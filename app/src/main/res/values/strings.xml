@@ -181,6 +181,7 @@
     <string name="video_options_share">Share</string>
     <string name="video_options_share_chooser">Share video</string>
     <string name="video_options_not_interested">Not interested</string>
+    <string name="video_options_remove_from_history">Remove from watch history</string>
     <string name="video_options_dont_recommend_channel">Don\'t recommend channel</string>
     <string name="video_options_dont_recommend_channel_name">Don\'t recommend %1$s</string>
     <string name="cd_back">Back</string>
@@ -509,6 +510,10 @@
     <string name="vh_recommended_for_you">Recommended For You</string>
     <string name="vh_trending_videos">Trending Videos</string>
     <string name="vh_youre_offline">You\'re offline</string>
+    <string name="vh_removed_from_history">Removed from watch history</string>
+    <string name="vh_clear_history">Clear watch history</string>
+    <string name="vh_clear_history_body">This empties Koda\'s watch history on this device. It does not delete anything from your YouTube account.</string>
+    <string name="vh_clear_history_confirm">Clear</string>
     <string name="vh_no_videos_found">No videos found</string>
     <string name="vh_downloaded_hint">Downloaded videos will appear here</string>
 
@@ -815,6 +820,7 @@
 
     <!-- Video player -->
     <string name="vp_captions">Captions</string>
+    <string name="vp_collaborators">Collaborators</string>
     <string name="vp_rewind">Rewind 10 seconds</string>
     <string name="vp_forward">Forward 10 seconds</string>
     <string name="vp_chapters">Chapters</string>
@@ -849,6 +855,32 @@
     <string name="vpc_vertical_live_sub">Return to the full-height stream</string>
     <string name="vpc_language">Language</string>
     <string name="vpc_no_captions">No captions available for this video</string>
+    <string name="vpc_off">Off</string>
+    <string name="vpc_no_embedded_subtitles">This video has no subtitle tracks</string>
+    <string name="vpc_audio_track">Audio track</string>
+
+    <!-- Device videos in the video-mode Library -->
+    <string name="dv_on_this_device">On this device</string>
+    <string name="dv_open_with">Open with</string>
+    <string name="dv_open_with_subtitle">Rename, move or delete it in another app</string>
+    <string name="dv_open_with_none">No app on this device can open this video</string>
+    <string name="dv_opened_externally">Opened from another app</string>
+    <string name="dv_card_subtitle">Videos stored on your phone</string>
+    <string name="dv_all_videos">All videos</string>
+    <string name="dv_one_video">1 video</string>
+    <string name="dv_many_videos">%1$d videos</string>
+    <string name="dv_no_videos">No videos found on this device</string>
+    <string name="dv_folder_empty">Nothing here any more</string>
+    <string name="dv_access_body">Play videos stored on your phone. Koda needs access to your video files.</string>
+    <string name="dv_allow_access">Allow access</string>
+    <string name="dv_partial_access">Showing only the videos you selected.</string>
+    <string name="dv_select_more">Select more</string>
+    <string name="dv_select_videos">Select videos</string>
+    <string name="dv_sort">Sort</string>
+    <string name="dv_sort_recent">Recently added</string>
+    <string name="dv_sort_name">Name</string>
+    <string name="dv_sort_duration">Longest first</string>
+    <string name="dv_sort_size">Largest first</string>
     <string name="vpc_white">White</string>
     <string name="vpc_yellow">Yellow</string>
     <string name="vpc_none">None</string>
@@ -1011,6 +1043,10 @@
         <item quantity="one">%1$d channel</item>
         <item quantity="other">%1$d channels</item>
     </plurals>
+    <plurals name="vp_collaborators_count">
+        <item quantity="one">%1$d channel shares this video</item>
+        <item quantity="other">%1$d channels share this video</item>
+    </plurals>
 
     <!-- Profile switcher -->
     <string name="profiles_title">Profiles</string>
@@ -1019,6 +1055,9 @@
     <string name="add_youtube_account_subtitle">Sign in to another Google account</string>
     <string name="add_device_profile">Add profile on this device</string>
     <string name="add_device_profile_subtitle">Separate subscriptions, no account needed</string>
+    <string name="incognito_title">Incognito</string>
+    <string name="incognito_subtitle">Pause watch, search and listening history. Downloads, playlists and likes still save.</string>
+    <string name="incognito_active">Incognito is on</string>
     <string name="profile_signed_out">Signed out - tap to sign in</string>
     <string name="profile_session_expired">Session expired - tap to reconnect</string>
     <string name="profile_on_this_device">On this device</string>

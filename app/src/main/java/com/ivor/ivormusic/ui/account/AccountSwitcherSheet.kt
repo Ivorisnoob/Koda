@@ -35,10 +35,14 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.PersonOutline
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -61,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.IncognitoMode
 import com.ivor.ivormusic.data.AccountSwitcher
 import com.ivor.ivormusic.data.Profile
 
@@ -95,6 +100,8 @@ fun AccountSwitcherSheet(
     val profiles by switcher.profiles.collectAsState()
     val activeId by switcher.activeProfileId.collectAsState()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val incognito by IncognitoMode.enabled(context).collectAsState()
 
     var pendingRemoval by remember { mutableStateOf<Profile?>(null) }
     var showAddLocal by remember { mutableStateOf(false) }
@@ -183,6 +190,18 @@ fun AccountSwitcherSheet(
                 subtitle = stringResource(R.string.add_device_profile_subtitle),
                 onClick = { showAddLocal = true }
             )
+
+            // Incognito lives with the profiles rather than in Settings because
+            // it is the same kind of decision - who the app is being right now
+            // - and because it is meant to be turned on for one sitting and off
+            // again, which a control three screens deep would not be.
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(12.dp))
+            IncognitoRow(
+                enabled = incognito,
+                onCheckedChange = { IncognitoMode.setEnabled(context, it) }
+            )
         }
     }
 
@@ -210,6 +229,73 @@ fun AccountSwitcherSheet(
             },
             onDismiss = { pendingRemoval = null }
         )
+    }
+}
+
+/**
+ * The incognito switch.
+ *
+ * Worded as what it does rather than as a mode name, because "incognito" means
+ * subtly different things in different apps and the difference that matters
+ * here is which things stop being recorded. Playback, downloads, playlists and
+ * likes are untouched, and the subtitle says so: someone who reads this as
+ * "nothing I do is saved" would be surprised by a download appearing later.
+ */
+@Composable
+private fun IncognitoRow(
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (enabled) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onCheckedChange(!enabled) }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.VisibilityOff,
+                contentDescription = null,
+                tint = if (enabled) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.incognito_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+                Text(
+                    text = stringResource(R.string.incognito_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(checked = enabled, onCheckedChange = onCheckedChange)
+        }
     }
 }
 

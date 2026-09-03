@@ -4,6 +4,8 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.ivor.ivormusic.data.CrashReporter
+import com.ivor.ivormusic.data.LocalVideoThumbnail
+import com.ivor.ivormusic.data.LocalVideoThumbnailFetcher
 
 class IvorMusicApplication : Application(), ImageLoaderFactory {
 
@@ -23,10 +25,17 @@ class IvorMusicApplication : Application(), ImageLoaderFactory {
      * ImageRequest (artwork color extraction, notification artwork, downloads)
      * resolve to this instance through Context.imageLoader, so they share one
      * memory cache, one disk cache and one connection pool instead of each
-     * call site building its own loader. Deliberately default-configured:
-     * the previous ad-hoc loaders were defaults too, so nothing about how an
-     * individual image loads changes - only that they now share.
+     * call site building its own loader.
+     *
+     * The only component added is the device-video frame fetcher, which is
+     * keyed on its own [LocalVideoThumbnail] model and so cannot affect any
+     * other image: every existing request still resolves exactly as it did.
      */
     override fun newImageLoader(): ImageLoader =
-        ImageLoader.Builder(this).build()
+        ImageLoader.Builder(this)
+            .components {
+                add(LocalVideoThumbnailFetcher.Factory(this@IvorMusicApplication))
+                add(LocalVideoThumbnailFetcher.ThumbnailKeyer())
+            }
+            .build()
 }

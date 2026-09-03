@@ -23,6 +23,7 @@ import com.ivor.ivormusic.data.usableHomeRecommendations
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -52,6 +53,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
     private val homeRecommendationCache = HomeRecommendationCache(application)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(application)
+    private val localVideoRepository = com.ivor.ivormusic.data.LocalVideoRepository(application)
     private val themePreferences = com.ivor.ivormusic.data.ThemePreferences(application)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
@@ -353,6 +355,54 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     private val _historyVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val historyVideos: StateFlow<List<VideoItem>> = _historyVideos.asStateFlow()
+
+    /**
+     * Video files on the device, newest first.
+     *
+     * Loaded only once the Library asks, which is the whole gate on this
+     * feature: nothing here runs, and no permission is requested, for a user
+     * who never opens the section.
+     */
+    private val _deviceVideos =
+        MutableStateFlow<List<com.ivor.ivormusic.data.LocalVideo>>(emptyList())
+    val deviceVideos: StateFlow<List<com.ivor.ivormusic.data.LocalVideo>> =
+        _deviceVideos.asStateFlow()
+
+    /** Folder cards, derived rather than queried a second time. */
+    val deviceVideoFolders: StateFlow<List<com.ivor.ivormusic.data.LocalVideoFolder>> =
+        _deviceVideos
+            .map { com.ivor.ivormusic.data.LocalVideoRepository.foldersOf(it) }
+            .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    private val _isDeviceVideosLoading = MutableStateFlow(false)
+    val isDeviceVideosLoading: StateFlow<Boolean> = _isDeviceVideosLoading.asStateFlow()
+
+    /** True once a scan has finished, so an empty list can be told from a pending one. */
+    private val _hasScannedDeviceVideos = MutableStateFlow(false)
+    val hasScannedDeviceVideos: StateFlow<Boolean> = _hasScannedDeviceVideos.asStateFlow()
+
+    private var deviceVideosJob: Job? = null
+
+    /**
+     * Re-read the device's videos.
+     *
+     * Always a fresh query rather than a cached list: the system's media
+     * scanner runs while the app is backgrounded, so a recording made since the
+     * tab was last opened must appear on the way back to it. A scan already in
+     * flight is left alone, since the two would return the same rows.
+     */
+    fun loadDeviceVideos() {
+        if (deviceVideosJob?.isActive == true) return
+        deviceVideosJob = viewModelScope.launch {
+            _isDeviceVideosLoading.value = true
+            try {
+                _deviceVideos.value = localVideoRepository.getVideos()
+                _hasScannedDeviceVideos.value = true
+            } finally {
+                _isDeviceVideosLoading.value = false
+            }
+        }
+    }
 
     private val _shortsFeed = MutableStateFlow<List<com.ivor.ivormusic.data.ShortsItem>>(emptyList())
 
@@ -1823,6 +1873,63 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * Load user's watch history. Logged in: YouTube account history
      * (falling back to local). Logged out: locally persisted history.
      */
+    /** A history entry just removed, kept so the snackbar can put it back. */
+    data class HistoryRemoval(val video: VideoItem, val at: Int, val id: Long)
+
+    private val _lastHistoryRemoval = MutableStateFlow<HistoryRemoval?>(null)
+    val lastHistoryRemoval: StateFlow<HistoryRemoval?> = _lastHistoryRemoval.asStateFlow()
+
+    /**
+     * Take one video out of the watch history.
+     *
+     * The list on screen is updated first and without waiting: the store write
+     * is synchronous and local, and a row that lingers for a frame after being
+     * removed is the thing this feature exists to fix.
+     */
+    fun removeVideoFromHistory(video: VideoItem) {
+        val at = _historyVideos.value.indexOfFirst { it.videoId == video.videoId }
+        _historyVideos.value = _historyVideos.value.filterNot { it.videoId == video.videoId }
+        videoHistoryRepository.removeVideo(video.videoId)
+        // A fresh id every time, so removing two entries in a row re-shows the
+        // snackbar instead of the second one silently doing nothing.
+        _lastHistoryRemoval.value =
+            HistoryRemoval(video, at.coerceAtLeast(0), System.currentTimeMillis())
+    }
+
+    /** Put the last removed entry back where it was. */
+    fun undoHistoryRemoval() {
+        val removal = _lastHistoryRemoval.value ?: return
+        _lastHistoryRemoval.value = null
+        videoHistoryRepository.restoreVideo(removal.video, removal.at)
+        val current = _historyVideos.value.toMutableList()
+        if (current.none { it.videoId == removal.video.videoId }) {
+            current.add(removal.at.coerceIn(0, current.size), removal.video)
+        }
+        _historyVideos.value = current
+    }
+
+    fun clearHistoryRemoval() {
+        _lastHistoryRemoval.value = null
+    }
+
+    /**
+     * Empty Koda's watch history.
+     *
+     * Local only, and the confirmation dialog says so: deleting the account's
+     * history needs YouTube's own per-item tokens, and a control that silently
+     * left youtube.com untouched would be the more damaging half of a promise
+     * it could not keep.
+     */
+    fun clearVideoHistory() {
+        videoHistoryRepository.clearHistory()
+        _historyVideos.value = emptyList()
+        _lastHistoryRemoval.value = null
+    }
+
+    /** True when this entry has already been taken out of history. */
+    fun isRemovedFromHistory(videoId: String): Boolean =
+        videoHistoryRepository.isRemoved(videoId)
+
     fun loadYouTubeHistory() {
         if (!sessionManager.isLoggedIn()) {
              _historyVideos.value = videoHistoryRepository.getHistory()
@@ -1833,7 +1940,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _isHistoryLoading.value = true
             try {
                 val videos = youtubeRepository.getWatchHistory()
-                _historyVideos.value = videos.ifEmpty { videoHistoryRepository.getHistory() }
+                // The account's list is filtered through the locally removed
+                // ids: a row the user took out here must not come back on the
+                // next FEhistory fetch, which is the only thing that would make
+                // the removal look like it had not worked.
+                _historyVideos.value = videoHistoryRepository
+                    .withoutRemoved(videos)
+                    .ifEmpty { videoHistoryRepository.getHistory() }
             } catch (e: Exception) {
                 _historyVideos.value = videoHistoryRepository.getHistory()
             } finally {

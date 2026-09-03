@@ -349,6 +349,11 @@ object BackupTransfer {
                     put("subscriptionGroups", entry.subscriptionGroups ?: JSONObject.NULL)
                     put("hiddenVideos", entry.hiddenVideos ?: JSONObject.NULL)
                     put("blockedChannels", entry.blockedChannels ?: JSONObject.NULL)
+                    put("watchHistory", entry.watchHistory ?: JSONObject.NULL)
+                    put(
+                        "removedFromHistory",
+                        entry.removedFromHistory?.let { JSONArray(it.toList()) } ?: JSONObject.NULL
+                    )
                 })
             }
         }
@@ -362,7 +367,16 @@ object BackupTransfer {
                 subscriptions = str("subscriptions"),
                 subscriptionGroups = str("subscriptionGroups"),
                 hiddenVideos = str("hiddenVideos"),
-                blockedChannels = str("blockedChannels")
+                blockedChannels = str("blockedChannels"),
+                watchHistory = str("watchHistory"),
+                // Absent in files written before history became per-profile,
+                // which is the normal case for an older backup rather than an
+                // error: it simply restores with nothing removed.
+                removedFromHistory = entry.optJSONArray("removedFromHistory")?.let { array ->
+                    (0 until array.length())
+                        .mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
+                        .toSet()
+                }
             )
         }.toMap()
 
@@ -483,11 +497,16 @@ data class BackupProfileData(
     val subscriptions: String? = null,
     val subscriptionGroups: String? = null,
     val hiddenVideos: String? = null,
-    val blockedChannels: String? = null
+    val blockedChannels: String? = null,
+    /** This profile's watch history, which is per-profile like the two above. */
+    val watchHistory: String? = null,
+    /** Ids this profile removed from its history, so a restore keeps them out. */
+    val removedFromHistory: Set<String>? = null
 ) {
     val isEmpty: Boolean
         get() = subscriptions == null && subscriptionGroups == null &&
-            hiddenVideos == null && blockedChannels == null
+            hiddenVideos == null && blockedChannels == null &&
+            watchHistory == null && removedFromHistory == null
 }
 
 /** A file copied verbatim, at a path relative to `filesDir`. */

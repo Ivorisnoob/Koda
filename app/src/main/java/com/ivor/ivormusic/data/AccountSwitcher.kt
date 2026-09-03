@@ -24,6 +24,9 @@ import kotlinx.coroutines.flow.asStateFlow
  *   memory and disk and re-minted.
  * - **Search extractor/page caches**, which hold personalised results.
  * - **The expired verdict**, which is per-profile and has to be re-read.
+ * - **Watch history**, whose stored key is per-profile but whose flow is
+ *   process-wide, so the new profile would otherwise be shown the previous
+ *   one's watches until something happened to reload it.
  *
  * Everything else follows automatically, because every consumer resolves the
  * session fresh on each call.
@@ -97,6 +100,7 @@ class AccountSwitcher(context: Context) {
         YouTubeRepository.invalidateSessionScopedCaches(appContext)
         LocalSubscriptionsRepository.reloadForActiveProfile(appContext)
         NotInterestedRepository.reloadForActiveProfile(appContext)
+        VideoHistoryRepository.reloadForActiveProfile(appContext)
         sessionManager.refreshExpiredFromProfile()
     }
 

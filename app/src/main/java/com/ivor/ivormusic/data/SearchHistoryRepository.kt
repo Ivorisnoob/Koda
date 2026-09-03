@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateListOf
  * Manages search history using SharedPreferences.
  */
 class SearchHistoryRepository(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     
     fun getHistory(): List<String> {
@@ -15,6 +16,8 @@ class SearchHistoryRepository(context: Context) {
     }
     
     fun addQuery(query: String) {
+        // Incognito records nothing that would later be suggested back.
+        if (IncognitoMode.isEnabled(appContext)) return
         if (query.isBlank()) return
         val current = getHistory().toMutableList()
         current.remove(query) // Remove if already exists to move to top

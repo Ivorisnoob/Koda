@@ -71,6 +71,7 @@ fun VideoHistoryContent(
     /** Open a creator's page, from the long-press sheet. */
     onOpenChannel: ((String) -> Unit)? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val historyVideos by viewModel.historyVideos.collectAsState()
     val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -86,8 +87,33 @@ fun VideoHistoryContent(
             viewModel = viewModel,
             onDismiss = { optionsTarget = null },
             onEnqueue = onEnqueueVideo?.let { enqueue -> { next -> enqueue(video, next) } },
+            // Offered here and nowhere else: this is the list the row acts on,
+            // so it is the one place where removing an entry has a visible and
+            // unambiguous meaning.
+            onRemoveFromHistory = { viewModel.removeVideoFromHistory(video) },
             onOpenChannel = onOpenChannel
         )
+    }
+
+    // Removal undo. Local to this screen rather than the app-wide host the
+    // dismissal snackbar uses, because unlike a dismissal this action exists on
+    // exactly one surface and that surface is inside the NavHost, never behind
+    // an overlay.
+    val lastRemoval by viewModel.lastHistoryRemoval.collectAsState()
+    val removalSnackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(lastRemoval?.id) {
+        val removal = lastRemoval ?: return@LaunchedEffect
+        val result = removalSnackbar.showSnackbar(
+            message = context.getString(R.string.vh_removed_from_history),
+            actionLabel = context.getString(R.string.undo),
+            withDismissAction = false,
+            duration = androidx.compose.material3.SnackbarDuration.Short
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+            viewModel.undoHistoryRemoval()
+        } else {
+            viewModel.clearHistoryRemoval()
+        }
     }
 
     // Initial fetch — works logged out too (locally persisted history)
@@ -154,6 +180,7 @@ fun VideoHistoryContent(
         return
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     ExpressivePullToRefresh(
         // The pull spinner only represents a refresh over existing history; the
         // empty first load is the skeleton's job below. Bound to the same flag
@@ -219,6 +246,17 @@ fun VideoHistoryContent(
             
              item { Spacer(modifier = Modifier.height(32.dp)) }
         }
+    }
+
+        androidx.compose.material3.SnackbarHost(
+            hostState = removalSnackbar,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                // Above whatever the host puts at the bottom - the nav bar in
+                // the Library tab, the mini player when one is up - so the
+                // undo is reachable rather than tucked underneath them.
+                .padding(bottom = contentPadding.calculateBottomPadding())
+        )
     }
 }
 

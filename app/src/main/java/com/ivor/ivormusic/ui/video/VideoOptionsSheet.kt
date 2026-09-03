@@ -44,10 +44,12 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.AlertDialog
@@ -86,6 +88,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.LocalVideo
 import com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
@@ -159,6 +162,15 @@ fun VideoOptionsSheet(
     onDismiss: () -> Unit,
     onNotInterested: (() -> Unit)? = null,
     onBlockChannel: (() -> Unit)? = null,
+    /**
+     * Take this video out of the watch history.
+     *
+     * Supplied only by the surfaces that show history, because everywhere else
+     * the row would be an offer to edit a list the user is not looking at - and
+     * on a feed it reads as "hide this", which is what "Not interested" already
+     * means and does something quite different.
+     */
+    onRemoveFromHistory: (() -> Unit)? = null,
     /**
      * True when there is no YouTube session, which changes what the Watch later
      * row promises: it is then the device's own list rather than the account's,
@@ -310,6 +322,15 @@ fun VideoOptionsSheet(
                             onDismiss()
                         }
                     },
+                    // Same treatment: the row removes an entry from the list
+                    // behind this sheet, so the sheet has to get out of the way
+                    // for the undo snackbar to be reachable.
+                    onRemoveFromHistory = onRemoveFromHistory?.let { action ->
+                        {
+                            action()
+                            onDismiss()
+                        }
+                    },
                     // Terminal: the sheet is over a screen the channel page is
                     // about to replace, and leaving it open would put it on top
                     // of the destination.
@@ -358,9 +379,23 @@ private fun ActionsPane(
     onDownload: () -> Unit,
     onNotInterested: (() -> Unit)?,
     onBlockChannel: (() -> Unit)?,
+    onRemoveFromHistory: (() -> Unit)?,
     onOpenChannel: (() -> Unit)?
 ) {
     val context = LocalContext.current
+
+    // A file on this device, reached from watch history or the device library.
+    // Derived from the item rather than threaded from the call site, for the
+    // same reason addVideoToPlaylist owns its own routing: six surfaces open
+    // this sheet and every one would otherwise have to remember.
+    //
+    // Most of this menu is about a video YouTube knows: there is nothing to
+    // download that is not already on the phone, no watch URL to share, no
+    // channel to open. What a local file has instead is the hand-off, which is
+    // also how it gets renamed, moved or deleted - jobs a file manager already
+    // does properly and Koda deliberately does not do at all.
+    val isDeviceVideo = LocalVideo.isDeviceVideoId(video.videoId)
+    val deviceUri = remember(video.videoId) { LocalVideo.uriFor(video.videoId) }
 
     Column(
         modifier = Modifier
@@ -395,78 +430,98 @@ private fun ActionsPane(
                 OptionRowDivider()
             }
 
-            OptionRow(
-                icon = Icons.Rounded.WatchLater,
-                title = stringResource(R.string.video_options_watch_later),
-                // The one place the signed-out story has to be told: the save
-                // lands on the device, not on the account the user may well
-                // think they are saving to.
-                subtitle = if (isSignedOut) stringResource(R.string.video_options_kept_on_device) else null,
-                state = watchLaterState,
-                onClick = onWatchLater
-            )
-            OptionRowDivider()
-            OptionRow(
-                icon = Icons.Rounded.PlaylistAdd,
-                title = stringResource(R.string.video_options_save_to_playlist),
-                subtitle = when (playlistCount) {
-                    0 -> null
-                    else -> pluralStringResource(R.plurals.n_playlists, playlistCount, playlistCount)
-                },
-                trailing = OptionRowTrailing.CHEVRON,
-                onClick = onOpenPlaylists
-            )
-            OptionRowDivider()
-            OptionRow(
-                icon = Icons.Rounded.Download,
-                title = stringResource(R.string.video_options_download),
-                trailing = OptionRowTrailing.CHEVRON,
-                onClick = onDownload
-            )
-            // The universal way into a creator's page. Every video-mode surface
-            // opens this sheet, so putting it here is what makes "tap a
-            // channel" mean the same thing in the feed, in search, in history
-            // and in a playlist - rather than being a thing only the player
-            // could do. Absent when the card never carried a channel id (RSS
-            // and some legacy renderers), which is honest: there is nothing to
-            // open.
-            onOpenChannel?.let { action ->
+            if (isDeviceVideo) {
+                OptionRow(
+                    icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                    title = stringResource(R.string.dv_open_with),
+                    subtitle = stringResource(R.string.dv_open_with_subtitle),
+                    onClick = {
+                        deviceUri?.let { openVideoWithExternalApp(context, it) }
+                    }
+                )
+            } else {
+                OptionRow(
+                    icon = Icons.Rounded.WatchLater,
+                    title = stringResource(R.string.video_options_watch_later),
+                    // The one place the signed-out story has to be told: the save
+                    // lands on the device, not on the account the user may well
+                    // think they are saving to.
+                    subtitle = if (isSignedOut) stringResource(R.string.video_options_kept_on_device) else null,
+                    state = watchLaterState,
+                    onClick = onWatchLater
+                )
                 OptionRowDivider()
                 OptionRow(
-                    icon = Icons.Rounded.AccountCircle,
-                    title = video.channelName.takeIf { it.isNotBlank() }
-                        ?.let { stringResource(R.string.song_options_go_to_artist, it) }
-                        ?: stringResource(R.string.video_options_go_to_channel),
+                    icon = Icons.Rounded.PlaylistAdd,
+                    title = stringResource(R.string.video_options_save_to_playlist),
+                    subtitle = when (playlistCount) {
+                        0 -> null
+                        else -> pluralStringResource(R.plurals.n_playlists, playlistCount, playlistCount)
+                    },
                     trailing = OptionRowTrailing.CHEVRON,
-                    onClick = action
+                    onClick = onOpenPlaylists
                 )
-            }
-            OptionRowDivider()
-            OptionRow(
-                icon = Icons.Rounded.Share,
-                title = stringResource(R.string.video_options_share),
-                onClick = {
-                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(
-                            android.content.Intent.EXTRA_TEXT,
-                            "https://youtube.com/watch?v=${video.videoId}"
-                        )
-                    }
-                    context.startActivity(
-                        android.content.Intent.createChooser(send, context.getString(R.string.video_options_share_chooser))
+                OptionRowDivider()
+                OptionRow(
+                    icon = Icons.Rounded.Download,
+                    title = stringResource(R.string.video_options_download),
+                    trailing = OptionRowTrailing.CHEVRON,
+                    onClick = onDownload
+                )
+                // The universal way into a creator's page. Every video-mode surface
+                // opens this sheet, so putting it here is what makes "tap a
+                // channel" mean the same thing in the feed, in search, in history
+                // and in a playlist - rather than being a thing only the player
+                // could do. Absent when the card never carried a channel id (RSS
+                // and some legacy renderers), which is honest: there is nothing to
+                // open.
+                onOpenChannel?.let { action ->
+                    OptionRowDivider()
+                    OptionRow(
+                        icon = Icons.Rounded.AccountCircle,
+                        title = video.channelName.takeIf { it.isNotBlank() }
+                            ?.let { stringResource(R.string.song_options_go_to_artist, it) }
+                            ?: stringResource(R.string.video_options_go_to_channel),
+                        trailing = OptionRowTrailing.CHEVRON,
+                        onClick = action
                     )
                 }
-            )
+                OptionRowDivider()
+                OptionRow(
+                    icon = Icons.Rounded.Share,
+                    title = stringResource(R.string.video_options_share),
+                    onClick = {
+                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(
+                                android.content.Intent.EXTRA_TEXT,
+                                "https://youtube.com/watch?v=${video.videoId}"
+                            )
+                        }
+                        context.startActivity(
+                            android.content.Intent.createChooser(send, context.getString(R.string.video_options_share_chooser))
+                        )
+                    }
+                )
+            }
         }
 
-        if (onNotInterested != null || onBlockChannel != null) {
+        if (onNotInterested != null || onBlockChannel != null || onRemoveFromHistory != null) {
             Spacer(modifier = Modifier.height(12.dp))
 
             // Its own group, in the muted tone the rows above are not. These
             // are destructive in a small way and share a surface with Save, so
             // they should never be the thing a thumb lands on by accident.
             OptionGroup {
+                onRemoveFromHistory?.let { action ->
+                    OptionRow(
+                        icon = Icons.Rounded.DeleteOutline,
+                        title = stringResource(R.string.video_options_remove_from_history),
+                        muted = true,
+                        onClick = action
+                    )
+                    if (onNotInterested != null || onBlockChannel != null) OptionRowDivider()
+                }
                 onNotInterested?.let { action ->
                     OptionRow(
                         icon = Icons.Rounded.NotInterested,
@@ -1012,12 +1067,18 @@ fun VideoOptionsSheetHost(
      */
     allowBlockChannel: Boolean = true,
     /**
+     * Offered only by the history surfaces. Null everywhere else, which is what
+     * keeps the row off feeds where it would have nothing to act on.
+     */
+    onRemoveFromHistory: (() -> Unit)? = null,
+    /**
      * Open this video's creator. Threaded from the screen because it is a
      * navigation, which no sheet can perform on its own; a call site that
      * leaves it null simply has no channel row.
      */
     onOpenChannel: ((channelId: String) -> Unit)? = null
 ) {
+    val isDeviceVideo = LocalVideo.isDeviceVideoId(video.videoId)
     val playlists by viewModel.videoPlaylists.collectAsState()
     val isLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
     val isConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -1064,19 +1125,22 @@ fun VideoOptionsSheetHost(
         },
         onDownload = { showDownload = true },
         onDismiss = onDismiss,
-        onNotInterested = if (allowNotInterested) {
+        // A device file has no recommendations to tune and no channel behind it,
+        // so both rows are suppressed here rather than at every call site.
+        onNotInterested = if (allowNotInterested && !isDeviceVideo) {
             { viewModel.markNotInterested(video) }
         } else null,
-        onBlockChannel = if (allowBlockChannel) {
+        onBlockChannel = if (allowBlockChannel && !isDeviceVideo) {
             { viewModel.blockChannelFor(video) }
         } else null,
+        onRemoveFromHistory = onRemoveFromHistory,
         isSignedOut = !isConnected,
         onCreatePlaylist = { name, onCreated ->
             viewModel.createLocalVideoPlaylist(name, onCreated)
         },
         onEnqueue = onEnqueue,
         alreadyIn = alreadyIn,
-        onOpenChannel = onOpenChannel?.let { open ->
+        onOpenChannel = if (isDeviceVideo) null else onOpenChannel?.let { open ->
             video.channelId?.takeIf { it.startsWith("UC") }?.let { id -> { open(id) } }
         }
     )

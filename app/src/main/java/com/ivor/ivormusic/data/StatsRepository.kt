@@ -50,6 +50,9 @@ class StatsRepository(private val context: Context) {
     private val mutex = Mutex()
 
     suspend fun addPlayEvent(song: Song) = withContext(Dispatchers.IO) {
+        // Incognito leaves no listening record, which is what makes the stats
+        // screen and "recently played" honest about the session it describes.
+        if (IncognitoMode.isEnabled(context)) return@withContext
         mutex.withLock {
             try {
                 val history = loadHistory().toMutableList()

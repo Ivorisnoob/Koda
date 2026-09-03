@@ -25,12 +25,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
@@ -73,6 +75,7 @@ import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.PlayerTrackOption
 import com.ivor.ivormusic.data.VideoQuality
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -130,6 +133,10 @@ fun VideoPlayerContent(
     val seekPreview by viewModel.seekPreview.collectAsState()
     val captionTracks by viewModel.captionTracks.collectAsState()
     val selectedCaption by viewModel.selectedCaption.collectAsState()
+    // Tracks the media file itself carries, populated only for device videos.
+    val audioTracks by viewModel.audioTracks.collectAsState()
+    val embeddedTextTracks by viewModel.embeddedTextTracks.collectAsState()
+    val embeddedCueText by viewModel.embeddedCueText.collectAsState()
     val captionCues by viewModel.captionCues.collectAsState()
     val captionTextSize by viewModel.captionTextSize.collectAsState()
     val allSponsorSegments by viewModel.sponsorSegments.collectAsState()
@@ -555,6 +562,14 @@ fun VideoPlayerContent(
             }
     ) {
         if (isFullscreen) {
+            // Clearance for anything floating over the frame above the bottom
+            // bar. Portrait's bar is taller and further off the edge, so the
+            // landscape figure would put the SponsorBlock chip behind it.
+            val fullscreenOverlayBottom = if (fullscreenIsPortrait) {
+                FULLSCREEN_COMPACT_BOTTOM_BAR
+            } else {
+                104.dp
+            }
             // Fullscreen Layout - ensure it fills entire screen including cutout areas
             Box(
                 modifier = Modifier
@@ -608,12 +623,13 @@ fun VideoPlayerContent(
                 chapters = chapters,
                 sponsorSegments = sponsorSegments,
                 onOpenChapters = { showChaptersSheet = true },
-                captionsActive = selectedCaption != null,
+                captionsActive = selectedCaption != null || embeddedTextTracks.any { it.isSelected },
                 onCaptionsClick = {
                     viewModel.ensureCaptionsLoaded()
                     showCaptionsSheet = true
                 },
                 captionCues = captionCues,
+                embeddedCueText = embeddedCueText,
                 captionTextSize = captionTextSize,
                 captionTextColor = captionTextColor,
                 captionBackground = captionBackground,
@@ -645,7 +661,11 @@ fun VideoPlayerContent(
                         positionMs = currentPosition,
                         modifier = Modifier
                             .align(Alignment.BottomStart)
-                            .padding(start = 24.dp, end = 24.dp, bottom = 104.dp)
+                            .padding(
+                                start = 24.dp,
+                                end = 24.dp,
+                                bottom = fullscreenOverlayBottom
+                            )
                     )
                 }
 
@@ -659,7 +679,7 @@ fun VideoPlayerContent(
                     onSkipSegment = { viewModel.skipCurrentSegment() },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 24.dp, bottom = 104.dp)
+                        .padding(end = 24.dp, bottom = fullscreenOverlayBottom)
                 )
 
                 // Regular comments stay inside immersive landscape as a
@@ -788,8 +808,9 @@ fun VideoPlayerContent(
                     chatMessages = liveChatMessages,
                     isChatAvailable = isLiveChatAvailable,
                     canSendChat = canSendLiveChat,
-                    captionsActive = selectedCaption != null,
+                    captionsActive = selectedCaption != null || embeddedTextTracks.any { it.isSelected },
                     captionCues = captionCues,
+                    embeddedCueText = embeddedCueText,
                     captionTextSize = captionTextSize,
                     captionTextColor = captionTextColor,
                     captionBackground = captionBackground,
@@ -918,12 +939,13 @@ fun VideoPlayerContent(
                         chapters = chapters,
                         sponsorSegments = sponsorSegments,
                         onOpenChapters = { showChaptersSheet = true },
-                        captionsActive = selectedCaption != null,
+                        captionsActive = selectedCaption != null || embeddedTextTracks.any { it.isSelected },
                         onCaptionsClick = {
                             viewModel.ensureCaptionsLoaded()
                             showCaptionsSheet = true
                         },
                         captionCues = captionCues,
+                        embeddedCueText = embeddedCueText,
                         captionTextSize = captionTextSize,
                         captionTextColor = captionTextColor,
                         captionBackground = captionBackground,
@@ -1011,6 +1033,7 @@ fun VideoPlayerContent(
                             val channelId = engagement?.channelId ?: currentVideo.channelId
                             if (channelId != null) onOpenChannel(channelId)
                         },
+                        onOpenChannelId = onOpenChannel,
                         onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
                         isOffline = isLocalPlayback,
                         onRelatedLongPress = { related ->
@@ -1201,6 +1224,12 @@ fun VideoPlayerContent(
         CaptionsSheet(
             tracks = captionTracks,
             selected = selectedCaption,
+            embeddedTracks = embeddedTextTracks,
+            onEmbeddedSelect = {
+                viewModel.setEmbeddedTextTrack(it)
+                showCaptionsSheet = false
+            },
+            isLocalMedia = isLocalPlayback,
             isLoading = isCaptionsLoading,
             textSize = captionTextSize,
             textColor = captionTextColor,
@@ -1237,6 +1266,8 @@ fun VideoPlayerContent(
             qualities = selectableQualities,
             currentQuality = currentQuality,
             onQualitySelected = { viewModel.setQuality(it) },
+            audioTracks = audioTracks,
+            onAudioTrackSelected = { viewModel.setAudioTrack(it) },
             playbackSpeed = playbackSpeed,
             onSpeedSelected = { viewModel.setPlaybackSpeed(it) },
             showEndBehavior = !isLive,
@@ -1389,6 +1420,13 @@ private fun PlayerSettingsSections(
     qualities: List<VideoQuality>,
     currentQuality: VideoQuality?,
     onQualitySelected: (VideoQuality) -> Unit,
+    /**
+     * Audio tracks the media declares, when there is more than one to choose
+     * between. Empty for ordinary YouTube playback, so the section below simply
+     * does not appear there.
+     */
+    audioTracks: List<PlayerTrackOption>,
+    onAudioTrackSelected: (PlayerTrackOption) -> Unit,
     playbackSpeed: Float,
     onSpeedSelected: (Float) -> Unit,
     showEndBehavior: Boolean,
@@ -1503,6 +1541,40 @@ private fun PlayerSettingsSections(
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(quality.displayLabel)
+                }
+            }
+        }
+    }
+
+    if (audioTracks.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(24.dp))
+        SettingsSectionLabel(
+            icon = Icons.Rounded.Audiotrack,
+            label = stringResource(R.string.vpc_audio_track)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        // Rows rather than the chips the quality ladder uses: a track name
+        // carries a language, a codec and a channel layout, and any of those
+        // truncated into a chip is exactly the part that distinguishes it from
+        // the track above it.
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Column {
+                audioTracks.forEachIndexed { index, track ->
+                    if (index > 0) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 64.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant
+                        )
+                    }
+                    SettingsActionRow(
+                        icon = if (track.isSelected) Icons.Rounded.Check else Icons.Rounded.Audiotrack,
+                        title = track.label,
+                        supportingText = track.detail,
+                        onClick = { if (!track.isSelected) onAudioTrackSelected(track) }
+                    )
                 }
             }
         }
@@ -1636,11 +1708,13 @@ private fun SettingsToggleRow(
 private fun SettingsActionRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
-    supportingText: String,
+    /** Omitted for rows whose title already says everything, such as an audio
+     * track a container tagged with no codec or channel information. */
+    supportingText: String?,
     onClick: () -> Unit
 ) {
     ListItem(
-        supportingContent = { Text(supportingText) },
+        supportingContent = supportingText?.let { { Text(it) } },
         leadingContent = {
             Icon(
                 imageVector = icon,
@@ -1771,6 +1845,16 @@ private fun ChaptersSheet(
 private fun CaptionsSheet(
     tracks: List<CaptionTrack>,
     selected: CaptionTrack?,
+    /**
+     * Subtitle tracks inside the file being played, for device videos. When
+     * this is non-empty it replaces [tracks] in the language list: the two can
+     * never coexist, since one comes from a YouTube watch page and the other
+     * from a container on disk.
+     */
+    embeddedTracks: List<PlayerTrackOption>,
+    onEmbeddedSelect: (PlayerTrackOption?) -> Unit,
+    /** Changes only the empty-state wording, which differs materially. */
+    isLocalMedia: Boolean,
     isLoading: Boolean,
     textSize: Float,
     textColor: CaptionTextColor,
@@ -1808,6 +1892,33 @@ private fun CaptionsSheet(
                 )
             }
             when {
+                embeddedTracks.isNotEmpty() -> {
+                    item {
+                        CaptionRow(
+                            label = stringResource(R.string.vpc_off),
+                            checked = embeddedTracks.none { it.isSelected },
+                            onClick = { onEmbeddedSelect(null) }
+                        )
+                    }
+                    items(embeddedTracks, key = { it.id }) { track ->
+                        CaptionRow(
+                            label = track.label,
+                            checked = track.isSelected,
+                            onClick = { onEmbeddedSelect(track) }
+                        )
+                    }
+                }
+                // A local file's subtitle tracks are known the moment it is
+                // read, so there is nothing to wait for and no spinner: an
+                // empty list here is the answer, not a pending one.
+                isLocalMedia -> item {
+                    Text(
+                        text = stringResource(R.string.vpc_no_embedded_subtitles),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
+                    )
+                }
                 isLoading && tracks.isEmpty() -> item {
                     Box(
                         modifier = Modifier
@@ -1829,7 +1940,7 @@ private fun CaptionsSheet(
                 else -> {
                     item {
                         CaptionRow(
-                            label = "Off",
+                            label = stringResource(R.string.vpc_off),
                             checked = selected == null,
                             onClick = { onSelect(null) }
                         )

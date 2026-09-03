@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.video
 import com.ivor.ivormusic.util.KLog
 
 import android.content.Context
+import android.net.Uri
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,6 +13,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -28,6 +32,13 @@ import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.LocalVideo
+import com.ivor.ivormusic.data.PlayerTrackOption
+import com.ivor.ivormusic.data.VideoDynamicRange
+import com.ivor.ivormusic.data.audioTrackDetail
+import com.ivor.ivormusic.data.audioTrackLabel
+import com.ivor.ivormusic.data.localVideoQualityLabel
+import com.ivor.ivormusic.data.textTrackLabel
 import com.ivor.ivormusic.data.SegmentAction
 import com.ivor.ivormusic.data.SponsorBlockRepository
 import com.ivor.ivormusic.data.SponsorSegment
@@ -123,10 +134,76 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
     val currentVideo: StateFlow<VideoItem?> = _currentVideo
 
-    /** True when ExoPlayer is reading a completed device download, not YouTube. */
+    /**
+     * True when ExoPlayer is reading a file on the device rather than YouTube -
+     * a completed download, or a video from the device's own gallery.
+     *
+     * Both sources take exactly the same path from here on, which is the point:
+     * everything that must not happen for a local file (a /next call, a history
+     * write, a caption fetch, an HDR downgrade aimed at saving bandwidth that
+     * is not being spent) is already gated on this one flag.
+     */
     private val _isLocalPlayback = MutableStateFlow(false)
     val isLocalPlayback: StateFlow<Boolean> = _isLocalPlayback.asStateFlow()
-    private var localDownloadsById: Map<String, DownloadedVideo> = emptyMap()
+
+    /**
+     * A file this player can open directly, keyed by the id its [VideoItem]
+     * carries.
+     *
+     * [label] is what the quality row shows before the container has been read.
+     * A device file replaces it with the real resolution and dynamic range as
+     * soon as the tracks arrive, since MediaStore's own dimensions can be
+     * missing and say nothing about HDR either way.
+     */
+    private data class LocalPlaybackSource(
+        val uri: Uri,
+        val label: String,
+        /** Device gallery files can report their own tracks; downloads cannot. */
+        val allowsTrackSelection: Boolean = false,
+        /**
+         * Width over height, when MediaStore recorded both. Supplied for the
+         * same reason the YouTube path derives it at parse time: the player
+         * also learns it from onVideoSizeChanged, but only after the first
+         * frame decodes, and the watch page would visibly snap out of 16:9 a
+         * moment into a portrait recording.
+         */
+        val aspectRatio: Float? = null,
+    )
+
+    private var localSourcesById: Map<String, LocalPlaybackSource> = emptyMap()
+
+    /**
+     * Audio tracks the current media declares, when it declares more than one.
+     *
+     * Empty for every ordinary YouTube stream - the app merges a single chosen
+     * audio rendition - so the control this drives simply never appears there.
+     * A device file with a dub track, a commentary or a second language is the
+     * case it exists for.
+     */
+    private val _audioTracks = MutableStateFlow<List<PlayerTrackOption>>(emptyList())
+    val audioTracks: StateFlow<List<PlayerTrackOption>> = _audioTracks.asStateFlow()
+
+    /**
+     * Subtitle tracks carried inside the media itself.
+     *
+     * Separate from [captionTracks], which are YouTube's timedtext files
+     * fetched and drawn by Koda's own overlay. These are decoded by the player,
+     * so they are selected through track selection and arrive as cues rather
+     * than as a document that can be parsed up front.
+     */
+    private val _embeddedTextTracks = MutableStateFlow<List<PlayerTrackOption>>(emptyList())
+    val embeddedTextTracks: StateFlow<List<PlayerTrackOption>> =
+        _embeddedTextTracks.asStateFlow()
+
+    /**
+     * The cue currently on screen from an embedded subtitle track.
+     *
+     * The overlay renders this instead of stepping through [captionCues],
+     * because an embedded track has no document to step through: the extractor
+     * emits each cue when it is due and withdraws it when it is not.
+     */
+    private val _embeddedCueText = MutableStateFlow<String?>(null)
+    val embeddedCueText: StateFlow<String?> = _embeddedCueText.asStateFlow()
 
     private val _isExpanded = MutableStateFlow(false)
     val isExpanded: StateFlow<Boolean> = _isExpanded
@@ -754,6 +831,33 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlaying.value = isPlaying
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                publishSelectableTracks(tracks)
+            }
+
+            /**
+             * Cues from an embedded subtitle track. Media3 parses subtitles
+             * during extraction, so this fires for a device file's own tracks
+             * with nothing fetched and nothing merged into the source.
+             *
+             * Empty groups arrive constantly - between every pair of cues - and
+             * are what clears the overlay, so they must not be filtered out.
+             */
+            override fun onCues(cueGroup: CueGroup) {
+                // Local files only. A YouTube stream draws its captions from
+                // the fetched-cue overlay instead, and a DASH manifest that
+                // happened to carry a text track the selector picked up would
+                // otherwise render a second line over the first.
+                if (!_isLocalPlayback.value) {
+                    _embeddedCueText.value = null
+                    return
+                }
+                _embeddedCueText.value = cueGroup.cues
+                    .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+                    .takeIf { it.isNotEmpty() }
+                    ?.joinToString("\n")
             }
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -1501,6 +1605,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the retry path - tapping the same video otherwise only re-expands.
      */
     fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
+        // A device video reaching the ordinary entry point is a watch-history
+        // row being replayed: history stores VideoItems and nothing else, so a
+        // file on this phone comes back through the same door a YouTube video
+        // does. Routed here rather than at the surfaces that open a video,
+        // because there are several of them and every one would have to
+        // remember - the same reason addVideoToPlaylist owns its own routing.
+        if (LocalVideo.isDeviceVideoId(video.videoId)) {
+            playDeviceVideoItem(video)
+            return
+        }
         leaveLocalPlayback()
         _queue.value = null
         // The queue this belonged to is gone, so restoring into the next one
@@ -1541,22 +1655,145 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun playDownloadedVideos(videos: List<DownloadedVideo>, selected: DownloadedVideo) {
         val index = videos.indexOfFirst { it.id == selected.id }
         if (index < 0) return
-        localDownloadsById = videos.associateBy { it.id }
+        startLocalQueue(
+            items = videos.map { it.toVideoItem() },
+            sources = videos.associate { download ->
+                download.id to LocalPlaybackSource(
+                    uri = download.uri,
+                    label = download.quality?.let { "$it • Offline" } ?: "Offline",
+                )
+            },
+            index = index,
+            title = "Downloads",
+        )
+    }
+
+    /**
+     * Play the device's own video files through Koda's video player.
+     *
+     * The whole list becomes the queue, matching how a playlist behaves and how
+     * downloads already behave: opening the third clip in a folder and having
+     * playback stop at the end of it is not what tapping into a folder means.
+     *
+     * Track selection is allowed here and not for downloads, because a
+     * downloaded file is one video and one audio rendition that Koda muxed
+     * itself - there is nothing to choose between - while a file from the
+     * gallery can carry any number of audio and subtitle tracks.
+     */
+    fun playDeviceVideos(videos: List<LocalVideo>, selected: LocalVideo) {
+        val index = videos.indexOfFirst { it.id == selected.id }
+        if (index < 0) return
+        startLocalQueue(
+            items = videos.map { it.toVideoItem() },
+            sources = videos.associate { video ->
+                video.playbackId to LocalPlaybackSource(
+                    uri = video.uri,
+                    // Stands in only until the container has been read; the
+                    // real label, HDR included, replaces it on the first
+                    // onTracksChanged.
+                    label = video.resolutionLabel ?: "On this device",
+                    allowsTrackSelection = true,
+                    aspectRatio = video.aspectRatio,
+                )
+            },
+            index = index,
+            title = selected.folderName,
+        )
+    }
+
+    /**
+     * Replay one device file addressed only by its playback id.
+     *
+     * The URI is rebuilt from the id rather than carried on the item, because
+     * the item may have come out of watch history, where nothing but a
+     * [VideoItem] was ever stored. A row whose file has since been deleted or
+     * moved fails at prepare and lands on the player's ordinary error overlay,
+     * which is the honest answer - there is no way to know it is gone without
+     * asking the provider, and asking costs a query on every tap.
+     */
+    private fun playDeviceVideoItem(video: VideoItem) {
+        val uri = LocalVideo.uriFor(video.videoId) ?: return
+        startLocalQueue(
+            items = listOf(video),
+            sources = mapOf(
+                video.videoId to LocalPlaybackSource(
+                    uri = uri,
+                    // Replaced by the real label, HDR included, on the first
+                    // onTracksChanged - the same placeholder the folder path uses.
+                    label = "On this device",
+                    allowsTrackSelection = true,
+                )
+            ),
+            index = 0,
+            title = video.channelName,
+        )
+    }
+
+    /**
+     * Play a video file handed to Koda from outside - an "open with", or a
+     * video shared into the app.
+     *
+     * A URI that resolves back to a MediaStore row is treated as an ordinary
+     * device video, id and all, so it lands in history and can be replayed
+     * later. Anything else plays under a one-off id: the read grant came with
+     * the intent and dies with the task, so remembering it would leave a row
+     * that can never be opened again.
+     */
+    fun playExternalVideo(uri: android.net.Uri, displayTitle: String?) {
+        val externalSourceLabel = context.getString(com.ivor.ivormusic.R.string.dv_opened_externally)
+        // A URI with no MediaStore row gets an id that is deliberately NOT a
+        // device id, so nothing downstream tries to rebuild a file address from
+        // it and history leaves it out (see recordLocalWatch).
+        val id = LocalVideo.playbackIdFor(uri) ?: "external:${uri.hashCode()}"
+        val title = displayTitle?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "Video"
+        startLocalQueue(
+            items = listOf(
+                VideoItem(
+                    videoId = id,
+                    title = title,
+                    channelName = externalSourceLabel,
+                    thumbnailUrl = null,
+                    duration = 0L,
+                    viewCount = "",
+                )
+            ),
+            sources = mapOf(
+                id to LocalPlaybackSource(
+                    uri = uri,
+                    label = "On this device",
+                    allowsTrackSelection = true,
+                )
+            ),
+            index = 0,
+            title = externalSourceLabel,
+        )
+    }
+
+    private fun startLocalQueue(
+        items: List<VideoItem>,
+        sources: Map<String, LocalPlaybackSource>,
+        index: Int,
+        title: String,
+    ) {
+        val target = items.getOrNull(index) ?: return
+        localSourcesById = sources
         _isLocalPlayback.value = true
-        val items = videos.map { it.toVideoItem() }
         _queue.value = com.ivor.ivormusic.data.VideoQueue(
             videos = items,
             index = index,
-            title = "Downloads"
+            title = title,
         )
         lastQueueRemoval = null
         queueErrorSkipCount = 0
-        startVideo(items[index], forceRestart = true)
+        startVideo(target, forceRestart = true)
     }
 
     private fun leaveLocalPlayback() {
         _isLocalPlayback.value = false
-        localDownloadsById = emptyMap()
+        localSourcesById = emptyMap()
+        clearSelectableTracks()
     }
 
     private fun DownloadedVideo.toVideoItem() = VideoItem(
@@ -1567,6 +1804,215 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         duration = durationMs / 1000L,
         viewCount = ""
     )
+
+    // ---------------- Tracks the media itself carries ----------------
+
+    /**
+     * Rebuild the audio and subtitle menus from what the player can actually
+     * see, and - for a device file - correct the quality row to the real
+     * resolution and dynamic range.
+     *
+     * Driven by onTracksChanged rather than read on demand because the track
+     * list is not known until the extractor has read the container, which is
+     * after playback has been asked for. Reading it when the menu opens would
+     * be a race with however fast the user was.
+     */
+    private fun publishSelectableTracks(tracks: Tracks) {
+        val local = localSourcesById[_currentVideo.value?.videoId]
+        if (local?.allowsTrackSelection != true) {
+            // Nothing else in the app has tracks worth choosing between, and
+            // leaving a previous file's menus standing would offer overrides
+            // against a Tracks snapshot that no longer exists.
+            clearSelectableTracks()
+            return
+        }
+
+        val audio = mutableListOf<PlayerTrackOption>()
+        val text = mutableListOf<PlayerTrackOption>()
+        tracks.groups.forEachIndexed { groupIndex, group ->
+            for (trackIndex in 0 until group.length) {
+                // A track the device cannot decode is not an option: offering
+                // a DTS row on a phone with no DTS decoder produces silence and
+                // no explanation.
+                if (!group.isTrackSupported(trackIndex)) continue
+                val format = group.getTrackFormat(trackIndex)
+                val id = "$groupIndex:$trackIndex"
+                val selected = group.isTrackSelected(trackIndex)
+                when (group.type) {
+                    C.TRACK_TYPE_AUDIO -> audio += PlayerTrackOption(
+                        id = id,
+                        label = audioTrackLabel(
+                            trackTitle = format.label,
+                            language = format.language,
+                            index = audio.size,
+                            isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
+                        ),
+                        detail = audioTrackDetail(
+                            codec = format.sampleMimeType,
+                            channelCount = format.channelCount,
+                            bitrate = format.bitrate,
+                        ),
+                        language = format.language,
+                        isSelected = selected,
+                    )
+
+                    C.TRACK_TYPE_TEXT -> text += PlayerTrackOption(
+                        id = id,
+                        label = textTrackLabel(
+                            trackTitle = format.label,
+                            language = format.language,
+                            index = text.size,
+                            isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
+                            isHearingImpaired =
+                                format.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND != 0,
+                        ),
+                        language = format.language,
+                        isSelected = selected,
+                    )
+
+                    C.TRACK_TYPE_VIDEO -> if (selected) applyLocalVideoFormat(format)
+                }
+            }
+        }
+
+        // One audio track is not a choice, and a row offering it would only
+        // ever be tapped to discover that.
+        _audioTracks.value = if (audio.size > 1) audio else emptyList()
+        _embeddedTextTracks.value = text
+        if (text.none { it.isSelected }) _embeddedCueText.value = null
+    }
+
+    private fun clearSelectableTracks() {
+        _audioTracks.value = emptyList()
+        _embeddedTextTracks.value = emptyList()
+        _embeddedCueText.value = null
+    }
+
+    /**
+     * Name a device file's quality row after what is really playing.
+     *
+     * MediaStore records dimensions inconsistently and says nothing about
+     * dynamic range, so a 4K Dolby Vision recording and a 4K SDR one are
+     * indistinguishable until the decoder reports the track's color info. This
+     * is also what makes the HDR badge honest: it reflects the transfer
+     * function in the file rather than a filename or a guess.
+     */
+    private fun applyLocalVideoFormat(format: androidx.media3.common.Format) {
+        val existing = _currentQuality.value
+        val range = when {
+            format.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION -> VideoDynamicRange.DOLBY_VISION
+            else -> when (format.colorInfo?.colorTransfer) {
+                C.COLOR_TRANSFER_ST2084 -> VideoDynamicRange.HDR10
+                C.COLOR_TRANSFER_HLG -> VideoDynamicRange.HLG
+                else -> VideoDynamicRange.SDR
+            }
+        }
+        val quality = VideoQuality(
+            resolution = localVideoQualityLabel(
+                height = format.height.takeIf { it > 0 } ?: 0,
+                frameRate = format.frameRate.takeIf { it > 0f } ?: 0f,
+            ),
+            url = existing?.url.orEmpty(),
+            format = format.containerMimeType ?: existing?.format,
+            codec = format.sampleMimeType,
+            dynamicRange = range,
+            width = format.width.coerceAtLeast(0),
+            height = format.height.coerceAtLeast(0),
+            frameRate = format.frameRate.takeIf { it > 0f }?.let(Math::round) ?: 0,
+            sourceAspectRatio = if (format.width > 0 && format.height > 0) {
+                format.width.toFloat() / format.height
+            } else null,
+        )
+        _currentQuality.value = quality
+        _availableQualities.value = listOf(quality)
+    }
+
+    /**
+     * Switch to one of [audioTracks].
+     *
+     * The override is resolved against the player's live Tracks rather than a
+     * remembered group, because a track list belongs to the media item that
+     * produced it and this menu can outlive a queue advance by a frame.
+     */
+    fun setAudioTrack(option: PlayerTrackOption) {
+        applyTrackOverride(option, C.TRACK_TYPE_AUDIO)
+    }
+
+    /**
+     * Show one of [embeddedTextTracks], or pass null to turn subtitles off.
+     *
+     * Disabling the whole track type rather than clearing the override: with
+     * only an override removed, the selector is free to re-pick a track flagged
+     * default in the container, so subtitles the user just switched off would
+     * come straight back.
+     */
+    fun setEmbeddedTextTrack(option: PlayerTrackOption?) {
+        val player = _exoPlayer ?: return
+        themePreferences.setCaptionsEnabled(option != null)
+        if (option == null) {
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+            _embeddedCueText.value = null
+            _embeddedTextTracks.value = _embeddedTextTracks.value.map { it.copy(isSelected = false) }
+            return
+        }
+        themePreferences.setCaptionLanguageCode(option.language)
+        applyTrackOverride(option, C.TRACK_TYPE_TEXT)
+    }
+
+    /**
+     * The subtitle state a device file opens in.
+     *
+     * Off unless captions were left on, which is the same rule the YouTube path
+     * follows. Disabling the track type is what makes "off" stick: a container
+     * routinely flags one subtitle track as default, and the selector would
+     * honour that flag and put subtitles on screen for a file the user opened
+     * with captions switched off.
+     */
+    private fun applyEmbeddedTextDefault() {
+        val player = _exoPlayer ?: return
+        val wantCaptions = themePreferences.isCaptionsEnabled()
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !wantCaptions)
+            .apply {
+                // Carries the language across files rather than across formats:
+                // with captions on, a folder of dual-language rips keeps
+                // landing on the same language instead of on whichever track
+                // each file happens to list first.
+                if (wantCaptions) {
+                    themePreferences.getCaptionLanguageCode()
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { setPreferredTextLanguage(it) }
+                }
+            }
+            .build()
+    }
+
+    private fun applyTrackOverride(option: PlayerTrackOption, trackType: Int) {
+        val player = _exoPlayer ?: return
+        val groupIndex = option.id.substringBefore(':').toIntOrNull() ?: return
+        val trackIndex = option.id.substringAfter(':').toIntOrNull() ?: return
+        val group = player.currentTracks.groups.getOrNull(groupIndex) ?: return
+        if (group.type != trackType || trackIndex >= group.length) return
+
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(trackType, false)
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+            .build()
+        // onTracksChanged republishes the menus with the new selection, but not
+        // before the sheet has already redrawn from this tap.
+        val mark = { options: List<PlayerTrackOption> ->
+            options.map { it.copy(isSelected = it.id == option.id) }
+        }
+        if (trackType == C.TRACK_TYPE_AUDIO) {
+            _audioTracks.value = mark(_audioTracks.value)
+        } else {
+            _embeddedTextTracks.value = mark(_embeddedTextTracks.value)
+        }
+    }
 
     /**
      * Jump to a position in the active queue.
@@ -1697,8 +2143,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Decide from the item, not merely from the queue that introduced it.
         // This keeps ad-hoc online items added after an offline download from
         // being mislabeled or having their network features suppressed.
-        val localDownload = localDownloadsById[video.videoId]
-        _isLocalPlayback.value = localDownload != null
+        val localSource = localSourcesById[video.videoId]
+        _isLocalPlayback.value = localSource != null
 
         _currentVideo.value = video
         if (video.isLive) {
@@ -1719,6 +2165,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _chapters.value = emptyList() // Clear previous chapters
         _seekPreview.value = null // Never show a frame from the previous video
         _captionTracks.value = emptyList() // Clear previous caption tracks
+        // The previous file's audio and subtitle menus address a Tracks
+        // snapshot that is about to be replaced; leaving them up would let a
+        // tap apply an override against groups that no longer exist.
+        clearSelectableTracks()
         _selectedCaption.value = null // Re-applied below when captions are persistently on
         _isCaptionsLoading.value = false
         captionsLoadedForVideoId = null
@@ -1809,21 +2259,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             com.ivor.ivormusic.service.VideoPlaybackService.start(context, it)
         }
 
-        if (localDownload != null) {
+        if (localSource != null) {
             playbackReportJob?.cancel()
             clearVideoPlaybackSession()
             try {
                 _exoPlayer?.stop()
                 _exoPlayer?.clearMediaItems()
-                val offlineQuality = VideoQuality(
-                    resolution = localDownload.quality?.let { "$it • Offline" } ?: "Offline",
-                    url = localDownload.uri.toString(),
-                    format = "video/mp4"
+                localSource.aspectRatio?.let { _videoAspectRatio.value = it }
+                val localQuality = VideoQuality(
+                    resolution = localSource.label,
+                    url = localSource.uri.toString(),
+                    format = "video/mp4",
+                    sourceAspectRatio = localSource.aspectRatio,
                 )
-                _availableQualities.value = listOf(offlineQuality)
-                _currentQuality.value = offlineQuality
-                _seekPreview.value = VideoSeekPreview.local(localDownload.uri.toString())
-                _exoPlayer?.setMediaItem(nowPlayingMediaItem(localDownload.uri.toString()))
+                _availableQualities.value = listOf(localQuality)
+                _currentQuality.value = localQuality
+                _seekPreview.value = VideoSeekPreview.local(localSource.uri.toString())
+                // Subtitles start off unless the user had captions on, and a
+                // container's default-flagged track would otherwise switch them
+                // back on by itself the moment the file is read.
+                applyEmbeddedTextDefault()
+                _exoPlayer?.setMediaItem(nowPlayingMediaItem(localSource.uri.toString()))
                 _exoPlayer?.prepare()
                 if (resumePositionMs != null && resumePositionMs > 0) {
                     _exoPlayer?.let { seekPlayerTo(it, resumePositionMs, precise = true) }
@@ -1838,6 +2294,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _playbackError.value = e
                 _isLoading.value = false
             }
+            recordLocalWatch(video)
             return
         }
 
@@ -2010,6 +2467,54 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // register plain videos in YouTube watch history
                 youtubeRepository.reportVideoPlayback(video.videoId)
             }
+        }
+    }
+
+    /**
+     * Record a locally played video in Koda's own watch history.
+     *
+     * A file on the device is still something the user watched, and leaving it
+     * out made the history list quietly incomplete - a folder of holiday clips
+     * watched all evening left no trace, while the one YouTube video in between
+     * did. Nothing is told to YouTube: there is no id to report, and a device
+     * file is nobody's upload.
+     *
+     * The same 10s-of-actual-playback rule as the online path, so opening a
+     * file and immediately backing out does not record it, and the same fresh
+     * pref read, because the settings screen toggles through its own
+     * ThemePreferences instance. Incognito and the profile scope are enforced
+     * inside [VideoHistoryRepository.addVideo], which is the whole reason that
+     * gate lives there rather than at each call site.
+     *
+     * Deliberately not extended to an externally opened one-off URI: a grant
+     * from another app dies with the task, so the entry would be a row that
+     * cannot be replayed. [LocalVideo.playbackIdFor] is what decides whether an
+     * incoming file is a MediaStore row worth remembering.
+     */
+    private fun recordLocalWatch(video: VideoItem) {
+        // Only entries that can be opened again. A downloaded video keeps its
+        // real YouTube id, a gallery file keeps a device id the URI is rebuilt
+        // from, and a one-off external grant keeps neither - a row for that
+        // would be a dead link the moment the task ends.
+        val replayable = LocalVideo.uriFor(video.videoId) != null ||
+            !video.videoId.startsWith("external:")
+        if (!replayable) return
+        playbackReportJob?.cancel()
+        playbackReportJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(10000)
+            var waitedMs = 0
+            while (!_isPlaying.value && waitedMs < 60_000) {
+                kotlinx.coroutines.delay(1000)
+                waitedMs += 1000
+            }
+            if (!_isPlaying.value) return@launch
+            if (_currentVideo.value?.videoId != video.videoId) return@launch
+            if (!themePreferences.isSaveVideoHistoryEnabled()) return@launch
+            // Prefer the current state: a device file's row is renamed from the
+            // decoder on the first onTracksChanged, so the enriched item is the
+            // one worth keeping.
+            val watched = _currentVideo.value?.takeIf { it.videoId == video.videoId } ?: video
+            videoHistoryRepository.addVideo(watched)
         }
     }
 

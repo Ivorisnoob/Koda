@@ -37,6 +37,7 @@ fun PipVideoSurface(
 ) {
     val exoPlayer = viewModel.exoPlayer ?: return
     val captionCues by viewModel.captionCues.collectAsState()
+    val embeddedCueText by viewModel.embeddedCueText.collectAsState()
     val captionTextSize by viewModel.captionTextSize.collectAsState()
     val captionTextColor by viewModel.captionTextColor.collectAsState()
     val captionBackground by viewModel.captionBackground.collectAsState()
@@ -51,6 +52,7 @@ fun PipVideoSurface(
                 PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = false
+                    disableBuiltInSubtitles()
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     // The PiP window is the video; a shutter over it during the
                     // hand-off from the full player's surface just reads as a
@@ -74,6 +76,7 @@ fun PipVideoSurface(
         // drawn by the app now, so PiP has to ask for them explicitly.
         CaptionOverlay(
             cues = captionCues,
+            embeddedCueText = embeddedCueText,
             player = exoPlayer,
             bottomPadding = 8.dp,
             compact = true,

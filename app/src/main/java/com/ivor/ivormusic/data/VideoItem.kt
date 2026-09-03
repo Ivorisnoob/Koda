@@ -207,11 +207,21 @@ data class VideoItem(
     }
 }
 
-/** Dynamic range carried by one video rendition. */
+/**
+ * Dynamic range carried by one video rendition.
+ *
+ * Not persisted anywhere - it is derived at parse time from the issuing player
+ * response for YouTube streams, and from the decoded track's color info for
+ * device files - so this list can grow without resetting anything a user
+ * chose. DOLBY_VISION only ever comes from a device file: YouTube does not
+ * serve it, but phone cameras record it constantly (an iPhone's HDR capture is
+ * Dolby Vision profile 8.4), so a gallery of them would otherwise all read SDR.
+ */
 enum class VideoDynamicRange {
     SDR,
     HDR10,
     HLG,
+    DOLBY_VISION,
 }
 
 /**
@@ -259,7 +269,14 @@ data class VideoQuality(
 
     /** The quality sheet keeps the resolution compact while making HDR explicit. */
     val displayLabel: String
-        get() = if (isHdr) "$resolution HDR" else resolution
+        get() = when (dynamicRange) {
+            VideoDynamicRange.SDR -> resolution
+            // Dolby Vision is named rather than folded into "HDR" because it is
+            // the one dynamic range whose playback can differ per device, so a
+            // viewer looking at a washed-out frame needs to see which it is.
+            VideoDynamicRange.DOLBY_VISION -> "$resolution Dolby Vision"
+            else -> "$resolution HDR"
+        }
 
     /**
      * How this entry reaches a player. This is derived rather than supplied by

@@ -73,6 +73,8 @@ import com.ivor.ivormusic.ui.video.enterPipMode
 import com.ivor.ivormusic.ui.share.PendingSharedLink
 import com.ivor.ivormusic.ui.share.SharedLinkHandler
 import com.ivor.ivormusic.ui.share.sharedLinkText
+import com.ivor.ivormusic.ui.video.PendingExternalVideo
+import com.ivor.ivormusic.ui.video.externalVideoUri
 
 /**
  * Height the floating navigation bar occupies at the bottom of the Home
@@ -98,6 +100,12 @@ class MainActivity : ComponentActivity() {
     // already running reaches the UI without restarting anything.
     private var pendingSharedLink by androidx.compose.runtime.mutableStateOf<PendingSharedLink?>(null)
     private var sharedLinkCounter = 0L
+
+    // A video file handed to Koda by another app - an "open with", or a video
+    // shared in. Separate from the link above because it is answered by playing
+    // a file rather than by resolving anything, and the two can never both be
+    // present on one intent.
+    private var pendingExternalVideo by androidx.compose.runtime.mutableStateOf<PendingExternalVideo?>(null)
 
     // True while the app is in system Picture-in-Picture. Held here rather than
     // inside the video overlay because the whole app has to stand down in PiP:
@@ -222,6 +230,7 @@ class MainActivity : ComponentActivity() {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
+                        pendingExternalVideo = pendingExternalVideo,
                         isInPipMode = isInPipMode,
                         appTimeLocked = appTimeLocked,
                         onPipStateChanged = { eligible -> pipEligible = eligible },
@@ -447,17 +456,53 @@ class MainActivity : ComponentActivity() {
      * and locale changes, and would otherwise replay the same link each time.
      */
     private fun takeSharedLink(intent: Intent?) {
-        val text = intent?.sharedLinkText() ?: return
+        if (intent == null) return
+        // A video file is checked for first: an "open with" on a video puts the
+        // file in the same `data` field a YouTube link would use, and letting
+        // the link path see it first would turn a playable file into "no
+        // YouTube link found in what you shared".
+        val videoUri = intent.externalVideoUri()
+        if (videoUri != null) {
+            // Take the grant for as long as the process lives where the sender
+            // offered a persistable one; without it the URI stops resolving as
+            // soon as the sending activity goes away, which on some file
+            // managers is immediately.
+            if (intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0) {
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        videoUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+            }
+            neutralize(intent)
+            pendingExternalVideo = PendingExternalVideo(videoUri, ++sharedLinkCounter)
+            return
+        }
+        val text = intent.sharedLinkText() ?: return
+        neutralize(intent)
+        pendingSharedLink = PendingSharedLink(text, ++sharedLinkCounter)
+    }
+
+    /**
+     * Strip an intent of what made it actionable, so it cannot fire twice. The
+     * activity is recreated on theme and locale changes and would otherwise
+     * replay the same hand-off each time.
+     */
+    private fun neutralize(intent: Intent) {
         intent.action = Intent.ACTION_MAIN
         intent.data = null
+        intent.type = null
         intent.removeExtra(Intent.EXTRA_TEXT)
-        pendingSharedLink = PendingSharedLink(text, ++sharedLinkCounter)
+        intent.removeExtra(Intent.EXTRA_STREAM)
     }
 }
 
 @Composable
 fun MusicApp(
     pendingSharedLink: PendingSharedLink?,
+    /** A video file handed in by another app, waiting to be played. */
+    pendingExternalVideo: PendingExternalVideo?,
     isInPipMode: Boolean,
 
     /**
@@ -741,6 +786,18 @@ fun MusicApp(
         onOpenChannel = openChannel
     )
 
+    com.ivor.ivormusic.ui.video.ExternalVideoHandler(
+        pending = pendingExternalVideo,
+        enabled = onboardingCompleted && !isInPipMode,
+        videoPlayerViewModel = videoPlayerViewModel,
+        onNavigateHome = {
+            navController.navigate("home") {
+                popUpTo("home") { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    )
+
     // Drives the PiP window's shape and its transport controls. Composed above
     // the early return so the package-scoped receiver remains alive when the
     // normal app UI is replaced by the dedicated video-only PiP surface.
@@ -815,6 +872,9 @@ fun MusicApp(
                     },
                     onPlayDownloadedVideos = { videos, selected ->
                         videoPlayerViewModel.playDownloadedVideos(videos, selected)
+                    },
+                    onPlayDeviceVideos = { videos, selected ->
+                        videoPlayerViewModel.playDeviceVideos(videos, selected)
                     },
                     onPlayVideoQueue = { queue ->
                         videoPlayerViewModel.playQueue(queue)
