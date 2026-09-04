@@ -6,41 +6,44 @@ import android.os.Build
 import android.view.Display
 
 /**
- * Whether the device has a connected display capable of presenting HDR.
+ * Whether HDR is worth requesting for this device's display.
  *
- * [scar] This used to read `Configuration.isScreenHdr` alone, and both callers
- * are ViewModels holding the **Application** context. That configuration is not
- * display-adjusted: the HDR bit is filled in for a context that has been
- * associated with a display, and an application context reports no HDR on
- * phones that plainly have an HDR panel. The effect was silent and total -
- * `includeHdr` came back false, so the visionOS augmentation never ran, the
- * ladder never carried an HDR entry, and the quality sheet never showed its
- * HDR/Standard tabs no matter what the setting said.
+ * [scar] HDR shipped gated on the `prefer_hdr_video` preference alone and
+ * worked. A later change added a display check on top of it, reading
+ * `Configuration.isScreenHdr` - and both callers are ViewModels holding the
+ * **Application** context, whose configuration is not display-adjusted. The bit
+ * is populated for a context associated with a display, so it read false on
+ * phones with an HDR panel, `includeHdr` came back false, the visionOS
+ * augmentation never ran, and HDR disappeared from the quality sheet for
+ * everyone who had been using it. Nothing failed and nothing logged. The unit
+ * tests could not see it either: they build quality lists directly and never
+ * touch a Context.
  *
- * The display's own capabilities are the authority. The configuration flag
- * stays as a fallback, since it is the one signal that survives a display this
- * process cannot enumerate.
+ * So this asks the display itself, and **fails open**. A positive answer from
+ * the display is trusted in both directions; anything else honours the
+ * preference, because that preference is explicit opt-in, off by default, and
+ * withholding what someone deliberately switched on is a worse failure than
+ * fetching a ladder that turns out not to help. Only a display we can
+ * positively confirm has no HDR mode skips the extra request.
  */
 internal fun hasHdrDisplay(context: Context): Boolean {
-    val display = runCatching {
-        val manager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
-        manager?.getDisplay(Display.DEFAULT_DISPLAY)
-    }.getOrNull()
-
-    if (display != null) {
-        val supportedHdrTypes = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // getHdrCapabilities is deprecated at 34 and reports the types
-                // the display can decode; the mode reports what it can actually
-                // present in its current configuration, which is the question.
-                display.mode.supportedHdrTypes
-            } else {
-                @Suppress("DEPRECATION")
-                display.hdrCapabilities?.supportedHdrTypes
-            }
-        }.getOrNull()
-        if (supportedHdrTypes != null && supportedHdrTypes.isNotEmpty()) return true
-    }
-
-    return context.resources.configuration.isScreenHdr
+    val supportedHdrTypes = supportedHdrTypesOrNull(context)
+        // No trustworthy signal - do what the build before the display check
+        // did, and take the preference at its word.
+        ?: return true
+    return supportedHdrTypes.isNotEmpty()
 }
+
+private fun supportedHdrTypesOrNull(context: Context): IntArray? = runCatching {
+    val manager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+    val display = manager?.getDisplay(Display.DEFAULT_DISPLAY) ?: return null
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        // getHdrCapabilities is deprecated at 34. The mode reports what the
+        // display can present as currently configured, which is the question
+        // being asked here.
+        display.mode.supportedHdrTypes
+    } else {
+        @Suppress("DEPRECATION")
+        display.hdrCapabilities?.supportedHdrTypes
+    }
+}.getOrNull()
