@@ -220,6 +220,13 @@ class CrossfadeEngine(
         val fadeMs = durationMs.coerceAtMost(remaining - END_GUARD_MS)
         if (fadeMs < MIN_FADE_MS) return false
 
+        // What the overlap is fading *out* of. Every index below addresses the
+        // queue as it stands right now, so if the outgoing player leaves this
+        // track the whole plan is stale - see [runFade] and [completeSwap].
+        // No outgoing track means there is nothing to overlap and nothing to
+        // anchor on; the caller's ordinary advance is the right answer.
+        val outgoingId = outgoing.currentMediaItem?.mediaId ?: return false
+
         return try {
             fadingIntoId = nextItem.mediaId
             pendingTargetIndex = targetIndex
@@ -235,7 +242,7 @@ class CrossfadeEngine(
 
             fadeJob = scope.launch {
                 runFade(
-                    outgoing, incoming, fadeMs, targetIndex,
+                    outgoing, incoming, fadeMs, targetIndex, outgoingId,
                     filterSweepStrength.coerceIn(0f, 1f),
                     startAtRemainingMs,
                 )
@@ -259,6 +266,7 @@ class CrossfadeEngine(
         incoming: ExoPlayer,
         requestedFadeMs: Long,
         targetIndex: Int,
+        outgoingId: String,
         filterSweepStrength: Float,
         startAtRemainingMs: Long?,
     ) {
@@ -382,6 +390,21 @@ class CrossfadeEngine(
                 setFilterSweep(outgoing, filterSweepStrength * t)
 
                 if (t >= 1f) break
+                // The queue was replaced or jumped under the overlap - a tap on
+                // another song in the list is the ordinary way this happens.
+                // Every index in the plan now addresses a different track, and
+                // the position arithmetic above is measuring a song that is no
+                // longer playing, so `t` would sit at zero and this would spin
+                // for the rest of the new track. Worse than the wasted work:
+                // `isFading` stays true, which blocks the *correct* transition
+                // and leaves `pendingTargetIndex` pointing into a queue that no
+                // longer exists, so the next Previous/Next jumps somewhere
+                // arbitrary.
+                if (outgoing.currentMediaItem?.mediaId != outgoingId) {
+                    KLog.w(TAG, "Queue moved under the overlap; abandoning it")
+                    abortInto(outgoing, incoming)
+                    return
+                }
                 // The outgoing player ending early (a short file, an error)
                 // must not leave this spinning against a frozen position.
                 if (outgoing.playbackState == Player.STATE_ENDED) break
@@ -398,7 +421,7 @@ class CrossfadeEngine(
             }
             currentCoroutineContext().ensureActive()
             KLog.d(TAG, "Transition clocks completed with max drift=${maxClockDriftMs}ms")
-            completeSwap(outgoing, incoming, gainFor(incoming), targetIndex)
+            completeSwap(outgoing, incoming, gainFor(incoming), targetIndex, outgoingId)
         } catch (e: CancellationException) {
             abortInto(outgoing, incoming)
             throw e
@@ -422,9 +445,19 @@ class CrossfadeEngine(
         incoming: ExoPlayer,
         inGain: Float,
         targetIndex: Int,
+        outgoingId: String,
     ) {
         try {
-            if (targetIndex !in 0 until outgoing.mediaItemCount ||
+            // The outgoing track is the anchor for everything below. A queue
+            // replaced during the fade - the user tapping another song in the
+            // list they are listening to - moves it, and the id check on
+            // [targetIndex] alone does not catch that: reopening the same
+            // playlist puts the same song back at the same index, so the guard
+            // passes and the session is handed to the standby playing a track
+            // nobody asked for. Anchoring on what the fade started from is what
+            // makes that case impossible rather than merely unlikely.
+            if (outgoing.currentMediaItem?.mediaId != outgoingId ||
+                targetIndex !in 0 until outgoing.mediaItemCount ||
                 outgoing.getMediaItemAt(targetIndex).mediaId != incoming.currentMediaItem?.mediaId
             ) {
                 abortInto(outgoing, incoming)

@@ -741,13 +741,23 @@ class MusicService : MediaLibraryService() {
             // real URI is in place.
             refreshTrackGain(applyNow = false)
 
-            // 1b. An automatic advance while a fade is running means the
-            // outgoing track ended before the overlap finished - the guard at
-            // the end of the fade window lost a race with a stall or a short
-            // file. Drop the overlap rather than swap onto a player the queue
-            // has already moved past, which would play the same track twice.
-            if (engine.isFading && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                KLog.w(TAG, "Advance beat the crossfade; dropping the overlap")
+            // 1b. Any change of the current item invalidates a transition
+            // that is already in flight, so drop it whatever moved us here.
+            // The engine's own swap never reaches this callback - the incoming
+            // player is handed its item directly rather than advancing into it
+            // - so reaching here mid-fade always means something else moved.
+            //
+            // AUTO is the outgoing track ending before the overlap finished.
+            // PLAYLIST_CHANGED is the one users meet: tapping a song in the
+            // list they are listening to replaces the queue, after which every
+            // index the transition planned against addresses a different
+            // track. Leaving it running let the swap hand the session to the
+            // standby - playing the old queue's next song - instead of the
+            // song that was tapped, and left `pendingTargetIndex` pointing
+            // into a queue that no longer exists, so the next Next/Previous
+            // jumped somewhere arbitrary too.
+            if (engine.isFading) {
+                KLog.w(TAG, "Current item changed (reason=$reason); dropping the overlap")
                 engine.cancelTransition()
             }
 
@@ -2338,7 +2348,12 @@ class MusicService : MediaLibraryService() {
                 targetIndex !in 0 until outgoing.mediaItemCount ||
                 outgoing.getMediaItemAt(targetIndex).mediaId != original.mediaId
             ) {
-                fallbackManualJump(targetIndex)
+                // Only a resolution that ran out of time still means "jump to
+                // the song that was asked for". The other three say the queue
+                // moved while we waited, and `targetIndex` now names a
+                // different track - which is how a skip could land on an
+                // arbitrary song after the user tapped something in a playlist.
+                fallbackManualJump(targetIndex, expectedMediaId = original.mediaId)
                 return@launch
             }
 
@@ -2354,14 +2369,34 @@ class MusicService : MediaLibraryService() {
                 targetIndex = targetIndex,
                 incomingStartMs = incomingStartMs,
             )
-            if (!canOverlap) fallbackManualJump(targetIndex)
+            if (!canOverlap) {
+                fallbackManualJump(targetIndex, expectedMediaId = target.mediaId)
+            }
         }
     }
 
-    /** Defined degraded path for an unresolved, paused, or unready target. */
-    private fun fallbackManualJump(targetIndex: Int) {
+    /**
+     * Defined degraded path for an unresolved, paused, or unready target.
+     *
+     * [expectedMediaId] is the song the jump was requested for. An index is
+     * only meaningful against the queue it was taken from, and this runs after
+     * an await, so it is checked rather than trusted: a queue replaced in the
+     * meantime turns a Next into a jump to whatever now sits at that position.
+     * No jump at all is the right answer there - the queue was replaced by
+     * someone choosing what to play, and that choice is already playing.
+     */
+    private fun fallbackManualJump(targetIndex: Int, expectedMediaId: String? = null) {
         val current = player
         if (targetIndex !in 0 until current.mediaItemCount) return
+        // Refusing is a no-op, deliberately: whatever replaced the queue is
+        // already playing what it chose, and cancelling a transition that
+        // belongs to it would interrupt that instead of this.
+        if (expectedMediaId != null &&
+            current.getMediaItemAt(targetIndex).mediaId != expectedMediaId
+        ) {
+            KLog.w(TAG, "Queue moved under a manual jump; leaving playback alone")
+            return
+        }
         engine.cancelTransition()
         current.volume = 0f
         current.seekTo(targetIndex, 0L)

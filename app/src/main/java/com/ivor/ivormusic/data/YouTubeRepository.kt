@@ -94,11 +94,14 @@ class YouTubeRepository(private val context: Context) {
         const val BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         private const val INNER_TUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
 
-        // Current InnerTube client versions (kept in sync with yt-dlp upstream).
-        // YouTube rejects clients older than a few months; bump these together when refreshing.
-        // Re-derived from the YouTube bootstrap HTML in August 2026.
-        private const val WEB_REMIX_VERSION = "1.20260816.07.00"
-        private const val WEB_VERSION = "2.20260817.01.00"
+        // Current InnerTube client versions. YouTube rejects clients older than
+        // a few months; bump these together when refreshing.
+        // Re-derived from the bootstrap HTML of music.youtube.com and
+        // www.youtube.com in September 2026 (INNERTUBE_CLIENT_VERSION), and
+        // both confirmed live: WEB_REMIX answers a VL<playlistId> browse with a
+        // full musicPlaylistShelfRenderer, WEB answers /next.
+        private const val WEB_REMIX_VERSION = "1.20260901.12.00"
+        private const val WEB_VERSION = "2.20260903.01.00"
 
         // browse params selecting a channel's Videos tab (protobuf: "videos")
         private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"

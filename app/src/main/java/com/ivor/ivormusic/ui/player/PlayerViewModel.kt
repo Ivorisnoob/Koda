@@ -15,6 +15,8 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.MusicQueueItem
+import com.ivor.ivormusic.data.QUEUE_START_ABSENT
+import com.ivor.ivormusic.data.queueStartIndex
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
 import com.ivor.ivormusic.data.LyricsResult
@@ -666,19 +668,34 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     fun playQueue(songs: List<Song>, startSong: Song? = null) {
-        if (songs.isEmpty()) return
+        if (songs.isEmpty() && startSong == null) return
 
-        val queue = songs.map { MusicQueueItem(song = it) }
-        // Callers pass the selected object from the displayed list. Reference
-        // identity preserves the selected occurrence when a playlist contains
-        // the same Song value twice; song ID is the compatibility fallback.
-        val startIndex = when (startSong) {
-            null -> 0
-            else -> songs.indexOfFirst { it === startSong }
-                .takeIf { it >= 0 }
-                ?: songs.indexOfFirst { it.id == startSong.id }.coerceAtLeast(0)
+        val startIndex = queueStartIndex(songs, startSong)
+
+        // A start song the list does not contain means this call site was
+        // handed a list it is not the one showing - the half-wired shape this
+        // codebase has met before, and nothing compile-fails when it happens.
+        // Clamping to index 0 answered a tap on one song by playing a
+        // different one, with nothing logged. Play what was actually asked for
+        // and keep the list behind it, and say so loudly enough that the
+        // wiring gets fixed rather than the symptom being lived with.
+        if (startSong != null && startIndex == QUEUE_START_ABSENT) {
+            KLog.w(
+                "PlayerViewModel",
+                "Start song ${startSong.id} is absent from the list it was played from " +
+                    "(${songs.size} songs); playing it ahead of that list",
+            )
+            playQueueItems(
+                (listOf(startSong) + songs).map { MusicQueueItem(song = it) },
+                0,
+            )
+            return
         }
-        playQueueItems(queue, startIndex)
+
+        playQueueItems(
+            songs.map { MusicQueueItem(song = it) },
+            startIndex.coerceAtLeast(0),
+        )
     }
 
     private fun playQueueItems(queue: List<MusicQueueItem>, startIndex: Int) {
