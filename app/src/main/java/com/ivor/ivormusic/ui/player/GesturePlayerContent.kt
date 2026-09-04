@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import com.ivor.ivormusic.R
 import androidx.compose.ui.res.stringResource
 
@@ -21,7 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1537,7 +1537,7 @@ private fun GestureQueueView(
             }
         }
 
-        SnackbarHost(
+        DismissibleSnackbarHost(
             hostState = removal.hostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)

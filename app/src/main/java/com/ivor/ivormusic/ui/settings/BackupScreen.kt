@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.settings
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -46,7 +47,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -160,7 +160,7 @@ fun BackupScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { DismissibleSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {

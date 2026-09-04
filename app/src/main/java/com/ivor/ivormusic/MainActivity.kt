@@ -1,5 +1,6 @@
 package com.ivor.ivormusic
 
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -19,7 +20,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
@@ -1412,7 +1412,7 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
         }
     }
 
-    SnackbarHost(hostState = snackbarHostState, modifier = modifier)
+    DismissibleSnackbarHost(hostState = snackbarHostState, modifier = modifier)
 }
 
 /**

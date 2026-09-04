@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.library
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
@@ -2887,7 +2888,7 @@ fun PlaylistDetailScreen(
             }
         },
         snackbarHost = {
-            SnackbarHost(
+            DismissibleSnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier.padding(
                     bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current

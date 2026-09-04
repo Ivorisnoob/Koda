@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.video
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -248,7 +249,7 @@ fun VideoHistoryContent(
         }
     }
 
-        androidx.compose.material3.SnackbarHost(
+        DismissibleSnackbarHost(
             hostState = removalSnackbar,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
