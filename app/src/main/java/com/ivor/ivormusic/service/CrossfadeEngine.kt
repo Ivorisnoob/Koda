@@ -212,7 +212,7 @@ class CrossfadeEngine(
         val incoming = standby
 
         if (targetIndex !in 0 until outgoing.mediaItemCount) return false
-        if (outgoing.getMediaItemAt(targetIndex).mediaId != nextItem.mediaId) return false
+        if (!outgoing.getMediaItemAt(targetIndex).isSameQueueItemAs(nextItem)) return false
         val remaining = outgoing.duration - outgoing.currentPosition
         if (outgoing.duration <= 0 || remaining <= 0) return false
         // Leave a beat at the end: ending the fade exactly on the track
@@ -225,7 +225,7 @@ class CrossfadeEngine(
         // track the whole plan is stale - see [runFade] and [completeSwap].
         // No outgoing track means there is nothing to overlap and nothing to
         // anchor on; the caller's ordinary advance is the right answer.
-        val outgoingId = outgoing.currentMediaItem?.mediaId ?: return false
+        val outgoingItem = outgoing.currentMediaItem ?: return false
 
         return try {
             fadingIntoId = nextItem.mediaId
@@ -242,7 +242,7 @@ class CrossfadeEngine(
 
             fadeJob = scope.launch {
                 runFade(
-                    outgoing, incoming, fadeMs, targetIndex, outgoingId,
+                    outgoing, incoming, fadeMs, targetIndex, outgoingItem,
                     filterSweepStrength.coerceIn(0f, 1f),
                     startAtRemainingMs,
                 )
@@ -266,7 +266,7 @@ class CrossfadeEngine(
         incoming: ExoPlayer,
         requestedFadeMs: Long,
         targetIndex: Int,
-        outgoingId: String,
+        outgoingItem: MediaItem,
         filterSweepStrength: Float,
         startAtRemainingMs: Long?,
     ) {
@@ -274,6 +274,9 @@ class CrossfadeEngine(
             val ready = withTimeoutOrNull(STANDBY_READY_TIMEOUT_MS) {
                 while (incoming.playbackState != Player.STATE_READY) {
                     currentCoroutineContext().ensureActive()
+                    if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true) {
+                        return@withTimeoutOrNull false
+                    }
                     if (incoming.playerError != null || incoming.playbackState == Player.STATE_ENDED) {
                         return@withTimeoutOrNull false
                     }
@@ -290,7 +293,9 @@ class CrossfadeEngine(
             if (startAtRemainingMs != null) {
                 while (outgoing.duration - outgoing.currentPosition > startAtRemainingMs) {
                     currentCoroutineContext().ensureActive()
-                    if (!outgoing.isPlaying || incoming.playbackState != Player.STATE_READY) {
+                    if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true ||
+                        !outgoing.isPlaying || incoming.playbackState != Player.STATE_READY
+                    ) {
                         abortInto(outgoing, incoming)
                         return
                     }
@@ -312,7 +317,8 @@ class CrossfadeEngine(
                     incoming.currentPosition <= incomingBeforeStart + MIN_CLOCK_ADVANCE_MS
                 ) {
                     currentCoroutineContext().ensureActive()
-                    if (incoming.playerError != null ||
+                    if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true ||
+                        incoming.playerError != null ||
                         incoming.playbackState == Player.STATE_IDLE ||
                         incoming.playbackState == Player.STATE_ENDED
                     ) return@withTimeoutOrNull false
@@ -342,6 +348,15 @@ class CrossfadeEngine(
 
             while (scope.isActive) {
                 currentCoroutineContext().ensureActive()
+                // Check the occurrence before reading clocks or touching
+                // volume. A rebuilt queue may contain the same media id at the
+                // same index; only the queue-item id distinguishes it from the
+                // transition this coroutine was created for.
+                if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true) {
+                    KLog.w(TAG, "Queue moved under the overlap; abandoning it")
+                    abortInto(outgoing, incoming)
+                    return
+                }
                 // If the audible player buffers, pause the muted/quiet player
                 // so it cannot run ahead. If only the incoming player buffers,
                 // hold the curve briefly with the outgoing track still audible;
@@ -390,21 +405,6 @@ class CrossfadeEngine(
                 setFilterSweep(outgoing, filterSweepStrength * t)
 
                 if (t >= 1f) break
-                // The queue was replaced or jumped under the overlap - a tap on
-                // another song in the list is the ordinary way this happens.
-                // Every index in the plan now addresses a different track, and
-                // the position arithmetic above is measuring a song that is no
-                // longer playing, so `t` would sit at zero and this would spin
-                // for the rest of the new track. Worse than the wasted work:
-                // `isFading` stays true, which blocks the *correct* transition
-                // and leaves `pendingTargetIndex` pointing into a queue that no
-                // longer exists, so the next Previous/Next jumps somewhere
-                // arbitrary.
-                if (outgoing.currentMediaItem?.mediaId != outgoingId) {
-                    KLog.w(TAG, "Queue moved under the overlap; abandoning it")
-                    abortInto(outgoing, incoming)
-                    return
-                }
                 // The outgoing player ending early (a short file, an error)
                 // must not leave this spinning against a frozen position.
                 if (outgoing.playbackState == Player.STATE_ENDED) break
@@ -421,9 +421,11 @@ class CrossfadeEngine(
             }
             currentCoroutineContext().ensureActive()
             KLog.d(TAG, "Transition clocks completed with max drift=${maxClockDriftMs}ms")
-            completeSwap(outgoing, incoming, gainFor(incoming), targetIndex, outgoingId)
+            completeSwap(outgoing, incoming, gainFor(incoming), targetIndex, outgoingItem)
         } catch (e: CancellationException) {
-            abortInto(outgoing, incoming)
+            // cancelTransition owns synchronous cleanup. Repeating it later
+            // from this cancelled coroutine can clear a new transition that
+            // has already reused the standby player.
             throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Transition failed; keeping the outgoing player", e)
@@ -445,7 +447,7 @@ class CrossfadeEngine(
         incoming: ExoPlayer,
         inGain: Float,
         targetIndex: Int,
-        outgoingId: String,
+        outgoingItem: MediaItem,
     ) {
         try {
             // The outgoing track is the anchor for everything below. A queue
@@ -456,9 +458,11 @@ class CrossfadeEngine(
             // passes and the session is handed to the standby playing a track
             // nobody asked for. Anchoring on what the fade started from is what
             // makes that case impossible rather than merely unlikely.
-            if (outgoing.currentMediaItem?.mediaId != outgoingId ||
+            if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true ||
                 targetIndex !in 0 until outgoing.mediaItemCount ||
-                outgoing.getMediaItemAt(targetIndex).mediaId != incoming.currentMediaItem?.mediaId
+                incoming.currentMediaItem?.let {
+                    outgoing.getMediaItemAt(targetIndex).isSameQueueItemAs(it)
+                } != true
             ) {
                 abortInto(outgoing, incoming)
                 return

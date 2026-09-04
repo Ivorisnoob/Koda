@@ -1642,6 +1642,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val target = normalized.current ?: return
         if (_currentVideo.value?.videoId == target.videoId) {
             _isExpanded.value = true
+            playFromExternal()
             return
         }
         startVideo(target)
@@ -2130,8 +2131,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, true)
         ensureLocalPlayer()
         if (!forceRestart && _currentVideo.value?.videoId == video.videoId) {
-            // Already playing this video, just expand
+            // A row tap is a play request, not only a navigation request. This
+            // matters for a cold-restored session (whose media is deliberately
+            // deferred), a paused video, and a video left at the end: merely
+            // expanding any of those produces a player that still does not
+            // play. playFromExternal handles all three without reloading a
+            // source that is already active.
             _isExpanded.value = true
+            playFromExternal()
             return
         }
 
@@ -2820,7 +2827,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     private suspend fun resolvePlayableStreamResult(videoId: String): VideoStreamResult {
-        val includeHdr = themePreferences.isPreferHdrEnabled()
+        // The preference is intent; the display capability decides whether
+        // HDR can produce a visible benefit. This also handles an enabled
+        // value restored onto an SDR-only phone.
+        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context)
         val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
         val qualities = if (includeHdr) {
             result.qualities

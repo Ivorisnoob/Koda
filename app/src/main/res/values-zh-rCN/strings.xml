@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">版本 %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">优先播放 HDR 视频</string>
     <string name="sp_prefer_hdr_sub">仅在显示屏和解码器均支持时使用 HDR</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">标准</string>
 
     <string name="profiles_title">个人资料</string>
     <string name="profiles_description">订阅和隐藏的推荐按个人资料分开保存。歌单、喜欢的歌曲和下载内容是共享的。</string>

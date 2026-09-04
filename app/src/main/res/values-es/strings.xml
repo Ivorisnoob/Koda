@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Versión %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Preferir vídeos HDR</string>
     <string name="sp_prefer_hdr_sub">Usar HDR solo cuando la pantalla y el decodificador sean compatibles</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Estándar</string>
 
     <string name="profiles_title">Perfiles</string>
     <string name="profiles_description">Las suscripciones y las recomendaciones ocultas se guardan por perfil. Las playlists, las canciones que te gustan y las descargas son compartidas.</string>

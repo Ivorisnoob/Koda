@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Έκδοση %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Προτίμηση βίντεο HDR</string>
     <string name="sp_prefer_hdr_sub">Χρήση HDR μόνο όταν υποστηρίζεται από την οθόνη και τον αποκωδικοποιητή</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Τυπική</string>
 
     <string name="profiles_title">Προφίλ</string>
     <string name="profiles_description">Οι συνδρομές και οι κρυφές προτάσεις διατηρούνται ανά προφίλ. Οι λίστες, τα αγαπημένα τραγούδια και οι λήψεις είναι κοινές.</string>

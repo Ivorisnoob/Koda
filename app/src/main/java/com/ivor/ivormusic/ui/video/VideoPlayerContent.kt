@@ -1515,11 +1515,70 @@ private fun PlayerSettingsSections(
             modifier = Modifier.padding(vertical = 16.dp)
         )
     } else {
+        val hdrQualities = qualities.filter(VideoQuality::isHdr)
+        val standardQualities = qualities.filterNot(VideoQuality::isHdr)
+        val showDynamicRangePicker = hdrQualities.isNotEmpty() && standardQualities.isNotEmpty()
+        var showHdrQualities by remember(qualities) {
+            mutableStateOf(currentQuality?.isHdr == true)
+        }
+
+        // Follow a real source change, including automatic HDR fallback. A
+        // tab tap by itself does not change currentQuality, so it remains free
+        // to browse the other ladder without snapping back.
+        LaunchedEffect(currentQuality?.dynamicRange, qualities) {
+            if (showDynamicRangePicker && currentQuality != null) {
+                showHdrQualities = currentQuality.isHdr
+            }
+        }
+
+        if (showDynamicRangePicker) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(
+                    ButtonGroupDefaults.ConnectedSpaceBetween
+                )
+            ) {
+                listOf(
+                    true to stringResource(R.string.vpc_quality_hdr),
+                    false to stringResource(R.string.vpc_quality_standard),
+                ).forEachIndexed { index, (showsHdr, label) ->
+                    val selected = showHdrQualities == showsHdr
+                    ToggleButton(
+                        checked = selected,
+                        onCheckedChange = { if (!selected) showHdrQualities = showsHdr },
+                        modifier = Modifier.weight(1f),
+                        shapes = if (index == 0) {
+                            ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        } else {
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        },
+                        colors = optionColors,
+                    ) {
+                        if (selected) {
+                            Icon(
+                                Icons.Rounded.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(label)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        val visibleQualities = when {
+            !showDynamicRangePicker -> qualities
+            showHdrQualities -> hdrQualities
+            else -> standardQualities
+        }
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            qualities.forEach { quality ->
+            visibleQualities.forEach { quality ->
                 // Compared by label, not URL: every rendition of a live
                 // stream points at the same HLS manifest, so a URL comparison
                 // would light up the whole ladder at once.
@@ -1540,7 +1599,7 @@ private fun PlayerSettingsSections(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                     }
-                    Text(quality.displayLabel)
+                    Text(if (showDynamicRangePicker) quality.resolution else quality.displayLabel)
                 }
             }
         }

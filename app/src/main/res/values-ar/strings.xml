@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">الإصدار %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">تفضيل فيديو HDR</string>
     <string name="sp_prefer_hdr_sub">استخدم HDR فقط عندما تدعمه الشاشة ووحدة فك الترميز</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">قياسي</string>
 
     <string name="profiles_title">الملفات الشخصية</string>
     <string name="profiles_description">تُحفظ الاشتراكات والتوصيات المخفية لكل ملف شخصي. قوائم التشغيل والأغاني المفضلة والتنزيلات مشتركة.</string>

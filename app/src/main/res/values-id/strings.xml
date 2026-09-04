@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Versi %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Prioritaskan video HDR</string>
     <string name="sp_prefer_hdr_sub">Gunakan HDR hanya jika layar dan dekoder mendukungnya</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standar</string>
 
     <string name="profiles_title">Profil</string>
     <string name="profiles_description">Subscription dan rekomendasi tersembunyi disimpan per profil. Playlist, lagu yang disukai, dan download dibersamakan.</string>

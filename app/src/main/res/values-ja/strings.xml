@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">バージョン %1$s（%2$d）</string>
     <string name="sp_prefer_hdr">HDR動画を優先</string>
     <string name="sp_prefer_hdr_sub">ディスプレイとデコーダーが対応している場合のみHDRを使用します</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">標準</string>
 
     <string name="profiles_title">プロフィール</string>
     <string name="profiles_description">登録チャンネルと非表示の推奨事項はプロフィールごとに保存されます。プレイリスト、お気に入り、ダウンロードは共通です。</string>

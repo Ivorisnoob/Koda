@@ -701,11 +701,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private fun playQueueItems(queue: List<MusicQueueItem>, startIndex: Int) {
         if (queue.isEmpty()) return
 
-        val requestedIndex = startIndex.coerceIn(queue.indices)
-        val requestedItem = queue[requestedIndex]
         val playbackQueue = queue
-        val safeStartIndex = playbackQueue.indexOfFirst { it.id == requestedItem.id }
-            .coerceAtLeast(0)
+        val safeStartIndex = startIndex.coerceIn(playbackQueue.indices)
 
         // Reset cleared flag - user is actively playing
         isPlayerCleared = false
@@ -733,26 +730,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
         pendingPlayRequest = null
         player.let {
-            // 1. Set the target song first (triggers URL resolution in MusicService)
-            val startItem = createMediaItem(currentItem)
-            it.setMediaItem(startItem)
-            
-            // 2. Add the rest of the queue BEFORE prepare (so notification sees full queue)
-            val otherItemsBefore = playbackQueue.subList(0, safeStartIndex).map { createMediaItem(it) }
-            val otherItemsAfter = playbackQueue
-                .subList(safeStartIndex + 1, playbackQueue.size)
-                .map { createMediaItem(it) }
-            
-            if (otherItemsBefore.isNotEmpty()) {
-                it.addMediaItems(0, otherItemsBefore)
-            }
-            if (otherItemsAfter.isNotEmpty()) {
-                // Start item is now at index otherItemsBefore.size
-                it.addMediaItems(otherItemsBefore.size + 1, otherItemsAfter)
-            }
-            
-            // 3. NOW prepare and play - notification will see complete queue
-            // (the buffering watchdog in init covers the stuck-spinner case)
+            // Replace the queue as one Media3 command. Building it through one
+            // set followed by multiple adds exposes intermediate timelines to
+            // the service, its transition listener and external controllers.
+            // The complete queue and the intended occurrence now become
+            // current together.
+            it.setMediaItems(
+                playbackQueue.map(::createMediaItem),
+                safeStartIndex,
+                0L,
+            )
             it.prepare()
             it.play()
         }

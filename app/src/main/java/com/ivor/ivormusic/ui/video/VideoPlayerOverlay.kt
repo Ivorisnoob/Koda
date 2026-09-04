@@ -24,7 +24,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.PredictiveBackHandler
 import kotlinx.coroutines.CancellationException
@@ -195,8 +197,21 @@ fun VideoPlayerOverlay(
     val context = LocalContext.current
     val activity = context as? androidx.activity.ComponentActivity
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     if (currentVideo == null) return
+
+    // The player overlays the NavHost instead of navigating away from it, so a
+    // search field underneath can otherwise keep input focus. Clear it when a
+    // video expands; without this, the IME can return over the player when the
+    // activity comes back from PiP.
+    LaunchedEffect(currentVideo?.videoId, isExpanded) {
+        if (isExpanded) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        }
+    }
 
     // Suspend video decoding whenever the app stops being visible. ON_STOP is
     // the right signal: entering PiP only pauses the activity (the PiP window

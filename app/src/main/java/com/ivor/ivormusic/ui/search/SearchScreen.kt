@@ -203,6 +203,8 @@ fun SearchScreen(
     isDarkMode: Boolean,
     videoMode: Boolean = false,
     localOnly: Boolean = false,
+    /** False while an expanded player covers this freshly composed screen. */
+    requestInitialFocus: Boolean = true,
     modifier: Modifier = Modifier,
     /**
      * Hoisted by HomeScreen so the results keep their place across a tab switch
@@ -525,7 +527,8 @@ fun SearchScreen(
                     tertiaryContainerColor = tertiaryContainerColor,
                     surfaceColor = surfaceColor,
                     textColor = textColor,
-                    secondaryTextColor = secondaryTextColor
+                    secondaryTextColor = secondaryTextColor,
+                    requestInitialFocus = requestInitialFocus
                 )
             }
             
@@ -1339,12 +1342,14 @@ private fun SearchHeroHeader(
     tertiaryContainerColor: Color,
     surfaceColor: Color,
     textColor: Color,
-    secondaryTextColor: Color
+    secondaryTextColor: Color,
+    requestInitialFocus: Boolean
 ) {
     // Auto-focus the search field (and pop the keyboard) when the screen appears
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
+        if (!requestInitialFocus) return@LaunchedEffect
         delay(150) // let the enter transition settle so focus/IME lands reliably
         focusRequester.requestFocus()
         keyboardController?.show()

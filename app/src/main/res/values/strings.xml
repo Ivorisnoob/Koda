@@ -338,6 +338,8 @@
     <string name="sp_video_quality">Video quality</string>
     <string name="sp_prefer_hdr">Prefer HDR video</string>
     <string name="sp_prefer_hdr_sub">Use HDR only when the display and decoder support it</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standard</string>
     <string name="sp_mode">Mode</string>
     <string name="sp_local_only">Local Only</string>
     <string name="sp_home_mode_toggle">Home Screen Mode Toggle</string>

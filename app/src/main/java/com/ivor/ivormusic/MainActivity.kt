@@ -901,6 +901,7 @@ fun MusicApp(
                     manualScan = manualScanEnabled,
                     localOnly = localOnlyMode,
                     hasVideoMiniPlayer = hasVideoMiniPlayer,
+                    hasExpandedVideoPlayer = overlayVideo != null && isVideoOverlayExpanded,
                     spotlightHome = spotlightHome,
                     nonExpressiveNavigationBar = nonExpressiveNavigationBar
                 )

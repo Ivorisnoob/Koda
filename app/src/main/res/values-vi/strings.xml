@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Phiên bản %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Ưu tiên video HDR</string>
     <string name="sp_prefer_hdr_sub">Chỉ sử dụng HDR khi màn hình và bộ giải mã hỗ trợ</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Tiêu chuẩn</string>
 
     <string name="profiles_title">Hồ sơ</string>
     <string name="profiles_description">Đăng ký kênh và đề xuất đã ẩn được giữ riêng cho từng hồ sơ. Danh sách phát, bài đã thích và mục tải xuống dùng chung.</string>

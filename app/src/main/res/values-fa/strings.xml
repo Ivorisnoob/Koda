@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">نسخه %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">ترجیح ویدیوی HDR</string>
     <string name="sp_prefer_hdr_sub">استفاده از HDR فقط زمانی که نمایشگر و رمزگشا از آن پشتیبانی می‌کنند</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">استاندارد</string>
 
     <string name="profiles_title">نمایه‌ها</string>
     <string name="profiles_description">اشتراک‌ها و پیشنهادهای پنهان برای هر نمایه جداگانه نگهداری می‌شوند. فهرست‌های پخش، آهنگ‌های مورد علاقه و دانلودها مشترک‌اند.</string>

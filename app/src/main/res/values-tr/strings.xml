@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Sürüm %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">HDR videoyu tercih et</string>
     <string name="sp_prefer_hdr_sub">HDR\'yi yalnızca ekran ve kod çözücü desteklediğinde kullan</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standart</string>
 
     <string name="profiles_title">Profiller</string>
     <string name="profiles_description">Abonelikler ve gizlenen öneriler profil başına tutulur. Oynatma listeleri, beğeniler ve indirilenler ortaktır.</string>

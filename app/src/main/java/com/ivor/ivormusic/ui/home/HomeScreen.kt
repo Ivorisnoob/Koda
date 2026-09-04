@@ -203,6 +203,8 @@ fun HomeScreen(
     manualScan: Boolean = false,
     localOnly: Boolean = false,
     hasVideoMiniPlayer: Boolean = false,
+    /** Prevent a rebuilt Search tab from focusing behind the full video player. */
+    hasExpandedVideoPlayer: Boolean = false,
     /** Spotlight: the alternative music Home. Off by default. */
     spotlightHome: Boolean = false,
     /** Use Material 3's compact bar instead of the default floating toolbar. */
@@ -719,6 +721,7 @@ fun HomeScreen(
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
                         localOnly = localOnly,
+                        requestInitialFocus = !hasExpandedVideoPlayer,
                         listState = searchScrollState
                     )
                     2 -> {
@@ -2051,6 +2054,7 @@ fun SearchContent(
     videoMode: Boolean = false,
     localOnly: Boolean = false,
     onSongLongPress: ((Song) -> Unit)? = null,
+    requestInitialFocus: Boolean = true,
     /** Hoisted by HomeScreen: survives tab switches, reachable by the nav bar. */
     listState: LazyListState = rememberLazyListState()
 ) {
@@ -2105,6 +2109,7 @@ fun SearchContent(
                 isDarkMode = isDarkMode,
                 videoMode = videoMode,
                 localOnly = localOnly,
+                requestInitialFocus = requestInitialFocus,
                 listState = listState
             )
         }

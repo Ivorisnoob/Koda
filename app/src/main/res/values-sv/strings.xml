@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Version %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Föredra HDR-video</string>
     <string name="sp_prefer_hdr_sub">Använd HDR endast när skärmen och avkodaren stöder det</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standard</string>
 
     <string name="profiles_title">Profiler</string>
     <string name="profiles_description">Prenumerationer och dolda rekommendationer sparas per profil. Spellistor, gillade låtar och nedladdningar delas.</string>
