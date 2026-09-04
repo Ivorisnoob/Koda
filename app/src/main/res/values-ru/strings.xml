@@ -215,4 +215,6 @@
     <string name="vhc_move_down">Переместить %1$s вниз</string>
     <string name="vh_recommendations_off">Рекомендации отключены</string>
     <string name="vh_recommendations_off_sub">Shorts всё ещё могут появляться здесь, если они включены.</string>
+    <string name="vp_resumed_from">Продолжено с %1$s</string>
+    <string name="vp_play_from_start">Воспроизвести сначала</string>
 </resources>

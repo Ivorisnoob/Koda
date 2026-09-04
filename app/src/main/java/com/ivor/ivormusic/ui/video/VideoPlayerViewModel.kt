@@ -235,6 +235,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _bufferedProgress = MutableStateFlow(0f)
     val bufferedProgress: StateFlow<Float> = _bufferedProgress
 
+    /**
+     * The checkpoint a reopened video was resumed to, for the notice over the
+     * player. Null whenever playback started where it was asked to.
+     *
+     * A resume happens without being asked for, so - like a SponsorBlock skip -
+     * it needs a visible way back. Without one the only route to the start of a
+     * video the viewer meant to rewatch is dragging the seek bar to zero, and
+     * they have no way of knowing the jump was Koda's doing rather than a bug.
+     */
+    private val _resumedFromMs = MutableStateFlow<Long?>(null)
+    val resumedFromMs: StateFlow<Long?> = _resumedFromMs.asStateFlow()
+
     private var progressJob: Job? = null
 
     /* ---------------- SponsorBlock ---------------- */
@@ -883,6 +895,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     queueErrorSkipCount = 0
                 }
                 if (playbackState == Player.STATE_ENDED) {
+                    _currentVideo.value?.videoId?.let(videoHistoryRepository::clearResumePosition)
                     // Repeat-one normally prevents STATE_ENDED entirely.
                     // The guard keeps a transient player/state mismatch
                     // from advancing away from a video meant to loop.
@@ -1139,6 +1152,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
+    /** Save a reusable per-video checkpoint, separate from the one active-session snapshot. */
+    private fun saveCurrentVideoResumePosition() {
+        val video = _currentVideo.value ?: return
+        if (_isLive.value || video.isLive) return
+        if (video.videoId.startsWith("external:")) return
+        if (!themePreferences.isSaveVideoHistoryEnabled()) return
+        val player = _exoPlayer
+        val duration = player?.duration?.takeIf { it > 0L } ?: _durationMs.value
+        val position = deferredRestorePositionMs
+            ?: player?.currentPosition?.coerceAtLeast(0L)
+            ?: _positionMs.value
+        videoHistoryRepository.saveResumePosition(video.videoId, position, duration)
+    }
+
     /**
      * Keep snapshot writes and clears ordered. A progress checkpoint can still
      * be writing when the user closes the player or opens a live broadcast;
@@ -1179,6 +1206,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // whether or not the track was already suspended, so it belongs above
         // that guard rather than inside it.
         saveVideoPlaybackSession()
+        saveCurrentVideoResumePosition()
         if (isVideoSuspended || _currentVideo.value == null) return
         isVideoSuspended = true
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -1230,6 +1258,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         if (now - lastSessionSaveAt >= SESSION_SAVE_INTERVAL_MS) {
                             lastSessionSaveAt = now
                             saveVideoPlaybackSession()
+                            saveCurrentVideoResumePosition()
                         }
 
                         // Rides the poll that already exists rather than adding
@@ -2142,6 +2171,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             return
         }
 
+        // Capture the outgoing item before any player state is reset. The
+        // explicit session restore position wins; ordinary opens use this
+        // profile's last meaningful checkpoint for that video.
+        saveCurrentVideoResumePosition()
+        val checkpointMs = if (resumePositionMs == null &&
+            themePreferences.isSaveVideoHistoryEnabled() && !video.isLive &&
+            !video.videoId.startsWith("external:")
+        ) {
+            videoHistoryRepository.resumePosition(
+                video.videoId,
+                video.duration.coerceAtLeast(0L) * 1_000L,
+            )
+        } else {
+            null
+        }
+        val effectiveResumePositionMs = resumePositionMs ?: checkpointMs
+        // Only a checkpoint raises the notice. A cold session restore already
+        // announces itself by arriving paused in the mini player, and an
+        // explicit seek is something the viewer just did.
+        _resumedFromMs.value = checkpointMs?.takeIf { it > 0L }
+
         val loadGeneration = ++videoLoadGeneration
         streamLoadJob?.cancel()
         watchNextJob?.cancel()
@@ -2236,7 +2286,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _exoPlayer?.setPlaybackSpeed(1f)
 
         if (deferStreamLoad) {
-            val position = resumePositionMs?.coerceAtLeast(0L) ?: 0L
+            val position = effectiveResumePositionMs?.coerceAtLeast(0L) ?: 0L
             val duration = (video.duration.coerceAtLeast(0L) * 1_000L)
             deferredRestorePositionMs = position
             _positionMs.value = position
@@ -2288,8 +2338,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 applyEmbeddedTextDefault()
                 _exoPlayer?.setMediaItem(nowPlayingMediaItem(localSource.uri.toString()))
                 _exoPlayer?.prepare()
-                if (resumePositionMs != null && resumePositionMs > 0) {
-                    _exoPlayer?.let { seekPlayerTo(it, resumePositionMs, precise = true) }
+                if (effectiveResumePositionMs != null && effectiveResumePositionMs > 0) {
+                    _exoPlayer?.let { seekPlayerTo(it, effectiveResumePositionMs, precise = true) }
                 }
                 if (resumePaused) {
                     _exoPlayer?.pause()
@@ -2351,7 +2401,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                             return@resolve
                         }
                         loadQuality(chosen)
-                        seekAndResumeAfterLoad(resumePositionMs, resumePaused)
+                        seekAndResumeAfterLoad(effectiveResumePositionMs, resumePaused)
                     } else {
                         // Fallback to legacy stream URL
                         val streamUrl = youtubeRepository.getVideoStreamUrl(video.videoId)
@@ -2373,7 +2423,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                                 )
                             _exoPlayer?.setMediaSource(source)
                             _exoPlayer?.prepare()
-                            seekAndResumeAfterLoad(resumePositionMs, resumePaused)
+                            seekAndResumeAfterLoad(effectiveResumePositionMs, resumePaused)
                         } else {
                             _playbackError.value = Exception("Unable to load video stream")
                             _isLoading.value = false
@@ -2975,6 +3025,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     fun closePlayer() {
+        saveCurrentVideoResumePosition()
+        _resumedFromMs.value = null
         // Remove quality change listener to prevent leaks if player closed before STATE_READY
         qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
         qualityChangeListener = null
@@ -3035,6 +3087,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * RemoteActions have no other way to reach the player.
      */
     fun seekBy(deltaMs: Long) {
+        _resumedFromMs.value = null
         deferredRestorePositionMs?.let { restoredPosition ->
             val duration = _durationMs.value.takeIf { it > 0L } ?: Long.MAX_VALUE
             val position = (restoredPosition + deltaMs).coerceIn(0L, duration)
@@ -3079,6 +3132,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Absolute seek which also works before a restored session has loaded media. */
     fun seekTo(positionMs: Long, precise: Boolean = false) {
+        _resumedFromMs.value = null
         deferredRestorePositionMs?.let {
             val duration = _durationMs.value.takeIf { value -> value > 0L } ?: Long.MAX_VALUE
             val position = positionMs.coerceIn(0L, duration)
@@ -3092,6 +3146,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             return
         }
         _exoPlayer?.let { seekPlayerTo(it, positionMs.coerceAtLeast(0L), precise) }
+    }
+
+    /** The viewer has read the resume notice and wants it gone. */
+    fun dismissResumeNotice() {
+        _resumedFromMs.value = null
+    }
+
+    /**
+     * Undo an automatic resume.
+     *
+     * The stored checkpoint is dropped as well as seeked away from: asking to
+     * watch this video from the start and then being dropped back into the
+     * middle on the next open would make the notice's only action useless.
+     */
+    fun playFromBeginning() {
+        _currentVideo.value?.videoId?.let(videoHistoryRepository::clearResumePosition)
+        // seekTo already dismisses the notice and knows how to move a restored
+        // session that has not resolved its media yet.
+        seekTo(0L, precise = true)
     }
 
     /** Pause without closing the player (music or Shorts playback started). */

@@ -209,4 +209,6 @@
     <string name="vhc_move_down">Sposta %1$s in basso</string>
     <string name="vh_recommendations_off">I consigli sono disattivati</string>
     <string name="vh_recommendations_off_sub">Gli Shorts possono comunque apparire qui, se attivati.</string>
+    <string name="vp_resumed_from">Ripreso da %1$s</string>
+    <string name="vp_play_from_start">Riproduci dall\'inizio</string>
 </resources>

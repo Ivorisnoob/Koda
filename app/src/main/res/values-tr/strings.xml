@@ -209,4 +209,6 @@
     <string name="vhc_move_down">%1$s öğesini aşağı taşı</string>
     <string name="vh_recommendations_off">Öneriler kapalı</string>
     <string name="vh_recommendations_off_sub">Etkinleştirildiğinde Shorts burada yine de görünebilir.</string>
+    <string name="vp_resumed_from">%1$s konumundan devam edildi</string>
+    <string name="vp_play_from_start">Baştan oynat</string>
 </resources>

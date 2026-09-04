@@ -212,4 +212,6 @@
     <string name="vhc_move_down">Mută %1$s în jos</string>
     <string name="vh_recommendations_off">Recomandările sunt dezactivate</string>
     <string name="vh_recommendations_off_sub">Shorts poate încă apărea aici atunci când este activat.</string>
+    <string name="vp_resumed_from">Reluat de la %1$s</string>
+    <string name="vp_play_from_start">Redă de la început</string>
 </resources>

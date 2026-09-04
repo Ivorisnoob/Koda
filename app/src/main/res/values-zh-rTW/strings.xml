@@ -206,4 +206,6 @@
     <string name="vhc_move_down">將%1$s下移</string>
     <string name="vh_recommendations_off">推薦功能已關閉</string>
     <string name="vh_recommendations_off_sub">啟用後，Shorts 仍可能顯示在這裡。</string>
+    <string name="vp_resumed_from">已從 %1$s 繼續播放</string>
+    <string name="vp_play_from_start">從頭播放</string>
 </resources>

@@ -10,6 +10,18 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * Positions before this threshold are accidental starts; positions at the end
+ * should reopen from the beginning. Kept pure for boundary tests.
+ */
+internal fun retainedVideoResumePosition(positionMs: Long, durationMs: Long): Long? {
+    if (durationMs <= 0L || positionMs < 10_000L) return null
+    val bounded = positionMs.coerceAtMost(durationMs)
+    val remaining = durationMs - bounded
+    val almostComplete = bounded.toDouble() / durationMs.toDouble() >= 0.95
+    return bounded.takeUnless { remaining <= 30_000L || almostComplete }
+}
+
+/**
  * Persists watched videos locally so watch history (and the taste-based feed)
  * works without a YouTube login. Most recent first, capped at [MAX_ENTRIES].
  *
@@ -48,6 +60,12 @@ class VideoHistoryRepository(context: Context) {
 
     private fun hiddenKey(): String = ProfileManager.profileScopedKey(
         KEY_HIDDEN,
+        ProfileManager.activeProfileId(appContext),
+        ProfileManager.legacyProfileId(appContext)
+    )
+
+    private fun resumeKey(): String = ProfileManager.profileScopedKey(
+        KEY_RESUME_POSITIONS,
         ProfileManager.activeProfileId(appContext),
         ProfileManager.legacyProfileId(appContext)
     )
@@ -117,6 +135,7 @@ class VideoHistoryRepository(context: Context) {
         synchronized(LOCK) {
             prefs.edit().putStringSet(hiddenKey(), hiddenIds() + videoId).apply()
             save(load().filterNot { it.videoId == videoId })
+            removeResumePositionLocked(videoId)
         }
     }
 
@@ -158,8 +177,96 @@ class VideoHistoryRepository(context: Context) {
      */
     fun clearHistory() {
         synchronized(LOCK) {
-            prefs.edit().remove(hiddenKey()).apply()
+            prefs.edit().remove(hiddenKey()).remove(resumeKey()).apply()
             save(emptyList())
+        }
+    }
+
+    /** Last meaningful position for this profile, suppressed in incognito mode. */
+    fun resumePosition(videoId: String, durationMs: Long): Long? {
+        if (videoId.isBlank() || IncognitoMode.isEnabled(appContext)) return null
+        return synchronized(LOCK) {
+            val stored = loadResumePositions()
+                .firstOrNull { it.videoId == videoId }
+                ?: return@synchronized null
+            retainedVideoResumePosition(
+                positionMs = stored.positionMs,
+                durationMs = durationMs.takeIf { it > 0L } ?: stored.durationMs,
+            )
+        }
+    }
+
+    /**
+     * Persist a checkpoint without growing preferences forever. Very early
+     * checkpoints leave an older useful value alone; completion clears it.
+     */
+    fun saveResumePosition(videoId: String, positionMs: Long, durationMs: Long) {
+        if (videoId.isBlank() || IncognitoMode.isEnabled(appContext) || durationMs <= 0L) return
+        synchronized(LOCK) {
+            val retained = retainedVideoResumePosition(positionMs, durationMs)
+            if (retained == null) {
+                val nearEnd = positionMs.coerceAtLeast(0L) >= durationMs - 30_000L ||
+                    positionMs.toDouble() / durationMs.toDouble() >= 0.95
+                if (nearEnd) removeResumePositionLocked(videoId)
+                return
+            }
+
+            val points = loadResumePositions().toMutableList()
+            points.removeAll { it.videoId == videoId }
+            points.add(
+                0,
+                VideoResumePoint(videoId, retained, durationMs, System.currentTimeMillis())
+            )
+            saveResumePositions(points.take(MAX_RESUME_ENTRIES))
+        }
+    }
+
+    fun clearResumePosition(videoId: String) {
+        if (videoId.isBlank()) return
+        synchronized(LOCK) { removeResumePositionLocked(videoId) }
+    }
+
+    private fun removeResumePositionLocked(videoId: String) {
+        val points = loadResumePositions()
+        if (points.none { it.videoId == videoId }) return
+        saveResumePositions(points.filterNot { it.videoId == videoId })
+    }
+
+    private fun saveResumePositions(points: List<VideoResumePoint>) {
+        val array = JSONArray()
+        points.forEach { point ->
+            array.put(JSONObject().apply {
+                put("videoId", point.videoId)
+                put("positionMs", point.positionMs)
+                put("durationMs", point.durationMs)
+                put("updatedAt", point.updatedAt)
+            })
+        }
+        prefs.edit().putString(resumeKey(), array.toString()).apply()
+    }
+
+    private fun loadResumePositions(): List<VideoResumePoint> {
+        val raw = prefs.getString(resumeKey(), null) ?: return emptyList()
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                val videoId = item.optString("videoId")
+                val positionMs = item.optLong("positionMs")
+                val durationMs = item.optLong("durationMs")
+                if (videoId.isBlank() || positionMs < 0L || durationMs <= 0L) {
+                    return@mapNotNull null
+                }
+                VideoResumePoint(
+                    videoId = videoId,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    updatedAt = item.optLong("updatedAt"),
+                )
+            }
+        } catch (e: Exception) {
+            KLog.e("VideoHistoryRepo", "Failed to load resume positions", e)
+            emptyList()
         }
     }
 
@@ -216,7 +323,14 @@ class VideoHistoryRepository(context: Context) {
         const val PREFS_NAME = "video_history"
         const val KEY_HISTORY = "history_list"
         const val KEY_HIDDEN = "history_removed_ids"
+        /**
+         * Public because [BackupRepository] restates it: this store is
+         * profile-scoped, so it travels in the backup's structural profile
+         * section rather than the raw preference copy.
+         */
+        const val KEY_RESUME_POSITIONS = "resume_positions"
         private const val MAX_ENTRIES = 100
+        private const val MAX_RESUME_ENTRIES = 100
 
         /**
          * Re-read the flow after a profile switch.
@@ -233,3 +347,10 @@ class VideoHistoryRepository(context: Context) {
         }
     }
 }
+
+private data class VideoResumePoint(
+    val videoId: String,
+    val positionMs: Long,
+    val durationMs: Long,
+    val updatedAt: Long,
+)

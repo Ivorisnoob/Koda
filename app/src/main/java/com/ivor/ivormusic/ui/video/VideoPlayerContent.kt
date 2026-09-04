@@ -147,6 +147,12 @@ fun VideoPlayerContent(
     val sponsorSegments = if (sponsorShowOnSeekBar) allSponsorSegments else emptyList()
     val manualSegment by viewModel.manualSegment.collectAsState()
     val skipNotice by viewModel.skipNotice.collectAsState()
+    val resumedFromMs by viewModel.resumedFromMs.collectAsState()
+    // Both chips claim the same corner. A SponsorBlock skip is the more urgent
+    // of the two and expires on its own, so the resume notice steps aside and
+    // comes back rather than being stacked or dropped.
+    val visibleResumedFromMs = resumedFromMs
+        ?.takeIf { skipNotice == null && manualSegment == null }
     val captionTextColor by viewModel.captionTextColor.collectAsState()
     val captionBackground by viewModel.captionBackground.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
@@ -682,6 +688,15 @@ fun VideoPlayerContent(
                         .padding(end = 24.dp, bottom = fullscreenOverlayBottom)
                 )
 
+                ResumePlaybackChip(
+                    resumedFromMs = visibleResumedFromMs,
+                    onPlayFromStart = { viewModel.playFromBeginning() },
+                    onDismiss = { viewModel.dismissResumeNotice() },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 24.dp, bottom = fullscreenOverlayBottom)
+                )
+
                 // Regular comments stay inside immersive landscape as a
                 // detached trailing panel. The video remains fullscreen behind
                 // it; opening comments never rotates or returns to the watch
@@ -991,6 +1006,15 @@ fun VideoPlayerContent(
                         manualSegment = manualSegment,
                         onUndoSkip = { viewModel.undoSponsorSkip() },
                         onSkipSegment = { viewModel.skipCurrentSegment() },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 12.dp, bottom = sponsorBottomPadding)
+                    )
+
+                    ResumePlaybackChip(
+                        resumedFromMs = visibleResumedFromMs,
+                        onPlayFromStart = { viewModel.playFromBeginning() },
+                        onDismiss = { viewModel.dismissResumeNotice() },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 12.dp, bottom = sponsorBottomPadding)

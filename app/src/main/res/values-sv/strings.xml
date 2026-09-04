@@ -209,4 +209,6 @@
     <string name="vhc_move_down">Flytta %1$s nedåt</string>
     <string name="vh_recommendations_off">Rekommendationer är avstängda</string>
     <string name="vh_recommendations_off_sub">Shorts kan fortfarande visas här när det är aktiverat.</string>
+    <string name="vp_resumed_from">Återupptogs från %1$s</string>
+    <string name="vp_play_from_start">Spela från början</string>
 </resources>

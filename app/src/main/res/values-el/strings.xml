@@ -209,4 +209,6 @@
     <string name="vhc_move_down">Μετακίνηση %1$s κάτω</string>
     <string name="vh_recommendations_off">Οι συστάσεις είναι απενεργοποιημένες</string>
     <string name="vh_recommendations_off_sub">Τα Shorts μπορεί ακόμα να εμφανίζονται εδώ όταν είναι ενεργοποιημένα.</string>
+    <string name="vp_resumed_from">Συνέχεια από %1$s</string>
+    <string name="vp_play_from_start">Αναπαραγωγή από την αρχή</string>
 </resources>

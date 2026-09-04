@@ -209,4 +209,6 @@
     <string name="vhc_move_down">%1$s omlaag verplaatsen</string>
     <string name="vh_recommendations_off">Aanbevelingen staan uit</string>
     <string name="vh_recommendations_off_sub">Shorts kunnen hier nog steeds verschijnen als ze zijn ingeschakeld.</string>
+    <string name="vp_resumed_from">Hervat vanaf %1$s</string>
+    <string name="vp_play_from_start">Vanaf het begin afspelen</string>
 </resources>

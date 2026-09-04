@@ -209,4 +209,6 @@
     <string name="vhc_move_down">%1$s nach unten verschieben</string>
     <string name="vh_recommendations_off">Empfehlungen sind aus</string>
     <string name="vh_recommendations_off_sub">Shorts können hier weiterhin erscheinen, wenn sie aktiviert sind.</string>
+    <string name="vp_resumed_from">Fortgesetzt ab %1$s</string>
+    <string name="vp_play_from_start">Von vorn abspielen</string>
 </resources>

@@ -215,4 +215,6 @@
     <string name="vhc_move_down">Przenieś %1$s w dół</string>
     <string name="vh_recommendations_off">Rekomendacje są wyłączone</string>
     <string name="vh_recommendations_off_sub">Shorts nadal mogą się tu pojawiać, jeśli są włączone.</string>
+    <string name="vp_resumed_from">Wznowiono od %1$s</string>
+    <string name="vp_play_from_start">Odtwórz od początku</string>
 </resources>

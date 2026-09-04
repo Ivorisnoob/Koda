@@ -206,4 +206,6 @@
     <string name="vhc_move_down">Di chuyển %1$s xuống</string>
     <string name="vh_recommendations_off">Đã tắt đề xuất</string>
     <string name="vh_recommendations_off_sub">Shorts vẫn có thể xuất hiện ở đây khi được bật.</string>
+    <string name="vp_resumed_from">Đã tiếp tục từ %1$s</string>
+    <string name="vp_play_from_start">Phát từ đầu</string>
 </resources>

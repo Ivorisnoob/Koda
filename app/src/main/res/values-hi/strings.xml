@@ -209,4 +209,6 @@
     <string name="vhc_move_down">%1$s को नीचे ले जाएं</string>
     <string name="vh_recommendations_off">सुझाव बंद हैं</string>
     <string name="vh_recommendations_off_sub">चालू होने पर Shorts अब भी यहां दिख सकते हैं।</string>
+    <string name="vp_resumed_from">%1$s से फिर से शुरू किया गया</string>
+    <string name="vp_play_from_start">शुरुआत से चलाएं</string>
 </resources>

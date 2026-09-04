@@ -215,4 +215,6 @@
     <string name="vhc_move_down">Přesunout %1$s dolů</string>
     <string name="vh_recommendations_off">Doporučení jsou vypnutá</string>
     <string name="vh_recommendations_off_sub">Shorts se tu mohou zobrazit, pokud jsou povolené.</string>
+    <string name="vp_resumed_from">Pokračuje od %1$s</string>
+    <string name="vp_play_from_start">Přehrát od začátku</string>
 </resources>

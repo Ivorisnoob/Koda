@@ -214,4 +214,6 @@
     <string name="vhc_move_down">הזז את %1$s למטה</string>
     <string name="vh_recommendations_off">ההמלצות כבויות</string>
     <string name="vh_recommendations_off_sub">Shorts עדיין עשוי להופיע כאן כשהאפשרות מופעלת.</string>
+    <string name="vp_resumed_from">התחדש מ-%1$s</string>
+    <string name="vp_play_from_start">הפעל מההתחלה</string>
 </resources>

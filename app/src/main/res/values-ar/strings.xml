@@ -221,4 +221,6 @@
     <string name="vhc_move_down">نقل %1$s للأسفل</string>
     <string name="vh_recommendations_off">التوصيات متوقفة</string>
     <string name="vh_recommendations_off_sub">يمكن أن تظهر Shorts هنا عند تفعيلها.</string>
+    <string name="vp_resumed_from">استؤنف من %1$s</string>
+    <string name="vp_play_from_start">تشغيل من البداية</string>
 </resources>

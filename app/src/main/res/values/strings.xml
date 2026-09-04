@@ -383,6 +383,8 @@
     <string name="vhc_move_down">Move %1$s down</string>
     <string name="vh_recommendations_off">Recommendations are off</string>
     <string name="vh_recommendations_off_sub">Shorts can still appear here when enabled.</string>
+    <string name="vp_resumed_from">Resumed from %1$s</string>
+    <string name="vp_play_from_start">Play from start</string>
     <string name="sp_not_recommended">Not Recommended</string>
     <string name="sp_not_recommended_sub">Videos and channels you\'ve hidden from your feeds</string>
     <string name="sp_manage_subscriptions">Manage Subscriptions</string>

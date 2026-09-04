@@ -206,4 +206,6 @@
     <string name="vhc_move_down">Pindahkan %1$s ke bawah</string>
     <string name="vh_recommendations_off">Rekomendasi nonaktif</string>
     <string name="vh_recommendations_off_sub">Shorts masih bisa muncul di sini jika diaktifkan.</string>
+    <string name="vp_resumed_from">Dilanjutkan dari %1$s</string>
+    <string name="vp_play_from_start">Putar dari awal</string>
 </resources>

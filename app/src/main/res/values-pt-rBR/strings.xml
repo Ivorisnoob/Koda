@@ -209,4 +209,6 @@
     <string name="vhc_move_down">Mover %1$s para baixo</string>
     <string name="vh_recommendations_off">As recomendações estão desativadas</string>
     <string name="vh_recommendations_off_sub">Os Shorts ainda podem aparecer aqui quando ativados.</string>
+    <string name="vp_resumed_from">Retomado de %1$s</string>
+    <string name="vp_play_from_start">Reproduzir do início</string>
 </resources>
