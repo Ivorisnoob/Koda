@@ -204,6 +204,15 @@ class ThemePreferences(context: Context) {
     private val _librarySortOption = MutableStateFlow(getLibrarySortOptionPreference())
     val librarySortOption: StateFlow<String> = _librarySortOption.asStateFlow()
 
+    private val _lastFmEnabled = MutableStateFlow(getLastFmEnabledPreference())
+    val lastFmEnabled: StateFlow<Boolean> = _lastFmEnabled.asStateFlow()
+
+    private val _listenBrainzEnabled = MutableStateFlow(getListenBrainzEnabledPreference())
+    val listenBrainzEnabled: StateFlow<Boolean> = _listenBrainzEnabled.asStateFlow()
+
+    private val _listenBrainzCustomUrl = MutableStateFlow(getListenBrainzCustomUrlPreference())
+    val listenBrainzCustomUrl: StateFlow<String> = _listenBrainzCustomUrl.asStateFlow()
+
     // Every screen/service news up its own ThemePreferences (no DI), so a setter
     // called on one instance must still reach the flows of every other instance.
     // All instances share the same process-wide SharedPreferences object, so a
@@ -274,6 +283,9 @@ class ThemePreferences(context: Context) {
             KEY_TIME_LIMIT_ENABLED -> _timeLimitEnabled.value = getTimeLimitEnabledPreference()
             KEY_TIME_LIMIT_BUDGETS -> _timeLimitBudgets.value = getTimeLimitBudgetsPreference()
             KEY_LIBRARY_SORT_OPTION -> _librarySortOption.value = getLibrarySortOptionPreference()
+            KEY_LASTFM_ENABLED -> _lastFmEnabled.value = getLastFmEnabledPreference()
+            KEY_LISTENBRAINZ_ENABLED -> _listenBrainzEnabled.value = getListenBrainzEnabledPreference()
+            KEY_LISTENBRAINZ_CUSTOM_URL -> _listenBrainzCustomUrl.value = getListenBrainzCustomUrlPreference()
         }
     }
 
@@ -330,6 +342,10 @@ class ThemePreferences(context: Context) {
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
         private const val KEY_SAVE_MUSIC_HISTORY = "save_music_history"
         private const val KEY_LIVE_DOWNLOAD_UPDATES = "live_download_updates"
+        private const val KEY_LASTFM_ENABLED = "lastfm_enabled"
+        private const val KEY_LISTENBRAINZ_ENABLED = "listenbrainz_enabled"
+        private const val KEY_LISTENBRAINZ_CUSTOM_URL = "listenbrainz_custom_url"
+        const val DEFAULT_LISTENBRAINZ_URL = "https://api.listenbrainz.org/1/"
 
         /**
          * Live Updates (promoted ongoing notifications) are an Android 16 / API 36
@@ -1683,6 +1699,29 @@ class ThemePreferences(context: Context) {
     fun setOnboardingCompleted(completed: Boolean) {
         prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
         _onboardingCompleted.value = completed
+    }
+
+    private fun getLastFmEnabledPreference(): Boolean = prefs.getBoolean(KEY_LASTFM_ENABLED, false)
+    fun getLastFmEnabled(): Boolean = getLastFmEnabledPreference()
+    fun setLastFmEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LASTFM_ENABLED, enabled).apply()
+        _lastFmEnabled.value = enabled
+    }
+
+    private fun getListenBrainzEnabledPreference(): Boolean = prefs.getBoolean(KEY_LISTENBRAINZ_ENABLED, false)
+    fun getListenBrainzEnabled(): Boolean = getListenBrainzEnabledPreference()
+    fun setListenBrainzEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LISTENBRAINZ_ENABLED, enabled).apply()
+        _listenBrainzEnabled.value = enabled
+    }
+
+    private fun getListenBrainzCustomUrlPreference(): String =
+        prefs.getString(KEY_LISTENBRAINZ_CUSTOM_URL, DEFAULT_LISTENBRAINZ_URL) ?: DEFAULT_LISTENBRAINZ_URL
+    fun getListenBrainzCustomUrl(): String = getListenBrainzCustomUrlPreference()
+    fun setListenBrainzCustomUrl(url: String) {
+        val normalized = url.trim().ifBlank { DEFAULT_LISTENBRAINZ_URL }
+        prefs.edit().putString(KEY_LISTENBRAINZ_CUSTOM_URL, normalized).apply()
+        _listenBrainzCustomUrl.value = normalized
     }
 }
 

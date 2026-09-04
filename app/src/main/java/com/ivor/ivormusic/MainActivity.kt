@@ -57,6 +57,7 @@ import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
 import com.ivor.ivormusic.data.PlayerStyle
+import com.ivor.ivormusic.data.ThemePreferences
 import androidx.compose.ui.unit.dp
 
 
@@ -211,6 +212,9 @@ class MainActivity : ComponentActivity() {
             val rememberVideoBrightness by themeViewModel.rememberVideoBrightness.collectAsState()
             val hapticsLevel by themeViewModel.hapticsLevel.collectAsState()
             val uploadNotificationsEnabled by themeViewModel.uploadNotificationsEnabled.collectAsState()
+            val lastFmEnabled by themeViewModel.lastFmEnabled.collectAsState()
+            val listenBrainzEnabled by themeViewModel.listenBrainzEnabled.collectAsState()
+            val listenBrainzCustomUrl by themeViewModel.listenBrainzCustomUrl.collectAsState()
             
             val isSystemDark = isSystemInDarkTheme()
             val isDarkTheme = remember(themeMode, isSystemDark) {
@@ -349,7 +353,13 @@ class MainActivity : ComponentActivity() {
                         onboardingCompleted = onboardingCompleted,
                         onOnboardingCompleted = { themeViewModel.setOnboardingCompleted(it) },
                         localOnlyMode = localOnlyMode,
-                        onLocalOnlyModeToggle = { themeViewModel.setLocalOnlyMode(it) }
+                        onLocalOnlyModeToggle = { themeViewModel.setLocalOnlyMode(it) },
+                        lastFmEnabled = lastFmEnabled,
+                        onLastFmEnabledToggle = { themeViewModel.setLastFmEnabled(it) },
+                        listenBrainzEnabled = listenBrainzEnabled,
+                        onListenBrainzEnabledToggle = { themeViewModel.setListenBrainzEnabled(it) },
+                        listenBrainzCustomUrl = listenBrainzCustomUrl,
+                        onListenBrainzCustomUrlChange = { themeViewModel.setListenBrainzCustomUrl(it) }
                     )
                 }
             }
@@ -613,7 +623,13 @@ fun MusicApp(
     onboardingCompleted: Boolean,
     onOnboardingCompleted: (Boolean) -> Unit,
     localOnlyMode: Boolean,
-    onLocalOnlyModeToggle: (Boolean) -> Unit
+    onLocalOnlyModeToggle: (Boolean) -> Unit,
+    lastFmEnabled: Boolean = false,
+    onLastFmEnabledToggle: (Boolean) -> Unit = {},
+    listenBrainzEnabled: Boolean = false,
+    onListenBrainzEnabledToggle: (Boolean) -> Unit = {},
+    listenBrainzCustomUrl: String = ThemePreferences.DEFAULT_LISTENBRAINZ_URL,
+    onListenBrainzCustomUrlChange: (String) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
@@ -1022,7 +1038,13 @@ fun MusicApp(
                     sponsorBlockNotice = sponsorBlockNotice,
                     onSponsorBlockNoticeToggle = onSponsorBlockNoticeToggle,
                     sponsorBlockMinDurationMs = sponsorBlockMinDurationMs,
-                    onSponsorBlockMinDurationChange = onSponsorBlockMinDurationChange
+                    onSponsorBlockMinDurationChange = onSponsorBlockMinDurationChange,
+                    lastFmEnabled = lastFmEnabled,
+                    onLastFmEnabledToggle = onLastFmEnabledToggle,
+                    listenBrainzEnabled = listenBrainzEnabled,
+                    onListenBrainzEnabledToggle = onListenBrainzEnabledToggle,
+                    listenBrainzCustomUrl = listenBrainzCustomUrl,
+                    onListenBrainzCustomUrlChange = onListenBrainzCustomUrlChange
                 )
             }
             composable(

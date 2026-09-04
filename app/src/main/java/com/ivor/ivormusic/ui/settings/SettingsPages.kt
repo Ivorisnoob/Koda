@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Cookie
@@ -423,6 +424,9 @@ internal fun PlaybackSettingsPage(
     videoQualityMobile: String,
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
+    lastFmEnabled: Boolean = false,
+    listenBrainzEnabled: Boolean = false,
+    onNavigateToScrobbling: () -> Unit = {},
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
     onBack: () -> Unit
 ) {
@@ -578,6 +582,22 @@ internal fun PlaybackSettingsPage(
                         },
                         enabled = saveMusicHistory,
                         onToggle = onSaveMusicHistoryToggle
+                    )
+
+                    SettingsDivider()
+
+                    val scrobbleSubtitle = when {
+                        lastFmEnabled && listenBrainzEnabled -> stringResource(R.string.scrobble_subtitle_both)
+                        lastFmEnabled -> stringResource(R.string.scrobble_subtitle_lastfm)
+                        listenBrainzEnabled -> stringResource(R.string.scrobble_subtitle_listenbrainz)
+                        else -> stringResource(R.string.scrobble_subtitle_off)
+                    }
+
+                    SettingsRow(
+                        icon = Icons.Rounded.CloudSync,
+                        title = stringResource(R.string.settings_scrobbling),
+                        subtitle = scrobbleSubtitle,
+                        onClick = onNavigateToScrobbling
                     )
                 }
             }

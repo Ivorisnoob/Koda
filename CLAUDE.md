@@ -76,6 +76,7 @@ Where to look, by question:
 | Device video files (gallery playback) | `data/LocalVideoRepository.kt`, `ui/video/DeviceVideosPage.kt` (§9) |
 | Subscriptions, blocklist, channels | §10, §11 |
 | Player look-and-feel, queue rows | `ui/player/` (§14) |
+| Scrobbling (Last.fm, ListenBrainz, offline queue) | `data/scrobble/`, `service/ScrobbleController.kt` (§8) |
 | Home screen widgets | `widget/` (§15) |
 | Colors, shapes, motion | §16 and `DESIGN.md` |
 
@@ -286,6 +287,22 @@ A live broadcast is not a separate content type. It is a normal video whose `/pl
 **Comments are hidden entirely on live videos** - the entry row, the timed-comments button in both chromes, the overlay, and the fetch behind it. Live chat is the conversation; a running broadcast's comment section is usually empty or disabled, and offering both sent people to the dead one. An open comments sheet closes when a live stream starts, since the sheet outlives the video it was opened on.
 
 **A live item in the Shorts feed is handed off, not approximated:** `ShortsPlayerViewModel` emits `liveHandoff` and closes itself, and `MainActivity` reopens it in the video player. Emit *before* `close()` - it cancels the very job the emit runs in.
+
+### Scrobbling (Last.fm & ListenBrainz)
+
+AudioScrobbler 2.0 and ListenBrainz music tracking (`data/scrobble/`, `service/ScrobbleController.kt`, `ui/settings/ScrobbleSettings.kt`).
+
+- **User API Model Only**: No official or bundled API keys/secrets are compiled into the app. Users supply their own Last.fm API Key & Shared Secret (obtained freely from `last.fm/api/account/create`) and/or ListenBrainz personal user token (from `listenbrainz.org/settings`).
+- **Encrypted credentials**: Sensitive credentials (API key, secret, session key, token) are stored in `EncryptedSharedPreferences` (`scrobble_secure.xml`) and excluded from cloud and device backups in both `backup_rules.xml` and `data_extraction_rules.xml`.
+- **Playback rules & invariants**:
+  1. Tracks under 30 seconds are never scrobbled or marked now-playing.
+  2. Debounced now-playing notification is sent after 5 seconds of continuous playback.
+  3. Scrobble threshold is min(duration / 2, 240s).
+  4. Video mode and Shorts run in separate players outside `MusicService` and are naturally excluded.
+  5. Crossfade engine swaps invoke `onEngineSwapped` to maintain tracking continuity.
+  6. YouTube placeholder resolution keeps the same `mediaId` and preserves accumulated play time.
+  7. `IncognitoMode.isEnabled()` gates all submissions and offline queue additions.
+- **Offline queue**: Failed scrobbles are persisted locally in `filesDir/scrobble_queue.json` (max 500 items) and flushed automatically in batches of up to 50 on network restoration or manually from the Scrobbling settings page.
 
 ---
 

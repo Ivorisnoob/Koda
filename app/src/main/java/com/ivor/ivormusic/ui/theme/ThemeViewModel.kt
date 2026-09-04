@@ -72,6 +72,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val onboardingCompleted: StateFlow<Boolean> = themePreferences.onboardingCompleted
     val localOnlyMode: StateFlow<Boolean> = themePreferences.localOnlyMode
     
+    val lastFmEnabled: StateFlow<Boolean> = themePreferences.lastFmEnabled
+    val listenBrainzEnabled: StateFlow<Boolean> = themePreferences.listenBrainzEnabled
+    val listenBrainzCustomUrl: StateFlow<String> = themePreferences.listenBrainzCustomUrl
+
     val currentCacheSizeBytes: StateFlow<Long> = com.ivor.ivormusic.data.CacheManager.currentCacheSizeBytes
 
     fun setThemeMode(mode: ThemeMode) {
@@ -311,5 +315,17 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setLocalOnlyMode(enabled: Boolean) {
         themePreferences.setLocalOnlyMode(enabled)
+    }
+
+    fun setLastFmEnabled(enabled: Boolean) {
+        themePreferences.setLastFmEnabled(enabled)
+    }
+
+    fun setListenBrainzEnabled(enabled: Boolean) {
+        themePreferences.setListenBrainzEnabled(enabled)
+    }
+
+    fun setListenBrainzCustomUrl(url: String) {
+        themePreferences.setListenBrainzCustomUrl(url)
     }
 }

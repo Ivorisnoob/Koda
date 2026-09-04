@@ -43,6 +43,7 @@ import com.ivor.ivormusic.data.NotificationArtworkLoader
 import com.ivor.ivormusic.data.AudioProfileStore
 import com.ivor.ivormusic.data.AudioProfiler
 import com.ivor.ivormusic.data.TrackLoudnessStore
+import com.ivor.ivormusic.data.scrobble.ScrobbleRepository
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.MusicQueueItem
@@ -191,6 +192,7 @@ class MusicService : MediaLibraryService() {
 
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
+    private lateinit var scrobbleController: ScrobbleController
 
     /** Artwork URLs already being fetched for the Live Update, so a per-second
      *  progress loop does not kick off the same load repeatedly. */
@@ -340,6 +342,7 @@ class MusicService : MediaLibraryService() {
         youtubeRepository = YouTubeRepository(this)
         downloadRepository = DownloadRepository.getInstance(this)
         audioProfileStore = AudioProfileStore(this)
+        scrobbleController = ScrobbleController(ScrobbleRepository.getInstance(this))
 
         // 2. Setup Notifications & Live Updates
         // Create the shared playback channel before the media provider is
@@ -451,6 +454,9 @@ class MusicService : MediaLibraryService() {
         serviceScope.cancel()
         resolveScope.cancel()
         musicProgressLiveUpdate?.hide()
+        if (::scrobbleController.isInitialized) {
+            scrobbleController.onDestroy()
+        }
         // Tell external equalizers our audio session is going away
         if (audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
             sendBroadcast(Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
@@ -779,6 +785,10 @@ class MusicService : MediaLibraryService() {
             // 3. Robust Prefetching of FUTURE items
             prefetchUpcomingSongs()
 
+            // 4. Scrobbling lifecycle
+            if (::scrobbleController.isInitialized) {
+                scrobbleController.onTrackTransition(mediaItem)
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -2431,6 +2441,9 @@ class MusicService : MediaLibraryService() {
         trackGain = gainForPlayer(newActive)
         engine.setPauseAtEndOfMediaItems(sleepTimerEndOfTrack)
         prefetchUpcomingSongs()
+        if (::scrobbleController.isInitialized) {
+            scrobbleController.onEngineSwapped(newActive)
+        }
     }
 
     /**
@@ -2580,6 +2593,11 @@ class MusicService : MediaLibraryService() {
                     if (widgetProgressTick >= 5) {
                         widgetProgressTick = 0
                         publishWidgetState()
+                    }
+
+                    // Scrobble progress tick
+                    if (::scrobbleController.isInitialized) {
+                        scrobbleController.onProgressTick(player.isPlaying, duration)
                     }
 
                     // The fade-out used to live here, on a one-second tick,

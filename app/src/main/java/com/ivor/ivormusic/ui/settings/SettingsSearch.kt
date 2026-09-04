@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.MoneyOff
@@ -294,6 +295,14 @@ internal fun buildSettingsSearchIndex(
             "incognito", "private", "pause history", "clear history", "stats"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "scrobbling", stringResource(R.string.settings_scrobbling), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.CloudSync,
+        listOf(
+            "scrobble", "scrobbling", "last.fm", "lastfm", "listenbrainz", "audioscrobbler",
+            "malojo", "maloja", "libre.fm", "librefm", "gnufm", "tracking", "stats"
+        )
+    ) { onOpenPage(SettingsPage.SCROBBLING) }
     entry(
         "music_q_wifi", stringResource(R.string.sp_music_quality_wifi), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.MusicNote,

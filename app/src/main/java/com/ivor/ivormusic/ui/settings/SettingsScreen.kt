@@ -262,7 +262,8 @@ internal enum class SettingsPage {
     LOCAL_LIBRARY,
     ADVANCED,
     DISPLAY_SIZE,
-    SPONSORBLOCK
+    SPONSORBLOCK,
+    SCROBBLING
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -375,6 +376,12 @@ fun SettingsScreen(
     onSponsorBlockNoticeToggle: (Boolean) -> Unit = {},
     sponsorBlockMinDurationMs: Long = 0L,
     onSponsorBlockMinDurationChange: (Long) -> Unit = {},
+    lastFmEnabled: Boolean = false,
+    onLastFmEnabledToggle: (Boolean) -> Unit = {},
+    listenBrainzEnabled: Boolean = false,
+    onListenBrainzEnabledToggle: (Boolean) -> Unit = {},
+    listenBrainzCustomUrl: String = ThemePreferences.DEFAULT_LISTENBRAINZ_URL,
+    onListenBrainzCustomUrlChange: (String) -> Unit = {},
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
@@ -803,8 +810,21 @@ fun SettingsScreen(
                     videoQualityMobile = videoQualityMobile,
                     preferHdr = preferHdr,
                     onPreferHdrToggle = onPreferHdrToggle,
+                    lastFmEnabled = lastFmEnabled,
+                    listenBrainzEnabled = listenBrainzEnabled,
+                    onNavigateToScrobbling = { page = SettingsPage.SCROBBLING },
                     onOpenQualityPicker = { qualityDialogTarget = it },
                     onBack = { page = SettingsPage.HUB }
+                )
+
+                SettingsPage.SCROBBLING -> ScrobbleSettingsPage(
+                    lastFmEnabled = lastFmEnabled,
+                    onLastFmEnabledToggle = onLastFmEnabledToggle,
+                    listenBrainzEnabled = listenBrainzEnabled,
+                    onListenBrainzEnabledToggle = onListenBrainzEnabledToggle,
+                    listenBrainzCustomUrl = listenBrainzCustomUrl,
+                    onListenBrainzCustomUrlChange = onListenBrainzCustomUrlChange,
+                    onBack = { page = SettingsPage.PLAYBACK }
                 )
 
                 SettingsPage.CONTENT -> ContentSettingsPage(
