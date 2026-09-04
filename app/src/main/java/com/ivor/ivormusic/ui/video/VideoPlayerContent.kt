@@ -1015,6 +1015,7 @@ fun VideoPlayerContent(
                         resumedFromMs = visibleResumedFromMs,
                         onPlayFromStart = { viewModel.playFromBeginning() },
                         onDismiss = { viewModel.dismissResumeNotice() },
+                        compact = true,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(end = 12.dp, bottom = sponsorBottomPadding)

@@ -410,7 +410,7 @@ private fun DownloadedVideo.asOfflineVideoItem() = VideoItem(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun VideoTopBarSection(
+internal fun VideoTopBarSection(
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit,
@@ -419,7 +419,14 @@ private fun VideoTopBarSection(
     videoMode: Boolean = true,
     onVideoModeToggle: (Boolean) -> Unit = {},
     showModeToggle: Boolean = true,
-    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
+    modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode),
+    /**
+     * The bell belongs to the Home feed it reports on, and its sheet is owned
+     * by [VideoHomeContent]. The shell copy of this bar - the one that appears
+     * when Home is hidden - leaves it out rather than drawing a button with
+     * nowhere to go.
+     */
+    showNotifications: Boolean = true
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
     val iconColor = MaterialTheme.colorScheme.onSurface
@@ -467,7 +474,7 @@ private fun VideoTopBarSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Notifications Button
-            IconButton(
+            if (showNotifications) IconButton(
                 onClick = onNotificationsClick,
                 shapes = IconButtonDefaults.shapes(),
                 colors = IconButtonDefaults.iconButtonColors(

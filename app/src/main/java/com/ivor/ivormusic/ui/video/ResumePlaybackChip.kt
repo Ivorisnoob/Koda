@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,11 +21,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,7 +53,13 @@ internal fun ResumePlaybackChip(
     resumedFromMs: Long?,
     onPlayFromStart: () -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * The watch page draws the video in a band a few hundred dp tall, so a chip
+     * sized for fullscreen covers a real fraction of the picture. Compact drops
+     * the leading icon and steps the type and padding down again.
+     */
+    compact: Boolean = false
 ) {
     LaunchedEffect(resumedFromMs) {
         if (resumedFromMs == null) return@LaunchedEffect
@@ -72,36 +79,61 @@ internal fun ResumePlaybackChip(
         // Held across the exit animation so the chip does not blank its own
         // text on the way out.
         val position = resumedFromMs ?: return@AnimatedVisibility
+        val textStyle = if (compact) {
+            MaterialTheme.typography.labelSmall
+        } else {
+            MaterialTheme.typography.labelMedium
+        }
         Surface(
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(if (compact) 14.dp else 18.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp,
-            shadowElevation = 6.dp
+            tonalElevation = if (compact) 3.dp else 6.dp,
+            shadowElevation = if (compact) 2.dp else 4.dp
         ) {
             Row(
-                modifier = Modifier.padding(start = 16.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                modifier = Modifier.padding(
+                    start = if (compact) 10.dp else 12.dp,
+                    end = 2.dp,
+                    top = 2.dp,
+                    bottom = 2.dp
+                ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Start
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.History,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(10.dp))
+                // The icon is the first thing to go: on the watch page the
+                // words already say what happened, and 16dp plus its gap is
+                // most of what makes the chip read as a bubble over the video.
+                if (!compact) {
+                    Icon(
+                        imageVector = Icons.Rounded.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(7.dp))
+                }
                 Text(
                     text = stringResource(R.string.vp_resumed_from, formatResumeTimestamp(position)),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = textStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.width(4.dp))
-                TextButton(onClick = onPlayFromStart) {
-                    Text(
-                        text = stringResource(R.string.vp_play_from_start),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
+                // A plain clickable rather than a TextButton: the button's own
+                // minimum size and 24dp of internal padding are what made this
+                // twice the height it needs to be.
+                Text(
+                    text = stringResource(R.string.vp_play_from_start),
+                    style = textStyle,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(if (compact) 12.dp else 16.dp))
+                        .clickable(onClick = onPlayFromStart)
+                        .padding(
+                            horizontal = if (compact) 8.dp else 10.dp,
+                            vertical = if (compact) 5.dp else 7.dp
+                        )
+                )
             }
         }
     }

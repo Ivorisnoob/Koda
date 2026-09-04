@@ -148,6 +148,13 @@ import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
 
+/**
+ * Height of the video top bar when the shell draws it: a 44dp control row with
+ * 16dp above and below. Kept beside the padding that reserves room for it, so
+ * the two cannot drift apart.
+ */
+private val VIDEO_SHELL_TOP_BAR_HEIGHT = 76.dp
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun HomeScreen(
@@ -283,6 +290,11 @@ fun HomeScreen(
     // recommendations nor the Shorts shelf are worth a request in that state.
     val videoHomeVisible =
         VideoHomeDestination.HOME in videoHomeConfiguration.visibleDestinations
+    // The account avatar, downloads and Settings live in video Home's top bar,
+    // and Home can be hidden - which used to strand the viewer, since the
+    // switch that brings Home back is itself inside Settings. Hiding Home
+    // moves that bar onto the shell instead, where every destination has it.
+    val videoShellTopBar = videoMode && !videoHomeVisible
     LaunchedEffect(
         videoMode,
         videoHomeVisible,
@@ -529,7 +541,7 @@ fun HomeScreen(
     // status bar instead of passing under it, and the top of the screen reads
     // as a system title bar. The bottom already worked this way.
     val listContentPadding = PaddingValues(
-        top = statusBarInset,
+        top = statusBarInset + if (videoShellTopBar) VIDEO_SHELL_TOP_BAR_HEIGHT else 0.dp,
         bottom = bottomOverlayInset + navBarInset + 16.dp
     )
 
@@ -935,6 +947,36 @@ fun HomeScreen(
             }
         }
         
+        // Video Home carries the account avatar, downloads and Settings, so
+        // hiding that destination took the only route to them - including the
+        // switch that puts Home back. The bar becomes part of the shell in
+        // that configuration, above every destination rather than inside one.
+        // Opaque, because the lists underneath scroll beneath it.
+        if (videoShellTopBar) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(backgroundColor)
+                    .padding(top = statusBarInset)
+            ) {
+                com.ivor.ivormusic.ui.video.VideoTopBarSection(
+                    onProfileClick = onProfileClick,
+                    onSettingsClick = onNavigateToSettings,
+                    onDownloadsClick = onNavigateToDownloads,
+                    // The bell reports on the Home feed and its sheet belongs
+                    // to that screen, so the shell copy leaves it out.
+                    onNotificationsClick = onProfileClick,
+                    viewModel = viewModel,
+                    videoMode = videoMode,
+                    onVideoModeToggle = onVideoModeToggle,
+                    showModeToggle = showModeToggle,
+                    modeToggleState = modeToggleState,
+                    showNotifications = false
+                )
+            }
+        }
+
         // Both navigation variants use the same destinations and interaction
         // contract. Only their Material container and item presentation differ.
         val navBarHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
