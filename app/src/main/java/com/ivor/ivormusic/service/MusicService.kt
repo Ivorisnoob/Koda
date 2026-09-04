@@ -223,6 +223,16 @@ class MusicService : MediaLibraryService() {
         private const val MAX_WARMED_IDS = 256
         // Covers the maintained NewPipe extraction and the direct InnerTube
         // fallback; their individual requests are also bounded by OkHttp.
+        //
+        // This timeout does not itself interrupt anything - both paths block
+        // inside OkHttp, so it can only discard a late result, and a discarded
+        // result is a skipped song. The budgets underneath are what keep the
+        // arithmetic inside it: YouTubeRepository gives NewPipe
+        // NEWPIPE_STREAM_BUDGET_MS (8s) before handing over, and each direct
+        // /player call is capped at 8s by streamResolveClient, so the ordinary
+        // failing case is one budget plus one client and lands well inside 20s.
+        // Lowering either one without the other reintroduces the case where a
+        // working fallback exists and is never reached.
         private const val RESOLVE_TIMEOUT_MS = 20_000L
         private const val PROFILE_TIMEOUT_MS = 30_000L
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
