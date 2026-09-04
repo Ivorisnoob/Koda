@@ -1,5 +1,7 @@
 package com.ivor.ivormusic
 
+import com.ivor.ivormusic.ui.components.hiddenFraction
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -19,7 +21,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
@@ -93,6 +94,9 @@ private val NON_EXPRESSIVE_NAV_BAR_RESERVE = 80.dp
 /** Height the collapsed music player occupies above the navigation bar. */
 private val MUSIC_PILL_RESERVE = 88.dp
 
+/** Gap the video mini bar keeps above the system navigation bar once the toolbar is gone. */
+private val VIDEO_MINI_RESTING_GAP = 16.dp
+
 class MainActivity : ComponentActivity() {
 
     // A YouTube link shared or opened into Koda, picked up by SharedLinkHandler
@@ -165,6 +169,7 @@ class MainActivity : ComponentActivity() {
             val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
+            val videoHomeConfiguration by themeViewModel.videoHomeConfiguration.collectAsState()
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
             val saveMusicHistory by themeViewModel.saveMusicHistory.collectAsState()
@@ -254,6 +259,16 @@ class MainActivity : ComponentActivity() {
                         onVideoModeToggle = { themeViewModel.setVideoMode(it) },
                         homeModeToggleEnabled = homeModeToggleEnabled,
                         onHomeModeToggleEnabledChange = { themeViewModel.setHomeModeToggleEnabled(it) },
+                        videoHomeConfiguration = videoHomeConfiguration,
+                        onVideoRecommendationsEnabledChange = {
+                            themeViewModel.setVideoRecommendationsEnabled(it)
+                        },
+                        onVideoHomeDestinationVisibleChange = { destination, visible ->
+                            themeViewModel.setVideoHomeDestinationVisible(destination, visible)
+                        },
+                        onMoveVideoHomeDestination = { destination, delta ->
+                            themeViewModel.moveVideoHomeDestination(destination, delta)
+                        },
                         spotlightHome = spotlightHome,
                         uiScale = uiScale,
                         onUiScaleChange = { themeViewModel.setUiScale(it) },
@@ -530,6 +545,13 @@ fun MusicApp(
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean,
     onHomeModeToggleEnabledChange: (Boolean) -> Unit,
+    videoHomeConfiguration: com.ivor.ivormusic.data.VideoHomeConfiguration,
+    onVideoRecommendationsEnabledChange: (Boolean) -> Unit,
+    onVideoHomeDestinationVisibleChange: (
+        com.ivor.ivormusic.data.VideoHomeDestination,
+        Boolean,
+    ) -> Unit,
+    onMoveVideoHomeDestination: (com.ivor.ivormusic.data.VideoHomeDestination, Int) -> Unit,
     spotlightHome: Boolean,
     uiScale: Float,
     onUiScaleChange: (Float) -> Unit,
@@ -751,6 +773,24 @@ fun MusicApp(
         else -> navBarReserve
     }
 
+    // Home's floating toolbar hides as a feed is scrolled, and the mini bar
+    // parked above it has to come down with it or it floats over the strip the
+    // toolbar left behind. The state is created here rather than inside
+    // HomeScreen because this overlay is a sibling of the NavHost and cannot
+    // read anything HomeScreen provides. Only the floating variant hides; the
+    // standard NavigationBar is pinned, and off the home route there is no
+    // toolbar at all.
+    val floatingToolbarState = androidx.compose.material3.rememberFloatingToolbarState()
+    val videoMiniFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
+        if (!onHomeRoute || nonExpressiveNavigationBar) 0f
+        else (videoMiniBottomChrome - VIDEO_MINI_RESTING_GAP)
+            .coerceAtLeast(0.dp).toPx()
+    }
+    val videoMiniFollowOffsetPx: () -> Float = {
+        videoMiniFollowDistancePx *
+            floatingToolbarState.hiddenFraction()
+    }
+
     // Keep the Activity's PiP inputs current. It needs them outside the
     // composition, in onUserLeaveHint on Android 11. Match the same proven 4.5
     // eligibility used by VideoPipController: bounds and playback state are not
@@ -788,7 +828,11 @@ fun MusicApp(
 
     com.ivor.ivormusic.ui.video.ExternalVideoHandler(
         pending = pendingExternalVideo,
-        enabled = onboardingCompleted && !isInPipMode,
+        // Deliberately not gated on PiP, unlike the shared-link handler above.
+        // A file hand-off is an explicit "play this now", and the window it
+        // would replace is the one still playing the previous video - holding
+        // it until PiP happens to end is what left the two fighting.
+        enabled = onboardingCompleted,
         videoPlayerViewModel = videoPlayerViewModel,
         onNavigateHome = {
             navController.navigate("home") {
@@ -892,11 +936,14 @@ fun MusicApp(
                     videoMode = videoMode,
                     onVideoModeToggle = switchPlaybackMode,
                     showModeToggle = homeModeToggleEnabled,
+                    videoHomeConfiguration = videoHomeConfiguration,
+                    floatingToolbarState = floatingToolbarState,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     manualScan = manualScanEnabled,
                     localOnly = localOnlyMode,
                     hasVideoMiniPlayer = hasVideoMiniPlayer,
+                    hasExpandedVideoPlayer = overlayVideo != null && isVideoOverlayExpanded,
                     spotlightHome = spotlightHome,
                     nonExpressiveNavigationBar = nonExpressiveNavigationBar
                 )
@@ -930,6 +977,12 @@ fun MusicApp(
                     onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
+                    videoHomeConfiguration = videoHomeConfiguration,
+                    onVideoRecommendationsEnabledChange =
+                        onVideoRecommendationsEnabledChange,
+                    onVideoHomeDestinationVisibleChange =
+                        onVideoHomeDestinationVisibleChange,
+                    onMoveVideoHomeDestination = onMoveVideoHomeDestination,
                     spotlightHome = spotlightHome,
                     onSpotlightHomeToggle = onSpotlightHomeToggle,
                     nonExpressiveNavigationBar = nonExpressiveNavigationBar,
@@ -1235,7 +1288,8 @@ fun MusicApp(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
             onOpenChannel = openChannel,
-            hostBottomChrome = videoMiniBottomChrome
+            hostBottomChrome = videoMiniBottomChrome,
+            hostChromeFollowOffsetPx = videoMiniFollowOffsetPx
         )
 
         // Shorts sit above everything, including the video player overlay. The
@@ -1382,7 +1436,7 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
         }
     }
 
-    SnackbarHost(hostState = snackbarHostState, modifier = modifier)
+    DismissibleSnackbarHost(hostState = snackbarHostState, modifier = modifier)
 }
 
 /**

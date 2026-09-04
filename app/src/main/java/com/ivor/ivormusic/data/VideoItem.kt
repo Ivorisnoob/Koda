@@ -57,7 +57,17 @@ data class VideoItem(
      * YouTube's dismissal tokens for this item, when the response carried
      * them. Null everywhere except signed-in InnerTube feeds.
      */
-    val dismissal: DismissalTokens? = null
+    val dismissal: DismissalTokens? = null,
+    /**
+     * Every channel credited on a collab upload, uploader first, when the
+     * response named them. Empty for an ordinary single-channel video, which
+     * is why size > 1 is the test for "this is a collab" rather than isEmpty.
+     *
+     * A collab names no single owner, so [channelId] alone cannot describe one:
+     * it holds the uploader so that tapping through still lands somewhere
+     * sensible, and this holds the rest so a surface can offer the choice.
+     */
+    val collaborators: List<VideoCollaborator> = emptyList()
 ) {
     /**
      * Destination understood by the channel screen.
@@ -69,6 +79,7 @@ data class VideoItem(
      */
     val channelNavigationReference: String
         get() = channelId?.takeIf { it.isNotBlank() }
+            ?: collaborators.firstOrNull()?.channelId
             ?: "$CHANNEL_REFERENCE_VIDEO_PREFIX$videoId"
 
     /**

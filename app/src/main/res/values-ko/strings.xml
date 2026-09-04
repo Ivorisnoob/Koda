@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">버전 %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">HDR 동영상 우선</string>
     <string name="sp_prefer_hdr_sub">디스플레이와 디코더가 모두 지원하는 경우에만 HDR 사용</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">표준</string>
 
     <string name="profiles_title">프로필</string>
     <string name="profiles_description">구독과 숨긴 추천은 프로필별로 유지돼요. 재생목록, 좋아요 표시한 곡, 다운로드는 공통이에요.</string>
@@ -192,4 +194,18 @@
         <item quantity="other">YouTube에서 이 네트워크의 요청을 제한하고 있어요. 약 %1$d분 후에 다시 시도해 주세요.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube에서 이 네트워크의 요청을 제한하고 있어요. 잠시 후 다시 시도해 주세요.</string>
+
+    <string name="vhc_title">동영상 홈</string>
+    <string name="vhc_summary">피드, 대상 위치와 순서</string>
+    <string name="vhc_feed_section">홈 피드</string>
+    <string name="vhc_recommendations">추천 및 제안</string>
+    <string name="vhc_recommendations_sub">홈에 추천 동영상 불러오기</string>
+    <string name="vhc_navigation_section">대상 위치</string>
+    <string name="vhc_navigation_hint">사용하지 않는 대상 위치를 숨기세요. 최소 하나는 항상 표시돼요.</string>
+    <string name="vhc_move_up">%1$s 위로 이동</string>
+    <string name="vhc_move_down">%1$s 아래로 이동</string>
+    <string name="vh_recommendations_off">추천이 꺼져 있어요</string>
+    <string name="vh_recommendations_off_sub">사용 설정하면 여기에 Shorts가 계속 표시될 수 있어요.</string>
+    <string name="vp_resumed_from">%1$s부터 이어서 재생했어요</string>
+    <string name="vp_play_from_start">처음부터 재생</string>
 </resources>

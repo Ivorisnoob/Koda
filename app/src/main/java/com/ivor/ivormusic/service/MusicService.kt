@@ -56,6 +56,7 @@ import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.widget.PlayerWidgetStore
 import com.ivor.ivormusic.widget.PlayerWidgets
 import com.ivor.ivormusic.widget.toWidgetSnapshot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -741,13 +742,23 @@ class MusicService : MediaLibraryService() {
             // real URI is in place.
             refreshTrackGain(applyNow = false)
 
-            // 1b. An automatic advance while a fade is running means the
-            // outgoing track ended before the overlap finished - the guard at
-            // the end of the fade window lost a race with a stall or a short
-            // file. Drop the overlap rather than swap onto a player the queue
-            // has already moved past, which would play the same track twice.
-            if (engine.isFading && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                KLog.w(TAG, "Advance beat the crossfade; dropping the overlap")
+            // 1b. Any change of the current item invalidates a transition
+            // that is already in flight, so drop it whatever moved us here.
+            // The engine's own swap never reaches this callback - the incoming
+            // player is handed its item directly rather than advancing into it
+            // - so reaching here mid-fade always means something else moved.
+            //
+            // AUTO is the outgoing track ending before the overlap finished.
+            // PLAYLIST_CHANGED is the one users meet: tapping a song in the
+            // list they are listening to replaces the queue, after which every
+            // index the transition planned against addresses a different
+            // track. Leaving it running let the swap hand the session to the
+            // standby - playing the old queue's next song - instead of the
+            // song that was tapped, and left `pendingTargetIndex` pointing
+            // into a queue that no longer exists, so the next Next/Previous
+            // jumped somewhere arbitrary too.
+            if (engine.isFading) {
+                KLog.w(TAG, "Current item changed (reason=$reason); dropping the overlap")
                 engine.cancelTransition()
             }
 
@@ -897,10 +908,10 @@ class MusicService : MediaLibraryService() {
                 val deferred = getOrStartResolution(mediaItem)
 
                 try {
-                    val resolvedItem = deferred.await()
+                    val resolvedItem = bindResolutionToItem(mediaItem, deferred.await())
 
                     // Apply if still current
-                    if (player.currentMediaItem?.mediaId == videoId) {
+                    if (player.currentMediaItem?.isSameQueueItemAs(mediaItem) == true) {
                         // Read playWhenReady NOW, at apply time — not before resolution.
                         // This transition fires during setMediaItem, which races ahead
                         // of the play() that a user tap issues right after. Capturing
@@ -960,11 +971,11 @@ class MusicService : MediaLibraryService() {
                 serviceScope.launch {
                     try {
                         val deferred = getOrStartResolution(item)
-                        val resolvedItem = deferred.await()
+                        val resolvedItem = bindResolutionToItem(item, deferred.await())
                         
                         // Update player if item is still there
                         if (targetIndex < player.mediaItemCount &&
-                            player.getMediaItemAt(targetIndex).mediaId == item.mediaId) {
+                            player.getMediaItemAt(targetIndex).isSameQueueItemAs(item)) {
                             KLog.d(
                                 TAG,
                                 "Prefetch: Updated ${if (offset == 0) "actual next" else "+${offset + 1}"} " +
@@ -1123,6 +1134,7 @@ class MusicService : MediaLibraryService() {
 
     private fun buildMediaItemWithUri(original: MediaItem, uri: Uri, duration: Long? = null): MediaItem {
         val metaBuilder = original.mediaMetadata.buildUpon()
+        duration?.takeIf { it > 0L }?.let(metaBuilder::setDurationMs)
         if (original.mediaMetadata.title == null) {
              val cachedInfo = cachedRecommendations?.find { it.id == original.mediaId }
                  ?: cachedPlaylistSongs.values.flatten().find { it.id == original.mediaId }
@@ -1140,6 +1152,18 @@ class MusicService : MediaLibraryService() {
             .setMediaMetadata(metaBuilder.build())
             .setTag(original.mediaId)
             .build()
+    }
+
+    /**
+     * Resolution is single-flight by track id, while a queue can contain the
+     * same track more than once. The shared result therefore carries the
+     * occurrence metadata of whichever caller won the flight. Rebind only its
+     * resolved source to the caller's item before inserting it into a queue so
+     * duplicate rows never acquire the same occurrence id.
+     */
+    private fun bindResolutionToItem(original: MediaItem, resolved: MediaItem): MediaItem {
+        val uri = resolved.localConfiguration?.uri ?: return original
+        return buildMediaItemWithUri(original, uri, resolved.mediaMetadata.durationMs)
     }
 
     private fun isPlaceholder(uri: Uri?): Boolean {
@@ -1199,6 +1223,13 @@ class MusicService : MediaLibraryService() {
 
             serviceScope.launch {
                 delay(1000)
+                // The error and retry belong to one exact occurrence. A tap
+                // can replace the queue during this delay with the same track
+                // id, and that new choice must not be reset, replaced or
+                // skipped by this stale recovery.
+                if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) {
+                    return@launch
+                }
                 // Mint a fresh visitorData before re-resolving. /player answered
                 // 200 and never sees this refusal, so without it the flagged
                 // token stays in prefs and is replayed for its whole 6h TTL -
@@ -1221,15 +1252,19 @@ class MusicService : MediaLibraryService() {
 
                 val deferred = getOrStartResolution(currentItem)
                 try {
-                    val resolved = deferred.await()
-                    if (player.currentMediaItem?.mediaId == videoId) {
+                    val resolved = bindResolutionToItem(currentItem, deferred.await())
+                    if (player.currentMediaItem?.isSameQueueItemAs(currentItem) == true) {
                          player.replaceMediaItem(player.currentMediaItemIndex, resolved)
                          player.prepare()
                          player.play()
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     // Retry failed, skip.
-                    if (player.hasNextMediaItem()) {
+                    if (player.currentMediaItem?.isSameQueueItemAs(currentItem) == true &&
+                        player.hasNextMediaItem()
+                    ) {
                          player.seekToNext()
                          player.play()
                     }
@@ -2327,7 +2362,7 @@ class MusicService : MediaLibraryService() {
 
             val target = if (isPlaceholder(original.localConfiguration?.uri)) {
                 withTimeoutOrNull(MANUAL_RESOLVE_WAIT_MS) {
-                    getOrStartResolution(original).await()
+                    bindResolutionToItem(original, getOrStartResolution(original).await())
                 }
             } else {
                 original
@@ -2336,9 +2371,14 @@ class MusicService : MediaLibraryService() {
             if (target == null ||
                 player !== outgoing ||
                 targetIndex !in 0 until outgoing.mediaItemCount ||
-                outgoing.getMediaItemAt(targetIndex).mediaId != original.mediaId
+                !outgoing.getMediaItemAt(targetIndex).isSameQueueItemAs(original)
             ) {
-                fallbackManualJump(targetIndex)
+                // Only a resolution that ran out of time still means "jump to
+                // the song that was asked for". The other three say the queue
+                // moved while we waited, and `targetIndex` now names a
+                // different track - which is how a skip could land on an
+                // arbitrary song after the user tapped something in a playlist.
+                fallbackManualJump(targetIndex, expectedItem = original)
                 return@launch
             }
 
@@ -2354,14 +2394,34 @@ class MusicService : MediaLibraryService() {
                 targetIndex = targetIndex,
                 incomingStartMs = incomingStartMs,
             )
-            if (!canOverlap) fallbackManualJump(targetIndex)
+            if (!canOverlap) {
+                fallbackManualJump(targetIndex, expectedItem = target)
+            }
         }
     }
 
-    /** Defined degraded path for an unresolved, paused, or unready target. */
-    private fun fallbackManualJump(targetIndex: Int) {
+    /**
+     * Defined degraded path for an unresolved, paused, or unready target.
+     *
+     * [expectedItem] is the queue occurrence the jump was requested for. An index is
+     * only meaningful against the queue it was taken from, and this runs after
+     * an await, so it is checked rather than trusted: a queue replaced in the
+     * meantime turns a Next into a jump to whatever now sits at that position.
+     * No jump at all is the right answer there - the queue was replaced by
+     * someone choosing what to play, and that choice is already playing.
+     */
+    private fun fallbackManualJump(targetIndex: Int, expectedItem: MediaItem? = null) {
         val current = player
         if (targetIndex !in 0 until current.mediaItemCount) return
+        // Refusing is a no-op, deliberately: whatever replaced the queue is
+        // already playing what it chose, and cancelling a transition that
+        // belongs to it would interrupt that instead of this.
+        if (expectedItem != null &&
+            !current.getMediaItemAt(targetIndex).isSameQueueItemAs(expectedItem)
+        ) {
+            KLog.w(TAG, "Queue moved under a manual jump; leaving playback alone")
+            return
+        }
         engine.cancelTransition()
         current.volume = 0f
         current.seekTo(targetIndex, 0L)

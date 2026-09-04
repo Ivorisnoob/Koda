@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Sürüm %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">HDR videoyu tercih et</string>
     <string name="sp_prefer_hdr_sub">HDR\'yi yalnızca ekran ve kod çözücü desteklediğinde kullan</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standart</string>
 
     <string name="profiles_title">Profiller</string>
     <string name="profiles_description">Abonelikler ve gizlenen öneriler profil başına tutulur. Oynatma listeleri, beğeniler ve indirilenler ortaktır.</string>
@@ -195,4 +197,18 @@
         <item quantity="other">YouTube bu ağdan gelen istekleri sınırlandırıyor. Yaklaşık %1$d dakika içinde tekrar deneyin.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube bu ağdan gelen istekleri sınırlandırıyor. Birazdan tekrar deneyin.</string>
+
+    <string name="vhc_title">Video Ana Sayfası</string>
+    <string name="vhc_summary">Besleme, hedefler ve sıraları</string>
+    <string name="vhc_feed_section">Ana sayfa beslemesi</string>
+    <string name="vhc_recommendations">Öneriler ve tavsiyeler</string>
+    <string name="vhc_recommendations_sub">Ana Sayfada önerilen videoları yükle</string>
+    <string name="vhc_navigation_section">Hedefler</string>
+    <string name="vhc_navigation_hint">Kullanmadığınız hedefleri gizleyin. En az biri görünür kalır.</string>
+    <string name="vhc_move_up">%1$s öğesini yukarı taşı</string>
+    <string name="vhc_move_down">%1$s öğesini aşağı taşı</string>
+    <string name="vh_recommendations_off">Öneriler kapalı</string>
+    <string name="vh_recommendations_off_sub">Etkinleştirildiğinde Shorts burada yine de görünebilir.</string>
+    <string name="vp_resumed_from">%1$s konumundan devam edildi</string>
+    <string name="vp_play_from_start">Baştan oynat</string>
 </resources>

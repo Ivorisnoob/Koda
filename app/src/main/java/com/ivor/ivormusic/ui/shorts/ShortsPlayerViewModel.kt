@@ -28,6 +28,7 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.bestSdrFallback
+import com.ivor.ivormusic.ui.video.hasHdrDisplay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -590,7 +591,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     private suspend fun resolvePlayableQualities(videoId: String): List<VideoQuality> {
-        val includeHdr = themePreferences.isPreferHdrEnabled()
+        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context)
         val qualities = youtubeRepository.getVideoStreamQualities(videoId, includeHdr)
         return if (includeHdr) {
             qualities

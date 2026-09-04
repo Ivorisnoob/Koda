@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.player
 
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
@@ -66,7 +67,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.rounded.DragHandle
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -1036,7 +1036,7 @@ internal fun EditorialQueueView(
         }
     }
 
-        SnackbarHost(
+        DismissibleSnackbarHost(
             hostState = removal.hostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)

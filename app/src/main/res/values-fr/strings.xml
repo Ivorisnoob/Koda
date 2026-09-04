@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Version %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Préférer les vidéos HDR</string>
     <string name="sp_prefer_hdr_sub">Utiliser le HDR uniquement si l’écran et le décodeur le prennent en charge</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standard</string>
 
     <string name="profiles_title">Profils</string>
     <string name="profiles_description">Les abonnements et les recommandations masquées sont conservés par profil. Les playlists, les titres aimés et les téléchargements sont partagés.</string>
@@ -197,4 +199,18 @@
         <item quantity="other">YouTube limite les requêtes provenant de ce réseau. Réessayez dans environ %1$d minutes.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube limite les requêtes provenant de ce réseau. Réessayez dans un instant.</string>
+
+    <string name="vhc_title">Accueil vidéo</string>
+    <string name="vhc_summary">Le flux, les destinations et leur ordre</string>
+    <string name="vhc_feed_section">Flux d\'accueil</string>
+    <string name="vhc_recommendations">Recommandations et suggestions</string>
+    <string name="vhc_recommendations_sub">Charger des vidéos suggérées dans l\'accueil</string>
+    <string name="vhc_navigation_section">Destinations</string>
+    <string name="vhc_navigation_hint">Masquez toute destination que vous n\'utilisez pas. Au moins une reste visible.</string>
+    <string name="vhc_move_up">Déplacer %1$s vers le haut</string>
+    <string name="vhc_move_down">Déplacer %1$s vers le bas</string>
+    <string name="vh_recommendations_off">Les recommandations sont désactivées</string>
+    <string name="vh_recommendations_off_sub">Les Shorts peuvent toujours apparaître ici lorsqu\'ils sont activés.</string>
+    <string name="vp_resumed_from">Reprise à %1$s</string>
+    <string name="vp_play_from_start">Lire depuis le début</string>
 </resources>

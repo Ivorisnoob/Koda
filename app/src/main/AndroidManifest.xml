@@ -40,15 +40,26 @@
         android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.App.Starting">
         <!--
-            singleTop so a link shared while Koda is already open is delivered
-            to the running instance through onNewIntent, instead of stacking a
+            singleTask so a link or a video file handed to Koda is delivered to
+            the running instance through onNewIntent, instead of stacking a
             second MainActivity on top of the live players.
+
+            singleTop was not enough, and picture-in-picture is why: PiP moves
+            the activity into a task of its own, so an "open with" arriving from
+            a file manager - which launches into a new task - matched nothing
+            and started a second MainActivity. Two instances meant two
+            VideoPlayerViewModels and two ExoPlayers: the PiP window carried on
+            playing while the new copy opened the file and lost the audio focus
+            fight, which is the "it opens but does not play" case. singleTask
+            routes that launch to the existing instance and expands it out of
+            PiP. Koda is a single-activity app, so being the root of its task
+            costs nothing.
         -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="${appLabel}"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"

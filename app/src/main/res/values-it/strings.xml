@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Versione %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Preferisci i video HDR</string>
     <string name="sp_prefer_hdr_sub">Usa HDR solo quando lo schermo e il decoder lo supportano</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standard</string>
 
     <string name="profiles_title">Profili</string>
     <string name="profiles_description">Iscrizioni e consigli nascosti vengono mantenuti per profilo. Playlist, brani preferiti e download sono condivisi.</string>
@@ -195,4 +197,18 @@
         <item quantity="other">YouTube sta limitando le richieste da questa rete. Riprova tra circa %1$d minuti.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube sta limitando le richieste da questa rete. Riprova tra un momento.</string>
+
+    <string name="vhc_title">Home video</string>
+    <string name="vhc_summary">Il feed, le destinazioni e il loro ordine</string>
+    <string name="vhc_feed_section">Feed della home</string>
+    <string name="vhc_recommendations">Consigli e suggerimenti</string>
+    <string name="vhc_recommendations_sub">Carica i video suggeriti nella home</string>
+    <string name="vhc_navigation_section">Destinazioni</string>
+    <string name="vhc_navigation_hint">Nascondi qualsiasi destinazione che non usi. Ne resterà visibile almeno una.</string>
+    <string name="vhc_move_up">Sposta %1$s in alto</string>
+    <string name="vhc_move_down">Sposta %1$s in basso</string>
+    <string name="vh_recommendations_off">I consigli sono disattivati</string>
+    <string name="vh_recommendations_off_sub">Gli Shorts possono comunque apparire qui, se attivati.</string>
+    <string name="vp_resumed_from">Ripreso da %1$s</string>
+    <string name="vp_play_from_start">Riproduci dall\'inizio</string>
 </resources>

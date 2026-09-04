@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Versiunea %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Preferă videoclipurile HDR</string>
     <string name="sp_prefer_hdr_sub">Folosește HDR numai dacă ecranul și decodorul îl acceptă</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standard</string>
 
     <string name="profiles_title">Profile</string>
     <string name="profiles_description">Abonamentele și recomandările ascunse sunt păstrate per profil. Playlisturile, melodiile favorite și descărcările sunt comune.</string>
@@ -198,4 +200,18 @@
         <item quantity="other">YouTube limitează cererile de pe această rețea. Încearcă din nou peste aproximativ %1$d de minute.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube limitează cererile de pe această rețea. Încearcă din nou peste puțin timp.</string>
+
+    <string name="vhc_title">Acasă video</string>
+    <string name="vhc_summary">Fluxul, destinațiile și ordinea lor</string>
+    <string name="vhc_feed_section">Flux de pe Acasă</string>
+    <string name="vhc_recommendations">Recomandări și sugestii</string>
+    <string name="vhc_recommendations_sub">Încarcă videoclipuri sugerate pe Acasă</string>
+    <string name="vhc_navigation_section">Destinații</string>
+    <string name="vhc_navigation_hint">Ascunde orice destinație pe care nu o folosești. Cel puțin una rămâne vizibilă.</string>
+    <string name="vhc_move_up">Mută %1$s în sus</string>
+    <string name="vhc_move_down">Mută %1$s în jos</string>
+    <string name="vh_recommendations_off">Recomandările sunt dezactivate</string>
+    <string name="vh_recommendations_off_sub">Shorts poate încă apărea aici atunci când este activat.</string>
+    <string name="vp_resumed_from">Reluat de la %1$s</string>
+    <string name="vp_play_from_start">Redă de la început</string>
 </resources>

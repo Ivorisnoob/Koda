@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Versi %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Prioritaskan video HDR</string>
     <string name="sp_prefer_hdr_sub">Gunakan HDR hanya jika layar dan dekoder mendukungnya</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standar</string>
 
     <string name="profiles_title">Profil</string>
     <string name="profiles_description">Subscription dan rekomendasi tersembunyi disimpan per profil. Playlist, lagu yang disukai, dan download dibersamakan.</string>
@@ -192,4 +194,18 @@
         <item quantity="other">YouTube membatasi permintaan dari jaringan ini. Coba lagi dalam sekitar %1$d menit.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube membatasi permintaan dari jaringan ini. Coba lagi sebentar lagi.</string>
+
+    <string name="vhc_title">Beranda Video</string>
+    <string name="vhc_summary">Feed, tujuan, dan urutannya</string>
+    <string name="vhc_feed_section">Feed beranda</string>
+    <string name="vhc_recommendations">Rekomendasi dan saran</string>
+    <string name="vhc_recommendations_sub">Muat video yang disarankan di Beranda</string>
+    <string name="vhc_navigation_section">Tujuan</string>
+    <string name="vhc_navigation_hint">Sembunyikan tujuan mana pun yang tidak kamu gunakan. Minimal satu tetap terlihat.</string>
+    <string name="vhc_move_up">Pindahkan %1$s ke atas</string>
+    <string name="vhc_move_down">Pindahkan %1$s ke bawah</string>
+    <string name="vh_recommendations_off">Rekomendasi nonaktif</string>
+    <string name="vh_recommendations_off_sub">Shorts masih bisa muncul di sini jika diaktifkan.</string>
+    <string name="vp_resumed_from">Dilanjutkan dari %1$s</string>
+    <string name="vp_play_from_start">Putar dari awal</string>
 </resources>

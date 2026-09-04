@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">เวอร์ชัน %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">เลือกใช้วิดีโอ HDR</string>
     <string name="sp_prefer_hdr_sub">ใช้ HDR เฉพาะเมื่อจอแสดงผลและตัวถอดรหัสรองรับ</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">มาตรฐาน</string>
 
     <string name="profiles_title">โปรไฟล์</string>
     <string name="profiles_description">การติดตามและรายการที่ซ่อนไว้จะแยกตามโปรไฟล์ เพลย์ลิสต์ เพลงที่ถูกใจ และไฟล์ดาวน์โหลดใช้ร่วมกัน</string>
@@ -192,4 +194,18 @@
         <item quantity="other">YouTube กำลังจำกัดคำขอจากเครือข่ายนี้ ลองอีกครั้งในอีกประมาณ %1$d นาที</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube กำลังจำกัดคำขอจากเครือข่ายนี้ ลองอีกครั้งในอีกสักครู่</string>
+
+    <string name="vhc_title">หน้าแรกวิดีโอ</string>
+    <string name="vhc_summary">ฟีด ปลายทาง และลำดับของปลายทาง</string>
+    <string name="vhc_feed_section">ฟีดหน้าแรก</string>
+    <string name="vhc_recommendations">คำแนะนำและข้อเสนอแนะ</string>
+    <string name="vhc_recommendations_sub">โหลดวิดีโอแนะนำในหน้าแรก</string>
+    <string name="vhc_navigation_section">ปลายทาง</string>
+    <string name="vhc_navigation_hint">ซ่อนปลายทางที่คุณไม่ได้ใช้ อย่างน้อยหนึ่งรายการจะยังแสดงอยู่</string>
+    <string name="vhc_move_up">ย้าย %1$s ขึ้น</string>
+    <string name="vhc_move_down">ย้าย %1$s ลง</string>
+    <string name="vh_recommendations_off">คำแนะนำปิดอยู่</string>
+    <string name="vh_recommendations_off_sub">Shorts ยังคงปรากฏที่นี่ได้เมื่อเปิดใช้งาน</string>
+    <string name="vp_resumed_from">เล่นต่อจาก %1$s</string>
+    <string name="vp_play_from_start">เล่นตั้งแต่ต้น</string>
 </resources>

@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">バージョン %1$s（%2$d）</string>
     <string name="sp_prefer_hdr">HDR動画を優先</string>
     <string name="sp_prefer_hdr_sub">ディスプレイとデコーダーが対応している場合のみHDRを使用します</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">標準</string>
 
     <string name="profiles_title">プロフィール</string>
     <string name="profiles_description">登録チャンネルと非表示の推奨事項はプロフィールごとに保存されます。プレイリスト、お気に入り、ダウンロードは共通です。</string>
@@ -192,4 +194,18 @@
         <item quantity="other">YouTube がこのネットワークからのリクエストを制限しています。約%1$d分後にもう一度お試しください。</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube がこのネットワークからのリクエストを制限しています。しばらくしてからもう一度お試しください。</string>
+
+    <string name="vhc_title">動画ホーム</string>
+    <string name="vhc_summary">フィード、移動先とその順序</string>
+    <string name="vhc_feed_section">ホームフィード</string>
+    <string name="vhc_recommendations">おすすめと提案</string>
+    <string name="vhc_recommendations_sub">ホームにおすすめの動画を読み込む</string>
+    <string name="vhc_navigation_section">移動先</string>
+    <string name="vhc_navigation_hint">使わない移動先は非表示にできます。少なくとも1つは表示されたままになります。</string>
+    <string name="vhc_move_up">%1$s を上に移動</string>
+    <string name="vhc_move_down">%1$s を下に移動</string>
+    <string name="vh_recommendations_off">おすすめはオフです</string>
+    <string name="vh_recommendations_off_sub">有効にすると、ここに Shorts が表示されることがあります。</string>
+    <string name="vp_resumed_from">%1$s から再開しました</string>
+    <string name="vp_play_from_start">最初から再生</string>
 </resources>

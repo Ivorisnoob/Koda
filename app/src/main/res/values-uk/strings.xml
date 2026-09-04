@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Версія %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Надавати перевагу HDR-відео</string>
     <string name="sp_prefer_hdr_sub">Використовувати HDR, лише якщо дисплей і декодер його підтримують</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Стандартна</string>
 
     <string name="profiles_title">Профілі</string>
     <string name="profiles_description">Підписки та приховані рекомендації зберігаються окремо для кожного профілю. Плейлісти, сподобані пісні та завантаження спільні.</string>
@@ -201,4 +203,18 @@
         <item quantity="other">YouTube обмежує кількість запитів із цієї мережі. Спробуйте ще раз приблизно через %1$d хвилини.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube обмежує кількість запитів із цієї мережі. Спробуйте ще раз за мить.</string>
+
+    <string name="vhc_title">Головна відео</string>
+    <string name="vhc_summary">Стрічка, розділи та їхній порядок</string>
+    <string name="vhc_feed_section">Стрічка головної</string>
+    <string name="vhc_recommendations">Рекомендації та пропозиції</string>
+    <string name="vhc_recommendations_sub">Завантажувати рекомендовані відео на Головній</string>
+    <string name="vhc_navigation_section">Розділи</string>
+    <string name="vhc_navigation_hint">Приховайте будь-який розділ, яким ви не користуєтеся. Принаймні один залишиться видимим.</string>
+    <string name="vhc_move_up">Перемістити %1$s вгору</string>
+    <string name="vhc_move_down">Перемістити %1$s вниз</string>
+    <string name="vh_recommendations_off">Рекомендації вимкнено</string>
+    <string name="vh_recommendations_off_sub">Shorts усе ще можуть з\'являтися тут, якщо їх увімкнено.</string>
+    <string name="vp_resumed_from">Відновлено з %1$s</string>
+    <string name="vp_play_from_start">Відтворити спочатку</string>
 </resources>

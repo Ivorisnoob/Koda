@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.video
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -39,7 +40,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.runtime.remember
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
@@ -170,7 +170,7 @@ fun VideoQueueSheet(
                 }
             }
 
-            SnackbarHost(
+            DismissibleSnackbarHost(
                 hostState = removal.hostState,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

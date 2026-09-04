@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Verze %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Upřednostňovat video v HDR</string>
     <string name="sp_prefer_hdr_sub">Použít HDR pouze tehdy, když ho podporuje displej i dekodér</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standardní</string>
 
     <string name="profiles_title">Profily</string>
     <string name="profiles_description">Odběry a skrytá doporučení se uchovávají podle profilu. Playlisty, oblíbené skladby a stažené soubory jsou sdílené.</string>
@@ -201,4 +203,18 @@
         <item quantity="other">YouTube omezuje počet požadavků z této sítě. Zkuste to znovu přibližně za %1$d minut.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube omezuje počet požadavků z této sítě. Zkuste to znovu za chvíli.</string>
+
+    <string name="vhc_title">Domovská obrazovka videa</string>
+    <string name="vhc_summary">Informační kanál, cíle a jejich pořadí</string>
+    <string name="vhc_feed_section">Domovský kanál</string>
+    <string name="vhc_recommendations">Doporučení a návrhy</string>
+    <string name="vhc_recommendations_sub">Načítat doporučená videa na Domů</string>
+    <string name="vhc_navigation_section">Cíle</string>
+    <string name="vhc_navigation_hint">Skryjte libovolný cíl, který nepoužíváte. Alespoň jeden zůstane viditelný.</string>
+    <string name="vhc_move_up">Přesunout %1$s nahoru</string>
+    <string name="vhc_move_down">Přesunout %1$s dolů</string>
+    <string name="vh_recommendations_off">Doporučení jsou vypnutá</string>
+    <string name="vh_recommendations_off_sub">Shorts se tu mohou zobrazit, pokud jsou povolené.</string>
+    <string name="vp_resumed_from">Pokračuje od %1$s</string>
+    <string name="vp_play_from_start">Přehrát od začátku</string>
 </resources>

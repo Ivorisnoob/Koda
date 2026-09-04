@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Versie %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">HDR-video verkiezen</string>
     <string name="sp_prefer_hdr_sub">HDR alleen gebruiken als het scherm en de decoder dit ondersteunen</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standaard</string>
 
     <string name="profiles_title">Profielen</string>
     <string name="profiles_description">Abonnementen en verborgen aanbevelingen worden per profiel bewaard. Afspeellijsten, favorieten en downloads worden gedeeld.</string>
@@ -195,4 +197,18 @@
         <item quantity="other">YouTube beperkt aanvragen vanaf dit netwerk. Probeer het over ongeveer %1$d minuten opnieuw.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube beperkt aanvragen vanaf dit netwerk. Probeer het over een moment opnieuw.</string>
+
+    <string name="vhc_title">Videostart</string>
+    <string name="vhc_summary">De feed, de bestemmingen en hun volgorde</string>
+    <string name="vhc_feed_section">Startfeed</string>
+    <string name="vhc_recommendations">Aanbevelingen en suggesties</string>
+    <string name="vhc_recommendations_sub">Voorgestelde video\'s laden op Start</string>
+    <string name="vhc_navigation_section">Bestemmingen</string>
+    <string name="vhc_navigation_hint">Verberg elke bestemming die je niet gebruikt. Er blijft er minstens één zichtbaar.</string>
+    <string name="vhc_move_up">%1$s omhoog verplaatsen</string>
+    <string name="vhc_move_down">%1$s omlaag verplaatsen</string>
+    <string name="vh_recommendations_off">Aanbevelingen staan uit</string>
+    <string name="vh_recommendations_off_sub">Shorts kunnen hier nog steeds verschijnen als ze zijn ingeschakeld.</string>
+    <string name="vp_resumed_from">Hervat vanaf %1$s</string>
+    <string name="vp_play_from_start">Vanaf het begin afspelen</string>
 </resources>

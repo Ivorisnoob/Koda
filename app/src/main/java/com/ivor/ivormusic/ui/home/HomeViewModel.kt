@@ -337,6 +337,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _trendingVideos = MutableStateFlow<List<VideoItem>>(emptyList())
 
     /**
+     * Apply the setting immediately; in-flight requests are prevented from
+     * repopulating it.
+     *
+     * Shorts are a separate shelf with their own setting, so the shelf is
+     * loaded either way - switching recommendations off must not silently take
+     * the Shorts row away with them.
+     */
+    fun applyVideoRecommendationsPreference(enabled: Boolean) {
+        if (enabled) {
+            loadTrendingVideos()
+        } else {
+            loadShortsFeed()
+            _trendingVideos.value = emptyList()
+            _isVideoLoading.value = false
+            _isVideoLoadingMore.value = false
+            videoFeedContinuation = null
+            videoFeedExhausted = true
+        }
+    }
+
+    /**
      * The home feed with hidden videos and blocked channels removed.
      *
      * Filtering is a derived flow rather than a write into the raw list, so a
@@ -1713,10 +1734,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun loadTrendingVideos() {
         loadShortsFeed()
+        if (!themePreferences.areVideoRecommendationsEnabled()) return
         viewModelScope.launch {
             _isVideoLoading.value = true
             try {
                 val page = youtubeRepository.getTrendingVideos()
+                if (!themePreferences.areVideoRecommendationsEnabled()) return@launch
                 if (page.videos.isNotEmpty()) {
                     _isVideoHomeOffline.value = false
                     _trendingVideos.value = page.videos
@@ -1812,6 +1835,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * feed is exhausted.
      */
     fun loadMoreTrendingVideos() {
+        if (!themePreferences.areVideoRecommendationsEnabled()) return
         if (_isVideoLoading.value || _isVideoLoadingMore.value || videoFeedExhausted) return
         if (_trendingVideos.value.isEmpty()) return
 
@@ -1837,6 +1861,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
                 val onScreen = _trendingVideos.value.mapTo(HashSet()) { it.videoId }
                 val fresh = newVideos.filterNot { it.videoId in onScreen }
+                if (!themePreferences.areVideoRecommendationsEnabled()) return@launch
                 if (fresh.isNotEmpty()) {
                     _trendingVideos.value = _trendingVideos.value + fresh
                     rememberShown(fresh)
@@ -2051,10 +2076,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun refreshVideos() {
         loadShortsFeed()
+        if (!themePreferences.areVideoRecommendationsEnabled()) return
         viewModelScope.launch {
             _isVideoLoading.value = true
             try {
                 val page = youtubeRepository.getTrendingVideos()
+                if (!themePreferences.areVideoRecommendationsEnabled()) return@launch
                 if (page.videos.isEmpty()) return@launch
 
                 val fresh = mutableListOf<VideoItem>()

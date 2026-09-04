@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">نسخه %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">ترجیح ویدیوی HDR</string>
     <string name="sp_prefer_hdr_sub">استفاده از HDR فقط زمانی که نمایشگر و رمزگشا از آن پشتیبانی می‌کنند</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">استاندارد</string>
 
     <string name="profiles_title">نمایه‌ها</string>
     <string name="profiles_description">اشتراک‌ها و پیشنهادهای پنهان برای هر نمایه جداگانه نگهداری می‌شوند. فهرست‌های پخش، آهنگ‌های مورد علاقه و دانلودها مشترک‌اند.</string>
@@ -197,4 +199,18 @@
         <item quantity="other">یوتیوب درخواست‌های این شبکه را محدود کرده است. لطفاً حدود %1$d دقیقه دیگر دوباره امتحان کنید.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">یوتیوب درخواست‌های این شبکه را محدود کرده است. لطفاً کمی بعد دوباره امتحان کنید.</string>
+
+    <string name="vhc_title">خانه ویدیو</string>
+    <string name="vhc_summary">فید، مقصدها و ترتیب آن‌ها</string>
+    <string name="vhc_feed_section">فید خانه</string>
+    <string name="vhc_recommendations">توصیه‌ها و پیشنهادها</string>
+    <string name="vhc_recommendations_sub">بارگذاری ویدیوهای پیشنهادی در خانه</string>
+    <string name="vhc_navigation_section">مقصدها</string>
+    <string name="vhc_navigation_hint">هر مقصدی را که استفاده نمی‌کنید پنهان کنید. حداقل یکی همیشه نمایان می‌ماند.</string>
+    <string name="vhc_move_up">انتقال %1$s به بالا</string>
+    <string name="vhc_move_down">انتقال %1$s به پایین</string>
+    <string name="vh_recommendations_off">توصیه‌ها خاموش است</string>
+    <string name="vh_recommendations_off_sub">Shorts در صورت فعال بودن، همچنان می‌تواند اینجا نمایش داده شود.</string>
+    <string name="vp_resumed_from">ادامه از %1$s</string>
+    <string name="vp_play_from_start">پخش از ابتدا</string>
 </resources>

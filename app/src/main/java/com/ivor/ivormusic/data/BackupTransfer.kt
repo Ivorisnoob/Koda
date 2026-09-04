@@ -354,6 +354,7 @@ object BackupTransfer {
                         "removedFromHistory",
                         entry.removedFromHistory?.let { JSONArray(it.toList()) } ?: JSONObject.NULL
                     )
+                    put("resumePositions", entry.resumePositions ?: JSONObject.NULL)
                 })
             }
         }
@@ -376,7 +377,8 @@ object BackupTransfer {
                     (0 until array.length())
                         .mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
                         .toSet()
-                }
+                },
+                resumePositions = str("resumePositions")
             )
         }.toMap()
 
@@ -501,12 +503,20 @@ data class BackupProfileData(
     /** This profile's watch history, which is per-profile like the two above. */
     val watchHistory: String? = null,
     /** Ids this profile removed from its history, so a restore keeps them out. */
-    val removedFromHistory: Set<String>? = null
+    val removedFromHistory: Set<String>? = null,
+    /**
+     * Where this profile left each video, stored beside its history and
+     * therefore scoped the same way. It rides here rather than in the raw
+     * preference copy for the reason the two fields above do: the key carries
+     * a device-local profile suffix that cannot be moved between devices.
+     */
+    val resumePositions: String? = null
 ) {
     val isEmpty: Boolean
         get() = subscriptions == null && subscriptionGroups == null &&
             hiddenVideos == null && blockedChannels == null &&
-            watchHistory == null && removedFromHistory == null
+            watchHistory == null && removedFromHistory == null &&
+            resumePositions == null
 }
 
 /** A file copied verbatim, at a path relative to `filesDir`. */

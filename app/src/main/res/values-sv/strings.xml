@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Version %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Föredra HDR-video</string>
     <string name="sp_prefer_hdr_sub">Använd HDR endast när skärmen och avkodaren stöder det</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Standard</string>
 
     <string name="profiles_title">Profiler</string>
     <string name="profiles_description">Prenumerationer och dolda rekommendationer sparas per profil. Spellistor, gillade låtar och nedladdningar delas.</string>
@@ -195,4 +197,18 @@
         <item quantity="other">YouTube begränsar förfrågningar från det här nätverket. Försök igen om ungefär %1$d minuter.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube begränsar förfrågningar från det här nätverket. Försök igen om en liten stund.</string>
+
+    <string name="vhc_title">Videostart</string>
+    <string name="vhc_summary">Flödet, målen och deras ordning</string>
+    <string name="vhc_feed_section">Startflöde</string>
+    <string name="vhc_recommendations">Rekommendationer och förslag</string>
+    <string name="vhc_recommendations_sub">Läs in föreslagna videor på Hem</string>
+    <string name="vhc_navigation_section">Mål</string>
+    <string name="vhc_navigation_hint">Dölj alla mål du inte använder. Minst ett förblir synligt.</string>
+    <string name="vhc_move_up">Flytta %1$s uppåt</string>
+    <string name="vhc_move_down">Flytta %1$s nedåt</string>
+    <string name="vh_recommendations_off">Rekommendationer är avstängda</string>
+    <string name="vh_recommendations_off_sub">Shorts kan fortfarande visas här när det är aktiverat.</string>
+    <string name="vp_resumed_from">Återupptogs från %1$s</string>
+    <string name="vp_play_from_start">Spela från början</string>
 </resources>

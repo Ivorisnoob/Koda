@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.library
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -59,7 +60,6 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -244,7 +244,7 @@ fun ListeningHistoryScreen(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars),
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { DismissibleSnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.fab_listening_history), fontWeight = FontWeight.Bold) },

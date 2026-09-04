@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Versión %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Preferir vídeos HDR</string>
     <string name="sp_prefer_hdr_sub">Usar HDR solo cuando la pantalla y el decodificador sean compatibles</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Estándar</string>
 
     <string name="profiles_title">Perfiles</string>
     <string name="profiles_description">Las suscripciones y las recomendaciones ocultas se guardan por perfil. Las playlists, las canciones que te gustan y las descargas son compartidas.</string>
@@ -197,4 +199,18 @@
         <item quantity="other">YouTube está limitando las solicitudes desde esta red. Inténtalo de nuevo en aproximadamente %1$d minutos.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube está limitando las solicitudes desde esta red. Inténtalo de nuevo en un momento.</string>
+
+    <string name="vhc_title">Inicio de vídeo</string>
+    <string name="vhc_summary">El feed, los destinos y su orden</string>
+    <string name="vhc_feed_section">Feed de inicio</string>
+    <string name="vhc_recommendations">Recomendaciones y sugerencias</string>
+    <string name="vhc_recommendations_sub">Cargar vídeos sugeridos en Inicio</string>
+    <string name="vhc_navigation_section">Destinos</string>
+    <string name="vhc_navigation_hint">Oculta cualquier destino que no uses. Al menos uno permanece visible.</string>
+    <string name="vhc_move_up">Mover %1$s hacia arriba</string>
+    <string name="vhc_move_down">Mover %1$s hacia abajo</string>
+    <string name="vh_recommendations_off">Las recomendaciones están desactivadas</string>
+    <string name="vh_recommendations_off_sub">Los Shorts aún pueden aparecer aquí si están activados.</string>
+    <string name="vp_resumed_from">Reanudado desde %1$s</string>
+    <string name="vp_play_from_start">Reproducir desde el inicio</string>
 </resources>

@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">الإصدار %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">تفضيل فيديو HDR</string>
     <string name="sp_prefer_hdr_sub">استخدم HDR فقط عندما تدعمه الشاشة ووحدة فك الترميز</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">قياسي</string>
 
     <string name="profiles_title">الملفات الشخصية</string>
     <string name="profiles_description">تُحفظ الاشتراكات والتوصيات المخفية لكل ملف شخصي. قوائم التشغيل والأغاني المفضلة والتنزيلات مشتركة.</string>
@@ -207,4 +209,18 @@
         <item quantity="other">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى خلال %1$d دقيقة تقريبًا.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">يحد YouTube من الطلبات الواردة من هذه الشبكة. حاول مرة أخرى بعد قليل.</string>
+
+    <string name="vhc_title">الرئيسية للفيديو</string>
+    <string name="vhc_summary">الخلاصة والوجهات وترتيبها</string>
+    <string name="vhc_feed_section">خلاصة الرئيسية</string>
+    <string name="vhc_recommendations">التوصيات والاقتراحات</string>
+    <string name="vhc_recommendations_sub">تحميل الفيديوهات المقترحة في الرئيسية</string>
+    <string name="vhc_navigation_section">الوجهات</string>
+    <string name="vhc_navigation_hint">أخفِ أي وجهة لا تستخدمها. تبقى وجهة واحدة على الأقل ظاهرة.</string>
+    <string name="vhc_move_up">نقل %1$s للأعلى</string>
+    <string name="vhc_move_down">نقل %1$s للأسفل</string>
+    <string name="vh_recommendations_off">التوصيات متوقفة</string>
+    <string name="vh_recommendations_off_sub">يمكن أن تظهر Shorts هنا عند تفعيلها.</string>
+    <string name="vp_resumed_from">استؤنف من %1$s</string>
+    <string name="vp_play_from_start">تشغيل من البداية</string>
 </resources>

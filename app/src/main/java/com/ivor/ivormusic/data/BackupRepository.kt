@@ -299,7 +299,11 @@ class BackupRepository(context: Context) {
                 removedFromHistory = history.getStringSet(
                     scoped(VideoHistoryRepository.KEY_HIDDEN, profile.id),
                     null
-                )?.takeIf { it.isNotEmpty() }
+                )?.takeIf { it.isNotEmpty() },
+                resumePositions = history.getString(
+                    scoped(VideoHistoryRepository.KEY_RESUME_POSITIONS, profile.id),
+                    null
+                )
             )
         }.filterValues { !it.isEmpty }
     }
@@ -550,6 +554,9 @@ class BackupRepository(context: Context) {
             }
             data.removedFromHistory?.let {
                 historyEditor.putStringSet(key(VideoHistoryRepository.KEY_HIDDEN), it)
+            }
+            data.resumePositions?.let {
+                historyEditor.putString(key(VideoHistoryRepository.KEY_RESUME_POSITIONS), it)
             }
         }
 

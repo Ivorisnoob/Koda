@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">Έκδοση %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">Προτίμηση βίντεο HDR</string>
     <string name="sp_prefer_hdr_sub">Χρήση HDR μόνο όταν υποστηρίζεται από την οθόνη και τον αποκωδικοποιητή</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">Τυπική</string>
 
     <string name="profiles_title">Προφίλ</string>
     <string name="profiles_description">Οι συνδρομές και οι κρυφές προτάσεις διατηρούνται ανά προφίλ. Οι λίστες, τα αγαπημένα τραγούδια και οι λήψεις είναι κοινές.</string>
@@ -195,4 +197,18 @@
         <item quantity="other">Το YouTube περιορίζει τα αιτήματα από αυτό το δίκτυο. Δοκίμασε ξανά σε περίπου %1$d λεπτά.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">Το YouTube περιορίζει τα αιτήματα από αυτό το δίκτυο. Δοκίμασε ξανά σε λίγο.</string>
+
+    <string name="vhc_title">Αρχική βίντεο</string>
+    <string name="vhc_summary">Η ροή, οι προορισμοί και η σειρά τους</string>
+    <string name="vhc_feed_section">Ροή αρχικής</string>
+    <string name="vhc_recommendations">Συστάσεις και προτάσεις</string>
+    <string name="vhc_recommendations_sub">Φόρτωση προτεινόμενων βίντεο στην Αρχική</string>
+    <string name="vhc_navigation_section">Προορισμοί</string>
+    <string name="vhc_navigation_hint">Απόκρυψε κάθε προορισμό που δεν χρησιμοποιείς. Τουλάχιστον ένας παραμένει ορατός.</string>
+    <string name="vhc_move_up">Μετακίνηση %1$s επάνω</string>
+    <string name="vhc_move_down">Μετακίνηση %1$s κάτω</string>
+    <string name="vh_recommendations_off">Οι συστάσεις είναι απενεργοποιημένες</string>
+    <string name="vh_recommendations_off_sub">Τα Shorts μπορεί ακόμα να εμφανίζονται εδώ όταν είναι ενεργοποιημένα.</string>
+    <string name="vp_resumed_from">Συνέχεια από %1$s</string>
+    <string name="vp_play_from_start">Αναπαραγωγή από την αρχή</string>
 </resources>

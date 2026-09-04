@@ -149,6 +149,8 @@
     <string name="settings_version_subtitle">版本 %1$s (%2$d)</string>
     <string name="sp_prefer_hdr">優先播放 HDR 影片</string>
     <string name="sp_prefer_hdr_sub">僅在顯示器和解碼器均支援時使用 HDR</string>
+    <string name="vpc_quality_hdr">HDR</string>
+    <string name="vpc_quality_standard">標準</string>
 
     <string name="profiles_title">個人資料</string>
     <string name="profiles_description">訂閱項目與隱藏的推薦內容會依個人資料分開保存。播放清單、喜歡的歌曲和下載內容則為共用。</string>
@@ -192,4 +194,18 @@
         <item quantity="other">YouTube 正在限制此網路的要求。請在大約 %1$d 分鐘後重試。</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube 正在限制此網路的要求。請稍後再試。</string>
+
+    <string name="vhc_title">影片首頁</string>
+    <string name="vhc_summary">動態消息、導覽項目及其順序</string>
+    <string name="vhc_feed_section">首頁動態消息</string>
+    <string name="vhc_recommendations">推薦與建議</string>
+    <string name="vhc_recommendations_sub">在首頁載入建議影片</string>
+    <string name="vhc_navigation_section">導覽項目</string>
+    <string name="vhc_navigation_hint">隱藏你不使用的導覽項目。至少會保留一項顯示。</string>
+    <string name="vhc_move_up">將%1$s上移</string>
+    <string name="vhc_move_down">將%1$s下移</string>
+    <string name="vh_recommendations_off">推薦功能已關閉</string>
+    <string name="vh_recommendations_off_sub">啟用後，Shorts 仍可能顯示在這裡。</string>
+    <string name="vp_resumed_from">已從 %1$s 繼續播放</string>
+    <string name="vp_play_from_start">從頭播放</string>
 </resources>
