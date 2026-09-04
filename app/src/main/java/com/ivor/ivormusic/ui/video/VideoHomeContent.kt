@@ -633,9 +633,9 @@ fun VideoCard(
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val cardShape = RoundedCornerShape(16.dp)
-    val openChannel = onOpenChannel?.let { open ->
-        { open(video.channelNavigationReference) }
-    }
+    // A collab card opens the list of credited channels rather than guessing
+    // one; an ordinary card navigates as before. See videoChannelTap.
+    val openChannel = videoChannelTap(video, onOpenChannel)
 
     Surface(
         // Clip before the click handler - Surface applies its own clip downstream of

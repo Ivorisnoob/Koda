@@ -4292,28 +4292,79 @@ class YouTubeRepository(private val context: Context) {
                  }
              }
              
-             // Channel avatar lives inline in the lockup metadata:
-             // metadata.image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources[]
-             val channelIconUrl = metadata
-                 ?.optJSONObject("image")
-                 ?.optJSONObject("decoratedAvatarViewModel")
-                 ?.optJSONObject("avatar")
-                 ?.optJSONObject("avatarViewModel")
-                 ?.optJSONObject("image")
-                 ?.optJSONArray("sources")
-                 ?.let { sources ->
-                     var bestUrl: String? = null
-                     var maxWidth = -1
-                     for (i in 0 until sources.length()) {
-                         val source = sources.optJSONObject(i)
-                         val width = source?.optInt("width", 0) ?: 0
-                         if (width >= maxWidth) {
-                             maxWidth = width
-                             bestUrl = source?.optString("url")
-                         }
+             // The creator block, which is where a lockup actually addresses its
+             // channel. [verified September 2026, signed out, against a live
+             // /next related list and a channel Videos tab]
+             //
+             // The metadata *text* rows above carry no creator command at all
+             // on these responses - every card in a related list came back with
+             // an empty onTap - so reading only those left `channelId` null for
+             // ordinary videos too, and every channel tap paid a whole extra
+             // /next through the `video:` fallback to recover an id the
+             // response had already sent. The avatar is where it lives:
+             //
+             //   image.decoratedAvatarViewModel  one creator, browse id on its
+             //                                   rendererContext.commandContext
+             //   image.avatarStackViewModel      a collab, one avatar each and
+             //                                   the collaborators dialog on
+             //                                   the same command slot
+             //
+             // A channel tab's lockup has no image block at all - the page
+             // already names the creator - so neither is present there and the
+             // `video:` fallback remains the answer for those.
+             val lockupImage = metadata?.optJSONObject("image")
+             val decoratedAvatar = lockupImage?.optJSONObject("decoratedAvatarViewModel")
+             val avatarStack = lockupImage?.optJSONObject("avatarStackViewModel")
+
+             fun bestSourceUrl(sources: org.json.JSONArray?): String? {
+                 if (sources == null) return null
+                 var bestUrl: String? = null
+                 var maxWidth = -1
+                 for (i in 0 until sources.length()) {
+                     val source = sources.optJSONObject(i)
+                     val width = source?.optInt("width", 0) ?: 0
+                     if (width >= maxWidth) {
+                         maxWidth = width
+                         bestUrl = source?.optString("url")
                      }
-                     bestUrl?.takeIf { it.isNotBlank() }
                  }
+                 return bestUrl?.takeIf { it.isNotBlank() }
+             }
+
+             val collaborators = collaboratorsFromDialogHost(avatarStack)
+
+             // The collab fallback is second because a collab has no single
+             // owner: the dialog lists its channels in the order the byline
+             // names them ("Sidemen and CORE"), so the first is the uploader and
+             // the right destination for a tap that is not offered the choice.
+             if (channelId == null) {
+                 val avatarChannelId = decoratedAvatar
+                     ?.optJSONObject("rendererContext")
+                     ?.optJSONObject("commandContext")
+                     ?.optJSONObject("onTap")
+                     ?.optJSONObject("innertubeCommand")
+                     ?.optJSONObject("browseEndpoint")
+                     ?.optString("browseId")
+                     ?.takeIf { it.isNotBlank() }
+                 channelId = avatarChannelId ?: collaborators.firstOrNull()?.channelId
+             }
+
+             val channelIconUrl = bestSourceUrl(
+                 decoratedAvatar
+                     ?.optJSONObject("avatar")
+                     ?.optJSONObject("avatarViewModel")
+                     ?.optJSONObject("image")
+                     ?.optJSONArray("sources")
+             ) ?: bestSourceUrl(
+                 // Only a stack to draw from: its first avatar is the uploader's,
+                 // matching the id chosen above.
+                 avatarStack
+                     ?.optJSONArray("avatars")
+                     ?.optJSONObject(0)
+                     ?.optJSONObject("avatarViewModel")
+                     ?.optJSONObject("image")
+                     ?.optJSONArray("sources")
+             )
 
              // Get thumbnail
              val contentImage = lockupViewModel.optJSONObject("contentImage")
@@ -4411,7 +4462,8 @@ class YouTubeRepository(private val context: Context) {
                 viewCount = viewCount,
                 uploadedDate = uploadDate,
                 isLive = isLive,
-                dismissal = parseDismissalTokens(metadata)
+                dismissal = parseDismissalTokens(metadata),
+                collaborators = collaborators
             )
         } catch (e: Exception) {
             return null
@@ -5319,9 +5371,17 @@ class YouTubeRepository(private val context: Context) {
         if (videoId.length != 11) return@withContext null
         try {
             val root = fetchWatchNextRoot(videoId) ?: return@withContext null
-            runCatching { parseEngagementFromWatchNext(videoId, root).channelId }
-                .getOrNull()
+            val engagement = runCatching { parseEngagementFromWatchNext(videoId, root) }.getOrNull()
+            engagement?.channelId
                 ?: parseVideoMetadataFromWatchNext(videoId, root, null)?.channelId
+                // A collab upload names no owner at all - no title, no
+                // thumbnail, no browse endpoint - so both of the above are null
+                // and this used to answer "no such channel", which is what a
+                // feed card whose lockup carried no creator command (a channel
+                // tab's, for one) surfaced as a channel page that failed to
+                // load. The collaborators are listed uploader first, so the
+                // first of them is the channel the byline leads with.
+                ?: engagement?.collaborators?.firstOrNull()?.channelId
         } catch (e: Exception) {
             KLog.w("YouTubeRepo", "Channel lookup failed for $videoId", e)
             null
@@ -6147,6 +6207,11 @@ class YouTubeRepository(private val context: Context) {
                     ?: baseVideo?.channelName ?: "Unknown",
                 channelId = channelId ?: baseVideo?.channelId,
                 channelIconUrl = channelIconUrl ?: baseVideo?.channelIconUrl,
+                // Carried on the item as well as on the engagement so that a
+                // surface holding only the VideoItem - the queue, the mini
+                // player, a related card - can still resolve the creator.
+                collaborators = parseCollaborators(owner)
+                    .ifEmpty { baseVideo?.collaborators.orEmpty() },
                 thumbnailUrl = baseVideo?.thumbnailUrl
                     ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
                 duration = baseVideo?.duration ?: 0L,
@@ -6263,20 +6328,41 @@ class YouTubeRepository(private val context: Context) {
      * headline, which is localized. A row with no browse id is dropped: without an
      * id there is nothing to open, and a row that looks tappable and does nothing
      * is worse than one that is not listed.
+     *
+     * A feed lockup carries the same dialog under a different host - see
+     * [collaboratorsFromDialogHost], which both entry points share.
      */
-    private fun parseCollaborators(owner: org.json.JSONObject?): List<VideoCollaborator> {
-        if (owner == null) return emptyList()
+    private fun parseCollaborators(owner: org.json.JSONObject?): List<VideoCollaborator> =
+        collaboratorsFromDialogHost(owner)
+
+    /**
+     * The collaborator rows out of whatever `showDialogCommand` [host] carries.
+     *
+     * Two hosts carry the same dialog and neither can be assumed [verified
+     * September 2026, signed out, against a live collab upload]:
+     *
+     * - the watch page's `videoOwnerRenderer`, on its `navigationEndpoint`;
+     * - a feed lockup's `lockupMetadataViewModel.image.avatarStackViewModel`,
+     *   on its `rendererContext.commandContext.onTap`, where the row command
+     *   sits on each list item rather than on its title text.
+     *
+     * The nesting between the host and the dialog differs, so the dialog is
+     * located by descending to it rather than by spelling out one path: what is
+     * structural here is that a collab's channels are the list inside the only
+     * dialog the creator block carries, not the exact depth YouTube nests it at.
+     * [host] is always the creator block itself, never a whole response, which
+     * is what keeps that search from reaching an unrelated dialog.
+     */
+    private fun collaboratorsFromDialogHost(host: org.json.JSONObject?): List<VideoCollaborator> {
+        if (host == null) return emptyList()
         return try {
-            val dialog = owner.optJSONObject("navigationEndpoint")
-                ?.optJSONObject("showDialogCommand")
-                ?.optJSONObject("panelLoadingStrategy")
-                ?.optJSONObject("inlineContent")
-                ?.optJSONObject("dialogViewModel")
-                ?: return emptyList()
-            val items = dialog.optJSONObject("customContent")
-                ?.optJSONObject("listViewModel")
-                ?.optJSONArray("listItems")
-                ?: return emptyList()
+            val dialogs = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(host, "dialogViewModel", dialogs)
+            val items = dialogs.firstNotNullOfOrNull { dialog ->
+                dialog.optJSONObject("customContent")
+                    ?.optJSONObject("listViewModel")
+                    ?.optJSONArray("listItems")
+            } ?: return emptyList()
 
             (0 until items.length()).mapNotNull { index ->
                 val item = items.optJSONObject(index)?.optJSONObject("listItemViewModel")

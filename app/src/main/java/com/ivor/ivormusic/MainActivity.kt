@@ -788,7 +788,11 @@ fun MusicApp(
 
     com.ivor.ivormusic.ui.video.ExternalVideoHandler(
         pending = pendingExternalVideo,
-        enabled = onboardingCompleted && !isInPipMode,
+        // Deliberately not gated on PiP, unlike the shared-link handler above.
+        // A file hand-off is an explicit "play this now", and the window it
+        // would replace is the one still playing the previous video - holding
+        // it until PiP happens to end is what left the two fighting.
+        enabled = onboardingCompleted,
         videoPlayerViewModel = videoPlayerViewModel,
         onNavigateHome = {
             navController.navigate("home") {

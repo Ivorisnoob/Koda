@@ -560,20 +560,9 @@ fun FullscreenPlayerContent(
                             )
                         }
 
-                        // Landscape keeps the single row it always had.
+                        // Landscape keeps the single row it always had. In
+                        // portrait these move to the bottom bar - see below.
                         if (!compactChrome) topBarActions()
-                    }
-
-                    if (compactChrome) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(
-                                space = 8.dp,
-                                alignment = Alignment.End
-                            ),
-                            content = topBarActions
-                        )
                     }
                 }
                 
@@ -650,6 +639,27 @@ fun FullscreenPlayerContent(
                     verticalArrangement = Arrangement.spacedBy(if (compactChrome) 4.dp else 8.dp)
                 ) {
                     if (compactChrome) {
+                        // Portrait puts the viewing controls down here rather
+                        // than on a second line under the title.
+                        //
+                        // Landscape has width for them beside the title and is
+                        // left alone. Portrait does not: they were pushed onto
+                        // a row of their own, which left a stray right-aligned
+                        // cluster hanging under the title and put every control
+                        // on this screen at the far end of a tall window, out of
+                        // reach of the hand holding it. The bottom band is where
+                        // the thumb already is, and where the seek bar this
+                        // shares a gutter with already sits.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(
+                                space = 8.dp,
+                                alignment = Alignment.End
+                            ),
+                            content = topBarActions
+                        )
+
                         // Portrait: the readout takes a line of its own so the
                         // seek bar can have the full width. Flanking labels cost
                         // it roughly two fifths of a phone's short edge, which
@@ -1571,13 +1581,18 @@ internal fun PlayerView.disableBuiltInSubtitles() {
 /**
  * Height to keep clear above the portrait fullscreen bottom bar.
  *
- * The bar is taller there than in landscape - the readout has a line of its own
+ * The bar is taller there than in landscape - it carries the viewing controls
+ * that landscape fits beside the title, then the readout on a line of its own
  * so the seek bar can span the width - and it stands further off the bottom
  * edge to clear the gesture bar. Anything floating over the frame (captions, the
  * SponsorBlock chip, timed comments) measures its clearance from here rather
  * than repeating a literal, so the three cannot drift apart from the bar.
+ *
+ * Update this whenever a row is added to or taken out of that bar. It is one
+ * icon-button row (48dp plus the 4dp gutter) taller than it was when the
+ * controls still sat under the title.
  */
-internal val FULLSCREEN_COMPACT_BOTTOM_BAR = 140.dp
+internal val FULLSCREEN_COMPACT_BOTTOM_BAR = 192.dp
 
 /** Seconds jumped per double-tap on either edge of the video surface. */
 private const val DOUBLE_TAP_SEEK_SECONDS = 10
