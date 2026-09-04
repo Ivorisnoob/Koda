@@ -114,6 +114,29 @@ class YouTubeRepository(private val context: Context) {
         // starving whatever else the app is loading.
         private const val FEED_CONCURRENCY = 6
 
+        // Two different caps, doing two different jobs.
+        //
+        // The budget is what playback actually feels: it bounds how long stream
+        // resolution waits on NewPipe before falling back, and is deliberately
+        // small enough to leave the InnerTube chain room inside MusicService's
+        // own resolution timeout. A NewPipe path that merely takes too long
+        // must degrade to the fallback, not spend the whole budget and then
+        // resolve to nothing.
+        //
+        // The per-request cap is only a backstop, and is generous on purpose:
+        // this same downloader serves search, playlists and channel pages,
+        // whose responses are far larger than a /player call and which had no
+        // wall-clock cap at all before. Tightening it to the budget would turn
+        // a slow connection into failed searches to fix a playback problem the
+        // budget already fixes.
+        //
+        // The budget is sized against MusicService.RESOLVE_TIMEOUT_MS (20s),
+        // which discards - and therefore skips - anything slower: 8s here
+        // leaves the 8s-capped direct /player chain room to succeed inside it.
+        // The two are a pair; moving one alone reopens the skip.
+        private const val NEWPIPE_REQUEST_TIMEOUT_SECONDS = 20L
+        private const val NEWPIPE_STREAM_BUDGET_MS = 8_000L
+
         // The channel Atom feed only ever returns 15 entries, so this takes
         // everything it has and lets the global sort decide what survives.
         private const val MAX_FEED_ITEMS_PER_CHANNEL = 15
@@ -344,6 +367,34 @@ class YouTubeRepository(private val context: Context) {
         .callTimeout(8, TimeUnit.SECONDS)
         .build()
 
+    // The client NewPipe's downloader runs on. It needs its own callTimeout for
+    // the same reason streamResolveClient has one, and the reason is sharper
+    // here: NewPipe's Downloader.execute() is a *blocking* call, and one
+    // extraction is many of them in sequence. [verified September 2026: a
+    // single fetchPage() of an ordinary track made eight requests — an
+    // ANDROID visitor_id mint, reel/reel_item_watch, a visionOS visitor_id and
+    // /player, sw.js, a WEB visitor_id, the WEB metadata /player and /next.]
+    // On the bare 30s connect/read budget of okHttpClient that is minutes of
+    // worst case, and because the thread is blocked inside execute() no
+    // coroutine timeout above it can cut it short. A per-request wall-clock cap
+    // is the only thing that bounds one of those requests at all; what bounds
+    // the *wait* is resolveAudioUrlWithinBudget, which is where playback
+    // responsiveness actually comes from.
+    private val newPipeClient = okHttpClient.newBuilder()
+        .callTimeout(NEWPIPE_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
+
+    // Blocking NewPipe extractions are started here rather than in the caller's
+    // scope. A coroutine timeout can only free the *caller*: the extraction
+    // itself is uninterruptible until newPipeClient's callTimeout fires, and a
+    // child job would keep the parent's coroutineScope waiting for exactly the
+    // work it is trying to abandon. Detaching it is what lets the InnerTube
+    // fallback start on time. SupervisorJob so one failed extraction cannot
+    // cancel the scope every later one needs.
+    private val newPipeScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO,
+    )
+
     private fun getRandomUserAgent(): String {
         return BROWSER_USER_AGENT
     }
@@ -367,7 +418,7 @@ class YouTubeRepository(private val context: Context) {
         synchronized(newPipeInitLock) {
             if (!isInitialized) {
                 try {
-                    NewPipe.init(NewPipeDownloaderImpl(okHttpClient, sessionManager))
+                    NewPipe.init(NewPipeDownloaderImpl(newPipeClient, sessionManager))
                 } catch (_: Exception) {
                     // NewPipe may already have been initialized by another
                     // process entry point. Its singleton is still usable.
@@ -751,7 +802,14 @@ class YouTubeRepository(private val context: Context) {
         // byte ceiling on long media, which is the same failure that moved video
         // playback to NewPipe first. Audio must use the maintained path too or a
         // long song can fail only after it has already been playing for a while.
-        val newPipeUrl = resolveAudioUrlViaNewPipe(videoId)
+        //
+        // Bounded, because being slow here used to be indistinguishable from
+        // failing: the extraction is eight blocking requests (see newPipeClient)
+        // and the caller's own timeout could not interrupt one, so a stalled
+        // primary path ran out MusicService's whole resolution budget and the
+        // song resolved to an error URI and was skipped - with a working
+        // fallback sitting unused behind it.
+        val newPipeUrl = resolveAudioUrlWithinBudget(videoId)
         if (!newPipeUrl.isNullOrEmpty()) {
             KLog.i(
                 "YouTubeRepository",
@@ -801,6 +859,47 @@ class YouTubeRepository(private val context: Context) {
         }
 
     /**
+     * Run [resolveAudioUrlViaNewPipe] with a wall-clock budget the caller can
+     * actually rely on.
+     *
+     * NewPipe's `fetchPage()` is blocking and uninterruptible, so wrapping it in
+     * `withTimeout` where it runs achieves nothing: `coroutineScope` will not
+     * return until the blocking child returns, timeout or no timeout. The work
+     * therefore starts on [newPipeScope], which is not a child of the caller,
+     * and only the *await* is bounded. When the budget expires the caller moves
+     * on to the InnerTube fallback while the extraction finishes in the
+     * background, capped by [newPipeClient]'s own per-request timeout.
+     *
+     * Abandoning it rather than cancelling it is deliberate: nothing is written
+     * outside the returned value, and a resolution that arrives late is simply
+     * discarded.
+     */
+    private suspend fun resolveAudioUrlWithinBudget(videoId: String): String? {
+        val extraction = newPipeScope.async { resolveAudioUrlViaNewPipe(videoId) }
+        return try {
+            kotlinx.coroutines.withTimeoutOrNull(NEWPIPE_STREAM_BUDGET_MS) { extraction.await() }
+                ?: run {
+                    // Cancelling cannot interrupt a thread already inside
+                    // fetchPage() - only newPipeClient's per-request cap ends
+                    // that - but it marks the work abandoned so nothing runs
+                    // after it and a queued extraction never starts at all.
+                    extraction.cancel()
+                    KLog.w(
+                        "YouTubeRepository",
+                        "Resolve[NewPipe] over ${NEWPIPE_STREAM_BUDGET_MS}ms budget " +
+                            "videoId=$videoId, falling back to InnerTube",
+                    )
+                    null
+                }
+        } catch (e: CancellationException) {
+            // The caller went away rather than the budget expiring. Abandon the
+            // extraction the same way and let the cancellation propagate.
+            extraction.cancel()
+            throw e
+        }
+    }
+
+    /**
      * Resolve an audio stream URL through NewPipe's maintained client chain.
      * Applies the same per-network music quality policy as [pickAudioStreamUrl]
      * (NewPipe's averageBitrate is in kbps), and falls back to a muxed
@@ -830,6 +929,11 @@ class YouTubeRepository(private val context: Context) {
                 .filter { it.isUrl }
                 .mapNotNull { it.content?.takeIf(String::isNotBlank) }
                 .firstOrNull()
+        } catch (e: CancellationException) {
+            // The budget in resolveAudioUrlWithinBudget expired, or the caller
+            // went away. Either way this is not an extraction failure and must
+            // not be reported as one.
+            throw e
         } catch (e: Exception) {
             KLog.w(
                 "YouTubeRepository",
@@ -856,6 +960,8 @@ class YouTubeRepository(private val context: Context) {
                 pickAudioStreamForCurrentQuality(m4aStreams)
                     ?.content
                     ?.takeIf(String::isNotBlank)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(
                     "YouTubeRepository",
@@ -979,8 +1085,16 @@ class YouTubeRepository(private val context: Context) {
                 // Reuse a previously-good value: this session's, else the last
                 // one this install successfully minted. Never a token shared
                 // across installs — the bot check flags shared visitorData,
-                // which kills all stream resolution. Empty means "send the
-                // /player call without visitorData", which mostly still works.
+                // which kills all stream resolution.
+                //
+                // Empty is a real answer, not a soft one. It used to mean "send
+                // the /player call without visitorData, which mostly still
+                // works"; that is no longer true. [verified September 2026:
+                // ANDROID_VR and VISIONOS answer a token-less /player with
+                // LOGIN_REQUIRED, "Sign in to confirm you're not a bot", on
+                // most videos, while IOS still answers OK.] Callers must treat
+                // a blank token as a mint that has to happen before the chain
+                // is worth running - see resolvePlayerStreamingData.
                 cachedVisitorData ?: loadPersistedVisitorData() ?: ""
             }
         }
@@ -1909,7 +2023,20 @@ class YouTubeRepository(private val context: Context) {
      * fine, then nothing plays anymore" failure mode.
      */
     private suspend fun resolvePlayerStreamingData(videoId: String): org.json.JSONObject? {
-        val visitorData = getVisitorData()
+        var visitorData = getVisitorData()
+        // A blank token is not "no identity, carry on": the bot check refuses
+        // ANDROID_VR and VISIONOS outright without one (see getVisitorData).
+        // Running the chain first would spend both clients on a refusal that is
+        // already known, so mint before it rather than after.
+        if (visitorData.isBlank()) {
+            visitorData = remintVisitorData(flagged = "").orEmpty()
+            if (visitorData.isBlank()) {
+                KLog.w(
+                    "YouTubeRepository",
+                    "Resolve: no visitorData available for videoId=$videoId, bot check will refuse",
+                )
+            }
+        }
         val first = runPlayerClientChain(videoId, visitorData)
         first.streamingData?.let { return it }
         if (!first.visitorDataSuspect) return null
@@ -2226,6 +2353,11 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext PlayerResponse(null, true, captionTracks, loudnessDb)
             }
             PlayerResponse(streamingData, false, captionTracks, loudnessDb)
+        } catch (e: CancellationException) {
+            // Swallowing this would report a cancelled call as a client that
+            // has no streams, sending the chain on to the next client inside a
+            // coroutine that is already dead.
+            throw e
         } catch (e: Exception) {
             KLog.e(
                 "YouTubeRepository",
