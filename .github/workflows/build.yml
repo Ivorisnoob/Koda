@@ -308,7 +308,7 @@ jobs:
         CONTEXT="Build for PR <a href=\"${PR_URL}\">#${PR_NUMBER}</a>
         By: $(author_html "$PR_AUTHOR")"
 
-        CAPTION="<b>Koda</b> v${VERSION} | Release Build
+        CAPTION="<b>Latest beta</b> · Koda v${VERSION}
 
         ${CONTEXT}
         SHA: <code>${PR_HEAD_SHA::7}</code>
@@ -385,17 +385,34 @@ jobs:
           printf '\nNo public changelog entries were included in the new commits.\n' >> "$CHANGELOG_FILE"
         fi
 
+        # Keep only the newest beta pinned. Reading the old id before sending
+        # lets us pin the replacement first, so a permissions/API failure never
+        # leaves the channel without its previous useful pin.
+        PINNED_MESSAGE_ID=""
+        CHAT_RESPONSE=$(curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/getChat" \
+          --data-urlencode "chat_id=${CHAT_ID}" || true)
+        if telegram_ok "$CHAT_RESPONSE"; then
+          PINNED_MESSAGE_ID=$(jq -r '.result.pinned_message.message_id // empty' \
+            <<< "$CHAT_RESPONSE")
+        else
+          echo "Could not read the previous Telegram pin; continuing without removing it."
+        fi
+
+        APK_MESSAGE_ID=""
         for apk in app/build/outputs/apk/release/*universal*.apk; do
           SIZE=$(stat -c%s "$apk")
           if [ "$SIZE" -gt 50000000 ]; then
             RESPONSE=$(curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               --data-urlencode "chat_id=${CHAT_ID}" \
               --data-urlencode "parse_mode=HTML" \
-              --data-urlencode "text=<b>Koda</b> | $(esc "$(basename "$apk")") is over Telegram's 50 MB bot limit — grab it from the <a href=\"${RUN_URL}\">workflow artifacts</a>.")
+              --data-urlencode "text=<b>Latest beta</b> · Koda v${VERSION}
+
+        $(esc "$(basename "$apk")") is over Telegram's 50 MB bot limit — grab it from the <a href=\"${RUN_URL}\">workflow artifacts</a>.")
             if ! telegram_ok "$RESPONSE"; then
               echo "Telegram artifact-link send failed: ${RESPONSE}"
               exit 1
             fi
+            APK_MESSAGE_ID=$(jq -r '.result.message_id // empty' <<< "$RESPONSE")
             continue
           fi
           RESPONSE=$(curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
@@ -407,7 +424,33 @@ jobs:
             echo "Telegram APK send failed: ${RESPONSE}"
             exit 1
           fi
+          APK_MESSAGE_ID=$(jq -r '.result.message_id // empty' <<< "$RESPONSE")
         done
+
+        if [ -n "$APK_MESSAGE_ID" ]; then
+          PIN_RESPONSE=$(curl -sS -X POST \
+            "https://api.telegram.org/bot${BOT_TOKEN}/pinChatMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "message_id=${APK_MESSAGE_ID}" \
+            --data-urlencode "disable_notification=true" || true)
+          if telegram_ok "$PIN_RESPONSE"; then
+            echo "Pinned latest beta message ${APK_MESSAGE_ID} without notification."
+            if [ -n "$PINNED_MESSAGE_ID" ] &&
+              [ "$PINNED_MESSAGE_ID" != "$APK_MESSAGE_ID" ]; then
+              UNPIN_RESPONSE=$(curl -sS -X POST \
+                "https://api.telegram.org/bot${BOT_TOKEN}/unpinChatMessage" \
+                --data-urlencode "chat_id=${CHAT_ID}" \
+                --data-urlencode "message_id=${PINNED_MESSAGE_ID}" || true)
+              if ! telegram_ok "$UNPIN_RESPONSE"; then
+                echo "Could not remove previous Telegram pin ${PINNED_MESSAGE_ID}; new beta remains pinned."
+              fi
+            fi
+          else
+            echo "Could not pin latest beta message; APK delivery succeeded and the previous pin was kept."
+          fi
+        else
+          echo "Telegram did not return an APK message id; skipping pin update."
+        fi
 
         # Telegram counts message length in UTF-16 units. Split on complete
         # Unicode characters, preferring line boundaries, with room below 4096.
