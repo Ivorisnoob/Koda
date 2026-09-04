@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -104,6 +105,7 @@ fun VideoHomeContent(
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
     onRefresh: () -> Unit,
+    recommendationsEnabled: Boolean = true,
     isDarkMode: Boolean,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
@@ -239,8 +241,11 @@ fun VideoHomeContent(
                     )
                 }
                 
-                // Section title - changes based on whether user is logged in
-                item {
+                // Section title - changes based on whether user is logged in.
+                // It names the recommendation list, so with recommendations off
+                // there is nothing for it to title: the Shorts shelf carries its
+                // own header and the empty state says why the feed is quiet.
+                if (showOfflineDownloads || recommendationsEnabled) item {
                     AnimatedVisibility(
                         visible = isVisible,
                         enter = fadeIn() + slideInVertically(
@@ -273,8 +278,17 @@ fun VideoHomeContent(
                 } else {
                     // Video cards, with the Shorts shelf slotted in after the
                     // first two like the YouTube home feed.
-                    val leadingVideos = if (shorts.isEmpty()) videos else videos.take(2)
-                    val trailingVideos = if (shorts.isEmpty()) emptyList() else videos.drop(2)
+                    val recommendationVideos = if (recommendationsEnabled) videos else emptyList()
+                    val leadingVideos = if (shorts.isEmpty()) {
+                        recommendationVideos
+                    } else {
+                        recommendationVideos.take(2)
+                    }
+                    val trailingVideos = if (shorts.isEmpty()) {
+                        emptyList()
+                    } else {
+                        recommendationVideos.drop(2)
+                    }
 
                     items(leadingVideos) { video ->
                         VideoCard(
@@ -307,7 +321,9 @@ fun VideoHomeContent(
                 }
                 
                 // Empty state
-                if (videos.isEmpty() && !isLoading && !showOfflineDownloads) {
+                if ((!recommendationsEnabled || videos.isEmpty()) &&
+                    !isLoading && !showOfflineDownloads && shorts.isEmpty()
+                ) {
                     item {
                         Box(
                             modifier = Modifier
@@ -317,18 +333,37 @@ fun VideoHomeContent(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
-                                    imageVector = Icons.Rounded.VideoLibrary,
+                                    imageVector = if (recommendationsEnabled) {
+                                        Icons.Rounded.VideoLibrary
+                                    } else {
+                                        // A feed that is off on purpose should
+                                        // not wear the same face as one that
+                                        // came back empty.
+                                        Icons.Rounded.NotInterested
+                                    },
                                     contentDescription = null,
                                     modifier = Modifier.size(64.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = if (isOffline) stringResource(R.string.vh_youre_offline) else stringResource(R.string.vh_no_videos_found),
+                                    text = when {
+                                        !recommendationsEnabled ->
+                                            stringResource(R.string.vh_recommendations_off)
+                                        isOffline -> stringResource(R.string.vh_youre_offline)
+                                        else -> stringResource(R.string.vh_no_videos_found)
+                                    },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (isOffline) {
+                                if (!recommendationsEnabled) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = stringResource(R.string.vh_recommendations_off_sub),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                } else if (isOffline) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = stringResource(R.string.vh_downloaded_hint),

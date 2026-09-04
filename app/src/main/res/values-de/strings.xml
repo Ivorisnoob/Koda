@@ -197,4 +197,16 @@
         <item quantity="other">YouTube schränkt Anfragen von diesem Netzwerk ein. Versuche es in etwa %1$d Minuten erneut.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube schränkt Anfragen von diesem Netzwerk ein. Versuche es in einem Moment erneut.</string>
+
+    <string name="vhc_title">Video-Startseite</string>
+    <string name="vhc_summary">Der Feed, die Ziele und ihre Reihenfolge</string>
+    <string name="vhc_feed_section">Startseiten-Feed</string>
+    <string name="vhc_recommendations">Empfehlungen und Vorschläge</string>
+    <string name="vhc_recommendations_sub">Vorgeschlagene Videos auf der Startseite laden</string>
+    <string name="vhc_navigation_section">Ziele</string>
+    <string name="vhc_navigation_hint">Blende Ziele aus, die du nicht nutzt. Mindestens eines bleibt sichtbar.</string>
+    <string name="vhc_move_up">%1$s nach oben verschieben</string>
+    <string name="vhc_move_down">%1$s nach unten verschieben</string>
+    <string name="vh_recommendations_off">Empfehlungen sind aus</string>
+    <string name="vh_recommendations_off_sub">Shorts können hier weiterhin erscheinen, wenn sie aktiviert sind.</string>
 </resources>

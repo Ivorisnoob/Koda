@@ -199,4 +199,16 @@
         <item quantity="other">YouTube limite les requêtes provenant de ce réseau. Réessayez dans environ %1$d minutes.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube limite les requêtes provenant de ce réseau. Réessayez dans un instant.</string>
+
+    <string name="vhc_title">Accueil vidéo</string>
+    <string name="vhc_summary">Le flux, les destinations et leur ordre</string>
+    <string name="vhc_feed_section">Flux d\'accueil</string>
+    <string name="vhc_recommendations">Recommandations et suggestions</string>
+    <string name="vhc_recommendations_sub">Charger des vidéos suggérées dans l\'accueil</string>
+    <string name="vhc_navigation_section">Destinations</string>
+    <string name="vhc_navigation_hint">Masquez toute destination que vous n\'utilisez pas. Au moins une reste visible.</string>
+    <string name="vhc_move_up">Déplacer %1$s vers le haut</string>
+    <string name="vhc_move_down">Déplacer %1$s vers le bas</string>
+    <string name="vh_recommendations_off">Les recommandations sont désactivées</string>
+    <string name="vh_recommendations_off_sub">Les Shorts peuvent toujours apparaître ici lorsqu\'ils sont activés.</string>
 </resources>

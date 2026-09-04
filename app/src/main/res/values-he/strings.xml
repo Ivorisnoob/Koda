@@ -202,4 +202,16 @@
         <item quantity="other">YouTube מגביל בקשות מהרשת הזו. נסה שוב בעוד כ-%1$d דקות.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube מגביל בקשות מהרשת הזו. נסה שוב בעוד רגע.</string>
+
+    <string name="vhc_title">בית הווידאו</string>
+    <string name="vhc_summary">הפיד, היעדים והסדר שלהם</string>
+    <string name="vhc_feed_section">פיד הבית</string>
+    <string name="vhc_recommendations">המלצות והצעות</string>
+    <string name="vhc_recommendations_sub">טען סרטונים מומלצים במסך הבית</string>
+    <string name="vhc_navigation_section">יעדים</string>
+    <string name="vhc_navigation_hint">הסתר כל יעד שאינך משתמש בו. לפחות יעד אחד יישאר גלוי.</string>
+    <string name="vhc_move_up">הזז את %1$s למעלה</string>
+    <string name="vhc_move_down">הזז את %1$s למטה</string>
+    <string name="vh_recommendations_off">ההמלצות כבויות</string>
+    <string name="vh_recommendations_off_sub">Shorts עדיין עשוי להופיע כאן כשהאפשרות מופעלת.</string>
 </resources>

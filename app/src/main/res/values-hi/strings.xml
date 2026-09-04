@@ -197,4 +197,16 @@
         <item quantity="other">YouTube इस नेटवर्क से आने वाले अनुरोधों को सीमित कर रहा है। लगभग %1$d मिनट में फिर से कोशिश करें।</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube इस नेटवर्क से आने वाले अनुरोधों को सीमित कर रहा है। थोड़ी देर में फिर से कोशिश करें।</string>
+
+    <string name="vhc_title">वीडियो होम</string>
+    <string name="vhc_summary">फ़ीड, गंतव्य और उनका क्रम</string>
+    <string name="vhc_feed_section">होम फ़ीड</string>
+    <string name="vhc_recommendations">सुझाव और अनुशंसाएं</string>
+    <string name="vhc_recommendations_sub">होम में सुझाए गए वीडियो लोड करें</string>
+    <string name="vhc_navigation_section">गंतव्य</string>
+    <string name="vhc_navigation_hint">जिस गंतव्य का उपयोग न करें उसे छिपाएं। कम से कम एक हमेशा दिखाई देगा।</string>
+    <string name="vhc_move_up">%1$s को ऊपर ले जाएं</string>
+    <string name="vhc_move_down">%1$s को नीचे ले जाएं</string>
+    <string name="vh_recommendations_off">सुझाव बंद हैं</string>
+    <string name="vh_recommendations_off_sub">चालू होने पर Shorts अब भी यहां दिख सकते हैं।</string>
 </resources>

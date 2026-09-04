@@ -194,4 +194,16 @@
         <item quantity="other">YouTube 正在限制来自此网络的请求。请在大约 %1$d 分钟后重试。</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube 正在限制来自此网络的请求。请稍后重试。</string>
+
+    <string name="vhc_title">视频首页</string>
+    <string name="vhc_summary">信息流、导航项及其顺序</string>
+    <string name="vhc_feed_section">首页信息流</string>
+    <string name="vhc_recommendations">推荐与建议</string>
+    <string name="vhc_recommendations_sub">在首页加载推荐视频</string>
+    <string name="vhc_navigation_section">导航项</string>
+    <string name="vhc_navigation_hint">隐藏你不使用的导航项。至少保留一项可见。</string>
+    <string name="vhc_move_up">将%1$s上移</string>
+    <string name="vhc_move_down">将%1$s下移</string>
+    <string name="vh_recommendations_off">推荐功能已关闭</string>
+    <string name="vh_recommendations_off_sub">启用后，Shorts 仍可能显示在这里。</string>
 </resources>

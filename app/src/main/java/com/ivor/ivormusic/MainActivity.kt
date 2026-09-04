@@ -165,6 +165,7 @@ class MainActivity : ComponentActivity() {
             val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
+            val videoHomeConfiguration by themeViewModel.videoHomeConfiguration.collectAsState()
             val playerStyle by themeViewModel.playerStyle.collectAsState()
             val saveVideoHistory by themeViewModel.saveVideoHistory.collectAsState()
             val saveMusicHistory by themeViewModel.saveMusicHistory.collectAsState()
@@ -254,6 +255,16 @@ class MainActivity : ComponentActivity() {
                         onVideoModeToggle = { themeViewModel.setVideoMode(it) },
                         homeModeToggleEnabled = homeModeToggleEnabled,
                         onHomeModeToggleEnabledChange = { themeViewModel.setHomeModeToggleEnabled(it) },
+                        videoHomeConfiguration = videoHomeConfiguration,
+                        onVideoRecommendationsEnabledChange = {
+                            themeViewModel.setVideoRecommendationsEnabled(it)
+                        },
+                        onVideoHomeDestinationVisibleChange = { destination, visible ->
+                            themeViewModel.setVideoHomeDestinationVisible(destination, visible)
+                        },
+                        onMoveVideoHomeDestination = { destination, delta ->
+                            themeViewModel.moveVideoHomeDestination(destination, delta)
+                        },
                         spotlightHome = spotlightHome,
                         uiScale = uiScale,
                         onUiScaleChange = { themeViewModel.setUiScale(it) },
@@ -530,6 +541,13 @@ fun MusicApp(
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean,
     onHomeModeToggleEnabledChange: (Boolean) -> Unit,
+    videoHomeConfiguration: com.ivor.ivormusic.data.VideoHomeConfiguration,
+    onVideoRecommendationsEnabledChange: (Boolean) -> Unit,
+    onVideoHomeDestinationVisibleChange: (
+        com.ivor.ivormusic.data.VideoHomeDestination,
+        Boolean,
+    ) -> Unit,
+    onMoveVideoHomeDestination: (com.ivor.ivormusic.data.VideoHomeDestination, Int) -> Unit,
     spotlightHome: Boolean,
     uiScale: Float,
     onUiScaleChange: (Float) -> Unit,
@@ -896,6 +914,7 @@ fun MusicApp(
                     videoMode = videoMode,
                     onVideoModeToggle = switchPlaybackMode,
                     showModeToggle = homeModeToggleEnabled,
+                    videoHomeConfiguration = videoHomeConfiguration,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     manualScan = manualScanEnabled,
@@ -935,6 +954,12 @@ fun MusicApp(
                     onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
+                    videoHomeConfiguration = videoHomeConfiguration,
+                    onVideoRecommendationsEnabledChange =
+                        onVideoRecommendationsEnabledChange,
+                    onVideoHomeDestinationVisibleChange =
+                        onVideoHomeDestinationVisibleChange,
+                    onMoveVideoHomeDestination = onMoveVideoHomeDestination,
                     spotlightHome = spotlightHome,
                     onSpotlightHomeToggle = onSpotlightHomeToggle,
                     nonExpressiveNavigationBar = nonExpressiveNavigationBar,

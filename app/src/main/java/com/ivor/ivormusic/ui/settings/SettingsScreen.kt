@@ -256,6 +256,7 @@ internal enum class SettingsPage {
     PLAYER,
     PLAYBACK,
     CONTENT,
+    VIDEO_HOME,
     SUBSCRIPTIONS,
     STORAGE,
     NOTIFICATIONS,
@@ -284,6 +285,14 @@ fun SettingsScreen(
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean = true,
     onHomeModeToggleChange: (Boolean) -> Unit = {},
+    videoHomeConfiguration: com.ivor.ivormusic.data.VideoHomeConfiguration =
+        com.ivor.ivormusic.data.VideoHomeConfiguration(),
+    onVideoRecommendationsEnabledChange: (Boolean) -> Unit = {},
+    onVideoHomeDestinationVisibleChange: (
+        com.ivor.ivormusic.data.VideoHomeDestination,
+        Boolean,
+    ) -> Unit = { _, _ -> },
+    onMoveVideoHomeDestination: (com.ivor.ivormusic.data.VideoHomeDestination, Int) -> Unit = { _, _ -> },
     spotlightHome: Boolean = false,
     onSpotlightHomeToggle: (Boolean) -> Unit = {},
     nonExpressiveNavigationBar: Boolean = false,
@@ -821,7 +830,18 @@ fun SettingsScreen(
                     shortsHiddenActions = shortsHiddenActions,
                     onShowShortsButtons = { showShortsButtonsDialog = true },
                     onNavigateToNotInterested = onNavigateToNotInterested,
+                    onNavigateToVideoHome = { page = SettingsPage.VIDEO_HOME },
                     onBack = { page = SettingsPage.HUB }
+                )
+
+                SettingsPage.VIDEO_HOME -> VideoHomeSettingsPage(
+                    configuration = videoHomeConfiguration,
+                    onRecommendationsEnabledChange =
+                        onVideoRecommendationsEnabledChange,
+                    onDestinationVisibleChange =
+                        onVideoHomeDestinationVisibleChange,
+                    onMoveDestination = onMoveVideoHomeDestination,
+                    onBack = { page = SettingsPage.CONTENT },
                 )
 
                 SettingsPage.SUBSCRIPTIONS -> SubscriptionsSettingsPage(

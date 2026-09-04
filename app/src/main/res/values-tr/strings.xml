@@ -197,4 +197,16 @@
         <item quantity="other">YouTube bu ağdan gelen istekleri sınırlandırıyor. Yaklaşık %1$d dakika içinde tekrar deneyin.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube bu ağdan gelen istekleri sınırlandırıyor. Birazdan tekrar deneyin.</string>
+
+    <string name="vhc_title">Video Ana Sayfası</string>
+    <string name="vhc_summary">Besleme, hedefler ve sıraları</string>
+    <string name="vhc_feed_section">Ana sayfa beslemesi</string>
+    <string name="vhc_recommendations">Öneriler ve tavsiyeler</string>
+    <string name="vhc_recommendations_sub">Ana Sayfada önerilen videoları yükle</string>
+    <string name="vhc_navigation_section">Hedefler</string>
+    <string name="vhc_navigation_hint">Kullanmadığınız hedefleri gizleyin. En az biri görünür kalır.</string>
+    <string name="vhc_move_up">%1$s öğesini yukarı taşı</string>
+    <string name="vhc_move_down">%1$s öğesini aşağı taşı</string>
+    <string name="vh_recommendations_off">Öneriler kapalı</string>
+    <string name="vh_recommendations_off_sub">Etkinleştirildiğinde Shorts burada yine de görünebilir.</string>
 </resources>

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Recommend
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
@@ -356,6 +357,14 @@ internal fun buildSettingsSearchIndex(
         "home_toggle", stringResource(R.string.sp_home_mode_toggle), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.ToggleOn,
         listOf("home", "header", "switcher", "quick toggle")
     ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "video_home_feed", stringResource(R.string.vhc_recommendations), stringResource(R.string.vhc_title), Icons.Rounded.Recommend,
+        listOf("recommendations", "suggestions", "disable home feed", "turn off feed", "video home")
+    ) { onOpenPage(SettingsPage.VIDEO_HOME) }
+    entry(
+        "video_home_destinations", stringResource(R.string.vhc_navigation_section), stringResource(R.string.vhc_title), Icons.Rounded.Dashboard,
+        listOf("tabs", "order", "rearrange", "hide home", "hide search", "hide subscriptions", "hide library")
+    ) { onOpenPage(SettingsPage.VIDEO_HOME) }
     entry(
         "timed_comments", stringResource(R.string.sp_timed_comments), stringResource(R.string.settings_content_and_feeds),
         Icons.AutoMirrored.Rounded.Comment,

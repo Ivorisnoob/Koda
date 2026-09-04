@@ -24,6 +24,8 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val playerArtworkColors: StateFlow<Boolean> = themePreferences.playerArtworkColors
     val videoMode: StateFlow<Boolean> = themePreferences.videoMode
     val homeModeToggleEnabled: StateFlow<Boolean> = themePreferences.homeModeToggleEnabled
+    val videoHomeConfiguration: StateFlow<com.ivor.ivormusic.data.VideoHomeConfiguration> =
+        themePreferences.videoHomeConfiguration
     val playerStyle: StateFlow<PlayerStyle> = themePreferences.playerStyle
     val saveVideoHistory: StateFlow<Boolean> = themePreferences.saveVideoHistory
     val saveMusicHistory: StateFlow<Boolean> = themePreferences.saveMusicHistory
@@ -116,6 +118,24 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setHomeModeToggleEnabled(enabled: Boolean) {
         themePreferences.setHomeModeToggleEnabled(enabled)
+    }
+
+    fun setVideoRecommendationsEnabled(enabled: Boolean) {
+        themePreferences.setVideoRecommendationsEnabled(enabled)
+    }
+
+    fun setVideoHomeDestinationVisible(
+        destination: com.ivor.ivormusic.data.VideoHomeDestination,
+        visible: Boolean,
+    ) {
+        themePreferences.setVideoHomeDestinationVisible(destination, visible)
+    }
+
+    fun moveVideoHomeDestination(
+        destination: com.ivor.ivormusic.data.VideoHomeDestination,
+        delta: Int,
+    ) {
+        themePreferences.moveVideoHomeDestination(destination, delta)
     }
 
     fun setPlayerStyle(style: PlayerStyle) {

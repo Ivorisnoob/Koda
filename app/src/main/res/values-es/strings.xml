@@ -199,4 +199,16 @@
         <item quantity="other">YouTube está limitando las solicitudes desde esta red. Inténtalo de nuevo en aproximadamente %1$d minutos.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube está limitando las solicitudes desde esta red. Inténtalo de nuevo en un momento.</string>
+
+    <string name="vhc_title">Inicio de vídeo</string>
+    <string name="vhc_summary">El feed, los destinos y su orden</string>
+    <string name="vhc_feed_section">Feed de inicio</string>
+    <string name="vhc_recommendations">Recomendaciones y sugerencias</string>
+    <string name="vhc_recommendations_sub">Cargar vídeos sugeridos en Inicio</string>
+    <string name="vhc_navigation_section">Destinos</string>
+    <string name="vhc_navigation_hint">Oculta cualquier destino que no uses. Al menos uno permanece visible.</string>
+    <string name="vhc_move_up">Mover %1$s hacia arriba</string>
+    <string name="vhc_move_down">Mover %1$s hacia abajo</string>
+    <string name="vh_recommendations_off">Las recomendaciones están desactivadas</string>
+    <string name="vh_recommendations_off_sub">Los Shorts aún pueden aparecer aquí si están activados.</string>
 </resources>

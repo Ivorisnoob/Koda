@@ -194,4 +194,16 @@
         <item quantity="other">YouTube đang giới hạn yêu cầu từ mạng này. Thử lại sau khoảng %1$d phút.</item>
     </plurals>
     <string name="hvm_subs_feed_rate_limited_soon">YouTube đang giới hạn yêu cầu từ mạng này. Thử lại sau một chút.</string>
+
+    <string name="vhc_title">Trang chủ video</string>
+    <string name="vhc_summary">Nguồn cấp dữ liệu, các đích đến và thứ tự của chúng</string>
+    <string name="vhc_feed_section">Nguồn cấp dữ liệu trang chủ</string>
+    <string name="vhc_recommendations">Đề xuất và gợi ý</string>
+    <string name="vhc_recommendations_sub">Tải video được đề xuất trên Trang chủ</string>
+    <string name="vhc_navigation_section">Đích đến</string>
+    <string name="vhc_navigation_hint">Ẩn mọi đích đến bạn không dùng. Ít nhất một mục vẫn hiển thị.</string>
+    <string name="vhc_move_up">Di chuyển %1$s lên</string>
+    <string name="vhc_move_down">Di chuyển %1$s xuống</string>
+    <string name="vh_recommendations_off">Đã tắt đề xuất</string>
+    <string name="vh_recommendations_off_sub">Shorts vẫn có thể xuất hiện ở đây khi được bật.</string>
 </resources>

@@ -138,6 +138,8 @@ import androidx.compose.animation.with
 import kotlinx.coroutines.launch
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.video.VideoHomeContent
+import com.ivor.ivormusic.data.VideoHomeConfiguration
+import com.ivor.ivormusic.data.VideoHomeDestination
 import com.ivor.ivormusic.ui.library.LibraryContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import com.ivor.ivormusic.BuildConfig
@@ -208,7 +210,9 @@ fun HomeScreen(
     /** Spotlight: the alternative music Home. Off by default. */
     spotlightHome: Boolean = false,
     /** Use Material 3's compact bar instead of the default floating toolbar. */
-    nonExpressiveNavigationBar: Boolean = false
+    nonExpressiveNavigationBar: Boolean = false,
+    /** Visibility, order and recommendation policy for Video mode. */
+    videoHomeConfiguration: VideoHomeConfiguration = VideoHomeConfiguration(),
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val homePreferences = remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
@@ -274,10 +278,20 @@ fun HomeScreen(
     val downloadedVideos by viewModel.downloadedVideos.collectAsState()
     val shortsFeed by viewModel.shortsFeed.collectAsState()
     
-    // Load videos when video mode is enabled
-    LaunchedEffect(videoMode) {
-        if (videoMode) {
-            viewModel.loadTrendingVideos()
+    // Load videos when video mode is enabled. Hiding the Home destination
+    // takes the only surface these feeds are drawn on with it, so neither the
+    // recommendations nor the Shorts shelf are worth a request in that state.
+    val videoHomeVisible =
+        VideoHomeDestination.HOME in videoHomeConfiguration.visibleDestinations
+    LaunchedEffect(
+        videoMode,
+        videoHomeVisible,
+        videoHomeConfiguration.recommendationsEnabled,
+    ) {
+        if (videoMode && videoHomeVisible) {
+            viewModel.applyVideoRecommendationsPreference(
+                videoHomeConfiguration.recommendationsEnabled
+            )
         }
     }
 
@@ -294,8 +308,37 @@ fun HomeScreen(
     // and a plainly-remembered tab index would drop the user on Home every time
     // they looked at a creator from the Subscriptions feed. The scroll states
     // below already survive it, because rememberLazyListState is saveable.
+    val videoRootTab = videoHomeConfiguration.orderedVisibleDestinations
+        .firstOrNull()?.tabId ?: VideoHomeDestination.HOME.tabId
+
+    // The remembered tab may name a destination that has since been hidden, so
+    // it is clamped as the state is created rather than only corrected by the
+    // effect below - otherwise a cold entry composes the hidden tab's content
+    // once before the correction lands.
     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable(videoMode) {
-        mutableIntStateOf(homePreferences.getLastHomeTab(videoMode))
+        val stored = homePreferences.getLastHomeTab(videoMode)
+        val reachable = !videoMode ||
+            videoHomeConfiguration.orderedVisibleDestinations.any { it.tabId == stored }
+        mutableIntStateOf(if (reachable) stored else videoRootTab)
+    }
+
+    val rootTab = if (videoMode) videoRootTab else 0
+    val visualTabOrder = if (videoMode) {
+        videoHomeConfiguration.destinationOrder.map(VideoHomeDestination::tabId)
+    } else {
+        listOf(0, 1, 2)
+    }
+
+    // A destination can be hidden while it is selected (including from the
+    // Settings screen on top of Home). Land on the first configured page when
+    // Home becomes visible again rather than rendering an unreachable tab.
+    LaunchedEffect(videoMode, videoHomeConfiguration) {
+        if (videoMode && videoHomeConfiguration.orderedVisibleDestinations.none {
+                it.tabId == selectedTab
+            }
+        ) {
+            selectedTab = videoRootTab
+        }
     }
 
     LaunchedEffect(selectedTab, videoMode) {
@@ -344,8 +387,8 @@ fun HomeScreen(
     )
 
     // Handle back button to return to Home tab if on Search or Library
-    BackHandler(enabled = selectedTab != 0) {
-        selectedTab = 0
+    BackHandler(enabled = selectedTab != rootTab) {
+        selectedTab = rootTab
     }
 
     // The Subscriptions/History tabs (2/3) only exist in video mode
@@ -509,7 +552,11 @@ fun HomeScreen(
                 targetState = selectedTab,
                 label = "TabTransition",
                 transitionSpec = {
-                    val direction = if (targetState > initialState) 1 else -1
+                    val initialRank = visualTabOrder.indexOf(initialState).takeIf { it >= 0 }
+                        ?: initialState
+                    val targetRank = visualTabOrder.indexOf(targetState).takeIf { it >= 0 }
+                        ?: targetState
+                    val direction = if (targetRank > initialRank) 1 else -1
                     if (direction > 0) {
                         // Moving forward (Right): New enters from Right, Old leaves to Left
                         (androidx.compose.animation.slideInHorizontally { width -> width } + 
@@ -578,6 +625,8 @@ fun HomeScreen(
                                     onSettingsClick = onNavigateToSettings,
                                     onDownloadsClick = onNavigateToDownloads,
                                     onRefresh = { viewModel.refreshVideos() },
+                                    recommendationsEnabled =
+                                        videoHomeConfiguration.recommendationsEnabled,
                                     isDarkMode = isDarkMode,
                                     contentPadding = listContentPadding,
                                     viewModel = viewModel,
@@ -889,12 +938,32 @@ fun HomeScreen(
         // Both navigation variants use the same destinations and interaction
         // contract. Only their Material container and item presentation differ.
         val navBarHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
-        val navTabs = if (videoMode) listOf(
-            Triple(0, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
-            Triple(1, stringResource(R.string.tab_search), Pair(Icons.Filled.Search, Icons.Outlined.Search)),
-            Triple(2, stringResource(R.string.tab_subs), Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)),
-            Triple(3, stringResource(R.string.tab_library), Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary))
-        ) else listOf(
+        val navTabs = if (videoMode) {
+            videoHomeConfiguration.orderedVisibleDestinations.map { destination ->
+                when (destination) {
+                    VideoHomeDestination.HOME -> Triple(
+                        destination.tabId,
+                        stringResource(R.string.tab_home),
+                        Pair(Icons.Rounded.Home, Icons.Outlined.Home)
+                    )
+                    VideoHomeDestination.SEARCH -> Triple(
+                        destination.tabId,
+                        stringResource(R.string.tab_search),
+                        Pair(Icons.Filled.Search, Icons.Outlined.Search)
+                    )
+                    VideoHomeDestination.SUBSCRIPTIONS -> Triple(
+                        destination.tabId,
+                        stringResource(R.string.tab_subs),
+                        Pair(Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions)
+                    )
+                    VideoHomeDestination.LIBRARY -> Triple(
+                        destination.tabId,
+                        stringResource(R.string.tab_library),
+                        Pair(Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary)
+                    )
+                }
+            }
+        } else listOf(
             Triple(0, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
             Triple(1, stringResource(R.string.tab_search), Pair(Icons.Filled.Search, Icons.Outlined.Search)),
             Triple(2, stringResource(R.string.tab_library), Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
