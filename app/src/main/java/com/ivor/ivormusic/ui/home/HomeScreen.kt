@@ -139,6 +139,7 @@ import kotlinx.coroutines.launch
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.video.VideoHomeContent
 import com.ivor.ivormusic.data.VideoHomeConfiguration
+import com.ivor.ivormusic.ui.components.hiddenFraction
 import com.ivor.ivormusic.data.VideoHomeDestination
 import com.ivor.ivormusic.ui.library.LibraryContent
 import androidx.compose.animation.ExperimentalAnimationApi
@@ -154,6 +155,16 @@ import com.ivor.ivormusic.data.UpdateResult
  * the two cannot drift apart.
  */
 private val VIDEO_SHELL_TOP_BAR_HEIGHT = 76.dp
+
+/** Gap the mini player keeps above the system navigation bar once the floating toolbar is gone. */
+private val MINI_PLAYER_RESTING_GAP = 16.dp
+
+/**
+ * What the Home shell is currently showing. The mode rides along with the tab
+ * because switching mode replaces the content behind the same tab index, and
+ * the transition between the two is not the one a tab move deserves.
+ */
+private data class HomeTabKey(val tab: Int, val videoMode: Boolean)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
@@ -220,6 +231,12 @@ fun HomeScreen(
     nonExpressiveNavigationBar: Boolean = false,
     /** Visibility, order and recommendation policy for Video mode. */
     videoHomeConfiguration: VideoHomeConfiguration = VideoHomeConfiguration(),
+    /**
+     * Hoisted so the video mini player - an overlay above the NavHost, outside
+     * this composable - can follow the same toolbar this shell hides on scroll.
+     */
+    floatingToolbarState: androidx.compose.material3.FloatingToolbarState =
+        androidx.compose.material3.rememberFloatingToolbarState(),
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val homePreferences = remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
@@ -395,7 +412,8 @@ fun HomeScreen(
     // toolbar is bottom-centred, so its exit direction is down and the Home
     // shell only needs to forward nested scroll from whichever tab is active.
     val floatingToolbarScrollBehavior = FloatingToolbarDefaults.exitAlwaysScrollBehavior(
-        exitDirection = FloatingToolbarExitDirection.Bottom
+        exitDirection = FloatingToolbarExitDirection.Bottom,
+        state = floatingToolbarState
     )
 
     // Handle back button to return to Home tab if on Search or Library
@@ -523,6 +541,16 @@ fun HomeScreen(
     // clearance above either variant so overlaid controls do not jump or
     // collide when this preference changes.
     val navigationOverlayInset = if (nonExpressiveNavigationBar) 84.dp else 88.dp
+    val miniPlayerCollapsedSpacing = if (nonExpressiveNavigationBar) 96.dp else 100.dp
+    // Only the floating toolbar hides on scroll; the standard NavigationBar
+    // stays pinned, so there is nothing for the pill to follow there.
+    val miniPlayerFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
+        if (nonExpressiveNavigationBar) 0f
+        else (miniPlayerCollapsedSpacing - MINI_PLAYER_RESTING_GAP).toPx()
+    }
+    val miniPlayerFollowOffsetPx: () -> Float = {
+        miniPlayerFollowDistancePx * floatingToolbarState.hiddenFraction()
+    }
     val bottomOverlayInset by androidx.compose.animation.core.animateDpAsState(
         targetValue = when {
             musicPillVisible && hasVideoMiniPlayer -> navigationOverlayInset + 196.dp
@@ -561,13 +589,28 @@ fun HomeScreen(
         // Main content
         if (!loadLocalSongs || permissionState.isGranted) {
             androidx.compose.animation.AnimatedContent(
-                targetState = selectedTab,
+                // Keyed on the mode as well as the tab so the spec below can
+                // tell a tab move from a mode switch. They deserve different
+                // motion and used to share one.
+                targetState = HomeTabKey(selectedTab, videoMode),
                 label = "TabTransition",
                 transitionSpec = {
-                    val initialRank = visualTabOrder.indexOf(initialState).takeIf { it >= 0 }
-                        ?: initialState
-                    val targetRank = visualTabOrder.indexOf(targetState).takeIf { it >= 0 }
-                        ?: targetState
+                    // A mode switch cross-fades. Both Homes draw their header
+                    // in the same place, so sliding the page sideways drags
+                    // that header off with it and reads as the whole chrome
+                    // leaving - when nothing about it was supposed to move.
+                    // A fade leaves it apparently stationary.
+                    if (initialState.videoMode != targetState.videoMode) {
+                        return@AnimatedContent androidx.compose.animation.fadeIn(
+                            androidx.compose.animation.core.tween(220)
+                        ) togetherWith androidx.compose.animation.fadeOut(
+                            androidx.compose.animation.core.tween(180)
+                        )
+                    }
+                    val initialRank = visualTabOrder.indexOf(initialState.tab).takeIf { it >= 0 }
+                        ?: initialState.tab
+                    val targetRank = visualTabOrder.indexOf(targetState.tab).takeIf { it >= 0 }
+                        ?: targetState.tab
                     val direction = if (targetRank > initialRank) 1 else -1
                     if (direction > 0) {
                         // Moving forward (Right): New enters from Right, Old leaves to Left
@@ -583,7 +626,8 @@ fun HomeScreen(
                                         androidx.compose.animation.fadeOut())
                     }
                 }
-            ) { targetTab ->
+            ) { tabKey ->
+                val targetTab = tabKey.tab
                 when (targetTab) {
                     0 -> {
                         // Mode swap morphs the page while the hoisted toggle
@@ -952,10 +996,21 @@ fun HomeScreen(
         // switch that puts Home back. The bar becomes part of the shell in
         // that configuration, above every destination rather than inside one.
         // Opaque, because the lists underneath scroll beneath it.
-        if (videoShellTopBar) {
+        // Fades rather than popping, on the same curve the mode cross-fade
+        // uses, so leaving video mode does not blink the chrome out a frame
+        // before the content underneath it changes.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = videoShellTopBar,
+            enter = androidx.compose.animation.fadeIn(
+                androidx.compose.animation.core.tween(220)
+            ),
+            exit = androidx.compose.animation.fadeOut(
+                androidx.compose.animation.core.tween(180)
+            ),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .background(backgroundColor)
                     .padding(top = statusBarInset)
@@ -1143,7 +1198,8 @@ fun HomeScreen(
             artworkColors = playerArtworkColors,
             playerStyle = playerStyle,
             onPlayerStyleChange = onPlayerStyleChange,
-            collapsedBottomSpacing = if (nonExpressiveNavigationBar) 96.dp else 100.dp,
+            collapsedBottomSpacing = miniPlayerCollapsedSpacing,
+            collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
             onArtistClick = { artistName ->
                 // Collapse player and navigate to Library tab to show artist
                 showPlayerSheet = false

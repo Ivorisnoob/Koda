@@ -1,5 +1,6 @@
 package com.ivor.ivormusic
 
+import com.ivor.ivormusic.ui.components.hiddenFraction
 import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import android.content.Intent
 import android.os.Build
@@ -92,6 +93,9 @@ private val NON_EXPRESSIVE_NAV_BAR_RESERVE = 80.dp
 
 /** Height the collapsed music player occupies above the navigation bar. */
 private val MUSIC_PILL_RESERVE = 88.dp
+
+/** Gap the video mini bar keeps above the system navigation bar once the toolbar is gone. */
+private val VIDEO_MINI_RESTING_GAP = 16.dp
 
 class MainActivity : ComponentActivity() {
 
@@ -769,6 +773,24 @@ fun MusicApp(
         else -> navBarReserve
     }
 
+    // Home's floating toolbar hides as a feed is scrolled, and the mini bar
+    // parked above it has to come down with it or it floats over the strip the
+    // toolbar left behind. The state is created here rather than inside
+    // HomeScreen because this overlay is a sibling of the NavHost and cannot
+    // read anything HomeScreen provides. Only the floating variant hides; the
+    // standard NavigationBar is pinned, and off the home route there is no
+    // toolbar at all.
+    val floatingToolbarState = androidx.compose.material3.rememberFloatingToolbarState()
+    val videoMiniFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
+        if (!onHomeRoute || nonExpressiveNavigationBar) 0f
+        else (videoMiniBottomChrome - VIDEO_MINI_RESTING_GAP)
+            .coerceAtLeast(0.dp).toPx()
+    }
+    val videoMiniFollowOffsetPx: () -> Float = {
+        videoMiniFollowDistancePx *
+            floatingToolbarState.hiddenFraction()
+    }
+
     // Keep the Activity's PiP inputs current. It needs them outside the
     // composition, in onUserLeaveHint on Android 11. Match the same proven 4.5
     // eligibility used by VideoPipController: bounds and playback state are not
@@ -915,6 +937,7 @@ fun MusicApp(
                     onVideoModeToggle = switchPlaybackMode,
                     showModeToggle = homeModeToggleEnabled,
                     videoHomeConfiguration = videoHomeConfiguration,
+                    floatingToolbarState = floatingToolbarState,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     manualScan = manualScanEnabled,
@@ -1265,7 +1288,8 @@ fun MusicApp(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
             onOpenChannel = openChannel,
-            hostBottomChrome = videoMiniBottomChrome
+            hostBottomChrome = videoMiniBottomChrome,
+            hostChromeFollowOffsetPx = videoMiniFollowOffsetPx
         )
 
         // Shorts sit above everything, including the video player overlay. The

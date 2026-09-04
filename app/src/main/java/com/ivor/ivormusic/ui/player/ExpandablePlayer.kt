@@ -74,6 +74,13 @@ fun ExpandablePlayer(
     playerStyle: PlayerStyle = PlayerStyle.EDITORIAL,
     onPlayerStyleChange: (PlayerStyle) -> Unit = {},
     collapsedBottomSpacing: androidx.compose.ui.unit.Dp = 100.dp,
+    /**
+     * How far to slide the collapsed pill down, in pixels, so it follows the
+     * navigation toolbar as that scrolls away. A lambda because it changes on
+     * every scroll frame and is read during layout - taking a value here would
+     * recompose the whole player instead.
+     */
+    collapsedFollowOffsetPx: () -> Float = { 0f },
     onArtistClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -227,7 +234,14 @@ fun ExpandablePlayer(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
                 .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
-                .offset { IntOffset(animatedHorizontalOffset.roundToInt(), 0) }
+                // The follow fades out as the player expands: a fullscreen
+                // player has no navigation bar to sit above.
+                .offset {
+                    IntOffset(
+                        animatedHorizontalOffset.roundToInt(),
+                        (collapsedFollowOffsetPx() * (1f - expandProgress)).roundToInt()
+                    )
+                }
                 .graphicsLayer { alpha = dismissAlpha }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))

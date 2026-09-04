@@ -182,6 +182,13 @@ fun VideoPlayerOverlay(
      */
     hostBottomChrome: androidx.compose.ui.unit.Dp = 0.dp,
     /**
+     * How far to slide the collapsed bar down, in pixels, so it follows the
+     * host's navigation toolbar as that scrolls out of the way. A lambda
+     * because it changes every scroll frame and is read inside the layer block
+     * below, which is what keeps the embedded video view from remeasuring.
+     */
+    hostChromeFollowOffsetPx: () -> Float = { 0f },
+    /**
      * Open the playing video's creator. Handled by the host rather than here,
      * because the channel page is a NavHost destination and this overlay is
      * drawn above the NavHost - the host is the only layer that can both
@@ -424,7 +431,9 @@ fun VideoPlayerOverlay(
                 // The collapsed bar rises a very short distance as it becomes
                 // legible. Translation and opacity are compositor-only; the
                 // embedded TextureView remains at its final 88dp size.
-                translationY = gestureOffset + (1f - visibility) * miniEnterOffsetPx
+                translationY = gestureOffset +
+                    (1f - visibility) * miniEnterOffsetPx +
+                    hostChromeFollowOffsetPx() * progress.let { 1f - it }.coerceIn(0f, 1f)
                 alpha = visibility
 
                 val fadeLimit = if (isDismissingMini) 1f else 0.5f
