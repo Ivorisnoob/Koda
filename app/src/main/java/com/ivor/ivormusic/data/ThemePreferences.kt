@@ -469,7 +469,8 @@ class ThemePreferences(context: Context) {
 
         /** Quality labels offered in Settings, best first. */
         val VIDEO_QUALITY_OPTIONS = listOf(
-            VIDEO_QUALITY_AUTO, "2160p", "1440p", "1080p", "720p", "480p", "360p", "144p"
+            VIDEO_QUALITY_AUTO, "2160p", "1440p", "1080p", "720p", "480p", "360p", "240p",
+            "144p"
         )
         private const val DEFAULT_VIDEO_QUALITY_WIFI = "1080p"
         private const val DEFAULT_VIDEO_QUALITY_MOBILE = "720p"

@@ -314,12 +314,12 @@ internal fun buildSettingsSearchIndex(
     entry(
         "video_q_wifi", stringResource(R.string.sp_video_quality_wifi), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.VideoLibrary,
-        listOf("resolution", "1080p", "720p", "480p", "4k", "2160", "default quality")
+        listOf("resolution", "1080p", "720p", "480p", "360p", "240p", "144p", "4k", "2160", "data saver", "default quality")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_WIFI) }
     entry(
         "video_q_mobile", stringResource(R.string.sp_video_quality_mobile), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.SignalCellularAlt,
-        listOf("resolution", "cellular", "data", "1080p", "720p", "roaming")
+        listOf("resolution", "cellular", "data", "1080p", "720p", "480p", "360p", "240p", "144p", "data saver", "roaming")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_MOBILE) }
     entry(
         "prefer_hdr", stringResource(R.string.sp_prefer_hdr), stringResource(R.string.settings_playback_and_quality),
