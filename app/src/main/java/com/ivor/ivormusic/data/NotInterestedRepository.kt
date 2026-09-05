@@ -148,6 +148,27 @@ class NotInterestedRepository(context: Context) {
         channelId != null && blockedState.value.any { it.channelId == channelId }
 
     /**
+     * Whether a creator - a channel or a music artist - is blocked.
+     *
+     * Id first, name second, because the two stores meet here: a video
+     * dismissal writes a real channel id while a music artist block writes a
+     * blank one and the name, and a discovery shelf carrying artists can be
+     * handed either. Name matching is whole-string and case-insensitive for
+     * the reason [isSongFiltered] gives.
+     */
+    fun isCreatorBlocked(channelId: String?, name: String?): Boolean {
+        val blocked = blockedState.value
+        if (blocked.isEmpty()) return false
+        val id = channelId?.takeIf { it.isNotBlank() }
+        val creator = name?.takeIf { it.isNotBlank() }
+        return blocked.any { entry ->
+            (id != null && entry.channelId.isNotBlank() && entry.channelId == id) ||
+                (creator != null && entry.name.isNotBlank() &&
+                    entry.name.equals(creator, ignoreCase = true))
+        }
+    }
+
+    /**
      * Whether [video] should be kept out of a recommendation feed.
      *
      * Channel matching falls back to the display name when the item carries no

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -266,6 +267,37 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             emptyList()
         )
 
+    private val _discoveryCollections =
+        MutableStateFlow(com.ivor.ivormusic.data.RecommendationEngine.DiscoveryCollections())
+
+    /**
+     * The albums, playlists and artists under the discovery songs.
+     *
+     * Filtered against the same two stores the rest of the screen respects, as
+     * a derived flow rather than at fetch time: hiding a playlist or blocking
+     * an artist has to take it off this shelf on the next frame, not on the
+     * next refresh.
+     */
+    val discoveryCollections: StateFlow<com.ivor.ivormusic.data.RecommendationEngine.DiscoveryCollections> =
+        combine(
+            _discoveryCollections,
+            hiddenPlaylistsRepository.hiddenPlaylists,
+            notInterestedRepository.blockedChannels
+        ) { collections, _, _ ->
+            collections.copy(
+                albums = collections.albums.filterNot { hiddenPlaylistsRepository.isHidden(it.id) },
+                playlists = collections.playlists
+                    .filterNot { hiddenPlaylistsRepository.isHidden(it.id) },
+                artists = collections.artists.filterNot {
+                    notInterestedRepository.isCreatorBlocked(it.id, it.name)
+                }
+            )
+        }.stateIn(
+            viewModelScope,
+            kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            com.ivor.ivormusic.data.RecommendationEngine.DiscoveryCollections()
+        )
+
     private val _isDiscoveryLoading = MutableStateFlow(false)
     val isDiscoveryLoading: StateFlow<Boolean> = _isDiscoveryLoading.asStateFlow()
 
@@ -292,12 +324,41 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     likedSongsRepository.likedSongIds.value.forEach { add(it) }
                     _recentlyPlayed.value.forEach { add(it.id) }
                 }
-                val discovered = recommendationEngine.getDiscoveryRecommendations(known)
+                // The two halves are fetched together and awaited together:
+                // the shelves are what the songs grid scrolls into, and loading
+                // them on a second pass would make the tab grow under the
+                // finger a second or two after it looked finished.
+                val discoveredSongs = async {
+                    recommendationEngine.getDiscoveryRecommendations(known)
+                }
+                val collections = async {
+                    recommendationEngine.getDiscoveryCollections(
+                        // Nothing already in the library is a discovery, and a
+                        // playlist the user saved or made is the clearest case
+                        // of that.
+                        excludeCollectionIds = buildSet {
+                            userPlaylists.value.forEach { add(it.id) }
+                            savedPlaylistIds.value.forEach { add(it) }
+                        },
+                        // The seeds themselves: an "artists you might like"
+                        // shelf that opens with the artist the seed came from
+                        // is telling the user about themselves.
+                        excludeArtistNames = buildSet {
+                            _songs.value.forEach { add(it.artist) }
+                            _recentlyPlayed.value.forEach { add(it.artist) }
+                        }
+                    )
+                }
+                val discovered = discoveredSongs.await()
                 // An empty result must not wipe a shelf that is already showing
                 // something usable - a failed refresh should look like nothing
                 // happened, not like the feature broke.
                 if (discovered.isNotEmpty() || _discoverySongs.value.isEmpty()) {
                     _discoverySongs.value = discovered
+                }
+                val fetchedCollections = collections.await()
+                if (!fetchedCollections.isEmpty() || _discoveryCollections.value.isEmpty()) {
+                    _discoveryCollections.value = fetchedCollections
                 }
             } catch (e: Exception) {
                 KLog.w("HomeViewModel", "Discovery recommendations failed", e)

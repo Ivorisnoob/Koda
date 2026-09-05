@@ -38,6 +38,19 @@ class RecommendationEngine(
         fun isEmpty() = topArtists.isEmpty() && topSongs.isEmpty() && recentSearches.isEmpty()
     }
 
+    /**
+     * The three discovery shelves, carried together because they are fetched
+     * together and a partial result is normal: any one of them can come back
+     * empty without the other two being wrong.
+     */
+    data class DiscoveryCollections(
+        val albums: List<PlaylistDisplayItem> = emptyList(),
+        val playlists: List<PlaylistDisplayItem> = emptyList(),
+        val artists: List<ArtistItem> = emptyList()
+    ) {
+        fun isEmpty() = albums.isEmpty() && playlists.isEmpty() && artists.isEmpty()
+    }
+
     companion object {
         /** A play from two weeks ago counts half as much as one from today. */
         private const val HALF_LIFE_DAYS = 14.0
@@ -49,6 +62,13 @@ class RecommendationEngine(
         private const val MAX_TOP_SONGS = 10
         private const val MAX_RECENT_SEARCHES = 5
         private const val MS_PER_DAY = 86_400_000.0
+
+        // Cold start, for someone who has played nothing yet. Deliberately
+        // undated: "albums 2026" is wrong every January and reads as a stale
+        // app long before anyone thinks to fix it.
+        private const val COLD_START_ALBUMS = "new album releases"
+        private const val COLD_START_PLAYLISTS = "top hits playlist"
+        private const val COLD_START_ARTISTS = "popular artists"
     }
 
     suspend fun buildTasteProfile(): TasteProfile = withContext(Dispatchers.Default) {
@@ -250,6 +270,107 @@ class RecommendationEngine(
             .filter { it.isNotEmpty() }
 
         interleave(buckets).distinctBy { it.id }.take(limit)
+    }
+
+    /**
+     * Albums, playlists and artists to discover, for the shelves under the
+     * songs on Spotlight's "For you" tab.
+     *
+     * A song grid answers "what should I play next" and nothing else: it gives
+     * no way to fall into a record, a curated hour, or somebody's whole
+     * catalogue, which is most of how people actually find music. These three
+     * shelves are that, built from the same taste profile the song half uses.
+     *
+     * Every query is an ordinary search, deliberately. There is no probed
+     * browse id for "new music" in this codebase, and inventing one is writing
+     * a request from memory - so this reaches for the endpoint that is already
+     * verified rather than the one that would be tidier.
+     *
+     * Each shelf is independent and each is wrapped in its own runCatching: one
+     * refused search costs its own shelf and not the other two, which is what
+     * keeps a rate-limited moment from emptying the whole tab.
+     */
+    suspend fun getDiscoveryCollections(
+        excludeCollectionIds: Set<String> = emptySet(),
+        excludeArtistNames: Set<String> = emptySet(),
+        limitPerShelf: Int = 12
+    ): DiscoveryCollections = coroutineScope {
+        val profile = buildTasteProfile()
+        // Shuffled for the reason the song half shuffles its seeds: a refresh
+        // returning the identical three shelves is a refresh that looks like it
+        // did not run.
+        val seeds = profile.topArtists.shuffled().take(2)
+        val querySeeds = if (seeds.isNotEmpty()) seeds else profile.recentSearches.take(1)
+
+        val albumJobs = if (querySeeds.isEmpty()) {
+            listOf(async { searchOrEmpty { youTubeRepository.searchAlbums(COLD_START_ALBUMS) } })
+        } else {
+            querySeeds.map { seed ->
+                async { searchOrEmpty { youTubeRepository.searchAlbums("$seed album") } }
+            }
+        }
+        val playlistJobs = if (querySeeds.isEmpty()) {
+            listOf(async { searchOrEmpty { youTubeRepository.searchPlaylists(COLD_START_PLAYLISTS) } })
+        } else {
+            querySeeds.map { seed ->
+                async { searchOrEmpty { youTubeRepository.searchPlaylists("$seed playlist") } }
+            }
+        }
+        val artistJobs = if (querySeeds.isEmpty()) {
+            listOf(async { searchArtistsOrEmpty(COLD_START_ARTISTS) })
+        } else {
+            querySeeds.map { seed -> async { searchArtistsOrEmpty(seed) } }
+        }
+
+        val excludedNames = excludeArtistNames.map { it.lowercase() }.toSet()
+
+        DiscoveryCollections(
+            albums = mergeCollections(albumJobs.map { it.await() }, excludeCollectionIds, limitPerShelf),
+            playlists = mergeCollections(
+                playlistJobs.map { it.await() },
+                excludeCollectionIds,
+                limitPerShelf
+            ),
+            artists = interleaveBy(artistJobs.map { it.await() }) { it.id }
+                .filter { it.name.isNotBlank() && it.name.lowercase() !in excludedNames }
+                .take(limitPerShelf)
+        )
+    }
+
+    private suspend fun searchOrEmpty(
+        block: suspend () -> List<PlaylistDisplayItem>
+    ): List<PlaylistDisplayItem> = runCatching { block() }.getOrDefault(emptyList())
+
+    private suspend fun searchArtistsOrEmpty(query: String): List<ArtistItem> =
+        runCatching { youTubeRepository.searchArtists(query) }.getOrDefault(emptyList())
+
+    private fun mergeCollections(
+        buckets: List<List<PlaylistDisplayItem>>,
+        excludeIds: Set<String>,
+        limit: Int
+    ): List<PlaylistDisplayItem> =
+        interleaveBy(buckets) { it.id }
+            .filter { it.name.isNotBlank() && it.id.isNotBlank() && it.id !in excludeIds }
+            .take(limit)
+
+    /** [interleave] for anything with an identity, so one seed cannot own a shelf. */
+    private fun <T> interleaveBy(buckets: List<List<T>>, id: (T) -> String): List<T> {
+        val out = mutableListOf<T>()
+        val seen = HashSet<String>()
+        var i = 0
+        var added = true
+        while (added) {
+            added = false
+            for (bucket in buckets) {
+                if (i < bucket.size) {
+                    added = true
+                    val item = bucket[i]
+                    if (seen.add(id(item))) out.add(item)
+                }
+            }
+            i++
+        }
+        return out
     }
 
     /** Round-robin merge so one seed doesn't dominate the top of the feed. */
