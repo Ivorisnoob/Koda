@@ -1076,7 +1076,21 @@ fun VideoOptionsSheetHost(
      * navigation, which no sheet can perform on its own; a call site that
      * leaves it null simply has no channel row.
      */
-    onOpenChannel: ((channelId: String) -> Unit)? = null
+    onOpenChannel: ((channelId: String) -> Unit)? = null,
+    /**
+     * Dismissals routed somewhere other than [HomeViewModel]'s feeds.
+     *
+     * Only Shorts needs this, and it needs it because it is the one surface
+     * that filters on *ingestion* rather than through a derived flow: the
+     * pager index and playIndex both address `_shorts` positionally, so the
+     * hide has to be taken by `ShortsPlayerViewModel`, which removes the item
+     * and advances the pager. Writing it through the home feeds instead would
+     * record the hide correctly and leave the Short sitting on screen.
+     *
+     * Null everywhere else, which keeps the default routing exactly as it was.
+     */
+    onNotInterestedOverride: (() -> Unit)? = null,
+    onBlockChannelOverride: (() -> Unit)? = null
 ) {
     val isDeviceVideo = LocalVideo.isDeviceVideoId(video.videoId)
     val playlists by viewModel.videoPlaylists.collectAsState()
@@ -1128,10 +1142,10 @@ fun VideoOptionsSheetHost(
         // A device file has no recommendations to tune and no channel behind it,
         // so both rows are suppressed here rather than at every call site.
         onNotInterested = if (allowNotInterested && !isDeviceVideo) {
-            { viewModel.markNotInterested(video) }
+            onNotInterestedOverride ?: { viewModel.markNotInterested(video) }
         } else null,
         onBlockChannel = if (allowBlockChannel && !isDeviceVideo) {
-            { viewModel.blockChannelFor(video) }
+            onBlockChannelOverride ?: { viewModel.blockChannelFor(video) }
         } else null,
         onRemoveFromHistory = onRemoveFromHistory,
         isSignedOut = !isConnected,

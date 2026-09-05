@@ -240,8 +240,13 @@ private fun CreatorBanner(
                         )
                 )
                 if (!avatarUrl.isNullOrBlank()) {
+                    // Requested at a real size: this is 150dp of picture, and
+                    // a channel avatar arrives from InnerTube at =s48 or =s88.
                     AsyncImage(
-                        model = avatarUrl,
+                        model = com.ivor.ivormusic.data.googleImageAtSize(
+                            avatarUrl,
+                            com.ivor.ivormusic.data.AVATAR_TARGET_PX
+                        ),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -291,13 +296,16 @@ fun CreatorAvatar(
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (!avatarUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = avatarUrl,
+                com.ivor.ivormusic.ui.components.AvatarImage(
+                    url = avatarUrl,
                     contentDescription = name,
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape),
-                    contentScale = ContentScale.Crop
+                    indicatorSize = 26.dp,
+                    // The branch below already draws the no-picture case with
+                    // this header's own initial, which says more than a glyph.
+                    emptyIcon = null
                 )
             } else {
                 Icon(

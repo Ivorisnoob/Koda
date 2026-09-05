@@ -119,12 +119,18 @@
 
     <!-- Spotlight home -->
     <string name="spotlight_quick_picks">Quick picks</string>
+    <string name="spotlight_new_for_you">New for you</string>
+    <string name="spotlight_new_for_you_caption">Songs you have not played, from artists you do</string>
+    <string name="spotlight_discovery_empty">Nothing new to suggest yet</string>
+    <string name="spotlight_discovery_empty_sub">Play and like a few more songs and this fills up.</string>
+    <string name="action_refresh">Refresh</string>
     <string name="spotlight_your_playlists">Your playlists</string>
     <string name="spotlight_from_your_library">From your library</string>
     <string name="spotlight_caption_liked">From songs you liked</string>
     <string name="spotlight_caption_recent">From what you played lately</string>
     <string name="shortcut_liked_songs">Liked songs</string>
     <string name="filter_all">All</string>
+    <string name="filter_recommended">For you</string>
     <string name="filter_liked">Liked</string>
     <string name="filter_recent">Recent</string>
     <string name="filter_playlists">Playlists</string>
@@ -348,6 +354,7 @@
     <string name="sp_home_mode_toggle">Home Screen Mode Toggle</string>
     <string name="sp_timed_comments">Timed Comments</string>
     <string name="sp_shorts">Shorts</string>
+    <string name="sp_no_description">No description</string>
     <string name="sp_shorts_enabled_sub">Shown on Home and opened in the swipe player</string>
     <string name="sp_shorts_disabled_sub">Hidden from Home; opened in the video player elsewhere</string>
     <string name="sp_shorts_buttons">Shorts Buttons</string>

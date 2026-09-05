@@ -1299,7 +1299,8 @@ fun MusicApp(
         com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
             viewModel = shortsPlayerViewModel,
             hiddenActions = shortsHiddenActions,
-            onOpenChannel = openChannel
+            onOpenChannel = openChannel,
+            homeViewModel = homeViewModel
         )
 
         // One confirmation host covers the player controls and every song

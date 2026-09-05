@@ -180,6 +180,78 @@ class RecommendationEngine(
         else youTubeRepository.search("trending music", YouTubeRepository.FILTER_SONGS)
     }
 
+    /**
+     * Songs the user has not heard, chosen from what they actually listen to.
+     *
+     * This is a different question from [getHomeRecommendations], which is
+     * "what should this feed look like": that one happily returns the user's
+     * own favourites back to them, and for a home feed that is correct.
+     * Discovery is only worth the name if what comes back is *new*, so
+     * [excludeIds] carries everything the caller already knows about - the
+     * device library, likes, downloads, play history - and anything matching
+     * is dropped rather than ranked lower.
+     *
+     * **YouTube's own recommendations skew to what you have already played**,
+     * which is why this is not simply a browse call. Three seeds pull in
+     * different directions and are interleaved so none of them dominates:
+     *
+     * - **"latest songs" searches on the top artists** are the half that
+     *   actually surfaces *recent* releases. Relevance ranking does the work;
+     *   there is no probed InnerTube browse id for new music in this codebase
+     *   and inventing one would be writing a request from memory.
+     * - **Related-song radios seeded from favourites** reach sideways into
+     *   adjacent artists, which is where anything genuinely unfamiliar comes
+     *   from - an artist search can only ever return that artist.
+     * - **Recent searches** because something typed last week is a taste
+     *   signal the play history has not caught up with yet.
+     *
+     * With no profile at all there is nothing to be personal about, so it asks
+     * for new music generally rather than returning nothing.
+     */
+    suspend fun getDiscoveryRecommendations(
+        excludeIds: Set<String> = emptySet(),
+        limit: Int = 40
+    ): List<Song> = coroutineScope {
+        val profile = buildTasteProfile()
+        if (profile.isEmpty()) {
+            return@coroutineScope youTubeRepository
+                .search("new music this week", YouTubeRepository.FILTER_SONGS)
+                .filter { it.id !in excludeIds }
+                .distinctBy { it.id }
+                .take(limit)
+        }
+
+        // Shuffled rather than always the same three: a refresh that returns
+        // the identical list is a refresh that appears not to have run.
+        val artistSeeds = profile.topArtists.shuffled().take(3)
+        val searchBuckets = artistSeeds.map { artist ->
+            async {
+                runCatching {
+                    youTubeRepository.search("$artist latest songs", YouTubeRepository.FILTER_SONGS)
+                }.getOrDefault(emptyList())
+            }
+        }
+        val searchHistoryBucket = profile.recentSearches.take(2).map { query ->
+            async {
+                runCatching { youTubeRepository.search(query, YouTubeRepository.FILTER_SONGS) }
+                    .getOrDefault(emptyList())
+            }
+        }
+        val radioBuckets = profile.topSongs.take(2).map { seed ->
+            async {
+                runCatching { youTubeRepository.getRelatedSongs(seed.songId) }
+                    .getOrDefault(emptyList())
+            }
+        }
+
+        val buckets = (searchBuckets + searchHistoryBucket + radioBuckets)
+            .map { it.await() }
+            .map { bucket -> bucket.filter { it.id !in excludeIds } }
+            .filter { it.isNotEmpty() }
+
+        interleave(buckets).distinctBy { it.id }.take(limit)
+    }
+
     /** Round-robin merge so one seed doesn't dominate the top of the feed. */
     private fun interleave(buckets: List<List<Song>>): List<Song> {
         val out = mutableListOf<Song>()

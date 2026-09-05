@@ -525,6 +525,16 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         com.ivor.ivormusic.data.CacheManager.setVideoPlaybackActive(SHORTS_CACHE_OWNER, false)
     }
 
+    /**
+     * Seek the current Short, for a timestamp link in its description.
+     *
+     * Clamped at zero only: a timestamp past the end is YouTube's data being
+     * wrong about its own video, and ExoPlayer already clamps to the duration.
+     */
+    fun seekTo(positionMs: Long) {
+        _exoPlayer?.seekTo(positionMs.coerceAtLeast(0L))
+    }
+
     fun togglePlayPause() {
         if (_isPlaying.value) _exoPlayer?.pause() else _exoPlayer?.play()
     }

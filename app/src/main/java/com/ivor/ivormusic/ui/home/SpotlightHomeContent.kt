@@ -26,17 +26,22 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueueMusic
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +55,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
@@ -122,10 +130,20 @@ fun SpotlightHomeContent(
     // scroll position.
     var filter by rememberSaveable { mutableStateOf(SpotlightFilter.All) }
 
-    val quickPicks = remember(filter, songs, likedSongs, recentlyPlayed) {
+    val discoverySongs by viewModel.discoverySongs.collectAsState()
+    val isDiscoveryLoading by viewModel.isDiscoveryLoading.collectAsState()
+
+    // Fetched when its tab is opened rather than with the rest of Home: it is
+    // several searches plus a radio call, and most sessions never look at it.
+    LaunchedEffect(filter) {
+        if (filter == SpotlightFilter.Recommended) viewModel.loadDiscovery()
+    }
+
+    val quickPicks = remember(filter, songs, likedSongs, recentlyPlayed, discoverySongs) {
         when (filter) {
             SpotlightFilter.Liked -> likedSongs
             SpotlightFilter.Recent -> recentlyPlayed
+            SpotlightFilter.Recommended -> discoverySongs
             else -> songs
         }.take(QUICK_PICK_PAGES * QUICK_PICK_ROWS)
     }
@@ -143,8 +161,17 @@ fun SpotlightHomeContent(
     }
 
     ExpressivePullToRefresh(
-        isRefreshing = isRefreshing && !isInitialLoading,
-        onRefresh = { viewModel.refresh(excludedFolders, manualScan) },
+        // The discovery tab has its own fetch, so its own spinner: pulling on
+        // it and watching the library reload would be the gesture doing
+        // something other than what the screen is showing.
+        isRefreshing = (isRefreshing || isDiscoveryLoading) && !isInitialLoading,
+        onRefresh = {
+            if (filter == SpotlightFilter.Recommended) {
+                viewModel.loadDiscovery(force = true)
+            } else {
+                viewModel.refresh(excludedFolders, manualScan)
+            }
+        },
         modifier = Modifier.fillMaxSize(),
     ) {
         LazyColumn(
@@ -189,10 +216,30 @@ fun SpotlightHomeContent(
                 }
             }
 
+            // First load of the discovery tab: the grid below is empty and
+            // will be for a second or two of network, and an empty page reads
+            // as "nothing to suggest" rather than "still asking".
+            if (filter == SpotlightFilter.Recommended && isDiscoveryLoading && quickPicks.isEmpty()) {
+                item(key = "discovery-loading") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 56.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        LoadingIndicator()
+                    }
+                }
+            }
+
             if (quickPicks.isNotEmpty()) {
                 item(key = "quick-header") {
                     SpotlightSectionHeader(
-                        title = stringResource(R.string.spotlight_quick_picks),
+                        title = if (filter == SpotlightFilter.Recommended) {
+                            stringResource(R.string.spotlight_new_for_you)
+                        } else {
+                            stringResource(R.string.spotlight_quick_picks)
+                        },
                         subtitle = spotlightQuickPickCaption(filter),
                         actionLabel = stringResource(R.string.action_play_all),
                         onAction = { onPlaySongs(quickPicks, quickPicks.firstOrNull()) },
@@ -207,14 +254,23 @@ fun SpotlightHomeContent(
                 }
             }
 
-            if (filter != SpotlightFilter.Playlists && recentlyPlayed.isNotEmpty()) {
+            if (filter != SpotlightFilter.Playlists &&
+                filter != SpotlightFilter.Recommended &&
+                recentlyPlayed.isNotEmpty()
+            ) {
                 item(key = "recent-header") {
                     SpotlightSectionHeader(title = stringResource(R.string.home_section_jump_back_in))
                 }
                 item(key = "recent-shelf") {
                     SpotlightShelf(
                         items = recentlyPlayed.take(SHELF_ITEMS).map {
-                            ShelfItem(it.id, it.title, it.artist, it.albumArtUri?.toString() ?: it.thumbnailUrl)
+                            ShelfItem(
+                                it.id,
+                                it.title,
+                                it.artist,
+                                it.albumArtUri?.toString() ?: it.thumbnailUrl,
+                                it.albumArtUri?.toString() ?: it.highResThumbnailUrl,
+                            )
                         },
                         onClick = { id ->
                             recentlyPlayed.find { it.id == id }?.let(onRecentClick)
@@ -236,6 +292,7 @@ fun SpotlightHomeContent(
                                     it.name,
                                     if (it.itemCount >= 0) "${it.itemCount} songs" else it.uploaderName,
                                     it.thumbnailUrl,
+                                    com.ivor.ivormusic.data.googleImageAtSize(it.thumbnailUrl, 512),
                                 )
                             },
                             onClick = { id ->
@@ -257,7 +314,13 @@ fun SpotlightHomeContent(
                 item(key = "library-shelf") {
                     SpotlightShelf(
                         items = songs.take(SHELF_ITEMS).map {
-                            ShelfItem(it.id, it.title, it.artist, it.albumArtUri?.toString() ?: it.thumbnailUrl)
+                            ShelfItem(
+                                it.id,
+                                it.title,
+                                it.artist,
+                                it.albumArtUri?.toString() ?: it.thumbnailUrl,
+                                it.albumArtUri?.toString() ?: it.highResThumbnailUrl,
+                            )
                         },
                         onClick = { id -> songs.find { it.id == id }?.let(onSongClick) },
                     )
@@ -266,7 +329,8 @@ fun SpotlightHomeContent(
 
             // A filter that turned up nothing is a real state, and a blank page
             // reads as a bug rather than as an answer.
-            if (!isInitialLoading && quickPicks.isEmpty() && shortcuts.isEmpty() &&
+            if (!isInitialLoading && !isDiscoveryLoading && quickPicks.isEmpty() &&
+                (filter == SpotlightFilter.Recommended || shortcuts.isEmpty()) &&
                 (filter != SpotlightFilter.Playlists || ownPlaylists.isEmpty())
             ) {
                 item(key = "empty") { SpotlightEmptyState(filter) }
@@ -315,32 +379,70 @@ private const val SHORTCUT_COUNT = 6
  */
 internal enum class SpotlightFilter(val label: String, val quickPickCaption: String?) {
     All("All", null),
+
+    /**
+     * The one filter that is not a view of what the user already has.
+     *
+     * It sits second because it is a peer of All rather than a corner of the
+     * screen: everything else here scopes the library, and this is the only
+     * entry that answers "what should I listen to that I have not heard".
+     */
+    Recommended("For you", "Not in your library yet"),
     Liked("Liked", "From songs you liked"),
     Recent("Recent", "From what you played lately"),
     Playlists("Playlists", null),
 }
 
+/**
+ * The filter row, as one connected group rather than five loose chips.
+ *
+ * These are mutually exclusive views of the same screen, which is a segmented
+ * control, not a set of independent toggles - and Material 3 Expressive draws
+ * that as connected [ToggleButton]s whose shape morphs on selection, the same
+ * component the SponsorBlock category rows and the video quality tabs use.
+ * Loose chips read as "pick any" and gave the selected one nothing but a fill.
+ *
+ * It scrolls rather than dividing the width five ways: "Playlists" and
+ * "For you" are not the same length as "All", and equal weights would either
+ * clip them or waste half the row.
+ */
 @Composable
 private fun SpotlightFilterChips(
     selected: SpotlightFilter,
     onSelect: (SpotlightFilter) -> Unit,
 ) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val entries = SpotlightFilter.entries.toList()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
     ) {
-        items(SpotlightFilter.entries.toList(), key = { it.name }) { entry ->
-            FilterChip(
-                selected = entry == selected,
-                onClick = { onSelect(entry) },
-                label = { Text(spotlightFilterLabel(entry)) },
-                shape = RoundedCornerShape(14.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+        entries.forEachIndexed { index, entry ->
+            ToggleButton(
+                checked = entry == selected,
+                onCheckedChange = {
+                    if (entry != selected) {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onSelect(entry)
+                    }
+                },
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                colors = ToggleButtonDefaults.toggleButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    checkedContainerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    checkedContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
-            )
+            ) {
+                Text(spotlightFilterLabel(entry))
+            }
         }
     }
 }
@@ -348,6 +450,7 @@ private fun SpotlightFilterChips(
 @Composable
 private fun spotlightFilterLabel(filter: SpotlightFilter): String = when (filter) {
     SpotlightFilter.All -> stringResource(R.string.filter_all)
+    SpotlightFilter.Recommended -> stringResource(R.string.filter_recommended)
     SpotlightFilter.Liked -> stringResource(R.string.filter_liked)
     SpotlightFilter.Recent -> stringResource(R.string.filter_recent)
     SpotlightFilter.Playlists -> stringResource(R.string.filter_playlists)
@@ -355,6 +458,7 @@ private fun spotlightFilterLabel(filter: SpotlightFilter): String = when (filter
 
 @Composable
 private fun spotlightQuickPickCaption(filter: SpotlightFilter): String? = when (filter) {
+    SpotlightFilter.Recommended -> stringResource(R.string.spotlight_new_for_you_caption)
     SpotlightFilter.Liked -> stringResource(R.string.spotlight_caption_liked)
     SpotlightFilter.Recent -> stringResource(R.string.spotlight_caption_recent)
     else -> null
@@ -468,9 +572,13 @@ private fun SpotlightShortcutTile(
                             modifier = Modifier.size(24.dp),
                         )
                     }
-                    is Shortcut.Playlist -> ShortcutImage(shortcut.playlist.thumbnailUrl)
+                    is Shortcut.Playlist -> ShortcutImage(
+                        shortcut.playlist.thumbnailUrl,
+                        com.ivor.ivormusic.data.googleImageAtSize(shortcut.playlist.thumbnailUrl, 512),
+                    )
                     is Shortcut.Track -> ShortcutImage(
-                        shortcut.song.albumArtUri?.toString() ?: shortcut.song.thumbnailUrl
+                        shortcut.song.albumArtUri?.toString() ?: shortcut.song.thumbnailUrl,
+                        shortcut.song.albumArtUri?.toString() ?: shortcut.song.highResThumbnailUrl,
                     )
                 }
             }
@@ -487,30 +595,28 @@ private fun SpotlightShortcutTile(
     }
 }
 
+/**
+ * Artwork for a shortcut tile or a shelf card.
+ *
+ * Goes through [VideoThumbnail] rather than a bare `AsyncImage` for the same
+ * reasons the feed cards do: the sharper URL is layered over the one the feed
+ * returned so a 404 upstairs is invisible, a dropped fetch is retried twice
+ * instead of leaving a permanently blank card, and the Material 3 loading
+ * indicator is held off long enough that a memory-cache hit never flashes one
+ * during a fling.
+ */
 @Composable
-private fun ShortcutImage(model: String?) {
-    if (model != null) {
-        AsyncImage(
-            model = model,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-    } else {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.QueueMusic,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-    }
+private fun ShortcutImage(model: String?, highRes: String? = null) {
+    com.ivor.ivormusic.ui.components.VideoThumbnail(
+        thumbnailUrl = model,
+        contentDescription = null,
+        modifier = Modifier.fillMaxSize(),
+        highResThumbnailUrl = highRes,
+        contentScale = ContentScale.Crop,
+        indicatorSize = 24.dp,
+        emptyIcon = Icons.AutoMirrored.Rounded.QueueMusic,
+        placeholderColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
 }
 
 /* ------------------------------------------------------------------ */
@@ -601,6 +707,9 @@ private fun SpotlightQuickPickRow(
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
+            // A quick-pick row draws at 48dp, so the feed's own thumbnail is
+            // already enough: asking for 1080 here would fetch a megabyte to
+            // fill a thumbnail and evict the covers that do need it.
             ShortcutImage(song.albumArtUri?.toString() ?: song.thumbnailUrl)
         }
         Spacer(Modifier.width(12.dp))
@@ -632,6 +741,15 @@ internal data class ShelfItem(
     val title: String,
     val subtitle: String,
     val artwork: String?,
+    /**
+     * The same picture asked for at a size worth drawing. Every shelf card is
+     * 140dp - 420 physical pixels on a 3x screen - and a feed thumbnail
+     * arrives at 120px or less, so the low one alone is being blown up three
+     * to four times. Drawn over [artwork] rather than instead of it, because
+     * `maxresdefault` does not exist for every video and a channel may have no
+     * large avatar: a miss then costs sharpness, not an empty card.
+     */
+    val artworkHighRes: String? = null,
 )
 
 /**
@@ -660,7 +778,7 @@ private fun SpotlightShelf(items: List<ShelfItem>, onClick: (String) -> Unit) {
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                     contentAlignment = Alignment.Center,
                 ) {
-                    ShortcutImage(item.artwork)
+                    ShortcutImage(item.artwork, item.artworkHighRes)
                 }
                 Column(
                     modifier = Modifier.padding(
@@ -760,10 +878,10 @@ private fun SpotlightEmptyState(filter: SpotlightFilter) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            imageVector = if (filter == SpotlightFilter.Liked) {
-                Icons.Rounded.Favorite
-            } else {
-                Icons.Rounded.History
+            imageVector = when (filter) {
+                SpotlightFilter.Liked -> Icons.Rounded.Favorite
+                SpotlightFilter.Recommended -> Icons.Rounded.AutoAwesome
+                else -> Icons.Rounded.History
             },
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -775,6 +893,7 @@ private fun SpotlightEmptyState(filter: SpotlightFilter) {
                 SpotlightFilter.Liked -> stringResource(R.string.spotlight_empty_no_liked)
                 SpotlightFilter.Recent -> stringResource(R.string.spotlight_empty_no_recent)
                 SpotlightFilter.Playlists -> stringResource(R.string.spotlight_empty_no_playlists)
+                SpotlightFilter.Recommended -> stringResource(R.string.spotlight_discovery_empty)
                 SpotlightFilter.All -> stringResource(R.string.spotlight_empty_generic)
             },
             style = MaterialTheme.typography.titleSmall,
@@ -785,6 +904,7 @@ private fun SpotlightEmptyState(filter: SpotlightFilter) {
             text = when (filter) {
                 SpotlightFilter.Liked -> stringResource(R.string.spotlight_hint_liked)
                 SpotlightFilter.Playlists -> stringResource(R.string.spotlight_hint_playlists)
+                SpotlightFilter.Recommended -> stringResource(R.string.spotlight_discovery_empty_sub)
                 else -> stringResource(R.string.spotlight_hint_all)
             },
             style = MaterialTheme.typography.bodySmall,

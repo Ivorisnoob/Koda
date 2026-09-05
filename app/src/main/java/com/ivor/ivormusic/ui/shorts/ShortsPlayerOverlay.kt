@@ -49,6 +49,8 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
@@ -130,7 +132,15 @@ fun ShortsPlayerOverlay(
      * overlay on the way: it is full-bleed with no minimised form, so unlike the
      * video player there is nothing to leave running behind the channel page.
      */
-    onOpenChannel: (String) -> Unit = {}
+    onOpenChannel: (String) -> Unit = {},
+    /**
+     * Playlists, downloads and Watch Later live on the home ViewModel, which is
+     * what `VideoOptionsSheetHost` is built around. Shorts is the sixth surface
+     * to open that sheet and goes through the same host as the other five -
+     * per-call-site wiring is what let one of them ship with its queue section
+     * silently missing.
+     */
+    homeViewModel: com.ivor.ivormusic.ui.home.HomeViewModel
 ) {
     val isActive by viewModel.isActive.collectAsState()
     if (!isActive) return
@@ -160,6 +170,8 @@ fun ShortsPlayerOverlay(
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
     var showDismissSheet by remember { mutableStateOf(false) }
+    var showDescriptionSheet by remember { mutableStateOf(false) }
+    var showOptionsSheet by remember { mutableStateOf(false) }
 
     fun requireLogin(action: () -> Unit) {
         if (isLoggedIn) action() else showSignInDialog = true
@@ -471,6 +483,25 @@ fun ShortsPlayerOverlay(
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+            Spacer(modifier = Modifier.weight(1f))
+            // The overflow, in the one piece of chrome this player has that is
+            // not the action rail. It cannot go in the rail: that column is a
+            // set of single-purpose taps the thumb rests on while swiping, and
+            // a menu opened by accident there is a menu over the video.
+            IconButton(
+                onClick = { showOptionsSheet = true },
+                enabled = currentVideo != null,
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreVert,
+                    contentDescription = stringResource(R.string.cd_more_options)
+                )
+            }
         }
 
         // Metadata (bottom-left) + floating action pill (bottom-right)
@@ -562,13 +593,59 @@ fun ShortsPlayerOverlay(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
                 if (video != null && video.title.isNotBlank()) {
-                    Text(
-                        text = video.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // Title plus stats are one target, and the target is what
+                    // opens the description - the same place a Short's title
+                    // takes you on YouTube. The stats line doubles as the
+                    // affordance: a line that says "1.2M views - 2 days ago"
+                    // reads as a thing you can open, where a bare truncated
+                    // title reads as a caption.
+                    val stats = shortsStatsLine(video)
+                    val hasMore = stats != null || !video.description.isNullOrBlank()
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .then(
+                                if (hasMore) {
+                                    Modifier.clickable { showDescriptionSheet = true }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .padding(vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = video.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (stats != null) {
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = stats,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    // Not onSurfaceVariant: this sits on video,
+                                    // where the only contrast available is the
+                                    // scrim, so it is white held back rather
+                                    // than a theme colour that could land on
+                                    // anything.
+                                    color = Color.White.copy(alpha = 0.75f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.ExpandMore,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.75f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -681,6 +758,48 @@ fun ShortsPlayerOverlay(
             onDeleteComment = { comment -> viewModel.deleteComment(comment) },
             onDismiss = { showCommentsSheet = false }
         )
+    }
+
+    if (showDescriptionSheet) {
+        currentVideo?.let { video ->
+            ShortsDescriptionSheet(
+                video = video,
+                onSeekTo = { viewModel.seekTo(it) },
+                onOpenChannel = { channelId ->
+                    // Terminal, like every channel tap in Shorts: the overlay
+                    // has no minimised form, so it closes rather than sitting
+                    // on top of the page it just opened.
+                    showDescriptionSheet = false
+                    onOpenChannel(channelId)
+                },
+                onDismiss = { showDescriptionSheet = false }
+            )
+        }
+    }
+
+    if (showOptionsSheet) {
+        currentVideo?.let { video ->
+            com.ivor.ivormusic.ui.video.VideoOptionsSheetHost(
+                video = video,
+                viewModel = homeViewModel,
+                onDismiss = { showOptionsSheet = false },
+                // The dismissals belong to this ViewModel, not the home feeds:
+                // Shorts filters on ingestion, so the hide has to remove the
+                // item from _shorts and move the pager on.
+                onNotInterestedOverride = {
+                    showOptionsSheet = false
+                    viewModel.markCurrentNotInterested()
+                },
+                onBlockChannelOverride = {
+                    showOptionsSheet = false
+                    viewModel.blockChannelForCurrent()
+                },
+                onOpenChannel = { channelId ->
+                    showOptionsSheet = false
+                    onOpenChannel(channelId)
+                }
+            )
+        }
     }
 
     if (showDismissSheet) {

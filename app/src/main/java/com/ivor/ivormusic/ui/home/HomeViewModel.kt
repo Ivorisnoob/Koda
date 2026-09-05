@@ -244,6 +244,69 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         (localItems + savedItems + ytPlaylists).filterNot { it.id in hiddenIds }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // --- Spotlight's "New for you" shelf ---
+
+    private val _discoverySongs = MutableStateFlow<List<Song>>(emptyList())
+
+    /**
+     * Songs the user has not heard, from what they do listen to.
+     *
+     * Filtered through the same dismissal store the rest of the music feed
+     * is: a discovery shelf that keeps offering something the user explicitly
+     * said no to is the one place that reads worst.
+     */
+    val discoverySongs: StateFlow<List<Song>> = combine(
+        _discoverySongs,
+        notInterestedRepository.hiddenVideos,
+        notInterestedRepository.blockedChannels
+    ) { discovered, _, _ -> notInterestedRepository.filterSongs(discovered) }
+        .stateIn(
+            viewModelScope,
+            kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
+    private val _isDiscoveryLoading = MutableStateFlow(false)
+    val isDiscoveryLoading: StateFlow<Boolean> = _isDiscoveryLoading.asStateFlow()
+
+    private var discoveryJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Fetch the discovery shelf, once, when the tab that shows it is opened.
+     *
+     * Lazy rather than loaded with the rest of Home: it is several searches
+     * and a radio call, and most sessions never open that tab. [force] is the
+     * pull-to-refresh path, which must actually re-run rather than see a
+     * non-empty list and decline.
+     */
+    fun loadDiscovery(force: Boolean = false) {
+        if (!force && (_discoverySongs.value.isNotEmpty() || _isDiscoveryLoading.value)) return
+        discoveryJob?.cancel()
+        discoveryJob = viewModelScope.launch {
+            _isDiscoveryLoading.value = true
+            try {
+                // Everything the user already has is what makes this
+                // "discovery" rather than a second copy of their library.
+                val known = buildSet {
+                    _songs.value.forEach { add(it.id) }
+                    likedSongsRepository.likedSongIds.value.forEach { add(it) }
+                    _recentlyPlayed.value.forEach { add(it.id) }
+                }
+                val discovered = recommendationEngine.getDiscoveryRecommendations(known)
+                // An empty result must not wipe a shelf that is already showing
+                // something usable - a failed refresh should look like nothing
+                // happened, not like the feature broke.
+                if (discovered.isNotEmpty() || _discoverySongs.value.isEmpty()) {
+                    _discoverySongs.value = discovered
+                }
+            } catch (e: Exception) {
+                KLog.w("HomeViewModel", "Discovery recommendations failed", e)
+            } finally {
+                _isDiscoveryLoading.value = false
+            }
+        }
+    }
+
     /** Playlists the user told Koda not to show, for the management sheet. */
     val hiddenPlaylists: StateFlow<List<com.ivor.ivormusic.data.HiddenPlaylist>> =
         hiddenPlaylistsRepository.hiddenPlaylists
