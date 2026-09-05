@@ -117,6 +117,51 @@ class VideoHistoryRepository(context: Context) {
     }
 
     /**
+     * Whether Koda has recorded a watch for [videoId].
+     *
+     * The local store rather than the account's own history, deliberately:
+     * this answers a feed filter and a menu row that both have to be correct
+     * the instant they are drawn, and the account's list is fetched lazily by
+     * whichever screen asked for it last. Signed in, the two agree for
+     * anything watched in Koda, which is the case the filter exists for.
+     */
+    fun isWatched(videoId: String?): Boolean =
+        videoId != null && state.value.any { it.videoId == videoId }
+
+    /**
+     * Mark a video watched because the user said so, rather than because they
+     * watched it.
+     *
+     * Not gated on incognito, and that is the point of it being separate from
+     * [addVideo]: incognito suppresses *recording*, not *doing*, and silently
+     * discarding something the user asked for by name would be a different
+     * feature wearing incognito's label. The same reasoning downloads,
+     * playlists and likes already follow.
+     */
+    fun markWatched(video: VideoItem) {
+        if (video.videoId.isBlank()) return
+        synchronized(LOCK) {
+            if (video.videoId in hiddenIds()) {
+                prefs.edit().putStringSet(hiddenKey(), hiddenIds() - video.videoId).apply()
+            }
+            val current = load().toMutableList()
+            current.removeAll { it.videoId == video.videoId }
+            current.add(0, video)
+            save(current.take(MAX_ENTRIES))
+        }
+    }
+
+    /**
+     * The inverse: forget that this was watched.
+     *
+     * Routed through [removeVideo] rather than only dropping the local entry,
+     * because signed in the history list comes from the account's FEhistory
+     * and a local-only removal would be undone by the next refresh - the video
+     * would go back to counting as watched with no explanation.
+     */
+    fun markUnwatched(videoId: String) = removeVideo(videoId)
+
+    /**
      * Take one video out of the watch history for good.
      *
      * Two writes, and both are needed. Dropping the local entry is the obvious

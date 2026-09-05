@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.horizontalScroll
@@ -131,6 +132,7 @@ fun SpotlightHomeContent(
     var filter by rememberSaveable { mutableStateOf(SpotlightFilter.All) }
 
     val discoverySongs by viewModel.discoverySongs.collectAsState()
+    val discoveryCollections by viewModel.discoveryCollections.collectAsState()
     val isDiscoveryLoading by viewModel.isDiscoveryLoading.collectAsState()
 
     // Fetched when its tab is opened rather than with the rest of Home: it is
@@ -254,6 +256,66 @@ fun SpotlightHomeContent(
                 }
             }
 
+            // The discovery tab's shelves. A grid of songs answers "what do I
+            // play next" and nothing else; a record, an hour somebody curated
+            // and a whole catalogue are the other three ways people find music,
+            // and none of them was reachable from this tab.
+            if (filter == SpotlightFilter.Recommended) {
+                if (discoveryCollections.albums.isNotEmpty()) {
+                    item(key = "discovery-albums-header") {
+                        SpotlightSectionHeader(
+                            title = stringResource(R.string.spotlight_albums_to_explore),
+                            subtitle = stringResource(R.string.spotlight_albums_to_explore_sub),
+                        )
+                    }
+                    item(key = "discovery-albums") {
+                        SpotlightShelf(
+                            items = discoveryCollections.albums.map { it.toShelfItem() },
+                            onClick = { id ->
+                                discoveryCollections.albums.find { it.id == id }
+                                    ?.let(onPlaylistClick)
+                            },
+                        )
+                    }
+                }
+
+                if (discoveryCollections.artists.isNotEmpty()) {
+                    item(key = "discovery-artists-header") {
+                        SpotlightSectionHeader(
+                            title = stringResource(R.string.spotlight_artists_for_you),
+                            subtitle = stringResource(R.string.spotlight_artists_for_you_sub),
+                        )
+                    }
+                    item(key = "discovery-artists") {
+                        SpotlightArtistRail(
+                            artists = discoveryCollections.artists,
+                            // The artist page lives in the Library tab, so this
+                            // is the hand-off the player and the channel page
+                            // already use rather than a route of its own.
+                            onClick = { viewModel.requestArtistPage(it.name) },
+                        )
+                    }
+                }
+
+                if (discoveryCollections.playlists.isNotEmpty()) {
+                    item(key = "discovery-playlists-header") {
+                        SpotlightSectionHeader(
+                            title = stringResource(R.string.spotlight_playlists_to_try),
+                            subtitle = stringResource(R.string.spotlight_playlists_to_try_sub),
+                        )
+                    }
+                    item(key = "discovery-playlists") {
+                        SpotlightShelf(
+                            items = discoveryCollections.playlists.map { it.toShelfItem() },
+                            onClick = { id ->
+                                discoveryCollections.playlists.find { it.id == id }
+                                    ?.let(onPlaylistClick)
+                            },
+                        )
+                    }
+                }
+            }
+
             if (filter != SpotlightFilter.Playlists &&
                 filter != SpotlightFilter.Recommended &&
                 recentlyPlayed.isNotEmpty()
@@ -331,6 +393,7 @@ fun SpotlightHomeContent(
             // reads as a bug rather than as an answer.
             if (!isInitialLoading && !isDiscoveryLoading && quickPicks.isEmpty() &&
                 (filter == SpotlightFilter.Recommended || shortcuts.isEmpty()) &&
+                (filter != SpotlightFilter.Recommended || discoveryCollections.isEmpty()) &&
                 (filter != SpotlightFilter.Playlists || ownPlaylists.isEmpty())
             ) {
                 item(key = "empty") { SpotlightEmptyState(filter) }
@@ -802,6 +865,93 @@ private fun SpotlightShelf(items: List<ShelfItem>, onClick: (String) -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A playlist or album as a shelf card.
+ *
+ * The high-res field is the point: an InnerTube search hands back covers at
+ * whatever size the surface it was built for wanted - often 120px - and a shelf
+ * card is 140dp, which is 420 physical pixels on a 3x screen. Asking for the
+ * size actually being drawn is what separates a cover from a blur.
+ */
+private fun PlaylistDisplayItem.toShelfItem(): ShelfItem = ShelfItem(
+    id = id,
+    title = name,
+    subtitle = when {
+        uploaderName.isNotBlank() -> uploaderName
+        itemCount >= 0 -> "$itemCount songs"
+        else -> ""
+    },
+    artwork = thumbnailUrl,
+    artworkHighRes = com.ivor.ivormusic.data.googleImageAtSize(thumbnailUrl, 512),
+)
+
+/**
+ * Artists as a rail of circles.
+ *
+ * Round rather than the square shelf card above, and that is the whole reason
+ * it is a separate composable: a person is drawn as a circle everywhere else in
+ * this app - the account avatar, the channel page, the artist page it opens -
+ * and a square card of a face in a row of square records reads as another
+ * album. The name sits centred under the circle with the subscriber count
+ * beneath it, so the rail scans as "people" at a glance.
+ */
+@Composable
+private fun SpotlightArtistRail(
+    artists: List<com.ivor.ivormusic.data.ArtistItem>,
+    onClick: (com.ivor.ivormusic.data.ArtistItem) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(artists, key = { it.id }) { artist ->
+            Column(
+                modifier = Modifier
+                    .width(112.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable { onClick(artist) }
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    com.ivor.ivormusic.ui.components.AvatarImage(
+                        url = artist.thumbnailUrl,
+                        contentDescription = null,
+                        targetPx = 288,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = artist.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                artist.subscriberCount?.takeIf { it.isNotBlank() }?.let { subscribers ->
+                    Text(
+                        text = subscribers,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
                     )
                 }
             }

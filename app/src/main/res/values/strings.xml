@@ -124,6 +124,12 @@
     <string name="spotlight_discovery_empty">Nothing new to suggest yet</string>
     <string name="spotlight_discovery_empty_sub">Play and like a few more songs and this fills up.</string>
     <string name="action_refresh">Refresh</string>
+    <string name="spotlight_albums_to_explore">Albums to explore</string>
+    <string name="spotlight_albums_to_explore_sub">Full records from the artists you play</string>
+    <string name="spotlight_playlists_to_try">Playlists to try</string>
+    <string name="spotlight_playlists_to_try_sub">Collections built around what you listen to</string>
+    <string name="spotlight_artists_for_you">Artists you might like</string>
+    <string name="spotlight_artists_for_you_sub">Not in your library yet</string>
     <string name="spotlight_your_playlists">Your playlists</string>
     <string name="spotlight_from_your_library">From your library</string>
     <string name="spotlight_caption_liked">From songs you liked</string>
@@ -190,6 +196,8 @@
     <string name="video_options_share">Share</string>
     <string name="video_options_share_chooser">Share video</string>
     <string name="video_options_not_interested">Not interested</string>
+    <string name="video_options_mark_watched">Mark as watched</string>
+    <string name="video_options_mark_unwatched">Mark as unwatched</string>
     <string name="video_options_remove_from_history">Remove from watch history</string>
     <string name="video_options_dont_recommend_channel">Don\'t recommend channel</string>
     <string name="video_options_dont_recommend_channel_name">Don\'t recommend %1$s</string>
@@ -395,6 +403,10 @@
     <string name="vh_recommendations_off_sub">Shorts can still appear here when enabled.</string>
     <string name="vp_resumed_from">Resumed from %1$s</string>
     <string name="vp_play_from_start">Play from start</string>
+    <string name="sp_show_recent_searches">Show recent searches</string>
+    <string name="sp_show_recent_searches_sub">Your past queries under the search bar</string>
+    <string name="sp_show_related_videos">Show related videos</string>
+    <string name="sp_show_related_videos_sub">Suggestions under a video while it plays</string>
     <string name="sp_not_recommended">Not Recommended</string>
     <string name="sp_not_recommended_sub">Videos and channels you\'ve hidden from your feeds</string>
     <string name="sp_manage_subscriptions">Manage Subscriptions</string>
@@ -418,6 +430,8 @@
     <string name="sp_cache_music_sub">Store streamed songs and videos for faster replay and seeking</string>
     <string name="sp_local_cache">Local Cache</string>
     <string name="sp_max_cache_size">Max Cache Size</string>
+    <string name="sp_cache_size_large_warning">Koda only fills the cache as you listen, but it can grow to %1$s of device storage before it starts evicting older songs.</string>
+    <string name="sp_cache_size_low_space">Only %1$s free on this device. The cache will stop growing when the space runs out, and other apps have to share it.</string>
     <string name="sp_clear_cache">Clear Cache</string>
     <string name="sp_clear_cache_sub">Free up storage space</string>
     <string name="sp_live_updates">Live updates</string>
@@ -574,6 +588,7 @@
     <string name="sc_unfollow_body">Removes it from this device. Your YouTube account isn\'t touched.</string>
     <string name="unfollow">Unfollow</string>
     <string name="cd_all_channels">All channels</string>
+    <string name="sc_hide_watched">Hide watched</string>
     <string name="sc_no_uploads_match">No uploads match these filters.</string>
     <string name="search_channels">Search channels</string>
     <string name="sc_none_found">No subscriptions found</string>
@@ -838,6 +853,14 @@
     <string name="ch_unavailable_title">This channel isn\'t available</string>
     <string name="ch_unavailable_body">It may have been renamed, removed, or restricted in your region.</string>
     <string name="ar_open_youtube_channel">Open YouTube channel</string>
+    <string name="ar_sort_suggested">Suggested</string>
+    <string name="ar_sort_title">A-Z</string>
+    <string name="ar_sort_album">Album</string>
+    <string name="ar_sort_longest">Longest</string>
+    <string name="ar_filter_songs">Filter these songs</string>
+    <string name="ar_filter_hint">Song or album name</string>
+    <string name="ar_no_matching_songs">No songs match that</string>
+    <string name="ar_matching_count">%1$d of %2$d</string>
     <string name="ar_no_songs">No songs found for this artist</string>
     <string name="ar_more_play_options">More play options</string>
     <string name="ar_start_radio">Start radio</string>

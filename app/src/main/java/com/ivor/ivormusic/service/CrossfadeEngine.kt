@@ -112,9 +112,23 @@ class CrossfadeEngine(
      */
     private var fadingIntoId: String? = null
 
-    /** Queue index that will become current if the in-flight swap completes. */
-    var pendingTargetIndex: Int? = null
-        private set
+    private data class PendingTransition(
+        val outgoing: ExoPlayer,
+        val outgoingItem: MediaItem,
+        val incomingItem: MediaItem,
+        val targetIndex: Int,
+    )
+
+    private var pendingTransition: PendingTransition? = null
+
+    /** A transport command can arrive before the fade's next validation tick. */
+    val pendingTargetIndex: Int?
+        get() = pendingTransition?.takeIf { pending ->
+            active === pending.outgoing &&
+                active.currentMediaItem?.isSameQueueItemAs(pending.outgoingItem) == true &&
+                pending.targetIndex in 0 until active.mediaItemCount &&
+                active.getMediaItemAt(pending.targetIndex).isSameQueueItemAs(pending.incomingItem)
+        }?.targetIndex
 
     private var movedListener: Player.Listener? = null
     private var shuffleEnabled = false
@@ -232,9 +246,15 @@ class CrossfadeEngine(
         // anchor on; the caller's ordinary advance is the right answer.
         val outgoingItem = outgoing.currentMediaItem ?: return false
 
+        // A preceding swap can still be easing its tempo back to normal.
+        // Retire that writer before this overlap captures either clock speed.
+        tempoReleaseJob?.cancel()
+        tempoReleaseJob = null
+        outgoing.playbackParameters = PlaybackParameters.DEFAULT
+
         return try {
             fadingIntoId = nextItem.mediaId
-            pendingTargetIndex = targetIndex
+            pendingTransition = PendingTransition(outgoing, outgoingItem, nextItem, targetIndex)
             // One item only. The rest of the queue is spliced around it at swap
             // time, from the live timeline rather than a stale snapshot.
             incoming.setMediaItem(nextItem, incomingStartMs.coerceAtLeast(0L))
@@ -260,7 +280,7 @@ class CrossfadeEngine(
         } catch (e: Exception) {
             KLog.e(TAG, "Could not start transition", e)
             fadingIntoId = null
-            pendingTargetIndex = null
+            pendingTransition = null
             runCatching { incoming.stop() }
             false
         }
@@ -548,7 +568,7 @@ class CrossfadeEngine(
             }
         } finally {
             fadingIntoId = null
-            pendingTargetIndex = null
+            pendingTransition = null
         }
     }
 
@@ -560,7 +580,7 @@ class CrossfadeEngine(
      */
     private fun abortInto(outgoing: ExoPlayer, incoming: ExoPlayer) {
         fadingIntoId = null
-        pendingTargetIndex = null
+        pendingTransition = null
         runCatching {
             incoming.stop()
             incoming.clearMediaItems()
@@ -586,7 +606,7 @@ class CrossfadeEngine(
         if (job?.isActive == true) job.cancel()
         fadeJob = null
         fadingIntoId = null
-        pendingTargetIndex = null
+        pendingTransition = null
         runCatching {
             standby.stop()
             standby.clearMediaItems()
@@ -606,14 +626,17 @@ class CrossfadeEngine(
             player.playbackParameters = PlaybackParameters.DEFAULT
             return
         }
+        val occurrence = player.currentMediaItem ?: return
         tempoReleaseJob = scope.launch {
             val steps = (TEMPO_RELEASE_MS / TEMPO_RELEASE_STEP_MS).toInt()
             repeat(steps) { index ->
+                if (active !== player || isFading ||
+                    player.currentMediaItem?.isSameQueueItemAs(occurrence) != true
+                ) return@launch
                 val t = (index + 1f) / steps
                 player.playbackParameters = PlaybackParameters(start + (1f - start) * t, 1f)
                 delay(TEMPO_RELEASE_STEP_MS)
             }
-            player.playbackParameters = PlaybackParameters.DEFAULT
         }
     }
 

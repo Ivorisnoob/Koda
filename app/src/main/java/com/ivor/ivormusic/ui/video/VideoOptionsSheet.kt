@@ -38,6 +38,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
@@ -171,6 +173,20 @@ fun VideoOptionsSheet(
      * means and does something quite different.
      */
     onRemoveFromHistory: (() -> Unit)? = null,
+    /**
+     * Flip whether Koda counts this video as watched.
+     *
+     * Offered only where [onRemoveFromHistory] is not, and that is a rule
+     * rather than a coincidence: on a feed this answers "I have seen this one"
+     * and is what drives the Hide watched filter, while on the history screen
+     * the same intent already has a row - Remove from history - and two
+     * controls doing one thing on one sheet is worse than either alone.
+     * Keeping them mutually exclusive also means the sheet's row count never
+     * grows, which matters on a surface with a silent height ceiling.
+     */
+    onToggleWatched: (() -> Unit)? = null,
+    /** Whether Koda currently counts this video as watched. */
+    isWatched: Boolean = false,
     /**
      * True when there is no YouTube session, which changes what the Watch later
      * row promises: it is then the device's own list rather than the account's,
@@ -331,6 +347,13 @@ fun VideoOptionsSheet(
                             onDismiss()
                         }
                     },
+                    // Not terminal, deliberately: this is a state flip whose
+                    // result shows on the row itself, and closing the sheet
+                    // would take that confirmation away. It is also the one row
+                    // here somebody may want to undo immediately, by tapping it
+                    // again.
+                    onToggleWatched = onToggleWatched,
+                    isWatched = isWatched,
                     // Terminal: the sheet is over a screen the channel page is
                     // about to replace, and leaving it open would put it on top
                     // of the destination.
@@ -379,6 +402,8 @@ private fun ActionsPane(
     onDownload: () -> Unit,
     onNotInterested: (() -> Unit)?,
     onBlockChannel: (() -> Unit)?,
+    onToggleWatched: (() -> Unit)? = null,
+    isWatched: Boolean = false,
     onRemoveFromHistory: (() -> Unit)?,
     onOpenChannel: (() -> Unit)?
 ) {
@@ -450,6 +475,25 @@ private fun ActionsPane(
                     state = watchLaterState,
                     onClick = onWatchLater
                 )
+                // Beside Watch later because the two are the same kind of
+                // thing: what this video is to me, rather than what to do with
+                // it. Suppressed on the history surfaces, which have Remove.
+                if (onToggleWatched != null) {
+                    OptionRowDivider()
+                    OptionRow(
+                        icon = if (isWatched) {
+                            Icons.Rounded.VisibilityOff
+                        } else {
+                            Icons.Rounded.CheckCircle
+                        },
+                        title = if (isWatched) {
+                            stringResource(R.string.video_options_mark_unwatched)
+                        } else {
+                            stringResource(R.string.video_options_mark_watched)
+                        },
+                        onClick = onToggleWatched
+                    )
+                }
                 OptionRowDivider()
                 OptionRow(
                     icon = Icons.Rounded.PlaylistAdd,
@@ -1093,6 +1137,16 @@ fun VideoOptionsSheetHost(
     onBlockChannelOverride: (() -> Unit)? = null
 ) {
     val isDeviceVideo = LocalVideo.isDeviceVideoId(video.videoId)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val watchHistoryRepository = remember(context) {
+        com.ivor.ivormusic.data.VideoHistoryRepository(context)
+    }
+    // Read from the store's own flow rather than asked once, so tapping the row
+    // flips the label under the finger instead of after the sheet is reopened.
+    val watchHistory by watchHistoryRepository.history.collectAsState()
+    val isWatched = remember(watchHistory, video.videoId) {
+        watchHistory.any { it.videoId == video.videoId }
+    }
     val playlists by viewModel.videoPlaylists.collectAsState()
     val isLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
     val isConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -1148,6 +1202,23 @@ fun VideoOptionsSheetHost(
             onBlockChannelOverride ?: { viewModel.blockChannelFor(video) }
         } else null,
         onRemoveFromHistory = onRemoveFromHistory,
+        // Wired here rather than per call site, which is the whole reason this
+        // host exists: a nullable parameter left unset ships a feature that is
+        // silently absent and nothing compile-fails. A device file is excluded
+        // for the same reason its dismissal rows are - Koda records local
+        // watches, but "watched" as a feed filter is about YouTube videos.
+        onToggleWatched = if (isDeviceVideo || onRemoveFromHistory != null) {
+            null
+        } else {
+            {
+                if (isWatched) {
+                    watchHistoryRepository.markUnwatched(video.videoId)
+                } else {
+                    watchHistoryRepository.markWatched(video)
+                }
+            }
+        },
+        isWatched = isWatched,
         isSignedOut = !isConnected,
         onCreatePlaylist = { name, onCreated ->
             viewModel.createLocalVideoPlaylist(name, onCreated)

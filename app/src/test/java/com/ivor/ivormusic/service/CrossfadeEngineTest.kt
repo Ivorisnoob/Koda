@@ -1,5 +1,8 @@
 package com.ivor.ivormusic.service
 
+import android.os.Bundle
+import androidx.media3.common.MediaMetadata
+import org.mockito.Mockito.*
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -13,7 +16,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CrossfadeEngineTest {
-    private fun item(id: String) = MediaItem.Builder().setMediaId(id).build()
+    private fun item(id: String, occurrence: String? = null): MediaItem {
+        val extras = occurrence?.let { value ->
+            mock(Bundle::class.java).also { `when`(it.getString(EXTRA_QUEUE_ITEM_ID)).thenReturn(value) }
+        }
+        return MediaItem.Builder().setMediaId(id)
+            .setMediaMetadata(MediaMetadata.Builder().setExtras(extras).build()).build()
+    }
 
     private suspend fun awaitCondition(condition: () -> Boolean) {
         withTimeout(3_000L) { while (!condition()) delay(10L) }
@@ -120,6 +129,90 @@ class CrossfadeEngineTest {
         } finally { pair.engine.release() }
     }
 
+    @Test fun `pending skip index becomes unavailable immediately when its target moves`() = runBlocking {
+        val pair = Pairing(this)
+        pair.outgoing.items += listOf(item("a", "a1"), item("b", "b1"), item("c", "c1"))
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 800L, targetIndex = 1))
+            delay(30L)
+            pair.outgoing.items.add(1, item("inserted", "inserted1"))
+            // Next/Previous may arrive before the fade coroutine's next tick.
+            assertNull(pair.engine.pendingTargetIndex)
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `same ids at the same indices in a rebuilt queue cannot finish preparation`() = runBlocking {
+        val pair = Pairing(this)
+        pair.outgoing.items += listOf(item("a", "a1"), item("b", "b1"))
+        pair.incoming.readyOnPrepare = false
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 400L, targetIndex = 1))
+            delay(30L)
+            pair.outgoing.items[0] = item("a", "a2")
+            pair.outgoing.items[1] = item("b", "b2")
+            awaitCondition { !pair.engine.isFading }
+            assertSame(pair.outgoing.player, pair.engine.active)
+            assertTrue(pair.incoming.items.isEmpty())
+            assertNull(pair.engine.pendingTargetIndex)
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `substituting a duplicate target during mixing cannot take the session`() = runBlocking {
+        val pair = Pairing(this)
+        pair.outgoing.items += listOf(item("a", "a1"), item("b", "b1"), item("b", "b2"))
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 800L, targetIndex = 1))
+            awaitCondition { pair.incoming.volume > 0.05f }
+            pair.outgoing.items.removeAt(1)
+            awaitCondition { !pair.engine.isFading }
+            assertSame(pair.outgoing.player, pair.engine.active)
+            assertTrue(pair.incoming.items.isEmpty())
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `cancelled fade cleanup cannot clear a newly prepared standby`() = runBlocking {
+        val pair = Pairing(this)
+        pair.outgoing.items += listOf(item("a", "a1"), item("b", "b1"), item("c", "c1"))
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 800L, targetIndex = 1))
+            awaitCondition { pair.incoming.playWhenReady }
+            pair.engine.cancelTransition()
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[2], 800L, targetIndex = 2))
+            delay(40L)
+            assertTrue(pair.engine.isFading)
+            assertEquals("c1", pair.incoming.items.single().queueItemId)
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `tempo release cannot write to a replacement occurrence after handoff`() = runBlocking {
+        val pair = Pairing(this)
+        pair.outgoing.items += listOf(item("a"), item("b"), item("c"))
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 400L, targetIndex = 1, incomingSpeed = 1.04f))
+            awaitCondition { !pair.engine.isFading }
+            delay(20L)
+            pair.incoming.items[1] = item("replacement")
+            val writes = pair.incoming.parameterWrites
+            delay(150L)
+            assertEquals("tempo release wrote into the replacement track", writes, pair.incoming.parameterWrites)
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `a new overlap retires the previous tempo release before measuring clocks`() = runBlocking {
+        val pair = Pairing(this)
+        pair.outgoing.items += listOf(item("a"), item("b"), item("c"))
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 400L, targetIndex = 1, incomingSpeed = 1.04f))
+            awaitCondition { !pair.engine.isFading }
+            delay(20L)
+            assertTrue(pair.engine.startTransition(pair.incoming.items[2], 400L, targetIndex = 2))
+            assertEquals(1f, pair.incoming.player.playbackParameters.speed, 0.001f)
+            val writes = pair.incoming.parameterWrites
+            delay(150L)
+            assertEquals("old release changed the outgoing clock during a new overlap", writes, pair.incoming.parameterWrites)
+        } finally { pair.engine.release() }
+    }
+
     /** A queue and advancing playback clock, with no decoder or Android looper. */
     private class ClockPlayer {
         val items = mutableListOf<MediaItem>()
@@ -127,18 +220,25 @@ class CrossfadeEngineTest {
         var volume = 1f
         var stalled = false
         private var state = Player.STATE_READY
+        var readyOnPrepare = true
         private var parameters = PlaybackParameters.DEFAULT
+        var parameterWrites = 0
         private var storedPosition = 8_000L
-        private var updatedAt = System.nanoTime()
+        // Fixture/mock construction is not elapsed playback time.
+        private var updatedAt: Long? = null
         var playWhenReady = true
             set(value) {
                 position = position
                 field = value
             }
         var position: Long
-            get() = storedPosition + if (playWhenReady && state == Player.STATE_READY && !stalled) {
-                ((System.nanoTime() - updatedAt) / 1_000_000L * parameters.speed).toLong()
-            } else 0L
+            get() {
+                val now = System.nanoTime()
+                val startedAt = updatedAt ?: now.also { updatedAt = it }
+                return storedPosition + if (playWhenReady && state == Player.STATE_READY && !stalled) {
+                    ((now - startedAt) / 1_000_000L * parameters.speed).toLong()
+                } else 0L
+            }
             set(value) { storedPosition = value; updatedAt = System.nanoTime() }
 
         val player = Proxy.newProxyInstance(
@@ -153,7 +253,7 @@ class CrossfadeEngineTest {
                 "getDuration" -> 10_000L
                 "getCurrentPosition" -> position
                 "getPlaybackParameters" -> parameters
-                "setPlaybackParameters" -> { position = position; parameters = args!![0] as PlaybackParameters; null }
+                "setPlaybackParameters" -> { parameterWrites++; position = position; parameters = args!![0] as PlaybackParameters; null }
                 "getPlaybackState" -> state
                 "getPlayerError" -> null
                 "isPlaying" -> playWhenReady && state == Player.STATE_READY
@@ -177,7 +277,7 @@ class CrossfadeEngineTest {
                     }
                     null
                 }
-                "prepare" -> { state = Player.STATE_READY; null }
+                "prepare" -> { state = if (readyOnPrepare) Player.STATE_READY else Player.STATE_BUFFERING; null }
                 "stop" -> { position = position; state = Player.STATE_IDLE; null }
                 "clearMediaItems" -> { items.clear(); index = 0; position = 0; null }
                 "setShuffleOrder", "setShuffleModeEnabled", "setRepeatMode",
