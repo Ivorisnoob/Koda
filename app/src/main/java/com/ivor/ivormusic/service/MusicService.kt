@@ -58,6 +58,7 @@ import com.ivor.ivormusic.widget.PlayerWidgets
 import com.ivor.ivormusic.widget.toWidgetSnapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -69,6 +70,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.LinkedHashMap
@@ -153,8 +156,7 @@ class MusicService : MediaLibraryService() {
     )
     private val profilingIds =
         java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
-    private val prefetchingIds =
-        java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    private val prefetchingOccurrences = mutableSetOf<Any>()
 
     // One warm at a time: warming must never contend with the current song's
     // own buffering for the whole prefetch window.
@@ -185,7 +187,6 @@ class MusicService : MediaLibraryService() {
     private var fadeVolumeJob: Job? = null
     private var progressJob: Job? = null
     private var transitionJob: Job? = null
-    private var manualTransitionJob: Job? = null
     private var playbackShuffleEnabled = false
     private var playbackShuffleSeed = 0L
     private var playbackRepeatMode = Player.REPEAT_MODE_OFF
@@ -263,9 +264,6 @@ class MusicService : MediaLibraryService() {
          */
         private const val SKIP_FADE_MS = 300L
 
-        /** Manual track changes overlap briefly without making Next feel slow. */
-        private const val MANUAL_CROSSFADE_MS = 500L
-        private const val MANUAL_RESOLVE_WAIT_MS = 1_500L
         private const val PREVIOUS_RESTART_MS = 3_000L
         private const val AUTO_MIX_FALLBACK_OVERLAP_MS = 3_000L
         private const val AUTO_MIX_MAX_OVERLAP_MS = 15_000L
@@ -453,7 +451,6 @@ class MusicService : MediaLibraryService() {
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
         transitionJob?.cancel()
-        manualTransitionJob?.cancel()
         headsetButtonJob?.cancel()
         headsetButtonSequence.clear()
         sleepTimerJob?.cancel()
@@ -673,7 +670,6 @@ class MusicService : MediaLibraryService() {
                 isCrossfadeEnabled = enabled
                 automaticTransitionAttempt = null
                 if (!enabled && ::engine.isInitialized) {
-                    manualTransitionJob?.cancel()
                     fadeVolumeJob?.cancel()
                     engine.cancelTransition()
                     engine.applyIdleVolumes()
@@ -736,7 +732,6 @@ class MusicService : MediaLibraryService() {
             ) {
                 // Same-song scrubs do not emit onMediaItemTransition. Their
                 // old fade clock is just as stale as a different-song jump.
-                manualTransitionJob?.cancel()
                 engine.cancelTransition()
                 automaticTransitionAttempt = null
             }
@@ -799,16 +794,15 @@ class MusicService : MediaLibraryService() {
             // song that was tapped, and left `pendingTargetIndex` pointing
             // into a queue that no longer exists, so the next Next/Previous
             // jumped somewhere arbitrary too.
-            if (engine.isFading) {
-                KLog.w(TAG, "Current item changed (reason=$reason); dropping the overlap")
-                engine.cancelTransition()
-            }
+            // Also retire a post-swap tempo release, which outlives isFading.
+            engine.cancelTransition()
 
             // 2. Volume for the new track. An automatic advance that reaches
             // here is one the engine did *not* overlap - crossfade off, an
             // unresolved next item or repeat-one. Off means literally off: no
             // overlap and no fade-in on either automatic or manual changes.
             if (!isCrossfadeEnabled || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                fadeVolumeJob?.cancel()
                 player.volume = trackGain * engine.duckGain
             } else {
                 performSkipFadeIn()
@@ -997,7 +991,10 @@ class MusicService : MediaLibraryService() {
             val uri = item.localConfiguration?.uri
 
             if (isPlaceholder(uri)) {
-                if (!prefetchingIds.add(item.mediaId)) return@forEachIndexed
+                // Resolution is shared by song; applying and warming belong
+                // to each occurrence. An old queue must not suppress a new one.
+                val occurrence = item.queueItemId ?: item
+                if (!prefetchingOccurrences.add(occurrence)) return@forEachIndexed
                 serviceScope.launch {
                     try {
                         val deferred = getOrStartResolution(item)
@@ -1022,7 +1019,7 @@ class MusicService : MediaLibraryService() {
                     } catch (e: Exception) {
                         KLog.w(TAG, "Prefetch: Failed to resolve upcoming ${item.mediaId}")
                     } finally {
-                        prefetchingIds.remove(item.mediaId)
+                        prefetchingOccurrences.remove(occurrence)
                     }
                 }
             }
@@ -1270,6 +1267,10 @@ class MusicService : MediaLibraryService() {
                 // Mirrors VideoPlayerViewModel.recoverFromSourceError.
                 if (isVisitorDataForbidden) {
                     youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                    currentCoroutineContext().ensureActive()
+                    if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) {
+                        return@launch
+                    }
                     // Everything prefetchUpcomingSongs resolved was signed with
                     // the token just discarded, so the rest of the queue is
                     // already dead. Dropping it here turns one recovery into a
@@ -1497,9 +1498,25 @@ class MusicService : MediaLibraryService() {
         override fun onPlaybackResumption(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
-        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = resolveScope.future {
-            loadPlaybackResumption()
-                ?: throw IllegalStateException("No saved playback session")
+            isForPlayback: Boolean,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            // System UI also asks for resume-card metadata without applying
+            // a queue. That read remains independent of current playback.
+            if (!isForPlayback) return resolveScope.future {
+                loadPlaybackResumption()
+                    ?: throw IllegalStateException("No saved playback session")
+            }
+            val requestedPlayer = mediaSession.player
+            return serviceScope.future {
+                fun queueStillEmpty() = mediaSession.player === requestedPlayer &&
+                    requestedPlayer.mediaItemCount == 0
+                check(queueStillEmpty()) { "Playback queue changed before resumption" }
+                val restored = withContext(Dispatchers.IO) { loadPlaybackResumption() }
+                // Media3 1.11 applies a successful future unconditionally.
+                // Refuse on the application thread before returning stale data.
+                check(queueStillEmpty()) { "Playback queue changed during resumption" }
+                restored ?: throw IllegalStateException("No saved playback session")
+            }
         }
 
         override fun onCustomCommand(
@@ -1564,6 +1581,17 @@ class MusicService : MediaLibraryService() {
             Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
                 requestManualSkip(forward = false)
                 SessionResult.RESULT_ERROR_NOT_SUPPORTED
+            }
+            Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
+            Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+            Player.COMMAND_SEEK_BACK,
+            Player.COMMAND_SEEK_FORWARD -> {
+                // Even a seek to the existing position supersedes a pending
+                // skip or overlap; Media3 may emit no discontinuity for it.
+                engine.cancelTransition()
+                automaticTransitionAttempt = null
+                super.onPlayerCommandRequest(session, controller, playerCommand)
             }
             else -> super.onPlayerCommandRequest(session, controller, playerCommand)
         }
@@ -1638,7 +1666,7 @@ class MusicService : MediaLibraryService() {
             if (meta.title == null) {
                 val cached = findSongInCache(item.mediaId)
                 if (cached != null) {
-                    meta = MediaMetadata.Builder()
+                    meta = meta.buildUpon()
                         .setTitle(cached.title)
                         .setArtist(cached.artist)
                         .setAlbumTitle(cached.album)
@@ -1647,6 +1675,14 @@ class MusicService : MediaLibraryService() {
                         .setIsPlayable(true)
                         .build()
                 }
+            }
+
+            // External controllers do not supply MusicQueueItem.id. Give
+            // every inserted row its own identity, preserving app-owned ids.
+            if (meta.extras?.getString(EXTRA_QUEUE_ITEM_ID) == null) {
+                val extras = meta.extras?.let(::Bundle) ?: Bundle()
+                extras.putString(EXTRA_QUEUE_ITEM_ID, java.util.UUID.randomUUID().toString())
+                meta = meta.buildUpon().setExtras(extras).build()
             }
 
             return if (isLocalUri) {
@@ -2192,17 +2228,14 @@ class MusicService : MediaLibraryService() {
      * the crossfade fade-in can never drive the volume at the same time.
      */
     private fun fadeOutAndPause() {
-        fadeVolumeJob?.cancel()
-        fadeVolumeJob = serviceScope.launch {
+        launchVolumeFade {
             val steps = 20
             for (i in steps - 1 downTo 0) {
                 player.volume = trackGain * (i / steps.toFloat())
                 delay(SLEEP_TIMER_FADE_MS / steps)
             }
             player.pause()
-            // Back to full straight away, or pressing play would be silent.
-            // Full is the corrected level, not 1.0.
-            player.volume = trackGain
+            // launchVolumeFade restores the current gain, including ducking.
         }
     }
 
@@ -2259,30 +2292,51 @@ class MusicService : MediaLibraryService() {
 
     private fun refreshTrackGain(applyNow: Boolean) {
         trackGain = gainForPlayer(player)
-        if (applyNow) engine.applyIdleVolumes()
+        if (applyNow && fadeVolumeJob?.isActive != true) engine.applyIdleVolumes()
     }
 
     /**
-     * The short ramp a *manual* skip gets.
-     *
-     * Deliberately not the full crossfade: a three second overlap on a skip
-     * makes the app feel unresponsive when the user has just asked for the next
-     * song now. Deliberately not a hard cut either, which is jarring when every
-     * automatic transition is smooth. Equal power like the real thing, so the
-     * two never sound like different effects.
+     * A volume writer owns its cleanup as well as its ramp. Publish it before
+     * starting so immediate completion and cancellation before the first frame
+     * also restore gain. An older job must never overwrite a newer ramp or an
+     * engine overlap; restoration reads the live player, not the retired item.
      */
+    private fun launchVolumeFade(block: suspend CoroutineScope.() -> Unit) {
+        val previous = fadeVolumeJob
+        val job = serviceScope.launch(start = CoroutineStart.LAZY, block = block)
+        fadeVolumeJob = job
+        job.invokeOnCompletion {
+            if (fadeVolumeJob === job) {
+                fadeVolumeJob = null
+                if (serviceScope.isActive) engine.applyIdleVolumes()
+            }
+        }
+        previous?.cancel()
+        job.start()
+    }
+
+    /** Short fade-in after an item change; queue selection never waits for it. */
     private fun performSkipFadeIn() {
-        fadeVolumeJob?.cancel()
         val target = player
-        fadeVolumeJob = serviceScope.launch {
+        val occurrence = target.currentMediaItem
+        if (occurrence == null) {
+            fadeVolumeJob?.cancel()
+            fadeVolumeJob = null
+            engine.applyIdleVolumes()
+            return
+        }
+        launchVolumeFade {
             val gain = gainForPlayer(target)
             val steps = (SKIP_FADE_MS / 16L).toInt().coerceAtLeast(4)
             for (i in 1..steps) {
+                if (player !== target ||
+                    target.currentMediaItem?.isSameQueueItemAs(occurrence) != true ||
+                    engine.isFading || !isCrossfadeEnabled
+                ) return@launchVolumeFade
                 val angle = (i.toFloat() / steps) * (Math.PI.toFloat() / 2f)
                 target.volume = gain * kotlin.math.sin(angle) * engine.duckGain
                 delay(SKIP_FADE_MS / steps)
             }
-            target.volume = gain * engine.duckGain
         }
     }
 
@@ -2339,141 +2393,51 @@ class MusicService : MediaLibraryService() {
         }
     }
 
-    /** Resolve Previous/Next against the audible queue, including rapid taps. */
+    /** Resolve every press against the current playback order, including rapid taps. */
     private fun requestManualSkip(
         forward: Boolean,
         restartCurrentOnPrevious: Boolean = true,
     ) {
         val current = player
-        val pendingIndex = engine.pendingTargetIndex
-        val baseIndex = pendingIndex ?: current.currentMediaItemIndex
-
-        if (
-            !forward &&
-            restartCurrentOnPrevious &&
-            pendingIndex == null &&
-            current.currentPosition > PREVIOUS_RESTART_MS
-        ) {
-            engine.cancelTransition()
-            current.seekTo(0L)
-            current.play()
-            return
-        }
-
+        if (current.mediaItemCount == 0) return
+        val currentIndex = current.currentMediaItemIndex.coerceIn(0, current.mediaItemCount - 1)
         val targetIndex = when {
-            pendingIndex != null -> if (forward) baseIndex + 1 else baseIndex - 1
-            current.repeatMode == Player.REPEAT_MODE_ONE -> {
-                if (forward) baseIndex + 1 else baseIndex - 1
-            }
+            !forward && restartCurrentOnPrevious && current.currentPosition > PREVIOUS_RESTART_MS ->
+                currentIndex
+            current.repeatMode == Player.REPEAT_MODE_ONE ->
+                if (forward) currentIndex + 1 else currentIndex - 1
             forward -> current.getNextMediaItemIndex()
             else -> current.getPreviousMediaItemIndex()
         }
-        requestManualTransition(targetIndex)
+        // An intercepted command has no Media3 fallback. At either boundary
+        // restart the current occurrence instead of silently discarding intent.
+        requestManualTransition(targetIndex.takeIf { it in 0 until current.mediaItemCount } ?: currentIndex)
     }
 
     /**
-     * Briefly overlap the currently audible track with a user-requested queue
-     * item. Off bypasses this method's preparation entirely and performs an
-     * ordinary immediate player jump.
+     * A user skip must select a track or restart it during this command, never
+     * wait for extraction or standby preparation. Each following press then
+     * addresses the updated queue. Automatic advancement still crossfades;
+     * manual changes can use the ordinary short fade-in from the item listener.
+     *
+     * There is no suspended manual plan to revive after a seek, natural end or
+     * queue replacement. Current-item validation resolves a selected placeholder
+     * with its occurrence checks and latest position/intent intact.
      */
     private fun requestManualTransition(targetIndex: Int) {
         val current = player
-        if (targetIndex !in 0 until current.mediaItemCount) return
-        if (targetIndex == current.currentMediaItemIndex) {
-            current.seekTo(0L)
-            current.play()
-            return
-        }
-        if (!isCrossfadeEnabled) {
-            jumpWithoutTransition(targetIndex)
-            return
-        }
-
-        manualTransitionJob?.cancel()
-        engine.cancelTransition()
-        manualTransitionJob = serviceScope.launch {
-            val outgoing = player
-            if (targetIndex !in 0 until outgoing.mediaItemCount) return@launch
-            val original = outgoing.getMediaItemAt(targetIndex)
-
-            val target = if (isPlaceholder(original.localConfiguration?.uri)) {
-                withTimeoutOrNull(MANUAL_RESOLVE_WAIT_MS) {
-                    bindResolutionToItem(original, getOrStartResolution(original).await())
-                }
-            } else {
-                original
-            }
-
-            if (target == null ||
-                player !== outgoing ||
-                targetIndex !in 0 until outgoing.mediaItemCount ||
-                !outgoing.getMediaItemAt(targetIndex).isSameQueueItemAs(original)
-            ) {
-                // Only a resolution that ran out of time still means "jump to
-                // the song that was asked for". The other three say the queue
-                // moved while we waited, and `targetIndex` now names a
-                // different track - which is how a skip could land on an
-                // arbitrary song after the user tapped something in a playlist.
-                fallbackManualJump(targetIndex, expectedItem = original)
-                return@launch
-            }
-
-            if (target !== original) outgoing.replaceMediaItem(targetIndex, target)
-            val incomingStartMs = audioProfileStore.peek(target.mediaId)
-                ?.leadInSilenceMs
-                ?.minus(60L)
-                ?.coerceIn(0L, 15_000L)
-                ?: 0L
-            val canOverlap = outgoing.isPlaying && engine.startTransition(
-                nextItem = target,
-                durationMs = MANUAL_CROSSFADE_MS,
-                targetIndex = targetIndex,
-                incomingStartMs = incomingStartMs,
-            )
-            if (!canOverlap) {
-                fallbackManualJump(targetIndex, expectedItem = target)
-            }
-        }
-    }
-
-    /**
-     * Defined degraded path for an unresolved, paused, or unready target.
-     *
-     * [expectedItem] is the queue occurrence the jump was requested for. An index is
-     * only meaningful against the queue it was taken from, and this runs after
-     * an await, so it is checked rather than trusted: a queue replaced in the
-     * meantime turns a Next into a jump to whatever now sits at that position.
-     * No jump at all is the right answer there - the queue was replaced by
-     * someone choosing what to play, and that choice is already playing.
-     */
-    private fun fallbackManualJump(targetIndex: Int, expectedItem: MediaItem? = null) {
-        val current = player
-        if (targetIndex !in 0 until current.mediaItemCount) return
-        // Refusing is a no-op, deliberately: whatever replaced the queue is
-        // already playing what it chose, and cancelling a transition that
-        // belongs to it would interrupt that instead of this.
-        if (expectedItem != null &&
-            !current.getMediaItemAt(targetIndex).isSameQueueItemAs(expectedItem)
-        ) {
-            KLog.w(TAG, "Queue moved under a manual jump; leaving playback alone")
-            return
-        }
-        engine.cancelTransition()
-        current.volume = 0f
-        current.seekTo(targetIndex, 0L)
-        current.play()
-    }
-
-    /** A literal Off path: no overlap and no volume ramp. */
-    private fun jumpWithoutTransition(targetIndex: Int) {
-        val current = player
-        if (targetIndex !in 0 until current.mediaItemCount) return
-        manualTransitionJob?.cancel()
+        if (current.mediaItemCount == 0) return
+        val selectedIndex = targetIndex.takeIf { it in 0 until current.mediaItemCount }
+            ?: current.currentMediaItemIndex.coerceIn(0, current.mediaItemCount - 1)
         fadeVolumeJob?.cancel()
         engine.cancelTransition()
-        current.volume = gainForPlayer(current) * engine.duckGain
-        current.seekTo(targetIndex, 0L)
+        automaticTransitionAttempt = null
+        current.seekTo(selectedIndex, 0L)
+        current.prepare()
         current.play()
+        // The seek can be a no-op, or its item callback can be absent/delayed.
+        // Never mute speculatively and depend on that callback to unmute us.
+        if (fadeVolumeJob?.isActive != true) engine.applyIdleVolumes()
     }
 
     /**
