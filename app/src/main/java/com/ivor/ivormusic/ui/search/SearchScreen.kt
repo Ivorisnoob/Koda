@@ -336,8 +336,27 @@ fun SearchScreen(
             return@LaunchedEffect
         }
         if (query.length >= 2 && !localOnly) {
-            delay(500) // Debounce
-            isLoading = true
+            // A category switch is not typing. The debounce exists to stop a
+            // request per keystroke, and it was also being paid every time
+            // somebody tapped between Songs and Artists - half a second of
+            // nothing before a search that, below, usually needs no network at
+            // all. The spinner is skipped on the same condition, because a
+            // result already in memory would show one for a single frame.
+            val cached = viewModel.hasCachedSearch(
+                query = query,
+                videoMode = videoMode,
+                category = if (videoMode) {
+                    selectedVideoCategory.name
+                } else {
+                    selectedCategory.name
+                },
+                dateFilter = selectedDateFilter,
+                sort = selectedSort
+            )
+            if (!cached) {
+                delay(500) // Debounce
+                isLoading = true
+            }
 
             // Clear previous results of other types
             youtubeResults = emptyList()
