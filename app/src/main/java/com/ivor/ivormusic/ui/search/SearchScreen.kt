@@ -249,6 +249,15 @@ fun SearchScreen(
     
     // Search history and focus state
     val searchHistory by viewModel.searchHistory.collectAsState()
+    // Read here rather than threaded from MainActivity: ThemePreferences
+    // instances listen to the same preference file, so a flip in Settings
+    // reaches this one, and the alternative is another parameter through a
+    // screen that already takes a long list of them.
+    val searchScreenContext = androidx.compose.ui.platform.LocalContext.current
+    val searchThemePreferences = remember(searchScreenContext) {
+        com.ivor.ivormusic.data.ThemePreferences(searchScreenContext)
+    }
+    val showRecentSearches by searchThemePreferences.showRecentSearches.collectAsState()
     var isSearchFocused by remember { mutableStateOf(false) }
 
     // Playlists and albums already kept, so a result the user saved earlier
@@ -706,7 +715,8 @@ fun SearchScreen(
                 // mode. While it has focus, keep recent queries in the same
                 // predictable place and reveal the mode's browse surface again
                 // as soon as focus clears.
-                isSearchFocused && query.isEmpty() && searchHistory.isNotEmpty() -> {
+                isSearchFocused && query.isEmpty() && showRecentSearches &&
+                    searchHistory.isNotEmpty() -> {
                     item {
                         SearchHistoryList(
                             history = searchHistory,

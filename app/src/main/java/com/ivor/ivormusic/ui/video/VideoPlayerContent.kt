@@ -106,6 +106,8 @@ fun VideoPlayerContent(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
     timedCommentsFeatureEnabled: Boolean = false,
+    /** False drops the related-videos list; the queue is unaffected. */
+    showRelatedVideos: Boolean = true,
     /**
      * Open the playing video's creator. Routed out to the host: the channel
      * page is a NavHost destination and this player is drawn above the NavHost,
@@ -1031,7 +1033,11 @@ fun VideoPlayerContent(
                 ) {
                     VideoInfoSection(
                         video = currentVideo,
-                        relatedVideos = relatedVideos,
+                        // Emptied rather than flagged: the section is
+                        // already conditional on having something to show, so
+                        // the switch reuses that path instead of adding a
+                        // second way for it to be absent.
+                        relatedVideos = if (showRelatedVideos) relatedVideos else emptyList(),
                         onVideoSelect = { viewModel.playVideo(it) },
                         modifier = Modifier
                             .fillMaxSize()

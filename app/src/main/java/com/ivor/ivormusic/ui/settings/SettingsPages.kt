@@ -834,6 +834,10 @@ internal fun ContentSettingsPage(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
     onShowShortsButtons: () -> Unit,
+    showRecentSearches: Boolean,
+    onShowRecentSearchesToggle: (Boolean) -> Unit,
+    showRelatedVideos: Boolean,
+    onShowRelatedVideosToggle: (Boolean) -> Unit,
     onNavigateToNotInterested: () -> Unit,
     onNavigateToVideoHome: () -> Unit,
     onBack: () -> Unit
@@ -962,6 +966,30 @@ internal fun ContentSettingsPage(
             item {
                 SettingsSection(title = stringResource(R.string.sp_recommendations)) {
                     SettingsCard {
+                        // Both are worded as what is shown, so the switch
+                        // position and the sentence agree. They sit above the
+                        // blocklist row because they are the blunt version of
+                        // the same wish: less of what was not asked for.
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.Search,
+                            title = stringResource(R.string.sp_show_recent_searches),
+                            subtitle = stringResource(R.string.sp_show_recent_searches_sub),
+                            enabled = showRecentSearches,
+                            onToggle = onShowRecentSearchesToggle
+                        )
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.Recommend,
+                            title = stringResource(R.string.sp_show_related_videos),
+                            subtitle = stringResource(R.string.sp_show_related_videos_sub),
+                            enabled = showRelatedVideos,
+                            onToggle = onShowRelatedVideosToggle
+                        )
+
+                        SettingsDivider()
+
                         SettingsRow(
                             icon = Icons.Rounded.NotInterested,
                             title = stringResource(R.string.sp_not_recommended),
