@@ -13,6 +13,20 @@ internal const val EXTRA_QUEUE_ITEM_ID = "com.ivor.ivormusic.QUEUE_ITEM_ID"
 internal val MediaItem.queueItemId: String?
     get() = mediaMetadata.extras?.getString(EXTRA_QUEUE_ITEM_ID)
 
+/** Preserve an identifiable album sequence; matching titles alone are not enough. */
+internal fun MediaItem.isAlbumSuccessorOf(previous: MediaItem): Boolean {
+    val before = previous.mediaMetadata
+    val after = mediaMetadata
+    val album = before.albumTitle?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+    val artist = (before.albumArtist ?: before.artist)?.toString()?.trim()
+        ?.takeIf { it.isNotEmpty() } ?: return false
+    val track = before.trackNumber?.takeIf { it > 0 } ?: return false
+    return album == after.albumTitle?.toString()?.trim() &&
+        artist == (after.albumArtist ?: after.artist)?.toString()?.trim() &&
+        (before.discNumber ?: 1) == (after.discNumber ?: 1) &&
+        after.trackNumber == track + 1
+}
+
 /**
  * Whether two media items describe the same occurrence in the same queue.
  *
@@ -60,6 +74,8 @@ internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
         .setTitle(song.title)
         .setArtist(song.artist)
         .setAlbumTitle(song.album.takeIf { it.isNotBlank() })
+        .setTrackNumber(song.trackNumber)
+        .setDiscNumber(song.discNumber)
         .setDurationMs(song.duration.takeIf { it > 0L })
         .setArtworkUri(
             if (song.source == SongSource.LOCAL) {

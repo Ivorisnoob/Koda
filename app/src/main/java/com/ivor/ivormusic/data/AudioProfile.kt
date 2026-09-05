@@ -22,6 +22,9 @@ import kotlinx.serialization.Serializable
 data class AudioProfile(
     val songId: String,
 
+    /** Duration reported by the analysed source, used to bound short-track mixes. */
+    val durationMs: Long = 0L,
+
     /**
      * Silence at the very start, in milliseconds.
      *
@@ -41,12 +44,9 @@ data class AudioProfile(
     /**
      * True when the track is still at real energy in its final moments.
      *
-     * That is a hard cut into whatever came next on the record - a live album,
-     * a DJ mix, anything that segues - and it is the one case where the right
-     * amount of crossfade is none. This is the signal `Song` cannot provide:
-     * it carries an album name but no track number, so "same album, consecutive
-     * track" is not available as data and could only be guessed from queue
-     * adjacency.
+     * It can signal a deliberate segue when the queue also supplies album
+     * continuity. Numbered album sequences are preserved independently;
+     * an unrelated loud ending gets only a brief overlap.
      */
     val endsAbruptly: Boolean = false,
 
@@ -73,11 +73,14 @@ data class AudioProfile(
     /** First detected beat and downbeat positions from the start of the file. */
     val beatOffsetMs: Long = 0,
     val downbeatOffsetMs: Long = 0,
+    val downbeatConfidence: Float = 0f,
 
     /** Tempo/grid measured at the outro, avoiding whole-song drift. */
     val outroBpm: Float? = null,
     val outroTempoConfidence: Float = 0f,
     val outroDownbeatLeadMs: Long = 0,
+    val outroBeatLeadMs: Long = 0,
+    val outroDownbeatConfidence: Float = 0f,
 
     /** A musically useful outro phrase boundary, measured back from the end. */
     val phraseOutroLeadMs: Long = 0,
@@ -112,6 +115,7 @@ data class AudioProfile(
         // Version 5 uses transient-aware rhythm analysis, persists the schema
         // marker explicitly, and measures the outro key independently.
         // Version 6 adds trailingSilenceMs for the AutoMix silence skip.
-        const val CURRENT_VERSION = 6
+        // Version 7 discards silence skips inferred from failed/empty probes.
+        const val CURRENT_VERSION = 7
     }
 }
