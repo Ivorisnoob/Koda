@@ -33,8 +33,9 @@ internal fun MediaItem.isAlbumSuccessorOf(previous: MediaItem): Boolean {
  * A media id is only a track identity. Playlists may contain that track more
  * than once, and replacing a queue rebuilds every occurrence with a fresh id.
  * Fall back to the media id only when neither item has Koda's occurrence id,
- * as happens for a pair supplied by an external controller. If only one has
- * it, treating them as equal would let an external/rebuilt item impersonate a
+ * for legacy/raw items. Controller ingress assigns an id before insertion,
+ * so external duplicate rows do not use that fallback. If only one has it,
+ * treating them as equal would let an external/rebuilt item impersonate a
  * Koda queue occurrence merely because it names the same track.
  */
 internal fun MediaItem.isSameQueueItemAs(other: MediaItem): Boolean {

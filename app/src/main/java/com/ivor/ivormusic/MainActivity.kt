@@ -176,6 +176,8 @@ class MainActivity : ComponentActivity() {
             val liveDownloadUpdates by themeViewModel.liveDownloadUpdates.collectAsState()
             val livePlaybackUpdates by themeViewModel.livePlaybackUpdates.collectAsState()
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
+            val showRecentSearches by themeViewModel.showRecentSearches.collectAsState()
+            val showRelatedVideos by themeViewModel.showRelatedVideos.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
@@ -306,6 +308,10 @@ class MainActivity : ComponentActivity() {
                         onLivePlaybackUpdatesToggle = { themeViewModel.setLivePlaybackUpdates(it) },
                         timedCommentsEnabled = timedCommentsEnabled,
                         onTimedCommentsToggle = { themeViewModel.setTimedCommentsEnabled(it) },
+                        showRecentSearches = showRecentSearches,
+                        onShowRecentSearchesToggle = { themeViewModel.setShowRecentSearches(it) },
+                        showRelatedVideos = showRelatedVideos,
+                        onShowRelatedVideosToggle = { themeViewModel.setShowRelatedVideos(it) },
                         shortsEnabled = shortsEnabled,
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
                         shortsHiddenActions = shortsHiddenActions,
@@ -581,6 +587,10 @@ fun MusicApp(
     onLivePlaybackUpdatesToggle: (Boolean) -> Unit,
     timedCommentsEnabled: Boolean,
     onTimedCommentsToggle: (Boolean) -> Unit,
+    showRecentSearches: Boolean,
+    onShowRecentSearchesToggle: (Boolean) -> Unit,
+    showRelatedVideos: Boolean,
+    onShowRelatedVideosToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
@@ -1000,6 +1010,10 @@ fun MusicApp(
                     onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
                     timedCommentsEnabled = timedCommentsEnabled,
                     onTimedCommentsToggle = onTimedCommentsToggle,
+                    showRecentSearches = showRecentSearches,
+                    onShowRecentSearchesToggle = onShowRecentSearchesToggle,
+                    showRelatedVideos = showRelatedVideos,
+                    onShowRelatedVideosToggle = onShowRelatedVideosToggle,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
                     shortsHiddenActions = shortsHiddenActions,
@@ -1287,6 +1301,7 @@ fun MusicApp(
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
+            showRelatedVideos = showRelatedVideos,
             onOpenChannel = openChannel,
             hostBottomChrome = videoMiniBottomChrome,
             hostChromeFollowOffsetPx = videoMiniFollowOffsetPx

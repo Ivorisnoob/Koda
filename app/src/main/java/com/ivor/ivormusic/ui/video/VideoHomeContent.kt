@@ -467,7 +467,17 @@ internal fun VideoTopBarSection(
                 )
             }
         }
-        
+
+        // Video mode carried no incognito indicator at all, so the one mode
+        // where somebody is most likely to want history paused was the one
+        // that never said it was. Compact here: this bar already holds four
+        // controls and the mode toggle, and a labelled chip would push them.
+        com.ivor.ivormusic.ui.components.IncognitoIndicator(
+            onClick = onProfileClick,
+            modifier = Modifier.padding(start = 10.dp),
+            compact = true
+        )
+
         // Right side icons
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),

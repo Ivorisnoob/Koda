@@ -249,6 +249,15 @@ fun SearchScreen(
     
     // Search history and focus state
     val searchHistory by viewModel.searchHistory.collectAsState()
+    // Read here rather than threaded from MainActivity: ThemePreferences
+    // instances listen to the same preference file, so a flip in Settings
+    // reaches this one, and the alternative is another parameter through a
+    // screen that already takes a long list of them.
+    val searchScreenContext = androidx.compose.ui.platform.LocalContext.current
+    val searchThemePreferences = remember(searchScreenContext) {
+        com.ivor.ivormusic.data.ThemePreferences(searchScreenContext)
+    }
+    val showRecentSearches by searchThemePreferences.showRecentSearches.collectAsState()
     var isSearchFocused by remember { mutableStateOf(false) }
 
     // Playlists and albums already kept, so a result the user saved earlier
@@ -327,8 +336,27 @@ fun SearchScreen(
             return@LaunchedEffect
         }
         if (query.length >= 2 && !localOnly) {
-            delay(500) // Debounce
-            isLoading = true
+            // A category switch is not typing. The debounce exists to stop a
+            // request per keystroke, and it was also being paid every time
+            // somebody tapped between Songs and Artists - half a second of
+            // nothing before a search that, below, usually needs no network at
+            // all. The spinner is skipped on the same condition, because a
+            // result already in memory would show one for a single frame.
+            val cached = viewModel.hasCachedSearch(
+                query = query,
+                videoMode = videoMode,
+                category = if (videoMode) {
+                    selectedVideoCategory.name
+                } else {
+                    selectedCategory.name
+                },
+                dateFilter = selectedDateFilter,
+                sort = selectedSort
+            )
+            if (!cached) {
+                delay(500) // Debounce
+                isLoading = true
+            }
 
             // Clear previous results of other types
             youtubeResults = emptyList()
@@ -706,7 +734,8 @@ fun SearchScreen(
                 // mode. While it has focus, keep recent queries in the same
                 // predictable place and reveal the mode's browse surface again
                 // as soon as focus clears.
-                isSearchFocused && query.isEmpty() && searchHistory.isNotEmpty() -> {
+                isSearchFocused && query.isEmpty() && showRecentSearches &&
+                    searchHistory.isNotEmpty() -> {
                     item {
                         SearchHistoryList(
                             history = searchHistory,

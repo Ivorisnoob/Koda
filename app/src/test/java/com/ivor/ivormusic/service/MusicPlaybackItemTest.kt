@@ -22,7 +22,7 @@ class MusicPlaybackItemTest {
     }
 
     @Test
-    fun `external items fall back to media id when both lack occurrence ids`() {
+    fun `legacy raw items fall back to media id when both lack occurrence ids`() {
         assertTrue(isSameQueueOccurrence(null, "song", null, "song"))
         assertFalse(isSameQueueOccurrence(null, "song", null, "other"))
     }

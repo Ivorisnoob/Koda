@@ -10,6 +10,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
@@ -68,6 +70,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Recommend
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ButtonGroupDefaults
@@ -83,6 +86,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -830,6 +834,10 @@ internal fun ContentSettingsPage(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
     onShowShortsButtons: () -> Unit,
+    showRecentSearches: Boolean,
+    onShowRecentSearchesToggle: (Boolean) -> Unit,
+    showRelatedVideos: Boolean,
+    onShowRelatedVideosToggle: (Boolean) -> Unit,
     onNavigateToNotInterested: () -> Unit,
     onNavigateToVideoHome: () -> Unit,
     onBack: () -> Unit
@@ -958,6 +966,30 @@ internal fun ContentSettingsPage(
             item {
                 SettingsSection(title = stringResource(R.string.sp_recommendations)) {
                     SettingsCard {
+                        // Both are worded as what is shown, so the switch
+                        // position and the sentence agree. They sit above the
+                        // blocklist row because they are the blunt version of
+                        // the same wish: less of what was not asked for.
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.Search,
+                            title = stringResource(R.string.sp_show_recent_searches),
+                            subtitle = stringResource(R.string.sp_show_recent_searches_sub),
+                            enabled = showRecentSearches,
+                            onToggle = onShowRecentSearchesToggle
+                        )
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.Recommend,
+                            title = stringResource(R.string.sp_show_related_videos),
+                            subtitle = stringResource(R.string.sp_show_related_videos_sub),
+                            enabled = showRelatedVideos,
+                            onToggle = onShowRelatedVideosToggle
+                        )
+
+                        SettingsDivider()
+
                         SettingsRow(
                             icon = Icons.Rounded.NotInterested,
                             title = stringResource(R.string.sp_not_recommended),
@@ -1321,45 +1353,10 @@ internal fun StorageSettingsPage(
                         }
                     }
 
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = stringResource(R.string.sp_max_cache_size),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        val options = listOf(256L, 512L, 1024L, 2048L)
-                        val labels = listOf("256MB", "512MB", "1GB", "2GB")
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(
-                                ButtonGroupDefaults.ConnectedSpaceBetween
-                            ),
-                        ) {
-                            options.forEachIndexed { index, size ->
-                                ToggleButton(
-                                    checked = maxCacheSizeMb == size,
-                                    onCheckedChange = { onMaxCacheSizeMbChange(size) },
-                                    modifier = Modifier.weight(1f),
-                                    shapes = when (index) {
-                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                                        options.lastIndex ->
-                                            ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                    },
-                                    colors = ToggleButtonDefaults.toggleButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                        checkedContainerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onSurface,
-                                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
-                                    ),
-                                ) {
-                                    Text(text = labels[index])
-                                }
-                            }
-                        }
-                    }
+                    MaxCacheSizeSlider(
+                        maxCacheSizeMb = maxCacheSizeMb,
+                        onMaxCacheSizeMbChange = onMaxCacheSizeMbChange
+                    )
                 }
             }
         }
@@ -1378,6 +1375,150 @@ internal fun StorageSettingsPage(
         }
     }
 }
+
+/**
+ * The cache ceiling, as one continuous choice rather than four preset buttons.
+ *
+ * Four connected buttons could only ever offer four sizes, and the top one was
+ * 2 GB - which is a whole rotation of songs for someone who listens offline on
+ * a commute and nothing at all for someone with a 512 GB phone. A slider spans
+ * 256 MB to 10 GB in steps people actually think in, and says the cost of the
+ * choice out loud rather than refusing it: past [CacheManager.LARGE_CACHE_WARNING_MB]
+ * it explains that the space is real, and it names the device's free space when
+ * the chosen ceiling is more than the volume can give.
+ *
+ * The value is previewed while dragging and written on release, for the reason
+ * the display-size slider does the same: a commit per step reaches
+ * [CacheManager.setMaxCacheSize], which trims spans off a live cache, so
+ * dragging from 10 GB to 256 MB would evict on the way past every stop.
+ */
+@Composable
+private fun MaxCacheSizeSlider(
+    maxCacheSizeMb: Long,
+    onMaxCacheSizeMbChange: (Long) -> Unit
+) {
+    val context = LocalContext.current
+    // Stops people think in: two below a gigabyte, then whole gigabytes. A raw
+    // continuous range would let someone land on 3,417 MB, which is a number
+    // nobody chose.
+    val stops = remember {
+        listOf(256L, 512L) + (1..10).map { it * 1024L }
+    }
+    val storedIndex = remember(maxCacheSizeMb, stops) {
+        stops.indices.minByOrNull { kotlin.math.abs(stops[it] - maxCacheSizeMb) } ?: 1
+    }
+    // Keyed on the stored value so an external change (a restore, a reset)
+    // moves the thumb instead of leaving it on a stale preview.
+    var sliderIndex by remember(storedIndex) { mutableStateOf(storedIndex.toFloat()) }
+    val selectedMb = stops[sliderIndex.roundToInt().coerceIn(stops.indices)]
+
+    val freeBytes = remember { CacheManager.availableSpaceBytes(context) }
+    val selectedBytes = selectedMb * 1024L * 1024L
+    val exceedsFreeSpace = freeBytes in 0 until selectedBytes
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.sp_max_cache_size),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = cacheStopLabel(selectedMb),
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Slider(
+            value = sliderIndex,
+            onValueChange = { sliderIndex = it },
+            onValueChangeFinished = {
+                onMaxCacheSizeMbChange(stops[sliderIndex.roundToInt().coerceIn(stops.indices)])
+            },
+            valueRange = 0f..(stops.lastIndex).toFloat(),
+            steps = stops.size - 2,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary
+            )
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = cacheStopLabel(stops.first()),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall
+            )
+            Text(
+                text = cacheStopLabel(stops.last()),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+
+        // Two different things to say, and the space one wins: being told the
+        // device cannot hold what was just chosen matters more than being told
+        // a large cache is large.
+        val warning = when {
+            exceedsFreeSpace -> stringResource(
+                R.string.sp_cache_size_low_space,
+                CacheManager.formatSize(freeBytes)
+            )
+            selectedMb >= CacheManager.LARGE_CACHE_WARNING_MB -> stringResource(
+                R.string.sp_cache_size_large_warning,
+                cacheStopLabel(selectedMb)
+            )
+            else -> null
+        }
+        // Held across the exit animation: reading the null straight through
+        // would blank the line for the frames the row spends collapsing.
+        var lastWarning by remember { mutableStateOf("") }
+        LaunchedEffect(warning) { if (warning != null) lastWarning = warning }
+
+        AnimatedVisibility(
+            visible = warning != null,
+            enter = fadeIn(tween(180)) + expandVertically(
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+            ),
+            exit = fadeOut(tween(140)) + shrinkVertically()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.WarningAmber,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = warning ?: lastWarning,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 17.sp
+                )
+            }
+        }
+    }
+}
+
+/** Whole gigabytes read as gigabytes; the two sub-gigabyte stops as megabytes. */
+private fun cacheStopLabel(sizeMb: Long): String =
+    if (sizeMb >= 1024L && sizeMb % 1024L == 0L) "${sizeMb / 1024L} GB" else "$sizeMb MB"
 
 /* ------------------------------------------------------------------ */
 /* Notifications                                                       */

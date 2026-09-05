@@ -1033,9 +1033,11 @@ private fun HistoryPreviewCard(
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
         ) {
+            // The item overload rather than the URL one: a device video
+            // carries no thumbnail URL and has its frame read off the file
+            // instead, which only this form knows how to do.
             VideoThumbnail(
-                thumbnailUrl = video.thumbnailUrl,
-                contentDescription = video.title,
+                video = video,
                 modifier = Modifier.fillMaxSize(),
                 indicatorSize = 26.dp
             )
@@ -1682,8 +1684,7 @@ private fun PlaylistVideoRow(
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {
                 VideoThumbnail(
-                    thumbnailUrl = video.thumbnailUrl,
-                    contentDescription = video.title,
+                    video = video,
                     modifier = Modifier.fillMaxSize(),
                     indicatorSize = 24.dp
                 )

@@ -1581,7 +1581,6 @@ fun TopBarSection(
             com.ivor.ivormusic.data.AccountSwitcher(context)
         }
         val isSwitching by accountSwitcher.switching.collectAsState()
-        val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
         Box(
             modifier = Modifier
                 .size(44.dp)
@@ -1633,45 +1632,14 @@ fun TopBarSection(
             }
         }
 
-        // Incognito has to be visible from anywhere it is in force, and it
-        // rides the avatar because that is both where it was turned on and the
-        // one control on this bar that is about identity. A mode that silently
-        // stops recording history is a promise, and a promise the user cannot
-        // see the state of is one they will assume is off at the wrong moment.
-        androidx.compose.animation.AnimatedVisibility(
-            visible = incognito,
-            enter = androidx.compose.animation.fadeIn() +
-                androidx.compose.animation.expandHorizontally(),
-            exit = androidx.compose.animation.fadeOut() +
-                androidx.compose.animation.shrinkHorizontally()
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                modifier = Modifier
-                    .padding(start = 10.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onProfileClick)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.VisibilityOff,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.incognito_title),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            }
-        }
+        // Incognito rides beside the avatar because that is both where it was
+        // turned on and the one control on this bar that is about identity.
+        // The chip itself lives in ui/components, since video mode's bar needs
+        // the same one.
+        com.ivor.ivormusic.ui.components.IncognitoIndicator(
+            onClick = onProfileClick,
+            modifier = Modifier.padding(start = 10.dp)
+        )
         
         // Right side icons with shape morphing
         Row(

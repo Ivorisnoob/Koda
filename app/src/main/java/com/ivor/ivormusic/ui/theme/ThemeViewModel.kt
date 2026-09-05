@@ -60,6 +60,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     // Cache & Crossfade
     val cacheEnabled: StateFlow<Boolean> = themePreferences.cacheEnabled
     val maxCacheSizeMb: StateFlow<Long> = themePreferences.maxCacheSizeMb
+
+    val showRecentSearches: StateFlow<Boolean> = themePreferences.showRecentSearches
+    val showRelatedVideos: StateFlow<Boolean> = themePreferences.showRelatedVideos
     val crossfadeEnabled: StateFlow<Boolean> = themePreferences.crossfadeEnabled
     val crossfadeAuto: StateFlow<Boolean> = themePreferences.crossfadeAuto
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
@@ -268,6 +271,11 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
         // MusicService running, so apply the new LRU limit here as well.
         com.ivor.ivormusic.data.CacheManager.setMaxCacheSize(getApplication(), sizeMb)
     }
+
+    fun setShowRecentSearches(show: Boolean) = themePreferences.setShowRecentSearches(show)
+
+    fun setShowRelatedVideos(show: Boolean) = themePreferences.setShowRelatedVideos(show)
+
     
     fun clearCacheAction() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {

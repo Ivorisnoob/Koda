@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Recommend
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
@@ -381,6 +382,16 @@ internal fun buildSettingsSearchIndex(
         "shorts_buttons", stringResource(R.string.sp_shorts_buttons), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.Visibility,
         listOf("hide buttons", "like", "share", "overlay", "actions")
     ) { onShowShortsButtons() }
+    entry(
+        "show_recent_searches", stringResource(R.string.sp_show_recent_searches), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.Search,
+        listOf("recent", "history", "suggestions", "search bar", "past queries", "hide")
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "show_related_videos", stringResource(R.string.sp_show_related_videos), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.Recommend,
+        listOf("related", "suggested", "up next", "recommendations", "distraction", "hide")
+    ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "not_interested", stringResource(R.string.sp_not_recommended), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.NotInterested,
         listOf(

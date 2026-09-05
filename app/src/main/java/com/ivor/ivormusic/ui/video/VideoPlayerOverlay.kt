@@ -169,6 +169,12 @@ fun VideoPlayerOverlay(
     viewModel: VideoPlayerViewModel,
     timedCommentsEnabled: Boolean = false,
     /**
+     * False hides the related-videos list under the player. The queue is
+     * untouched: "what plays next from the playlist I opened" is not a
+     * recommendation, and hiding it would break a list the user built.
+     */
+    showRelatedVideos: Boolean = true,
+    /**
      * How much bottom chrome the host is drawing under this player right now -
      * the floating nav bar, and the music pill above it when both are alive.
      *
@@ -605,6 +611,7 @@ fun VideoPlayerOverlay(
                          viewModel.setExpanded(false)
                      },
                      timedCommentsFeatureEnabled = timedCommentsEnabled,
+                     showRelatedVideos = showRelatedVideos,
                      onOpenChannel = onOpenChannel,
                      onMinimizeDragDelta = { dy ->
                          if (!isDragging) {

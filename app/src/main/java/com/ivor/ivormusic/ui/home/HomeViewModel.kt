@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -266,6 +267,37 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             emptyList()
         )
 
+    private val _discoveryCollections =
+        MutableStateFlow(com.ivor.ivormusic.data.RecommendationEngine.DiscoveryCollections())
+
+    /**
+     * The albums, playlists and artists under the discovery songs.
+     *
+     * Filtered against the same two stores the rest of the screen respects, as
+     * a derived flow rather than at fetch time: hiding a playlist or blocking
+     * an artist has to take it off this shelf on the next frame, not on the
+     * next refresh.
+     */
+    val discoveryCollections: StateFlow<com.ivor.ivormusic.data.RecommendationEngine.DiscoveryCollections> =
+        combine(
+            _discoveryCollections,
+            hiddenPlaylistsRepository.hiddenPlaylists,
+            notInterestedRepository.blockedChannels
+        ) { collections, _, _ ->
+            collections.copy(
+                albums = collections.albums.filterNot { hiddenPlaylistsRepository.isHidden(it.id) },
+                playlists = collections.playlists
+                    .filterNot { hiddenPlaylistsRepository.isHidden(it.id) },
+                artists = collections.artists.filterNot {
+                    notInterestedRepository.isCreatorBlocked(it.id, it.name)
+                }
+            )
+        }.stateIn(
+            viewModelScope,
+            kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            com.ivor.ivormusic.data.RecommendationEngine.DiscoveryCollections()
+        )
+
     private val _isDiscoveryLoading = MutableStateFlow(false)
     val isDiscoveryLoading: StateFlow<Boolean> = _isDiscoveryLoading.asStateFlow()
 
@@ -292,12 +324,41 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     likedSongsRepository.likedSongIds.value.forEach { add(it) }
                     _recentlyPlayed.value.forEach { add(it.id) }
                 }
-                val discovered = recommendationEngine.getDiscoveryRecommendations(known)
+                // The two halves are fetched together and awaited together:
+                // the shelves are what the songs grid scrolls into, and loading
+                // them on a second pass would make the tab grow under the
+                // finger a second or two after it looked finished.
+                val discoveredSongs = async {
+                    recommendationEngine.getDiscoveryRecommendations(known)
+                }
+                val collections = async {
+                    recommendationEngine.getDiscoveryCollections(
+                        // Nothing already in the library is a discovery, and a
+                        // playlist the user saved or made is the clearest case
+                        // of that.
+                        excludeCollectionIds = buildSet {
+                            userPlaylists.value.forEach { add(it.id) }
+                            savedPlaylistIds.value.forEach { add(it) }
+                        },
+                        // The seeds themselves: an "artists you might like"
+                        // shelf that opens with the artist the seed came from
+                        // is telling the user about themselves.
+                        excludeArtistNames = buildSet {
+                            _songs.value.forEach { add(it.artist) }
+                            _recentlyPlayed.value.forEach { add(it.artist) }
+                        }
+                    )
+                }
+                val discovered = discoveredSongs.await()
                 // An empty result must not wipe a shelf that is already showing
                 // something usable - a failed refresh should look like nothing
                 // happened, not like the feature broke.
                 if (discovered.isNotEmpty() || _discoverySongs.value.isEmpty()) {
                     _discoverySongs.value = discovered
+                }
+                val fetchedCollections = collections.await()
+                if (!fetchedCollections.isEmpty() || _discoveryCollections.value.isEmpty()) {
+                    _discoveryCollections.value = fetchedCollections
                 }
             } catch (e: Exception) {
                 KLog.w("HomeViewModel", "Discovery recommendations failed", e)
@@ -892,6 +953,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun resetForProfileChange() {
         youtubeRepository.clearSessionScopedInstanceCaches()
+        // Signed-in search is personalised, so serving one account's results
+        // under another is the same mistake as replaying its visitorData.
+        clearSearchCaches()
 
         // Identity first, so the avatar and name change on the next frame
         // rather than after the feeds have finished loading.
@@ -1682,10 +1746,90 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Search results, kept briefly so moving between the category chips is not
+     * a request each way.
+     *
+     * One cache per result type, all cleared together on a profile switch:
+     * signed-in search is personalised, so serving one account's results under
+     * another is the same mistake as replaying its visitorData.
+     */
+    private val songSearchCache = com.ivor.ivormusic.data.SearchResultsCache<Song>()
+    private val artistSearchCache =
+        com.ivor.ivormusic.data.SearchResultsCache<com.ivor.ivormusic.data.ArtistItem>()
+    private val albumSearchCache =
+        com.ivor.ivormusic.data.SearchResultsCache<com.ivor.ivormusic.data.PlaylistDisplayItem>()
+    private val playlistSearchCache =
+        com.ivor.ivormusic.data.SearchResultsCache<com.ivor.ivormusic.data.PlaylistDisplayItem>()
+    private val videoSearchCache = com.ivor.ivormusic.data.SearchResultsCache<VideoItem>()
+    private val videoPlaylistSearchCache =
+        com.ivor.ivormusic.data.SearchResultsCache<com.ivor.ivormusic.data.VideoPlaylist>()
+    private val channelSearchCache =
+        com.ivor.ivormusic.data.SearchResultsCache<com.ivor.ivormusic.data.SubscribedChannel>()
+
+    /** Case and surrounding space are not a different search. */
+    private fun searchKey(query: String, vararg parts: String): String =
+        (listOf(query.trim().lowercase()) + parts).joinToString("|")
+
+    private fun videoSearchKey(
+        query: String,
+        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter,
+        sort: com.ivor.ivormusic.data.VideoSearchSort
+    ) = searchKey(query, dateFilter.name, sort.name)
+
+    /**
+     * Whether this exact search can be answered without the network.
+     *
+     * The search screen asks so it can skip both its typing debounce and its
+     * spinner: a category switch that resolves from memory should feel like a
+     * tab, not like a new search.
+     */
+    fun hasCachedSearch(
+        query: String,
+        videoMode: Boolean,
+        category: String,
+        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter =
+            com.ivor.ivormusic.data.VideoSearchDateFilter.ANY,
+        sort: com.ivor.ivormusic.data.VideoSearchSort =
+            com.ivor.ivormusic.data.VideoSearchSort.RELEVANCE
+    ): Boolean {
+        if (query.isBlank()) return false
+        val key = searchKey(query)
+        return if (videoMode) {
+            when (category) {
+                "VIDEOS" -> videoSearchCache.has(videoSearchKey(query, dateFilter, sort))
+                "PLAYLISTS" -> videoPlaylistSearchCache.has(key)
+                "CHANNELS" -> channelSearchCache.has(key)
+                else -> false
+            }
+        } else {
+            when (category) {
+                "SONGS" -> songSearchCache.has(key)
+                "ARTISTS" -> artistSearchCache.has(key)
+                "ALBUMS" -> albumSearchCache.has(key)
+                "PLAYLISTS" -> playlistSearchCache.has(key)
+                else -> false
+            }
+        }
+    }
+
+    /** Drop every cached search. Called on a profile switch. */
+    private fun clearSearchCaches() {
+        songSearchCache.clear()
+        artistSearchCache.clear()
+        albumSearchCache.clear()
+        playlistSearchCache.clear()
+        videoSearchCache.clear()
+        videoPlaylistSearchCache.clear()
+        channelSearchCache.clear()
+    }
+
     suspend fun searchYouTube(query: String): List<Song> {
         if (query.isBlank()) return emptyList()
+        val key = searchKey(query)
+        songSearchCache.get(key)?.let { return it }
         return try {
-            youtubeRepository.search(query)
+            youtubeRepository.search(query).also { songSearchCache.put(key, it) }
         } catch (e: Exception) {
             emptyList()
         }
@@ -1694,7 +1838,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun loadMoreResults(query: String): List<Song> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.searchNext(query)
+            // Appended rather than replaced: the repository's continuation
+            // cursor has moved on, so a cache still holding only the first page
+            // would, after a tab switch, show one page while the next load
+            // returned the page after the last one fetched.
+            youtubeRepository.searchNext(query).also {
+                songSearchCache.append(searchKey(query), it)
+            }
         } catch (e: Exception) {
             emptyList()
         }
@@ -1744,8 +1894,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun searchArtists(query: String): List<ArtistItem> {
         if (query.isBlank()) return emptyList()
+        val key = searchKey(query)
+        artistSearchCache.get(key)?.let { return it }
         return try {
-            youtubeRepository.searchArtists(query)
+            youtubeRepository.searchArtists(query).also { artistSearchCache.put(key, it) }
         } catch (e: Exception) {
             emptyList()
         }
@@ -1753,8 +1905,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> {
         if (query.isBlank()) return emptyList()
+        val key = searchKey(query)
+        albumSearchCache.get(key)?.let { return it }
         return try {
-            youtubeRepository.searchAlbums(query)
+            youtubeRepository.searchAlbums(query).also { albumSearchCache.put(key, it) }
         } catch (e: Exception) {
             emptyList()
         }
@@ -1762,8 +1916,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> {
         if (query.isBlank()) return emptyList()
+        val key = searchKey(query)
+        playlistSearchCache.get(key)?.let { return it }
         return try {
-            youtubeRepository.searchPlaylists(query)
+            youtubeRepository.searchPlaylists(query).also { playlistSearchCache.put(key, it) }
         } catch (e: Exception) {
             emptyList()
         }
@@ -1803,6 +1959,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _userAvatar.value = null
         _userName.value = null
         homeRecommendationCache.clear()
+        // Same reason as on a profile switch: results fetched with a session
+        // must not survive it.
+        clearSearchCaches()
         _youtubeSongs.value = emptyList()
         _likedSongs.value = emptyList()
         _youtubePlaylists.value = emptyList()
@@ -2133,8 +2292,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         sort: com.ivor.ivormusic.data.VideoSearchSort = com.ivor.ivormusic.data.VideoSearchSort.RELEVANCE
     ): List<VideoItem> {
         if (query.isBlank()) return emptyList()
+        // The filters are part of the search, not a view of it, so they are
+        // part of the key: the same words with a different date window is a
+        // different question and has to reach the network.
+        val key = videoSearchKey(query, dateFilter, sort)
+        videoSearchCache.get(key)?.let { return it }
         return try {
             youtubeRepository.searchVideos(query, dateFilter, sort)
+                .also { videoSearchCache.put(key, it) }
         } catch (e: Exception) {
             emptyList()
         }
@@ -2150,7 +2315,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     ): List<VideoItem> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.searchVideosNext(query, dateFilter)
+            youtubeRepository.searchVideosNext(query, dateFilter).also { more ->
+                // The sort is not a parameter here, so every cached sort of this
+                // query and window is appended to - which is correct, because
+                // the repository keeps one cursor for them and they are all
+                // showing pages from it.
+                com.ivor.ivormusic.data.VideoSearchSort.entries.forEach { sort ->
+                    videoSearchCache.append(videoSearchKey(query, dateFilter, sort), more)
+                }
+            }
         } catch (e: Exception) {
             emptyList()
         }
@@ -2161,8 +2334,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun searchVideoPlaylists(query: String): List<com.ivor.ivormusic.data.VideoPlaylist> {
         if (query.isBlank()) return emptyList()
+        val key = searchKey(query)
+        videoPlaylistSearchCache.get(key)?.let { return it }
         return try {
             youtubeRepository.searchVideoPlaylists(query)
+                .also { videoPlaylistSearchCache.put(key, it) }
         } catch (e: Exception) {
             emptyList()
         }
@@ -2191,8 +2367,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Search for channels (video mode's Channels filter). */
     suspend fun searchChannels(query: String): List<com.ivor.ivormusic.data.SubscribedChannel> {
         if (query.isBlank()) return emptyList()
+        val key = searchKey(query)
+        channelSearchCache.get(key)?.let { return it }
         return try {
-            youtubeRepository.searchChannels(query)
+            youtubeRepository.searchChannels(query).also { channelSearchCache.put(key, it) }
         } catch (e: Exception) {
             emptyList()
         }

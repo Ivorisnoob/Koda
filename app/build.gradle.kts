@@ -223,6 +223,7 @@ dependencies {
     implementation(libs.jaudiotagger)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
     // A real org.json on the unit-test classpath, shadowing the Android stub.
     // `isReturnDefaultValues` makes every stubbed android.jar method return a
     // default rather than throw, which is what lets KLog run in JVM tests - but

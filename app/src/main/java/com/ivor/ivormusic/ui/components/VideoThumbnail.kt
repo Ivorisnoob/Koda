@@ -99,27 +99,38 @@ fun VideoThumbnail(
     placeholderColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
 ) {
     val context = LocalContext.current
+    // A blank URL is the same state as no URL, and treating it as one keeps a
+    // request that could only ever fail off Coil's queue.
+    val url = thumbnailUrl?.takeIf { it.isNotBlank() }
     // Only worth a second layer when it is genuinely a different URL - a
     // non-ytimg thumbnail is returned unchanged by highResThumbnailUrl.
-    val highRes = highResThumbnailUrl?.takeIf { it != thumbnailUrl && thumbnailUrl != null }
+    val highRes = highResThumbnailUrl?.takeIf { it.isNotBlank() && it != url && url != null }
 
-    var attempt by remember(thumbnailUrl) { mutableIntStateOf(0) }
-    var state by remember(thumbnailUrl) {
+    var attempt by remember(url) { mutableIntStateOf(0) }
+    var state by remember(url) {
         mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty)
     }
     val isError = state is AsyncImagePainter.State.Error
-    val isSettled = state is AsyncImagePainter.State.Success ||
+    // No URL is not a load in progress. Nothing is requested in that case, so
+    // the painter state never leaves Empty and the spinner below would turn
+    // itself on after its delay and stay on for as long as the frame is on
+    // screen - which is what a device video did on every surface that reached
+    // this overload rather than the VideoItem one, since a device VideoItem
+    // carries no thumbnail URL at all.
+    val hasNothingToLoad = url == null
+    val isSettled = hasNothingToLoad ||
+        state is AsyncImagePainter.State.Success ||
         (isError && attempt >= THUMBNAIL_RETRIES)
 
-    LaunchedEffect(isError, attempt, thumbnailUrl) {
+    LaunchedEffect(isError, attempt, url) {
         if (!isError || attempt >= THUMBNAIL_RETRIES) return@LaunchedEffect
         delay(THUMBNAIL_RETRY_DELAYS_MS[attempt.coerceAtMost(THUMBNAIL_RETRY_DELAYS_MS.lastIndex)])
         attempt++
     }
 
     // See THUMBNAIL_SPINNER_DELAY_MS.
-    var showSpinner by remember(thumbnailUrl) { mutableStateOf(false) }
-    LaunchedEffect(isSettled, thumbnailUrl) {
+    var showSpinner by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(isSettled, url) {
         if (isSettled) {
             showSpinner = false
         } else {
@@ -132,11 +143,11 @@ fun VideoThumbnail(
         modifier = modifier.background(placeholderColor),
         contentAlignment = Alignment.Center
     ) {
-        if (thumbnailUrl != null) {
+        if (url != null) {
             AsyncImage(
-                model = remember(thumbnailUrl, attempt) {
+                model = remember(url, attempt) {
                     ImageRequest.Builder(context)
-                        .data(thumbnailUrl)
+                        .data(url)
                         .crossfade(200)
                         .build()
                 },
@@ -163,7 +174,7 @@ fun VideoThumbnail(
             )
         }
 
-        if (emptyIcon != null && thumbnailUrl == null) {
+        if (emptyIcon != null && url == null) {
             Icon(
                 imageVector = emptyIcon,
                 contentDescription = null,
