@@ -93,6 +93,7 @@ class BackupRepository(context: Context) {
             "ivor_music_theme_prefs",   // every setting, palette and player style
             "ivor_music_liked_songs",   // liked song ids
             "saved_playlists",          // playlists kept as references, both modes
+            "hidden_playlists",         // playlists the user told Koda not to show
             "search_history",
             "ivor_track_loudness"       // measured per-track gain
         )

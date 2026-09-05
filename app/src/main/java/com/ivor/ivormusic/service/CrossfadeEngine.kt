@@ -127,6 +127,7 @@ class CrossfadeEngine(
      * which puts already-played songs back into the future.
      */
     fun setShuffleState(enabled: Boolean, seed: Long) {
+        if (shuffleEnabled != enabled || shuffleSeed != seed) cancelTransition()
         shuffleEnabled = enabled
         shuffleSeed = seed
         applyPlaybackOrder(playerA)
@@ -134,6 +135,7 @@ class CrossfadeEngine(
     }
 
     fun setRepeatMode(mode: Int) {
+        if (repeatMode != mode) cancelTransition()
         repeatMode = mode
         playerA.repeatMode = mode
         playerB.repeatMode = mode
@@ -212,6 +214,9 @@ class CrossfadeEngine(
         val incoming = standby
 
         if (targetIndex !in 0 until outgoing.mediaItemCount) return false
+        if (targetIndex == outgoing.currentMediaItemIndex ||
+            nextItem.mediaId == outgoing.currentMediaItem?.mediaId
+        ) return false
         if (!outgoing.getMediaItemAt(targetIndex).isSameQueueItemAs(nextItem)) return false
         val remaining = outgoing.duration - outgoing.currentPosition
         if (outgoing.duration <= 0 || remaining <= 0) return false
@@ -270,11 +275,20 @@ class CrossfadeEngine(
         filterSweepStrength: Float,
         startAtRemainingMs: Long?,
     ) {
+        fun queueStillMatches(): Boolean =
+            active === outgoing &&
+                outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) == true &&
+                targetIndex in 0 until outgoing.mediaItemCount &&
+                incoming.currentMediaItem?.let {
+                    outgoing.getMediaItemAt(targetIndex).isSameQueueItemAs(it)
+                } == true &&
+                (startAtRemainingMs == null || outgoing.getNextMediaItemIndex() == targetIndex)
+
         try {
             val ready = withTimeoutOrNull(STANDBY_READY_TIMEOUT_MS) {
                 while (incoming.playbackState != Player.STATE_READY) {
                     currentCoroutineContext().ensureActive()
-                    if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true) {
+                    if (!queueStillMatches() || !outgoing.playWhenReady) {
                         return@withTimeoutOrNull false
                     }
                     if (incoming.playerError != null || incoming.playbackState == Player.STATE_ENDED) {
@@ -293,7 +307,7 @@ class CrossfadeEngine(
             if (startAtRemainingMs != null) {
                 while (outgoing.duration - outgoing.currentPosition > startAtRemainingMs) {
                     currentCoroutineContext().ensureActive()
-                    if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true ||
+                    if (!queueStillMatches() ||
                         !outgoing.isPlaying || incoming.playbackState != Player.STATE_READY
                     ) {
                         abortInto(outgoing, incoming)
@@ -301,6 +315,11 @@ class CrossfadeEngine(
                     }
                     delay(RAMP_INTERVAL_MS)
                 }
+            }
+
+            if (!queueStillMatches() || !outgoing.isPlaying) {
+                abortInto(outgoing, incoming)
+                return
             }
 
             val outGain = gainFor(outgoing)
@@ -317,7 +336,7 @@ class CrossfadeEngine(
                     incoming.currentPosition <= incomingBeforeStart + MIN_CLOCK_ADVANCE_MS
                 ) {
                     currentCoroutineContext().ensureActive()
-                    if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true ||
+                    if (!queueStillMatches() || !outgoing.isPlaying ||
                         incoming.playerError != null ||
                         incoming.playbackState == Player.STATE_IDLE ||
                         incoming.playbackState == Player.STATE_ENDED
@@ -352,7 +371,7 @@ class CrossfadeEngine(
                 // volume. A rebuilt queue may contain the same media id at the
                 // same index; only the queue-item id distinguishes it from the
                 // transition this coroutine was created for.
-                if (outgoing.currentMediaItem?.isSameQueueItemAs(outgoingItem) != true) {
+                if (!queueStillMatches() || !outgoing.playWhenReady) {
                     KLog.w(TAG, "Queue moved under the overlap; abandoning it")
                     abortInto(outgoing, incoming)
                     return
@@ -392,6 +411,11 @@ class CrossfadeEngine(
                     ).toLong()
                 val clockDriftMs = kotlin.math.abs(outgoingElapsedMs - incomingElapsedMs)
                 maxClockDriftMs = maxOf(maxClockDriftMs, clockDriftMs)
+                if (clockDriftMs > MAX_CLOCK_DRIFT_MS) {
+                    KLog.w(TAG, "Playback clocks diverged by ${clockDriftMs}ms; abandoning the overlap")
+                    abortInto(outgoing, incoming)
+                    return
+                }
                 // The quieter player determines safe progress. In particular,
                 // the outgoing side never disappears ahead of incoming audio.
                 val elapsedMs = minOf(outgoingElapsedMs, incomingElapsedMs)
@@ -494,14 +518,26 @@ class CrossfadeEngine(
 
             // Only after the session has moved: stopping the outgoing player
             // first would publish a stopped state through it on the way out.
-            outgoing.stop()
-            outgoing.clearMediaItems()
-            outgoing.volume = 0f
-            outgoing.playbackParameters = PlaybackParameters.DEFAULT
-            setFilterSweep(outgoing, 0f)
-            releaseTempo(incoming)
+            // Once the session has moved, retiring the old player must never
+            // roll back by stopping and clearing the newly audible one.
+            runCatching {
+                outgoing.volume = 0f
+                outgoing.stop()
+                outgoing.clearMediaItems()
+                outgoing.playbackParameters = PlaybackParameters.DEFAULT
+                setFilterSweep(outgoing, 0f)
+            }.onFailure { KLog.w(TAG, "Could not fully retire outgoing player: ${it.message}") }
+            runCatching { releaseTempo(incoming) }
         } catch (e: Exception) {
             KLog.e(TAG, "Swap failed; falling back to the outgoing player", e)
+            if (active === incoming) {
+                active = outgoing
+                movedListener?.let {
+                    incoming.removeListener(it)
+                    outgoing.addListener(it)
+                }
+                runCatching { onActiveChanged(outgoing) }
+            }
             runCatching {
                 incoming.stop()
                 incoming.clearMediaItems()
@@ -617,6 +653,7 @@ class CrossfadeEngine(
         private const val INCOMING_CLOCK_TIMEOUT_MS = 750L
         private const val MIN_CLOCK_ADVANCE_MS = 8L
         private const val MAX_INCOMING_STALL_MS = 350L
+        private const val MAX_CLOCK_DRIFT_MS = 150L
         private const val MIN_TRANSITION_SPEED = 0.96f
         private const val MAX_TRANSITION_SPEED = 1.04f
         private const val TEMPO_RELEASE_MS = 2_500L

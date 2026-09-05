@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
@@ -88,6 +89,13 @@ fun VideoThumbnail(
      */
     showProgress: Boolean = true,
     indicatorSize: Dp = 36.dp,
+    /**
+     * Drawn when there is no URL at all, as opposed to one that failed. Null
+     * leaves the bare plate, which is right for a video frame and wrong for an
+     * avatar - a circle with a person in it reads as "no picture", an empty
+     * circle reads as "still loading" forever.
+     */
+    emptyIcon: ImageVector? = null,
     placeholderColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
 ) {
     val context = LocalContext.current
@@ -152,6 +160,15 @@ fun VideoThumbnail(
                 contentDescription = null,
                 modifier = Modifier.matchParentSize(),
                 contentScale = contentScale
+            )
+        }
+
+        if (emptyIcon != null && thumbnailUrl == null) {
+            Icon(
+                imageVector = emptyIcon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(indicatorSize)
             )
         }
 

@@ -44,10 +44,11 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -57,8 +58,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -66,7 +67,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -137,7 +137,8 @@ fun EditorialPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onAlbumClick: (String) -> Unit = {}
 ) {
     // Back is handled once by ExpandablePlayer, which previews the collapse
     // as a gesture instead of firing at the end of one. A BackHandler here
@@ -157,11 +158,10 @@ fun EditorialPlayerSheetContent(
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val localPlaylists by viewModel.localPlaylists.collectAsState()
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showOptions by remember { mutableStateOf(false) }
 
     // The two-tone contract: field + accent, nothing else.
     val field = MaterialTheme.colorScheme.primaryContainer
@@ -229,7 +229,7 @@ fun EditorialPlayerSheetContent(
                     isLocalOriginal = currentSong?.let { viewModel.isLocalOriginal(it) } ?: false,
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
-                    onShowAddToPlaylist = { showAddToPlaylist = true },
+                    onShowOptions = { showOptions = true },
                     onShowSleepTimer = sleepTimer.open,
                     sleepTimerActive = sleepTimer.active,
                     onArtistClick = onArtistClick,
@@ -240,19 +240,17 @@ fun EditorialPlayerSheetContent(
         }
     }
 
-    if (showAddToPlaylist) {
-        AddToPlaylistSheet(
-            playlists = localPlaylists,
-            onPlaylistClick = { playlist ->
-                viewModel.addToPlaylist(playlist.id)
-                showAddToPlaylist = false
-            },
-            onCreateNewClick = { name, desc ->
-                viewModel.createPlaylist(name, desc)
-                showAddToPlaylist = false
-            },
-            onDismissRequest = { showAddToPlaylist = false }
-        )
+    // The overflow menu, gated on a song so it can never open against nothing.
+    if (showOptions) {
+        currentSong?.let { song ->
+            NowPlayingOptionsSheet(
+                song = song,
+                viewModel = viewModel,
+                onDismiss = { showOptions = false },
+                onArtistClick = onArtistClick,
+                onAlbumClick = onAlbumClick
+            )
+        }
     }
 }
 
@@ -284,7 +282,7 @@ private fun EditorialNowPlayingView(
     isLocalOriginal: Boolean,
     onCollapse: () -> Unit,
     onShowQueue: () -> Unit,
-    onShowAddToPlaylist: () -> Unit,
+    onShowOptions: () -> Unit,
     onShowSleepTimer: () -> Unit,
     sleepTimerActive: Boolean,
     onArtistClick: (String) -> Unit,
@@ -322,20 +320,20 @@ private fun EditorialNowPlayingView(
                     Icon(Icons.Rounded.Bedtime, "Sleep timer", modifier = Modifier.size(22.dp))
                 }
                 EditorialCircleButton(
-                    onClick = onShowAddToPlaylist,
-                    accent = accent,
-                    field = field,
-                    size = 44.dp
-                ) {
-                    Icon(Icons.Rounded.PlaylistAdd, "Add to Playlist", modifier = Modifier.size(22.dp))
-                }
-                EditorialCircleButton(
                     onClick = onShowQueue,
                     accent = accent,
                     field = field,
                     size = 44.dp
                 ) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", modifier = Modifier.size(22.dp))
+                }
+                EditorialCircleButton(
+                    onClick = onShowOptions,
+                    accent = accent,
+                    field = field,
+                    size = 44.dp
+                ) {
+                    Icon(Icons.Rounded.MoreVert, "More options", modifier = Modifier.size(22.dp))
                 }
             }
         }

@@ -176,6 +176,35 @@ class NotInterestedRepository(context: Context) {
         return videos.filterNot { isFiltered(it) }
     }
 
+    /**
+     * The music-mode half of the same question.
+     *
+     * A song and a video dismissed here share one store on purpose: a YouTube
+     * song *is* a video, keyed by the same id, so "don't recommend this" said
+     * in music mode and said in video mode are the same sentence about the
+     * same thing, and keeping two sets would let one mode go on recommending
+     * what the other was told to drop.
+     *
+     * An artist is matched by name because that is all a [Song] carries -
+     * there is no artist id on the model - so blocking one writes a
+     * [BlockedChannel] with a blank id and leans on the name fallback that
+     * already exists for lockups with no channel id. Matching is whole-string
+     * and case-insensitive rather than substring: blocking "Sam" must not take
+     * "Samantha" with it.
+     */
+    fun isSongFiltered(song: Song): Boolean {
+        if (isVideoHidden(song.id)) return true
+        val blocked = blockedState.value
+        if (blocked.isEmpty()) return false
+        val artist = song.artist.takeIf { it.isNotBlank() } ?: return false
+        return blocked.any { it.name.isNotBlank() && it.name.equals(artist, ignoreCase = true) }
+    }
+
+    fun filterSongs(songs: List<Song>): List<Song> {
+        if (hiddenState.value.isEmpty() && blockedState.value.isEmpty()) return songs
+        return songs.filterNot { isSongFiltered(it) }
+    }
+
     // ---------------- Writes ----------------
 
     fun hideVideo(video: VideoItem) {
@@ -196,6 +225,44 @@ class NotInterestedRepository(context: Context) {
             videoId = video.videoId,
             undoToken = video.dismissal?.notInterestedUndo
         )
+    }
+
+    /**
+     * Keep [song] out of the music recommendation feeds.
+     *
+     * Recommendations only. The user's own library, their playlists, their
+     * likes and their downloads are things they chose and are never filtered -
+     * "do not recommend this to me" is not "delete this from my music".
+     */
+    fun hideSong(song: Song) {
+        if (song.id.isBlank()) return
+        if (isVideoHidden(song.id)) return
+        val entry = HiddenVideo(
+            videoId = song.id,
+            title = song.title.takeIf { it.isNotBlank() } ?: song.id,
+            channelName = song.artist.takeIf {
+                it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true)
+            }
+        )
+        saveHidden((listOf(entry) + hiddenState.value).take(MAX_HIDDEN_VIDEOS))
+        sharedLastAction!!.value = UndoableAction(
+            scope = NotInterestedScope.VIDEO,
+            message = "Song hidden",
+            videoId = song.id
+        )
+    }
+
+    /**
+     * Stop recommending everything by [name].
+     *
+     * No token, ever: music feed items carry no dismissal tokens in any
+     * response Koda parses, so this half is local and that is the whole
+     * feature rather than a degraded version of one - which is also true of
+     * every signed-out video dismissal.
+     */
+    fun blockArtist(name: String) {
+        if (name.isBlank() || name.startsWith("Unknown", ignoreCase = true)) return
+        blockChannel(channelId = null, name = name)
     }
 
     fun unhideVideo(videoId: String) {

@@ -13,6 +13,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheDataSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
 import kotlin.math.PI
@@ -36,8 +39,8 @@ import kotlin.math.sqrt
  * no path to hand `MediaExtractor`, so [CacheBackedDataSource] adapts a
  * `CacheDataSource` to the `MediaDataSource` interface, which takes ranged
  * reads and is exactly what a seeking extractor wants. Nothing is downloaded
- * here: if the bytes are not already cached the read fails and the track simply
- * has no profile, which every consumer has to tolerate anyway.
+ * here on metered networks; the service admits uncached analysis only on an
+ * unmetered connection. Missing or incomplete measurements remain unknown.
  */
 @UnstableApi
 object AudioProfiler {
@@ -79,15 +82,22 @@ object AudioProfiler {
         cacheKey: String,
         factory: CacheDataSource.Factory?,
         durationMs: Long,
+        budgetMs: Long = 30_000L,
     ): AudioProfile? = withContext(Dispatchers.Default) {
         if (durationMs <= 0) return@withContext null
+        val analysisContext = currentCoroutineContext()
+        val deadlineMs = SystemClock.elapsedRealtime() + budgetMs
+        val checkWork = {
+            analysisContext.ensureActive()
+            check(SystemClock.elapsedRealtime() < deadlineMs) { "Audio analysis budget exhausted" }
+        }
         var extractor: MediaExtractor? = null
         var source: CacheBackedDataSource? = null
         try {
             extractor = MediaExtractor()
             if (uri.scheme == "http" || uri.scheme == "https") {
                 val cacheFactory = factory ?: return@withContext null
-                source = CacheBackedDataSource(cacheFactory, uri, cacheKey)
+                source = CacheBackedDataSource(cacheFactory, uri, cacheKey, checkWork)
                 if (source.getSize() <= 0) return@withContext null
                 extractor.setDataSource(source)
             } else {
@@ -102,12 +112,19 @@ object AudioProfiler {
 
             extractor.selectTrack(trackIndex)
             val format = extractor.getTrackFormat(trackIndex)
+            val measuredDurationMs = runCatching {
+                format.getLong(MediaFormat.KEY_DURATION) / 1000L
+            }.getOrNull()?.takeIf { it > 0L } ?: durationMs
 
-            val head = decodeAudio(extractor, format, 0L, HEAD_WINDOW_US)
-            val tailStartUs = ((durationMs * 1000L) - TAIL_WINDOW_US).coerceAtLeast(0L)
-            val tail = decodeAudio(extractor, format, tailStartUs, TAIL_WINDOW_US)
+            val headWindowUs = minOf(HEAD_WINDOW_US, measuredDurationMs * 1000L)
+            val tailWindowUs = minOf(TAIL_WINDOW_US, measuredDurationMs * 1000L)
+            val head = decodeAudio(extractor, format, 0L, headWindowUs, checkWork)
+            val tailStartUs = ((measuredDurationMs * 1000L) - TAIL_WINDOW_US).coerceAtLeast(0L)
+            val tail = decodeAudio(extractor, format, tailStartUs, tailWindowUs, checkWork)
 
-            if (head.envelope.isEmpty() && tail.envelope.isEmpty()) return@withContext null
+            // A timeout or truncated read can leave plausible-looking samples.
+            // Never persist those as the true opening/ending of the recording.
+            if (!head.complete || !tail.complete) return@withContext null
 
             val rhythm = analyseRhythm(head)
             val outroRhythm = analyseRhythm(tail)
@@ -115,25 +132,39 @@ object AudioProfiler {
             val outroDownbeatLeadMs = lastDownbeatLead(
                 rhythm = outroRhythm,
                 windowStartMs = tailStartMs,
-                durationMs = durationMs,
+                durationMs = measuredDurationMs,
+            )
+            val outroBeatLeadMs = lastDownbeatLead(
+                rhythm = outroRhythm,
+                windowStartMs = tailStartMs,
+                durationMs = measuredDurationMs,
+                beatsPerGrid = 1,
             )
             val rawOutroLead = outroLead(tail.envelope)
-            val trailingSilenceMs = if (endsInDeadAir(tail.envelope)) {
-                probeTrailingSilence(extractor, format, durationMs)
+            val measuredSilenceMs = measuredTailSilenceMs(tail.envelope)
+                .coerceAtMost(tailWindowUs / 1000L)
+            val trailingSilenceMs = if (tailWindowUs == TAIL_WINDOW_US &&
+                measuredSilenceMs >= TAIL_WINDOW_US / 1000L - 50L
+            ) {
+                // Extend only a wholly silent tail. A quiet final half-second
+                // says nothing about the music in the preceding twenty seconds.
+                probeTrailingSilence(extractor, format, measuredDurationMs, checkWork)
             } else {
-                0L
+                measuredSilenceMs
             }
             val phrase = analysePhraseBoundary(
                 rawOutroLeadMs = rawOutroLead,
-                durationMs = durationMs,
+                durationMs = measuredDurationMs,
                 rhythm = outroRhythm,
                 gridOriginMs = tailStartMs + outroRhythm.downbeatOffsetMs,
             )
             val key = analyseKey(head.samples, head.sampleRate)
             val outroKey = analyseKey(tail.samples, tail.sampleRate, fromEnd = true)
+            checkWork()
 
             AudioProfile(
                 songId = songId,
+                durationMs = measuredDurationMs,
                 leadInSilenceMs = leadInSilence(head.envelope),
                 tailFadeMs = tailFadeLength(tail.envelope),
                 endsAbruptly = endsAbruptly(tail.envelope),
@@ -142,9 +173,12 @@ object AudioProfiler {
                 tempoConfidence = rhythm.confidence,
                 beatOffsetMs = rhythm.beatOffsetMs,
                 downbeatOffsetMs = rhythm.downbeatOffsetMs,
+                downbeatConfidence = rhythm.barConfidence,
                 outroBpm = outroRhythm.bpm,
                 outroTempoConfidence = outroRhythm.confidence,
                 outroDownbeatLeadMs = outroDownbeatLeadMs,
+                outroBeatLeadMs = outroBeatLeadMs,
+                outroDownbeatConfidence = outroRhythm.barConfidence,
                 phraseOutroLeadMs = phrase.first,
                 phraseConfidence = phrase.second,
                 keyPitchClass = key.pitchClass,
@@ -155,6 +189,8 @@ object AudioProfiler {
                 outroKeyConfidence = outroKey.confidence,
                 trailingSilenceMs = trailingSilenceMs,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.d(TAG, "No profile for $songId: ${e.message}")
             null
@@ -175,6 +211,7 @@ object AudioProfiler {
         format: MediaFormat,
         fromUs: Long,
         windowUs: Long,
+        checkWork: () -> Unit,
     ): DecodedAudio {
         val mime = format.getString(MediaFormat.KEY_MIME) ?: return DecodedAudio.EMPTY
         val codec = runCatching { MediaCodec.createDecoderByType(mime) }.getOrNull()
@@ -186,6 +223,7 @@ object AudioProfiler {
         var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
         val mono = FloatCollector((sampleRate * (windowUs / 1_000_000L)).toInt())
         var firstAcceptedPresentationUs = Long.MIN_VALUE
+        var failed = false
         try {
             codec.configure(format, null, null, 0)
             codec.start()
@@ -221,6 +259,7 @@ object AudioProfiler {
             }
 
             while (!sawOutputEnd && SystemClock.elapsedRealtime() < decodeDeadlineMs) {
+                checkWork()
                 if (!sawInputEnd) {
                     val inIndex = codec.dequeueInputBuffer(DECODE_TIMEOUT_US)
                     if (inIndex >= 0) {
@@ -290,7 +329,10 @@ object AudioProfiler {
                 }
             }
             if (accCount > 0) envelope.add(sqrt(acc / accCount).toFloat())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            failed = true
             KLog.d(TAG, "Decode window failed: ${e.message}")
         } finally {
             runCatching { codec.stop() }
@@ -301,16 +343,21 @@ object AudioProfiler {
         } else {
             firstAcceptedPresentationUs
         }
+        val samples = mono.toArray()
+        val decodedEndUs = firstPresentationUs + samples.size.toLong() * 1_000_000L / sampleRate
         return DecodedAudio(
             envelope = envelope.toFloatArray(),
-            samples = mono.toArray(),
+            samples = samples,
             sampleRate = sampleRate,
             startOffsetMs = ((firstPresentationUs - fromUs) / 1000L).coerceAtLeast(0L),
+            complete = !failed && samples.isNotEmpty() &&
+                firstPresentationUs <= fromUs + 50_000L &&
+                decodedEndUs >= fromUs + windowUs - 50_000L,
         )
     }
 
     /** Tempo and phase from spectral transients plus broad energy changes. */
-    private fun analyseRhythm(audio: DecodedAudio): RhythmAnalysis {
+    internal fun analyseRhythm(audio: DecodedAudio): RhythmAnalysis {
         val envelope = audio.envelope
         if (envelope.size < 180) return RhythmAnalysis.NONE
         val onset = onsetStrength(audio)
@@ -343,7 +390,12 @@ object AudioProfiler {
             .filter { kotlin.math.abs(it - bestLag) > 2 }
             .maxOfOrNull { scores[it] } ?: 0.0
         if (bestLag == 0) return RhythmAnalysis.NONE
-        val confidence = ((best - second) * 2.5 + best * 0.55).toFloat().coerceIn(0f, 1f)
+        // Broadly correlated noise is not a beat. Demand a distinct periodic
+        // peak above the other lags before trusting the tempo estimate.
+        val baseline = (minLag..maxLag).map { scores[it] }.sorted().let { it[it.size / 2] }
+        val prominence = ((best - baseline) / 0.25).coerceIn(0.0, 1.0)
+        val confidence = (((best - second) * 2.5 + best * 0.55) * prominence)
+            .toFloat().coerceIn(0f, 1f)
         if (confidence < MIN_TEMPO_CONFIDENCE_TO_STORE) return RhythmAnalysis.NONE
 
         var beatPhase = 0
@@ -362,13 +414,18 @@ object AudioProfiler {
         // downbeat. This is deliberately ignored downstream at low confidence.
         var downbeatBeat = 0
         var downbeatScore = -1.0
+        val accents = DoubleArray(4)
         for (candidate in 0..3) {
             var score = 0.0
             var beat = candidate
+            var count = 0
             while (beatPhase + beat * bestLag < onset.size) {
                 score += onset[beatPhase + beat * bestLag]
+                count++
                 beat += 4
             }
+            score /= count.coerceAtLeast(1)
+            accents[candidate] = score
             if (score > downbeatScore) { downbeatScore = score; downbeatBeat = candidate }
         }
         val left = scores.getOrElse(bestLag - 1) { best }
@@ -378,9 +435,13 @@ object AudioProfiler {
             (0.5 * (left - right) / denominator).coerceIn(-0.5, 0.5)
         } else 0.0
         val refinedLag = bestLag + fractional
+        val otherAccent = accents.filterIndexed { i, _ -> i != downbeatBeat }.max()
+        val barConfidence = (confidence * ((downbeatScore - otherAccent) /
+            downbeatScore.coerceAtLeast(1e-7)).coerceIn(0.0, 1.0)).toFloat()
         return RhythmAnalysis(
             bpm = (60_000.0 / ((bestLag + fractional) * WINDOW_MS)).toFloat(),
             confidence = confidence,
+            barConfidence = barConfidence,
             beatOffsetMs = audio.startOffsetMs + beatPhase.toLong() * WINDOW_MS,
             downbeatOffsetMs = audio.startOffsetMs +
                 ((beatPhase + downbeatBeat * refinedLag) * WINDOW_MS).toLong(),
@@ -462,7 +523,7 @@ object AudioProfiler {
         gridOriginMs: Long,
     ): Pair<Long, Float> {
         val bpm = rhythm.bpm ?: return 0L to 0f
-        if (rawOutroLeadMs <= 0 || rhythm.confidence < MIN_GRID_CONFIDENCE) return 0L to 0f
+        if (rawOutroLeadMs <= 0 || rhythm.barConfidence < MIN_GRID_CONFIDENCE) return 0L to 0f
         val barMs = 4.0 * 60_000.0 / bpm
         val rawPosition = durationMs - rawOutroLeadMs
         val bars = ((rawPosition - gridOriginMs) / barMs).roundToInt()
@@ -471,18 +532,21 @@ object AudioProfiler {
         if (distance > barMs * 0.32) return 0L to 0f
         val lead = (durationMs - snappedPosition).coerceAtLeast(0L)
         val proximity = (1.0 - distance / (barMs * 0.32)).toFloat().coerceIn(0f, 1f)
-        return lead to (rhythm.confidence * (0.65f + 0.35f * proximity)).coerceIn(0f, 1f)
+        return lead to (rhythm.barConfidence * (0.65f + 0.35f * proximity)).coerceIn(0f, 1f)
     }
 
     private fun lastDownbeatLead(
         rhythm: RhythmAnalysis,
         windowStartMs: Long,
         durationMs: Long,
+        beatsPerGrid: Int = 4,
     ): Long {
         val bpm = rhythm.bpm ?: return 0L
-        if (rhythm.confidence < MIN_GRID_CONFIDENCE) return 0L
-        val barMs = (4f * 60_000f / bpm).toLong().coerceAtLeast(1L)
-        var downbeat = windowStartMs + rhythm.downbeatOffsetMs
+        val confidence = if (beatsPerGrid == 4) rhythm.barConfidence else rhythm.confidence
+        if (confidence < MIN_GRID_CONFIDENCE) return 0L
+        val barMs = (beatsPerGrid * 60_000f / bpm).toLong().coerceAtLeast(1L)
+        var downbeat = windowStartMs +
+            if (beatsPerGrid == 4) rhythm.downbeatOffsetMs else rhythm.beatOffsetMs
         if (downbeat > durationMs) return 0L
         downbeat += ((durationMs - downbeat) / barMs) * barMs
         return (durationMs - downbeat).coerceAtLeast(0L)
@@ -587,17 +651,19 @@ object AudioProfiler {
         }
     }
 
-    private data class DecodedAudio(
+    internal data class DecodedAudio(
         val envelope: FloatArray,
         val samples: FloatArray,
         val sampleRate: Int,
         /** Actual first PCM timestamp relative to the requested seek point. */
         val startOffsetMs: Long,
+        val complete: Boolean = false,
     ) {
         companion object { val EMPTY = DecodedAudio(FloatArray(0), FloatArray(0), 0, 0L) }
     }
-    private data class RhythmAnalysis(
+    internal data class RhythmAnalysis(
         val bpm: Float?, val confidence: Float, val beatOffsetMs: Long, val downbeatOffsetMs: Long,
+        val barConfidence: Float = 0f,
     ) { companion object { val NONE = RhythmAnalysis(null, 0f, 0L, 0L) } }
     private data class KeyAnalysis(val pitchClass: Int?, val mode: String?, val confidence: Float) {
         companion object { val NONE = KeyAnalysis(null, null, 0f) }
@@ -623,11 +689,6 @@ object AudioProfiler {
     private const val MIN_BPM = 70f
     private const val MAX_BPM = 180f
 
-    /** How far back the trailing-silence probe may look, and how far it may
-     *  report: AutoMix's silence skip is capped at one minute. */
-    private const val MAX_SILENCE_SCAN_US = 65_000_000L
-    private const val MAX_TRAILING_SILENCE_MS = 60_000L
-    private const val SILENCE_PROBE_STEP_US = 5_000_000L
     private const val SILENCE_PROBE_SAMPLE_US = 400_000L
     private const val MIN_TEMPO_CONFIDENCE_TO_STORE = 0.12f
     private const val MIN_GRID_CONFIDENCE = 0.28f
@@ -701,21 +762,6 @@ object AudioProfiler {
     }
 
     /**
-     * Whether the track ends in genuine dead air rather than a musical decay.
-     *
-     * The last half-second of the tail envelope must be below the absolute
-     * silence floor - not just quiet relative to the track's own peak, which
-     * is [outroLead]'s test. This is the gate for the more expensive sparse
-     * probe, so it must be cheap and it must not fire on ordinary fade-outs,
-     * whose reverb tails hover around the floor without sitting under it.
-     */
-    private fun endsInDeadAir(tail: FloatArray): Boolean {
-        if (tail.size < 10) return false
-        val finalWindows = tail.takeLast(25)
-        return finalWindows.average() <= SILENCE_RMS
-    }
-
-    /**
      * How much silence follows the last audible sound, probing backwards.
      *
      * The continuous tail decode only sees twenty seconds, but recordings do
@@ -731,28 +777,15 @@ object AudioProfiler {
         extractor: MediaExtractor,
         format: MediaFormat,
         durationMs: Long,
+        checkWork: () -> Unit,
     ): Long {
-        val durationUs = durationMs.coerceAtLeast(0L) * 1000L
-        var distanceFromEndUs = TAIL_WINDOW_US
-        while (distanceFromEndUs < MAX_SILENCE_SCAN_US) {
-            distanceFromEndUs += SILENCE_PROBE_STEP_US
-            val sampleStartUs =
-                (durationUs - distanceFromEndUs).coerceAtLeast(0L)
+        return probeTrailingSilenceMs(durationMs) { sampleStartMs ->
             val audio = runCatching {
-                decodeAudio(extractor, format, sampleStartUs, SILENCE_PROBE_SAMPLE_US)
+                decodeAudio(extractor, format, sampleStartMs * 1000L, SILENCE_PROBE_SAMPLE_US, checkWork)
             }.getOrNull()
-            if (audio == null || audio.envelope.isEmpty()) break
-            if (audio.envelope.average() > SILENCE_RMS) {
-                // Audible material lives in this window: the confirmed
-                // silence runs from its end to the end of the track.
-                val confirmedUs = durationUs - sampleStartUs - SILENCE_PROBE_SAMPLE_US
-                return (confirmedUs / 1000L).coerceIn(0L, MAX_TRAILING_SILENCE_MS)
-            }
+            audio?.takeIf { it.complete }?.envelope?.takeIf { it.isNotEmpty() }
+                ?.let { it.all { level -> level.isFinite() && level <= SILENCE_RMS } }
         }
-        // Everything probed was silent; report the full scanned stretch.
-        return (MAX_SILENCE_SCAN_US / 1000L)
-            .coerceAtMost(durationMs)
-            .coerceAtMost(MAX_TRAILING_SILENCE_MS)
     }
 
     /**
@@ -768,9 +801,13 @@ object AudioProfiler {
         private val factory: CacheDataSource.Factory,
         private val uri: android.net.Uri,
         private val cacheKey: String,
+        private val checkWork: () -> Unit,
     ) : MediaDataSource() {
 
-        private val length: Long = CacheManager.getCachedLength(cacheKey)
+        // A bounded head warm does not necessarily publish total cache length.
+        // googlevideo's signed URL supplies it before playback fills the cache.
+        private val length: Long = uri.getQueryParameter("clen")?.toLongOrNull()
+            ?.takeIf { it > 0L } ?: CacheManager.getCachedLength(cacheKey)
 
         override fun getSize(): Long = length
 
@@ -778,6 +815,7 @@ object AudioProfiler {
             if (position >= length) return -1
             val source = factory.createDataSource()
             return try {
+                checkWork()
                 val spec = DataSpec.Builder()
                     .setUri(uri)
                     .setPosition(position)
@@ -787,6 +825,7 @@ object AudioProfiler {
                 source.open(spec)
                 var read = 0
                 while (read < size) {
+                    checkWork()
                     val n = source.read(buffer, offset + read, size - read)
                     if (n == androidx.media3.common.C.RESULT_END_OF_INPUT) break
                     read += n

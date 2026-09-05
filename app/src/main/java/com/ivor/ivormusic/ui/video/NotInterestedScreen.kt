@@ -128,7 +128,7 @@ fun NotInterestedScreen(
             if (blockedChannels.isNotEmpty()) {
                 item(key = "channels-header") {
                     SectionHeader(
-                        title = stringResource(R.string.section_channels),
+                        title = stringResource(R.string.ni_section_sources),
                         subtitle = "${blockedChannels.size} won't appear in your feeds",
                         onClear = { confirmClear = ClearTarget.CHANNELS }
                     )
@@ -144,7 +144,7 @@ fun NotInterestedScreen(
             if (hiddenVideos.isNotEmpty()) {
                 item(key = "videos-header") {
                     SectionHeader(
-                        title = stringResource(R.string.cat_videos),
+                        title = stringResource(R.string.ni_section_items),
                         subtitle = "${hiddenVideos.size} hidden",
                         onClear = { confirmClear = ClearTarget.VIDEOS }
                     )

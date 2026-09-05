@@ -166,6 +166,7 @@ class MusicService : MediaLibraryService() {
     private var isAutoMixEnabled = true
     private var crossfadeDurationMs = 3000L
     private var isNormalizeVolumeEnabled = true
+    private var automaticTransitionAttempt: Pair<MediaItem, MediaItem>? = null
 
     /**
      * The current track's loudness correction, as a linear volume scalar.
@@ -670,6 +671,7 @@ class MusicService : MediaLibraryService() {
         serviceScope.launch {
             themePreferences.crossfadeEnabled.collect { enabled ->
                 isCrossfadeEnabled = enabled
+                automaticTransitionAttempt = null
                 if (!enabled && ::engine.isInitialized) {
                     manualTransitionJob?.cancel()
                     fadeVolumeJob?.cancel()
@@ -678,8 +680,19 @@ class MusicService : MediaLibraryService() {
                 }
             }
         }
-        serviceScope.launch { themePreferences.crossfadeAuto.collect { isAutoMixEnabled = it } }
-        serviceScope.launch { themePreferences.crossfadeDurationMs.collect { crossfadeDurationMs = it.toLong() } }
+        serviceScope.launch {
+            themePreferences.crossfadeAuto.collect {
+                if (isAutoMixEnabled != it) engine.cancelTransition()
+                automaticTransitionAttempt = null
+                isAutoMixEnabled = it
+            }
+        }
+        serviceScope.launch {
+            themePreferences.crossfadeDurationMs.collect {
+                if (crossfadeDurationMs != it.toLong() && !isAutoMixEnabled) engine.cancelTransition()
+                crossfadeDurationMs = it.toLong()
+            }
+        }
         serviceScope.launch { themePreferences.cacheEnabled.collect { isCacheEnabled = it } }
         serviceScope.launch {
             themePreferences.normalizeVolume.collect { enabled ->
@@ -713,6 +726,22 @@ class MusicService : MediaLibraryService() {
 
     private inner class PlayerEventListener : Player.Listener {
 
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK ||
+                reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+            ) {
+                // Same-song scrubs do not emit onMediaItemTransition. Their
+                // old fade clock is just as stale as a different-song jump.
+                manualTransitionJob?.cancel()
+                engine.cancelTransition()
+                automaticTransitionAttempt = null
+            }
+        }
+
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
             val itemCount = player.mediaItemCount
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED &&
@@ -727,6 +756,7 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            automaticTransitionAttempt = null
             if (shuffleModeEnabled && !playbackShuffleEnabled) {
                 playbackShuffleSeed = kotlin.random.Random.nextLong()
                 themePreferences.setPlaybackShuffleSeed(playbackShuffleSeed)
@@ -738,6 +768,7 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
+            automaticTransitionAttempt = null
             playbackRepeatMode = repeatMode
             themePreferences.setPlaybackRepeatMode(repeatMode)
             engine.setRepeatMode(repeatMode)
@@ -745,6 +776,7 @@ class MusicService : MediaLibraryService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
+            automaticTransitionAttempt = null
 
             // 1. Loudness correction for the new track, before anything sets a
             // volume. It may still be unknown here - an unresolved song has not
@@ -921,28 +953,16 @@ class MusicService : MediaLibraryService() {
                     val resolvedItem = bindResolutionToItem(mediaItem, deferred.await())
 
                     // Apply if still current
-                    if (player.currentMediaItem?.isSameQueueItemAs(mediaItem) == true) {
-                        // Read playWhenReady NOW, at apply time — not before resolution.
-                        // This transition fires during setMediaItem, which races ahead
-                        // of the play() that a user tap issues right after. Capturing
-                        // earlier would latch a stale `false` and clobber the user's
-                        // play() when we wrote it back. By apply time the intent is
-                        // settled: true for a tap, still false for cold-start restore
-                        // (which never calls play()), so playback no longer pauses.
-                        val playWhenReady = player.playWhenReady
-                        // Replacing the restored placeholder can reset the
-                        // current item to zero even though the controller and
-                        // mini player already adopted the saved position.
-                        val resumePosition = player.currentPosition.coerceAtLeast(0L)
-                        KLog.i(TAG, "Validation: Applied resolved item for $videoId (playWhenReady=$playWhenReady)")
-                        val index = player.currentMediaItemIndex
-                        player.replaceMediaItem(index, resolvedItem)
-                        player.prepare()
-                        if (resumePosition > 0L) {
-                            player.seekTo(index, resumePosition)
-                        }
-                        player.playWhenReady = playWhenReady
+                    if (player.currentMediaItem?.isSameQueueItemAs(mediaItem) == true &&
+                        isPlaceholder(player.currentMediaItem?.localConfiguration?.uri)
+                    ) {
+                        // Prefetch may have already applied this shared result.
+                        // Only the still-unresolved occurrence needs replacing.
+                        KLog.i(TAG, "Validation: Applied resolved item for $videoId")
+                        player.replaceMusicSource(player.currentMediaItemIndex, resolvedItem)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     KLog.e(TAG, "Validation: Resolution failed for $videoId", e)
                 }
@@ -985,16 +1005,20 @@ class MusicService : MediaLibraryService() {
                         
                         // Update player if item is still there
                         if (targetIndex < player.mediaItemCount &&
-                            player.getMediaItemAt(targetIndex).isSameQueueItemAs(item)) {
+                            player.getMediaItemAt(targetIndex).isSameQueueItemAs(item) &&
+                            isPlaceholder(player.getMediaItemAt(targetIndex).localConfiguration?.uri)
+                        ) {
                             KLog.d(
                                 TAG,
                                 "Prefetch: Updated ${if (offset == 0) "actual next" else "+${offset + 1}"} " +
                                     "(${item.mediaId})"
                             )
-                            player.replaceMediaItem(targetIndex, resolvedItem)
+                            player.replaceMusicSource(targetIndex, resolvedItem)
                             warmStreamCache(item.mediaId, resolvedItem.localConfiguration?.uri)
                             maybeProfile(resolvedItem)
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         KLog.w(TAG, "Prefetch: Failed to resolve upcoming ${item.mediaId}")
                     } finally {
@@ -1208,7 +1232,6 @@ class MusicService : MediaLibraryService() {
         // The validation logic or update logic will handle it when ready.
         if (activeResolutions.contains(videoId)) {
             KLog.d(TAG, "Error: Already resolving $videoId. Ignoring error.")
-            player.playWhenReady = true
             return
         }
 
@@ -1264,9 +1287,8 @@ class MusicService : MediaLibraryService() {
                 try {
                     val resolved = bindResolutionToItem(currentItem, deferred.await())
                     if (player.currentMediaItem?.isSameQueueItemAs(currentItem) == true) {
-                         player.replaceMediaItem(player.currentMediaItemIndex, resolved)
-                         player.prepare()
-                         player.play()
+                        KLog.i(TAG, "Recovery: Restoring $videoId at ${player.currentPosition}ms")
+                        player.replaceMusicSource(player.currentMediaItemIndex, resolved)
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -2270,6 +2292,7 @@ class MusicService : MediaLibraryService() {
      * once normal playback has fully cached the song.
      */
     private fun maybeProfile(mediaItem: MediaItem, knownDurationMs: Long? = null) {
+        if (!isCrossfadeEnabled || !isAutoMixEnabled) return
         val id = mediaItem.mediaId
         val uri = mediaItem.localConfiguration?.uri ?: return
         val factory = cacheDataSourceFactory
@@ -2281,8 +2304,10 @@ class MusicService : MediaLibraryService() {
         if (!profilingIds.add(id)) return
 
         resolveScope.launch {
-            profileSemaphore.acquire()
+            var acquired = false
             try {
+                profileSemaphore.acquire()
+                acquired = true
                 if (audioProfileStore.get(id) != null) return@launch
                 if (isNetwork && ThemePreferences.isNetworkMetered(this@MusicService) &&
                     !CacheManager.isFullyCached(id)
@@ -2296,6 +2321,7 @@ class MusicService : MediaLibraryService() {
                         cacheKey = id,
                         factory = factory,
                         durationMs = durationMs,
+                        budgetMs = PROFILE_TIMEOUT_MS,
                     )
                 }?.let { profile ->
                     audioProfileStore.put(profile)
@@ -2307,7 +2333,7 @@ class MusicService : MediaLibraryService() {
                     )
                 }
             } finally {
-                profileSemaphore.release()
+                if (acquired) profileSemaphore.release()
                 profilingIds.remove(id)
             }
         }
@@ -2459,13 +2485,14 @@ class MusicService : MediaLibraryService() {
      * would stop prefetching the moment the first crossfade completed.
      */
     private fun onEngineSwapped(newActive: ExoPlayer) {
-        mediaLibrarySession?.let { session ->
-            runCatching { session.setPlayer(newActive) }
-                .onFailure { KLog.e(TAG, "Could not re-point the session", it) }
-        }
+        automaticTransitionAttempt = null
+        // Let a failure reach CrossfadeEngine's rollback. Swallowing it would
+        // retire the old player while the session still points at that player.
+        mediaLibrarySession?.setPlayer(newActive)
         trackGain = gainForPlayer(newActive)
         engine.setPauseAtEndOfMediaItems(sleepTimerEndOfTrack)
         prefetchUpcomingSongs()
+        newActive.currentMediaItem?.let { maybeProfile(it, newActive.duration) }
     }
 
     /**
@@ -2499,6 +2526,16 @@ class MusicService : MediaLibraryService() {
                 val nextIndex = current.getNextMediaItemIndex()
                 if (nextIndex !in 0 until current.mediaItemCount) continue
                 val nextItem = current.getMediaItemAt(nextIndex)
+                val outgoingItem = current.currentMediaItem ?: continue
+                // A failed standby should not reopen its source every 200ms.
+                // Let this pair advance normally; a seek, mode change, new
+                // source or new queue occurrence allows another attempt.
+                val alreadyAttempted = automaticTransitionAttempt?.let { (oldOutgoing, oldIncoming) ->
+                    oldOutgoing.isSameQueueItemAs(outgoingItem) &&
+                        oldIncoming.isSameQueueItemAs(nextItem) &&
+                        oldIncoming.localConfiguration?.uri == nextItem.localConfiguration?.uri
+                } == true
+                if (alreadyAttempted) continue
                 // An unresolved item has no stream to fade in. Let the normal
                 // advance happen only as the degraded path; normally this
                 // proactively resolves the real playback-order successor long
@@ -2515,6 +2552,9 @@ class MusicService : MediaLibraryService() {
                         outgoing = current.currentMediaItem?.mediaId?.let(audioProfileStore::peek),
                         incoming = audioProfileStore.peek(nextItem.mediaId),
                         outgoingDurationMs = duration,
+                        incomingDurationMs = nextItem.mediaMetadata.durationMs ?: 0L,
+                        preserveAlbumSequence = !current.shuffleModeEnabled &&
+                            current.currentMediaItem?.let(nextItem::isAlbumSuccessorOf) == true,
                         preserveAbruptEnding = !current.shuffleModeEnabled &&
                             current.currentMediaItem?.mediaMetadata?.albumTitle
                                 ?.toString()?.takeIf { it.isNotBlank() }?.let { album ->
@@ -2548,6 +2588,7 @@ class MusicService : MediaLibraryService() {
                     startAtRemainingMs = prepareLeadMs,
                 )
                 if (started) {
+                    automaticTransitionAttempt = outgoingItem to nextItem
                     KLog.d(
                         TAG,
                         "Crossfade: ${plan.reason} ${plan.overlapMs}ms " +

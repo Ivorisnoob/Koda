@@ -40,10 +40,10 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
@@ -100,7 +100,8 @@ fun PosterPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onAlbumClick: (String) -> Unit = {}
 ) {
     // Back is handled once by ExpandablePlayer, which previews the collapse
     // as a gesture instead of firing at the end of one. A BackHandler here
@@ -119,11 +120,10 @@ fun PosterPlayerSheetContent(
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val localPlaylists by viewModel.localPlaylists.collectAsState()
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showOptions by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
 
     val playerHaptics = rememberPlayerHaptics()
@@ -336,17 +336,6 @@ fun PosterPlayerSheetContent(
                                     )
                                 }
                                 EditorialCircleButton(
-                                    onClick = { showAddToPlaylist = true },
-                                    accent = scrim.copy(alpha = 0.35f),
-                                    field = glyph,
-                                    size = 44.dp
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.PlaylistAdd, "Add to Playlist",
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                                EditorialCircleButton(
                                     onClick = { showQueue = true },
                                     accent = scrim.copy(alpha = 0.35f),
                                     field = glyph,
@@ -354,6 +343,17 @@ fun PosterPlayerSheetContent(
                                 ) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.QueueMusic, "Queue",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                EditorialCircleButton(
+                                    onClick = { showOptions = true },
+                                    accent = scrim.copy(alpha = 0.35f),
+                                    field = glyph,
+                                    size = 44.dp
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.MoreVert, "More options",
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
@@ -574,18 +574,18 @@ fun PosterPlayerSheetContent(
         }
     }
 
-    if (showAddToPlaylist) {
-        AddToPlaylistSheet(
-            playlists = localPlaylists,
-            onPlaylistClick = { playlist ->
-                viewModel.addToPlaylist(playlist.id)
-                showAddToPlaylist = false
-            },
-            onCreateNewClick = { name, desc ->
-                viewModel.createPlaylist(name, desc)
-                showAddToPlaylist = false
-            },
-            onDismissRequest = { showAddToPlaylist = false }
-        )
+    // The overflow menu. Hosted here rather than above the style dispatch so
+    // it sits inside this player's own composition, and gated on a song so the
+    // sheet can never open against nothing.
+    if (showOptions) {
+        currentSong?.let { song ->
+            NowPlayingOptionsSheet(
+                song = song,
+                viewModel = viewModel,
+                onDismiss = { showOptions = false },
+                onArtistClick = onArtistClick,
+                onAlbumClick = onAlbumClick
+            )
+        }
     }
 }

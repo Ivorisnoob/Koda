@@ -171,10 +171,41 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val _youtubeAddablePlaylists =
         MutableStateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>>(emptyList())
 
-    /** Local playlists followed by editable YouTube playlists, for the Add to Playlist sheet. */
+    private val hiddenPlaylistsRepository =
+        com.ivor.ivormusic.data.HiddenPlaylistsRepository(context)
+
+    private val notInterestedActions = com.ivor.ivormusic.data.NotInterestedActions(
+        com.ivor.ivormusic.data.NotInterestedRepository(context),
+        youTubeRepository
+    )
+
+    /**
+     * Stop recommending this song's artist, from the player's overflow.
+     *
+     * The artist and not the song, matching what video mode's player offers:
+     * "not interested" in the thing currently playing is a contradiction, and
+     * the store is a recommendation filter rather than a skip list, so hiding
+     * the playing track would do nothing visible anyway.
+     */
+    fun blockArtist(song: Song) = notInterestedActions.blockArtist(song)
+
+    /**
+     * Local playlists followed by editable YouTube playlists, for the Add to
+     * Playlist sheet.
+     *
+     * A playlist the user hid is left out here too. "Do not show me this" reads
+     * the same way in a picker as it does in the Library, and offering a target
+     * that is invisible everywhere else is how a song ends up somewhere its
+     * owner cannot find it.
+     */
     val addToPlaylistItems: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> =
-        kotlinx.coroutines.flow.combine(localPlaylists, _youtubeAddablePlaylists) { local, youtube ->
-            local + youtube
+        kotlinx.coroutines.flow.combine(
+            localPlaylists,
+            _youtubeAddablePlaylists,
+            hiddenPlaylistsRepository.hiddenPlaylists
+        ) { local, youtube, hidden ->
+            val hiddenIds = hidden.map { it.playlistId }.toSet()
+            (local + youtube).filterNot { it.id in hiddenIds }
         }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Fetch the user's YouTube playlists for the Add to Playlist sheet (once per session). */
@@ -417,8 +448,21 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     // later READY callback to refresh these values. Publish
                     // the new timeline values at the item boundary instead of
                     // leaving the previous song's duration on screen.
-                    val transitionedDuration = controller?.duration?.takeIf { it > 0L }
-                        ?: mediaItem?.mediaMetadata?.durationMs?.takeIf { it > 0L }
+                    //
+                    // [scar] The incoming item's own metadata is asked first,
+                    // and the order is the whole point. `MediaController`'s
+                    // duration is not read off the player - it is
+                    // `playerInfo.sessionPositionInfo.durationMs`, a value the
+                    // session transports [verified September 2026 against the
+                    // Media3 1.11 bytecode] - so at the instant this callback
+                    // runs it can still describe the song that just ended.
+                    // Preferring it therefore published the *previous* song's
+                    // length, and because it was a positive number the
+                    // metadata fallback never ran. The item's own
+                    // `durationMs` is set from `Song.duration` on every queue
+                    // item, is per-occurrence, and cannot be one song behind.
+                    val transitionedDuration = mediaItem?.mediaMetadata?.durationMs?.takeIf { it > 0L }
+                        ?: controller?.duration?.takeIf { it > 0L }
                         ?: 0L
                     _duration.value = transitionedDuration
                     _progress.value = controller?.currentPosition?.coerceAtLeast(0L) ?: 0L
@@ -614,6 +658,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    /** Which queue occurrence [_duration] currently describes - see the loop. */
+    private var durationItemKey: String? = null
+
     private fun startProgressUpdates() {
         viewModelScope.launch {
             var lastPosition = 0L
@@ -637,12 +684,30 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         _progress.value = currentPos
                     }
                     
-                    // Keep duration tied to the active player. Crossfade swaps
-                    // between already-ready players, so this is also a
-                    // backstop if a controller misses the item callback.
-                    val dur = it.duration
-                    if (dur > 0 && _duration.value != dur) {
-                        _duration.value = dur
+                    // Duration belongs to one queue occurrence, so it is
+                    // tracked against one: a value published for the previous
+                    // song can then never survive into this one, whatever the
+                    // session did or did not deliver at the boundary. Without
+                    // this the only guard was "is it different from what we
+                    // last showed", which a stale-but-positive duration
+                    // satisfies forever.
+                    val item = it.currentMediaItem
+                    val itemKey = item?.mediaMetadata?.extras?.getString(EXTRA_QUEUE_ITEM_ID)
+                        ?: item?.mediaId
+                    val metadataDuration = item?.mediaMetadata?.durationMs?.takeIf { d -> d > 0L }
+                    if (itemKey != durationItemKey) {
+                        durationItemKey = itemKey
+                        _duration.value = metadataDuration ?: 0L
+                    }
+                    // The item's own duration wins over the session's while it
+                    // has one. It comes from Song.duration - MediaStore for a
+                    // file, the video length for a stream - so it can be off
+                    // by a fraction of a second against the decoded track,
+                    // which is invisible on a progress bar and a far better
+                    // trade than showing another song's length.
+                    val resolved = metadataDuration ?: it.duration.takeIf { d -> d > 0L }
+                    if (resolved != null && _duration.value != resolved) {
+                        _duration.value = resolved
                     }
                     
                     // Update buffering sanity check

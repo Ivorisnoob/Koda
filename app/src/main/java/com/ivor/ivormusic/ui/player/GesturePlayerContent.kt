@@ -19,19 +19,19 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.rounded.DragHandle
-import androidx.compose.material3.IconButton
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -87,7 +87,8 @@ fun GesturePlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onAlbumClick: (String) -> Unit = {}
 ) {
     // Back is handled once by ExpandablePlayer, which previews the collapse
     // as a gesture instead of firing at the end of one. A BackHandler here
@@ -114,8 +115,7 @@ fun GesturePlayerSheetContent(
     
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showAddToPlaylist by remember { mutableStateOf(false) }
-    val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
+    var showOptions by remember { mutableStateOf(false) }
 
     // Sleep timer
     val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
@@ -176,10 +176,7 @@ fun GesturePlayerSheetContent(
                     ambientBackground = ambientBackground,
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
-                    onShowAddToPlaylist = {
-                        viewModel.loadYouTubePlaylistsForSheet()
-                        showAddToPlaylist = true
-                    },
+                    onShowOptions = { showOptions = true },
                     onArtistClick = onArtistClick,
                     onToggleShuffle = { viewModel.toggleShuffle() },
                     onToggleRepeat = { viewModel.toggleRepeat() },
@@ -208,19 +205,17 @@ fun GesturePlayerSheetContent(
     }
 
 
-    if (showAddToPlaylist) {
-        AddToPlaylistSheet(
-            playlists = addToPlaylistItems,
-            onPlaylistClick = { playlist ->
-                viewModel.addToPlaylist(playlist.id)
-                showAddToPlaylist = false
-            },
-            onCreateNewClick = { name, desc ->
-                viewModel.createPlaylist(name, desc)
-                showAddToPlaylist = false
-            },
-            onDismissRequest = { showAddToPlaylist = false }
-        )
+    // The overflow menu, gated on a song so it can never open against nothing.
+    if (showOptions) {
+        currentSong?.let { song ->
+            NowPlayingOptionsSheet(
+                song = song,
+                viewModel = viewModel,
+                onDismiss = { showOptions = false },
+                onArtistClick = onArtistClick,
+                onAlbumClick = onAlbumClick
+            )
+        }
     }
 }
 
@@ -247,7 +242,7 @@ private fun GestureNowPlayingView(
     ambientBackground: Boolean,
     onCollapse: () -> Unit,
     onShowQueue: () -> Unit,
-    onShowAddToPlaylist: () -> Unit, // Add param
+    onShowOptions: () -> Unit,
     onArtistClick: (String) -> Unit,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
@@ -598,7 +593,7 @@ private fun GestureNowPlayingView(
                     isDownloaded = isDownloaded,
                     isDownloading = isDownloading,
                     isLocalOriginal = isLocalOriginal,
-                    onShowAddToPlaylist = onShowAddToPlaylist,
+                    onShowOptions = onShowOptions,
                     onToggleShuffle = onToggleShuffle,
                     onToggleRepeat = onToggleRepeat,
                     onToggleFavorite = onToggleFavorite,
@@ -628,7 +623,7 @@ private fun GesturePlayerToolbar(
     isDownloaded: Boolean,
     isDownloading: Boolean,
     isLocalOriginal: Boolean,
-    onShowAddToPlaylist: () -> Unit,
+    onShowOptions: () -> Unit,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
     onToggleFavorite: () -> Unit,
@@ -720,20 +715,20 @@ private fun GesturePlayerToolbar(
                     }
                 }
                 
-                // Add to Playlist Button
-                IconButton(onClick = onShowAddToPlaylist) {
-                    Icon(
-                        imageVector = Icons.Rounded.PlaylistAdd,
-                        contentDescription = "Add to Playlist"
-                    )
-                }
-
                 // Sleep timer
                 IconButton(onClick = onSleepTimerClick) {
                     Icon(
                         imageVector = Icons.Rounded.Bedtime,
                         contentDescription = "Sleep timer",
                         tint = if (sleepTimerActive) primaryColor else LocalContentColor.current
+                    )
+                }
+
+                // Overflow menu, last in the row as the convention has it
+                IconButton(onClick = onShowOptions) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "More options"
                     )
                 }
             }

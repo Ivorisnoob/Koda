@@ -453,6 +453,11 @@ fun HomeScreen(
     // Artist screen state (for navigation from player)
     var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
 
+    // The album counterpart, from the player's overflow menu. A name rather
+    // than a PlaylistDisplayItem, because a device album is identified by its
+    // name and the Library builds the rest from the songs it already has.
+    var viewedAlbumFromPlayer by remember { mutableStateOf<String?>(null) }
+
     // The same hand-off, asked for from outside this screen entirely: the
     // "Open music artist page" cross-link on a creator's channel page pops back
     // to home and leaves the request on the ViewModel, because a NavHost
@@ -872,6 +877,8 @@ fun HomeScreen(
                                 onInitialArtistConsumed = { viewedArtistFromPlayer = null },
                                 initialPlaylist = viewedPlaylistFromHome,
                                 onInitialPlaylistConsumed = { viewedPlaylistFromHome = null },
+                                initialAlbum = viewedAlbumFromPlayer,
+                                onInitialAlbumConsumed = { viewedAlbumFromPlayer = null },
                                 onStatsClick = onNavigateToStats,
                                 onOpenChannel = onOpenChannel,
                                 onSongLongPress = { song -> songOptionsTarget = song },
@@ -1206,6 +1213,11 @@ fun HomeScreen(
                 viewedArtistFromPlayer = artistName
                 selectedTab = 2 // Library tab
             },
+            onAlbumClick = { albumName ->
+                showPlayerSheet = false
+                viewedAlbumFromPlayer = albumName
+                selectedTab = 2 // Library tab
+            },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
         
@@ -1265,7 +1277,27 @@ fun HomeScreen(
         com.ivor.ivormusic.ui.player.SongOptionsSheet(
             song = song,
             viewModel = playerViewModel,
-            onDismiss = { songOptionsTarget = null }
+            onDismiss = { songOptionsTarget = null },
+            // The same hand-off the player already uses for an artist: the
+            // artist page lives inside the Library tab rather than on a route,
+            // so it is opened by handing the name over and switching tab.
+            // Nothing else passed this, which left the sheet's own artist row
+            // unreachable from every surface in the app.
+            onArtistClick = { artist ->
+                if (videoMode) onVideoModeToggle(false)
+                viewedArtistFromPlayer = artist
+                selectedTab = 2
+            },
+            // Only for songs a feed could have recommended. A file on this
+            // device was not recommended by anything, so "stop recommending
+            // it" would be a control with nothing to act on - and the local
+            // library is deliberately never filtered by this store.
+            onNotInterested = if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) {
+                { viewModel.hideSong(song) }
+            } else null,
+            onBlockArtist = if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) {
+                { viewModel.blockArtist(song) }
+            } else null
         )
     }
 

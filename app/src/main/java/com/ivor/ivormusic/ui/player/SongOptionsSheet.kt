@@ -1,63 +1,40 @@
 package com.ivor.ivormusic.ui.player
-import androidx.compose.ui.res.stringResource
-import com.ivor.ivormusic.R
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
-import androidx.compose.material.icons.rounded.PlaylistAdd
-import androidx.compose.material.icons.rounded.PlaylistPlay
-import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.NotInterested
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.collectAsState
+import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.Song
-import com.ivor.ivormusic.ui.components.SongArtwork
 
 /**
  * What you get for long-pressing a song anywhere in music mode.
@@ -73,6 +50,27 @@ import com.ivor.ivormusic.ui.components.SongArtwork
  * hands off to [AddToPlaylistSheet] rather than reimplementing it; the two
  * sheets swap in place so it stays one gesture rather than a sheet on top of a
  * sheet.
+ *
+ * **The body scrolls, and that is not decoration.** A bottom sheet whose
+ * content is a plain `Column` has a silent hard ceiling: rows past the sheet's
+ * height are clipped with nothing logged, identically at every data size, which
+ * is exactly how `VideoOptionsSheet` shipped with its last three rows
+ * unreachable. This sheet fits a Pixel-class phone upright today, but it does
+ * not fit one at a large interface scale or system font size, and it does not
+ * fit landscape at all - both of which grow the rows without growing the sheet.
+ *
+ * **The rows are grouped, not stacked.** They used to be standalone cards with
+ * their own icon plate, press spring and 8dp gap, which is roughly 76dp per
+ * action for a menu of six. Grouping the related ones into shared containers -
+ * queue, library, creator - is both what this actually is and what keeps it a
+ * screenful. A chevron means the row navigates somewhere; a row with no
+ * trailing glyph acts and closes.
+ *
+ * **Like toggles in place.** Every other row here is terminal, but liking a
+ * song is the one thing someone plausibly does *and then* queues it, and
+ * closing the sheet under them made the second action a second long press.
+ * [onArtistClick] is nullable because it is only honest where there is an
+ * artist page to reach.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,7 +79,15 @@ fun SongOptionsSheet(
     viewModel: PlayerViewModel,
     onDismiss: () -> Unit,
     /** Offered only where there is somewhere to go; null hides the row. */
-    onArtistClick: ((String) -> Unit)? = null
+    onArtistClick: ((String) -> Unit)? = null,
+    /**
+     * The two "don't recommend this" taps. Null on a surface with no
+     * recommendation feed behind it - the same gate `VideoOptionsSheet` uses -
+     * and both are null for a device file, which no feed recommended in the
+     * first place.
+     */
+    onNotInterested: (() -> Unit)? = null,
+    onBlockArtist: (() -> Unit)? = null
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
     val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
@@ -107,6 +113,7 @@ fun SongOptionsSheet(
     val likedIds by viewModel.likedSongIds.collectAsState()
     val isLiked = song.id in likedIds
     val isDownloaded = remember(song.id) { viewModel.isDownloaded(song.id) }
+    val artist = song.artist.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -117,231 +124,152 @@ fun SongOptionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // Before the insets and the padding, so the last row can be
+                // scrolled clear of the gesture bar rather than sitting under
+                // it on a short window.
+                .verticalScroll(rememberScrollState())
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             SongOptionsHeader(song)
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            OptionRow(
-                icon = Icons.Rounded.PlaylistPlay,
-                title = stringResource(R.string.song_options_play_next),
-                subtitle = stringResource(R.string.song_options_play_next_subtitle),
-                hero = true,
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    viewModel.playNext(song)
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OptionRow(
-                icon = Icons.Rounded.QueueMusic,
-                title = stringResource(R.string.song_options_add_to_queue),
-                subtitle = stringResource(R.string.song_options_add_to_queue_subtitle),
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    viewModel.addToQueue(song)
-                    onDismiss()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OptionRow(
-                icon = Icons.Rounded.PlaylistAdd,
-                title = stringResource(R.string.song_options_add_to_playlist),
-                onClick = { showPlaylists = true }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OptionRow(
-                icon = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                title = if (isLiked) stringResource(R.string.song_options_remove_from_liked) else stringResource(R.string.song_options_like),
-                tint = if (isLiked) MaterialTheme.colorScheme.primary else null,
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.ToggleOn)
-                    viewModel.toggleLike(song)
-                    onDismiss()
-                }
-            )
-
-            // A song already on the device has nothing to download, and a row
-            // that would undo the download belongs on the downloads screen
-            // rather than one tap from a list of everything.
-            if (!isDownloaded && !viewModel.isLocalOriginal(song)) {
-                Spacer(modifier = Modifier.height(8.dp))
+            // Queue. The two actions this sheet was built for, first and
+            // together, because they are a pair: the only difference is where
+            // in the queue the song lands.
+            OptionGroup {
                 OptionRow(
-                    icon = Icons.Rounded.Download,
-                    title = stringResource(R.string.song_options_download),
-                    subtitle = stringResource(R.string.song_options_download_subtitle),
+                    icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                    title = stringResource(R.string.song_options_play_next),
+                    subtitle = stringResource(R.string.song_options_play_next_subtitle),
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        viewModel.toggleDownload(song)
+                        viewModel.playNext(song)
                         onDismiss()
                     }
                 )
-            } else if (isDownloaded) {
-                Spacer(modifier = Modifier.height(8.dp))
+                OptionRowDivider()
                 OptionRow(
-                    icon = Icons.Rounded.Check,
-                    title = stringResource(R.string.song_options_downloaded),
-                    enabled = false,
-                    onClick = {}
+                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                    title = stringResource(R.string.song_options_add_to_queue),
+                    subtitle = stringResource(R.string.song_options_add_to_queue_subtitle),
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        viewModel.addToQueue(song)
+                        onDismiss()
+                    }
                 )
             }
 
-            onArtistClick?.let { go ->
-                val artist = song.artist.takeIf { it.isNotBlank() && !it.startsWith("Unknown") }
-                if (artist != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
+            // Library. What keeping this song looks like: a playlist, the liked
+            // list, or the device.
+            OptionGroup {
+                OptionRow(
+                    icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                    title = stringResource(R.string.song_options_add_to_playlist),
+                    trailing = OptionRowTrailing.CHEVRON,
+                    onClick = { showPlaylists = true }
+                )
+                OptionRowDivider()
+                OptionRow(
+                    icon = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    title = if (isLiked) {
+                        stringResource(R.string.song_options_remove_from_liked)
+                    } else {
+                        stringResource(R.string.song_options_like)
+                    },
+                    iconTint = if (isLiked) MaterialTheme.colorScheme.primary else null,
+                    onClick = {
+                        haptics.performHapticFeedback(
+                            if (isLiked) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+                        )
+                        viewModel.toggleLike(song)
+                    }
+                )
+
+                // A song already on the device has nothing to download, and a
+                // row that would undo the download belongs on the downloads
+                // screen rather than one tap from a list of everything.
+                if (isDownloaded) {
+                    OptionRowDivider()
                     OptionRow(
-                        icon = Icons.Rounded.PlaylistPlay,
-                        title = stringResource(R.string.song_options_go_to_artist, artist),
+                        icon = Icons.Rounded.Download,
+                        title = stringResource(R.string.song_options_downloaded),
+                        trailing = OptionRowTrailing.CHECK,
+                        enabled = false,
+                        onClick = {}
+                    )
+                } else if (!viewModel.isLocalOriginal(song)) {
+                    OptionRowDivider()
+                    OptionRow(
+                        icon = Icons.Rounded.Download,
+                        title = stringResource(R.string.song_options_download),
+                        subtitle = stringResource(R.string.song_options_download_subtitle),
                         onClick = {
-                            go(artist)
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            viewModel.toggleDownload(song)
                             onDismiss()
                         }
                     )
                 }
             }
-        }
-    }
-}
 
-@Composable
-private fun SongOptionsHeader(song: Song) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.size(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHighest
-        ) {
-            SongArtwork(
-                song = song,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = song.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = song.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-/**
- * One action. Shaped like `VideoOptionsSheet`'s rows on the video side, so
- * the same gesture produces a recognisably similar sheet in both modes.
- */
-@Composable
-private fun OptionRow(
-    icon: ImageVector,
-    title: String,
-    onClick: () -> Unit,
-    subtitle: String? = null,
-    hero: Boolean = false,
-    enabled: Boolean = true,
-    tint: Color? = null
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && enabled) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "songOptionRowScale"
-    )
-
-    val container = when {
-        !enabled -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)
-        hero -> MaterialTheme.colorScheme.primaryContainer
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val content = when {
-        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-        hero -> MaterialTheme.colorScheme.onPrimaryContainer
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(if (hero) 20.dp else 16.dp))
-            .clickable(
-                enabled = enabled,
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        shape = RoundedCornerShape(if (hero) 20.dp else 16.dp),
-        color = container
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (hero) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        else MaterialTheme.colorScheme.surfaceContainerHighest
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = tint ?: content,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = content,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (!subtitle.isNullOrBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            // The creator, where the caller has a page to send them to.
+            if (onArtistClick != null && artist != null) {
+                OptionGroup {
+                    OptionRow(
+                        icon = Icons.Rounded.AccountCircle,
+                        title = stringResource(R.string.song_options_go_to_artist, artist),
+                        trailing = OptionRowTrailing.CHEVRON,
+                        onClick = {
+                            // Terminal: the sheet is over a screen the artist
+                            // page is about to replace, and leaving it open
+                            // would put it on top of the destination.
+                            onDismiss()
+                            onArtistClick(artist)
+                        }
                     )
+                }
+            }
+
+            // Dismissals last and on their own, the way the video sheet has
+            // them: they are the destructive-shaped actions here, and a row
+            // that removes something from a feed should not sit next to the
+            // rows that add it to one.
+            if (onNotInterested != null || onBlockArtist != null) {
+                OptionGroup {
+                    onNotInterested?.let { dismiss ->
+                        OptionRow(
+                            icon = Icons.Rounded.NotInterested,
+                            title = stringResource(R.string.song_options_not_interested),
+                            subtitle = stringResource(
+                                R.string.song_options_not_interested_subtitle
+                            ),
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = {
+                                // The undo snackbar lives at the root of the
+                                // app, behind this sheet, so the sheet has to
+                                // get out of the way for it to be reachable.
+                                onDismiss()
+                                dismiss()
+                            }
+                        )
+                    }
+                    if (onNotInterested != null && onBlockArtist != null && artist != null) {
+                        OptionRowDivider()
+                    }
+                    if (onBlockArtist != null && artist != null) {
+                        OptionRow(
+                            icon = Icons.Rounded.RemoveCircleOutline,
+                            title = stringResource(R.string.song_options_block_artist, artist),
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = {
+                                onDismiss()
+                                onBlockArtist()
+                            }
+                        )
+                    }
                 }
             }
         }

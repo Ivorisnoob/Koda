@@ -33,6 +33,9 @@ data class TransitionPlan(
         ABRUPT_END,
         PRESERVE_ABRUPT_END,
         SILENCE_SKIP,
+        TEMPO_MISMATCH,
+        PRESERVE_ALBUM,
+        SHORT_TRACK,
     }
 
     enum class HarmonicMatch { COMPATIBLE, NEUTRAL, CLASH, UNKNOWN }
@@ -54,57 +57,74 @@ object TransitionPlanner {
         incoming: AudioProfile?,
         outgoingDurationMs: Long = 0L,
         preserveAbruptEnding: Boolean = false,
+        preserveAlbumSequence: Boolean = false,
+        incomingDurationMs: Long = incoming?.durationMs ?: 0L,
     ): TransitionPlan {
         val fallback = fallbackOverlapMs.coerceIn(MIN_OVERLAP_MS, MAX_OVERLAP_MS)
-        val maximum = maximumOverlapMs.coerceIn(fallback, MAX_OVERLAP_MS)
-        val silenceStart = incoming?.leadInSilenceMs
+        var maximum = maximumOverlapMs.coerceIn(fallback, MAX_OVERLAP_MS)
+        // Do not consume most of an interlude or a short incoming track.
+        if (outgoingDurationMs > 0L) maximum = minOf(maximum, outgoingDurationMs / 4L)
+        if (incomingDurationMs > 0L) maximum = minOf(maximum, incomingDurationMs / 4L)
+        if (maximum < MIN_OVERLAP_MS) {
+            return TransitionPlan(0L, 0L, TransitionPlan.Reason.SHORT_TRACK)
+        }
+        if (preserveAlbumSequence) {
+            return TransitionPlan(0L, 0L, TransitionPlan.Reason.PRESERVE_ALBUM)
+        }
+        val silenceStart = (incoming?.leadInSilenceMs
             ?.minus(ATTACK_GUARD_MS)
             ?.coerceIn(0L, MAX_LEAD_IN_SKIP_MS)
-            ?: 0L
+            ?: 0L).coerceAtMost(
+                if (incomingDurationMs > 0L) incomingDurationMs / 4L else MAX_LEAD_IN_SKIP_MS
+            )
         val tempo = tempoMatch(outgoing, incoming)
         val harmonic = harmonicMatch(outgoing, incoming)
-        val cue = incomingCue(incoming, silenceStart, tempo.speed)
-        val filterStrength = when (harmonic) {
+        val alignBars = (outgoing?.outroDownbeatConfidence ?: 0f) in MIN_GRID_CONFIDENCE..1f &&
+            (incoming?.downbeatConfidence ?: 0f) in MIN_GRID_CONFIDENCE..1f
+        val filterStrength = if (!tempo.compatible) 0f else when (harmonic) {
             TransitionPlan.HarmonicMatch.COMPATIBLE -> 0.3f
             TransitionPlan.HarmonicMatch.NEUTRAL -> 0.45f
             TransitionPlan.HarmonicMatch.CLASH -> 0.8f
-            TransitionPlan.HarmonicMatch.UNKNOWN -> 0.5f
+            TransitionPlan.HarmonicMatch.UNKNOWN -> 0f
         }
 
         fun result(overlap: Long, reason: TransitionPlan.Reason): TransitionPlan {
-            val harmonicallySafe = if (harmonic == TransitionPlan.HarmonicMatch.CLASH) {
+            val harmonicallySafe = minOf(maximum, if (harmonic == TransitionPlan.HarmonicMatch.CLASH) {
                 minOf(overlap, CLASH_MAX_OVERLAP_MS)
-            } else overlap
+            } else overlap)
             // Beat snapping must never undo a reason-specific safety cap. A
             // natural fade stays at one second and a key clash stays at three.
             val ruleMaximum = minOf(maximum, harmonicallySafe)
-            val beatAligned = alignOutgoingBoundary(
+            val canProcess = tempo.compatible && harmonicallySafe > NATURAL_FADE_OVERLAP_MS
+            val cue = incomingCue(incoming, silenceStart, if (canProcess) tempo.speed else 1f, alignBars)
+            val beatAligned = if (canProcess) alignOutgoingBoundary(
                 requestedLeadMs = harmonicallySafe,
                 maximumLeadMs = ruleMaximum,
                 durationMs = outgoingDurationMs,
                 profile = outgoing,
                 incomingDownbeatDelayMs = cue.downbeatDelayMs,
-            )
+                alignBars = alignBars,
+            ) else harmonicallySafe
             return TransitionPlan(
                 overlapMs = beatAligned,
                 incomingStartMs = cue.startMs,
                 reason = reason,
-                incomingSpeed = tempo.speed,
-                filterSweepStrength = filterStrength,
+                incomingSpeed = if (canProcess) tempo.speed else 1f,
+                filterSweepStrength = if (canProcess) filterStrength else 0f,
                 harmonicMatch = harmonic,
-                incomingDownbeatDelayMs = cue.downbeatDelayMs,
+                incomingDownbeatDelayMs = if (canProcess) cue.downbeatDelayMs else 0L,
             )
         }
 
         if (outgoing == null) {
-            return result(fallback, TransitionPlan.Reason.FALLBACK)
+            return result(minOf(fallback, maximum), TransitionPlan.Reason.FALLBACK)
         }
 
         // A loud final frame is commonly a deliberate cut into the next album
         // track. Overlap would duplicate that boundary; let Media3 advance
         // gaplessly instead.
         if (outgoing.endsAbruptly && preserveAbruptEnding) {
-            return TransitionPlan(0L, cue.startMs, TransitionPlan.Reason.PRESERVE_ABRUPT_END)
+            return TransitionPlan(0L, 0L, TransitionPlan.Reason.PRESERVE_ABRUPT_END)
         }
         if (outgoing.endsAbruptly) {
             return result(
@@ -129,15 +149,27 @@ object TransitionPlanner {
         if (outgoing.trailingSilenceMs >= MIN_SILENCE_SKIP_MS) {
             val lead = minOf(outgoing.trailingSilenceMs, MAX_SILENCE_SKIP_MS)
             return TransitionPlan(
-                overlapMs = maxOf(minOf(fallback, NATURAL_FADE_OVERLAP_MS), MIN_OVERLAP_MS),
-                incomingStartMs = cue.startMs,
+                overlapMs = minOf(maximum, maxOf(minOf(fallback, NATURAL_FADE_OVERLAP_MS), MIN_OVERLAP_MS)),
+                incomingStartMs = silenceStart,
                 reason = TransitionPlan.Reason.SILENCE_SKIP,
-                incomingSpeed = tempo.speed,
-                filterSweepStrength = filterStrength,
+                incomingSpeed = 1f,
+                filterSweepStrength = 0f,
                 harmonicMatch = harmonic,
-                incomingDownbeatDelayMs = cue.downbeatDelayMs,
-                prepareLeadMs = lead,
+                incomingDownbeatDelayMs = 0L,
+                prepareLeadMs = if (outgoingDurationMs > 0L) {
+                    minOf(lead, outgoingDurationMs * 2L / 3L)
+                } else lead,
             )
+        }
+
+        if (tempo.confident && !tempo.compatible) {
+            return result(minOf(fallback, 1_500L), TransitionPlan.Reason.TEMPO_MISMATCH)
+        }
+
+        // Long overlaps require a reliable matching pulse on both sides.
+        // An energy dip alone can be a breath between lines, not an outro.
+        if (!tempo.compatible) {
+            return result(minOf(fallback, maximum), TransitionPlan.Reason.FALLBACK)
         }
 
         val phrase = outgoing.phraseOutroLeadMs
@@ -160,20 +192,26 @@ object TransitionPlanner {
         return result(fallback, TransitionPlan.Reason.FALLBACK)
     }
 
-    private data class TempoMatch(val speed: Float)
+    private data class TempoMatch(
+        val speed: Float = 1f,
+        val confident: Boolean = false,
+        val compatible: Boolean = false,
+    )
 
     private fun tempoMatch(outgoing: AudioProfile?, incoming: AudioProfile?): TempoMatch {
-        val out = outgoing?.outroBpm ?: return TempoMatch(1f)
-        val rawIn = incoming?.bpm ?: return TempoMatch(1f)
-        if (outgoing.outroTempoConfidence < MIN_TEMPO_CONFIDENCE ||
-            incoming.tempoConfidence < MIN_TEMPO_CONFIDENCE
-        ) return TempoMatch(1f)
+        val out = outgoing?.outroBpm ?: return TempoMatch()
+        val rawIn = incoming?.bpm ?: return TempoMatch()
+        if (!out.isFinite() || out <= 0f || !rawIn.isFinite() || rawIn <= 0f ||
+            outgoing.outroTempoConfidence !in MIN_TEMPO_CONFIDENCE..1f ||
+            incoming.tempoConfidence !in MIN_TEMPO_CONFIDENCE..1f
+        ) return TempoMatch()
 
         val equivalent = listOf(rawIn * 0.5f, rawIn, rawIn * 2f)
             .minByOrNull { kotlin.math.abs(out / it - 1f) } ?: rawIn
         val ratio = out / equivalent
-        return if (ratio in MIN_TEMPO_SPEED..MAX_TEMPO_SPEED) TempoMatch(ratio)
-        else TempoMatch(1f)
+        return if (ratio in MIN_TEMPO_SPEED..MAX_TEMPO_SPEED) {
+            TempoMatch(ratio, confident = true, compatible = true)
+        } else TempoMatch(confident = true)
     }
 
     private data class IncomingCue(val startMs: Long, val downbeatDelayMs: Long)
@@ -182,15 +220,21 @@ object TransitionPlanner {
         incoming: AudioProfile?,
         minimumStartMs: Long,
         speed: Float,
+        alignBars: Boolean,
     ): IncomingCue {
         val bpm = incoming?.bpm ?: return IncomingCue(minimumStartMs, 0L)
-        if (incoming.tempoConfidence < MIN_GRID_CONFIDENCE) {
+        val offsetMs = if (alignBars) incoming.downbeatOffsetMs else incoming.beatOffsetMs
+        if (!bpm.isFinite() || bpm <= 0f ||
+            incoming.tempoConfidence !in MIN_GRID_CONFIDENCE..1f ||
+            offsetMs !in 0L..MAX_LEAD_IN_SKIP_MS
+        ) {
             return IncomingCue(minimumStartMs, 0L)
         }
         // Seek positions are expressed on the source timeline. Playback speed
         // changes how long the bar takes after starting, not where it lives.
-        val barMsOnSource = (4f * 60_000f / bpm).toLong().coerceAtLeast(1L)
-        var downbeat = incoming.downbeatOffsetMs
+        val beatsPerGrid = if (alignBars) 4f else 1f
+        val barMsOnSource = (beatsPerGrid * 60_000f / bpm).toLong().coerceAtLeast(1L)
+        var downbeat = offsetMs
         while (downbeat < minimumStartMs) downbeat += barMsOnSource
         // Clamping a later downbeat to exactly 15 seconds creates a timestamp
         // that is not on the grid. Keep the audible cue and decline alignment.
@@ -206,16 +250,20 @@ object TransitionPlanner {
         durationMs: Long,
         profile: AudioProfile?,
         incomingDownbeatDelayMs: Long,
+        alignBars: Boolean,
     ): Long {
         val bpm = profile?.outroBpm ?: return requestedLeadMs
-        if (durationMs <= 0 || profile.outroTempoConfidence < MIN_GRID_CONFIDENCE) {
+        if (durationMs <= 0 || !bpm.isFinite() || bpm <= 0f ||
+            profile.outroTempoConfidence !in MIN_GRID_CONFIDENCE..1f
+        ) {
             return requestedLeadMs
         }
-        val barMs = 4.0 * 60_000.0 / bpm
+        val barMs = (if (alignBars) 4.0 else 1.0) * 60_000.0 / bpm
         // Align the incoming downbeat, not necessarily the beginning of its
         // audio. A pickup can now play during the first part of the overlap.
         val desiredDownbeatPosition = durationMs - requestedLeadMs + incomingDownbeatDelayMs
-        val lastDownbeat = durationMs - profile.outroDownbeatLeadMs
+        val lastDownbeat = durationMs -
+            if (alignBars) profile.outroDownbeatLeadMs else profile.outroBeatLeadMs
         val nearestBar = kotlin.math.round((desiredDownbeatPosition - lastDownbeat) / barMs).toLong()
         return ((nearestBar - 2)..(nearestBar + 2))
             .map { bar ->
@@ -244,14 +292,19 @@ object TransitionPlanner {
             outgoingProfile.keyConfidence
         }
         val outgoingMode = outgoingProfile.outroKeyMode ?: outgoingProfile.keyMode
-        if (outgoingConfidence < MIN_KEY_CONFIDENCE ||
-            incoming.keyConfidence < MIN_KEY_CONFIDENCE
+        if (outgoingConfidence !in MIN_KEY_CONFIDENCE..1f ||
+            incoming.keyConfidence !in MIN_KEY_CONFIDENCE..1f ||
+            a !in 0..11 || b !in 0..11 ||
+            outgoingMode !in listOf("major", "minor") ||
+            incoming.keyMode !in listOf("major", "minor")
         ) return TransitionPlan.HarmonicMatch.UNKNOWN
         val interval = ((b - a) % 12 + 12) % 12
         val sameMode = outgoingMode == incoming.keyMode
         return when {
             interval == 0 && sameMode -> TransitionPlan.HarmonicMatch.COMPATIBLE
-            interval == 5 || interval == 7 -> TransitionPlan.HarmonicMatch.COMPATIBLE
+            sameMode && (interval == 5 || interval == 7) -> TransitionPlan.HarmonicMatch.COMPATIBLE
+            !sameMode && ((outgoingMode == "major" && interval == 9) ||
+                (outgoingMode == "minor" && interval == 3)) -> TransitionPlan.HarmonicMatch.COMPATIBLE
             interval == 0 || interval == 3 || interval == 9 -> TransitionPlan.HarmonicMatch.NEUTRAL
             else -> TransitionPlan.HarmonicMatch.CLASH
         }

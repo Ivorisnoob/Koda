@@ -43,8 +43,8 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
@@ -100,7 +100,8 @@ fun BentoPlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onAlbumClick: (String) -> Unit = {}
 ) {
     // Back is handled once by ExpandablePlayer, which previews the collapse
     // as a gesture instead of firing at the end of one. A BackHandler here
@@ -121,11 +122,10 @@ fun BentoPlayerSheetContent(
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val localPlaylists by viewModel.localPlaylists.collectAsState()
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showOptions by remember { mutableStateOf(false) }
 
     // Swipe-to-skip, shared by the art tile and the title tile so both
     // commit at the same threshold with the same spring home.
@@ -232,7 +232,7 @@ fun BentoPlayerSheetContent(
                             )
                         }
                         BentoTile(
-                            onClick = { showAddToPlaylist = true },
+                            onClick = { showOptions = true },
                             color = tileColor,
                             contentColor = onTile,
                             modifier = Modifier
@@ -240,7 +240,7 @@ fun BentoPlayerSheetContent(
                                 .fillMaxHeight()
                         ) {
                             Icon(
-                                Icons.Rounded.PlaylistAdd, "Add to Playlist",
+                                Icons.Rounded.MoreVert, "More options",
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -513,19 +513,19 @@ fun BentoPlayerSheetContent(
         }
     }
 
-    if (showAddToPlaylist) {
-        AddToPlaylistSheet(
-            playlists = localPlaylists,
-            onPlaylistClick = { playlist ->
-                viewModel.addToPlaylist(playlist.id)
-                showAddToPlaylist = false
-            },
-            onCreateNewClick = { name, desc ->
-                viewModel.createPlaylist(name, desc)
-                showAddToPlaylist = false
-            },
-            onDismissRequest = { showAddToPlaylist = false }
-        )
+    // The overflow menu. Hosted here rather than above the style dispatch so
+    // it sits inside this player's own composition, and gated on a song so the
+    // sheet can never open against nothing.
+    if (showOptions) {
+        currentSong?.let { song ->
+            NowPlayingOptionsSheet(
+                song = song,
+                viewModel = viewModel,
+                onDismiss = { showOptions = false },
+                onArtistClick = onArtistClick,
+                onAlbumClick = onAlbumClick
+            )
+        }
     }
 }
 

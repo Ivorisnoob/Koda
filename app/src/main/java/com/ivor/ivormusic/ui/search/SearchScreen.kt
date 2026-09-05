@@ -1901,11 +1901,15 @@ fun ArtistResultCard(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
-                model = artist.thumbnailUrl ?: "",
+            // 140dp of picture asked for at whatever size the search
+            // response returned - usually =s48, blown up nine times. This
+            // requests one worth drawing and keeps the original underneath.
+            com.ivor.ivormusic.ui.components.AvatarImage(
+                url = artist.thumbnailUrl,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                indicatorSize = 32.dp,
+                placeholderColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
         

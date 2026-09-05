@@ -30,7 +30,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -76,7 +76,8 @@ fun PlayerSheetContent(
     ambientBackground: Boolean = true,
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onAlbumClick: (String) -> Unit = {}
 ) {
     // Handle back press to collapse player instead of quitting app
     // Back is handled once by ExpandablePlayer, which previews the collapse
@@ -105,8 +106,7 @@ fun PlayerSheetContent(
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     
     var showQueue by remember { mutableStateOf(false) }
-    var showAddToPlaylist by remember { mutableStateOf(false) }
-    val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
+    var showOptions by remember { mutableStateOf(false) }
 
     // 🌟 Stable shapes - prevents "square flash" on initial render
     // IconButtonDefaults.shapes() already uses internal remember/caching
@@ -176,10 +176,7 @@ fun PlayerSheetContent(
                     
                     onCollapse = onCollapse,
                     onShowQueue = { showQueue = true },
-                    onShowAddToPlaylist = {
-                        viewModel.loadYouTubePlaylistsForSheet()
-                        showAddToPlaylist = true
-                    },
+                    onShowOptions = { showOptions = true },
                     onArtistClick = onArtistClick,
                     viewModel = viewModel,
                     primaryColor = primaryColor,
@@ -194,19 +191,17 @@ fun PlayerSheetContent(
         }
     } // THIS BITCH ASS BRACKET WAS MISSING AND IT TOOK ME HOURS TO KNOW
 
-    if (showAddToPlaylist) {
-        AddToPlaylistSheet(
-            playlists = addToPlaylistItems,
-            onPlaylistClick = { playlist ->
-                viewModel.addToPlaylist(playlist.id)
-                showAddToPlaylist = false
-            },
-            onCreateNewClick = { name, desc ->
-                viewModel.createPlaylist(name, desc)
-                showAddToPlaylist = false
-            },
-            onDismissRequest = { showAddToPlaylist = false }
-        )
+    // The overflow menu, gated on a song so it can never open against nothing.
+    if (showOptions) {
+        currentSong?.let { song ->
+            NowPlayingOptionsSheet(
+                song = song,
+                viewModel = viewModel,
+                onDismiss = { showOptions = false },
+                onArtistClick = onArtistClick,
+                onAlbumClick = onAlbumClick
+            )
+        }
     }
 }
 
@@ -236,7 +231,7 @@ private fun ExpressiveNowPlayingView(
     ambientBackground: Boolean,
     onCollapse: () -> Unit,
     onShowQueue: () -> Unit,
-    onShowAddToPlaylist: () -> Unit,
+    onShowOptions: () -> Unit,
     onArtistClick: (String) -> Unit,
     viewModel: PlayerViewModel,
     primaryColor: Color,
@@ -342,23 +337,11 @@ private fun ExpressiveNowPlayingView(
                 }
             }
             
-            // Right Side Group: Add to Playlist + Queue
+            // Right Side Group: Queue, then the overflow menu last
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FilledIconButton(
-                    onClick = onShowAddToPlaylist,
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(Icons.Rounded.PlaylistAdd, "Add to Playlist", modifier = Modifier.size(24.dp))
-                }
-
                 // Queue button
                 FilledIconButton(
                     onClick = onShowQueue,
@@ -370,6 +353,18 @@ private fun ExpressiveNowPlayingView(
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", modifier = Modifier.size(24.dp))
+                }
+
+                FilledIconButton(
+                    onClick = onShowOptions,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Rounded.MoreVert, "More options", modifier = Modifier.size(24.dp))
                 }
             }
         }
