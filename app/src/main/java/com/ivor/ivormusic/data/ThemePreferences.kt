@@ -1537,12 +1537,20 @@ class ThemePreferences(context: Context) {
     }
     
     private fun getMaxCacheSizeMbPreference(): Long {
-        return prefs.getLong(KEY_MAX_CACHE_SIZE_MB, 512L) // Default 512MB
+        return prefs.getLong(KEY_MAX_CACHE_SIZE_MB, CacheManager.DEFAULT_CACHE_SIZE_MB)
+            .coerceIn(CacheManager.MIN_CACHE_SIZE_MB, CacheManager.MAX_CACHE_SIZE_MB)
     }
     
     fun setMaxCacheSizeMb(sizeMb: Long) {
-        prefs.edit().putLong(KEY_MAX_CACHE_SIZE_MB, sizeMb).apply()
-        _maxCacheSizeMb.value = sizeMb
+        // Clamped here rather than at the settings slider, because a restored
+        // backup and a build with a different ceiling both write through this
+        // one setter and neither passes a slider stop.
+        val clamped = sizeMb.coerceIn(
+            CacheManager.MIN_CACHE_SIZE_MB,
+            CacheManager.MAX_CACHE_SIZE_MB
+        )
+        prefs.edit().putLong(KEY_MAX_CACHE_SIZE_MB, clamped).apply()
+        _maxCacheSizeMb.value = clamped
     }
     
     // --- Queue Settings ---

@@ -48,8 +48,19 @@ object CacheManager {
 
     // Default 512MB cache
     const val DEFAULT_CACHE_SIZE_MB = 512L
-    const val MIN_CACHE_SIZE_MB = 128L
-    const val MAX_CACHE_SIZE_MB = 4096L // 4GB
+    const val MIN_CACHE_SIZE_MB = 256L
+
+    /**
+     * The ceiling the settings slider offers. 10 GB is far more than a music
+     * cache normally needs, which is exactly why the slider warns rather than
+     * refuses past a few gigabytes: someone with a large card and a long
+     * commute is entitled to keep their whole rotation offline-ready, and
+     * someone on a 32 GB phone should be told what they are about to spend.
+     */
+    const val MAX_CACHE_SIZE_MB = 10240L // 10GB
+
+    /** Past this the settings page states the cost out loud. */
+    const val LARGE_CACHE_WARNING_MB = 4096L // 4GB
 
     private var simpleCache: SimpleCache? = null
     private var databaseProvider: StandaloneDatabaseProvider? = null
@@ -508,6 +519,25 @@ object CacheManager {
         KLog.d(TAG, "Updating cache size to ${maxSizeMb}MB (live)")
         currentEvictor.updateMaxBytes(cache, newSizeBytes)
         updateCacheSize()
+    }
+
+    /**
+     * Free space on the volume the music cache lives on, or -1 when the
+     * platform will not answer.
+     *
+     * The settings slider reads this because a ceiling is a promise about disk
+     * the device may not have: offering 10 GB on a phone with 3 GB left is an
+     * invitation to fill it. It is a snapshot rather than a reservation - the
+     * evictor still only trims what the cache itself holds - so the page states
+     * it as context beside the choice rather than clamping the choice to it.
+     */
+    fun availableSpaceBytes(context: Context): Long = try {
+        val dir = cacheDir ?: File(context.cacheDir, CACHE_DIR_NAME)
+        val target = if (dir.exists()) dir else context.cacheDir
+        android.os.StatFs(target.absolutePath).availableBytes
+    } catch (e: Exception) {
+        KLog.e(TAG, "Could not read free space", e)
+        -1L
     }
 
     /**

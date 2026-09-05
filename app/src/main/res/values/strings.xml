@@ -418,6 +418,8 @@
     <string name="sp_cache_music_sub">Store streamed songs and videos for faster replay and seeking</string>
     <string name="sp_local_cache">Local Cache</string>
     <string name="sp_max_cache_size">Max Cache Size</string>
+    <string name="sp_cache_size_large_warning">Koda only fills the cache as you listen, but it can grow to %1$s of device storage before it starts evicting older songs.</string>
+    <string name="sp_cache_size_low_space">Only %1$s free on this device. The cache will stop growing when the space runs out, and other apps have to share it.</string>
     <string name="sp_clear_cache">Clear Cache</string>
     <string name="sp_clear_cache_sub">Free up storage space</string>
     <string name="sp_live_updates">Live updates</string>
