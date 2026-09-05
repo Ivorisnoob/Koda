@@ -1265,7 +1265,17 @@ fun HomeScreen(
         com.ivor.ivormusic.ui.player.SongOptionsSheet(
             song = song,
             viewModel = playerViewModel,
-            onDismiss = { songOptionsTarget = null }
+            onDismiss = { songOptionsTarget = null },
+            // The same hand-off the player already uses for an artist: the
+            // artist page lives inside the Library tab rather than on a route,
+            // so it is opened by handing the name over and switching tab.
+            // Nothing else passed this, which left the sheet's own artist row
+            // unreachable from every surface in the app.
+            onArtistClick = { artist ->
+                if (videoMode) onVideoModeToggle(false)
+                viewedArtistFromPlayer = artist
+                selectedTab = 2
+            }
         )
     }
 
