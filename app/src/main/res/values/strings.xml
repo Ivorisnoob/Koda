@@ -196,6 +196,8 @@
     <string name="video_options_share">Share</string>
     <string name="video_options_share_chooser">Share video</string>
     <string name="video_options_not_interested">Not interested</string>
+    <string name="video_options_mark_watched">Mark as watched</string>
+    <string name="video_options_mark_unwatched">Mark as unwatched</string>
     <string name="video_options_remove_from_history">Remove from watch history</string>
     <string name="video_options_dont_recommend_channel">Don\'t recommend channel</string>
     <string name="video_options_dont_recommend_channel_name">Don\'t recommend %1$s</string>
@@ -401,6 +403,10 @@
     <string name="vh_recommendations_off_sub">Shorts can still appear here when enabled.</string>
     <string name="vp_resumed_from">Resumed from %1$s</string>
     <string name="vp_play_from_start">Play from start</string>
+    <string name="sp_show_recent_searches">Show recent searches</string>
+    <string name="sp_show_recent_searches_sub">Your past queries under the search bar</string>
+    <string name="sp_show_related_videos">Show related videos</string>
+    <string name="sp_show_related_videos_sub">Suggestions under a video while it plays</string>
     <string name="sp_not_recommended">Not Recommended</string>
     <string name="sp_not_recommended_sub">Videos and channels you\'ve hidden from your feeds</string>
     <string name="sp_manage_subscriptions">Manage Subscriptions</string>
@@ -582,6 +588,7 @@
     <string name="sc_unfollow_body">Removes it from this device. Your YouTube account isn\'t touched.</string>
     <string name="unfollow">Unfollow</string>
     <string name="cd_all_channels">All channels</string>
+    <string name="sc_hide_watched">Hide watched</string>
     <string name="sc_no_uploads_match">No uploads match these filters.</string>
     <string name="search_channels">Search channels</string>
     <string name="sc_none_found">No subscriptions found</string>

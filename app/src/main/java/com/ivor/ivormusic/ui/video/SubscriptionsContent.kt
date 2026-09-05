@@ -38,6 +38,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.PersonRemove
@@ -154,9 +156,26 @@ fun SubscriptionsContent(
     val selectedGroupId by viewModel.selectedGroupId.collectAsState()
     val backgroundColor = MaterialTheme.colorScheme.background
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     var selectedChannelId by rememberSaveable { mutableStateOf<String?>(null) }
-    var feedPeriodName by rememberSaveable { mutableStateOf(SubscriptionFeedPeriod.ALL.name) }
-    var feedOrderName by rememberSaveable { mutableStateOf(SubscriptionFeedOrder.NEWEST.name) }
+    // Persisted rather than remembered. rememberSaveable survives rotation and
+    // process death, but this tab lives inside Home's AnimatedContent: leaving
+    // the tab disposes it and takes the saved state with it, so the feed came
+    // back on "Any time" every single time. Matched by name rather than
+    // ordinal, so a period removed in a later version falls back to the
+    // default instead of throwing.
+    val themePreferences = remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }
+    val feedPeriodName by themePreferences.subscriptionFeedPeriod.collectAsState()
+    val feedOrderName by themePreferences.subscriptionFeedOrder.collectAsState()
+    val hideWatched by themePreferences.hideWatchedInFeed.collectAsState()
+    val watchHistoryRepository = remember(context) {
+        com.ivor.ivormusic.data.VideoHistoryRepository(context)
+    }
+    val watchHistory by watchHistoryRepository.history.collectAsState()
+    val watchedIds = remember(watchHistory) { watchHistory.map { it.videoId }.toSet() }
     val feedPeriod = remember(feedPeriodName) {
         SubscriptionFeedPeriod.entries.firstOrNull { it.name == feedPeriodName } ?: SubscriptionFeedPeriod.ALL
     }
@@ -172,7 +191,9 @@ fun SubscriptionsContent(
         channels,
         selectedChannelId,
         feedPeriod,
-        feedOrder
+        feedOrder,
+        hideWatched,
+        watchedIds
     ) {
         val selectedChannel = channels.firstOrNull { it.channelId == selectedChannelId }
         val sourceFeed = if (selectedChannel == null) feed else selectedChannelFeed
@@ -183,6 +204,10 @@ fun SubscriptionsContent(
                     (video.publishedAtMs ?: VideoItem.parseRelativeTime(video.uploadedDate, now))
                         ?.let { now - it <= feedPeriod.ageMs } == true
             }
+            // A filter over the fetched list rather than a write into it, the
+            // same shape the dismissal store uses: marking something unwatched
+            // has to put it back on the next frame, not on the next refresh.
+            .filter { video -> !hideWatched || video.videoId !in watchedIds }
             .sortedWith(compareBy<VideoItem> {
                 it.publishedAtMs ?: VideoItem.parseRelativeTime(it.uploadedDate) ?: Long.MIN_VALUE
             }.let { if (feedOrder == SubscriptionFeedOrder.NEWEST) it.reversed() else it })
@@ -608,11 +633,33 @@ fun SubscriptionsContent(
                                         SubscriptionFeedPeriod.entries.forEach { period ->
                                             DropdownMenuItem(
                                                 text = { Text(feedPeriodLabel(period)) },
-                                                onClick = { feedPeriodName = period.name; showKindMenu = false }
+                                                onClick = {
+                                                    themePreferences.setSubscriptionFeedPeriod(period.name)
+                                                    showKindMenu = false
+                                                }
                                             )
                                         }
                                     }
                                 }
+                                // A chip rather than a menu entry, because it
+                                // is a switch with two states and its own state
+                                // is the answer to "where did those videos go".
+                                FilterChip(
+                                    selected = hideWatched,
+                                    onClick = { themePreferences.setHideWatchedInFeed(!hideWatched) },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (hideWatched) {
+                                                Icons.Rounded.VisibilityOff
+                                            } else {
+                                                Icons.Rounded.Visibility
+                                            },
+                                            null,
+                                            Modifier.size(18.dp)
+                                        )
+                                    },
+                                    label = { Text(stringResource(R.string.sc_hide_watched)) }
+                                )
                                 Box {
                                     FilterChip(
                                         selected = feedOrder != SubscriptionFeedOrder.NEWEST,
@@ -624,7 +671,10 @@ fun SubscriptionsContent(
                                         SubscriptionFeedOrder.entries.forEach { order ->
                                             DropdownMenuItem(
                                                 text = { Text(feedOrderLabel(order)) },
-                                                onClick = { feedOrderName = order.name; showOrderMenu = false }
+                                                onClick = {
+                                                    themePreferences.setSubscriptionFeedOrder(order.name)
+                                                    showOrderMenu = false
+                                                }
                                             )
                                         }
                                     }
@@ -670,7 +720,9 @@ fun SubscriptionsContent(
                                         viewModel.loadSelectedChannelFeed(selected)
                                     } else {
                                         selectedChannelId = null
-                                        feedPeriodName = SubscriptionFeedPeriod.ALL.name
+                                        themePreferences.setSubscriptionFeedPeriod(
+                                            SubscriptionFeedPeriod.ALL.name
+                                        )
                                         viewModel.clearSelectedChannelFeed()
                                     }
                                 },

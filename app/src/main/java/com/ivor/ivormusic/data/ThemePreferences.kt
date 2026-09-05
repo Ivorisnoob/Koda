@@ -233,6 +233,30 @@ class ThemePreferences(context: Context) {
     private val _librarySortOption = MutableStateFlow(getLibrarySortOptionPreference())
     val librarySortOption: StateFlow<String> = _librarySortOption.asStateFlow()
 
+    // The Subscriptions feed's own controls. Persisted for the reason the
+    // Library sort is: they were held in composition state, and the tab lives
+    // inside Home's AnimatedContent, so leaving the tab disposed the state and
+    // the feed came back on "Any time" every time. A filter that forgets is
+    // worse than no filter, because the user has to re-check it constantly.
+    private val _subscriptionFeedPeriod = MutableStateFlow(getSubscriptionFeedPeriodPreference())
+    val subscriptionFeedPeriod: StateFlow<String> = _subscriptionFeedPeriod.asStateFlow()
+
+    private val _subscriptionFeedOrder = MutableStateFlow(getSubscriptionFeedOrderPreference())
+    val subscriptionFeedOrder: StateFlow<String> = _subscriptionFeedOrder.asStateFlow()
+
+    private val _hideWatchedInFeed = MutableStateFlow(getHideWatchedInFeedPreference())
+    val hideWatchedInFeed: StateFlow<Boolean> = _hideWatchedInFeed.asStateFlow()
+
+    // Two ways the app suggests things you did not ask for. Stated as what is
+    // shown rather than what is hidden, so the switch position and the sentence
+    // agree - a toggle called "Hide X" that is on when X is visible is the
+    // reliable way to make somebody flip it twice.
+    private val _showRecentSearches = MutableStateFlow(getShowRecentSearchesPreference())
+    val showRecentSearches: StateFlow<Boolean> = _showRecentSearches.asStateFlow()
+
+    private val _showRelatedVideos = MutableStateFlow(getShowRelatedVideosPreference())
+    val showRelatedVideos: StateFlow<Boolean> = _showRelatedVideos.asStateFlow()
+
     // Every screen/service news up its own ThemePreferences (no DI), so a setter
     // called on one instance must still reach the flows of every other instance.
     // All instances share the same process-wide SharedPreferences object, so a
@@ -307,6 +331,13 @@ class ThemePreferences(context: Context) {
             KEY_TIME_LIMIT_ENABLED -> _timeLimitEnabled.value = getTimeLimitEnabledPreference()
             KEY_TIME_LIMIT_BUDGETS -> _timeLimitBudgets.value = getTimeLimitBudgetsPreference()
             KEY_LIBRARY_SORT_OPTION -> _librarySortOption.value = getLibrarySortOptionPreference()
+            KEY_SUBSCRIPTION_FEED_PERIOD ->
+                _subscriptionFeedPeriod.value = getSubscriptionFeedPeriodPreference()
+            KEY_SUBSCRIPTION_FEED_ORDER ->
+                _subscriptionFeedOrder.value = getSubscriptionFeedOrderPreference()
+            KEY_HIDE_WATCHED_IN_FEED -> _hideWatchedInFeed.value = getHideWatchedInFeedPreference()
+            KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
+            KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
         }
     }
 
@@ -624,6 +655,11 @@ class ThemePreferences(context: Context) {
         private const val KEY_REPORT_VERBOSE_LOGS = "report_verbose_logs"
 
         private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
+        private const val KEY_SUBSCRIPTION_FEED_PERIOD = "subscription_feed_period"
+        private const val KEY_SUBSCRIPTION_FEED_ORDER = "subscription_feed_order"
+        private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
+        private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
+        private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
 
         /**
          * Fallback sort order for the Library's All tab. Mirrors the name of
@@ -1781,6 +1817,51 @@ class ThemePreferences(context: Context) {
     fun setLibrarySortOption(optionName: String) {
         prefs.edit().putString(KEY_LIBRARY_SORT_OPTION, optionName).apply()
         _librarySortOption.value = optionName
+    }
+
+    private fun getSubscriptionFeedPeriodPreference(): String =
+        prefs.getString(KEY_SUBSCRIPTION_FEED_PERIOD, "") ?: ""
+
+    /**
+     * Store the feed's age filter by enum name. Matched by name rather than
+     * ordinal at the call site, so a period removed in a later version falls
+     * back to "Any time" instead of throwing.
+     */
+    fun setSubscriptionFeedPeriod(periodName: String) {
+        prefs.edit().putString(KEY_SUBSCRIPTION_FEED_PERIOD, periodName).apply()
+        _subscriptionFeedPeriod.value = periodName
+    }
+
+    private fun getSubscriptionFeedOrderPreference(): String =
+        prefs.getString(KEY_SUBSCRIPTION_FEED_ORDER, "") ?: ""
+
+    fun setSubscriptionFeedOrder(orderName: String) {
+        prefs.edit().putString(KEY_SUBSCRIPTION_FEED_ORDER, orderName).apply()
+        _subscriptionFeedOrder.value = orderName
+    }
+
+    private fun getHideWatchedInFeedPreference(): Boolean =
+        prefs.getBoolean(KEY_HIDE_WATCHED_IN_FEED, false)
+
+    fun setHideWatchedInFeed(hide: Boolean) {
+        prefs.edit().putBoolean(KEY_HIDE_WATCHED_IN_FEED, hide).apply()
+        _hideWatchedInFeed.value = hide
+    }
+
+    private fun getShowRecentSearchesPreference(): Boolean =
+        prefs.getBoolean(KEY_SHOW_RECENT_SEARCHES, true)
+
+    fun setShowRecentSearches(show: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_RECENT_SEARCHES, show).apply()
+        _showRecentSearches.value = show
+    }
+
+    private fun getShowRelatedVideosPreference(): Boolean =
+        prefs.getBoolean(KEY_SHOW_RELATED_VIDEOS, true)
+
+    fun setShowRelatedVideos(show: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_RELATED_VIDEOS, show).apply()
+        _showRelatedVideos.value = show
     }
 
     private fun getOnboardingCompletedPreference(): Boolean {
