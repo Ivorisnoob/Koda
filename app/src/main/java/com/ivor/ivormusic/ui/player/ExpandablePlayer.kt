@@ -82,6 +82,7 @@ fun ExpandablePlayer(
      */
     collapsedFollowOffsetPx: () -> Float = { 0f },
     onArtistClick: (String) -> Unit = {},
+    onAlbumClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (currentSong == null) return
@@ -391,7 +392,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick
                                 )
                             }
                             PlayerStyle.GESTURE -> {
@@ -402,7 +404,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick
                                 )
                             }
                             PlayerStyle.EDITORIAL -> {
@@ -413,7 +416,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick
                                 )
                             }
                             PlayerStyle.POSTER -> {
@@ -424,7 +428,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick
                                 )
                             }
                             PlayerStyle.BENTO -> {
@@ -435,7 +440,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick
                                 )
                             }
                             PlayerStyle.STICKER -> {
@@ -446,7 +452,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick
                                 )
                             }
                             PlayerStyle.MORPH -> {
@@ -457,7 +464,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick
                                 )
                             }
                             PlayerStyle.DIAL -> {
@@ -468,7 +476,8 @@ fun ExpandablePlayer(
                                     onLoadMore = {
                                         viewModel.loadMoreRecommendations()
                                     },
-                                    onArtistClick = onArtistClick
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick
                                 )
                             }
                         }

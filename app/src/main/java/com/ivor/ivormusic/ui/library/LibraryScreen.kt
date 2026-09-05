@@ -154,6 +154,14 @@ fun LibraryContent(
      */
     initialPlaylist: PlaylistDisplayItem? = null,
     onInitialPlaylistConsumed: () -> Unit = {},
+    /**
+     * Open straight onto a device album, named rather than passed whole: the
+     * album route is built from a name plus that album's songs, and the player
+     * - the one caller - has a [Song] and no list. The songs are gathered here
+     * from the library this screen already holds.
+     */
+    initialAlbum: String? = null,
+    onInitialAlbumConsumed: () -> Unit = {},
     onStatsClick: () -> Unit = {},
     /**
      * Long-press on a song row. Hoisted rather than handled here because the
@@ -203,6 +211,22 @@ fun LibraryContent(
             selectedPlaylist = initialPlaylist
             currentRoute = LibraryRoute.Playlist
             onInitialPlaylistConsumed()
+        }
+    }
+
+    // Handle initial deep link to an album. Keyed on the song list as well, so
+    // a request arriving before the device scan finishes is not resolved to an
+    // empty album; an album with no songs is not opened at all, which is the
+    // honest outcome for a name the library does not have.
+    LaunchedEffect(initialAlbum, songs) {
+        if (initialAlbum != null) {
+            val albumSongs = songs.filter { it.album == initialAlbum }.sortedInAlbumOrder()
+            if (albumSongs.isNotEmpty()) {
+                selectedAlbumName = initialAlbum
+                selectedAlbumSongs = albumSongs
+                currentRoute = LibraryRoute.Album
+                onInitialAlbumConsumed()
+            }
         }
     }
 

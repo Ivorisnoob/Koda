@@ -453,6 +453,11 @@ fun HomeScreen(
     // Artist screen state (for navigation from player)
     var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
 
+    // The album counterpart, from the player's overflow menu. A name rather
+    // than a PlaylistDisplayItem, because a device album is identified by its
+    // name and the Library builds the rest from the songs it already has.
+    var viewedAlbumFromPlayer by remember { mutableStateOf<String?>(null) }
+
     // The same hand-off, asked for from outside this screen entirely: the
     // "Open music artist page" cross-link on a creator's channel page pops back
     // to home and leaves the request on the ViewModel, because a NavHost
@@ -872,6 +877,8 @@ fun HomeScreen(
                                 onInitialArtistConsumed = { viewedArtistFromPlayer = null },
                                 initialPlaylist = viewedPlaylistFromHome,
                                 onInitialPlaylistConsumed = { viewedPlaylistFromHome = null },
+                                initialAlbum = viewedAlbumFromPlayer,
+                                onInitialAlbumConsumed = { viewedAlbumFromPlayer = null },
                                 onStatsClick = onNavigateToStats,
                                 onOpenChannel = onOpenChannel,
                                 onSongLongPress = { song -> songOptionsTarget = song },
@@ -1204,6 +1211,11 @@ fun HomeScreen(
                 // Collapse player and navigate to Library tab to show artist
                 showPlayerSheet = false
                 viewedArtistFromPlayer = artistName
+                selectedTab = 2 // Library tab
+            },
+            onAlbumClick = { albumName ->
+                showPlayerSheet = false
+                viewedAlbumFromPlayer = albumName
                 selectedTab = 2 // Library tab
             },
             modifier = Modifier.align(Alignment.BottomCenter)
