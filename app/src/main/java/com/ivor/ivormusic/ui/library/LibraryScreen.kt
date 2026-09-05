@@ -454,6 +454,7 @@ fun LibraryMainScreen(
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
     val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
+    val hiddenPlaylists by viewModel.hiddenPlaylists.collectAsState()
     val likedSongs by viewModel.likedSongs.collectAsState()
     val downloadedSongs by viewModel.downloadedSongs.collectAsState()
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
@@ -681,6 +682,9 @@ fun LibraryMainScreen(
                             onLikedSongsClick = {
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
                             },
+                            hiddenPlaylists = hiddenPlaylists,
+                            onHidePlaylist = { playlist -> viewModel.hidePlaylist(playlist) },
+                            onUnhidePlaylist = { id -> viewModel.unhidePlaylist(id) },
                             contentPadding = contentPadding,
                             isLoggedIn = isYouTubeConnected
                         )
@@ -1336,9 +1340,19 @@ fun PlaylistsGrid(
     contentPadding: PaddingValues,
     savedPlaylistIds: Set<String> = emptySet(),
     onRemoveSavedPlaylist: (PlaylistDisplayItem) -> Unit = {},
+    /**
+     * Playlists the user told Koda not to list, and the two ways back. Passed
+     * in rather than read from a repository here so this grid stays a pure
+     * rendering of what it is given, as the rest of its arguments are.
+     */
+    hiddenPlaylists: List<com.ivor.ivormusic.data.HiddenPlaylist> = emptyList(),
+    onHidePlaylist: (PlaylistDisplayItem) -> Unit = {},
+    onUnhidePlaylist: (String) -> Unit = {},
     /** Signed in, so the account's own playlists live on YouTube for real. */
     isLoggedIn: Boolean = false
 ) {
+    var showHiddenSheet by remember { mutableStateOf(false) }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(
@@ -1360,17 +1374,44 @@ fun PlaylistsGrid(
             )
         }
 
-        if (playlists.isNotEmpty()) {
+        // The header stands whenever there is either a playlist or something
+        // hidden, because the hidden count is the only route back and a
+        // library whose every playlist is hidden is exactly when it is needed.
+        if (playlists.isNotEmpty() || hiddenPlaylists.isNotEmpty()) {
             item(key = "playlists_header", span = { GridItemSpan(maxLineSpan) }) {
-                Text(
-                    text = "Your playlists • ${playlists.size}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Your playlists • ${playlists.size}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    if (hiddenPlaylists.isNotEmpty()) {
+                        TextButton(onClick = { showHiddenSheet = true }) {
+                            Icon(
+                                Icons.Rounded.VisibilityOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                stringResource(
+                                    R.string.lib_hidden_count,
+                                    hiddenPlaylists.size
+                                )
+                            )
+                        }
+                    }
+                }
             }
-        } else {
+        }
+        if (playlists.isEmpty()) {
             item(key = "playlists_empty", span = { GridItemSpan(maxLineSpan) }) {
                 EmptyLibraryState(
                     icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
@@ -1408,8 +1449,141 @@ fun PlaylistsGrid(
                 onEditConfirmed = { name, description -> onEditPlaylist(playlist, name, description) },
                 onDeleteConfirmed = { onDeletePlaylist(playlist) },
                 onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
+                onHide = { onHidePlaylist(playlist) },
                 onClick = { onPlaylistClick(playlist) }
             )
+        }
+    }
+
+    if (showHiddenSheet) {
+        HiddenPlaylistsSheet(
+            hidden = hiddenPlaylists,
+            onUnhide = onUnhidePlaylist,
+            onDismiss = { showHiddenSheet = false }
+        )
+    }
+}
+
+/**
+ * What has been hidden, and the way back.
+ *
+ * This screen is the whole reason hiding is safe to offer. Without it a
+ * mis-tap weeks ago is an invisible hole in the library that the user has no
+ * way to explain or repair - the same reason `NotInterestedScreen` exists for
+ * blocked channels. The entry point is a count beside the section header,
+ * shown only when there is something to show, so it costs nothing until it
+ * matters.
+ *
+ * Un-hiding is immediate and needs no confirmation: nothing is destroyed in
+ * either direction, and the playlist reappears in the grid behind this sheet
+ * on the next frame.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HiddenPlaylistsSheet(
+    hidden: List<com.ivor.ivormusic.data.HiddenPlaylist>,
+    onUnhide: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.lib_hidden_playlists),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.lib_hidden_explainer),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            // A LazyColumn, and weighted rather than wrapped: someone can hide
+            // a great many playlists, and a Column of them would run off the
+            // bottom of the sheet with nothing to scroll.
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(hidden, key = { it.playlistId }) { entry ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!entry.thumbnailUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = entry.thumbnailUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = entry.name.ifBlank {
+                                    stringResource(R.string.label_playlist)
+                                },
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            entry.uploaderName.takeIf { it.isNotBlank() }?.let { by ->
+                                Text(
+                                    text = by,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = { onUnhide(entry.playlistId) }) {
+                            Text(stringResource(R.string.lib_unhide))
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1610,6 +1784,11 @@ fun ExpressivePlaylistCard(
      * and the confirmation says nothing about YouTube.
      */
     affectsYouTubeAccount: Boolean = false,
+    /**
+     * Stop listing this playlist in Koda. Null where hiding makes no sense;
+     * non-null it is offered on every card, editable or not.
+     */
+    onHide: (() -> Unit)? = null,
     onEditConfirmed: (String, String?) -> Unit = { _, _ -> },
     onDeleteConfirmed: () -> Unit = {},
     onRemoveSaved: () -> Unit = {},
@@ -1739,12 +1918,29 @@ fun ExpressivePlaylistCard(
                     maxLines = 1
                 )
             }
-            if (isEditable || isSaved) {
+            if (isEditable || isSaved || onHide != null) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Rounded.MoreVert, contentDescription = "Playlist options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        // Hiding is offered on every card, including the ones
+                        // with nothing else in this menu: the synthesized
+                        // Supermix and Your Likes entries cannot be renamed,
+                        // deleted or unsaved, and they are exactly the rows
+                        // people want out of the way.
+                        onHide?.let { hide ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.lib_hide_playlist)) },
+                                onClick = {
+                                    showMenu = false
+                                    hide()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.VisibilityOff, contentDescription = null)
+                                }
+                            )
+                        }
                         if (isSaved) {
                             // Removing the reference, not the playlist: no
                             // confirmation dialog, because nothing is destroyed
@@ -2774,7 +2970,16 @@ fun PlaylistDetailScreen(
                             val hasRename = isLocalPlaylist || canRenameDeleteYouTube
                             val hasShare = !isLocalPlaylist &&
                                 resolvedPlaylist.id !in NON_SHAREABLE_PLAYLIST_IDS
-                            if (hasRename || hasShare) {
+                            // Anything that is not already the user's own local
+                            // playlist can be copied into one, once its tracks
+                            // are on screen - an album and a generated mix
+                            // included, since a snapshot of either is a
+                            // perfectly good starting point for a playlist of
+                            // your own. There is nothing to copy before the
+                            // list loads, so the row waits for it rather than
+                            // creating an empty playlist.
+                            val canCopyToLocal = !isLocalPlaylist && songs.isNotEmpty()
+                            if (hasRename || hasShare || canCopyToLocal) {
                                 Box {
                                     IconButton(onClick = { showOverflow = true }) {
                                         Icon(Icons.Rounded.MoreVert, "More options")
@@ -2815,6 +3020,32 @@ fun PlaylistDetailScreen(
                                                     }
                                                 )
                                             }
+                                        }
+                                        if (canCopyToLocal) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.lib_copy_editable)) },
+                                                leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    haptics.performHapticFeedback(
+                                                        HapticFeedbackType.Confirm
+                                                    )
+                                                    scope.launch {
+                                                        val copied = viewModel.copyPlaylistToLocal(
+                                                            name = resolvedPlaylist.name,
+                                                            description = resolvedPlaylist.description,
+                                                            songs = songs
+                                                        )
+                                                        if (copied != null) {
+                                                            snackbarHostState.showSnackbar(
+                                                                shareContext.getString(
+                                                                    R.string.lib_copy_editable_done
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            )
                                         }
                                         if (hasShare) {
                                             DropdownMenuItem(

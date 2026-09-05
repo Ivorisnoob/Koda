@@ -165,6 +165,9 @@
     <string name="song_options_download_subtitle">Keep on this device</string>
     <string name="song_options_downloaded">Downloaded</string>
     <string name="song_options_go_to_artist">Go to %1$s</string>
+    <string name="song_options_not_interested">Not interested</string>
+    <string name="song_options_not_interested_subtitle">Stop recommending this song</string>
+    <string name="song_options_block_artist">Don\'t recommend %1$s</string>
 
     <!-- Add to playlist sheet -->
     <string name="add_to_playlist_title">Add to Playlist</string>
@@ -662,7 +665,9 @@
     <string name="ni_unhide_all">Unhide all</string>
     <string name="ni_nothing_hidden">Nothing hidden</string>
     <string name="ni_empty_title">Nothing hidden yet</string>
-    <string name="ni_empty_body">Long-press any video and choose \"Not interested\" or \"Don\'t recommend channel\" to keep it out of your feeds.</string>
+    <string name="ni_section_items">Videos and songs</string>
+    <string name="ni_section_sources">Channels and artists</string>
+    <string name="ni_empty_body">Long-press any video or song and choose \"Not interested\" or \"Don\'t recommend\" to keep it out of your feeds.</string>
     <string name="cd_close_comments">Close comments</string>
 
     <!-- Watch history -->
@@ -1047,6 +1052,14 @@
     <string name="lib_tap_remove_hint">Tap to remove tracks</string>
     <string name="label_album">Album</string>
     <string name="lib_saved_to_library">Saved to your library</string>
+    <string name="lib_copy_editable">Save as editable copy</string>
+    <string name="lib_copy_editable_done">Copied to your library. Edit it there.</string>
+    <string name="lib_hide_playlist">Hide from Koda</string>
+    <string name="lib_hidden_playlists">Hidden playlists</string>
+    <string name="lib_hidden_count">%1$d hidden</string>
+    <string name="lib_unhide">Unhide</string>
+    <string name="lib_hidden_explainer">These stay on your account. Koda just stops listing them.</string>
+    <string name="lib_playlist_hidden">Hidden from Koda</string>
     <string name="lib_removed_from_library">Removed from your library</string>
     <string name="lib_load_failed_title">Couldn\'t load tracks</string>
     <string name="lib_load_failed_body">This playlist came back empty. Check your connection and try again.</string>

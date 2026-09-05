@@ -58,6 +58,22 @@ class NotInterestedActions(
     }
 
     /**
+     * The music-mode pair. Both are local and always will be: no music feed
+     * response Koda parses carries a dismissal token, so there is nothing to
+     * forward - the same position a signed-out video dismissal is already in.
+     * They still route through here rather than straight to the store, because
+     * this class is where "what does this tap mean" is answered and a second
+     * answer elsewhere is how the two drift apart.
+     */
+    fun hideSong(song: Song) {
+        notInterestedRepository.hideSong(song)
+    }
+
+    fun blockArtist(song: Song) {
+        notInterestedRepository.blockArtist(song.artist)
+    }
+
+    /**
      * Take back [action], locally and - when the dismissal was forwarded and
      * YouTube pre-baked an undo token for it - on the account as well.
      */

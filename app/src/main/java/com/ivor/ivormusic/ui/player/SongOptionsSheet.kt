@@ -17,6 +17,8 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.NotInterested
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -77,7 +79,15 @@ fun SongOptionsSheet(
     viewModel: PlayerViewModel,
     onDismiss: () -> Unit,
     /** Offered only where there is somewhere to go; null hides the row. */
-    onArtistClick: ((String) -> Unit)? = null
+    onArtistClick: ((String) -> Unit)? = null,
+    /**
+     * The two "don't recommend this" taps. Null on a surface with no
+     * recommendation feed behind it - the same gate `VideoOptionsSheet` uses -
+     * and both are null for a device file, which no feed recommended in the
+     * first place.
+     */
+    onNotInterested: (() -> Unit)? = null,
+    onBlockArtist: (() -> Unit)? = null
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
     val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
@@ -220,6 +230,46 @@ fun SongOptionsSheet(
                             onArtistClick(artist)
                         }
                     )
+                }
+            }
+
+            // Dismissals last and on their own, the way the video sheet has
+            // them: they are the destructive-shaped actions here, and a row
+            // that removes something from a feed should not sit next to the
+            // rows that add it to one.
+            if (onNotInterested != null || onBlockArtist != null) {
+                OptionGroup {
+                    onNotInterested?.let { dismiss ->
+                        OptionRow(
+                            icon = Icons.Rounded.NotInterested,
+                            title = stringResource(R.string.song_options_not_interested),
+                            subtitle = stringResource(
+                                R.string.song_options_not_interested_subtitle
+                            ),
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = {
+                                // The undo snackbar lives at the root of the
+                                // app, behind this sheet, so the sheet has to
+                                // get out of the way for it to be reachable.
+                                onDismiss()
+                                dismiss()
+                            }
+                        )
+                    }
+                    if (onNotInterested != null && onBlockArtist != null && artist != null) {
+                        OptionRowDivider()
+                    }
+                    if (onBlockArtist != null && artist != null) {
+                        OptionRow(
+                            icon = Icons.Rounded.RemoveCircleOutline,
+                            title = stringResource(R.string.song_options_block_artist, artist),
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = {
+                                onDismiss()
+                                onBlockArtist()
+                            }
+                        )
+                    }
                 }
             }
         }

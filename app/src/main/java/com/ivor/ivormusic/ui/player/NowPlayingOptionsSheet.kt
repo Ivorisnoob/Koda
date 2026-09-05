@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -247,6 +248,27 @@ fun NowPlayingOptionsSheet(
                             }
                         )
                     }
+                }
+            }
+
+            // Stop recommending this artist. Last and on its own, because it
+            // is the one row here that takes something away rather than
+            // adding it - and only for a song a feed could have served, since
+            // nothing recommended the files on this device.
+            if (artist != null && song.source == SongSource.YOUTUBE) {
+                OptionGroup {
+                    OptionRow(
+                        icon = Icons.Rounded.RemoveCircleOutline,
+                        title = stringResource(R.string.song_options_block_artist, artist),
+                        iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        onClick = {
+                            // The undo snackbar sits at the root of the app,
+                            // under this sheet; the sheet has to leave for it
+                            // to be reachable.
+                            onDismiss()
+                            viewModel.blockArtist(song)
+                        }
+                    )
                 }
             }
 

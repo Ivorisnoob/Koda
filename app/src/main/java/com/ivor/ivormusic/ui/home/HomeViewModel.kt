@@ -54,6 +54,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val homeRecommendationCache = HomeRecommendationCache(application)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(application)
     private val localVideoRepository = com.ivor.ivormusic.data.LocalVideoRepository(application)
+
+    // What the user asked not to be recommended, in either mode. Declared with
+    // the other repositories rather than beside the video feeds it started
+    // with: the music recommendation flow is initialised further up this file
+    // and now filters through it, and a property initialiser cannot reach a
+    // declaration below it.
+    private val notInterestedRepository =
+        com.ivor.ivormusic.data.NotInterestedRepository(application)
+
+    /** Local hide plus best-effort account propagation - see NotInterestedActions. */
+    private val notInterestedActions =
+        com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
     private val themePreferences = com.ivor.ivormusic.data.ThemePreferences(application)
 
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
@@ -131,7 +143,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
     private val _youtubeSongs = MutableStateFlow(homeRecommendationCache.load())
-    val youtubeSongs: StateFlow<List<Song>> = _youtubeSongs.asStateFlow()
+    /**
+     * The music recommendation feed, with dismissed songs and blocked artists
+     * removed.
+     *
+     * A derived flow over the raw fetch, never a write into it - the rule the
+     * video feeds already follow: a tap removes the row on the next frame with
+     * no refetch, and undo puts it back where it was rather than somewhere
+     * else or nowhere. The local library (`songs`) is deliberately not filtered
+     * through here: it is music the user chose to have, and "stop recommending
+     * this" was never a request to hide their own files.
+     */
+    val youtubeSongs: StateFlow<List<Song>> = combine(
+        _youtubeSongs,
+        notInterestedRepository.hiddenVideos,
+        notInterestedRepository.blockedChannels
+    ) { songs, _, _ -> notInterestedRepository.filterSongs(songs) }
+        .stateIn(
+            viewModelScope,
+            kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
     
 
 
@@ -174,6 +206,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val savedPlaylistsRepository =
         com.ivor.ivormusic.data.SavedPlaylistsRepository(application)
 
+    // Playlists the user told Koda not to show them. Process-wide, because the
+    // Library grid, Spotlight's shelves and the player's add-to-playlist sheet
+    // are three ViewModels holding three sets of repositories.
+    private val hiddenPlaylistsRepository =
+        com.ivor.ivormusic.data.HiddenPlaylistsRepository(application)
+
     // Video playlists held on the device, with the videos embedded. The video
     // counterpart of playlistRepository, and the reason video mode can save
     // anything at all signed out. See LocalVideoPlaylistsRepository.
@@ -188,8 +226,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val userPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
         _youtubePlaylists,
         playlistRepository.userPlaylists,
-        savedPlaylistsRepository.savedPlaylists
-    ) { ytPlaylists, localPlaylists, savedPlaylists ->
+        savedPlaylistsRepository.savedPlaylists,
+        hiddenPlaylistsRepository.hiddenPlaylists
+    ) { ytPlaylists, localPlaylists, savedPlaylists, hidden ->
         val localItems = localPlaylists.map { it.toDisplayItem() }
         // A playlist kept locally that also turns up in the account's own
         // library would otherwise appear twice in the grid.
@@ -197,8 +236,39 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val savedItems = savedPlaylists
             .filterNot { it.id in accountIds }
             .map { it.toDisplayItem() }
-        localItems + savedItems + ytPlaylists
+        // Hiding is applied to the merged list rather than to each source, so
+        // one hidden id covers the playlist wherever it came from - and it is
+        // a filter over the fetch, never a write into it, so un-hiding brings
+        // the playlist straight back without a refetch.
+        val hiddenIds = hidden.map { it.playlistId }.toSet()
+        (localItems + savedItems + ytPlaylists).filterNot { it.id in hiddenIds }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Playlists the user told Koda not to show, for the management sheet. */
+    val hiddenPlaylists: StateFlow<List<com.ivor.ivormusic.data.HiddenPlaylist>> =
+        hiddenPlaylistsRepository.hiddenPlaylists
+
+    fun isPlaylistHidden(playlistId: String?): Boolean =
+        hiddenPlaylistsRepository.isHidden(playlistId)
+
+    /**
+     * Stop showing [playlist] in Koda. Local only - nothing is unsubscribed,
+     * unfollowed or deleted, and the playlist is still reachable by link or
+     * search. Synchronous, because the row has to leave in the frame it was
+     * dismissed in.
+     */
+    fun hidePlaylist(playlist: com.ivor.ivormusic.data.PlaylistDisplayItem) {
+        hiddenPlaylistsRepository.hide(
+            com.ivor.ivormusic.data.HiddenPlaylist(
+                playlistId = playlist.id,
+                name = playlist.name,
+                uploaderName = playlist.uploaderName,
+                thumbnailUrl = playlist.thumbnailUrl
+            )
+        )
+    }
+
+    fun unhidePlaylist(playlistId: String) = hiddenPlaylistsRepository.unhide(playlistId)
     
     val localPlaylistIds: StateFlow<Set<String>> = playlistRepository.userPlaylists
         .map { playlists -> playlists.map { it.id }.toSet() }
@@ -323,13 +393,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Video Mode State
-    private val notInterestedRepository =
-        com.ivor.ivormusic.data.NotInterestedRepository(application)
-
-    /** Local hide plus best-effort account propagation - see NotInterestedActions. */
-    private val notInterestedActions =
-        com.ivor.ivormusic.data.NotInterestedActions(notInterestedRepository, youtubeRepository)
-
     /**
      * Raw feed as fetched. Everything user-facing reads [trendingVideos]
      * instead, which subtracts what the user asked not to see.
@@ -598,9 +661,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     val videoPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = combine(
         localVideoPlaylistsRepository.playlists,
-        _videoPlaylists
-    ) { local, account ->
-        local.map { it.toVideoPlaylist() } + account
+        _videoPlaylists,
+        hiddenPlaylistsRepository.hiddenPlaylists
+    ) { local, account, hidden ->
+        // The hide is on the playlist, not on the mode. A playlist id means
+        // the same playlist whichever list found it, so "Hide from Koda"
+        // covers both - the alternative is a control whose label says Koda and
+        // whose effect stops at one tab.
+        val hiddenIds = hidden.map { it.playlistId }.toSet()
+        (local.map { it.toVideoPlaylist() } + account).filterNot { it.playlistId in hiddenIds }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isVideoPlaylistsLoading = MutableStateFlow(false)
@@ -1786,6 +1855,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         topUpFeedAfterFiltering()
     }
 
+    /**
+     * Music mode's two dismissals. Local only - see [NotInterestedActions] -
+     * and both land in the same store and the same undo snackbar the video
+     * ones use, so there is one place to review them and one gesture to take
+     * them back.
+     */
+    fun hideSong(song: Song) = notInterestedActions.hideSong(song)
+
+    fun blockArtist(song: Song) = notInterestedActions.blockArtist(song)
+
     fun unhideVideo(videoId: String) = notInterestedRepository.unhideVideo(videoId)
 
     fun unblockChannel(channelId: String, name: String) =
@@ -2197,6 +2276,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+
+    /**
+     * Copy a playlist that is not the user's own into one that is - a real
+     * local playlist they can rename, reorder, add to and delete from.
+     *
+     * This is deliberately not what the Save button does, and the two must not
+     * be folded together. Saving keeps a *reference*: the playlist is re-fetched
+     * live on every open, so it stays whatever its author makes it. That is the
+     * right default and the reason saving exists. A copy is the opposite trade,
+     * taken knowingly: it freezes the tracklist at this moment and never
+     * updates again, in exchange for being editable. Someone who wants to prune
+     * a 200-track playlist down to the 20 they like has no other way to do it.
+     *
+     * Duplicates are dropped rather than carried over. A YouTube playlist may
+     * legitimately list the same video twice, but a local playlist cannot
+     * represent that - [PlaylistRepository.removeSongFromPlaylist] filters by
+     * id, so removing one copy would silently remove all of them, which is a
+     * bug the user would meet while doing the editing this copy exists for.
+     *
+     * The cover is generated from the name like any other local playlist, not
+     * lifted from the original: this is the user's playlist now, and the
+     * original's artwork belongs to whoever published it.
+     *
+     * @return the new playlist's id, or null if there was nothing to copy.
+     */
+    suspend fun copyPlaylistToLocal(
+        name: String,
+        description: String?,
+        songs: List<Song>
+    ): String? {
+        val tracks = songs.distinctBy { it.id }
+        if (tracks.isEmpty()) return null
+        val id = playlistRepository.createPlaylist(name, description, coverSeedColors())
+        playlistRepository.replacePlaylistSongs(id, tracks)
+        return id
+    }
 
     fun addSongToLocalPlaylist(playlistId: String, song: Song) {
         viewModelScope.launch {

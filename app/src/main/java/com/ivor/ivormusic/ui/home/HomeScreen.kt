@@ -1287,7 +1287,17 @@ fun HomeScreen(
                 if (videoMode) onVideoModeToggle(false)
                 viewedArtistFromPlayer = artist
                 selectedTab = 2
-            }
+            },
+            // Only for songs a feed could have recommended. A file on this
+            // device was not recommended by anything, so "stop recommending
+            // it" would be a control with nothing to act on - and the local
+            // library is deliberately never filtered by this store.
+            onNotInterested = if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) {
+                { viewModel.hideSong(song) }
+            } else null,
+            onBlockArtist = if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) {
+                { viewModel.blockArtist(song) }
+            } else null
         )
     }
 
