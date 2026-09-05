@@ -205,6 +205,11 @@ internal fun buildSettingsSearchIndex(
         "palette", stringResource(R.string.sp_color_palette), stringResource(R.string.settings_appearance), Icons.Rounded.Palette,
         listOf("colour", "accent", "dynamic", "material you", "monet", "wallpaper", "scheme")
     ) { onNavigateToColorPalette() }
+    entry(
+        "palette_style", stringResource(R.string.palette_style_title),
+        stringResource(R.string.settings_appearance), Icons.Rounded.Palette,
+        listOf("vibrant", "vibrancy", "expressive", "tonal spot", "fruit salad", "monochrome", "color", "colour", "saturation")
+    ) { onNavigateToColorPalette() }
     // "Too big" and "too small" are the words people actually arrive with,
     // and neither appears in the title - the whole reason the synonym list
     // exists. "Font size" and "zoom" are here because they are what the

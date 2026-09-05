@@ -3,6 +3,7 @@ package com.ivor.ivormusic.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.ivor.ivormusic.ui.theme.ThemeMode
+import com.ivor.ivormusic.ui.theme.PaletteStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,6 +52,9 @@ class ThemePreferences(context: Context) {
 
     private val _colorPalette = MutableStateFlow(getColorPalettePreference())
     val colorPalette: StateFlow<String> = _colorPalette.asStateFlow()
+
+    private val _paletteStyle = MutableStateFlow(getPaletteStylePreference())
+    val paletteStyle: StateFlow<PaletteStyle> = _paletteStyle.asStateFlow()
 
     private val _loadLocalSongs = MutableStateFlow(getLoadLocalSongsPreference())
     val loadLocalSongs: StateFlow<Boolean> = _loadLocalSongs.asStateFlow()
@@ -267,6 +271,7 @@ class ThemePreferences(context: Context) {
             KEY_THEME_MODE -> _themeMode.value = getThemeModePreference()
             KEY_AMOLED_THEME -> _amoledTheme.value = getAmoledThemePreference()
             KEY_COLOR_PALETTE -> _colorPalette.value = getColorPalettePreference()
+            KEY_PALETTE_STYLE -> _paletteStyle.value = getPaletteStylePreference()
             KEY_LOAD_LOCAL_SONGS -> _loadLocalSongs.value = getLoadLocalSongsPreference()
             KEY_AMBIENT_BACKGROUND -> _ambientBackground.value = getAmbientBackgroundPreference()
             KEY_PLAYER_ARTWORK_COLORS -> _playerArtworkColors.value = getPlayerArtworkColorsPreference()
@@ -378,6 +383,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_OLD_DARK_MODE = "dark_mode" // For migration
         private const val KEY_AMOLED_THEME = "amoled_theme"
         private const val KEY_COLOR_PALETTE = "color_palette"
+        private const val KEY_PALETTE_STYLE = "palette_style"
         /** Default palette id: wallpaper-based dynamic color (Android 12+). */
         const val DEFAULT_COLOR_PALETTE = "dynamic"
         private const val KEY_LOAD_LOCAL_SONGS = "load_local_songs"
@@ -773,9 +779,14 @@ class ThemePreferences(context: Context) {
         return prefs.getString(KEY_COLOR_PALETTE, DEFAULT_COLOR_PALETTE) ?: DEFAULT_COLOR_PALETTE
     }
 
-    /**
-     * Save color palette preference and update the flow.
-     */
+    private fun getPaletteStylePreference(): PaletteStyle =
+        PaletteStyle.fromStorageId(prefs.getString(KEY_PALETTE_STYLE, null))
+
+    fun setPaletteStyle(style: PaletteStyle) {
+        prefs.edit().putString(KEY_PALETTE_STYLE, style.storageId).apply()
+        _paletteStyle.value = style
+    }
+
     fun setColorPalette(paletteId: String) {
         prefs.edit().putString(KEY_COLOR_PALETTE, paletteId).apply()
         _colorPalette.value = paletteId
