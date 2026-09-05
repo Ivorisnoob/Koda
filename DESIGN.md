@@ -20,11 +20,11 @@ These are counts from the current source tree, not aspirations.
 
 | Measure | Value |
 |---|---|
-| UI Kotlin files | 95 |
-| Lines of UI code | ~60,400 |
-| Files importing `androidx.compose.material3` | 77 |
-| Files using Expressive-only APIs | 49 |
-| `MaterialShapes` references | 142, across 17 distinct shapes |
+| UI Kotlin files | 120 |
+| Lines of UI code | ~75,500 |
+| Files importing `androidx.compose.material3` | 96 |
+| Files using Expressive-only APIs | 65 |
+| `MaterialShapes` references | 149, across 17 distinct shapes |
 | `spring()` animation specs | 127, across 45 files |
 | `animate*AsState` call sites | 81 |
 | Built-in color palettes | 29, in 6 families |
@@ -240,7 +240,7 @@ Between palettes, theme modes, and player styles, that is a very large number of
 
 The reasons are practical, not stubborn:
 
-1. **It is not a theme, it is the app.** 49 files use Expressive-only APIs directly. Replacing the design language means rewriting every screen, both players, all eight player styles, both music homes, onboarding, and settings. Roughly 60,000 lines of UI code.
+1. **It is not a theme, it is the app.** 65 files use Expressive-only APIs directly. Replacing the design language means rewriting every screen, both players, all eight player styles, both music homes, onboarding, and settings. Roughly 75,000 lines of UI code.
 2. **Two design languages means two apps.** Every future feature would need building twice, and every bug would need reproducing twice. In a project this size that is not a sustainable trade.
 3. **The design is the differentiator.** There are many capable NewPipe-based players. What Koda offers on top of the same extraction stack is this interface. Making it generic removes the reason to choose it.
 
