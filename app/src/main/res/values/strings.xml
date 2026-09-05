@@ -846,6 +846,14 @@
     <string name="ch_unavailable_title">This channel isn\'t available</string>
     <string name="ch_unavailable_body">It may have been renamed, removed, or restricted in your region.</string>
     <string name="ar_open_youtube_channel">Open YouTube channel</string>
+    <string name="ar_sort_suggested">Suggested</string>
+    <string name="ar_sort_title">A-Z</string>
+    <string name="ar_sort_album">Album</string>
+    <string name="ar_sort_longest">Longest</string>
+    <string name="ar_filter_songs">Filter these songs</string>
+    <string name="ar_filter_hint">Song or album name</string>
+    <string name="ar_no_matching_songs">No songs match that</string>
+    <string name="ar_matching_count">%1$d of %2$d</string>
     <string name="ar_no_songs">No songs found for this artist</string>
     <string name="ar_more_play_options">More play options</string>
     <string name="ar_start_radio">Start radio</string>

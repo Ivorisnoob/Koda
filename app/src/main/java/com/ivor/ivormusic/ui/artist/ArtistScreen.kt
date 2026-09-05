@@ -8,6 +8,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -44,7 +46,10 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -80,10 +85,115 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.sortedInAlbumOrder
 import com.ivor.ivormusic.ui.library.songRowClick
+import com.ivor.ivormusic.ui.components.SEARCH_FIELD_MIN_ITEMS
+import com.ivor.ivormusic.ui.components.SearchField
 import com.ivor.ivormusic.ui.channel.CreatorHeader
 import com.ivor.ivormusic.ui.channel.creatorMetadata
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import kotlinx.coroutines.launch
+
+/**
+ * How the track list under an artist is ordered.
+ *
+ * [Suggested] is the order the source gave us and stays the default: for a
+ * YouTube artist that is roughly popularity, which is the order somebody
+ * arriving at an artist they do not know actually wants. The other three exist
+ * because a discography of two hundred tracks in popularity order is unusable
+ * for the opposite job - finding one song you already have in mind.
+ *
+ * Deliberately not persisted: a sort is a thing you do to the page you are on,
+ * and coming back to a different artist under last week's ordering is a
+ * setting nobody asked for. It survives rotation and nothing more.
+ */
+private enum class ArtistSongSort { Suggested, Title, Album, Longest }
+
+@Composable
+private fun artistSortLabel(sort: ArtistSongSort): String = when (sort) {
+    ArtistSongSort.Suggested -> stringResource(R.string.ar_sort_suggested)
+    ArtistSongSort.Title -> stringResource(R.string.ar_sort_title)
+    ArtistSongSort.Album -> stringResource(R.string.ar_sort_album)
+    ArtistSongSort.Longest -> stringResource(R.string.ar_sort_longest)
+}
+
+/**
+ * Sort and filter in one place, so the list, the counts, the "show more"
+ * budget and what Play enqueues can never disagree about what is on screen.
+ */
+private fun List<Song>.arrangedForArtist(sort: ArtistSongSort, query: String): List<Song> {
+    val trimmed = query.trim()
+    val filtered = if (trimmed.isEmpty()) this else filter { song ->
+        song.title.contains(trimmed, ignoreCase = true) ||
+            song.album.contains(trimmed, ignoreCase = true)
+    }
+    return when (sort) {
+        ArtistSongSort.Suggested -> filtered
+        ArtistSongSort.Title -> filtered.sortedBy { it.title.lowercase() }
+        // Album order within an album, albums themselves alphabetical, and
+        // anything untagged last rather than under a blank heading.
+        ArtistSongSort.Album -> filtered.sortedWith(
+            compareBy<Song> { it.album.isBlank() || it.album.startsWith("Unknown") }
+                .thenBy { it.album.lowercase() }
+                .thenBy { it.discNumber ?: Int.MAX_VALUE }
+                .thenBy { it.trackNumber ?: Int.MAX_VALUE }
+                .thenBy { it.title.lowercase() }
+        )
+        ArtistSongSort.Longest -> filtered.sortedByDescending { it.duration }
+    }
+}
+
+/**
+ * The sort control: connected toggle buttons, the same segmented shape
+ * Spotlight's filters and the SponsorBlock categories use.
+ *
+ * Connected rather than loose chips because these are four mutually exclusive
+ * views of one list, which is exactly what M3 Expressive's connected group
+ * says and what a row of independent-looking chips does not. It scrolls rather
+ * than dividing the width four ways: the labels are different lengths, and
+ * equal quarters would either clip "Suggested" or waste the row on "A-Z".
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ArtistSortRow(
+    selected: ArtistSongSort,
+    onSelect: (ArtistSongSort) -> Unit
+) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val entries = ArtistSongSort.entries.toList()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+    ) {
+        entries.forEachIndexed { index, entry ->
+            ToggleButton(
+                checked = entry == selected,
+                onCheckedChange = {
+                    if (entry != selected) {
+                        haptics.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick
+                        )
+                        onSelect(entry)
+                    }
+                },
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                colors = ToggleButtonDefaults.toggleButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    checkedContainerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    checkedContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text(artistSortLabel(entry))
+            }
+        }
+    }
+}
 
 /**
  * Segmented list shape helper for Expressive design
@@ -140,6 +250,10 @@ fun ArtistScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
     var canLoadMoreRemote by remember { mutableStateOf(true) }
     var visibleSongCount by remember { mutableIntStateOf(20) }
+    // Both survive rotation but not a change of artist, which is why they are
+    // keyed on the name below rather than only declared here.
+    var songSort by remember(artistName) { mutableStateOf(ArtistSongSort.Suggested) }
+    var songQuery by remember(artistName) { mutableStateOf("") }
     var hasLocalSongs by remember { mutableStateOf(false) }
     // The canonical UC id behind this artist, once something has resolved one.
     // Local-only artists never get one, which is why every use of it is guarded
@@ -223,12 +337,23 @@ fun ArtistScreen(
         artistSongs.take(4).mapNotNull { it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() }
     }
     
-    // Songs currently visible (with pagination)
-    val displayedSongs = remember(artistSongs, visibleSongCount) {
-        artistSongs.take(visibleSongCount)
+    // The list as the user has arranged it. Everything below reads this rather
+    // than artistSongs: the rows, the counts, the pagination budget and what a
+    // tap enqueues all have to be the same list, or tapping the third row
+    // plays something else.
+    val arrangedSongs = remember(artistSongs, songSort, songQuery) {
+        artistSongs.arrangedForArtist(songSort, songQuery)
     }
-    val hasMoreSongs = artistSongs.size > visibleSongCount ||
-            (!hasLocalSongs && viewModel != null && canLoadMoreRemote)
+    val isFiltering = songQuery.isNotBlank()
+    // Songs currently visible (with pagination)
+    val displayedSongs = remember(arrangedSongs, visibleSongCount) {
+        arrangedSongs.take(visibleSongCount)
+    }
+    // A filter is applied to what has already been fetched, so paging further
+    // into YouTube while one is active would answer a narrowed list with
+    // unnarrowed rows. The remote budget is offered on the whole list only.
+    val hasMoreSongs = arrangedSongs.size > visibleSongCount ||
+            (!isFiltering && !hasLocalSongs && viewModel != null && canLoadMoreRemote)
     
     Box(
         modifier = modifier
@@ -421,7 +546,11 @@ fun ArtistScreen(
                 }
                 
                 // ========== SONGS SECTION ==========
-                if (displayedSongs.isNotEmpty()) {
+                // The header stands even when the arrangement matches nothing,
+                // because the controls that produced that state live in it: a
+                // filter with no results that also hides the field is a dead
+                // end with no way back.
+                if (artistSongs.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(24.dp))
                         Row(
@@ -438,9 +567,47 @@ fun ArtistScreen(
                                 color = textColor
                             )
                             Text(
-                                "${artistSongs.size} tracks",
+                                // While filtering, the count is the answer to
+                                // what the field just did - "12 of 148" - and
+                                // a bare total there would read as the filter
+                                // not having applied.
+                                text = if (isFiltering) {
+                                    stringResource(
+                                        R.string.ar_matching_count,
+                                        arrangedSongs.size,
+                                        artistSongs.size
+                                    )
+                                } else {
+                                    "${artistSongs.size} tracks"
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = secondaryTextColor
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        ArtistSortRow(
+                            selected = songSort,
+                            onSelect = {
+                                songSort = it
+                                // A re-sort re-numbers the list, so the twenty
+                                // rows on screen are a different twenty; paging
+                                // back to the top of the budget keeps "show
+                                // more" meaning the same thing it did before.
+                                visibleSongCount = 20
+                            }
+                        )
+                        // Below the threshold the whole discography is a screen
+                        // or two of scrolling and a permanent field is chrome.
+                        if (artistSongs.size >= SEARCH_FIELD_MIN_ITEMS) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            SearchField(
+                                query = songQuery,
+                                onQueryChange = {
+                                    songQuery = it
+                                    visibleSongCount = 20
+                                },
+                                placeholder = stringResource(R.string.ar_filter_hint),
+                                modifier = Modifier.padding(horizontal = 20.dp)
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
@@ -451,7 +618,11 @@ fun ArtistScreen(
                         ArtistSongCard(
                             song = song,
                             index = index + 1,
-                            onClick = { onPlayQueue(artistSongs, song) },
+                            // The arranged list, not the raw one: the queue
+                            // has to be what is on screen, or playing the third
+                            // row under an A-Z sort continues into the songs
+                            // that follow it in popularity order instead.
+                            onClick = { onPlayQueue(arrangedSongs, song) },
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
@@ -534,7 +705,26 @@ fun ArtistScreen(
                             }
                         }
                     }
-                } else if (!isLoading) {
+                }
+
+                // Two different nothings: a filter that matched none of a real
+                // discography, and an artist with no tracks at all.
+                if (artistSongs.isNotEmpty() && displayedSongs.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                stringResource(R.string.ar_no_matching_songs),
+                                color = secondaryTextColor,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                } else if (artistSongs.isEmpty() && !isLoading) {
                     item {
                         Box(
                             modifier = Modifier
