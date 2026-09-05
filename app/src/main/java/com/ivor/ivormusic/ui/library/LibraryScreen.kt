@@ -81,6 +81,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.sortedInAlbumOrder
 import com.ivor.ivormusic.ui.artist.ArtistScreen
@@ -2665,6 +2666,8 @@ fun PlaylistDetailScreen(
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val headerScrolledAway by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+
     val shareContext = LocalContext.current
 
     // Search state
@@ -2979,7 +2982,8 @@ fun PlaylistDetailScreen(
                             // list loads, so the row waits for it rather than
                             // creating an empty playlist.
                             val canCopyToLocal = !isLocalPlaylist && songs.isNotEmpty()
-                            if (hasRename || hasShare || canCopyToLocal) {
+                            val radioSeed = songs.firstOrNull { it.source == SongSource.YOUTUBE }
+                            if (hasRename || hasShare || canCopyToLocal || radioSeed != null) {
                                 Box {
                                     IconButton(onClick = { showOverflow = true }) {
                                         Icon(Icons.Rounded.MoreVert, "More options")
@@ -2988,6 +2992,21 @@ fun PlaylistDetailScreen(
                                         expanded = showOverflow,
                                         onDismissRequest = { showOverflow = false }
                                     ) {
+                                        if (radioSeed != null) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.ar_start_radio)) },
+                                                leadingIcon = { Icon(Icons.Rounded.Radio, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    scope.launch {
+                                                        val radio = viewModel.getRadioSongs(radioSeed.id)
+                                                        if (radio.isNotEmpty()) {
+                                                            onPlayQueue(listOf(radioSeed) + radio, radioSeed)
+                                                        }
+                                                    }
+                                                },
+                                            )
+                                        }
                                         if (hasRename) {
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.action_rename)) },
@@ -3165,29 +3184,35 @@ fun PlaylistDetailScreen(
                     )
                 )
             } else if (filteredSongs.isNotEmpty()) {
-                // M3E split button: Play + menu (shuffle, radio). This is the
-                // one primary action on the page.
-                val radioSeed = filteredSongs.firstOrNull {
-                    it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
-                }
-                com.ivor.ivormusic.ui.artist.PlaySplitButton(
-                    onPlay = { onPlayQueue(filteredSongs, filteredSongs.first()) },
-                    onShuffle = { onPlayQueue(filteredSongs.shuffled(), null) },
-                    onStartRadio = if (radioSeed != null) {
-                        {
-                            scope.launch {
-                                val radio = viewModel.getRadioSongs(radioSeed.id)
-                                if (radio.isNotEmpty()) {
-                                    onPlayQueue(listOf(radioSeed) + radio, radioSeed)
+                AnimatedVisibility(
+                    visible = headerScrolledAway || isSearchActive,
+                    enter = fadeIn() + scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)),
+                    exit = fadeOut() + scaleOut(),
+                ) {
+                    // M3E split button: Play + menu (shuffle, radio). This is the
+                    // one primary action on the page.
+                    val radioSeed = filteredSongs.firstOrNull {
+                        it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
+                    }
+                    com.ivor.ivormusic.ui.artist.PlaySplitButton(
+                        onPlay = { onPlayQueue(filteredSongs, filteredSongs.first()) },
+                        onShuffle = { onPlayQueue(filteredSongs.shuffled(), null) },
+                        onStartRadio = if (radioSeed != null) {
+                            {
+                                scope.launch {
+                                    val radio = viewModel.getRadioSongs(radioSeed.id)
+                                    if (radio.isNotEmpty()) {
+                                        onPlayQueue(listOf(radioSeed) + radio, radioSeed)
+                                    }
                                 }
                             }
-                        }
-                    } else null,
-                    // Clear the floating nav pill and mini player(s)
-                    modifier = Modifier.padding(
-                        bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current
+                        } else null,
+                        // Clear the floating nav pill and mini player(s)
+                        modifier = Modifier.padding(
+                            bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current
+                        )
                     )
-                )
+                }
             }
         }
     ) { padding ->
@@ -3356,60 +3381,72 @@ fun PlaylistDetailScreen(
                             )
                         }
 
-                        // Keeping a playlist is the whole point of arriving
-                        // here from search, so it sits in the header rather
-                        // than behind the overflow. Play is still the one
-                        // primary action - that is the button at the bottom.
-                        if (canSavePlaylist) {
-                            FilledTonalButton(
-                                onClick = {
-                                    val nowSaved = viewModel.toggleSavedPlaylist(
-                                        resolvedPlaylist,
-                                        isAlbum = isAlbum
-                                    )
-                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                                    scope.launch {
-                                        val snackbarMsg =
-                                            if (nowSaved) shareContext.getString(R.string.lib_saved_to_library)
-                                            else shareContext.getString(R.string.lib_removed_from_library)
-                                        snackbarHostState.showSnackbar(snackbarMsg)
-                                    }
-                                },
-                                modifier = Modifier.padding(top = 20.dp)
-                            ) {
-                                // Crossfade rather than a spatial spec: the
-                                // button must not resize under the finger that
-                                // is still on it.
-                                AnimatedContent(
-                                    targetState = isSavedPlaylist,
-                                    transitionSpec = { fadeIn() togetherWith fadeOut() },
-                                    label = "savePlaylist"
-                                ) { saved ->
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = if (saved) Icons.Rounded.BookmarkAdded
-                                                else Icons.Rounded.BookmarkAdd,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
+                        if (songs.isNotEmpty() && !isReorderMode && !isSearchActive) {
+                            CollectionPlaybackActions(
+                                onPlay = { onPlayQueue(songs, songs.first()) },
+                                onShuffle = { onPlayQueue(songs.shuffled(), null) },
+                                modifier = Modifier.padding(horizontal = 24.dp).padding(top = 20.dp),
+                            )
+                        }
+
+                        androidx.compose.foundation.layout.FlowRow(
+                            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            // Keeping a playlist is the whole point of arriving
+                            // here from search, so it sits in the header rather
+                            // than behind the overflow. Play is still the one
+                            // primary action, above this secondary action group.
+                            if (canSavePlaylist) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        val nowSaved = viewModel.toggleSavedPlaylist(
+                                            resolvedPlaylist,
+                                            isAlbum = isAlbum
                                         )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(if (saved) stringResource(R.string.cd_saved) else stringResource(R.string.action_save))
+                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                        scope.launch {
+                                            val snackbarMsg =
+                                                if (nowSaved) shareContext.getString(R.string.lib_saved_to_library)
+                                                else shareContext.getString(R.string.lib_removed_from_library)
+                                            snackbarHostState.showSnackbar(snackbarMsg)
+                                        }
+                                    },
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    // Crossfade rather than a spatial spec: the
+                                    // button must not resize under the finger that
+                                    // is still on it.
+                                    AnimatedContent(
+                                        targetState = isSavedPlaylist,
+                                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                        label = "savePlaylist"
+                                    ) { saved ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = if (saved) Icons.Rounded.BookmarkAdded
+                                                    else Icons.Rounded.BookmarkAdd,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(if (saved) stringResource(R.string.cd_saved) else stringResource(R.string.action_save))
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        // Saving keeps a live reference; downloading makes the
-                        // loaded snapshot available offline. They stay separate
-                        // actions because either can be useful without the other.
-                        if (songs.isNotEmpty()) {
-                            MusicPlaylistDownloadAction(
-                                playlistTitle = resolvedPlaylist.name,
-                                songs = songs,
-                                modifier = Modifier.padding(
-                                    top = if (canSavePlaylist) 12.dp else 20.dp
+                            // Saving keeps a live reference; downloading makes the
+                            // loaded snapshot available offline. They stay separate
+                            // actions because either can be useful without the other.
+                            if (songs.isNotEmpty()) {
+                                MusicPlaylistDownloadAction(
+                                    playlistTitle = resolvedPlaylist.name,
+                                    songs = songs,
+                                    modifier = Modifier.heightIn(min = 48.dp)
                                 )
-                            )
+                            }
                         }
                     }
                 }

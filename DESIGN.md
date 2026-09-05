@@ -184,6 +184,8 @@ The palette families are chosen to cover genuinely different moods rather than t
 
 Each preset retains its id and reference swatches. Its primary seed generates a complete Material HCT scheme in `PaletteStyle.kt`: accents, paired text colors, outlines, fixed roles and the tinted surface ramp. Tonal Spot is the calm default; Vibrant, Expressive, Fruit Salad and Monochrome offer different color treatments. The palette picker previews both accents and surfaces using the selected style and AMOLED setting. Presets fully ignore wallpaper color; the wallpaper option retains Android's own scheme and ignores the preset style. Black and White retain their distinct monochrome container fills across styles.
 
+Album and playlist detail pages inherit the shared scheme. Their header places Play all and Shuffle together, followed by a wrapping Save/Download group; the floating playback menu remains available when the header has scrolled away or search is active. Editing rights, album order and playlist occurrences remain data-layer concerns, unchanged by the presentation.
+
 AMOLED mode does not simply set the background to black. It compresses the whole `surfaceContainer` ramp toward black so cards keep elevation separation instead of turning into a grey wash on an OLED panel.
 
 ---
