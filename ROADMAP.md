@@ -391,6 +391,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+- Optional Compact video home in Settings, Content and feeds, shows smaller thumbnails beside titles and channels, including offline Home downloads (#266, Home scope). It preserves the same feed, scroll state, video taps, channel destinations and long-press actions; other lists retain their existing layout.
+
 - Mini-player opening and closing use a softer spring without endpoint bounce. Music keeps the full player measured at its final size in both axes; video retains its stationary surface until the closing curtain finishes, then brings in the mini bar.
 
 - Live video controls show a negative time from the newest seekable media beside LIVE, including fullscreen and vertical broadcasts (#268). A fixed ten-second edge tolerance replaces the percentage of the DVR window; unknown windows omit the timestamp.

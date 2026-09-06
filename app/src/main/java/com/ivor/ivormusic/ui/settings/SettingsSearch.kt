@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Recommend
+import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
@@ -391,6 +392,11 @@ internal fun buildSettingsSearchIndex(
         "show_recent_searches", stringResource(R.string.sp_show_recent_searches), stringResource(R.string.settings_content_and_feeds),
         Icons.Rounded.Search,
         listOf("recent", "history", "suggestions", "search bar", "past queries", "hide")
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "compact_video_home", stringResource(R.string.sp_compact_video_home), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.ViewList,
+        listOf("compact", "video", "home", "small", "thumbnail", "list", "layout", "density")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "show_related_videos", stringResource(R.string.sp_show_related_videos), stringResource(R.string.settings_content_and_feeds),

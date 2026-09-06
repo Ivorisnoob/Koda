@@ -64,6 +64,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     val showRecentSearches: StateFlow<Boolean> = themePreferences.showRecentSearches
     val showRelatedVideos: StateFlow<Boolean> = themePreferences.showRelatedVideos
+    val compactVideoHome: StateFlow<Boolean> = themePreferences.compactVideoHome
     val crossfadeEnabled: StateFlow<Boolean> = themePreferences.crossfadeEnabled
     val crossfadeAuto: StateFlow<Boolean> = themePreferences.crossfadeAuto
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
@@ -280,6 +281,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setShowRecentSearches(show: Boolean) = themePreferences.setShowRecentSearches(show)
 
     fun setShowRelatedVideos(show: Boolean) = themePreferences.setShowRelatedVideos(show)
+    fun setCompactVideoHome(enabled: Boolean) = themePreferences.setCompactVideoHome(enabled)
 
     
     fun clearCacheAction() {

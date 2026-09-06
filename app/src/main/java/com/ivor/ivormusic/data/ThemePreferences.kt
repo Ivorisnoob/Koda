@@ -261,6 +261,9 @@ class ThemePreferences(context: Context) {
     private val _showRelatedVideos = MutableStateFlow(getShowRelatedVideosPreference())
     val showRelatedVideos: StateFlow<Boolean> = _showRelatedVideos.asStateFlow()
 
+    private val _compactVideoHome = MutableStateFlow(getCompactVideoHomePreference())
+    val compactVideoHome: StateFlow<Boolean> = _compactVideoHome.asStateFlow()
+
     // Every screen/service news up its own ThemePreferences (no DI), so a setter
     // called on one instance must still reach the flows of every other instance.
     // All instances share the same process-wide SharedPreferences object, so a
@@ -343,6 +346,7 @@ class ThemePreferences(context: Context) {
             KEY_HIDE_WATCHED_IN_FEED -> _hideWatchedInFeed.value = getHideWatchedInFeedPreference()
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
+            KEY_COMPACT_VIDEO_HOME -> _compactVideoHome.value = getCompactVideoHomePreference()
         }
     }
 
@@ -684,6 +688,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
+        private const val KEY_COMPACT_VIDEO_HOME = "compact_video_home"
 
         /**
          * Fallback sort order for the Library's All tab. Mirrors the name of
@@ -1902,6 +1907,14 @@ class ThemePreferences(context: Context) {
     fun setShowRecentSearches(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_RECENT_SEARCHES, show).apply()
         _showRecentSearches.value = show
+    }
+
+    private fun getCompactVideoHomePreference(): Boolean =
+        prefs.getBoolean(KEY_COMPACT_VIDEO_HOME, false)
+
+    fun setCompactVideoHome(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_COMPACT_VIDEO_HOME, enabled).apply()
+        _compactVideoHome.value = enabled
     }
 
     private fun getShowRelatedVideosPreference(): Boolean =

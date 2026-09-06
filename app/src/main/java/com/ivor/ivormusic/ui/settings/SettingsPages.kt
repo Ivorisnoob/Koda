@@ -68,6 +68,7 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Recommend
+import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -841,6 +842,8 @@ internal fun ContentSettingsPage(
     onShowRecentSearchesToggle: (Boolean) -> Unit,
     showRelatedVideos: Boolean,
     onShowRelatedVideosToggle: (Boolean) -> Unit,
+    compactVideoHome: Boolean,
+    onCompactVideoHomeToggle: (Boolean) -> Unit,
     onNavigateToNotInterested: () -> Unit,
     onNavigateToVideoHome: () -> Unit,
     onBack: () -> Unit
@@ -979,6 +982,16 @@ internal fun ContentSettingsPage(
                             subtitle = stringResource(R.string.sp_show_recent_searches_sub),
                             enabled = showRecentSearches,
                             onToggle = onShowRecentSearchesToggle
+                        )
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.ViewList,
+                            title = stringResource(R.string.sp_compact_video_home),
+                            subtitle = stringResource(R.string.sp_compact_video_home_sub),
+                            enabled = compactVideoHome,
+                            onToggle = onCompactVideoHomeToggle
                         )
 
                         SettingsDivider()

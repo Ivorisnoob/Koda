@@ -180,6 +180,7 @@ class MainActivity : ComponentActivity() {
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val showRecentSearches by themeViewModel.showRecentSearches.collectAsState()
             val showRelatedVideos by themeViewModel.showRelatedVideos.collectAsState()
+            val compactVideoHome by themeViewModel.compactVideoHome.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
@@ -317,6 +318,8 @@ class MainActivity : ComponentActivity() {
                         onShowRecentSearchesToggle = { themeViewModel.setShowRecentSearches(it) },
                         showRelatedVideos = showRelatedVideos,
                         onShowRelatedVideosToggle = { themeViewModel.setShowRelatedVideos(it) },
+                        compactVideoHome = compactVideoHome,
+                        onCompactVideoHomeToggle = { themeViewModel.setCompactVideoHome(it) },
                         shortsEnabled = shortsEnabled,
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
                         shortsHiddenActions = shortsHiddenActions,
@@ -598,6 +601,8 @@ fun MusicApp(
     onShowRecentSearchesToggle: (Boolean) -> Unit,
     showRelatedVideos: Boolean,
     onShowRelatedVideosToggle: (Boolean) -> Unit,
+    compactVideoHome: Boolean,
+    onCompactVideoHomeToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
@@ -939,6 +944,7 @@ fun MusicApp(
 
             composable("home") {
                 HomeScreen(
+                    compactVideoHome = compactVideoHome,
                     onSongClick = { song ->
                         playerViewModel.playSong(song)
                     },
@@ -1045,6 +1051,8 @@ fun MusicApp(
                     onShowRecentSearchesToggle = onShowRecentSearchesToggle,
                     showRelatedVideos = showRelatedVideos,
                     onShowRelatedVideosToggle = onShowRelatedVideosToggle,
+                    compactVideoHome = compactVideoHome,
+                    onCompactVideoHomeToggle = onCompactVideoHomeToggle,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
                     shortsHiddenActions = shortsHiddenActions,

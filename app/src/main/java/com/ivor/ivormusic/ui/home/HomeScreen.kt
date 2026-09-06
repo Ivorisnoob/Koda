@@ -211,6 +211,7 @@ fun HomeScreen(
      */
     onOpenChannel: (String) -> Unit = {},
     shortsEnabled: Boolean = false,
+    compactVideoHome: Boolean = false,
     loadLocalSongs: Boolean = false,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
@@ -664,6 +665,7 @@ fun HomeScreen(
                                 )
                             } else if (videoModeContent) {
                                 VideoHomeContent(
+                                    compact = compactVideoHome,
                                     videos = trendingVideos,
                                     isLoading = isVideoLoading,
                                     isOffline = isVideoHomeOffline,

@@ -367,6 +367,8 @@
     <string name="sp_local_only">Local Only</string>
     <string name="sp_home_mode_toggle">Home Screen Mode Toggle</string>
     <string name="sp_timed_comments">Timed Comments</string>
+    <string name="sp_compact_video_home">Compact video home</string>
+    <string name="sp_compact_video_home_sub">Show smaller thumbnails with titles and channels beside them</string>
     <string name="sp_shorts">Shorts</string>
     <string name="sp_no_description">No description</string>
     <string name="sp_shorts_enabled_sub">Shown on Home and opened in the swipe player</string>
