@@ -1412,6 +1412,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
     
+    fun pauseDownload(id: String) = downloadRepository.pauseDownload(id)
+    fun resumeDownload(id: String) = downloadRepository.resumeDownload(id)
+
     fun cancelDownload(songId: String) {
         downloadRepository.cancelDownload(songId)
     }

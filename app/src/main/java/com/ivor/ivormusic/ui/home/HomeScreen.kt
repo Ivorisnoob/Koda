@@ -926,6 +926,14 @@ fun HomeScreen(
                                     bottom = listContentPadding.calculateBottomPadding()
                                 ),
                                 topBar = {
+                                    Column {
+                                    com.ivor.ivormusic.ui.video.DownloadedContentLibraryCard(
+                                        onClick = onNavigateToDownloads,
+                                        modifier = Modifier.padding(
+                                            start = 16.dp, end = 16.dp,
+                                            top = listContentPadding.calculateTopPadding()
+                                        )
+                                    )
                                     Text(
                                         text = stringResource(R.string.dv_on_this_device),
                                         style = MaterialTheme.typography.headlineSmall,
@@ -934,10 +942,11 @@ fun HomeScreen(
                                         modifier = Modifier.padding(
                                             start = 20.dp,
                                             end = 20.dp,
-                                            top = listContentPadding.calculateTopPadding(),
+                                            top = 12.dp,
                                             bottom = 8.dp
                                         )
                                     )
+                                    }
                                 },
                                 folderTopBar = { title, onBack ->
                                     com.ivor.ivormusic.ui.video.DeviceFolderTopBar(
@@ -951,6 +960,7 @@ fun HomeScreen(
                             )
                         } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.VideoLibraryContent(
+                                onOpenDownloads = onNavigateToDownloads,
                                 viewModel = viewModel,
                                 onOpenChannel = onOpenChannel,
                                 onVideoClick = { video ->

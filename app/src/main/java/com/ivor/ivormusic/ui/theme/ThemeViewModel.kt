@@ -60,6 +60,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     // Cache & Crossfade
     val cacheEnabled: StateFlow<Boolean> = themePreferences.cacheEnabled
+    val videoCacheEnabled: StateFlow<Boolean> = themePreferences.videoCacheEnabled
+    val shortsCacheEnabled: StateFlow<Boolean> = themePreferences.shortsCacheEnabled
+    val playbackPreloadEnabled: StateFlow<Boolean> = themePreferences.playbackPreloadEnabled
     val maxCacheSizeMb: StateFlow<Long> = themePreferences.maxCacheSizeMb
 
     val showRecentSearches: StateFlow<Boolean> = themePreferences.showRecentSearches
@@ -267,6 +270,18 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     // --- Cache Settings ---
+    fun setVideoCacheEnabled(enabled: Boolean) {
+        themePreferences.setVideoCacheEnabled(enabled)
+    }
+
+    fun setShortsCacheEnabled(enabled: Boolean) {
+        themePreferences.setShortsCacheEnabled(enabled)
+    }
+
+    fun setPlaybackPreloadEnabled(enabled: Boolean) {
+        themePreferences.setPlaybackPreloadEnabled(enabled)
+    }
+
     fun setCacheEnabled(enabled: Boolean) {
         themePreferences.setCacheEnabled(enabled)
     }

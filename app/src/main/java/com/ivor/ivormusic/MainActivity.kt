@@ -211,6 +211,9 @@ class MainActivity : ComponentActivity() {
             val localOnlyMode by themeViewModel.localOnlyMode.collectAsState()
             
             val cacheEnabled by themeViewModel.cacheEnabled.collectAsState()
+            val videoCacheEnabled by themeViewModel.videoCacheEnabled.collectAsState()
+            val shortsCacheEnabled by themeViewModel.shortsCacheEnabled.collectAsState()
+            val playbackPreloadEnabled by themeViewModel.playbackPreloadEnabled.collectAsState()
             val maxCacheSizeMb by themeViewModel.maxCacheSizeMb.collectAsState()
             val currentCacheSize by themeViewModel.currentCacheSizeBytes.collectAsState()
             val autoLoadQueue by themeViewModel.autoLoadQueue.collectAsState()
@@ -353,10 +356,26 @@ class MainActivity : ComponentActivity() {
                         },
                         cacheEnabled = cacheEnabled,
                         onCacheEnabledToggle = { themeViewModel.setCacheEnabled(it) },
+                        videoCacheEnabled = videoCacheEnabled,
+                        onVideoCacheEnabledToggle = { themeViewModel.setVideoCacheEnabled(it) },
+                        shortsCacheEnabled = shortsCacheEnabled,
+                        onShortsCacheEnabledToggle = { themeViewModel.setShortsCacheEnabled(it) },
+                        playbackPreloadEnabled = playbackPreloadEnabled,
+                        onPlaybackPreloadEnabledToggle = { themeViewModel.setPlaybackPreloadEnabled(it) },
                         maxCacheSizeMb = maxCacheSizeMb,
                         onMaxCacheSizeMbChange = { themeViewModel.setMaxCacheSizeMb(it) },
                         currentCacheSize = currentCacheSize,
                         onClearCacheClick = { themeViewModel.clearCacheAction() },
+                        onClearVideoCacheClick = {
+                            lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                com.ivor.ivormusic.data.CacheManager.clearVideoCache(shorts = false)
+                            }
+                        },
+                        onClearShortsCacheClick = {
+                            lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                com.ivor.ivormusic.data.CacheManager.clearVideoCache(shorts = true)
+                            }
+                        },
                         autoLoadQueue = autoLoadQueue,
                         onAutoLoadQueueToggle = { themeViewModel.setAutoLoadQueue(it) },
                         crossfadeEnabled = crossfadeEnabled,
@@ -628,10 +647,18 @@ fun MusicApp(
     onRemoveExcludedFolder: (String) -> Unit,
     cacheEnabled: Boolean,
     onCacheEnabledToggle: (Boolean) -> Unit,
+    videoCacheEnabled: Boolean,
+    onVideoCacheEnabledToggle: (Boolean) -> Unit,
+    shortsCacheEnabled: Boolean,
+    onShortsCacheEnabledToggle: (Boolean) -> Unit,
+    playbackPreloadEnabled: Boolean,
+    onPlaybackPreloadEnabledToggle: (Boolean) -> Unit,
     maxCacheSizeMb: Long,
     onMaxCacheSizeMbChange: (Long) -> Unit,
     currentCacheSize: Long,
     onClearCacheClick: () -> Unit,
+    onClearVideoCacheClick: () -> Unit,
+    onClearShortsCacheClick: () -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     crossfadeEnabled: Boolean,
@@ -1083,10 +1110,18 @@ fun MusicApp(
                     onBackClick = { navController.popBackStack() },
                     cacheEnabled = cacheEnabled,
                     onCacheEnabledToggle = onCacheEnabledToggle,
+                    videoCacheEnabled = videoCacheEnabled,
+                    onVideoCacheEnabledToggle = onVideoCacheEnabledToggle,
+                    shortsCacheEnabled = shortsCacheEnabled,
+                    onShortsCacheEnabledToggle = onShortsCacheEnabledToggle,
+                    playbackPreloadEnabled = playbackPreloadEnabled,
+                    onPlaybackPreloadEnabledToggle = onPlaybackPreloadEnabledToggle,
                     maxCacheSizeMb = maxCacheSizeMb,
                     onMaxCacheSizeMbChange = onMaxCacheSizeMbChange,
                     currentCacheSize = currentCacheSize,
                     onClearCacheClick = onClearCacheClick,
+                    onClearVideoCacheClick = onClearVideoCacheClick,
+                    onClearShortsCacheClick = onClearShortsCacheClick,
                     autoLoadQueue = autoLoadQueue,
                     onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     crossfadeEnabled = crossfadeEnabled,
@@ -1242,6 +1277,9 @@ fun MusicApp(
                     downloadedSongs = downloadedSongs,
                     downloadedVideos = downloadedVideos,
                     activeDownloads = downloadProgress,
+                    onPauseDownload = playerViewModel::pauseDownload,
+                    onResumeDownload = playerViewModel::resumeDownload,
+                    initiallyShowVideos = videoMode,
                     onBack = { navController.popBackStack() },
                     onPlaySong = { song ->
                         playerViewModel.playSong(song)

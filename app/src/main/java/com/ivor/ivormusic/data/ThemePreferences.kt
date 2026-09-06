@@ -179,6 +179,15 @@ class ThemePreferences(context: Context) {
     // Cache Settings
     private val _cacheEnabled = MutableStateFlow(getCacheEnabledPreference())
     val cacheEnabled: StateFlow<Boolean> = _cacheEnabled.asStateFlow()
+
+    private val _videoCacheEnabled = MutableStateFlow(getVideoCacheEnabledPreference())
+    val videoCacheEnabled: StateFlow<Boolean> = _videoCacheEnabled.asStateFlow()
+
+    private val _shortsCacheEnabled = MutableStateFlow(getShortsCacheEnabledPreference())
+    val shortsCacheEnabled: StateFlow<Boolean> = _shortsCacheEnabled.asStateFlow()
+
+    private val _playbackPreloadEnabled = MutableStateFlow(getPlaybackPreloadEnabledPreference())
+    val playbackPreloadEnabled: StateFlow<Boolean> = _playbackPreloadEnabled.asStateFlow()
     
     private val _maxCacheSizeMb = MutableStateFlow(getMaxCacheSizeMbPreference())
     val maxCacheSizeMb: StateFlow<Long> = _maxCacheSizeMb.asStateFlow()
@@ -319,6 +328,9 @@ class ThemePreferences(context: Context) {
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
             KEY_EXCLUDED_FOLDERS -> _excludedFolders.value = getExcludedFoldersPreference()
             KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
+            KEY_VIDEO_CACHE_ENABLED -> _videoCacheEnabled.value = getVideoCacheEnabledPreference()
+            KEY_SHORTS_CACHE_ENABLED -> _shortsCacheEnabled.value = getShortsCacheEnabledPreference()
+            KEY_PLAYBACK_PRELOAD_ENABLED -> _playbackPreloadEnabled.value = getPlaybackPreloadEnabledPreference()
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
             KEY_AUTO_LOAD_QUEUE -> _autoLoadQueue.value = getAutoLoadQueuePreference()
             KEY_CROSSFADE_ENABLED -> _crossfadeEnabled.value = getCrossfadeEnabledPreference()
@@ -635,6 +647,33 @@ class ThemePreferences(context: Context) {
 
         private const val KEY_EXCLUDED_FOLDERS = "excluded_folders"
         private const val KEY_CACHE_ENABLED = "cache_enabled"
+        private const val KEY_VIDEO_CACHE_ENABLED = "video_cache_enabled"
+        private const val KEY_SHORTS_CACHE_ENABLED = "shorts_cache_enabled"
+        private const val KEY_PLAYBACK_PRELOAD_ENABLED = "playback_preload_enabled"
+
+        /**
+         * Read a switch without holding an instance.
+         *
+         * These are asked at decision time from a service, a data source
+         * factory and a prefetch loop, none of which owns a [ThemePreferences]
+         * and all of which must see a change on the next load rather than on
+         * the next process. Null-safe on purpose: the JVM unit tests run
+         * against a stubbed Context whose getSharedPreferences returns null,
+         * and a caching switch is never worth taking playback down with it.
+         */
+        private fun switch(context: Context, key: String, default: Boolean): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                ?.getBoolean(key, default) ?: default
+
+        fun isVideoCacheEnabled(context: Context): Boolean =
+            switch(context, KEY_VIDEO_CACHE_ENABLED, true)
+
+        fun isShortsCacheEnabled(context: Context): Boolean =
+            switch(context, KEY_SHORTS_CACHE_ENABLED, true)
+
+        fun isPlaybackPreloadEnabled(context: Context): Boolean =
+            switch(context, KEY_PLAYBACK_PRELOAD_ENABLED, true)
+
         private const val KEY_MAX_CACHE_SIZE_MB = "max_cache_size_mb"
         private const val KEY_AUTO_LOAD_QUEUE = "auto_load_queue"
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
@@ -1606,6 +1645,27 @@ class ThemePreferences(context: Context) {
         _cacheEnabled.value = enabled
     }
     
+    private fun getVideoCacheEnabledPreference(): Boolean = prefs.getBoolean(KEY_VIDEO_CACHE_ENABLED, true)
+
+    fun setVideoCacheEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VIDEO_CACHE_ENABLED, enabled).apply()
+        _videoCacheEnabled.value = enabled
+    }
+
+    private fun getShortsCacheEnabledPreference(): Boolean = prefs.getBoolean(KEY_SHORTS_CACHE_ENABLED, true)
+
+    fun setShortsCacheEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHORTS_CACHE_ENABLED, enabled).apply()
+        _shortsCacheEnabled.value = enabled
+    }
+
+    private fun getPlaybackPreloadEnabledPreference(): Boolean = prefs.getBoolean(KEY_PLAYBACK_PRELOAD_ENABLED, true)
+
+    fun setPlaybackPreloadEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PLAYBACK_PRELOAD_ENABLED, enabled).apply()
+        _playbackPreloadEnabled.value = enabled
+    }
+
     private fun getMaxCacheSizeMbPreference(): Long {
         return prefs.getLong(KEY_MAX_CACHE_SIZE_MB, CacheManager.DEFAULT_CACHE_SIZE_MB)
             .coerceIn(CacheManager.MIN_CACHE_SIZE_MB, CacheManager.MAX_CACHE_SIZE_MB)

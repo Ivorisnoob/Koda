@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
@@ -130,10 +133,13 @@ fun DownloadsScreen(
     onDeleteVideo: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
     onRetryDownload: (DownloadRequest) -> Unit,
+    onPauseDownload: (String) -> Unit,
+    onResumeDownload: (String) -> Unit,
+    initiallyShowVideos: Boolean = false,
     onCancelAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(DownloadsTab.MUSIC) }
+    var selectedTab by rememberSaveable { mutableStateOf(if (initiallyShowVideos) DownloadsTab.VIDEO else DownloadsTab.MUSIC) }
 
     // Split by the media type of the request itself rather than by which list
     // the finished item lands in, so queued and failed entries route correctly
@@ -248,7 +254,9 @@ fun DownloadsScreen(
                         onPlayQueue = onPlayQueue,
                         onDelete = onDeleteDownload,
                         onCancel = onCancelDownload,
-                        onRetry = onRetryDownload
+                        onRetry = onRetryDownload,
+                        onPause = onPauseDownload,
+                        onResume = onResumeDownload
                     )
 
                     DownloadsTab.VIDEO -> VideoTab(
@@ -257,7 +265,9 @@ fun DownloadsScreen(
                         onPlay = { video -> onPlayVideo(downloadedVideos, video) },
                         onDelete = onDeleteVideo,
                         onCancel = onCancelDownload,
-                        onRetry = onRetryDownload
+                        onRetry = onRetryDownload,
+                        onPause = onPauseDownload,
+                        onResume = onResumeDownload
                     )
                 }
             }
@@ -272,7 +282,9 @@ private fun MusicTab(
     onPlayQueue: (List<Song>, Song) -> Unit,
     onDelete: (String) -> Unit,
     onCancel: (String) -> Unit,
-    onRetry: (DownloadRequest) -> Unit
+    onRetry: (DownloadRequest) -> Unit,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit
 ) {
     // No spacedBy: rows in a connected group sit flush and are separated by
     // dividers, not gaps. Section spacing is added explicitly instead.
@@ -287,7 +299,9 @@ private fun MusicTab(
                     item = item,
                     shape = segmentedShape(index, progress.size),
                     onCancel = onCancel,
-                    onRetry = onRetry
+                    onRetry = onRetry,
+                    onPause = onPause,
+                    onResume = onResume
                 )
                 if (index < progress.lastIndex) SegmentDivider(inset = 46.dp)
             }
@@ -323,7 +337,9 @@ private fun VideoTab(
     onPlay: (DownloadedVideo) -> Unit,
     onDelete: (String) -> Unit,
     onCancel: (String) -> Unit,
-    onRetry: (DownloadRequest) -> Unit
+    onRetry: (DownloadRequest) -> Unit,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -336,7 +352,9 @@ private fun VideoTab(
                     item = item,
                     shape = segmentedShape(index, progress.size),
                     onCancel = onCancel,
-                    onRetry = onRetry
+                    onRetry = onRetry,
+                    onPause = onPause,
+                    onResume = onResume
                 )
                 if (index < progress.lastIndex) SegmentDivider(inset = 46.dp)
             }
@@ -383,10 +401,13 @@ private fun ProgressCard(
     item: DownloadProgress,
     shape: Shape,
     onCancel: (String) -> Unit,
-    onRetry: (DownloadRequest) -> Unit
+    onRetry: (DownloadRequest) -> Unit,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit
 ) {
     val failed = item.status == DownloadStatus.FAILED
     val queued = item.status == DownloadStatus.QUEUED
+    val paused = item.status == DownloadStatus.PAUSED
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -398,6 +419,7 @@ private fun ProgressCard(
                 Icon(
                     imageVector = when {
                         failed -> Icons.Rounded.ErrorOutline
+                        paused -> Icons.Rounded.Pause
                         queued -> Icons.Rounded.Schedule
                         else -> Icons.Rounded.Download
                     },
@@ -420,6 +442,7 @@ private fun ProgressCard(
                     Text(
                         text = when {
                             failed -> stringResource(R.string.dl_failed)
+                            paused -> stringResource(R.string.dl_paused)
                             queued -> stringResource(R.string.dl_waiting)
                             item.totalBytes > 0 -> "%.1f / %.1f MB".format(
                                 item.bytesDownloaded / (1024 * 1024f),
@@ -436,6 +459,16 @@ private fun ProgressCard(
                     )
                 }
 
+                if (paused || queued || item.status == DownloadStatus.DOWNLOADING) {
+                    IconButton(onClick = {
+                        if (paused) onResume(item.songId) else onPause(item.songId)
+                    }) {
+                        Icon(
+                            if (paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                            contentDescription = stringResource(if (paused) R.string.dl_resume else R.string.cd_pause)
+                        )
+                    }
+                }
                 if (failed) {
                     IconButton(onClick = { onRetry(item.request) }) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Retry")

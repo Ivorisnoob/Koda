@@ -2023,32 +2023,71 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * Load trending/recommended videos for video mode home screen.
      * Also refreshes the Shorts shelf in parallel.
      */
+    private var videoHomeLoadJob: Job? = null
+    private var videoHomeRequest: kotlinx.coroutines.Deferred<com.ivor.ivormusic.data.VideoFeedPage>? = null
+    private var videoHomeLoadGeneration = 0L
+
+    /**
+     * One page of the video feed, or null if it did not arrive in time.
+     *
+     * The request is started on the ViewModel's own scope rather than inside
+     * the timeout, because [YouTubeRepository.getTrendingVideos] can reach a
+     * blocking extractor and a coroutine timeout does not return while an
+     * uninterruptible child is still inside one - the same non-fix section 8
+     * of CLAUDE.md describes for music resolution. Detached, the deadline
+     * actually fires and the caller can put the downloaded videos up while the
+     * orphan finishes against its own client timeouts.
+     *
+     * An outstanding request is joined rather than duplicated, so repeated
+     * pulls on a slow connection cannot pile network work on the server that is
+     * already not answering.
+     */
+    private suspend fun requestVideoFeedPage(): com.ivor.ivormusic.data.VideoFeedPage? {
+        val request = videoHomeRequest?.takeIf { it.isActive }
+            ?: viewModelScope.async(kotlinx.coroutines.Dispatchers.IO) {
+                youtubeRepository.getTrendingVideos()
+            }.also { videoHomeRequest = it }
+        return kotlinx.coroutines.withTimeoutOrNull(VIDEO_FEED_DEADLINE_MS) { request.await() }
+    }
+
     fun loadTrendingVideos() {
+        val generation = ++videoHomeLoadGeneration
+        videoHomeLoadJob?.cancel()
+        if (!hasNetworkConnection() || themePreferences.isLocalOnlyModeEnabled()) {
+            _isVideoHomeOffline.value = true
+            _isVideoLoading.value = false
+            return
+        }
         loadShortsFeed()
-        if (!themePreferences.areVideoRecommendationsEnabled()) return
-        viewModelScope.launch {
+        if (!themePreferences.areVideoRecommendationsEnabled()) {
+            _isVideoLoading.value = false
+            return
+        }
+        videoHomeLoadJob = viewModelScope.launch {
             _isVideoLoading.value = true
             try {
-                val page = youtubeRepository.getTrendingVideos()
+                // The request belongs to the ViewModel, not the timeout scope:
+                // blocking NewPipe calls cannot hold the UI's deadline open.
+                // Reuse an outstanding request so repeated refreshes cannot
+                // accumulate network work while that call finishes.
+                val page = requestVideoFeedPage()
                 if (!themePreferences.areVideoRecommendationsEnabled()) return@launch
-                if (page.videos.isNotEmpty()) {
+                if (page != null && page.videos.isNotEmpty()) {
                     _isVideoHomeOffline.value = false
                     _trendingVideos.value = page.videos
                     videoFeedContinuation = page.continuation
-                    // Taste-based page 1 seeds from the 6 most recent history
-                    // entries; load-more continues from the 7th.
                     tasteSeedOffset = 6
                     videoFeedExhausted = false
                     rememberShown(page.videos)
-                } else if (_trendingVideos.value.isEmpty()) {
-                    _isVideoHomeOffline.value = !hasNetworkConnection()
+                } else {
+                    _isVideoHomeOffline.value = page == null || !hasNetworkConnection()
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                if (_trendingVideos.value.isEmpty()) {
-                    _isVideoHomeOffline.value = !hasNetworkConnection()
-                }
+                _isVideoHomeOffline.value = true
             } finally {
-                _isVideoLoading.value = false
+                if (generation == videoHomeLoadGeneration) _isVideoLoading.value = false
             }
         }
     }
@@ -2137,7 +2176,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun loadMoreTrendingVideos() {
         if (!themePreferences.areVideoRecommendationsEnabled()) return
-        if (_isVideoLoading.value || _isVideoLoadingMore.value || videoFeedExhausted) return
+        if (_isVideoHomeOffline.value || _isVideoLoading.value || _isVideoLoadingMore.value || videoFeedExhausted) return
         if (_trendingVideos.value.isEmpty()) return
 
         viewModelScope.launch {
@@ -2395,14 +2434,37 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * emptying the screen.
      */
     fun refreshVideos() {
+        // The same refusal the initial load makes, for the same reason: a pull
+        // with no connection should answer with the downloads immediately
+        // rather than spin over them until a network call times out.
+        if (!hasNetworkConnection() || themePreferences.isLocalOnlyModeEnabled()) {
+            _isVideoHomeOffline.value = true
+            _isVideoLoading.value = false
+            return
+        }
         loadShortsFeed()
         if (!themePreferences.areVideoRecommendationsEnabled()) return
         viewModelScope.launch {
             _isVideoLoading.value = true
             try {
-                val page = youtubeRepository.getTrendingVideos()
+                // Bounded and detached exactly as the initial load is - a
+                // blocking extraction cannot hold this deadline open from
+                // inside, so the request cannot be a child of the timeout.
+                val page = requestVideoFeedPage()
                 if (!themePreferences.areVideoRecommendationsEnabled()) return@launch
-                if (page.videos.isEmpty()) return@launch
+                if (page == null || page.videos.isEmpty()) {
+                    // Nothing new to show. Say offline only when there is also
+                    // nothing already on screen, so a refresh that comes back
+                    // empty does not replace a working feed with downloads.
+                    if (_trendingVideos.value.isEmpty()) {
+                        _isVideoHomeOffline.value = page == null || !hasNetworkConnection()
+                    }
+                    return@launch
+                }
+                // Reached the feed, so whatever put the offline list up is over.
+                // Without this a refresh could load videos into a screen that
+                // went on showing downloads until the tab was rebuilt.
+                _isVideoHomeOffline.value = false
 
                 val fresh = mutableListOf<VideoItem>()
                 val batchIds = HashSet<String>()
@@ -2757,6 +2819,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         const val FEED_TOP_UP_THRESHOLD = 8
 
         /** A refresh stops walking the feed once it has this many new videos. */
+        /**
+         * How long video Home waits for its feed before showing what is on the
+         * device instead.
+         *
+         * Long enough that an ordinary slow connection still fills the feed,
+         * short enough that a dead one does not hold an empty screen. The
+         * request is not cancelled when this expires - it is detached - so a
+         * page that arrives late is still there for the next pull.
+         */
+        const val VIDEO_FEED_DEADLINE_MS = 8_000L
+
         const val MIN_FRESH_VIDEOS_ON_REFRESH = 15
 
         /**

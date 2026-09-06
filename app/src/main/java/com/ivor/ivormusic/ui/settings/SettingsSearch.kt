@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
@@ -442,7 +444,7 @@ internal fun buildSettingsSearchIndex(
     ) { onOpenPage(SettingsPage.STORAGE) }
     entry(
         "cache_music", stringResource(R.string.sp_cache_music), "Storage and cache", Icons.Rounded.Save,
-        listOf("cache", "store", "replay", "offline songs", "video seeking", "buffer")
+        listOf("cache", "store", "replay", "offline songs", "music", "buffer")
     ) { onOpenPage(SettingsPage.STORAGE) }
     entry(
         "cache_size", stringResource(R.string.sp_max_cache_size), "Storage and cache", Icons.Rounded.Folder,
@@ -451,6 +453,27 @@ internal fun buildSettingsSearchIndex(
     entry(
         "clear_cache", stringResource(R.string.sp_clear_cache), "Storage and cache", Icons.Rounded.FolderOff,
         listOf("clear", "delete", "free space", "wipe", "clean", "reset storage")
+    ) { onOpenPage(SettingsPage.STORAGE) }
+
+    entry(
+        "cache_videos", stringResource(R.string.sp_cache_videos), "Storage and cache", Icons.Rounded.Videocam,
+        listOf("cache", "cache videos", "buffer", "preload", "playback")
+    ) { onOpenPage(SettingsPage.STORAGE) }
+    entry(
+        "cache_shorts", stringResource(R.string.sp_cache_shorts), "Storage and cache", Icons.Rounded.PlayCircle,
+        listOf("cache", "cache shorts", "buffer", "preload", "playback")
+    ) { onOpenPage(SettingsPage.STORAGE) }
+    entry(
+        "playback_preload", stringResource(R.string.sp_playback_preload), "Storage and cache", Icons.Rounded.SkipNext,
+        listOf("preload", "prefetch", "automatic", "upcoming", "next song", "shorts", "buffer")
+    ) { onOpenPage(SettingsPage.STORAGE) }
+    entry(
+        "clear_video_cache", stringResource(R.string.sp_clear_video_cache), "Storage and cache", Icons.Rounded.FolderOff,
+        listOf("clear", "video", "cache", "free space", "temporary")
+    ) { onOpenPage(SettingsPage.STORAGE) }
+    entry(
+        "clear_shorts_cache", stringResource(R.string.sp_clear_shorts_cache), "Storage and cache", Icons.Rounded.FolderOff,
+        listOf("clear", "shorts", "cache", "free space", "temporary")
     ) { onOpenPage(SettingsPage.STORAGE) }
 
     // Backup and restore. Three entries rather than one, because people arrive

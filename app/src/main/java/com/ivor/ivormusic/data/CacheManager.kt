@@ -258,10 +258,10 @@ object CacheManager {
 
     /** Clear transient video bytes only. Music and permanent downloads stay. */
     @Synchronized
-    fun clearVideoCache() {
+    fun clearVideoCache(shorts: Boolean? = null) {
         try {
             val cache = videoCache ?: return
-            val keys = cache.keys.toList()
+            val keys = cache.keys.filter { shorts == null || isShortsCacheKey(it) == shorts }
             keys.forEach(cache::removeResource)
             KLog.d(TAG, "Transient video cache cleared: removed ${keys.size} items")
         } catch (e: Exception) {
@@ -300,6 +300,7 @@ object CacheManager {
     fun createCacheDataSourceFactory(
         context: Context,
         upstreamFactory: DataSource.Factory? = null,
+        writeEnabled: Boolean = true,
     ): CacheDataSource.Factory? {
         val cache = simpleCache ?: return null
 
@@ -323,6 +324,7 @@ object CacheManager {
                 .setFlags(
                     CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
                 )
+                .apply { if (!writeEnabled) setCacheWriteDataSinkFactory(null) }
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to create cache data source factory", e)
             return null
@@ -345,11 +347,13 @@ object CacheManager {
     ): DataSource.Factory {
         val directFactory = DefaultDataSource.Factory(context, createPerClientHttpFactory(context))
         val cacheFactory = createCacheDataSourceFactory(context)
+        val readOnlyFactory = createCacheDataSourceFactory(context, writeEnabled = false)
         return DataSource.Factory {
             SwitchingPlaybackDataSource(
                 direct = directFactory.createDataSource(),
                 cached = cacheFactory?.createDataSource(),
                 isCacheEnabled = isCacheEnabled,
+                readOnlyCache = readOnlyFactory?.createDataSource(),
             )
         }
     }
@@ -357,46 +361,59 @@ object CacheManager {
     /**
      * Player factory for online video and Shorts.
      *
-     * This cache deliberately ignores the music cache preference and size:
-     * it is temporary playback state, not a promise of offline availability.
+     * Video and Shorts have separate write policies and key namespaces while
+     * sharing the temporary store. The music size limit does not apply here.
      * Cache failures (including a full disk) fall through to upstream so the
      * act of caching can never stop an otherwise playable video.
      */
     @Synchronized
-    fun createVideoPlaybackDataSourceFactory(context: Context): DataSource.Factory {
+    fun createVideoPlaybackDataSourceFactory(context: Context, shorts: Boolean = false): DataSource.Factory {
         initializeVideoCache(context.applicationContext)
         val directFactory = DefaultDataSource.Factory(
             context,
             createPerClientHttpFactory(context),
         )
-        val cacheFactory = createVideoCacheDataSourceFactory(context)
+        val cacheFactory = createVideoCacheDataSourceFactory(context, shorts)
+        val readOnlyFactory = createVideoCacheDataSourceFactory(context, shorts, writeEnabled = false)
         return DataSource.Factory {
             SwitchingPlaybackDataSource(
                 direct = directFactory.createDataSource(),
                 cached = cacheFactory?.createDataSource(),
-                isCacheEnabled = { true },
+                isCacheEnabled = {
+                    if (shorts) ThemePreferences.isShortsCacheEnabled(context)
+                    else ThemePreferences.isVideoCacheEnabled(context)
+                },
+                readOnlyCache = readOnlyFactory?.createDataSource(),
             )
         }
     }
 
     /** Blocking range warm for the immediate-next Shorts item. Call on IO. */
     fun cacheVideoRange(context: Context, dataSpec: DataSpec) {
+        if (!ThemePreferences.isShortsCacheEnabled(context) ||
+            !ThemePreferences.isPlaybackPreloadEnabled(context)) return
         val factory = synchronized(this) {
             initializeVideoCache(context.applicationContext)
-            createVideoCacheDataSourceFactory(context)
+            createVideoCacheDataSourceFactory(context, shorts = true)
         } ?: return
         CacheWriter(factory.createDataSource(), dataSpec, null, null).cache()
     }
 
-    private fun createVideoCacheDataSourceFactory(context: Context): CacheDataSource.Factory? =
+    private fun createVideoCacheDataSourceFactory(
+        context: Context,
+        shorts: Boolean,
+        writeEnabled: Boolean = true,
+    ): CacheDataSource.Factory? =
         videoCache?.let { cache ->
             CacheDataSource.Factory()
                 .setCache(cache)
                 .setUpstreamDataSourceFactory(createPerClientHttpFactory(context))
                 .setCacheKeyFactory { dataSpec ->
-                    dataSpec.key ?: opaquePlaybackCacheKey(dataSpec.uri.toString())
+                    val key = dataSpec.key ?: opaquePlaybackCacheKey(dataSpec.uri.toString())
+                    playbackCacheCategoryKey(key, shorts)
                 }
                 .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                .apply { if (!writeEnabled) setCacheWriteDataSinkFactory(null) }
         }
 
     @Synchronized
@@ -619,18 +636,22 @@ object CacheManager {
         private val direct: DataSource,
         private val cached: DataSource?,
         private val isCacheEnabled: () -> Boolean,
+        private val readOnlyCache: DataSource? = null,
     ) : DataSource {
         private var active: DataSource? = null
 
         override fun addTransferListener(transferListener: TransferListener) {
             direct.addTransferListener(transferListener)
             cached?.addTransferListener(transferListener)
+            readOnlyCache?.addTransferListener(transferListener)
         }
 
         override fun open(dataSpec: DataSpec): Long {
             val scheme = dataSpec.uri.scheme
             val isNetwork = scheme == "http" || scheme == "https"
-            active = if (isNetwork && isCacheEnabled() && cached != null) cached else direct
+            active = if (isNetwork) {
+                if (isCacheEnabled()) cached ?: direct else readOnlyCache ?: direct
+            } else direct
             return checkNotNull(active).open(dataSpec)
         }
 

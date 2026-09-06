@@ -543,10 +543,12 @@ class MusicService : MediaLibraryService() {
         // Null when cache init failed — playback then always goes direct.
         val cacheDataSourceFactory = CacheManager.createCacheDataSourceFactory(this, null)
         this.cacheDataSourceFactory = cacheDataSourceFactory
+        val readOnlyCacheFactory = CacheManager.createCacheDataSourceFactory(this, writeEnabled = false)
 
         val smartDataSourceFactory = DataSource.Factory {
             val defaultSource = defaultDataSourceFactory.createDataSource()
             val cacheSource = cacheDataSourceFactory?.createDataSource()
+            val readOnlyCacheSource = readOnlyCacheFactory?.createDataSource()
 
             object : DataSource {
                 private var currentSource: DataSource? = null
@@ -554,6 +556,7 @@ class MusicService : MediaLibraryService() {
                 override fun addTransferListener(transferListener: TransferListener) {
                     defaultSource.addTransferListener(transferListener)
                     cacheSource?.addTransferListener(transferListener)
+                    readOnlyCacheSource?.addTransferListener(transferListener)
                 }
 
                 override fun open(dataSpec: DataSpec): Long {
@@ -565,6 +568,8 @@ class MusicService : MediaLibraryService() {
                     // toggle applies to the very next stream, no restart).
                     currentSource = if (isNetwork && isCacheEnabled && cacheSource != null) {
                         cacheSource
+                    } else if (isNetwork) {
+                        readOnlyCacheSource ?: defaultSource
                     } else {
                         defaultSource
                     }
@@ -989,6 +994,7 @@ class MusicService : MediaLibraryService() {
     // --- Logic 2: Robust Prefetching ---
 
     private fun prefetchUpcomingSongs() {
+        if (!ThemePreferences.isPlaybackPreloadEnabled(this)) return
         val currentIndex = player.currentMediaItemIndex
         if (currentIndex == C.INDEX_UNSET) return
 
@@ -1056,6 +1062,7 @@ class MusicService : MediaLibraryService() {
      * cached / error) are skipped.
      */
     private fun warmStreamCache(videoId: String, uri: Uri?) {
+        if (!ThemePreferences.isPlaybackPreloadEnabled(this)) return
         val factory = cacheDataSourceFactory ?: return
         if (!isCacheEnabled || uri == null) return
         if (uri.scheme != "http" && uri.scheme != "https") return

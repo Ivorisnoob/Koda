@@ -122,7 +122,7 @@ fun VideoHomeContent(
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
-    val showOfflineDownloads = isOffline && videos.isEmpty() && downloadedVideos.isNotEmpty()
+    val showOfflineDownloads = isOffline && downloadedVideos.isNotEmpty()
 
     // Notifications sheet state
     var showNotificationsSheet by remember { mutableStateOf(false) }

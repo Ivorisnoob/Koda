@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
@@ -1294,10 +1297,18 @@ internal fun StorageSettingsPage(
     onPrivateDownloadsEnabledToggle: (Boolean) -> Unit,
     cacheEnabled: Boolean,
     onCacheEnabledToggle: (Boolean) -> Unit,
+    videoCacheEnabled: Boolean,
+    onVideoCacheEnabledToggle: (Boolean) -> Unit,
+    shortsCacheEnabled: Boolean,
+    onShortsCacheEnabledToggle: (Boolean) -> Unit,
+    playbackPreloadEnabled: Boolean,
+    onPlaybackPreloadEnabledToggle: (Boolean) -> Unit,
     maxCacheSizeMb: Long,
     onMaxCacheSizeMbChange: (Long) -> Unit,
     currentCacheSize: Long,
     onClearCacheClick: () -> Unit,
+    onClearVideoCacheClick: () -> Unit,
+    onClearShortsCacheClick: () -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_storage_and_cache), onBack = onBack) {
@@ -1332,6 +1343,36 @@ internal fun StorageSettingsPage(
                         subtitle = stringResource(R.string.sp_cache_music_sub),
                         enabled = cacheEnabled,
                         onToggle = onCacheEnabledToggle
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Videocam,
+                        title = stringResource(R.string.sp_cache_videos),
+                        subtitle = stringResource(R.string.sp_cache_videos_sub),
+                        enabled = videoCacheEnabled,
+                        onToggle = onVideoCacheEnabledToggle
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.PlayCircle,
+                        title = stringResource(R.string.sp_cache_shorts),
+                        subtitle = stringResource(R.string.sp_cache_shorts_sub),
+                        enabled = shortsCacheEnabled,
+                        onToggle = onShortsCacheEnabledToggle
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.SkipNext,
+                        title = stringResource(R.string.sp_playback_preload),
+                        subtitle = stringResource(R.string.sp_playback_preload_sub),
+                        enabled = playbackPreloadEnabled,
+                        onToggle = onPlaybackPreloadEnabledToggle
                     )
 
                     SettingsDivider()
@@ -1374,6 +1415,10 @@ internal fun StorageSettingsPage(
                         onMaxCacheSizeMbChange = onMaxCacheSizeMbChange
                     )
                 }
+                SettingsFootnote(
+                    icon = Icons.Rounded.Info,
+                    text = stringResource(R.string.sp_playback_cache_note)
+                )
             }
         }
 
@@ -1384,6 +1429,24 @@ internal fun StorageSettingsPage(
                     title = stringResource(R.string.sp_clear_cache),
                     subtitle = stringResource(R.string.sp_clear_cache_sub),
                     onClick = onClearCacheClick,
+                    tint = SettingsRowDefaults.destructiveTint,
+                    titleColor = SettingsRowDefaults.destructiveTint
+                )
+                SettingsDivider()
+                SettingsRow(
+                    icon = Icons.Rounded.FolderOff,
+                    title = stringResource(R.string.sp_clear_video_cache),
+                    subtitle = stringResource(R.string.sp_clear_video_cache_sub),
+                    onClick = onClearVideoCacheClick,
+                    tint = SettingsRowDefaults.destructiveTint,
+                    titleColor = SettingsRowDefaults.destructiveTint
+                )
+                SettingsDivider()
+                SettingsRow(
+                    icon = Icons.Rounded.FolderOff,
+                    title = stringResource(R.string.sp_clear_shorts_cache),
+                    subtitle = stringResource(R.string.sp_clear_shorts_cache_sub),
+                    onClick = onClearShortsCacheClick,
                     tint = SettingsRowDefaults.destructiveTint,
                     titleColor = SettingsRowDefaults.destructiveTint
                 )

@@ -391,6 +391,14 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+- Downloads can be paused and resumed. A paused transfer keeps the bytes it already has and carries on from them, rather than starting the file again; partial media is session-scoped and cleared on the next process, since nothing can resume it without its request.
+
+- Caching is separated into music, video and Shorts, with a fourth switch for preloading media you have not asked for yet. Turning one off stops new writes but still reads what is already stored, and video and Shorts can be cleared independently of each other and of the music cache.
+
+- The video Library opens Downloads directly, on its Videos tab, instead of leaving offline content reachable only from the top bar.
+
+- Video Home offers downloaded videos immediately offline and after an eight-second feed deadline. Refresh keeps at most one network request in flight, so blocking extraction cannot hold the loading screen open or multiply requests. Existing downloads also replace an old online feed when the connection is unavailable.
+
 - Optional Compact video home in Settings, Content and feeds, shows smaller thumbnails beside titles and channels, including offline Home downloads (#266, Home scope). It preserves the same feed, scroll state, video taps, channel destinations and long-press actions; other lists retain their existing layout.
 
 - Mini-player opening and closing use a softer spring without endpoint bounce. Music keeps the full player measured at its final size in both axes; video retains its stationary surface until the closing curtain finishes, then brings in the mini bar.
