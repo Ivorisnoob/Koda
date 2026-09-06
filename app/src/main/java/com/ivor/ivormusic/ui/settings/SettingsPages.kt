@@ -225,6 +225,7 @@ internal fun AccountSettingsPage(
 
 @Composable
 internal fun AppearanceSettingsPage(
+    paletteStyle: com.ivor.ivormusic.ui.theme.PaletteStyle,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     colorPalette: String,
@@ -261,7 +262,9 @@ internal fun AppearanceSettingsPage(
                     SettingsRow(
                         icon = Icons.Rounded.Palette,
                         title = stringResource(R.string.sp_color_palette),
-                        subtitle = paletteName,
+                        subtitle = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE ||
+                            colorPalette == "black" || colorPalette == "white") paletteName
+                        else "$paletteName · ${stringResource(paletteStyle.labelRes)}",
                         onClick = onNavigateToColorPalette,
                         showChevron = true
                     )

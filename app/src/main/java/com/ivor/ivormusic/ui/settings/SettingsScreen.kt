@@ -275,6 +275,7 @@ fun SettingsScreen(
     onAmoledThemeToggle: (Boolean) -> Unit,
     colorPalette: String = ThemePreferences.DEFAULT_COLOR_PALETTE,
     onNavigateToColorPalette: () -> Unit = {},
+    paletteStyle: com.ivor.ivormusic.ui.theme.PaletteStyle = com.ivor.ivormusic.ui.theme.PaletteStyle.TONAL_SPOT,
     loadLocalSongs: Boolean,
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
@@ -743,6 +744,7 @@ fun SettingsScreen(
                 )
 
                 SettingsPage.APPEARANCE -> AppearanceSettingsPage(
+                    paletteStyle = paletteStyle,
                     currentThemeMode = currentThemeMode,
                     onThemeModeChange = onThemeModeChange,
                     colorPalette = colorPalette,

@@ -19,6 +19,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -49,7 +50,7 @@ private val DarkColorScheme = darkColorScheme(
  * true #000000, and the surface container ramp is compressed toward black so
  * cards keep a subtle elevation separation without the default grey wash.
  */
-private fun ColorScheme.toAmoled(): ColorScheme = copy(
+internal fun ColorScheme.toAmoled(): ColorScheme = copy(
     background = Color.Black,
     surface = Color.Black,
     surfaceDim = Color.Black,
@@ -70,7 +71,7 @@ private val ExpressiveShapes = Shapes(
 )
 
 /**
- * How Koda turns its three theme preferences into a [ColorScheme]. Extracted
+ * How Koda turns its theme preferences into a [ColorScheme]. Extracted
  * from [IvorMusicTheme] because the home screen widgets need the same answer
  * outside a Compose UI composition - a Glance composition has no
  * LocalContext of the Compose kind and cannot call [IvorMusicTheme] at all, and
@@ -85,11 +86,11 @@ fun kodaColorScheme(
     darkTheme: Boolean,
     colorPalette: String,
     amoledDark: Boolean,
+    paletteStyle: PaletteStyle = PaletteStyle.TONAL_SPOT,
 ): ColorScheme {
     val useDynamic = colorPalette == DYNAMIC_PALETTE_ID
-    // Neutral base scheme (surfaces, on-surface text). Dynamic pulls from the
-    // wallpaper; a fixed palette starts from the app's own neutral scheme so
-    // wallpaper color is fully ignored and only our accents apply.
+    // Wallpaper keeps the system scheme. Presets generate a complete HCT
+    // scheme; this base is only the fallback for Android 11 or unknown ids.
     val baseColorScheme = when {
         useDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -99,7 +100,7 @@ fun kodaColorScheme(
     val palettedScheme = if (useDynamic) {
         baseColorScheme
     } else {
-        findPalette(colorPalette)?.let { buildPaletteColorScheme(it, darkTheme, baseColorScheme) }
+        findPalette(colorPalette)?.let { buildPaletteColorScheme(it, darkTheme, paletteStyle) }
             ?: baseColorScheme
     }
     return if (darkTheme && amoledDark) palettedScheme.toAmoled() else palettedScheme
@@ -112,14 +113,16 @@ fun IvorMusicTheme(
     colorPalette: String = DYNAMIC_PALETTE_ID, // "dynamic" = wallpaper color, else a fixed AppPalette id
     amoledDark: Boolean = false, // Pure black backgrounds when dark theme is active
     uiScale: Float = UI_SCALE_DEFAULT, // Multiplies every dp and sp in the app
+    paletteStyle: PaletteStyle = PaletteStyle.TONAL_SPOT,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = kodaColorScheme(
-        context = LocalContext.current,
-        darkTheme = darkTheme,
-        colorPalette = colorPalette,
-        amoledDark = amoledDark,
-    )
+    val context = LocalContext.current
+    // Configuration changes include wallpaper/UI mode changes. Rebuild then,
+    // but never regenerate HCT roles on unrelated parent recompositions.
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val colorScheme = remember(context, configuration, darkTheme, colorPalette, amoledDark, paletteStyle) {
+        kodaColorScheme(context, darkTheme, colorPalette, amoledDark, paletteStyle)
+    }
     
     val view = LocalView.current
     if (!view.isInEditMode) {

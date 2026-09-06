@@ -182,6 +182,8 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.material3)
+    // HCT scheme generation; UI remains Compose Material 3 Expressive.
+    implementation(libs.material.color.utilities)
     implementation(libs.androidx.media3.exoplayer)
     // DefaultMediaSourceFactory loads DashMediaSource / HlsMediaSource
     // reflectively and throws "Module missing for content type" without these.

@@ -22,7 +22,7 @@ The app is past the point of proving itself. The core loops all work end to end:
 
 **Identity is plural.** Several YouTube accounts and device-only local profiles sit side by side, switchable with one preference write and no re-authentication, no network, and no interruption to playback.
 
-**The interface is the product.** Eight fully animated player styles, 29 color palettes plus wallpaper-based dynamic color and AMOLED, a settings hub of eleven pages with full-text search, and spring physics on anything touch-driven.
+**The interface is the product.** Eight fully animated player styles, 28 color palettes plus wallpaper-based dynamic color and AMOLED, a settings hub of eleven pages with full-text search, and spring physics on anything touch-driven.
 
 Where the weight sits today:
 
@@ -112,14 +112,6 @@ Local playlists work, and they are plain. You can create, rename, reorder by dra
 Still open on covers: deriving a generated cover from the playlist's *contents* rather than only the palette, so a playlist of one artist picks up that artwork's colors the way the player already does.
 
 **One structural note.** Playlists serialize to SharedPreferences with the full `Song` list embedded in each record, so every add rewrites the whole playlist. That is invisible at forty songs and will not be at four thousand. It does not need solving now, but a playlist feature set that encourages large playlists should not be built without knowing that is the storage underneath.
-
-#### Black and white custom palettes
-
-The custom color palette picker should offer two deliberate monochrome presets: **Black** and **White**. This is related to the earlier pure-black AMOLED request in [#51](https://github.com/Ivorisnoob/Koda/issues/51), but it is a smaller, better-scoped feature: the presets belong inside the existing palette system rather than becoming a separate theme mode.
-
-Both palettes need to flow through the shared theme everywhere it is used — surfaces, text, controls, navigation, dialogs, settings, and player styles — with readable contrast in every state. They should persist like the other palette choices, work signed out, and keep the project's rule that colors live in the theme rather than being hardcoded at call sites.
-
-Tracked in [#179](https://github.com/Ivorisnoob/Koda/issues/179).
 
 #### Respect reduced motion
 
@@ -399,6 +391,9 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+- Preset themes now generate a full HCT color scheme, tinting large surfaces as well as controls. Appearance > Color palette offers Tonal Spot (default), Vibrant, Expressive, Fruit Salad and Monochrome, with live surface previews and settings-search discovery. Wallpaper follows Android unchanged; AMOLED still applies its black ramp last. Black and White already existed and retain their distinct monochrome fills (the stale planned entry for #179 is removed).
+- Music album and playlist pages expose Play all and Shuffle directly beneath the artwork and group Save/Download in a wrapping secondary row. The floating playback menu takes over after the header scrolls away and remains available during search; Radio is also reachable from the page overflow. Existing save/download semantics and editing eligibility are preserved. Artwork-specific page themes, library index scrolling and bulk selection remain follow-up work.
+
 - Audited music playback ownership across suspended work. Fixed stale manual skips and no-op seek cancellation, stale pending indices, missing external-controller occurrence ids, duplicate/rebuilt-row prefetch suppression, recovery after visitor refresh, delayed gain/tempo writes and saved-session resumption over a new queue. The JVM regression cases are in the service test suite; source replacement still preserves the latest position and playback intent, and shared extraction/cache work remains keyed by song.
 
 - The Spotlight "For you" tab is more than a grid of songs. Under the tracks it now carries albums to explore, artists you might like as a rail of circles, and public playlists to try, all built from the same taste profile the song half uses and all through ordinary searches - there is no probed browse id for new music in this codebase and inventing one is writing a request from memory. Each shelf fetches independently, so one refused search costs its own shelf rather than the tab; playlists already saved or made are excluded, the seed artists are excluded from the artist rail, and hidden playlists and blocked artists are filtered as a derived flow so a hide takes effect on the next frame rather than the next refresh.
@@ -468,7 +463,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - In-app video with a personalized feed, chapters, comments, and captions whose size, text color and background can be adjusted while the video remains visible
 - Video scrubbing with chapter-aligned buffering, bounded storyboard previews that stay stable through release, control auto-hide, and rapid video switches, plus disk-backed VOD seeks that reuse fetched video and audio bytes instead of loading them again
 - A restrained video chrome with one scroll-safe Playback settings surface for secondary controls, plus durable Autoplay and Loop behavior that cannot contradict itself
-- Eight player styles and a 27-palette color system with dynamic color and AMOLED
+- Eight player styles and a 28-palette color system with dynamic color and AMOLED
 - Listening statistics with play charts, streaks, and top artists
 - Offline downloads for music and video, written to the system Downloads folder and playable inside Koda without a network connection; music files carry portable title, artist, album, cover art and the best available lyric timing
 - Whole-playlist downloads in both modes, with one background queue, resumable partial batches, per-batch video quality, and honest skips for local music and live video

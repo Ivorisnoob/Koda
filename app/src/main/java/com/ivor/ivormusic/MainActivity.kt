@@ -56,6 +56,7 @@ import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
+import com.ivor.ivormusic.ui.theme.PaletteStyle
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
 import com.ivor.ivormusic.data.PlayerStyle
 import androidx.compose.ui.unit.dp
@@ -164,6 +165,7 @@ class MainActivity : ComponentActivity() {
             val themeMode by themeViewModel.themeMode.collectAsState()
             val amoledTheme by themeViewModel.amoledTheme.collectAsState()
             val colorPalette by themeViewModel.colorPalette.collectAsState()
+            val paletteStyle by themeViewModel.paletteStyle.collectAsState()
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
@@ -232,7 +234,8 @@ class MainActivity : ComponentActivity() {
                 darkTheme = isDarkTheme,
                 colorPalette = colorPalette,
                 amoledDark = amoledTheme,
-                uiScale = uiScale
+                uiScale = uiScale,
+                paletteStyle = paletteStyle
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
@@ -247,6 +250,8 @@ class MainActivity : ComponentActivity() {
                         onAmoledThemeToggle = { themeViewModel.setAmoledTheme(it) },
                         colorPalette = colorPalette,
                         onColorPaletteChange = { themeViewModel.setColorPalette(it) },
+                        paletteStyle = paletteStyle,
+                        onPaletteStyleChange = { themeViewModel.setPaletteStyle(it) },
                         isDarkMode = isDarkTheme, // Derived for compatibility
                         onThemeToggle = { isDark ->
                             themeViewModel.setThemeMode(if (isDark) ThemeMode.DARK else ThemeMode.LIGHT)
@@ -539,6 +544,8 @@ fun MusicApp(
     onAmoledThemeToggle: (Boolean) -> Unit,
     colorPalette: String,
     onColorPaletteChange: (String) -> Unit,
+    paletteStyle: PaletteStyle,
+    onPaletteStyleChange: (PaletteStyle) -> Unit,
     isDarkMode: Boolean,
     onThemeToggle: (Boolean) -> Unit,
     loadLocalSongs: Boolean,
@@ -972,6 +979,7 @@ fun MusicApp(
                     onAmoledThemeToggle = onAmoledThemeToggle,
                     colorPalette = colorPalette,
                     onNavigateToColorPalette = { navController.navigate("color_palette") },
+                    paletteStyle = paletteStyle,
                     onNavigateToSubscriptions = { navController.navigate("subscriptions") },
                     onNavigateToNotInterested = { navController.navigate("not_interested") },
                     onNavigateToBackup = { navController.navigate("backup") },
@@ -1098,6 +1106,9 @@ fun MusicApp(
                 com.ivor.ivormusic.ui.theme.ColorPaletteScreen(
                     currentPalette = colorPalette,
                     onPaletteSelected = onColorPaletteChange,
+                    paletteStyle = paletteStyle,
+                    onPaletteStyleSelected = onPaletteStyleChange,
+                    amoledDark = amoledTheme,
                     isDarkMode = isDarkMode,
                     onBack = { navController.popBackStack() }
                 )

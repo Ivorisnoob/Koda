@@ -29,18 +29,19 @@ internal object KodaWidgetTheme {
         val prefs = ThemePreferences(context)
         val palette = prefs.colorPalette.value
         val amoled = prefs.amoledTheme.value
+        val style = prefs.paletteStyle.value
         return when (prefs.themeMode.value) {
             ThemeMode.LIGHT -> {
-                val scheme = kodaColorScheme(context, false, palette, amoled)
+                val scheme = kodaColorScheme(context, false, palette, amoled, style)
                 ColorProviders(light = scheme, dark = scheme)
             }
             ThemeMode.DARK -> {
-                val scheme = kodaColorScheme(context, true, palette, amoled)
+                val scheme = kodaColorScheme(context, true, palette, amoled, style)
                 ColorProviders(light = scheme, dark = scheme)
             }
             ThemeMode.SYSTEM -> ColorProviders(
-                light = kodaColorScheme(context, false, palette, amoled),
-                dark = kodaColorScheme(context, true, palette, amoled),
+                light = kodaColorScheme(context, false, palette, amoled, style),
+                dark = kodaColorScheme(context, true, palette, amoled, style),
             )
         }
     }
