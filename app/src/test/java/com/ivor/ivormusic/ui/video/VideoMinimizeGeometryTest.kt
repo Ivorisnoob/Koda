@@ -49,17 +49,37 @@ class VideoMinimizeGeometryTest {
         assertEquals(0f, g.pageTop, 0.01f)
         assertEquals(1f, g.scale, 0.001f)
         assertEquals(0f, g.cornerRadius, 0.01f)
+        assertEquals(1f, g.pageReveal, 0.001f)
+    }
+
+    @Test
+    fun `the page stays out of the way until the picture is nearly home`() {
+        // Most of the travel shows the video and nothing else: a shrunken
+        // watch page sliding across the screen reads as a dragged screenshot.
+        listOf(0f, 0.2f, 0.4f, 0.59f).forEach { p ->
+            val g = geometry(p)
+            assertEquals("reveal at " + p, 0f, g.pageReveal, 0.001f)
+            // The clip is exactly the picture, so nothing else can be drawn.
+            assertEquals("width at " + p, g.scale * windowWidth, g.clipWidth, 0.01f)
+            assertEquals("height at " + p, g.scale * videoHeight, g.clipHeight, 0.01f)
+        }
+        // And then it opens, without ever jumping.
+        assertTrue(geometry(0.8f).pageReveal > 0f)
+        assertTrue(geometry(0.8f).clipHeight > geometry(0.8f).scale * videoHeight)
     }
 
     @Test
     fun `fully collapsed puts the video exactly on the thumbnail`() {
         val g = geometry(0f)
 
+        // A 16:9 source fills a 16:9 frame, so the clip - which is the picture
+        // and nothing else at this end - is the thumbnail.
         assertEquals(thumbLeft, g.clipLeft, 0.01f)
         assertEquals(thumbTop, g.clipTop, 0.01f)
         assertEquals(thumbWidth, g.clipWidth, 0.01f)
         assertEquals(thumbHeight, g.clipHeight, 0.01f)
         assertEquals(thumbCorner, g.cornerRadius, 0.01f)
+        assertEquals(0f, g.pageReveal, 0.001f)
 
         // The video box, which starts videoTop down the page, lands on the top
         // left of the thumbnail once the page is scaled and placed.
@@ -85,11 +105,13 @@ class VideoMinimizeGeometryTest {
         assertEquals(thumbHeight, g.scale * sourceHeight, 0.01f)
         assertTrue(g.scale * windowWidth <= thumbWidth + 0.01f)
 
-        // Centred in the bars it leaves.
+        // Centred in the frame, with the bar's own black box showing as the
+        // letterbox to either side rather than this layer painting one.
         val videoLeft = g.clipLeft + g.pageLeft
         val leftBar = videoLeft - thumbLeft
         val rightBar = (thumbLeft + thumbWidth) - (videoLeft + g.scale * windowWidth)
         assertEquals(leftBar, rightBar, 0.01f)
+        assertTrue(leftBar > 0f)
     }
 
     @Test

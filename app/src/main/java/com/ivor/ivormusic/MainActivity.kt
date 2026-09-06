@@ -1378,13 +1378,20 @@ fun MusicApp(
             }
         }
         
+        // This overlay is above the NavHost, so its collapsed bar was drawing
+        // over the full-screen music player, which is inside Home. Both players
+        // surviving a mode switch is deliberate; one of them hovering over the
+        // other's open player is not.
+        val isMusicPlayerExpanded by playerViewModel.isPlayerExpanded.collectAsState()
+
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
             showRelatedVideos = showRelatedVideos,
             onOpenChannel = openChannel,
             hostBottomChrome = videoMiniBottomChrome,
-            hostChromeFollowOffsetPx = videoMiniFollowOffsetPx
+            hostChromeFollowOffsetPx = videoMiniFollowOffsetPx,
+            miniBarHidden = isMusicPlayerExpanded
         )
 
         // Shorts sit above everything, including the video player overlay. The

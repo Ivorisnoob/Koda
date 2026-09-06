@@ -43,6 +43,8 @@ internal fun supportsSharedElementMinimize(
  * @property pageTop where the page's own top edge sits, relative to the clip
  * @property scale uniform scale applied to the page about its top left corner
  * @property cornerRadius corner rounding of the clip window
+ * @property pageReveal how much of the page beyond the video is uncovered: 0
+ *   while the picture is travelling on its own, 1 once the page is fully open
  */
 internal data class VideoMinimizeGeometry(
     val clipLeft: Float,
@@ -53,7 +55,18 @@ internal data class VideoMinimizeGeometry(
     val pageTop: Float,
     val scale: Float,
     val cornerRadius: Float,
+    val pageReveal: Float,
 )
+
+/**
+ * Where in the travel the page around the video starts to appear.
+ *
+ * The video moves alone for the first part of the journey and the watch page
+ * opens out around it near the end, which is the difference between a player
+ * arriving and a whole shrunken screenshot sliding about. Below this the clip
+ * is the picture and nothing else.
+ */
+private const val PAGE_REVEAL_START = 0.6f
 
 /**
  * Resolve the geometry for one frame of the minimize transition.
@@ -61,17 +74,17 @@ internal data class VideoMinimizeGeometry(
  * At [progress] 1 this is the identity: the clip is the whole window, the page
  * sits at the origin unscaled, and the corners are square - pixel for pixel
  * what the expanded player draws when nothing is animating. At 0 the clip is
- * exactly the mini bar's thumbnail and the page is scaled so that its video box
- * fills that thumbnail, with the rest of the page - the title, the related
- * videos - scaled with it and clipped away. So the resting states are not
- * special cases of this function, they are its endpoints, and there is no
+ * the picture alone, landed on the mini bar's frame. So the resting states are
+ * not special cases of this function, they are its endpoints, and there is no
  * second layout that has to be kept in agreement with the first.
  *
- * The clip always contains the video: its edges interpolate to the window while
- * the video's interpolate to the video box, and the video box is inside the
- * window, so the difference at any point is a non-negative multiple of
- * [progress]. That is what lets the page below the video appear as the frame
- * opens rather than being revealed in a separate step.
+ * **The video travels alone and the page opens around it at the end.** Clipping
+ * to the whole interpolated frame instead would send a shrunken watch page
+ * across the screen - title, related videos and all - which is legible as a
+ * screenshot being dragged rather than as a player being put away. So the clip
+ * follows the picture until [PAGE_REVEAL_START] and only then widens to the
+ * window. Every clip edge interpolates away from the video's own edge, so the
+ * clip can never cut into the picture it is carrying, at any progress.
  *
  * **Scale fits rather than fills for a portrait source**, matching what the
  * thumbnail itself does with one: the mini frame is 16:9 and a vertical video
@@ -117,10 +130,19 @@ internal fun videoMinimizeGeometry(
     val videoLeftNow = lerp(thumbLeft + (thumbWidth - collapsedScale * windowWidth) / 2f, 0f, p)
     val videoTopNow = lerp(thumbTop + (thumbHeight - collapsedScale * videoHeight) / 2f, videoTop, p)
 
-    val clipLeft = lerp(thumbLeft, 0f, p)
-    val clipTop = lerp(thumbTop, 0f, p)
-    val clipRight = lerp(thumbLeft + thumbWidth, windowWidth, p)
-    val clipBottom = lerp(thumbTop + thumbHeight, windowHeight, p)
+    val videoWidthNow = scale * windowWidth
+    val videoHeightNow = scale * videoHeight
+
+    // The clip is the picture for most of the travel and opens out to the
+    // window at the end, so the title and the related videos are not a
+    // shrunken page flying alongside the video - they are simply not there
+    // yet. Every edge interpolates away from the video's own, so the clip can
+    // never cut into the picture it is carrying.
+    val reveal = ((p - PAGE_REVEAL_START) / (1f - PAGE_REVEAL_START)).coerceIn(0f, 1f)
+    val clipLeft = lerp(videoLeftNow, 0f, reveal)
+    val clipTop = lerp(videoTopNow, 0f, reveal)
+    val clipRight = lerp(videoLeftNow + videoWidthNow, windowWidth, reveal)
+    val clipBottom = lerp(videoTopNow + videoHeightNow, windowHeight, reveal)
 
     return VideoMinimizeGeometry(
         clipLeft = clipLeft,
@@ -132,7 +154,11 @@ internal fun videoMinimizeGeometry(
         pageLeft = videoLeftNow - clipLeft,
         pageTop = videoTopNow - scale * videoTop - clipTop,
         scale = scale,
-        cornerRadius = lerp(thumbCornerRadius, 0f, p),
+        // Rounded for the whole journey and square only once the page is
+        // open: the thing travelling is a card, and it is going to land in a
+        // rounded frame.
+        cornerRadius = lerp(thumbCornerRadius, 0f, reveal),
+        pageReveal = reveal,
     )
 }
 

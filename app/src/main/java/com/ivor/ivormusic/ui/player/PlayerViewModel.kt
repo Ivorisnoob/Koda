@@ -1412,6 +1412,21 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
     
+    /**
+     * Whether the full-screen music player is open.
+     *
+     * Owned by the screen that hosts it - this only mirrors it - because the
+     * video overlay needs to know and cannot ask: it is drawn above the
+     * NavHost, while the music player lives inside Home, so the two never share
+     * a scope and the video bar was free to draw over an open music player.
+     */
+    private val _isPlayerExpanded = MutableStateFlow(false)
+    val isPlayerExpanded: StateFlow<Boolean> = _isPlayerExpanded.asStateFlow()
+
+    fun setPlayerExpanded(expanded: Boolean) {
+        _isPlayerExpanded.value = expanded
+    }
+
     fun pauseDownload(id: String) = downloadRepository.pauseDownload(id)
     fun resumeDownload(id: String) = downloadRepository.resumeDownload(id)
 

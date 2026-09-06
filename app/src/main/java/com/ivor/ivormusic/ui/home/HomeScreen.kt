@@ -89,6 +89,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -1198,6 +1199,16 @@ fun HomeScreen(
                     }
                 }
             )
+        }
+
+        // Published for the video overlay, which is drawn above the NavHost and
+        // therefore above this player. Cleared on dispose as well as on
+        // collapse: leaving Home while the player is open drops the remembered
+        // flag here, and a stale true would keep the video bar hidden for the
+        // rest of the session.
+        DisposableEffect(showPlayerSheet) {
+            playerViewModel.setPlayerExpanded(showPlayerSheet)
+            onDispose { playerViewModel.setPlayerExpanded(false) }
         }
 
         // Expandable Player (Mini <-> Full Screen)

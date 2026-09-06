@@ -220,7 +220,18 @@ fun VideoPlayerOverlay(
      * drawn above the NavHost - the host is the only layer that can both
      * navigate and drop this player to its mini bar on the way.
      */
-    onOpenChannel: (String) -> Unit = {}
+    onOpenChannel: (String) -> Unit = {},
+    /**
+     * Take the collapsed bar off screen because something owns the whole window
+     * - today, the full-screen music player.
+     *
+     * This overlay is drawn above the NavHost so that a video survives
+     * navigation, which also means nothing inside the NavHost can draw over it;
+     * the music player is inside Home and was being covered by a bar for a
+     * video the user had left behind in the other mode. The expanded video
+     * player is not suppressed: it is the thing owning the window in that case.
+     */
+    miniBarHidden: Boolean = false
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val currentVideo by viewModel.currentVideo.collectAsState()
@@ -317,6 +328,11 @@ fun VideoPlayerOverlay(
         var retainExpanded by remember { mutableStateOf(isExpanded) }
         var hasExpanded by remember { mutableStateOf(isExpanded) }
         val showExpandedSurface = isExpanded || retainExpanded
+
+        // Nothing to draw: the bar is hidden and there is no expanded player
+        // behind it. Returning rather than drawing it transparent also hands
+        // the video surface back, so a bar nobody can see is not decoding.
+        if (miniBarHidden && !showExpandedSurface) return@BoxWithConstraints
 
         // Latched when a collapse begins, because the curtain's own clean-up
         // has to know which transition it is cleaning up after - and by the
@@ -902,13 +918,14 @@ fun VideoPlayerOverlay(
                         shape = RoundedCornerShape(geometry().cornerRadius)
                     }
                     .drawBehind {
-                        // Black at the collapsed end, where it is the frame's
-                        // letterbox; the page's own backdrop at the other, which
-                        // is what stands behind the status bar strip above the
+                        // Follows the page's own reveal rather than the
+                        // travel: while the picture is on its way the clip is
+                        // the picture, and anything drawn behind it is either
+                        // invisible or a letterbox bar, which is black. Once
+                        // the page opens it is the page's backdrop, which is
+                        // what stands behind the status bar strip above the
                         // video.
-                        val progress = (if (isDragging) dragProgress else expandProgress.value)
-                            .coerceIn(0f, 1f)
-                        drawRect(lerp(Color.Black, pageBackdrop, progress))
+                        drawRect(lerp(Color.Black, pageBackdrop, geometry().pageReveal))
                     }
             ) {
                 Box(
