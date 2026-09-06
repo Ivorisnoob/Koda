@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.media.AudioManager
+import android.view.LayoutInflater
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.view.View
@@ -113,6 +114,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -827,6 +829,13 @@ fun PortraitPlayerContent(
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
+    /**
+     * Draw into a TextureView so the minimize transition can scale, clip and
+     * round this box on its way to the mini bar. False for an HDR rendition,
+     * which needs the SurfaceView and takes the curtain transition instead -
+     * see portrait_video_surface.xml.
+     */
+    useTextureSurface: Boolean = true,
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes
@@ -858,26 +867,37 @@ fun PortraitPlayerContent(
         // the surface now answers both directions.
         onEnterFullscreen = onFullscreenToggle
     ) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    disableBuiltInSubtitles()
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            update = { playerView ->
-                playerView.player = exoPlayer
-            },
-            // Hand the surface back before this view is destroyed - the same
-            // ExoPlayer is also rendered by the mini and PiP PlayerViews.
-            onRelease = { playerView -> playerView.player = null },
-            modifier = Modifier.fillMaxSize()
-        )
+        // Keyed on the surface type: it is fixed in PlayerView's constructor,
+        // so changing it has to build a new view rather than update this one.
+        // Only an HDR rendition arriving or leaving flips it, and that already
+        // re-prepares playback.
+        key(useTextureSurface) {
+            AndroidView(
+                factory = { ctx ->
+                    val view = if (useTextureSurface) {
+                        LayoutInflater.from(ctx)
+                            .inflate(R.layout.portrait_video_surface, null) as PlayerView
+                    } else {
+                        PlayerView(ctx).apply { useController = false }
+                    }
+                    view.apply {
+                        player = exoPlayer
+                        disableBuiltInSubtitles()
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                update = { playerView ->
+                    playerView.player = exoPlayer
+                },
+                // Hand the surface back before this view is destroyed - the same
+                // ExoPlayer is also rendered by the mini and PiP PlayerViews.
+                onRelease = { playerView -> playerView.player = null },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         CaptionOverlay(
             cues = captionCues,

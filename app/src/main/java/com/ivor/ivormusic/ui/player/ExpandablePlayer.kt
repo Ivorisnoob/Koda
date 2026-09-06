@@ -117,11 +117,16 @@ fun ExpandablePlayer(
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
     
     // Single animated progress (0f = collapsed, 1f = expanded)
-    // A critically damped spring carries the sheet without bouncing at its bounds.
+    //
+    // Near-critically damped so the sheet never bounces against its bounds,
+    // but stiff enough to arrive: at 180 this settled over roughly twice
+    // Material's own slow spatial spec and read as mush rather than as calm.
+    // 0.95 leaves overshoot far below a pixel, so the coerce below is a
+    // guard rather than something the eye ever sees working.
     //
     // An Animatable rather than animateFloatAsState so a back gesture can
     // scrub it and an interrupted transition continues from its current value.
-    val expandSpec = remember { spring<Float>(dampingRatio = 1f, stiffness = 180f) }
+    val expandSpec = remember { spring<Float>(dampingRatio = 0.95f, stiffness = 350f) }
     val expand = remember { Animatable(if (isExpanded) 1f else 0f) }
     LaunchedEffect(isExpanded) {
         expand.animateTo(if (isExpanded) 1f else 0f, expandSpec)
@@ -188,9 +193,14 @@ fun ExpandablePlayer(
     // Soft floating-pill depth while collapsed, gone once fullscreen
     val pillShadowElevation = lerp(8.dp, 0.dp, expandProgress)
 
-    // Color interpolation - collapsed shows surface, expanded shows transparent
+    // Collapsed shows surface, expanded shows transparent - but not on a
+    // straight ramp. Fading the container in step with the progress made the
+    // growing pill half transparent exactly while the player content inside it
+    // was also half transparent, so mid-expansion you saw Home through both.
+    // The container therefore stays opaque until the content behind it is
+    // solid, and only then hands over.
     val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
-        alpha = 1f - expandProgress
+        alpha = 1f - ((expandProgress - 0.7f) / 0.3f).coerceIn(0f, 1f)
     )
 
     // Swipe Logic for expand/collapse (vertical)
@@ -315,11 +325,16 @@ fun ExpandablePlayer(
 
                 // --- Mini layer: fades out over the first part of the expansion ---
                 if (expandProgress < 0.999f) {
-                    val miniAlpha = (1f - expandProgress / 0.4f).coerceIn(0f, 1f)
+                    val miniAlpha = (1f - expandProgress / 0.28f).coerceIn(0f, 1f)
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
+                            // Measured once at its collapsed width, like the
+                            // full layer below. fillMaxWidth() re-measured the
+                            // bar's artwork, marquee title and progress track
+                            // against new constraints on every frame of the
+                            // expansion, for a layer that is fading out.
+                            .requiredWidth(screenWidth - collapsedWidthPadding * 2)
                             .height(collapsedHeight)
                             .graphicsLayer { alpha = miniAlpha }
                     ) {
@@ -338,7 +353,10 @@ fun ExpandablePlayer(
 
                 // --- Full layer: fixed height, fades in over the latter part ---
                 if (isExpanded || expandProgress > 0.001f) {
-                    val fullAlpha = ((expandProgress - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                    // Solid by the halfway point rather than only at the very
+                    // end, so the second half of the motion is one opaque
+                    // screen growing instead of a washed-out one.
+                    val fullAlpha = ((expandProgress - 0.12f) / 0.38f).coerceIn(0f, 1f)
                     // Optionally re-theme the expanded player's accent roles
                     // from the album cover; every style's buttons read
                     // MaterialTheme.colorScheme, so one wrapper covers them
@@ -360,10 +378,11 @@ fun ExpandablePlayer(
                             // height() alone is still clamped to the pill every frame.
                             .wrapContentSize(Alignment.TopCenter, unbounded = true)
                             .requiredSize(screenWidth, expandedHeight)
-                            .graphicsLayer {
-                                alpha = fullAlpha
-                                translationY = (1f - expandProgress) * 24.dp.toPx()
-                            }
+                            // Alpha only. The content is already rising with
+                            // the container's top edge, so a second 24dp lift
+                            // of its own put two different speeds on one
+                            // object and read as a slip.
+                            .graphicsLayer { alpha = fullAlpha }
                     ) {
                         // The live player blurs beneath the style wheel.
                         val wheelBlur by animateDpAsState(

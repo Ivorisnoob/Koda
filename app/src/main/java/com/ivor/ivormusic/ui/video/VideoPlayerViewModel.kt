@@ -461,6 +461,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _videoSurfaceBounds.value = bounds
     }
 
+    /**
+     * The portrait watch page's video box, for the minimize transition to
+     * interpolate from.
+     *
+     * Deliberately a layout size and an inset rather than the window rectangle
+     * [videoSurfaceBounds] already carries: that one is measured with
+     * `boundsInWindow`, which includes the transform the transition itself is
+     * applying, so driving the animation from it would feed the animation its
+     * own output. A layout size is unaffected by a graphicsLayer.
+     *
+     * Null whenever the inline box is not the layout on screen - fullscreen and
+     * the full-bleed vertical live player both publish nothing - which is also
+     * how the overlay knows the shared-element transition has somewhere to go.
+     */
+    private val _inlineVideoBox = MutableStateFlow<InlineVideoBox?>(null)
+    val inlineVideoBox: StateFlow<InlineVideoBox?> = _inlineVideoBox.asStateFlow()
+
+    fun setInlineVideoBox(box: InlineVideoBox?) {
+        _inlineVideoBox.value = box
+    }
+
     fun setMiniVideoSurfaceBounds(bounds: android.graphics.Rect?) {
         _miniVideoSurfaceBounds.value = bounds
     }

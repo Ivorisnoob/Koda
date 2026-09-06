@@ -401,7 +401,7 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 - Optional Compact video home in Settings, Content and feeds, shows smaller thumbnails beside titles and channels, including offline Home downloads (#266, Home scope). It preserves the same feed, scroll state, video taps, channel destinations and long-press actions; other lists retain their existing layout.
 
-- Mini-player opening and closing use a softer spring without endpoint bounce. Music keeps the full player measured at its final size in both axes; video retains its stationary surface until the closing curtain finishes, then brings in the mini bar.
+- Minimizing and reopening a video moves the video. The picture travels between the watch page and the mini bar's frame, following the finger the whole way down and growing back out of the bar on the way up, instead of a curtain wiping the screen while the video stayed where it was. The portrait player draws into a TextureView so it can be scaled, rounded and clipped on the way; HDR renditions and the full-bleed vertical live player keep their SurfaceView and the previous curtain. Both players' settle springs were also too slack to arrive - roughly twice Material's own slow spatial spec - and the music player was see-through at half-open because its container and its content were fading past each other.
 
 - Live video controls show a negative time from the newest seekable media beside LIVE, including fullscreen and vertical broadcasts (#268). A fixed ten-second edge tolerance replaces the percentage of the DVR window; unknown windows omit the timestamp.
 

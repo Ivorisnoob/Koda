@@ -53,7 +53,9 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
@@ -295,6 +297,11 @@ fun VideoPlayerContent(
      * live player makes about 4:5 and 1:1 not being "vertical" in the Shorts
      * sense is inherited for free: those get a 4:5 or 1:1 box and no crop.
      */
+    // The page holds the video below the status bar, so this is the video
+    // box's top edge in window coordinates - the other half of what the
+    // minimize transition needs, and cheaper than measuring for it.
+    val statusBarInsetPx = WindowInsets.systemBars.getTop(LocalDensity.current)
+
     val targetVideoBoxAspect = run {
         val source = videoAspectRatio?.takeIf { it.isFinite() && it > 0f }
         if (source == null || source >= 1f) {
@@ -889,6 +896,13 @@ fun VideoPlayerContent(
             }
         } else {
             // Portrait Layout
+            //
+            // Published only from here. Fullscreen and the full-bleed vertical
+            // live player have no inline box, and a stale one would aim the
+            // minimize transition at a rectangle that is not on screen.
+            DisposableEffect(Unit) {
+                onDispose { viewModel.setInlineVideoBox(null) }
+            }
              Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -909,6 +923,16 @@ fun VideoPlayerContent(
                         // videoBoxAspect above for why, and why only upward.
                         .aspectRatio(videoBoxAspect.coerceAtLeast(0.1f))
                         .background(Color.Black)
+                        // The minimize transition interpolates from this box to
+                        // the mini bar's thumbnail, and needs it as a layout
+                        // measurement rather than a window rectangle - see
+                        // VideoPlayerViewModel.inlineVideoBox for why the two
+                        // cannot be the same reading.
+                        .onSizeChanged { size ->
+                            viewModel.setInlineVideoBox(
+                                InlineVideoBox(topPx = statusBarInsetPx, heightPx = size.height)
+                            )
+                        }
                         // Reported so PictureInPictureParams can animate the
                         // window out of the video rect instead of the whole
                         // screen. Window coordinates are what the system wants.
@@ -926,6 +950,9 @@ fun VideoPlayerContent(
                 ) {
                     PortraitPlayerContent(
                         exoPlayer = exoPlayer,
+                        // An HDR rendition needs the SurfaceView, and gives up
+                        // the shared-element minimize for it.
+                        useTextureSurface = supportsSharedElementMinimize(currentQuality),
                         videoId = currentVideo.videoId,
                         showControls = showControls,
                         onToggleControls = { showControls = !showControls },
@@ -974,7 +1001,15 @@ fun VideoPlayerContent(
                         isLive = isLive,
                         onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                         minimizeDragEnabled = true,
-                        onMinimizeDragDelta = onMinimizeDragDelta,
+                        onMinimizeDragDelta = { delta ->
+                            // The chrome shrinks with the page now, and a
+                            // seek bar rendered at thumbnail size is noise
+                            // rather than a control. Dropping it as the
+                            // gesture starts leaves the picture travelling on
+                            // its own, which is the whole point of the move.
+                            if (showControls) showControls = false
+                            onMinimizeDragDelta(delta)
+                        },
                         onMinimizeDragRelease = onMinimizeDragRelease,
                         onRetry = { viewModel.retryPlayback() }
                     )
