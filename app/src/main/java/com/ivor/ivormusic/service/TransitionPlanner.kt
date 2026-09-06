@@ -59,6 +59,14 @@ object TransitionPlanner {
         preserveAbruptEnding: Boolean = false,
         preserveAlbumSequence: Boolean = false,
         incomingDurationMs: Long = incoming?.durationMs ?: 0L,
+        /**
+         * The user's playback rate. Tempo matching is unaffected by it - both
+         * tracks are sped by the same factor, so their ratio is what it always
+         * was - but [incomingCue] converts a distance on the source timeline
+         * into a wall-clock delay, and that conversion is wrong by this factor
+         * if it assumes the recorded speed.
+         */
+        baseSpeed: Float = 1f,
     ): TransitionPlan {
         val fallback = fallbackOverlapMs.coerceIn(MIN_OVERLAP_MS, MAX_OVERLAP_MS)
         var maximum = maximumOverlapMs.coerceIn(fallback, MAX_OVERLAP_MS)
@@ -96,7 +104,12 @@ object TransitionPlanner {
             // natural fade stays at one second and a key clash stays at three.
             val ruleMaximum = minOf(maximum, harmonicallySafe)
             val canProcess = tempo.compatible && harmonicallySafe > NATURAL_FADE_OVERLAP_MS
-            val cue = incomingCue(incoming, silenceStart, if (canProcess) tempo.speed else 1f, alignBars)
+            val cue = incomingCue(
+                incoming,
+                silenceStart,
+                baseSpeed.coerceAtLeast(0.01f) * if (canProcess) tempo.speed else 1f,
+                alignBars,
+            )
             val beatAligned = if (canProcess) alignOutgoingBoundary(
                 requestedLeadMs = harmonicallySafe,
                 maximumLeadMs = ruleMaximum,

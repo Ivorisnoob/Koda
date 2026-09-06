@@ -181,6 +181,12 @@
     <string name="song_options_not_interested_subtitle">Stop recommending this song</string>
     <string name="song_options_block_artist">Don\'t recommend %1$s</string>
 
+    <!-- Playback speed control in the now-playing overflow sheet -->
+    <string name="song_options_speed">Playback speed</string>
+    <string name="song_options_speed_value">%1$d%%</string>
+    <string name="song_options_speed_normal">Normal speed</string>
+    <string name="cd_speed_reset">Reset to normal speed</string>
+
     <!-- Add to playlist sheet -->
     <string name="add_to_playlist_title">Add to Playlist</string>
     <string name="new_playlist_label">New Playlist</string>

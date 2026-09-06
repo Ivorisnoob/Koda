@@ -297,11 +297,30 @@ class MusicService : MediaLibraryService() {
         const val CMD_SKIP_TO_INDEX = "com.ivor.ivormusic.SKIP_TO_INDEX"
         const val CMD_RESTORE_PLAYBACK = "com.ivor.ivormusic.RESTORE_PLAYBACK"
         const val ARG_SKIP_INDEX = "skip_index"
+
+        /**
+         * Set the music playback rate. Carries [ARG_PLAYBACK_SPEED], and
+         * [ARG_PLAYBACK_SPEED_PERSIST] to say whether this value should
+         * outlive the session - a slider sends the live value continuously
+         * while it is being dragged and persists once, on release.
+         *
+         * A custom command rather than the player's own COMMAND_SET_SPEED_AND
+         * _PITCH because the rate belongs to both engines and to the crossfade
+         * plan, not to whichever ExoPlayer the session happens to point at:
+         * written straight onto the active player it would be undone by the
+         * next transition, which resets tempo on both.
+         */
+        const val CMD_SET_PLAYBACK_SPEED = "com.ivor.ivormusic.SET_PLAYBACK_SPEED"
+        const val ARG_PLAYBACK_SPEED = "playback_speed"
+        const val ARG_PLAYBACK_SPEED_PERSIST = "playback_speed_persist"
         const val EXTRA_SONG_SOURCE = "com.ivor.ivormusic.SONG_SOURCE"
 
         /** Session-extras keys the timer state is published under. */
         const val EXTRA_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
         const val EXTRA_SLEEP_TIMER_END_OF_TRACK = "sleep_timer_end_of_track"
+
+        /** Session-extras key the current playback rate is published under. */
+        const val EXTRA_PLAYBACK_SPEED = "playback_speed"
 
         /**
          * How long the fade before the timer's pause takes. Long enough to read
@@ -653,6 +672,7 @@ class MusicService : MediaLibraryService() {
     }
 
     private fun restorePlaybackModes() {
+        applyPlaybackSpeed(themePreferences.getPlaybackSpeed(), persist = false)
         playbackShuffleEnabled = themePreferences.isPlaybackShuffleEnabled()
         playbackRepeatMode = themePreferences.getPlaybackRepeatMode()
         playbackShuffleSeed = themePreferences.getPlaybackShuffleSeed().takeIf { it != 0L }
@@ -1470,6 +1490,7 @@ class MusicService : MediaLibraryService() {
                     .add(SessionCommand(CMD_SKIP_PREVIOUS, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SKIP_TO_INDEX, Bundle.EMPTY))
                     .add(SessionCommand(CMD_RESTORE_PLAYBACK, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SET_PLAYBACK_SPEED, Bundle.EMPTY))
                     .build()
 
             return MediaSession.ConnectionResult.accept(
@@ -1485,7 +1506,7 @@ class MusicService : MediaLibraryService() {
          */
         override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
             super.onPostConnect(session, controller)
-            publishSleepTimerState()
+            publishSessionState()
         }
 
         /**
@@ -1543,6 +1564,13 @@ class MusicService : MediaLibraryService() {
             }
             CMD_SKIP_TO_INDEX -> {
                 requestManualTransition(args.getInt(ARG_SKIP_INDEX, C.INDEX_UNSET))
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_SET_PLAYBACK_SPEED -> {
+                applyPlaybackSpeed(
+                    args.getFloat(ARG_PLAYBACK_SPEED, ThemePreferences.DEFAULT_PLAYBACK_SPEED),
+                    persist = args.getBoolean(ARG_PLAYBACK_SPEED_PERSIST, true),
+                )
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
             CMD_RESTORE_PLAYBACK -> serviceScope.future {
@@ -2165,6 +2193,14 @@ class MusicService : MediaLibraryService() {
     private var sleepTimerEndOfTrack: Boolean = false
 
     /**
+     * The rate music plays at, 1f being the recorded speed. Held here rather
+     * than read back off a player because the crossfade engine rewrites tempo
+     * on both of its players throughout a transition, so no single player's
+     * value is the user's choice at an arbitrary moment.
+     */
+    private var playbackSpeed: Float = ThemePreferences.DEFAULT_PLAYBACK_SPEED
+
+    /**
      * Arm the sleep timer. [minutes] of 0 or less means "at the end of the
      * current track" instead of a duration.
      */
@@ -2183,7 +2219,7 @@ class MusicService : MediaLibraryService() {
             val durationMs = minutes * 60_000L
             armDurationSleepTimer(System.currentTimeMillis() + durationMs)
         }
-        publishSleepTimerState()
+        publishSessionState()
     }
 
     private fun armDurationSleepTimer(endsAt: Long) {
@@ -2249,21 +2285,46 @@ class MusicService : MediaLibraryService() {
         // crossfade and must not carry an old end-of-track instruction.
         engine.setPauseAtEndOfMediaItems(false)
         themePreferences.clearSleepTimer()
-        if (publish) publishSleepTimerState()
+        if (publish) publishSessionState()
     }
 
     /**
-     * Push the timer state to every connected controller. Session extras are
-     * the right channel: they survive the UI being destroyed and rebuilt, so a
-     * player reopened ten minutes later still shows the running countdown.
+     * Apply the user's playback rate to both engines.
+     *
+     * @param persist false while a slider is still under the finger. The rate
+     *   is applied either way - it is judged by ear, so it has to be audible
+     *   as it moves - and written once when the gesture ends, rather than
+     *   forty times on the way there.
      */
-    private fun publishSleepTimerState() {
+    private fun applyPlaybackSpeed(speed: Float, persist: Boolean) {
+        val bounded = speed.coerceIn(
+            ThemePreferences.MIN_PLAYBACK_SPEED,
+            ThemePreferences.MAX_PLAYBACK_SPEED,
+        )
+        playbackSpeed = bounded
+        if (::engine.isInitialized) engine.setBaseSpeed(bounded)
+        if (persist) themePreferences.setPlaybackSpeed(bounded)
+        publishSessionState()
+    }
+
+    /**
+     * Push the service's own state to every connected controller. Session
+     * extras are the right channel: they survive the UI being destroyed and
+     * rebuilt, so a player reopened ten minutes later still shows the running
+     * countdown and the rate it is playing at.
+     *
+     * One bundle for all of it, because [MediaSession.setSessionExtras]
+     * replaces what is there rather than merging into it - a second publisher
+     * with its own bundle would silently blank the first one's keys.
+     */
+    private fun publishSessionState() {
         val session = mediaLibrarySession ?: return
         runCatching {
             session.setSessionExtras(
                 Bundle().apply {
                     putLong(EXTRA_SLEEP_TIMER_ENDS_AT, sleepTimerEndsAt)
                     putBoolean(EXTRA_SLEEP_TIMER_END_OF_TRACK, sleepTimerEndOfTrack)
+                    putFloat(EXTRA_PLAYBACK_SPEED, playbackSpeed)
                 }
             )
         }
@@ -2525,6 +2586,7 @@ class MusicService : MediaLibraryService() {
                                     album == nextItem.mediaMetadata.albumTitle
                                         ?.toString()?.takeIf { it.isNotBlank() }
                                 } == true,
+                        baseSpeed = playbackSpeed,
                     )
                 } else {
                     TransitionPlan(

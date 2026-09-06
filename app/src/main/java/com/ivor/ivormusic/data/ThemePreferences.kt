@@ -639,8 +639,25 @@ class ThemePreferences(context: Context) {
         private const val KEY_PLAYBACK_SHUFFLE = "playback_shuffle"
         private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
         private const val KEY_PLAYBACK_SHUFFLE_SEED = "playback_shuffle_seed"
+        private const val KEY_PLAYBACK_SPEED = "playback_speed"
         private const val KEY_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
         private const val KEY_SLEEP_TIMER_END_OF_TRACK = "sleep_timer_end_of_track"
+
+        /**
+         * Playback speed bounds for music, as a rate where 1f is the recorded
+         * speed. The floor is Media3's, not a taste call: DefaultAudioSink
+         * constrains PlaybackParameters to 0.1f..8f, so a smaller rate is
+         * clamped by the sink while the player keeps reporting the value it
+         * was given - the audio would run at 10% while the position clock
+         * extrapolated at 5%, drifting the seek bar away from what is
+         * audible. [verified September 2026 against media3 1.11.0 bytecode:
+         * DefaultAudioSink.MIN_PLAYBACK_SPEED = 0.1f, applied through
+         * Util.constrainValue in setPlaybackParameters.]
+         */
+        const val MIN_PLAYBACK_SPEED = 0.1f
+        const val MAX_PLAYBACK_SPEED = 2f
+        const val DEFAULT_PLAYBACK_SPEED = 1f
+
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
@@ -1673,6 +1690,25 @@ class ThemePreferences(context: Context) {
 
     fun setPlaybackRepeatMode(mode: Int) {
         prefs.edit().putInt(KEY_PLAYBACK_REPEAT_MODE, mode).apply()
+    }
+
+    /**
+     * The music playback rate, shared by both crossfade engines. Read fresh by
+     * MusicService rather than collected: it is written from the player's
+     * overflow sheet through the UI's own ThemePreferences instance, and the
+     * service applies the live value from the session command that carries it.
+     */
+    fun getPlaybackSpeed(): Float =
+        prefs.getFloat(KEY_PLAYBACK_SPEED, DEFAULT_PLAYBACK_SPEED)
+            .coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
+
+    fun setPlaybackSpeed(speed: Float) {
+        prefs.edit()
+            .putFloat(
+                KEY_PLAYBACK_SPEED,
+                speed.coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
+            )
+            .apply()
     }
 
     fun getPlaybackShuffleSeed(): Long = prefs.getLong(KEY_PLAYBACK_SHUFFLE_SEED, 0L)
