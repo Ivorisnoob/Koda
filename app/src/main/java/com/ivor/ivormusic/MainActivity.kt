@@ -667,15 +667,38 @@ fun MusicApp(
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
 
-    // Changing content modes is a clean hand-off: no player from the previous
-    // mode should remain visible or continue playing after the switch. Route
-    // every mode toggle through the same close actions used by the players'
-    // own dismiss buttons, while ignoring callbacks that repeat the current
-    // value (including preference restoration during composition).
+    // Changing content modes pauses what was playing; it does not dismantle
+    // it. This used to route the toggle through the players' own dismiss
+    // actions, and those are deliberately destructive - `clearPlayer` stops
+    // the controller, empties the queue and erases both the last-played song
+    // and the saved session, while `closePlayer` clears the video resume
+    // snapshot because an explicit close means "I am done with this video".
+    // A mode switch means neither of those things: someone flicking over to
+    // look at videos has not finished with the album they were halfway
+    // through, and coming back to a Home with no mini player and no way to
+    // recover the queue is the app throwing away work the user did not ask it
+    // to throw away.
+    //
+    // Both mini players surviving at once is the case the layout was already
+    // built for - `videoMiniBottomChrome` stacks the video bar above the music
+    // pill, and `bottomOverlayInset` reserves 196dp for the pair - it simply
+    // could not be reached through this toggle while the switch was closing
+    // one of them. Video collapses through `setExpanded(false)` rather than by
+    // writing the flag, because that is the path that swaps an HDR rendition
+    // for its SDR twin: the mini player is a TextureView and cannot present
+    // HDR.
+    //
+    // Shorts is the one thing still closed outright. It has no minimised form
+    // to park in - a swipe feed has no mini bar - so there is nowhere for it
+    // to persist to.
+    //
+    // Callbacks repeating the current value are ignored, including preference
+    // restoration during composition.
     val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
         if (nextVideoMode != videoMode) {
-            playerViewModel.clearPlayer()
-            videoPlayerViewModel.closePlayer()
+            playerViewModel.pause()
+            videoPlayerViewModel.setExpanded(false)
+            videoPlayerViewModel.pause()
             shortsPlayerViewModel.close()
             onVideoModeToggle(nextVideoMode)
         }
