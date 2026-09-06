@@ -180,6 +180,7 @@ class MainActivity : ComponentActivity() {
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val showRecentSearches by themeViewModel.showRecentSearches.collectAsState()
             val showRelatedVideos by themeViewModel.showRelatedVideos.collectAsState()
+            val compactVideoHome by themeViewModel.compactVideoHome.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
@@ -210,6 +211,9 @@ class MainActivity : ComponentActivity() {
             val localOnlyMode by themeViewModel.localOnlyMode.collectAsState()
             
             val cacheEnabled by themeViewModel.cacheEnabled.collectAsState()
+            val videoCacheEnabled by themeViewModel.videoCacheEnabled.collectAsState()
+            val shortsCacheEnabled by themeViewModel.shortsCacheEnabled.collectAsState()
+            val playbackPreloadEnabled by themeViewModel.playbackPreloadEnabled.collectAsState()
             val maxCacheSizeMb by themeViewModel.maxCacheSizeMb.collectAsState()
             val currentCacheSize by themeViewModel.currentCacheSizeBytes.collectAsState()
             val autoLoadQueue by themeViewModel.autoLoadQueue.collectAsState()
@@ -317,6 +321,8 @@ class MainActivity : ComponentActivity() {
                         onShowRecentSearchesToggle = { themeViewModel.setShowRecentSearches(it) },
                         showRelatedVideos = showRelatedVideos,
                         onShowRelatedVideosToggle = { themeViewModel.setShowRelatedVideos(it) },
+                        compactVideoHome = compactVideoHome,
+                        onCompactVideoHomeToggle = { themeViewModel.setCompactVideoHome(it) },
                         shortsEnabled = shortsEnabled,
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
                         shortsHiddenActions = shortsHiddenActions,
@@ -350,10 +356,26 @@ class MainActivity : ComponentActivity() {
                         },
                         cacheEnabled = cacheEnabled,
                         onCacheEnabledToggle = { themeViewModel.setCacheEnabled(it) },
+                        videoCacheEnabled = videoCacheEnabled,
+                        onVideoCacheEnabledToggle = { themeViewModel.setVideoCacheEnabled(it) },
+                        shortsCacheEnabled = shortsCacheEnabled,
+                        onShortsCacheEnabledToggle = { themeViewModel.setShortsCacheEnabled(it) },
+                        playbackPreloadEnabled = playbackPreloadEnabled,
+                        onPlaybackPreloadEnabledToggle = { themeViewModel.setPlaybackPreloadEnabled(it) },
                         maxCacheSizeMb = maxCacheSizeMb,
                         onMaxCacheSizeMbChange = { themeViewModel.setMaxCacheSizeMb(it) },
                         currentCacheSize = currentCacheSize,
                         onClearCacheClick = { themeViewModel.clearCacheAction() },
+                        onClearVideoCacheClick = {
+                            lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                com.ivor.ivormusic.data.CacheManager.clearVideoCache(shorts = false)
+                            }
+                        },
+                        onClearShortsCacheClick = {
+                            lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                com.ivor.ivormusic.data.CacheManager.clearVideoCache(shorts = true)
+                            }
+                        },
                         autoLoadQueue = autoLoadQueue,
                         onAutoLoadQueueToggle = { themeViewModel.setAutoLoadQueue(it) },
                         crossfadeEnabled = crossfadeEnabled,
@@ -598,6 +620,8 @@ fun MusicApp(
     onShowRecentSearchesToggle: (Boolean) -> Unit,
     showRelatedVideos: Boolean,
     onShowRelatedVideosToggle: (Boolean) -> Unit,
+    compactVideoHome: Boolean,
+    onCompactVideoHomeToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
@@ -623,10 +647,18 @@ fun MusicApp(
     onRemoveExcludedFolder: (String) -> Unit,
     cacheEnabled: Boolean,
     onCacheEnabledToggle: (Boolean) -> Unit,
+    videoCacheEnabled: Boolean,
+    onVideoCacheEnabledToggle: (Boolean) -> Unit,
+    shortsCacheEnabled: Boolean,
+    onShortsCacheEnabledToggle: (Boolean) -> Unit,
+    playbackPreloadEnabled: Boolean,
+    onPlaybackPreloadEnabledToggle: (Boolean) -> Unit,
     maxCacheSizeMb: Long,
     onMaxCacheSizeMbChange: (Long) -> Unit,
     currentCacheSize: Long,
     onClearCacheClick: () -> Unit,
+    onClearVideoCacheClick: () -> Unit,
+    onClearShortsCacheClick: () -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     crossfadeEnabled: Boolean,
@@ -667,15 +699,38 @@ fun MusicApp(
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
 
-    // Changing content modes is a clean hand-off: no player from the previous
-    // mode should remain visible or continue playing after the switch. Route
-    // every mode toggle through the same close actions used by the players'
-    // own dismiss buttons, while ignoring callbacks that repeat the current
-    // value (including preference restoration during composition).
+    // Changing content modes pauses what was playing; it does not dismantle
+    // it. This used to route the toggle through the players' own dismiss
+    // actions, and those are deliberately destructive - `clearPlayer` stops
+    // the controller, empties the queue and erases both the last-played song
+    // and the saved session, while `closePlayer` clears the video resume
+    // snapshot because an explicit close means "I am done with this video".
+    // A mode switch means neither of those things: someone flicking over to
+    // look at videos has not finished with the album they were halfway
+    // through, and coming back to a Home with no mini player and no way to
+    // recover the queue is the app throwing away work the user did not ask it
+    // to throw away.
+    //
+    // Both mini players surviving at once is the case the layout was already
+    // built for - `videoMiniBottomChrome` stacks the video bar above the music
+    // pill, and `bottomOverlayInset` reserves 196dp for the pair - it simply
+    // could not be reached through this toggle while the switch was closing
+    // one of them. Video collapses through `setExpanded(false)` rather than by
+    // writing the flag, because that is the path that swaps an HDR rendition
+    // for its SDR twin: the mini player is a TextureView and cannot present
+    // HDR.
+    //
+    // Shorts is the one thing still closed outright. It has no minimised form
+    // to park in - a swipe feed has no mini bar - so there is nowhere for it
+    // to persist to.
+    //
+    // Callbacks repeating the current value are ignored, including preference
+    // restoration during composition.
     val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
         if (nextVideoMode != videoMode) {
-            playerViewModel.clearPlayer()
-            videoPlayerViewModel.closePlayer()
+            playerViewModel.pause()
+            videoPlayerViewModel.setExpanded(false)
+            videoPlayerViewModel.pause()
             shortsPlayerViewModel.close()
             onVideoModeToggle(nextVideoMode)
         }
@@ -916,6 +971,7 @@ fun MusicApp(
 
             composable("home") {
                 HomeScreen(
+                    compactVideoHome = compactVideoHome,
                     onSongClick = { song ->
                         playerViewModel.playSong(song)
                     },
@@ -1022,6 +1078,8 @@ fun MusicApp(
                     onShowRecentSearchesToggle = onShowRecentSearchesToggle,
                     showRelatedVideos = showRelatedVideos,
                     onShowRelatedVideosToggle = onShowRelatedVideosToggle,
+                    compactVideoHome = compactVideoHome,
+                    onCompactVideoHomeToggle = onCompactVideoHomeToggle,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
                     shortsHiddenActions = shortsHiddenActions,
@@ -1052,10 +1110,18 @@ fun MusicApp(
                     onBackClick = { navController.popBackStack() },
                     cacheEnabled = cacheEnabled,
                     onCacheEnabledToggle = onCacheEnabledToggle,
+                    videoCacheEnabled = videoCacheEnabled,
+                    onVideoCacheEnabledToggle = onVideoCacheEnabledToggle,
+                    shortsCacheEnabled = shortsCacheEnabled,
+                    onShortsCacheEnabledToggle = onShortsCacheEnabledToggle,
+                    playbackPreloadEnabled = playbackPreloadEnabled,
+                    onPlaybackPreloadEnabledToggle = onPlaybackPreloadEnabledToggle,
                     maxCacheSizeMb = maxCacheSizeMb,
                     onMaxCacheSizeMbChange = onMaxCacheSizeMbChange,
                     currentCacheSize = currentCacheSize,
                     onClearCacheClick = onClearCacheClick,
+                    onClearVideoCacheClick = onClearVideoCacheClick,
+                    onClearShortsCacheClick = onClearShortsCacheClick,
                     autoLoadQueue = autoLoadQueue,
                     onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     crossfadeEnabled = crossfadeEnabled,
@@ -1211,6 +1277,9 @@ fun MusicApp(
                     downloadedSongs = downloadedSongs,
                     downloadedVideos = downloadedVideos,
                     activeDownloads = downloadProgress,
+                    onPauseDownload = playerViewModel::pauseDownload,
+                    onResumeDownload = playerViewModel::resumeDownload,
+                    initiallyShowVideos = videoMode,
                     onBack = { navController.popBackStack() },
                     onPlaySong = { song ->
                         playerViewModel.playSong(song)
@@ -1309,13 +1378,20 @@ fun MusicApp(
             }
         }
         
+        // This overlay is above the NavHost, so its collapsed bar was drawing
+        // over the full-screen music player, which is inside Home. Both players
+        // surviving a mode switch is deliberate; one of them hovering over the
+        // other's open player is not.
+        val isMusicPlayerExpanded by playerViewModel.isPlayerExpanded.collectAsState()
+
         com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
             showRelatedVideos = showRelatedVideos,
             onOpenChannel = openChannel,
             hostBottomChrome = videoMiniBottomChrome,
-            hostChromeFollowOffsetPx = videoMiniFollowOffsetPx
+            hostChromeFollowOffsetPx = videoMiniFollowOffsetPx,
+            miniBarHidden = isMusicPlayerExpanded
         )
 
         // Shorts sit above everything, including the video player overlay. The

@@ -60,10 +60,14 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     // Cache & Crossfade
     val cacheEnabled: StateFlow<Boolean> = themePreferences.cacheEnabled
+    val videoCacheEnabled: StateFlow<Boolean> = themePreferences.videoCacheEnabled
+    val shortsCacheEnabled: StateFlow<Boolean> = themePreferences.shortsCacheEnabled
+    val playbackPreloadEnabled: StateFlow<Boolean> = themePreferences.playbackPreloadEnabled
     val maxCacheSizeMb: StateFlow<Long> = themePreferences.maxCacheSizeMb
 
     val showRecentSearches: StateFlow<Boolean> = themePreferences.showRecentSearches
     val showRelatedVideos: StateFlow<Boolean> = themePreferences.showRelatedVideos
+    val compactVideoHome: StateFlow<Boolean> = themePreferences.compactVideoHome
     val crossfadeEnabled: StateFlow<Boolean> = themePreferences.crossfadeEnabled
     val crossfadeAuto: StateFlow<Boolean> = themePreferences.crossfadeAuto
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
@@ -266,6 +270,18 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     // --- Cache Settings ---
+    fun setVideoCacheEnabled(enabled: Boolean) {
+        themePreferences.setVideoCacheEnabled(enabled)
+    }
+
+    fun setShortsCacheEnabled(enabled: Boolean) {
+        themePreferences.setShortsCacheEnabled(enabled)
+    }
+
+    fun setPlaybackPreloadEnabled(enabled: Boolean) {
+        themePreferences.setPlaybackPreloadEnabled(enabled)
+    }
+
     fun setCacheEnabled(enabled: Boolean) {
         themePreferences.setCacheEnabled(enabled)
     }
@@ -280,6 +296,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setShowRecentSearches(show: Boolean) = themePreferences.setShowRecentSearches(show)
 
     fun setShowRelatedVideos(show: Boolean) = themePreferences.setShowRelatedVideos(show)
+    fun setCompactVideoHome(enabled: Boolean) = themePreferences.setCompactVideoHome(enabled)
 
     
     fun clearCacheAction() {

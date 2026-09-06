@@ -84,3 +84,9 @@ internal fun opaquePlaybackCacheKey(uri: String): String =
 /** Keys that belong in the shared byte cache but are not song ids. */
 internal fun isNonMusicPlaybackCacheKey(key: String): Boolean =
     isVideoPlaybackCacheKey(key) || key.startsWith(OPAQUE_PLAYBACK_CACHE_PREFIX)
+
+/** Shorts and watch playback can be cleared independently, even for the same URL. */
+internal fun playbackCacheCategoryKey(key: String, shorts: Boolean): String =
+    if (shorts) "shorts:$key" else key
+
+internal fun isShortsCacheKey(key: String): Boolean = key.startsWith("shorts:")

@@ -572,7 +572,7 @@ fun VerticalLivePlayerContent(
                                 onTonalSurface = true
                             )
                             LiveEdgeChip(
-                                atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
+                                behindLiveMs = liveWindowOffsetMs(duration, (progress.toDouble() * duration).toLong()),
                                 onClick = onSeekToLive,
                                 contentTint = MaterialTheme.colorScheme.onSurfaceVariant
                             )

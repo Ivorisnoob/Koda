@@ -14,8 +14,11 @@
 
   A TextureView draws in-window like any other view, so it clips, rounds and
   animates with the card. It costs an extra copy per frame, which is nothing for
-  a preview this size. The full-screen player deliberately keeps its SurfaceView,
-  where the bounds match the window and the compositor path is the cheaper one.
+  a preview this size. The portrait watch page followed for the same reason once
+  the minimize transition began carrying the picture between the two - see
+  portrait_video_surface.xml. Fullscreen, and an HDR rendition anywhere, keep
+  their SurfaceView, where nothing has to be clipped or moved and the compositor
+  path is the cheaper one.
 -->
 <androidx.media3.ui.PlayerView
     xmlns:android="http://schemas.android.com/apk/res/android"

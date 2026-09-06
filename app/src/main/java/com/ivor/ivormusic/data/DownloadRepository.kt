@@ -35,7 +35,8 @@ enum class DownloadStatus {
     DOWNLOADING,
     DOWNLOADED,
     FAILED,
-    LOCAL_ORIGINAL
+    LOCAL_ORIGINAL,
+    PAUSED
 }
 
 /**
@@ -196,6 +197,8 @@ class DownloadRepository private constructor(private val context: Context) {
     // downloads run on Dispatchers.IO while cancellation arrives from the main
     // thread; a plain LinkedHashMap here was a data race.
     private val activeDownloadCalls = java.util.concurrent.ConcurrentHashMap<String, okhttp3.Call>()
+    private val pausedRequests = java.util.concurrent.ConcurrentHashMap<String, DownloadRequest>()
+    private val checkpoints = DownloadCheckpoints(File(context.cacheDir, "download_checkpoints"))
 
     init {
         // Read whatever is on disk right away so consumers that touch
@@ -474,6 +477,7 @@ class DownloadRepository private constructor(private val context: Context) {
         bytesDownloaded: Long = 0,
         totalBytes: Long = 0
     ) {
+        if (pausedRequests.containsKey(request.id) && status == DownloadStatus.DOWNLOADING) return
         val previous = _downloadProgress.value[request.id]
         if (previous != null &&
             previous.status == status &&
@@ -646,13 +650,27 @@ class DownloadRepository private constructor(private val context: Context) {
                 request.id.isNotBlank() &&
                     !isDownloadedOfType(request.id, request.type) &&
                     request.id !in existing &&
-                    request.id != activeId
+                    request.id != activeId && !pausedRequests.containsKey(request.id)
             }.distinctBy { it.id }
 
             if (additions.isNotEmpty()) {
                 _downloadQueue.value = _downloadQueue.value + additions
                 _downloadingIds.value = _downloadingIds.value + additions.map { it.id }
-                additions.forEach { updateProgress(it, 0f, DownloadStatus.QUEUED) }
+                additions.forEach { request ->
+                    // A resumed download keeps the bytes it already has on
+                    // disk, so it keeps the bar that reports them. Queueing it
+                    // at zero showed "0.0 / 50.0 MB" for a transfer that was
+                    // half done and about to carry on from where it stopped.
+                    val held = _downloadProgress.value[request.id]
+                        ?.takeIf { it.status == DownloadStatus.PAUSED }
+                    updateProgress(
+                        request,
+                        held?.progress ?: 0f,
+                        DownloadStatus.QUEUED,
+                        held?.bytesDownloaded ?: 0L,
+                        held?.totalBytes ?: 0L,
+                    )
+                }
             }
             additions
         }
@@ -688,18 +706,19 @@ class DownloadRepository private constructor(private val context: Context) {
         DownloadService.start(context)
         try {
             while (true) {
-                val next = queueMutex.withLock {
-                    _downloadQueue.value.firstOrNull()?.also {
-                        _downloadQueue.value = _downloadQueue.value.drop(1)
-                        activeId = it.id
-                    }
+                val job = queueMutex.withLock {
+                    val next = _downloadQueue.value.firstOrNull() ?: return@withLock null
+                    _downloadQueue.value = _downloadQueue.value.drop(1)
+                    activeId = next.id
+                    repositoryScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                        try {
+                            runTask(next)
+                        } finally {
+                            if (!pausedRequests.containsKey(next.id)) checkpoints.remove(next.id)
+                        }
+                    }.also { activeJob = it }
                 } ?: break
-
-                // Each task is its own child job so cancelling one download
-                // does not tear down the queue. join() returns normally when
-                // the child is cancelled, so the loop simply moves on.
-                val job = repositoryScope.launch { runTask(next) }
-                activeJob = job
+                job.start()
                 job.join()
 
                 activeJob = null
@@ -795,10 +814,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     }
                     val artworkDeferred = async { loadDownloadArtwork(song) }
 
-                    audioTemp = File.createTempFile("koda_music_", ".m4a", context.cacheDir)
-                    audioTemp!!.outputStream().use { out ->
-                        downloadStream(request, streamUrl, out, 0.1f, 0.82f)
-                    }
+                    audioTemp = downloadStream(request, streamUrl, "music", 0.1f, 0.82f)
 
                     ensureActive()
                     updateProgress(request, 0.84f, DownloadStatus.DOWNLOADING)
@@ -915,15 +931,16 @@ class DownloadRepository private constructor(private val context: Context) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 withContext(kotlinx.coroutines.NonCancellable) {
                     pendingTargets.forEach(storage::delete)
-                    _downloadingIds.value = _downloadingIds.value - request.id
-                    removeProgress(request.id)
+                    if (!pausedRequests.containsKey(request.id)) {
+                        _downloadingIds.value = _downloadingIds.value - request.id
+                        removeProgress(request.id)
+                    }
                 }
                 throw e
             } catch (e: Exception) {
                 pendingTargets.forEach(storage::delete)
                 throw e
             } finally {
-                audioTemp?.delete()
                 taggedAudioTemp?.delete()
                 artworkTemp?.delete()
                 activeDownloadCalls.remove(request.id)
@@ -1036,16 +1053,9 @@ class DownloadRepository private constructor(private val context: Context) {
                     // Two transfers, then a remux. Progress is split so the bar
                     // reflects real work: video is the bulk, audio a slice, and
                     // the tail is the mux.
-                    videoTemp = File.createTempFile("koda_v_", ".mp4", context.cacheDir)
-                    audioTemp = File.createTempFile("koda_a_", ".m4a", context.cacheDir)
-
-                    videoTemp.outputStream().use { out ->
-                        downloadStream(request, chosen.url, out, 0.05f, 0.70f)
-                    }
+                    videoTemp = downloadStream(request, chosen.url, "video", 0.05f, 0.70f)
                     ensureActive()
-                    audioTemp.outputStream().use { out ->
-                        downloadStream(request, chosen.audioUrl, out, 0.70f, 0.88f)
-                    }
+                    audioTemp = downloadStream(request, chosen.audioUrl, "audio", 0.70f, 0.88f)
                     ensureActive()
 
                     updateProgress(request, 0.9f, DownloadStatus.DOWNLOADING)
@@ -1073,14 +1083,15 @@ class DownloadRepository private constructor(private val context: Context) {
                         ?: throw java.io.IOException("Could not recreate storage entry")
                     pendingTarget = retryTarget
 
-                    storage.openOutput(retryTarget)?.use { out ->
-                        downloadStream(request, fallback.url, out, 0.1f, 1f)
-                    } ?: throw java.io.IOException("Could not open output")
-
+                    val progressiveFile = downloadStream(request, fallback.url, "muxed", 0.1f, 0.98f)
+                    ensureActive()
+                    copyToPending(progressiveFile, retryTarget)
+                    ensureActive()
                     storage.publish(retryTarget)
                     recordVideo(request, retryTarget, fallback.resolution)
                     pendingTarget = null
                 } else {
+                    ensureActive()
                     storage.publish(target)
                     recordVideo(request, target, chosen.resolution)
                     pendingTarget = null
@@ -1095,14 +1106,12 @@ class DownloadRepository private constructor(private val context: Context) {
                 pendingTarget?.let { storage.delete(it) }
                 throw e
             } finally {
-                videoTemp?.delete()
-                audioTemp?.delete()
                 activeDownloadCalls.remove(request.id)
             }
         }
 
     /**
-     * Stream [url] into [out], reporting progress scaled into
+     * Stream [url] into a session checkpoint, reporting progress scaled into
      * [fromFraction]..[toFraction] of the overall download. Fetches in
      * bounded ranged chunks: googlevideo paces open-ended requests to
      * roughly the media bitrate, which made downloads crawl at playback
@@ -1114,77 +1123,84 @@ class DownloadRepository private constructor(private val context: Context) {
     private suspend fun downloadStream(
         request: DownloadRequest,
         url: String,
-        out: java.io.OutputStream,
+        role: String,
         fromFraction: Float,
         toFraction: Float
-    ) {
+    ): File {
+        val identity = videoPlaybackCacheKey(request.id, VideoPlaybackCacheStream.MUXED, url, role)
+        val checkpoint = checkpoints.get(request.id, role, identity)
+        if (checkpoint.complete && checkpoint.file.exists()) return checkpoint.file
         val userAgent = YouTubeRepository.uaForPlaybackUri(Uri.parse(url))
         val buffer = ByteArray(BUFFER_SIZE)
         val span = toFraction - fromFraction
-        var position = 0L
-        var totalBytes = -1L
-
-        while (totalBytes < 0 || position < totalBytes) {
-            val call = client.newCall(
-                Request.Builder()
-                    .url(url)
-                    .header("User-Agent", userAgent)
-                    .header("Range", "bytes=$position-${position + DOWNLOAD_CHUNK_BYTES - 1}")
-                    .build()
-            )
-            activeDownloadCalls[request.id] = call
-
-            val response = call.execute()
-            if (!response.isSuccessful) {
-                response.close()
-                throw MediaHttpException(response.code)
-            }
-            val body = response.body ?: throw java.io.IOException("Empty body")
-
-            // A 206 carries the served extent and the file size in
-            // Content-Range; a 200 means the server ignored the range and is
-            // sending the whole file in this response.
-            val ranged = response.code == 206
-            if (totalBytes < 0) {
-                totalBytes = if (ranged) {
-                    parseContentRangeTotal(response.header("Content-Range")) ?: -1L
-                } else {
-                    body.contentLength()
-                }
-            }
-
-            var chunkBytes = 0L
-            body.byteStream().use { input ->
-                var read: Int
-                while (input.read(buffer).also { read = it } != -1) {
-                    // Throws CancellationException if this task was cancelled,
-                    // unwinding into the caller's handler.
-                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
-
-                    out.write(buffer, 0, read)
-                    position += read
-                    chunkBytes += read
-
-                    val fraction = if (totalBytes > 0) {
-                        fromFraction + (position.toFloat() / totalBytes * span)
-                    } else {
-                        fromFraction + span / 2f // Indeterminate
+        var position = checkpoint.file.length()
+        var totalBytes = checkpoint.totalBytes
+        java.io.RandomAccessFile(checkpoint.file, "rw").use { out ->
+            out.seek(position)
+            while (totalBytes <= 0 || position < totalBytes) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val call = client.newCall(
+                    Request.Builder().url(url)
+                        .header("User-Agent", userAgent)
+                        .header("Range", "bytes=$position-${position + DOWNLOAD_CHUNK_BYTES - 1}")
+                        .build()
+                )
+                activeDownloadCalls[request.id] = call
+                // Close the registration race with pause/cancel on the main thread.
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                call.execute().use { response ->
+                    if (response.code == 416 && position > 0 &&
+                        parseContentRangeTotal(response.header("Content-Range")) == position) {
+                        totalBytes = position
+                        return@use
                     }
-                    updateProgress(
-                        request, fraction, DownloadStatus.DOWNLOADING,
-                        position, totalBytes
-                    )
+                    if (!response.isSuccessful) throw MediaHttpException(response.code)
+                    val body = response.body ?: throw java.io.IOException("Empty body")
+                    val ranged = response.code == 206
+                    if (ranged) {
+                        val start = response.header("Content-Range")
+                            ?.substringAfter("bytes ")?.substringBefore('-')?.toLongOrNull()
+                        if (start != position) throw java.io.IOException("Unexpected range start")
+                        totalBytes = parseContentRangeTotal(response.header("Content-Range")) ?: -1L
+                    } else {
+                        // Servers may ignore Range. Replace rather than appending
+                        // a second copy of the beginning to a partial file.
+                        position = 0L
+                        out.setLength(0L)
+                        out.seek(0L)
+                        totalBytes = body.contentLength()
+                    }
+                    checkpoint.totalBytes = totalBytes
+                    var chunkBytes = 0L
+                    body.byteStream().use { input ->
+                        while (true) {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            out.write(buffer, 0, read)
+                            position += read
+                            chunkBytes += read
+                            if (totalBytes > 0 && position > totalBytes) {
+                                out.setLength(0L)
+                                throw java.io.IOException("Media exceeds declared length")
+                            }
+                            val fraction = if (totalBytes > 0) {
+                                fromFraction + position.toFloat() / totalBytes * span
+                            } else fromFraction + span / 2f
+                            updateProgress(request, fraction, DownloadStatus.DOWNLOADING, position, totalBytes)
+                        }
+                    }
+                    if (chunkBytes == 0L && (totalBytes <= 0L || position < totalBytes)) {
+                        throw java.io.IOException("Media transfer made no progress")
+                    }
+                    if (!ranged && totalBytes <= 0L) totalBytes = position
+                    if (ranged && totalBytes <= 0L) throw java.io.IOException("Missing range total")
                 }
             }
-
-            // An unranged response was the whole file. Without a known total,
-            // an empty chunk means the server has nothing more to serve.
-            if (!ranged || totalBytes < 0 || chunkBytes == 0L) break
         }
-
-        if (totalBytes > 0 && position < totalBytes) {
-            throw java.io.IOException("Truncated: $position/$totalBytes")
-        }
+        checkpoint.totalBytes = totalBytes
+        checkpoint.complete = true
+        return checkpoint.file
     }
 
     /**
@@ -1252,6 +1268,7 @@ class DownloadRepository private constructor(private val context: Context) {
     }
 
     private fun finishSuccess(request: DownloadRequest) {
+        pausedRequests.remove(request.id)
         updateProgress(request, 1f, DownloadStatus.DOWNLOADED)
         _downloadingIds.value = _downloadingIds.value - request.id
         removeProgressAfterCompletion(request.id)
@@ -1265,8 +1282,10 @@ class DownloadRepository private constructor(private val context: Context) {
     private suspend fun cleanUpCancelled(request: DownloadRequest, pendingTarget: Uri?) {
         withContext(kotlinx.coroutines.NonCancellable) {
             pendingTarget?.let { storage.delete(it) }
-            _downloadingIds.value = _downloadingIds.value - request.id
-            removeProgress(request.id)
+            if (!pausedRequests.containsKey(request.id)) {
+                _downloadingIds.value = _downloadingIds.value - request.id
+                removeProgress(request.id)
+            }
         }
     }
 
@@ -1291,11 +1310,41 @@ class DownloadRepository private constructor(private val context: Context) {
      * Cancel a queued or in-flight download. Safe to call for an id that is
      * neither.
      */
+    fun pauseDownload(id: String) {
+        repositoryScope.launch {
+            queueMutex.withLock {
+                val entry = _downloadProgress.value[id] ?: return@withLock
+                if (entry.status != DownloadStatus.DOWNLOADING && entry.status != DownloadStatus.QUEUED) return@withLock
+                pausedRequests[id] = entry.request
+                _downloadQueue.value = _downloadQueue.value.filterNot { it.id == id }
+                updateProgress(entry.request, entry.progress, DownloadStatus.PAUSED, entry.bytesDownloaded, entry.totalBytes)
+                if (activeId == id) {
+                    activeJob?.cancel()
+                    activeDownloadCalls[id]?.cancel()
+                }
+            }
+        }
+    }
+
+    fun resumeDownload(id: String) {
+        repositoryScope.launch {
+            // Let the old task close files before a new one can append to them.
+            val stopping = queueMutex.withLock { activeJob.takeIf { activeId == id } }
+            stopping?.join()
+            val request = queueMutex.withLock {
+                if (activeId == id && activeJob?.isCompleted == true) activeId = null
+                pausedRequests.remove(id)
+            } ?: return@launch
+            enqueue(listOf(request))
+        }
+    }
+
     fun cancelDownload(songId: String) {
         KLog.d(TAG, "Cancelling download for $songId")
 
         repositoryScope.launch {
             val wasQueued = queueMutex.withLock {
+                pausedRequests.remove(songId)
                 val before = _downloadQueue.value
                 val after = before.filterNot { it.id == songId }
                 _downloadQueue.value = after
@@ -1309,6 +1358,9 @@ class DownloadRepository private constructor(private val context: Context) {
                 activeJob?.cancel()
             }
 
+            val stopping = activeJob.takeIf { activeId == songId }
+            stopping?.join()
+            checkpoints.remove(songId)
             _downloadingIds.value = _downloadingIds.value - songId
             removeProgress(songId)
         }
@@ -1318,11 +1370,12 @@ class DownloadRepository private constructor(private val context: Context) {
     fun cancelAll() {
         repositoryScope.launch {
             val cleared = queueMutex.withLock {
-                val queued = _downloadQueue.value
+                val queued = _downloadQueue.value + pausedRequests.values
+                pausedRequests.clear()
                 _downloadQueue.value = emptyList()
                 queued
             }
-            cleared.forEach { removeProgress(it.id) }
+            cleared.forEach { removeProgress(it.id); checkpoints.remove(it.id) }
             activeId?.let { id ->
                 activeDownloadCalls[id]?.cancel()
                 activeJob?.cancel()
