@@ -27,7 +27,7 @@ These are counts from the current source tree, not aspirations.
 | `MaterialShapes` references | 149, across 17 distinct shapes |
 | `spring()` animation specs | 127, across 45 files |
 | `animate*AsState` call sites | 81 |
-| Built-in color palettes | 29, in 6 families |
+| Built-in color palettes | 28, in 6 families |
 | Player styles | 8, each a full independent layout |
 | Material 3 version | `1.5.0-alpha24` (Expressive APIs) |
 
@@ -144,16 +144,16 @@ Everything else stays silent on purpose. Haptics that fire on every tap stop mea
 
 ## Color
 
-Koda's color system has three independent inputs that resolve into one `ColorScheme`. This is where most of the app's visual variety actually lives.
+Koda's color system has four independent inputs that resolve into one `ColorScheme`. This is where most of the app's visual variety actually lives.
 
 ```mermaid
 flowchart TD
     Start([IvorMusicTheme]) --> Q{colorPalette == dynamic?}
 
     Q -->|Yes, Android 12+| Dyn["dynamicLight/DarkColorScheme<br/>from wallpaper"]
-    Q -->|No| Neutral["App neutral scheme<br/>DarkColorScheme / expressiveLightColorScheme"]
+    Q -->|No| Seed["Preset primary seed + palette style"]
 
-    Neutral --> Pal["buildPaletteColorScheme()<br/>29 palettes, 6 families"]
+    Seed --> Pal["buildPaletteColorScheme()<br/>28 palettes, 6 families"]
     Pal --> Merge
     Dyn --> Merge([Resolved scheme])
 
@@ -182,7 +182,9 @@ The palette families are chosen to cover genuinely different moods rather than t
 | Moody | Crimson Noir, Midnight Indigo, Deep Teal, Royal Plum |
 | Jewel & Mono | Emerald, Ocean, Rose Gold, Graphite, Black, White |
 
-Each palette is three seed colors expanded into full Material role sets (`primary`, `onPrimary`, `primaryContainer`, and so on for secondary and tertiary) via HSL manipulation in `ColorPalettes.kt`. Picking a fixed palette **fully ignores** wallpaper color rather than blending with it, so the result is predictable.
+Each preset retains its id and reference swatches. Its primary seed generates a complete Material HCT scheme in `PaletteStyle.kt`: accents, paired text colors, outlines, fixed roles and the tinted surface ramp. Tonal Spot is the calm default; Vibrant, Expressive, Fruit Salad and Monochrome offer different color treatments. The palette picker previews both accents and surfaces using the selected style and AMOLED setting. Presets fully ignore wallpaper color; the wallpaper option retains Android's own scheme and ignores the preset style. Black and White retain their distinct monochrome container fills across styles.
+
+Album and playlist detail pages inherit the shared scheme. Their header places Play all and Shuffle together, followed by a wrapping Save/Download group; the floating playback menu remains available when the header has scrolled away or search is active. Editing rights, album order and playlist occurrences remain data-layer concerns, unchanged by the presentation.
 
 AMOLED mode does not simply set the background to black. It compresses the whole `surfaceContainer` ramp toward black so cards keep elevation separation instead of turning into a grey wash on an OLED panel.
 
@@ -224,7 +226,8 @@ If Koda's look is not to your taste, a lot is already adjustable in Settings bef
 
 - **Theme mode:** light, dark, or follow system
 - **AMOLED true black:** for OLED panels
-- **Color palette:** wallpaper-based dynamic color, or any of the 29 fixed palettes
+- **Color palette:** wallpaper-based dynamic color, or any of the 28 fixed palettes
+- **Palette style:** Tonal Spot, Vibrant, Expressive, Fruit Salad or Monochrome for preset colors
 - **Album Art Colors:** recolor the expanded player from the current cover art
 - **Ambient artwork background** and the optional chromatic-mist effect
 - **Player style:** eight full layouts, switchable from the style wheel

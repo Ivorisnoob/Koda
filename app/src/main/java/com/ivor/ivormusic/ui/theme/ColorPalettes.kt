@@ -7,11 +7,10 @@ import androidx.compose.ui.graphics.luminance
 /**
  * Curated color palettes for the app theme.
  *
- * Each palette carries three vivid reference "seed" hues (primary, secondary,
- * tertiary). At theme-build time [buildPaletteColorScheme] derives the full set
- * of Material accent roles from those seeds for the active light/dark mode and
- * overlays them onto the neutral base scheme, so surfaces, AMOLED black, and the
- * on-surface neutrals stay coherent while only the accents change.
+ * Each palette retains its reference swatches. [buildPaletteColorScheme] uses
+ * the primary seed and the selected [PaletteStyle] to generate coordinated
+ * accents, text and tinted surfaces through Material's HCT color utilities.
+ * AMOLED is applied afterwards by the shared theme resolver.
  *
  * The special id [DYNAMIC_PALETTE_ID] is not seed-based: it means "use the
  * system wallpaper dynamic color" (Android 12+), the app's historical default.
@@ -71,13 +70,8 @@ val APP_PALETTES: List<AppPalette> = listOf(
     AppPalette("ocean", "Ocean", "Jewel & Mono", Color(0xFF0077B6), Color(0xFF0096C7), Color(0xFF3A67C4)),
     AppPalette("rosegold", "Rose Gold", "Jewel & Mono", Color(0xFFE18C8C), Color(0xFFE0B0A0), Color(0xFFD4AF37)),
     AppPalette("graphite", "Graphite", "Jewel & Mono", Color(0xFF64748B), Color(0xFF94A3B8), Color(0xFF475569)),
-    // Pure black/white seeds have zero saturation, so hue is meaningless and
-    // the generic tone() re-mapping below - which deliberately discards a
-    // seed's own lightness so every palette lands on the same Material tone
-    // targets - would make these two indistinguishable from each other and
-    // from Graphite. roleColors() special-cases these two ids instead of
-    // deriving from the seeds; the seeds here only feed the picker's preview
-    // swatches, so they are kept literal.
+    // HCT generation gives neutral seeds the same tone targets. Keep the
+    // Black/White identity through their dedicated container roles below.
     AppPalette("black", "Black", "Jewel & Mono", Color(0xFF000000), Color(0xFF000000), Color(0xFF000000)),
     AppPalette("white", "White", "Jewel & Mono", Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0xFFFFFFFF))
 )
@@ -87,58 +81,8 @@ val PALETTE_CATEGORIES: List<String> = APP_PALETTES.map { it.category }.distinct
 
 fun findPalette(id: String?): AppPalette? = APP_PALETTES.firstOrNull { it.id == id }
 
-// --- HSL tone derivation (dependency-free; good enough for accent roles) ---
-
-private fun Color.toHsl(): FloatArray {
-    val r = red; val g = green; val b = blue
-    val max = maxOf(r, g, b); val min = minOf(r, g, b)
-    val l = (max + min) / 2f
-    val d = max - min
-    var h = 0f
-    var s = 0f
-    if (d != 0f) {
-        s = if (l > 0.5f) d / (2f - max - min) else d / (max + min)
-        h = when (max) {
-            r -> (g - b) / d + (if (g < b) 6f else 0f)
-            g -> (b - r) / d + 2f
-            else -> (r - g) / d + 4f
-        } / 6f
-    }
-    return floatArrayOf(h, s, l)
-}
-
-private fun hsl(h: Float, s: Float, l: Float): Color {
-    if (s == 0f) return Color(l, l, l)
-    val q = if (l < 0.5f) l * (1f + s) else l + s - l * s
-    val p = 2f * l - q
-    fun channel(t0: Float): Float {
-        var t = t0
-        if (t < 0f) t += 1f
-        if (t > 1f) t -= 1f
-        return when {
-            t < 1f / 6f -> p + (q - p) * 6f * t
-            t < 1f / 2f -> q
-            t < 2f / 3f -> p + (q - p) * (2f / 3f - t) * 6f
-            else -> p
-        }
-    }
-    return Color(channel(h + 1f / 3f), channel(h), channel(h - 1f / 3f))
-}
-
-/** Re-tone a seed to a target lightness, optionally scaling its saturation. */
-private fun Color.tone(lightness: Float, satScale: Float = 1f): Color {
-    val (h, s, _) = toHsl()
-    return hsl(h, (s * satScale).coerceIn(0f, 1f), lightness.coerceIn(0f, 1f))
-}
-
-/**
- * The full set of accent color roles a palette resolves to for a given mode,
- * following Material 3 tone targets (e.g. primary at tone 40 light / 80 dark,
- * containers at tone 90 light / 30 dark) so on-color pairings keep >=3:1
- * contrast. This is the single source of truth: both the applied [ColorScheme]
- * and the picker preview are built from it, so what you see is what you get.
- */
-data class PaletteRoles(
+/** Accent overrides preserving the distinct Black and White presets. */
+private data class PaletteRoles(
     val primary: Color,
     val onPrimary: Color,
     val primaryContainer: Color,
@@ -154,25 +98,9 @@ data class PaletteRoles(
 )
 
 /**
- * Role colors for the two monochrome presets (Black, White), which cannot go
- * through the seed-based derivation below: it deliberately discards a seed's
- * own lightness so every hued palette lands on the same fixed Material tone
- * targets regardless of how light or dark its swatch was, and with
- * saturation 0 that lightness is the only thing that told a black seed and a
- * white seed apart. Both would come out as the exact same grey.
- *
- * [primary]/[secondary]/[tertiary] and their "on" colors stay mode-adaptive -
- * dark ink in light mode, light ink in dark mode - the same flip every other
- * palette makes for small controls, because one that goes invisible against
- * its own surface is not a design choice. What actually carries the
- * Black-vs-White identity is the containers: large fills that have room to
- * lean all the way toward one end without losing legibility, since
- * [contrastInk] picks each one's "on" color from the fill itself rather than
- * from the app's light/dark mode - so a near-black container can still carry
- * legible light text even inside the app's light mode, and vice versa.
- * Primary/secondary/tertiary containers step slightly apart from each other
- * so three filled elements on screen together still read as distinct
- * surfaces rather than one flat block.
+ * Preserve Black/White identity in their large container fills. HCT monochrome
+ * generation alone would give both seeds the same roles. Accent ink stays
+ * mode-adaptive; each container's on-color follows its fill, not the app mode.
  */
 private fun monochromeRoles(dark: Boolean, leanDark: Boolean): PaletteRoles {
     val ink = if (dark) Color(0xFFF2F2F2) else Color(0xFF141414)
@@ -204,68 +132,30 @@ private fun monochromeRoles(dark: Boolean, leanDark: Boolean): PaletteRoles {
     )
 }
 
-/**
- * Derive the M3 accent roles from the palette's three seeds for the active
- * mode. Primary keeps near-full chroma (expressive), containers ease off a
- * touch so soft fills don't glow.
- */
-fun AppPalette.roleColors(dark: Boolean): PaletteRoles {
-    when (id) {
-        "black" -> return monochromeRoles(dark, leanDark = true)
-        "white" -> return monochromeRoles(dark, leanDark = false)
-    }
-    val p = seedPrimary; val s = seedSecondary; val t = seedTertiary
-    return if (dark) PaletteRoles(
-        primary = p.tone(0.80f, 0.98f),
-        onPrimary = p.tone(0.20f),
-        primaryContainer = p.tone(0.32f, 0.92f),
-        onPrimaryContainer = p.tone(0.90f, 0.75f),
-        secondary = s.tone(0.80f, 0.85f),
-        onSecondary = s.tone(0.20f),
-        secondaryContainer = s.tone(0.30f, 0.70f),
-        onSecondaryContainer = s.tone(0.90f, 0.65f),
-        tertiary = t.tone(0.82f, 0.90f),
-        onTertiary = t.tone(0.20f),
-        tertiaryContainer = t.tone(0.32f, 0.78f),
-        onTertiaryContainer = t.tone(0.92f, 0.70f)
-    ) else PaletteRoles(
-        primary = p.tone(0.42f),
-        onPrimary = Color.White,
-        primaryContainer = p.tone(0.88f, 0.88f),
-        onPrimaryContainer = p.tone(0.30f),
-        secondary = s.tone(0.44f, 0.90f),
-        onSecondary = Color.White,
-        secondaryContainer = s.tone(0.88f, 0.72f),
-        onSecondaryContainer = s.tone(0.28f),
-        tertiary = t.tone(0.44f),
-        onTertiary = Color.White,
-        tertiaryContainer = t.tone(0.88f, 0.76f),
-        onTertiaryContainer = t.tone(0.28f)
+/** Full HCT scheme, including the tinted neutral surfaces used by every screen. */
+fun buildPaletteColorScheme(
+    palette: AppPalette,
+    dark: Boolean,
+    style: PaletteStyle = PaletteStyle.TONAL_SPOT,
+): ColorScheme {
+    val monochrome = palette.id == "black" || palette.id == "white"
+    val scheme = buildSeedColorScheme(
+        palette.seedPrimary,
+        dark,
+        if (monochrome) PaletteStyle.MONOCHROME else style,
     )
-}
+    if (!monochrome) return scheme
 
-/**
- * Overlay a palette's derived accent roles onto [base] for the active mode.
- * Neutral roles (background, surfaces, on-surface text) are inherited from
- * [base] so the app's structural look and AMOLED handling stay intact.
- */
-fun buildPaletteColorScheme(palette: AppPalette, dark: Boolean, base: ColorScheme): ColorScheme {
-    val r = palette.roleColors(dark)
-    return base.copy(
-        primary = r.primary,
-        onPrimary = r.onPrimary,
-        primaryContainer = r.primaryContainer,
-        onPrimaryContainer = r.onPrimaryContainer,
-        inversePrimary = palette.seedPrimary.tone(if (dark) 0.40f else 0.80f),
-        secondary = r.secondary,
-        onSecondary = r.onSecondary,
-        secondaryContainer = r.secondaryContainer,
-        onSecondaryContainer = r.onSecondaryContainer,
-        tertiary = r.tertiary,
-        onTertiary = r.onTertiary,
-        tertiaryContainer = r.tertiaryContainer,
-        onTertiaryContainer = r.onTertiaryContainer,
-        surfaceTint = r.primary
+    // Black and White retain their distinct container fills in every style.
+    val r = monochromeRoles(dark, leanDark = palette.id == "black")
+    return scheme.copy(
+        primary = r.primary, onPrimary = r.onPrimary,
+        primaryContainer = r.primaryContainer, onPrimaryContainer = r.onPrimaryContainer,
+        secondary = r.secondary, onSecondary = r.onSecondary,
+        secondaryContainer = r.secondaryContainer, onSecondaryContainer = r.onSecondaryContainer,
+        tertiary = r.tertiary, onTertiary = r.onTertiary,
+        tertiaryContainer = r.tertiaryContainer, onTertiaryContainer = r.onTertiaryContainer,
+        surfaceTint = r.primary,
     )
 }
 

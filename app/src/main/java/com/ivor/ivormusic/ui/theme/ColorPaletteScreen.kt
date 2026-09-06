@@ -13,7 +13,17 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ToggleButton
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -85,10 +95,18 @@ fun ColorPaletteScreen(
     onPaletteSelected: (String) -> Unit,
     isDarkMode: Boolean,
     onBack: () -> Unit,
+    paletteStyle: PaletteStyle,
+    onPaletteStyleSelected: (PaletteStyle) -> Unit,
+    amoledDark: Boolean,
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val context = LocalContext.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val wallpaperScheme = remember(context, configuration, isDarkMode, amoledDark) {
+        kodaColorScheme(context, isDarkMode, DYNAMIC_PALETTE_ID, amoledDark)
+    }
 
     var isVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { isVisible = true }
@@ -131,13 +149,44 @@ fun ColorPaletteScreen(
         )
 
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize(),
+            columns = GridCells.Adaptive(150.dp),
+            modifier = Modifier.fillMaxSize().selectableGroup(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "style") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.palette_style_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.palette_style_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = secondaryTextColor,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
+                        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+                    ) {
+                        PaletteStyle.entries.forEachIndexed { index, style ->
+                            ToggleButton(
+                                checked = paletteStyle == style,
+                                onCheckedChange = { onPaletteStyleSelected(style) },
+                                shapes = when (index) {
+                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                    PaletteStyle.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                },
+                            ) { Text(stringResource(style.labelRes)) }
+                        }
+                    }
+                    Text(
+                        stringResource(R.string.palette_style_presets_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = secondaryTextColor,
+                    )
+                }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }, key = "wallpaper") {
                 AnimatedVisibility(
                     visible = isVisible,
                     enter = fadeIn(tween(350)) + slideInVertically(
@@ -146,6 +195,7 @@ fun ColorPaletteScreen(
                     )
                 ) {
                     DynamicPaletteCard(
+                        scheme = wallpaperScheme,
                         selected = currentPalette == DYNAMIC_PALETTE_ID,
                         onClick = { onPaletteSelected(DYNAMIC_PALETTE_ID) }
                     )
@@ -164,7 +214,12 @@ fun ColorPaletteScreen(
                     key = { it.id }
                 ) { palette ->
                     PaletteCard(
-                        roles = remember(palette.id, isDarkMode) { palette.roleColors(isDarkMode) },
+                        roles = remember(palette.id, isDarkMode, paletteStyle, amoledDark) {
+                            buildPaletteColorScheme(palette, isDarkMode, paletteStyle).let {
+                                if (isDarkMode && amoledDark) it.toAmoled() else it
+                            }
+                        },
+                        name = palette.name,
                         selected = currentPalette == palette.id,
                         onClick = { onPaletteSelected(palette.id) }
                     )
@@ -240,7 +295,8 @@ private fun RoleBar(
 
 @Composable
 private fun PaletteCard(
-    roles: PaletteRoles,
+    roles: ColorScheme,
+    name: String,
     selected: Boolean,
     onClick: () -> Unit
 ) {
@@ -262,11 +318,14 @@ private fun PaletteCard(
             .height(148.dp)
             .scale(scale)
             .clip(RoundedCornerShape(28.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(roles.surfaceContainerHigh)
+            .semantics { contentDescription = name }
             .then(
                 if (selected) Modifier.border(3.dp, roles.primary, RoundedCornerShape(28.dp)) else Modifier
             )
-            .clickable(
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
@@ -347,10 +406,12 @@ private fun PaletteCard(
 
 @Composable
 private fun DynamicPaletteCard(
+    scheme: ColorScheme,
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    val cs = MaterialTheme.colorScheme
+    val cs = scheme
+    val label = stringResource(R.string.cp_dynamic_cd)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -366,10 +427,13 @@ private fun DynamicPaletteCard(
             .scale(scale)
             .clip(RoundedCornerShape(26.dp))
             .background(cs.surfaceContainerHigh)
+            .semantics { contentDescription = label }
             .then(
                 if (selected) Modifier.border(3.dp, cs.primary, RoundedCornerShape(26.dp)) else Modifier
             )
-            .clickable(
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick

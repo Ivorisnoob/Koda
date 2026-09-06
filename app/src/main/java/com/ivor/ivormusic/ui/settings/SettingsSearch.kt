@@ -205,6 +205,11 @@ internal fun buildSettingsSearchIndex(
         "palette", stringResource(R.string.sp_color_palette), stringResource(R.string.settings_appearance), Icons.Rounded.Palette,
         listOf("colour", "accent", "dynamic", "material you", "monet", "wallpaper", "scheme")
     ) { onNavigateToColorPalette() }
+    entry(
+        "palette_style", stringResource(R.string.palette_style_title),
+        stringResource(R.string.settings_appearance), Icons.Rounded.Palette,
+        listOf("vibrant", "vibrancy", "expressive", "tonal spot", "fruit salad", "monochrome", "color", "colour", "saturation")
+    ) { onNavigateToColorPalette() }
     // "Too big" and "too small" are the words people actually arrive with,
     // and neither appears in the title - the whole reason the synonym list
     // exists. "Font size" and "zoom" are here because they are what the
@@ -309,12 +314,12 @@ internal fun buildSettingsSearchIndex(
     entry(
         "video_q_wifi", stringResource(R.string.sp_video_quality_wifi), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.VideoLibrary,
-        listOf("resolution", "1080p", "720p", "480p", "4k", "2160", "default quality")
+        listOf("resolution", "1080p", "720p", "480p", "360p", "240p", "144p", "4k", "2160", "data saver", "default quality")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_WIFI) }
     entry(
         "video_q_mobile", stringResource(R.string.sp_video_quality_mobile), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.SignalCellularAlt,
-        listOf("resolution", "cellular", "data", "1080p", "720p", "roaming")
+        listOf("resolution", "cellular", "data", "1080p", "720p", "480p", "360p", "240p", "144p", "data saver", "roaming")
     ) { onOpenQualityPicker(QualityDialogTarget.VIDEO_MOBILE) }
     entry(
         "prefer_hdr", stringResource(R.string.sp_prefer_hdr), stringResource(R.string.settings_playback_and_quality),

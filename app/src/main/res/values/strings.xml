@@ -1217,4 +1217,12 @@
         <item quantity="one">%1$d result</item>
         <item quantity="other">%1$d results</item>
     </plurals>
+    <string name="palette_style_title">Palette style</string>
+    <string name="palette_style_description">Choose how colorful your theme feels. Previews update as you explore.</string>
+    <string name="palette_style_presets_hint">Styles apply to preset palettes. Wallpaper follows your system colors; Black and White keep their own look.</string>
+    <string name="palette_style_tonal_spot">Tonal Spot</string>
+    <string name="palette_style_vibrant">Vibrant</string>
+    <string name="palette_style_expressive">Expressive</string>
+    <string name="palette_style_fruit_salad">Fruit Salad</string>
+    <string name="palette_style_monochrome">Monochrome</string>
 </resources>
