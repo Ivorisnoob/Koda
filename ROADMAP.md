@@ -391,6 +391,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+- Mini-player opening and closing use a softer spring without endpoint bounce. Music keeps the full player measured at its final size in both axes; video retains its stationary surface until the closing curtain finishes, then brings in the mini bar.
+
 - Live video controls show a negative time from the newest seekable media beside LIVE, including fullscreen and vertical broadcasts (#268). A fixed ten-second edge tolerance replaces the percentage of the DVR window; unknown windows omit the timestamp.
 
 - Switching between music and video mode pauses what was playing instead of throwing it away. The toggle used to run the players' own dismiss actions, which are destructive by design - the music one empties the queue and erases both the last-played song and the saved session, the video one drops the resume snapshot - so a glance at the video tab cost the album you were halfway through, with no mini player and no route back to the queue. Music now pauses, video collapses to its mini bar and pauses, and only Shorts still closes outright because a swipe feed has no minimised form to park in. Both mini bars surviving at once is the state the layout was already built for and simply could not reach through this toggle, and it is safe because whichever player starts pauses the other two by explicit rule rather than by audio focus, which is unreliable between players inside one app.

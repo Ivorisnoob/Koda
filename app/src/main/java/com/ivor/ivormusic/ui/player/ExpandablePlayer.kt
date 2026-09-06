@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.player
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -116,17 +117,16 @@ fun ExpandablePlayer(
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
     
     // Single animated progress (0f = collapsed, 1f = expanded)
-    // Using Material Physics slowSpatialSpec for full-screen animations.
+    // A critically damped spring carries the sheet without bouncing at its bounds.
     //
     // An Animatable rather than animateFloatAsState so a back gesture can
-    // scrub it. Same spec, same overshoot, so the coerceAtLeast guards below
-    // stay exactly as load-bearing as they were.
-    val expandSpec = MaterialTheme.motionScheme.slowSpatialSpec<Float>()
+    // scrub it and an interrupted transition continues from its current value.
+    val expandSpec = remember { spring<Float>(dampingRatio = 1f, stiffness = 180f) }
     val expand = remember { Animatable(if (isExpanded) 1f else 0f) }
     LaunchedEffect(isExpanded) {
         expand.animateTo(if (isExpanded) 1f else 0f, expandSpec)
     }
-    val expandProgress = expand.value
+    val expandProgress = expand.value.coerceIn(0f, 1f)
 
     /**
      * Back on the expanded player previews the collapse it is going to do.
@@ -356,9 +356,14 @@ fun ExpandablePlayer(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
-                            .fillMaxWidth()
-                            .height(expandedHeight)
-                            .graphicsLayer { alpha = fullAlpha }
+                            // Escape the animated parent's constraints in both axes.
+                            // height() alone is still clamped to the pill every frame.
+                            .wrapContentSize(Alignment.TopCenter, unbounded = true)
+                            .requiredSize(screenWidth, expandedHeight)
+                            .graphicsLayer {
+                                alpha = fullAlpha
+                                translationY = (1f - expandProgress) * 24.dp.toPx()
+                            }
                     ) {
                         // The live player blurs beneath the style wheel.
                         val wheelBlur by animateDpAsState(

@@ -63,8 +63,8 @@ private const val MAX_PIP_ASPECT = 2.39f
  * reads as a snap rather than as character.
  */
 private val MINIMIZE_SETTLE_SPRING = spring<Float>(
-    dampingRatio = 0.9f,
-    stiffness = 260f
+    dampingRatio = 1f,
+    stiffness = 180f
 )
 
 /**
@@ -291,6 +291,12 @@ fun VideoPlayerOverlay(
         // frame when a video was first opened. Progress never changes layout:
         // the Android video surface is swapped once, then cheap layers animate.
         val expandProgress = remember { Animatable(0f) }
+        // Keep the expanded surface mounted through the closing curtain. Swapping
+        // it on the Boolean edge removed the entire exit animation.
+        var retainExpanded by remember { mutableStateOf(isExpanded) }
+        var hasExpanded by remember { mutableStateOf(isExpanded) }
+        val showExpandedSurface = isExpanded || retainExpanded
+
 
         // A restored collapsed player also deserves an entrance instead of
         // appearing abruptly on the first composed frame. This is read only by
@@ -298,8 +304,9 @@ fun VideoPlayerOverlay(
         // and composition during the animation.
         val miniEntrance = remember { Animatable(0f) }
         val miniEntranceSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
-        LaunchedEffect(Unit) {
-            miniEntrance.animateTo(1f, miniEntranceSpec)
+        LaunchedEffect(showExpandedSurface) {
+            if (showExpandedSurface) miniEntrance.snapTo(0f)
+            else miniEntrance.animateTo(1f, miniEntranceSpec)
         }
 
         // Live value while a finger is down. The drag deliberately does not go
@@ -323,10 +330,15 @@ fun VideoPlayerOverlay(
         // never moves, which is what made minimizing work once per app launch.
         LaunchedEffect(isExpanded) {
             isDragging = false
+            if (isExpanded) {
+                retainExpanded = true
+                hasExpanded = true
+            }
             expandProgress.animateTo(
                 if (isExpanded) 1f else 0f,
                 MINIMIZE_SETTLE_SPRING
             )
+            if (!isExpanded) retainExpanded = false
         }
 
         // 1:1 with the finger: progress maps to a compositor translation over
@@ -414,15 +426,15 @@ fun VideoPlayerOverlay(
         // Minimized resting position clears the system navigation inset plus
         // whatever bottom chrome the host says it is drawing, which is nothing
         // on most routes.
-        val widthPadding = if (isExpanded) 0.dp else 16.dp
-        val bottomPadding = if (isExpanded) {
+        val widthPadding = if (showExpandedSurface) 0.dp else 16.dp
+        val bottomPadding = if (showExpandedSurface) {
             0.dp
         } else {
             MINI_VIDEO_MARGIN + bottomInset + hostBottomChrome
         }
-        val height = if (isExpanded) fullHeight else MINI_VIDEO_HEIGHT
-        val cornerRadius = if (isExpanded) 0.dp else 28.dp
-        val miniMotionModifier = if (isExpanded) {
+        val height = if (showExpandedSurface) fullHeight else MINI_VIDEO_HEIGHT
+        val cornerRadius = if (showExpandedSurface) 0.dp else 28.dp
+        val miniMotionModifier = if (showExpandedSurface) {
             Modifier
         } else {
             Modifier.graphicsLayer {
@@ -450,6 +462,17 @@ fun VideoPlayerOverlay(
             }
         }
 
+        // After the video is fully covered, fade the same color off the host
+        // while the mini bar rises above it. Otherwise the opaque closing
+        // curtain would disappear in one frame when the AndroidView swaps.
+        if (hasExpanded && !showExpandedSurface) {
+            Box(
+                Modifier.matchParentSize()
+                    .graphicsLayer { alpha = (1f - miniEntrance.value).coerceIn(0f, 1f) }
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            )
+        }
+
         // Offset and fade live on a wrapper rather than on the Surface itself.
         // A graphicsLayer on an elevated Surface makes its shadow render
         // against the layer's rectangular bounds instead of the rounded
@@ -474,16 +497,16 @@ fun VideoPlayerOverlay(
             // it follows the 28dp rounding instead of spilling into the square
             // corners the modifier version rippled into.
             onClick = { viewModel.setExpanded(true) },
-            enabled = !isExpanded,
+            enabled = !showExpandedSurface,
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(
-                    isExpanded,
+                    showExpandedSurface,
                     miniExpandThresholdPx,
                     miniDismissThresholdPx,
                     miniFlingVelocityPx
                 ) {
-                    if (isExpanded) return@pointerInput
+                    if (showExpandedSurface) return@pointerInput
                     var gestureTravelY = 0f
                     var dragStartOffsetY = 0f
                     var thresholdFeedbackSent = false
@@ -600,10 +623,10 @@ fun VideoPlayerOverlay(
                 },
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = if (isExpanded) 0.dp else 4.dp,
-            shadowElevation = if (isExpanded) 0.dp else 12.dp
+            tonalElevation = if (showExpandedSurface) 0.dp else 4.dp,
+            shadowElevation = if (showExpandedSurface) 0.dp else 12.dp
         ) {
-             if (isExpanded) {
+             if (showExpandedSurface) {
                  // Full Screen Content
                  VideoPlayerContent(
                      viewModel = viewModel,
@@ -669,7 +692,7 @@ fun VideoPlayerOverlay(
                  MiniVideoPlayerContent(viewModel = viewModel)
              }
         }
-        if (isExpanded) {
+        if (showExpandedSurface) {
             // Reveal curtain: the full player itself is completely static.
             // A plain color layer lifts toward the top while fading, revealing
             // the destination from the mini player's bottom edge. This gives a
