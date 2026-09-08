@@ -4,18 +4,14 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,7 +50,6 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,7 +69,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
-import kotlinx.coroutines.delay
 
 /**
  * Canvas Player - the full-bleed artwork style (replaces the old kinetic
@@ -123,7 +117,6 @@ fun PosterPlayerSheetContent(
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
-    var controlsVisible by remember { mutableStateOf(true) }
 
     val playerHaptics = rememberPlayerHaptics()
     val styleWheel = LocalPlayerStyleWheelController.current
@@ -138,15 +131,6 @@ fun PosterPlayerSheetContent(
         onNext = { skipDirection = 1; playerHaptics.skip(); viewModel.skipToNext() },
         onPrevious = { skipDirection = -1; playerHaptics.skip(); viewModel.skipToPrevious() }
     )
-
-    // The chrome slips away on its own while music plays; any tap on the
-    // canvas summons it back.
-    LaunchedEffect(controlsVisible, isPlaying) {
-        if (controlsVisible && isPlaying) {
-            delay(5000)
-            controlsVisible = false
-        }
-    }
 
     // Monochrome UI over the art: white glyphs, black scrims. Reads over
     // any cover without fighting the artwork's own palette.
@@ -190,10 +174,6 @@ fun PosterPlayerSheetContent(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { controlsVisible = true }
                         // Off while lyrics are up: that view scrolls and seeks.
                         .swipeToSkip(swipeToSkip, enabled = !showLyrics)
                         // Last in the chain: consumes the post-long-press
@@ -249,17 +229,11 @@ fun PosterPlayerSheetContent(
                         }
                     }
 
-                    // Scrims fade with the chrome so the resting screen is
-                    // pure artwork.
-                    val scrimAlpha by animateFloatAsState(
-                        targetValue = if (controlsVisible || showLyrics) 1f else 0f,
-                        animationSpec = spring(stiffness = Spring.StiffnessLow),
-                        label = "CanvasScrimAlpha"
-                    )
+                    // The chrome never leaves, so the scrim that keeps white glyphs
+                    // legible over an arbitrary cover never leaves either.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .alpha(scrimAlpha)
                             .background(
                                 Brush.verticalGradient(
                                     0f to scrim.copy(alpha = 0.35f),
@@ -295,12 +269,7 @@ fun PosterPlayerSheetContent(
                     }
 
                     // ========== TOP BAR ==========
-                    AnimatedVisibility(
-                        visible = controlsVisible,
-                        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-                        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-                        modifier = Modifier.align(Alignment.TopCenter)
-                    ) {
+                    Box(modifier = Modifier.align(Alignment.TopCenter)) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -361,12 +330,7 @@ fun PosterPlayerSheetContent(
                     }
 
                     // ========== BOTTOM CLUSTER ==========
-                    AnimatedVisibility(
-                        visible = controlsVisible,
-                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                        modifier = Modifier.align(Alignment.BottomCenter)
-                    ) {
+                    Box(modifier = Modifier.align(Alignment.BottomCenter)) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
