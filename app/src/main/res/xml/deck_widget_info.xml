@@ -2,9 +2,9 @@
 <!--
     2x4 vertical player: squircle cover, metadata, progress, full transport, shuffle and repeat.
 
-    updatePeriodMillis is 0 for every widget in the family: MusicService pushes
-    a redraw on each playback event, so scheduled polling would only burn
-    battery redrawing the same picture.
+    MusicService pushes a redraw on each playback event; the 30-minute
+    updatePeriodMillis heartbeat (the platform floor) exists only so a widget
+    frozen by an OEM force-killing the app eventually corrects itself.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="150dp"
@@ -15,7 +15,7 @@
     android:targetCellHeight="4"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:updatePeriodMillis="0"
+    android:updatePeriodMillis="1800000"
     android:description="@string/widget_deck_description"
     android:previewLayout="@layout/widget_preview_deck"
     android:previewImage="@drawable/widget_preview_deck_image"

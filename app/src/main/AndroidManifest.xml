@@ -338,16 +338,25 @@
             the QS tile: none holds a MediaController, and every tap binds a
             throwaway one on the main thread.
 
-            updatePeriodMillis is 0 on all of them because MusicService pushes a
-            redraw on each playback event; scheduled polling would only burn
-            battery redrawing the same picture.
+            MusicService pushes a redraw on each playback event; a 30-minute
+            updatePeriodMillis heartbeat (the platform floor) exists only so a
+            widget frozen by an OEM force-kill eventually corrects itself.
+
+            exported="true" is deliberate on every receiver: on stock Android
+            the APPWIDGET_UPDATE broadcasts come from system_server, which
+            bypasses the export check, so exported="false" worked on Pixels -
+            but OEM launchers (HyperOS/MIUI Home notably) talk to provider
+            receivers directly, and a non-exported receiver silently drops
+            those, which read as "widgets do not work on this phone". The
+            intent filter only accepts APPWIDGET_UPDATE and AppWidgetProvider
+            ignores non-widget actions, so exporting is safe.
 
             Listed in picker order - the everyday one first, the two decorative
             ones last.
         -->
         <receiver
             android:name=".widget.PulseWidgetReceiver"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/widget_pulse_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -359,7 +368,7 @@
 
         <receiver
             android:name=".widget.ConsoleWidgetReceiver"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/widget_console_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -371,7 +380,7 @@
 
         <receiver
             android:name=".widget.DeckWidgetReceiver"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/widget_deck_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -383,7 +392,7 @@
 
         <receiver
             android:name=".widget.LineupWidgetReceiver"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/widget_lineup_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -395,7 +404,7 @@
 
         <receiver
             android:name=".widget.BloomWidgetReceiver"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/widget_bloom_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -407,7 +416,7 @@
 
         <receiver
             android:name=".widget.OrbitWidgetReceiver"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/widget_orbit_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
