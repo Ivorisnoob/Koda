@@ -169,6 +169,8 @@ class MainActivity : ComponentActivity() {
             val appIcon by themeViewModel.appIcon.collectAsState()
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
+            val motionArtwork by themeViewModel.motionArtwork.collectAsState()
+            val motionArtworkWifiOnly by themeViewModel.motionArtworkWifiOnly.collectAsState()
             val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
@@ -268,6 +270,10 @@ class MainActivity : ComponentActivity() {
                         onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
                         playerArtworkColors = playerArtworkColors,
                         onPlayerArtworkColorsToggle = { themeViewModel.setPlayerArtworkColors(it) },
+                        motionArtwork = motionArtwork,
+                        onMotionArtworkToggle = themeViewModel::setMotionArtwork,
+                        motionArtworkWifiOnly = motionArtworkWifiOnly,
+                        onMotionArtworkWifiOnlyToggle = themeViewModel::setMotionArtworkWifiOnly,
                         videoMode = videoMode,
                         onVideoModeToggle = { themeViewModel.setVideoMode(it) },
                         homeModeToggleEnabled = homeModeToggleEnabled,
@@ -590,6 +596,10 @@ fun MusicApp(
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     playerArtworkColors: Boolean,
     onPlayerArtworkColorsToggle: (Boolean) -> Unit,
+    motionArtwork: Boolean,
+    onMotionArtworkToggle: (Boolean) -> Unit,
+    motionArtworkWifiOnly: Boolean,
+    onMotionArtworkWifiOnlyToggle: (Boolean) -> Unit,
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean,
@@ -1069,6 +1079,10 @@ fun MusicApp(
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     playerArtworkColors = playerArtworkColors,
                     onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
+                    motionArtwork = motionArtwork,
+                    onMotionArtworkToggle = onMotionArtworkToggle,
+                    motionArtworkWifiOnly = motionArtworkWifiOnly,
+                    onMotionArtworkWifiOnlyToggle = onMotionArtworkWifiOnlyToggle,
                     videoMode = videoMode,
                     onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,

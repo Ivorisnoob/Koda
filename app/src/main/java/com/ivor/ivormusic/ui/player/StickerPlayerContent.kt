@@ -81,7 +81,6 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
-import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
@@ -701,7 +700,7 @@ private fun DraggableSticker(
         ) {
             val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
             if (artSong != null) {
-                SongArtwork(
+                PlayerArtwork(
                     song = artSong,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),

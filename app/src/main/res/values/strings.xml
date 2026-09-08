@@ -1420,4 +1420,9 @@
     <string name="si_live_playback">Shows the playing song as a Live Update chip in the status bar.</string>
     <string name="si_time_limit">Set a daily usage budget for Koda. When it runs out, the app locks until the next day.</string>
     <string name="si_watch_history_account">When on, videos you watch in Koda are added to your YouTube account\'s watch history, exactly as if you watched on youtube.com.</string>
+    <string name="sp_motion_artwork">Motion artwork</string>
+    <string name="sp_motion_artwork_sub">Animate supported album covers in the full player</string>
+    <string name="sp_motion_artwork_wifi">Motion artwork on Wi-Fi only</string>
+    <string name="sp_motion_artwork_wifi_sub">Use unmetered Wi-Fi for cover lookups and animation</string>
+    <string name="si_motion_artwork">Looks up the song title and artist with Apple Music; no account is needed. Not every song has an animated cover. Uses extra data and battery, and keeps the original cover when unavailable. Animation stops when music is paused or the player is closed, and stays off in Battery Saver, Data Saver, reduced motion, Local Only and Incognito.</string>
 </resources>

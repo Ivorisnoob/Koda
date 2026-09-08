@@ -18,7 +18,7 @@ The app is past the point of proving itself. The core loops all work end to end:
 
 **Two playback pipelines.** Music runs through `MusicService`, a Media3 `MediaLibraryService` with background playback, notifications, and a queue. Video owns its own `ExoPlayer` with DASH, PiP, chapters, captions, hold-to-2x, and a playlist queue when one was opened from a playlist. Both fetch media through bounded ranged requests, because googlevideo throttles open-ended reads to roughly the media bitrate.
 
-**No API keys, and no mandatory account.** Everything comes from NewPipe Extractor and direct InnerTube calls. Search, streaming, downloads, a local taste profile, subscriptions, and the "don't recommend" blocklist all work signed out. Signing in adds the real YouTube feeds on top rather than unlocking the app.
+**No user-supplied API keys, and no mandatory account.** YouTube content comes from NewPipe Extractor and direct InnerTube calls; optional motion artwork uses Apple's public web catalog. Search, streaming, downloads, a local taste profile, subscriptions, and the "don't recommend" blocklist all work signed out. Signing in adds the real YouTube feeds on top rather than unlocking the app.
 
 **Identity is plural.** Several YouTube accounts and device-only local profiles sit side by side, switchable with one preference write and no re-authentication, no network, and no interruption to playback.
 
@@ -115,7 +115,7 @@ Still open on covers: deriving a generated cover from the playlist's *contents* 
 
 #### Respect reduced motion
 
-Koda animates more than almost anything in its category (roughly 97 spring animations, eight player styles built on motion, staggered entrances on every screen), and it reads nothing about whether the person using it wants that. There is no read of `Settings.Global.ANIMATOR_DURATION_SCALE` anywhere in the source, so a user who has turned animations off system-wide, whether for vestibular reasons or because they are on a slow device, still gets every spring and every stagger.
+Koda animates more than almost anything in its category (roughly 97 spring animations, eight player styles built on motion, staggered entrances on every screen). Synced lyrics and motion artwork now observe `Settings.Global.ANIMATOR_DURATION_SCALE`, but the player-style springs and screen entrances still lack a shared reduced-motion policy. A user who turns animations off system-wide should get that choice consistently, not only on those two surfaces.
 
 This matters more here than in a typical app precisely *because* the motion is so central. The bigger the motion design, the worse the experience for someone who cannot tolerate it, and "turn off animations" is a setting people reach for because something is making them ill.
 
@@ -390,6 +390,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 ---
 
 ## Shipped
+
+- Opt-in motion artwork under Settings → Player, with unmetered Wi-Fi only on by default. All eight player styles can show a matched Apple Music album's square animation; queues and the mini-player stay static. The direct public web catalog lookup checks title, artist, album hints and duration, refreshes its expiring web token, and falls back to the existing cover without blocking music. A single muted, audio-disabled H.264 decoder is scoped to the visible, playing full player; a 32 MB disk cache prevents repeated segment downloads. Battery Saver, Data Saver, reduced motion, Local Only, Incognito and leaving the foreground suppress the feature. No Spotify login or third-party artwork proxy is involved. Device validation should cover clipped/rotated covers, live style changes, rapid skipping, backgrounding and switching from Wi-Fi to mobile data.
 
 - Settings explains itself. Every row takes an optional explanation and a long press opens it, because a subtitle has room for a phrase while several of these settings need a paragraph - what AMOLED does to an OLED panel, what fast subscription refresh trades away, what Local Only actually cuts off. Rows do not host that dialog: one owned by a page dies with the page transition, the same reason `SettingsScreen` already hosts every other dialog, so a row hands its request up through `LocalSettingsInfoSink` and the screen shows one dialog for all of them; a row with no explanation keeps its plain tap rather than growing a dead gesture. Home style and navigation style are now two cards drawing the layout instead of two toggles describing it, since the answer to "which of these do I want" is in the picture. Appearance is regrouped into Display, Home and navigation, and Touch feedback, and haptics moved onto it from Playback - they answer every touch in the app, not playback - with the search entry keeping its key so "vibration" still lands on it. Hub rows carry a `MaterialShapes` die-cut each, the player-style-wheel language; detail rows keep the squircle so a page reads calmer than the hub.
 

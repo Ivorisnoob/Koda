@@ -74,7 +74,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
-import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlinx.coroutines.delay
 
 /**
@@ -227,7 +226,7 @@ fun PosterPlayerSheetContent(
                         label = "CanvasSongSwitch"
                     ) { song ->
                         if (song != null && (song.thumbnailUrl != null || song.albumArtUri != null)) {
-                            SongArtwork(
+                            PlayerArtwork(
                                 song = song,
                                 contentDescription = "Album Art",
                                 modifier = Modifier.fillMaxSize(),

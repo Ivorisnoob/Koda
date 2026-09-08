@@ -904,8 +904,9 @@ private fun SwipeableAlbumCarousel(
                         Box(modifier = Modifier.fillMaxSize()) {
                             // Album art with stable loading
                             if (imgUrl != null) {
-                                SongArtwork(
+                                PlayerArtwork(
                                     song = song,
+                                    motionEligible = isCentered,
                                     contentDescription = song.title,
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -1019,7 +1020,7 @@ private fun SingleAlbumArt(
                 val artSong = song?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
 
                 if (artSong != null) {
-                    SongArtwork(
+                    PlayerArtwork(
                         song = artSong,
                         contentDescription = artSong.title,
                         modifier = Modifier
