@@ -347,14 +347,16 @@ internal fun buildSettingsSearchIndex(
             "system brightness"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
+    // Lives on Appearance now: haptics answer every touch in the app, not
+    // playback, so both the row and this entry moved.
     entry(
-        "haptics", "Haptics", "Playback and quality",
+        "haptics", "Haptics", stringResource(R.string.settings_appearance),
         Icons.Rounded.Vibration,
         listOf(
             "haptics", "vibration", "vibrate", "feedback", "touch", "buzz",
             "rumble", "feel", "silent"
         )
-    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    ) { onOpenPage(SettingsPage.APPEARANCE) }
     entry(
         "upload_notifications", "Notify about new uploads", "Notifications",
         Icons.Rounded.NotificationsActive,

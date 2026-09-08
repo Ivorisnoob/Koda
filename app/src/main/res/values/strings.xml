@@ -1353,4 +1353,71 @@
     <string name="app_icon_section_saved_sub">Kept on this device, and included in backups</string>
     <string name="app_icon_delete_style">Delete style</string>
     <string name="app_icon_delete_style_body">"%1$s" will be removed from this device.</string>
+
+    <!-- Settings redesign: hold-to-explain, previews, regrouped sections -->
+    <string name="settings_hold_hint">Touch and hold any setting to learn what it does</string>
+    <string name="si_got_it">Got it</string>
+    <string name="sp_touch_feedback">Touch feedback</string>
+    <string name="sp_display_section">Display</string>
+    <string name="sp_home_and_navigation">Home and navigation</string>
+    <string name="sp_video_section">Video</string>
+    <string name="sp_remember_brightness">Remember fullscreen brightness</string>
+    <string name="sp_home_classic">Classic</string>
+    <string name="sp_home_spotlight">Spotlight</string>
+    <string name="sp_nav_floating">Floating</string>
+    <string name="sp_nav_standard">Standard</string>
+
+    <!-- Hub category explanations (long press) -->
+    <string name="si_hub_account">Connect a YouTube Music account to bring in your playlists, likes, history and subscriptions. Koda works fully signed out; signing in unlocks the personalised feeds.</string>
+    <string name="si_hub_appearance">Everything about how Koda looks and feels: theme, colors, app icon, display size, Home layout, navigation style and touch feedback.</string>
+    <string name="si_hub_player">Choose between eight now-playing designs and control how the player uses album artwork colors.</string>
+    <string name="si_hub_playback">Song transitions, volume levelling, queue behavior, and streaming quality chosen per network.</string>
+    <string name="si_hub_content">Switch between music and video mode, go fully offline, and tune Shorts, feeds and recommendations.</string>
+    <string name="si_hub_subscriptions">Manage followed channels, choose whether they live on this device or your account, and how the feed refreshes.</string>
+    <string name="si_hub_sponsorblock">Skips sponsor reads and other segments in videos automatically, using community-submitted timestamps. Off by default.</string>
+    <string name="si_hub_storage">Where downloads are kept, what gets cached for instant replays, and how much space Koda is allowed to use.</string>
+    <string name="si_hub_notifications">Alerts for new uploads from channels you follow, and live status-bar progress for downloads and playback.</string>
+    <string name="si_hub_local_library">Show music files already on this device alongside YouTube Music in your library.</string>
+    <string name="si_hub_backup">Save settings, playlists, history and stats into one file you can restore on any device.</string>
+    <string name="si_hub_advanced">Fixes for aggressive battery savers, Android Auto help, a daily time limit, and bug reporting.</string>
+
+    <!-- Individual setting explanations (long press) -->
+    <string name="si_amoled">Uses pure black instead of dark gray in the dark theme. On OLED screens black pixels switch off entirely, which deepens contrast and saves battery.</string>
+    <string name="si_ambient">Tints the app background with soft colors pulled from the album art of whatever is playing.</string>
+    <string name="si_app_icon">Pick a different look for Koda\'s icon on your home screen from a set of shape and color presets.</string>
+    <string name="si_display_size">Scales the whole interface up or down without touching your system font size. You preview the change before it applies.</string>
+    <string name="si_spotlight">Two Home designs showing the same content. Classic leads with a large hero and carousels; Spotlight is a denser grid of shortcuts, quick picks and artwork shelves.</string>
+    <string name="si_nav_bar">The floating toolbar hides while you scroll down and returns when you scroll up. The standard bar is a fixed Material 3 navigation bar with labels.</string>
+    <string name="si_haptics">How strongly Koda vibrates in response to touch: drags, toggles, skips and taps. Rich uses the full vocabulary; Subtle keeps only the moments that matter.</string>
+    <string name="si_artwork_colors">Tints the player\'s controls and background with colors pulled from the current album cover instead of the app theme.</string>
+    <string name="si_crossfade">How one song hands over to the next. AutoMix analyses tempo and silence to blend compatible songs; Manual always overlaps by a fixed time; Off changes tracks cleanly.</string>
+    <string name="si_normalize">Evens out loudness between songs, so a quiet acoustic track and a loudly mastered one play at a similar level.</string>
+    <string name="si_auto_queue">When your queue runs out, Koda keeps the music going with similar songs instead of stopping.</string>
+    <string name="si_music_history">Keeps a log on this device of the songs you play. It powers your stats and recently played. Separate from your YouTube account\'s history.</string>
+    <string name="si_hdr">When a video has an HDR version and your screen supports it, Koda plays the HDR one. Richer colors, but more data and battery.</string>
+    <string name="si_brightness">Koda remembers the brightness you drag to in fullscreen video and reapplies it next time, instead of resetting to the system level.</string>
+    <string name="si_local_only">Cuts all internet use. Only downloads and files on this device play; search, streaming and every YouTube surface stay off until you switch back.</string>
+    <string name="si_home_mode_toggle">Shows a music/video switch in the Home header so you can change modes without opening Settings.</string>
+    <string name="si_timed_comments">Shows comments pinned to the moment they talk about, floating above the seek bar as the video plays.</string>
+    <string name="si_shorts">Show or hide Shorts across the app. Hidden Shorts are not just tucked away - they stop being fetched at all.</string>
+    <string name="si_recent_searches">Shows your past searches when you tap the search field. Turning this off hides them without deleting them.</string>
+    <string name="si_compact_video_home">Smaller video cards in the video Home feed, so more fit on one screen.</string>
+    <string name="si_related_videos">The suggestions under a playing video. Turning them off removes the distraction; playlists and queues keep working.</string>
+    <string name="si_not_interested">Everything you have told Koda to stop recommending - hidden videos and blocked channels. Anything can be un-hidden here.</string>
+    <string name="si_private_downloads">Stores downloads inside Koda\'s private folder, invisible to other apps and the gallery, instead of the shared Downloads/Koda folder.</string>
+    <string name="si_cache_music">Keeps recently streamed songs on disk so replays start instantly and cost no data. The oldest entries are evicted when the limit below is reached.</string>
+    <string name="si_cache_videos">Keeps recently streamed video temporarily for smooth scrubbing and instant replays. It clears itself a few minutes after you stop watching.</string>
+    <string name="si_cache_shorts">Caches Shorts you watch so swiping back replays them instantly.</string>
+    <string name="si_preload">Fetches the beginning of upcoming songs and Shorts before you reach them, so skips start instantly. Costs some data on metered networks.</string>
+    <string name="si_fast_refresh">Fast mode reads each channel\'s lightweight RSS feed - roughly twenty times less data - but cannot show video durations or live badges.</string>
+    <string name="si_subs_source">Which subscriptions the feed shows: the ones saved on this device, the ones on your YouTube account, or both merged together.</string>
+    <string name="si_subs_target">Where the Subscribe button saves a new channel: on this device only, invisible to YouTube, or on your YouTube account.</string>
+    <string name="si_load_local_songs">Scans this device for music files and shows them in your library next to YouTube Music. Needs the audio files permission.</string>
+    <string name="si_compat_scan">Reads music files directly from storage instead of Android\'s media index. Fixes songs missing on HyperOS and MIUI, but needs the all-files permission.</string>
+    <string name="si_battery">Aggressive battery savers kill background playback. This asks Android to leave Koda running while music plays.</string>
+    <string name="si_upload_notifications">Koda periodically checks followed channels in the background and notifies you about new uploads. Uses a little battery and data.</string>
+    <string name="si_live_download">Shows download progress as a Live Update chip in the status bar while a transfer runs.</string>
+    <string name="si_live_playback">Shows the playing song as a Live Update chip in the status bar.</string>
+    <string name="si_time_limit">Set a daily usage budget for Koda. When it runs out, the app locks until the next day.</string>
+    <string name="si_watch_history_account">When on, videos you watch in Koda are added to your YouTube account\'s watch history, exactly as if you watched on youtube.com.</string>
 </resources>
