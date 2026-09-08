@@ -62,6 +62,18 @@ internal object MotionArtworkResolver {
         return null
     }
 
+    /**
+     * Apple's web player answers its own root with a 301 to a locale path, so the
+     * token scrape has to follow redirects - but only inside the host it started on.
+     * The client itself still refuses to follow any, so an off-Apple Location is a
+     * dead end rather than a request.
+     */
+    fun isWebUrl(value: String): Boolean {
+        val url = value.toHttpUrlOrNull() ?: return false
+        return url.isHttps && url.port == 443 && url.username.isEmpty() && url.password.isEmpty() &&
+            url.host == "music.apple.com"
+    }
+
     fun isMediaUrl(value: String): Boolean {
         val url = value.toHttpUrlOrNull() ?: return false
         return url.isHttps && url.port == 443 && url.username.isEmpty() && url.password.isEmpty() &&

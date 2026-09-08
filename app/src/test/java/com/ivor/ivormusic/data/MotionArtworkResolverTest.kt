@@ -92,4 +92,30 @@ class MotionArtworkResolverTest {
         assertFalse(MotionArtworkResolver.usableWebToken(token("AMPWebPlay", 4_000), 1_000))
         assertFalse(MotionArtworkResolver.usableWebToken("broken", 1_000))
     }
+
+    /**
+     * The token scrape follows Apple's 301 itself rather than letting OkHttp do it, so
+     * this predicate is what stops a Location header walking the request off Apple.
+     */
+    @Test fun webPlayerHostIsPinnedAcrossRedirects() {
+        assertTrue(MotionArtworkResolver.isWebUrl("https://music.apple.com"))
+        // The real 301 target, which the feature must be able to follow.
+        assertTrue(MotionArtworkResolver.isWebUrl("https://music.apple.com/us/new"))
+        for (url in listOf(
+            "http://music.apple.com",
+            "https://music.apple.com.evil.test/us/new",
+            "https://evil.test/music.apple.com",
+            "https://user@music.apple.com/us/new",
+            "https://music.apple.com:8443/us/new",
+            "file:///etc/passwd",
+        )) {
+            assertFalse(url, MotionArtworkResolver.isWebUrl(url))
+        }
+    }
+
+    /** A media host is not a web host and vice versa; neither predicate may accept the other's. */
+    @Test fun webAndMediaHostsAreDisjoint() {
+        assertFalse(MotionArtworkResolver.isWebUrl(master))
+        assertFalse(MotionArtworkResolver.isMediaUrl("https://music.apple.com/us/new"))
+    }
 }
