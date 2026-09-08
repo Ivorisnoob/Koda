@@ -29,7 +29,7 @@
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">What is playing and what is next; tap a track to jump</string>
     <string name="widget_bloom_label">Bloom</string>
-    <string name="widget_bloom_description">Album art as a scalloped tile with one play button</string>
+    <string name="widget_bloom_description">Album art as a scalloped tile on your wallpaper, with play and next</string>
     <string name="widget_orbit_label">Orbit</string>
     <string name="widget_orbit_description">A round cover in a single cell</string>
 
@@ -43,6 +43,13 @@
     <string name="widget_action_repeat_one">Repeat one</string>
     <string name="widget_action_repeat_all">Repeat all</string>
     <string name="widget_nothing_up_next">Nothing up next</string>
+
+    <!-- Static sample content for the launcher picker previews (previewLayout).
+        Never shown on an installed widget; the live Glance UI owns that. -->
+    <string name="widget_preview_title">Midnight Drive</string>
+    <string name="widget_preview_artist">Neon Coast</string>
+    <string name="widget_preview_next_1">Glasshouse</string>
+    <string name="widget_preview_next_2">Ultraviolet</string>
 
     <!-- Background upload check (#137): its notification channel and grouped title. -->
     <string name="upload_check_channel_name">New uploads</string>
@@ -567,6 +574,9 @@
     <string name="vh_available_offline">Available offline</string>
     <string name="vh_recommended_for_you">Recommended For You</string>
     <string name="vh_trending_videos">Trending Videos</string>
+    <string name="vh_from_subscriptions">From your subscriptions</string>
+    <string name="vh_no_subscriptions">No subscriptions yet</string>
+    <string name="vh_no_subscriptions_sub">Subscribe to channels to see their latest videos on Home</string>
     <string name="vh_youre_offline">You\'re offline</string>
     <string name="vh_removed_from_history">Removed from watch history</string>
     <string name="vh_clear_history">Clear watch history</string>
@@ -1248,4 +1258,56 @@
     <string name="dl_resume">Resume download</string>
     <string name="vl_downloaded_content">Downloaded content</string>
     <string name="vl_downloaded_content_sub">Watch saved videos and manage downloads</string>
+
+    <!-- App Icon Customizer -->
+    <string name="sp_app_icon">App icon</string>
+    <string name="sp_app_icon_subtitle">Customize launcher icon style and colors</string>
+    <string name="app_icon_classic">Koda Classic</string>
+    <string name="app_icon_classic_desc">Deep purple with cream note &amp; neon lime spark</string>
+    <string name="app_icon_crimson">Crimson Beat</string>
+    <string name="app_icon_crimson_desc">Ruby red with rose note &amp; golden amber spark</string>
+    <string name="app_icon_midnight">Midnight Cyber</string>
+    <string name="app_icon_midnight_desc">Stealth obsidian with glowing cyan note &amp; hot pink spark</string>
+    <string name="app_icon_emerald">Emerald Groove</string>
+    <string name="app_icon_emerald_desc">Botanical green with fresh mint note &amp; sun yellow spark</string>
+    <string name="app_icon_sunset">Electric Sunset</string>
+    <string name="app_icon_sunset_desc">Sunset orange with peach note &amp; deep violet spark</string>
+    <string name="app_icon_ocean">Ocean Breeze</string>
+    <string name="app_icon_ocean_desc">Deep marine blue with ice-blue note &amp; coral spark</string>
+    <string name="app_icon_blossom">Pastel Blossom</string>
+    <string name="app_icon_blossom_desc">Dreamy lavender with pearl note &amp; bright sky blue spark</string>
+    <string name="app_icon_monochrome">Monochrome</string>
+    <string name="app_icon_monochrome_desc">Minimalist noir with pure white note &amp; silver spark</string>
+    <string name="app_icon_solar">Solar Gold</string>
+    <string name="app_icon_solar_desc">Golden honey with electric indigo spark</string>
+    <string name="app_icon_section_presets">Launcher presets</string>
+    <string name="app_icon_section_presets_sub">Changes the launcher icon on your home screen and app drawer</string>
+    <string name="app_icon_section_studio">Icon Studio</string>
+    <string name="app_icon_section_studio_sub">Personalize colors and preview how your icon looks</string>
+    <string name="app_icon_shape_preview">Preview shape</string>
+    <string name="app_icon_color_blob">Aura color</string>
+    <string name="app_icon_color_note">Note color</string>
+    <string name="app_icon_color_dot">Accent spark</string>
+    <string name="app_icon_color_bg">Background</string>
+    <string name="app_icon_applied_notice">App icon updated. Some launchers take a moment to refresh.</string>
+    <string name="app_icon_apply_failed">Android refused the icon change. Nothing was altered.</string>
+    <string name="app_icon_current">Active</string>
+    <string name="app_icon_apply_button">Apply to Home Screen</string>
+    <string name="app_icon_closest_preset">Matches "%1$s" preset</string>
+    <string name="app_icon_reset">Reset</string>
+    <string name="app_icon_shape_squircle">Squircle</string>
+    <string name="app_icon_shape_circle">Circle</string>
+    <string name="app_icon_shape_square">Square</string>
+    <string name="app_icon_shape_burst">Burst</string>
+    <string name="app_icon_shape_cookie">Cookie</string>
+    <string name="app_icon_shape_clover">Clover</string>
+    <string name="app_icon_custom_title">Custom style</string>
+    <string name="app_icon_launcher_note">Custom colors stay inside Koda. Your launcher shows the closest preset, %1$s.</string>
+    <string name="app_icon_save_style">Save style</string>
+    <string name="app_icon_save_style_title">Name this style</string>
+    <string name="app_icon_save_style_hint">Style name</string>
+    <string name="app_icon_section_saved">Your styles</string>
+    <string name="app_icon_section_saved_sub">Kept on this device, and included in backups</string>
+    <string name="app_icon_delete_style">Delete style</string>
+    <string name="app_icon_delete_style_body">"%1$s" will be removed from this device.</string>
 </resources>
