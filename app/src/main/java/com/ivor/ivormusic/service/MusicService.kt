@@ -636,6 +636,11 @@ class MusicService : MediaLibraryService() {
 
         audioFocus = AudioFocusController(
             context = this,
+            isPlaybackActive = {
+                engine.active.playWhenReady &&
+                    engine.active.playbackState != Player.STATE_ENDED &&
+                    engine.active.playbackState != Player.STATE_IDLE
+            },
             onPause = { engine.active.pause() },
             onResume = { engine.active.play() },
             onDuck = { gain -> engine.duckGain = gain },
@@ -918,6 +923,9 @@ class MusicService : MediaLibraryService() {
             ) {
                 clearSleepTimer()
             }
+            if (!playWhenReady && !audioFocus.isPausedByFocusLoss) {
+                audioFocus.abandon()
+            }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -945,6 +953,9 @@ class MusicService : MediaLibraryService() {
                 transitionJob?.cancel()
                 transitionJob = null
                 musicProgressLiveUpdate?.hide()
+                if (!audioFocus.isPausedByFocusLoss) {
+                    audioFocus.abandon()
+                }
             }
         }
 

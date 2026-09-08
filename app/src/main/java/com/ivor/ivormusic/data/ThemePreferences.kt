@@ -56,6 +56,9 @@ class ThemePreferences(context: Context) {
     private val _paletteStyle = MutableStateFlow(getPaletteStylePreference())
     val paletteStyle: StateFlow<PaletteStyle> = _paletteStyle.asStateFlow()
 
+    private val _appIcon = MutableStateFlow(getAppIconPreference())
+    val appIcon: StateFlow<String> = _appIcon.asStateFlow()
+
     private val _loadLocalSongs = MutableStateFlow(getLoadLocalSongsPreference())
     val loadLocalSongs: StateFlow<Boolean> = _loadLocalSongs.asStateFlow()
     
@@ -283,6 +286,7 @@ class ThemePreferences(context: Context) {
             KEY_THEME_MODE -> _themeMode.value = getThemeModePreference()
             KEY_AMOLED_THEME -> _amoledTheme.value = getAmoledThemePreference()
             KEY_COLOR_PALETTE -> _colorPalette.value = getColorPalettePreference()
+            KEY_APP_ICON -> _appIcon.value = getAppIconPreference()
             KEY_PALETTE_STYLE -> _paletteStyle.value = getPaletteStylePreference()
             KEY_LOAD_LOCAL_SONGS -> _loadLocalSongs.value = getLoadLocalSongsPreference()
             KEY_AMBIENT_BACKGROUND -> _ambientBackground.value = getAmbientBackgroundPreference()
@@ -399,6 +403,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_OLD_DARK_MODE = "dark_mode" // For migration
         private const val KEY_AMOLED_THEME = "amoled_theme"
         private const val KEY_COLOR_PALETTE = "color_palette"
+        const val KEY_APP_ICON = "app_icon"
+        const val DEFAULT_APP_ICON = "default"
         private const val KEY_PALETTE_STYLE = "palette_style"
         /** Default palette id: wallpaper-based dynamic color (Android 12+). */
         const val DEFAULT_COLOR_PALETTE = "dynamic"
@@ -641,6 +647,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_REPEAT = "video_repeat"
         private const val KEY_VIDEO_AUTOPLAY = "video_autoplay"
         private const val KEY_VIDEO_BRIGHTNESS = "video_brightness"
+        private const val KEY_VIDEO_PLAYBACK_SPEED = "video_playback_speed"
 
         /** Stored brightness sentinel meaning "never set, follow the system". */
         const val VIDEO_BRIGHTNESS_UNSET = -1f
@@ -852,6 +859,15 @@ class ThemePreferences(context: Context) {
     fun setColorPalette(paletteId: String) {
         prefs.edit().putString(KEY_COLOR_PALETTE, paletteId).apply()
         _colorPalette.value = paletteId
+    }
+
+    fun getAppIconPreference(): String {
+        return prefs.getString(KEY_APP_ICON, DEFAULT_APP_ICON) ?: DEFAULT_APP_ICON
+    }
+
+    fun setAppIcon(iconId: String) {
+        prefs.edit().putString(KEY_APP_ICON, iconId).apply()
+        _appIcon.value = iconId
     }
 
     /**
@@ -1544,6 +1560,22 @@ class ThemePreferences(context: Context) {
 
     fun setVideoAutoplayEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_VIDEO_AUTOPLAY, enabled).apply()
+    }
+
+    /**
+     * The video playback rate the user last picked in the player sheet,
+     * re-applied to the next video instead of resetting to 1x. Stored like
+     * repeat/autoplay: read once when a video starts, written when the user
+     * changes it in the player itself, so there is no Settings UI for it.
+     * Live broadcasts always play at 1x and never overwrite the stored value.
+     */
+    fun getVideoPlaybackSpeed(): Float =
+        prefs.getFloat(KEY_VIDEO_PLAYBACK_SPEED, 1f).coerceIn(0.25f, 2f)
+
+    fun setVideoPlaybackSpeed(speed: Float) {
+        prefs.edit()
+            .putFloat(KEY_VIDEO_PLAYBACK_SPEED, speed.coerceIn(0.25f, 2f))
+            .apply()
     }
 
     /**
