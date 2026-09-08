@@ -263,7 +263,8 @@ internal enum class SettingsPage {
     LOCAL_LIBRARY,
     ADVANCED,
     DISPLAY_SIZE,
-    SPONSORBLOCK
+    SPONSORBLOCK,
+    APP_ICON
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -276,6 +277,7 @@ fun SettingsScreen(
     colorPalette: String = ThemePreferences.DEFAULT_COLOR_PALETTE,
     onNavigateToColorPalette: () -> Unit = {},
     paletteStyle: com.ivor.ivormusic.ui.theme.PaletteStyle = com.ivor.ivormusic.ui.theme.PaletteStyle.TONAL_SPOT,
+    appIcon: String = ThemePreferences.DEFAULT_APP_ICON,
     loadLocalSongs: Boolean,
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
@@ -491,12 +493,12 @@ fun SettingsScreen(
                             stiffness = Spring.StiffnessMedium
                         )
                     )
-                    page = SettingsPage.HUB
+                    page = if (page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON) SettingsPage.APPEARANCE else SettingsPage.HUB
                 }
                 // A button press, or three-button navigation: no gesture to
                 // continue from, so the ordinary transition is still the right
                 // one and the peel stays out of it entirely.
-                hasPage -> page = SettingsPage.HUB
+                hasPage -> page = if (page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON) SettingsPage.APPEARANCE else SettingsPage.HUB
                 else -> searchQuery = ""
             }
         } catch (cancelled: CancellationException) {
@@ -770,6 +772,8 @@ fun SettingsScreen(
                         onNonExpressiveNavigationBarToggle,
                     uiScale = uiScale,
                     onNavigateToDisplaySize = { page = SettingsPage.DISPLAY_SIZE },
+                    appIcon = appIcon,
+                    onNavigateToAppIcon = { page = SettingsPage.APP_ICON },
                     onBack = { page = SettingsPage.HUB }
                 )
 
@@ -794,6 +798,10 @@ fun SettingsScreen(
                 SettingsPage.DISPLAY_SIZE -> DisplaySizeSettingsPage(
                     uiScale = uiScale,
                     onUiScaleChange = onUiScaleChange,
+                    onBack = { page = SettingsPage.APPEARANCE }
+                )
+
+                SettingsPage.APP_ICON -> AppIconSettingsPage(
                     onBack = { page = SettingsPage.APPEARANCE }
                 )
 
@@ -2040,11 +2048,43 @@ private fun ExpressiveAboutDialog(
                                     .background(MaterialTheme.colorScheme.primaryContainer),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                androidx.compose.foundation.Image(
-                                    painter = painterResource(R.drawable.ic_launcher_foreground),
-                                    contentDescription = stringResource(R.string.app_name),
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                                // A saved style has no drawable behind it -
+                                // it is colours, not a resource - so the one
+                                // place Koda draws its own mark at size gets
+                                // the live renderer when one is active, and
+                                // the preset's artwork otherwise. Without this
+                                // a style someone saved would change nothing
+                                // they could ever see.
+                                val themePrefs = remember { ThemePreferences(context) }
+                                val styleStore = remember {
+                                    com.ivor.ivormusic.data.AppIconStyleStore(context)
+                                }
+                                val currentAppIconId by themePrefs.appIcon.collectAsState()
+                                val activeStyleId by styleStore.activeStyleId.collectAsState()
+                                val savedStyles by styleStore.styles.collectAsState()
+                                val currentAppIcon = remember(currentAppIconId) {
+                                    AppIcon.fromId(currentAppIconId)
+                                }
+                                val activeStyle = remember(activeStyleId, savedStyles) {
+                                    savedStyles.firstOrNull { it.id == activeStyleId }
+                                }
+                                if (activeStyle != null) {
+                                    KodaAppIcon(
+                                        style = activeStyle.toIconStyle(),
+                                        shape = androidx.compose.foundation.shape
+                                            .RoundedCornerShape(20.dp),
+                                        animateColors = false,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    androidx.compose.foundation.Image(
+                                        painter = painterResource(
+                                            currentAppIcon.previewForegroundRes
+                                        ),
+                                        contentDescription = stringResource(R.string.app_name),
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.height(14.dp))
                             Text(

@@ -166,6 +166,7 @@ class MainActivity : ComponentActivity() {
             val amoledTheme by themeViewModel.amoledTheme.collectAsState()
             val colorPalette by themeViewModel.colorPalette.collectAsState()
             val paletteStyle by themeViewModel.paletteStyle.collectAsState()
+            val appIcon by themeViewModel.appIcon.collectAsState()
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
@@ -256,6 +257,7 @@ class MainActivity : ComponentActivity() {
                         onColorPaletteChange = { themeViewModel.setColorPalette(it) },
                         paletteStyle = paletteStyle,
                         onPaletteStyleChange = { themeViewModel.setPaletteStyle(it) },
+                        appIcon = appIcon,
                         isDarkMode = isDarkTheme, // Derived for compatibility
                         onThemeToggle = { isDark ->
                             themeViewModel.setThemeMode(if (isDark) ThemeMode.DARK else ThemeMode.LIGHT)
@@ -568,6 +570,7 @@ fun MusicApp(
     onColorPaletteChange: (String) -> Unit,
     paletteStyle: PaletteStyle,
     onPaletteStyleChange: (PaletteStyle) -> Unit,
+    appIcon: String = com.ivor.ivormusic.data.ThemePreferences.DEFAULT_APP_ICON,
     isDarkMode: Boolean,
     onThemeToggle: (Boolean) -> Unit,
     loadLocalSongs: Boolean,

@@ -60,6 +60,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SignalCellularAlt
@@ -244,8 +245,11 @@ internal fun AppearanceSettingsPage(
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
     uiScale: Float,
     onNavigateToDisplaySize: () -> Unit,
+    appIcon: String = ThemePreferences.DEFAULT_APP_ICON,
+    onNavigateToAppIcon: () -> Unit = {},
     onBack: () -> Unit
 ) {
+    val currentAppIcon = remember(appIcon) { AppIcon.fromId(appIcon) }
     val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
         "Dynamic (from wallpaper)"
     } else {
@@ -283,6 +287,20 @@ internal fun AppearanceSettingsPage(
                         },
                         enabled = amoledTheme,
                         onToggle = onAmoledThemeToggle
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.sp_app_icon)) {
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Rounded.AutoAwesome,
+                        title = stringResource(R.string.sp_app_icon),
+                        subtitle = stringResource(currentAppIcon.titleRes),
+                        onClick = onNavigateToAppIcon,
+                        showChevron = true
                     )
                 }
             }

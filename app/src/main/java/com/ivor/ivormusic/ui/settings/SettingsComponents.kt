@@ -357,6 +357,15 @@ internal fun SettingsHubRow(
 internal fun SettingsDetailScaffold(
     title: String,
     onBack: () -> Unit,
+    /**
+     * Drawn between the top bar and the list, and it does not scroll.
+     *
+     * For a page whose whole job is judging one thing while you change it - the
+     * app icon, where the controls run past a screen and the preview is the
+     * point - a header inside the list scrolls off exactly when it starts being
+     * needed. Most pages want nothing here.
+     */
+    header: (@Composable () -> Unit)? = null,
     content: LazyListScope.() -> Unit
 ) {
     Column(
@@ -396,6 +405,12 @@ internal fun SettingsDetailScaffold(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
         )
+
+        if (header != null) {
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                header()
+            }
+        }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),

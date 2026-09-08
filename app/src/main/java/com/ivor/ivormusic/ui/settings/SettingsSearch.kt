@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.MoneyOff
@@ -226,6 +227,14 @@ internal fun buildSettingsSearchIndex(
             "segments", "intro", "outro", "self promo", "sponsors", "skip"
         )
     ) { onOpenPage(SettingsPage.SPONSORBLOCK) }
+    entry(
+        "app_icon", stringResource(R.string.sp_app_icon), stringResource(R.string.settings_appearance), Icons.Rounded.AutoAwesome,
+        listOf(
+            "icon", "app icon", "launcher icon", "home screen icon", "logo",
+            "shortcut icon", "alternate icon", "icon color", "icon colour",
+            "icon style", "custom icon", "change icon", "app logo"
+        )
+    ) { onOpenPage(SettingsPage.APP_ICON) }
     entry(
         "display_size", stringResource(R.string.sp_display_size), stringResource(R.string.settings_appearance), Icons.Rounded.FormatSize,
         listOf(
