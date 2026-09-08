@@ -507,6 +507,12 @@ class MainActivity : ComponentActivity() {
      */
     private fun takeSharedLink(intent: Intent?) {
         if (intent == null) return
+        val navTarget = intent.getStringExtra("navigate_to")
+        if (navTarget != null) {
+            neutralize(intent)
+            pendingNavigation.value = navTarget
+            return
+        }
         // A video file is checked for first: an "open with" on a video puts the
         // file in the same `data` field a YouTube link would use, and letting
         // the link path see it first would turn a playable file into "no
@@ -545,6 +551,11 @@ class MainActivity : ComponentActivity() {
         intent.type = null
         intent.removeExtra(Intent.EXTRA_TEXT)
         intent.removeExtra(Intent.EXTRA_STREAM)
+        intent.removeExtra("navigate_to")
+    }
+
+    companion object {
+        var pendingNavigation = androidx.compose.runtime.mutableStateOf<String?>(null)
     }
 }
 
@@ -691,6 +702,14 @@ fun MusicApp(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val navController = rememberNavController()
+    val pendingNav by MainActivity.pendingNavigation
+    LaunchedEffect(pendingNav) {
+        val target = pendingNav
+        if (target != null) {
+            MainActivity.pendingNavigation.value = null
+            navController.navigate(target)
+        }
+    }
     // Scope the player VM to the ViewModelStore so it survives configuration
     // changes and onCleared() actually runs (releasing the MediaController).
     // Application context is used so the Activity isn't retained.

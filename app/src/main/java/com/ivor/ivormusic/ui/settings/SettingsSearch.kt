@@ -57,6 +57,7 @@ import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
@@ -507,6 +508,13 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "playlists", "liked songs", "stats", "history", "keep", "protect",
             "lose", "wipe", "uninstall"
+        )
+    ) { onNavigateToBackup() }
+    entry(
+        "scheduled_backup", stringResource(R.string.bk_scheduled_title), stringResource(R.string.settings_backup_and_restore), Icons.Rounded.Schedule,
+        listOf(
+            "scheduled", "automatic", "schedule", "daily", "auto backup", "timer",
+            "recurring", "auto", "nightly", "retention"
         )
     ) { onNavigateToBackup() }
 

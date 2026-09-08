@@ -760,6 +760,49 @@
     <string name="bk_restart_now">Restart now</string>
     <string name="bk_failed_title">That didn\'t work</string>
 
+    <!-- Scheduled Backups -->
+    <string name="bk_scheduled_title">Scheduled backups</string>
+    <string name="bk_scheduled_sub">Automatically protect your data on a schedule</string>
+    <string name="bk_folder_title">Backup folder</string>
+    <string name="bk_folder_none">No folder selected</string>
+    <string name="bk_folder_pick">Choose folder</string>
+    <string name="bk_folder_change">Change folder</string>
+    <string name="bk_folder_permission_lost">Storage access was revoked. Tap to choose the folder again.</string>
+    <string name="bk_folder_not_found">The backup folder is unavailable or missing. Tap to choose a new folder.</string>
+    <string name="bk_freq_title">Frequency</string>
+    <string name="bk_freq_daily">Daily</string>
+    <string name="bk_freq_3days">Every 3 days</string>
+    <string name="bk_freq_weekly">Weekly</string>
+    <string name="bk_freq_2weeks">Every 2 weeks</string>
+    <string name="bk_freq_monthly">Monthly</string>
+    <string name="bk_retention_title">Backups to keep</string>
+    <string name="bk_retention_format">Keep last %1$d backups</string>
+    <string name="bk_retention_dialog_title">Backup retention</string>
+    <string name="bk_retention_dialog_desc">Older backups in the selected folder will be deleted automatically after a new backup completes.</string>
+    <string name="bk_retention_keep_3">Keep last 3 backups</string>
+    <string name="bk_retention_keep_5">Keep last 5 backups (recommended)</string>
+    <string name="bk_retention_keep_10">Keep last 10 backups</string>
+    <string name="bk_retention_keep_20">Keep last 20 backups</string>
+    <string name="bk_constraint_charging">Only when charging</string>
+    <string name="bk_constraint_charging_sub">Back up while plugged in to preserve battery</string>
+    <string name="bk_constraint_idle">Only when idle</string>
+    <string name="bk_constraint_idle_sub">Wait until your device is not actively in use</string>
+    <string name="bk_constraint_unmetered">Only on unmetered Wi-Fi</string>
+    <string name="bk_constraint_unmetered_sub">Recommended when backing up to cloud-synced storage</string>
+    <string name="bk_run_now">Back up now to folder</string>
+    <string name="bk_run_now_sub">Write a backup to your chosen folder immediately</string>
+    <string name="bk_last_run_never">No automatic backups yet</string>
+    <string name="bk_last_run_success">Last automatic backup: %1$s</string>
+    <string name="bk_last_run_failed">Last automatic backup failed: %1$s</string>
+    <string name="bk_pruned_count">Pruned %1$d older backup(s)</string>
+    <string name="bk_backup_saved_to_folder">Backup saved to %1$s</string>
+    <string name="bk_channel_name">Scheduled backups</string>
+    <string name="bk_channel_desc">Notifications about automatic backup progress and storage issues</string>
+    <string name="bk_notif_failed_title">Scheduled backup failed</string>
+    <string name="bk_notif_perm_revoked">Storage access was revoked. Tap to choose a backup folder.</string>
+    <string name="bk_notif_folder_missing">Backup folder could not be found. Tap to select a backup folder.</string>
+    <string name="bk_notif_failed_repeated">Backup failed %1$d times in a row. Tap to check backup settings.</string>
+
     <!-- Update screen -->
     <string name="us_title">Software Update</string>
     <string name="us_checking">Checking for updates...</string>
