@@ -181,6 +181,12 @@
     <string name="song_options_not_interested_subtitle">Stop recommending this song</string>
     <string name="song_options_block_artist">Don\'t recommend %1$s</string>
 
+    <!-- Playback speed control in the now-playing overflow sheet -->
+    <string name="song_options_speed">Playback speed</string>
+    <string name="song_options_speed_value">%1$d%%</string>
+    <string name="song_options_speed_normal">Normal speed</string>
+    <string name="cd_speed_reset">Reset to normal speed</string>
+
     <!-- Add to playlist sheet -->
     <string name="add_to_playlist_title">Add to Playlist</string>
     <string name="new_playlist_label">New Playlist</string>
@@ -361,6 +367,8 @@
     <string name="sp_local_only">Local Only</string>
     <string name="sp_home_mode_toggle">Home Screen Mode Toggle</string>
     <string name="sp_timed_comments">Timed Comments</string>
+    <string name="sp_compact_video_home">Compact video home</string>
+    <string name="sp_compact_video_home_sub">Show smaller thumbnails with titles and channels beside them</string>
     <string name="sp_shorts">Shorts</string>
     <string name="sp_no_description">No description</string>
     <string name="sp_shorts_enabled_sub">Shown on Home and opened in the swipe player</string>
@@ -426,14 +434,25 @@
     <string name="sp_private_downloads_off">New audio and video appear in Downloads/Koda</string>
     <string name="sp_private_downloads_note">Album art stays hidden from Gallery in either mode. Existing downloads stay where they are.</string>
     <string name="sp_cache">Cache</string>
-    <string name="sp_cache_music">Cache Playback</string>
-    <string name="sp_cache_music_sub">Store streamed songs and videos for faster replay and seeking</string>
-    <string name="sp_local_cache">Local Cache</string>
-    <string name="sp_max_cache_size">Max Cache Size</string>
+    <string name="sp_cache_videos">Cache videos</string>
+    <string name="sp_cache_videos_sub">Keep temporary video data for seeking and replay</string>
+    <string name="sp_cache_shorts">Cache Shorts</string>
+    <string name="sp_cache_shorts_sub">Keep temporary Shorts data for swipe-back and replay</string>
+    <string name="sp_playback_preload">Preload upcoming media</string>
+    <string name="sp_playback_preload_sub">Prepare upcoming music and Shorts before you play them</string>
+    <string name="sp_clear_video_cache">Clear video cache</string>
+    <string name="sp_clear_video_cache_sub">Remove temporary video data; keep downloads</string>
+    <string name="sp_clear_shorts_cache">Clear Shorts cache</string>
+    <string name="sp_clear_shorts_cache_sub">Remove temporary Shorts data; keep downloads</string>
+    <string name="sp_playback_cache_note">Music uses the storage limit above. Video and Shorts data clears five minutes after both players close. Turning caching off stops new writes on the next load. Downloads are kept separately. Crossfade may still prepare the next song when enabled.</string>
+    <string name="sp_cache_music">Cache music</string>
+    <string name="sp_cache_music_sub">Keep streamed songs for faster replay and offline listening</string>
+    <string name="sp_local_cache">Music cache</string>
+    <string name="sp_max_cache_size">Music cache limit</string>
     <string name="sp_cache_size_large_warning">Koda only fills the cache as you listen, but it can grow to %1$s of device storage before it starts evicting older songs.</string>
     <string name="sp_cache_size_low_space">Only %1$s free on this device. The cache will stop growing when the space runs out, and other apps have to share it.</string>
-    <string name="sp_clear_cache">Clear Cache</string>
-    <string name="sp_clear_cache_sub">Free up storage space</string>
+    <string name="sp_clear_cache">Clear music cache</string>
+    <string name="sp_clear_cache_sub">Remove temporarily stored songs; keep downloads</string>
     <string name="sp_live_updates">Live updates</string>
     <string name="sp_live_download_updates">Live download updates</string>
     <string name="sp_live_download_updates_sub">Show download progress as a live status bar chip</string>
@@ -1225,4 +1244,8 @@
     <string name="palette_style_expressive">Expressive</string>
     <string name="palette_style_fruit_salad">Fruit Salad</string>
     <string name="palette_style_monochrome">Monochrome</string>
+    <string name="dl_paused">Paused · resume when you’re ready</string>
+    <string name="dl_resume">Resume download</string>
+    <string name="vl_downloaded_content">Downloaded content</string>
+    <string name="vl_downloaded_content_sub">Watch saved videos and manage downloads</string>
 </resources>

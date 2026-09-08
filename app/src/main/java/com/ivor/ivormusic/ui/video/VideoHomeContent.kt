@@ -106,6 +106,7 @@ fun VideoHomeContent(
     onDownloadsClick: () -> Unit = {},
     onRefresh: () -> Unit,
     recommendationsEnabled: Boolean = true,
+    compact: Boolean = false,
     isDarkMode: Boolean,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
@@ -121,7 +122,7 @@ fun VideoHomeContent(
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
-    val showOfflineDownloads = isOffline && videos.isEmpty() && downloadedVideos.isNotEmpty()
+    val showOfflineDownloads = isOffline && downloadedVideos.isNotEmpty()
 
     // Notifications sheet state
     var showNotificationsSheet by remember { mutableStateOf(false) }
@@ -217,7 +218,7 @@ fun VideoHomeContent(
                     .fillMaxSize()
                     .background(backgroundColor),
                 contentPadding = contentPadding,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp)
             ) {
                 // Top Bar
                 item {
@@ -270,6 +271,7 @@ fun VideoHomeContent(
                 if (showOfflineDownloads) {
                     items(downloadedVideos, key = { "download_${it.id}" }) { downloaded ->
                         VideoCard(
+                            compact = compact,
                             video = downloaded.asOfflineVideoItem(),
                             onClick = { onDownloadedVideoClick(downloaded) },
                             modifier = Modifier.padding(horizontal = 16.dp)
@@ -292,6 +294,7 @@ fun VideoHomeContent(
 
                     items(leadingVideos) { video ->
                         VideoCard(
+                            compact = compact,
                             video = video,
                             onClick = { onVideoClick(video) },
                             onLongClick = { onVideoLongPress(video) },
@@ -311,6 +314,7 @@ fun VideoHomeContent(
 
                     items(trailingVideos) { video ->
                         VideoCard(
+                            compact = compact,
                             video = video,
                             onClick = { onVideoClick(video) },
                             onLongClick = { onVideoLongPress(video) },
@@ -680,7 +684,8 @@ fun VideoCard(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     /** Opens the creator when the avatar is tapped, without invoking [onClick]. */
-    onOpenChannel: ((String) -> Unit)? = null
+    onOpenChannel: ((String) -> Unit)? = null,
+    compact: Boolean = false
 ) {
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -701,149 +706,153 @@ fun VideoCard(
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 1.dp
     ) {
-        Column {
-            // Thumbnail with duration overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-            ) {
-                VideoThumbnail(
-                    video = video,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Gradient overlay at bottom for duration
+        if (compact) {
+            CompactVideoCardContent(video, openChannel, onLongClick)
+        } else {
+            Column {
+                // Thumbnail with duration overlay
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
-                            )
-                        )
-                )
-                
-                // Duration badge (skip entirely when the duration is unknown)
-                if (!video.isLive && video.duration > 0) {
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp),
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color.Black.copy(alpha = 0.8f)
-                    ) {
-                        Text(
-                            text = video.formattedDuration,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                } else if (video.isLive) {
-                    // Live badge
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp),
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFFFF0000)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.badge_live),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-            }
-            
-            // Video info
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Channel avatar
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .then(
-                            if (openChannel != null) {
-                                Modifier.clickable(
-                                    onClickLabel = "Open ${video.channelName} channel",
-                                    onClick = openChannel
-                                )
-                            } else {
-                                Modifier
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 ) {
+                    VideoThumbnail(
+                        video = video,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Gradient overlay at bottom for duration
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!video.channelIconUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = video.channelIconUrl,
-                                contentDescription = "${video.channelName} channel",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .align(Alignment.BottomCenter)
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                )
                             )
-                        } else {
+                    )
+                
+                    // Duration badge (skip entirely when the duration is unknown)
+                    if (!video.isLive && video.duration > 0) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp),
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color.Black.copy(alpha = 0.8f)
+                        ) {
                             Text(
-                                text = video.channelName.take(1).uppercase(),
-                                style = MaterialTheme.typography.titleMedium,
+                                text = video.formattedDuration,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    } else if (video.isLive) {
+                        // Live badge
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp),
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFFF0000)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.badge_live),
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
                 }
+            
+                // Video info
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Channel avatar
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .then(
+                                if (openChannel != null) {
+                                    Modifier.clickable(
+                                        onClickLabel = "Open ${video.channelName} channel",
+                                        onClick = openChannel
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!video.channelIconUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = video.channelIconUrl,
+                                    contentDescription = "${video.channelName} channel",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Text(
+                                    text = video.channelName.take(1).uppercase(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 
-                Column(modifier = Modifier.weight(1f)) {
-                    // Video title
-                    Text(
-                        text = video.title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = textColor,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        // Video title
+                        Text(
+                            text = video.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textColor,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     
-                    Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                     
-                    // Channel name, views, date
-                    Text(
-                        text = buildString {
-                            append(video.channelName)
-                            if (video.viewCount.isNotEmpty()) {
-                                append(" • ")
-                                append(video.viewCount)
-                            }
-                            if (!video.uploadedDate.isNullOrEmpty()) {
-                                append(" • ")
-                                append(video.uploadedDate)
-                            }
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = secondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                        // Channel name, views, date
+                        Text(
+                            text = buildString {
+                                append(video.channelName)
+                                if (video.viewCount.isNotEmpty()) {
+                                    append(" • ")
+                                    append(video.viewCount)
+                                }
+                                if (!video.uploadedDate.isNullOrEmpty()) {
+                                    append(" • ")
+                                    append(video.uploadedDate)
+                                }
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = secondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }

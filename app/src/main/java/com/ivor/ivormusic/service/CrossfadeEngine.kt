@@ -155,6 +155,42 @@ class CrossfadeEngine(
         playerB.repeatMode = mode
     }
 
+    /**
+     * The user's playback rate, and the engine's definition of "normal".
+     *
+     * Every tempo write below is relative to this rather than to 1.0. The
+     * transition speeds this engine applies are small corrections around the
+     * source tempo - [MIN_TRANSITION_SPEED]..[MAX_TRANSITION_SPEED], about four
+     * percent either way - so they multiply the base rather than replacing it,
+     * and the tempo release eases back to the base instead of to 1.0. Before
+     * this existed every resting write here was a literal 1.0, so any
+     * transition would have snapped a user who had chosen another speed back
+     * to the recorded one, mid-song and without warning.
+     */
+    private var baseSpeed = 1f
+
+    /** [PlaybackParameters] at the user's rate: this engine's resting tempo. */
+    private fun baseParameters() = PlaybackParameters(baseSpeed, 1f)
+
+    /**
+     * Change the resting tempo of both engines.
+     *
+     * A running overlap is abandoned rather than retuned, for the reason
+     * [setShuffleState] and [setRepeatMode] abandon one: the plan behind it -
+     * its cue, its beat alignment, and the clock speeds [runFade] captured
+     * before its loop started - was made against the tempo that just changed.
+     * The caller's ordinary advance is a better answer than a mix drifting
+     * against a moved clock.
+     */
+    fun setBaseSpeed(speed: Float) {
+        val next = speed.coerceAtLeast(MIN_BASE_SPEED)
+        if (kotlin.math.abs(next - baseSpeed) < 0.001f) return
+        baseSpeed = next
+        cancelTransition()
+        playerA.playbackParameters = baseParameters()
+        playerB.playbackParameters = baseParameters()
+    }
+
     /** Rebuild the audible player's permutation after its queue was edited. */
     fun refreshActiveShuffleOrder() {
         applyPlaybackOrder(active)
@@ -250,7 +286,7 @@ class CrossfadeEngine(
         // Retire that writer before this overlap captures either clock speed.
         tempoReleaseJob?.cancel()
         tempoReleaseJob = null
-        outgoing.playbackParameters = PlaybackParameters.DEFAULT
+        outgoing.playbackParameters = baseParameters()
 
         return try {
             fadingIntoId = nextItem.mediaId
@@ -259,7 +295,8 @@ class CrossfadeEngine(
             // time, from the live timeline rather than a stale snapshot.
             incoming.setMediaItem(nextItem, incomingStartMs.coerceAtLeast(0L))
             incoming.playbackParameters = PlaybackParameters(
-                incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED), 1f
+                baseSpeed * incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED),
+                1f
             )
             incoming.volume = 0f
             incoming.prepare()
@@ -544,7 +581,7 @@ class CrossfadeEngine(
                 outgoing.volume = 0f
                 outgoing.stop()
                 outgoing.clearMediaItems()
-                outgoing.playbackParameters = PlaybackParameters.DEFAULT
+                outgoing.playbackParameters = baseParameters()
                 setFilterSweep(outgoing, 0f)
             }.onFailure { KLog.w(TAG, "Could not fully retire outgoing player: ${it.message}") }
             runCatching { releaseTempo(incoming) }
@@ -561,7 +598,7 @@ class CrossfadeEngine(
             runCatching {
                 incoming.stop()
                 incoming.clearMediaItems()
-                incoming.playbackParameters = PlaybackParameters.DEFAULT
+                incoming.playbackParameters = baseParameters()
                 setFilterSweep(incoming, 0f)
                 setFilterSweep(outgoing, 0f)
                 outgoing.volume = gainFor(outgoing) * duckGain
@@ -585,7 +622,7 @@ class CrossfadeEngine(
             incoming.stop()
             incoming.clearMediaItems()
             incoming.volume = 0f
-            incoming.playbackParameters = PlaybackParameters.DEFAULT
+            incoming.playbackParameters = baseParameters()
             setFilterSweep(incoming, 0f)
             setFilterSweep(outgoing, 0f)
             outgoing.volume = gainFor(outgoing) * duckGain
@@ -601,7 +638,7 @@ class CrossfadeEngine(
     fun cancelTransition() {
         tempoReleaseJob?.cancel()
         tempoReleaseJob = null
-        active.playbackParameters = PlaybackParameters.DEFAULT
+        active.playbackParameters = baseParameters()
         val job = fadeJob
         if (job?.isActive == true) job.cancel()
         fadeJob = null
@@ -611,7 +648,7 @@ class CrossfadeEngine(
             standby.stop()
             standby.clearMediaItems()
             standby.volume = 0f
-            standby.playbackParameters = PlaybackParameters.DEFAULT
+            standby.playbackParameters = baseParameters()
             setFilterSweep(standby, 0f)
             setFilterSweep(active, 0f)
             active.volume = gainFor(active) * duckGain
@@ -622,8 +659,8 @@ class CrossfadeEngine(
     private fun releaseTempo(player: ExoPlayer) {
         tempoReleaseJob?.cancel()
         val start = player.playbackParameters.speed
-        if (kotlin.math.abs(start - 1f) < 0.001f) {
-            player.playbackParameters = PlaybackParameters.DEFAULT
+        if (kotlin.math.abs(start - baseSpeed) < 0.001f) {
+            player.playbackParameters = baseParameters()
             return
         }
         val occurrence = player.currentMediaItem ?: return
@@ -634,7 +671,8 @@ class CrossfadeEngine(
                     player.currentMediaItem?.isSameQueueItemAs(occurrence) != true
                 ) return@launch
                 val t = (index + 1f) / steps
-                player.playbackParameters = PlaybackParameters(start + (1f - start) * t, 1f)
+                player.playbackParameters =
+                    PlaybackParameters(start + (baseSpeed - start) * t, 1f)
                 delay(TEMPO_RELEASE_STEP_MS)
             }
         }
@@ -677,6 +715,13 @@ class CrossfadeEngine(
         private const val MIN_CLOCK_ADVANCE_MS = 8L
         private const val MAX_INCOMING_STALL_MS = 350L
         private const val MAX_CLOCK_DRIFT_MS = 150L
+        /**
+         * Media3's own floor. DefaultAudioSink constrains the rate to
+         * 0.1f..8f, and a request below it is clamped by the sink while the
+         * player goes on reporting the value it was handed - which would
+         * desync [runFade]'s clock normalization from the audio it is mixing.
+         */
+        private const val MIN_BASE_SPEED = 0.1f
         private const val MIN_TRANSITION_SPEED = 0.96f
         private const val MAX_TRANSITION_SPEED = 1.04f
         private const val TEMPO_RELEASE_MS = 2_500L

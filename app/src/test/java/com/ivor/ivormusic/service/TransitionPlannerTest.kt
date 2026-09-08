@@ -105,6 +105,27 @@ class TransitionPlannerTest {
         assertTrue(bars.overlapMs < beats.overlapMs)
     }
 
+    @Test fun `a chosen playback speed shortens the wall clock beat delay`() {
+        val out = rhythmic().copy(outroLeadMs = 8_000L, outroDownbeatConfidence = 0.9f)
+        val incoming = rhythmic("in").copy(downbeatOffsetMs = 500L, downbeatConfidence = 0.9f)
+        val normal = plan(out, incoming)
+        val doubled = TransitionPlanner.plan(
+            fallbackOverlapMs = 3_000L, maximumOverlapMs = 15_000L,
+            outgoing = out, incoming = incoming, outgoingDurationMs = 180_000L,
+            baseSpeed = 2f,
+        )
+        // The downbeat is in the same place on the source timeline either way.
+        // At twice the rate it simply arrives in half the time, and a delay
+        // measured as though the track were playing at its recorded speed
+        // would hold the incoming track back for twice as long as the music
+        // it is meant to land on.
+        assertEquals(500L, normal.incomingDownbeatDelayMs)
+        assertEquals(250L, doubled.incomingDownbeatDelayMs)
+        // Matching one tempo to the other is a ratio between two tracks that
+        // are both sped up, so it is untouched by the user's rate.
+        assertEquals(normal.incomingSpeed, doubled.incomingSpeed, 0.0001f)
+    }
+
     @Test fun `silence skip uses a short unprocessed overlap`() {
         val result = plan(rhythmic().copy(trailingSilenceMs = 60_000L), rhythmic("in", 118f))
         assertEquals(TransitionPlan.Reason.SILENCE_SKIP, result.reason)

@@ -14,6 +14,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.QUEUE_START_ABSENT
 import com.ivor.ivormusic.data.queueStartIndex
@@ -336,6 +337,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     extras: android.os.Bundle
                 ) {
                     applySleepTimerExtras(extras)
+                    applyPlaybackSpeedExtras(extras)
                 }
             })
             .buildAsync()
@@ -1231,6 +1233,52 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     /**
+     * The rate music is playing at, 1f being the recorded speed. The service
+     * owns the value - it belongs to both crossfade engines rather than to one
+     * player - and publishes it back here, so this is a mirror of the service's
+     * state rather than a second copy of it.
+     */
+    private val _playbackSpeed = MutableStateFlow(ThemePreferences.DEFAULT_PLAYBACK_SPEED)
+    val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
+    /**
+     * Set the playback rate.
+     *
+     * @param persist false while a slider is still under the finger: the rate
+     *   applies immediately either way, because it is judged by ear, and is
+     *   written to preferences once when the gesture ends.
+     */
+    fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
+        val bounded = speed.coerceIn(
+            ThemePreferences.MIN_PLAYBACK_SPEED,
+            ThemePreferences.MAX_PLAYBACK_SPEED,
+        )
+        // Move the UI on the local value rather than waiting for the round
+        // trip through the session, so the label tracks the finger even if the
+        // service is slow to answer; the published extras correct it after.
+        _playbackSpeed.value = bounded
+        val ctrl = controller ?: return
+        ctrl.sendCustomCommand(
+            androidx.media3.session.SessionCommand(
+                MusicService.CMD_SET_PLAYBACK_SPEED,
+                android.os.Bundle.EMPTY,
+            ),
+            android.os.Bundle().apply {
+                putFloat(MusicService.ARG_PLAYBACK_SPEED, bounded)
+                putBoolean(MusicService.ARG_PLAYBACK_SPEED_PERSIST, persist)
+            },
+        )
+    }
+
+    private fun applyPlaybackSpeedExtras(extras: android.os.Bundle) {
+        if (!extras.containsKey(MusicService.EXTRA_PLAYBACK_SPEED)) return
+        _playbackSpeed.value = extras.getFloat(
+            MusicService.EXTRA_PLAYBACK_SPEED,
+            ThemePreferences.DEFAULT_PLAYBACK_SPEED,
+        )
+    }
+
+    /**
      * Adopt the timer state the service published. Also called on connect, so
      * a player reopened after the activity was destroyed picks the running
      * countdown back up instead of showing nothing.
@@ -1364,6 +1412,24 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
     
+    /**
+     * Whether the full-screen music player is open.
+     *
+     * Owned by the screen that hosts it - this only mirrors it - because the
+     * video overlay needs to know and cannot ask: it is drawn above the
+     * NavHost, while the music player lives inside Home, so the two never share
+     * a scope and the video bar was free to draw over an open music player.
+     */
+    private val _isPlayerExpanded = MutableStateFlow(false)
+    val isPlayerExpanded: StateFlow<Boolean> = _isPlayerExpanded.asStateFlow()
+
+    fun setPlayerExpanded(expanded: Boolean) {
+        _isPlayerExpanded.value = expanded
+    }
+
+    fun pauseDownload(id: String) = downloadRepository.pauseDownload(id)
+    fun resumeDownload(id: String) = downloadRepository.resumeDownload(id)
+
     fun cancelDownload(songId: String) {
         downloadRepository.cancelDownload(songId)
     }

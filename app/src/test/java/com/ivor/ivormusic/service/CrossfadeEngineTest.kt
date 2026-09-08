@@ -213,6 +213,58 @@ class CrossfadeEngineTest {
         } finally { pair.engine.release() }
     }
 
+    @Test fun `a chosen speed survives a completed crossfade`() = runBlocking {
+        val pair = Pairing(this)
+        val songs = listOf(item("a"), item("b"), item("c"))
+        pair.outgoing.items += songs
+        try {
+            pair.engine.setBaseSpeed(1.5f)
+            assertEquals(1.5f, pair.outgoing.player.playbackParameters.speed, 0.001f)
+            assertTrue(pair.engine.startTransition(songs[1], 400L, targetIndex = 1))
+            awaitCondition { !pair.engine.isFading }
+            assertSame(pair.incoming.player, pair.engine.active)
+            // Every resting tempo write in the engine used to be a literal
+            // 1.0, so finishing a transition snapped a listener who had chosen
+            // another speed back to the recorded one, mid-song.
+            assertEquals(
+                "the swap reset the listener's speed to the recorded one",
+                1.5f, pair.incoming.player.playbackParameters.speed, 0.001f,
+            )
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `a tempo correction multiplies the chosen speed rather than replacing it`() = runBlocking {
+        val pair = Pairing(this)
+        pair.outgoing.items += listOf(item("a"), item("b"), item("c"))
+        try {
+            pair.engine.setBaseSpeed(1.5f)
+            assertTrue(
+                pair.engine.startTransition(
+                    pair.outgoing.items[1], 800L, targetIndex = 1, incomingSpeed = 1.04f,
+                )
+            )
+            assertEquals(1.56f, pair.incoming.player.playbackParameters.speed, 0.001f)
+            assertEquals(1.5f, pair.outgoing.player.playbackParameters.speed, 0.001f)
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `changing the speed during an overlap abandons it`() = runBlocking {
+        val pair = Pairing(this)
+        pair.outgoing.items += listOf(item("a"), item("b"), item("c"))
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 800L, targetIndex = 1))
+            awaitCondition { pair.incoming.playWhenReady }
+            // The plan behind a running overlap - its cue and the clock speeds
+            // the fade captured before its loop - was made against the tempo
+            // that just changed.
+            pair.engine.setBaseSpeed(0.5f)
+            assertFalse(pair.engine.isFading)
+            assertSame(pair.outgoing.player, pair.engine.active)
+            assertEquals(0.5f, pair.outgoing.player.playbackParameters.speed, 0.001f)
+            assertTrue(pair.incoming.items.isEmpty())
+        } finally { pair.engine.release() }
+    }
+
     /** A queue and advancing playback clock, with no decoder or Android looper. */
     private class ClockPlayer {
         val items = mutableListOf<MediaItem>()

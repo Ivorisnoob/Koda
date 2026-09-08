@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.media.AudioManager
+import android.view.LayoutInflater
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.view.View
@@ -113,6 +114,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -691,7 +693,7 @@ fun FullscreenPlayerContent(
                             }
                             if (isLive) {
                                 LiveEdgeChip(
-                                    atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
+                                    behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
                                     onClick = onSeekToLive
                                 )
                             }
@@ -752,9 +754,8 @@ fun FullscreenPlayerContent(
 
                             if (isLive) {
                                 LiveEdgeChip(
-                                    // A stream without a DVR window reports no
-                                    // duration, so there is nowhere to be behind.
-                                    atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
+                                    // Unknown windows omit the offset until the timeline arrives.
+                                    behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
                                     onClick = onSeekToLive
                                 )
                             } else {
@@ -828,6 +829,13 @@ fun PortraitPlayerContent(
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
+    /**
+     * Draw into a TextureView so the minimize transition can scale, clip and
+     * round this box on its way to the mini bar. False for an HDR rendition,
+     * which needs the SurfaceView and takes the curtain transition instead -
+     * see portrait_video_surface.xml.
+     */
+    useTextureSurface: Boolean = true,
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes
@@ -859,26 +867,37 @@ fun PortraitPlayerContent(
         // the surface now answers both directions.
         onEnterFullscreen = onFullscreenToggle
     ) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    disableBuiltInSubtitles()
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            update = { playerView ->
-                playerView.player = exoPlayer
-            },
-            // Hand the surface back before this view is destroyed - the same
-            // ExoPlayer is also rendered by the mini and PiP PlayerViews.
-            onRelease = { playerView -> playerView.player = null },
-            modifier = Modifier.fillMaxSize()
-        )
+        // Keyed on the surface type: it is fixed in PlayerView's constructor,
+        // so changing it has to build a new view rather than update this one.
+        // Only an HDR rendition arriving or leaving flips it, and that already
+        // re-prepares playback.
+        key(useTextureSurface) {
+            AndroidView(
+                factory = { ctx ->
+                    val view = if (useTextureSurface) {
+                        LayoutInflater.from(ctx)
+                            .inflate(R.layout.portrait_video_surface, null) as PlayerView
+                    } else {
+                        PlayerView(ctx).apply { useController = false }
+                    }
+                    view.apply {
+                        player = exoPlayer
+                        disableBuiltInSubtitles()
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                update = { playerView ->
+                    playerView.player = exoPlayer
+                },
+                // Hand the surface back before this view is destroyed - the same
+                // ExoPlayer is also rendered by the mini and PiP PlayerViews.
+                onRelease = { playerView -> playerView.player = null },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         CaptionOverlay(
             cues = captionCues,
@@ -1030,9 +1049,8 @@ fun PortraitPlayerContent(
 
                         if (isLive) {
                             LiveEdgeChip(
-                                // A stream without a DVR window reports no
-                                // duration, so there is nowhere to be behind.
-                                atLiveEdge = duration <= 0L || progress >= LIVE_EDGE_THRESHOLD,
+                                // Unknown windows omit the offset until the timeline arrives.
+                                behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
                                 onClick = onSeekToLive
                             )
                         } else {
@@ -1045,13 +1063,6 @@ fun PortraitPlayerContent(
     }
 }
 
-/**
- * Fraction of the DVR window past which playback counts as "at the live edge".
- * The window is hours long, so anything short of the last fraction of a percent
- * is genuinely behind.
- */
-internal const val LIVE_EDGE_THRESHOLD = 0.995f
-
 /** Time distance close enough to confirm that the position poll observed a seek. */
 private const val SEEK_CONFIRM_TOLERANCE_MS = 1_000f
 
@@ -1059,9 +1070,8 @@ private const val SEEK_CONFIRM_TOLERANCE_MS = 1_000f
 private const val SEEK_COMMIT_TIMEOUT_MS = 1_500L
 
 /**
- * The "LIVE" marker where a normal video shows its duration. Red and tappable
- * while the viewer is behind, so getting back to the edge is one tap; muted
- * once they are already there.
+ * Distance from the newest seekable media beside LIVE. The dot is active at
+ * the edge; while behind, tapping the chip returns to the newest position.
  *
  * [contentTint] is what the chip resolves to when it is *not* at the edge, plus
  * the label color throughout. It defaults to white because the standard player
@@ -1070,10 +1080,11 @@ private const val SEEK_COMMIT_TIMEOUT_MS = 1_500L
  */
 @Composable
 internal fun LiveEdgeChip(
-    atLiveEdge: Boolean,
+    behindLiveMs: Long?,
     onClick: () -> Unit,
     contentTint: Color = Color.White
 ) {
+    val atLiveEdge = behindLiveMs == null || behindLiveMs <= LIVE_EDGE_TOLERANCE_MS
     Surface(
         shape = CircleShape,
         color = Color.Transparent,
@@ -1094,6 +1105,14 @@ internal fun LiveEdgeChip(
                         else contentTint.copy(alpha = 0.6f)
                     )
             )
+            if (behindLiveMs != null) {
+                Text(
+                    text = "−${formatDuration(if (atLiveEdge) 0L else behindLiveMs)}",
+                    color = contentTint,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1
+                )
+            }
             Text(
                 text = stringResource(R.string.badge_live),
                 color = if (atLiveEdge) contentTint else contentTint.copy(alpha = 0.6f),

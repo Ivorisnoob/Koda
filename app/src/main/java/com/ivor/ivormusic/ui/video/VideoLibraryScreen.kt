@@ -153,6 +153,7 @@ private sealed interface LibraryPage {
 @Composable
 fun VideoLibraryContent(
     viewModel: HomeViewModel,
+    onOpenDownloads: () -> Unit,
     /** Open a creator's page, from the long-press sheet on any video row. */
     onOpenChannel: ((String) -> Unit)? = null,
     onVideoClick: (VideoItem) -> Unit,
@@ -272,6 +273,7 @@ fun VideoLibraryContent(
                     deviceVideos.size
                 } else null,
                 onOpenDeviceVideos = { page = LibraryPage.DeviceVideos },
+                onOpenDownloads = onOpenDownloads,
                 onOpenPlaylist = { playlist ->
                     viewModel.loadPlaylistVideos(playlist.playlistId)
                     page = LibraryPage.Playlist(playlist)
@@ -467,6 +469,7 @@ private fun LibraryRoot(
      */
     deviceVideoCount: Int?,
     onOpenDeviceVideos: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onOpenPlaylist: (VideoPlaylist) -> Unit,
     /** Name, and whether it goes on the device rather than to the account. */
     onCreatePlaylist: (String, Boolean) -> Unit,
@@ -567,6 +570,13 @@ private fun LibraryRoot(
                 DeviceVideosLibraryCard(
                     videoCount = deviceVideoCount,
                     onClick = onOpenDeviceVideos,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
+            item {
+                DownloadedContentLibraryCard(
+                    onClick = onOpenDownloads,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
