@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -59,9 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +73,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+
+/** Where the cover stops being sharp and starts dissolving into the frosted foot. */
+private const val CANVAS_ART_FRACTION = 0.70f
 
 /**
  * Canvas Player - the full-bleed artwork style (replaces the old kinetic
@@ -132,6 +139,16 @@ fun PosterPlayerSheetContent(
         onPrevious = { skipDirection = -1; playerHaptics.skip(); viewModel.skipToPrevious() }
     )
 
+    // Measured down the art box, not the screen: the cover is solid for most of its
+    // height and gives out over the last fifth, so there is no seam to see.
+    val artFootMask = remember {
+        Brush.verticalGradient(
+            0.72f to Color.Black,
+            0.88f to Color.Black.copy(alpha = 0.35f),
+            1f to Color.Transparent,
+        )
+    }
+
     // Monochrome UI over the art: white glyphs, black scrims. Reads over
     // any cover without fighting the artwork's own palette.
     val glyph = Color.White
@@ -180,7 +197,22 @@ fun PosterPlayerSheetContent(
                         // hold stream before the tap and swipe detectors.
                         .styleWheelHold(styleWheel)
                 ) {
-                    // ========== THE CANVAS: full-bleed artwork ==========
+                    // ========== THE FIELD ==========
+                    // Built from the cover's own bottom edge so the join is continuous
+                    // by construction - see CanvasField. ChromaticMistBackground was the
+                    // obvious reuse and is wrong here twice over: it answers a null model
+                    // with a flat rectangle, and it is fed highResThumbnailUrl, which is
+                    // null for every device-library song, so it drew plain white. Its
+                    // colours are also palette-derived rather than edge-derived, which
+                    // cannot close a seam even when it does find artwork.
+                    CanvasField(
+                        song = currentSong,
+                        joinAt = CANVAS_ART_FRACTION,
+                        scrim = scrim,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // ========== THE CANVAS: the cover itself ==========
                     AnimatedContent(
                         targetState = currentSong,
                         transitionSpec = {
@@ -199,10 +231,20 @@ fun PosterPlayerSheetContent(
                                 ) { (-it / 3) * dir } + fadeOut())
                         },
                         modifier = Modifier
-                            .fillMaxSize()
-                            // Full-bleed art moves less than a framed cover
-                            // would: at 0.5x the crop edges show.
-                            .graphicsLayer { translationX = swipeToSkip.offset * 0.35f },
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .fillMaxHeight(CANVAS_ART_FRACTION)
+                            .graphicsLayer {
+                                // Art moves less than the finger: at 0.5x the crop shows.
+                                translationX = swipeToSkip.offset * 0.35f
+                                // So the foot can be masked away without taking the
+                                // field behind it out too.
+                                compositingStrategy = CompositingStrategy.Offscreen
+                            }
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(brush = artFootMask, blendMode = BlendMode.DstIn)
+                            },
                         label = "CanvasSongSwitch"
                     ) { song ->
                         if (song != null && (song.thumbnailUrl != null || song.albumArtUri != null)) {
@@ -230,7 +272,8 @@ fun PosterPlayerSheetContent(
                     }
 
                     // The chrome never leaves, so the scrim that keeps white glyphs
-                    // legible over an arbitrary cover never leaves either.
+                    // legible over an arbitrary cover never leaves either. It also
+                    // carries the whole bottom on API 30, where blur is a no-op.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
