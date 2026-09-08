@@ -17,4 +17,6 @@
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="0"
     android:description="@string/widget_lineup_description"
+    android:previewLayout="@layout/widget_preview_lineup"
+    android:previewImage="@drawable/widget_preview_lineup_image"
     android:initialLayout="@layout/glance_default_loading_layout" />

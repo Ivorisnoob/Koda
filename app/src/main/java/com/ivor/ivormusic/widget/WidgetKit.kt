@@ -108,20 +108,27 @@ internal fun widgetString(@StringRes id: Int): String = LocalContext.current.get
 // ------------------------------------------------------------------- surfaces
 
 /**
- * The card every widget sits in. [cornerRadius] is applied alongside the shaped
+ * The card every widget sits in. `cornerRadius` is applied alongside the shaped
  * background purely so the whole-card tap ripple is clipped to the corner
  * instead of flashing a full rectangle past it.
+ *
+ * A null [background] draws no card at all, which is how a widget sits directly
+ * on the wallpaper - the cover and its controls float, with nothing behind
+ * them. The corner clip stays either way, because it is the ripple's shape
+ * rather than the card's: without a card that flash is the only feedback a tap
+ * registered, so it is worth keeping and worth keeping inside the cell.
  */
 @Composable
 internal fun WidgetSurface(
     modifier: GlanceModifier = GlanceModifier,
-    background: ColorProvider = GlanceTheme.colors.widgetBackground,
+    background: ColorProvider? = GlanceTheme.colors.widgetBackground,
     openAppOnTap: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    var surface = modifier
-        .fillMaxSize()
-        .shaped(WidgetShape.ExtraLarge, background)
+    var surface = modifier.fillMaxSize()
+    if (background != null) {
+        surface = surface.shaped(WidgetShape.ExtraLarge, background)
+    }
     if (openAppOnTap) {
         surface = surface.cornerRadius(28.dp).clickable(actionStartActivity<MainActivity>())
     }

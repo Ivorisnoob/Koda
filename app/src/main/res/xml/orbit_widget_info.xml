@@ -17,4 +17,6 @@
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="0"
     android:description="@string/widget_orbit_description"
+    android:previewLayout="@layout/widget_preview_orbit"
+    android:previewImage="@drawable/widget_preview_orbit_image"
     android:initialLayout="@layout/glance_default_loading_layout" />

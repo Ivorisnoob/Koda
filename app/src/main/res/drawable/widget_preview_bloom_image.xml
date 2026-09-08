@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Launcher picker fallback preview for the Bloom widget (2x2 art tile).
+
+    No card behind it: Bloom draws straight onto the wallpaper, and a preview
+    that showed a rounded card would advertise the one thing this widget
+    deliberately does not have. The cover path is sampled from the same polar
+    function WidgetShapes.cookie() uses at runtime.
+
+    Geometry, so the pair stays on the cover's axis: hero 48 spanning 37-85,
+    six of gap, next 44 spanning 91-135; the group's centre is 86 against a
+    cell centre of 85.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="170dp"
+    android:height="170dp"
+    android:viewportWidth="170"
+    android:viewportHeight="170">
+
+    <path android:pathData="M166.00,85.00 L165.59,87.81 L164.41,90.55 L162.65,93.16 L160.59,95.62 L158.53,97.97 L156.76,100.25 L155.49,102.57 L154.83,105.02 L154.77,107.67 L155.16,110.54 L155.78,113.60 L156.33,116.76 L156.55,119.90 L156.20,122.86 L155.15,125.50 L153.38,127.73 L150.99,129.51 L148.17,130.90 L145.15,132.00 L142.20,132.99 L139.52,134.09 L137.26,135.46 L135.46,137.26 L134.09,139.52 L132.99,142.20 L132.00,145.15 L130.90,148.17 L129.51,150.99 L127.73,153.38 L125.50,155.15 L122.86,156.20 L119.90,156.55 L116.76,156.33 L113.60,155.78 L110.54,155.16 L107.67,154.77 L105.02,154.83 L102.57,155.49 L100.25,156.76 L97.97,158.53 L95.62,160.59 L93.16,162.65 L90.55,164.41 L87.81,165.59 L85.00,166.00 L82.19,165.59 L79.45,164.41 L76.84,162.65 L74.38,160.59 L72.03,158.53 L69.75,156.76 L67.43,155.49 L64.98,154.83 L62.33,154.77 L59.46,155.16 L56.40,155.78 L53.24,156.33 L50.10,156.55 L47.14,156.20 L44.50,155.15 L42.27,153.38 L40.49,150.99 L39.10,148.17 L38.00,145.15 L37.01,142.20 L35.91,139.52 L34.54,137.26 L32.74,135.46 L30.48,134.09 L27.80,132.99 L24.85,132.00 L21.83,130.90 L19.01,129.51 L16.62,127.73 L14.85,125.50 L13.80,122.86 L13.45,119.90 L13.67,116.76 L14.22,113.60 L14.84,110.54 L15.23,107.67 L15.17,105.02 L14.51,102.57 L13.24,100.25 L11.47,97.97 L9.41,95.62 L7.35,93.16 L5.59,90.55 L4.41,87.81 L4.00,85.00 L4.41,82.19 L5.59,79.45 L7.35,76.84 L9.41,74.38 L11.47,72.03 L13.24,69.75 L14.51,67.43 L15.17,64.98 L15.23,62.33 L14.84,59.46 L14.22,56.40 L13.67,53.24 L13.45,50.10 L13.80,47.14 L14.85,44.50 L16.62,42.27 L19.01,40.49 L21.83,39.10 L24.85,38.00 L27.80,37.01 L30.48,35.91 L32.74,34.54 L34.54,32.74 L35.91,30.48 L37.01,27.80 L38.00,24.85 L39.10,21.83 L40.49,19.01 L42.27,16.62 L44.50,14.85 L47.14,13.80 L50.10,13.45 L53.24,13.67 L56.40,14.22 L59.46,14.84 L62.33,15.23 L64.98,15.17 L67.43,14.51 L69.75,13.24 L72.03,11.47 L74.38,9.41 L76.84,7.35 L79.45,5.59 L82.19,4.41 L85.00,4.00 L87.81,4.41 L90.55,5.59 L93.16,7.35 L95.62,9.41 L97.97,11.47 L100.25,13.24 L102.57,14.51 L105.02,15.17 L107.67,15.23 L110.54,14.84 L113.60,14.22 L116.76,13.67 L119.90,13.45 L122.86,13.80 L125.50,14.85 L127.73,16.62 L129.51,19.01 L130.90,21.83 L132.00,24.85 L132.99,27.80 L134.09,30.48 L135.46,32.74 L137.26,34.54 L139.52,35.91 L142.20,37.01 L145.15,38.00 L148.17,39.10 L150.99,40.49 L153.38,42.27 L155.15,44.50 L156.20,47.14 L156.55,50.10 L156.33,53.24 L155.78,56.40 L155.16,59.46 L154.77,62.33 L154.83,64.98 L155.49,67.43 L156.76,69.75 L158.53,72.03 L160.59,74.38 L162.65,76.84 L164.41,79.45 L165.59,82.19 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="4"
+                android:endX="0"
+                android:endY="166"
+                android:type="linear">
+                <item android:offset="0" android:color="#FFFFA8C9" />
+                <item android:offset="0.5" android:color="#FFE887C9" />
+                <item android:offset="1" android:color="#FF9B6BE0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:fillColor="#FFFFB1C8"
+        android:pathData="M37,140 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z" />
+    <path
+        android:fillColor="#FF5E1133"
+        android:pathData="M55,131 L71,140 L55,149 Z" />
+
+    <path
+        android:fillColor="#FF3A2C33"
+        android:pathData="M103,118 H123 Q135,118 135,130 V150 Q135,162 123,162 H103 Q91,162 91,150 V130 Q91,118 103,118 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M105,132 L117,140 L105,148 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M119,132 H123 V148 H119 Z" />
+</vector>

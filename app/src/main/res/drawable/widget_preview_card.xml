@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Widget picker previews. A launcher inflates these outside the app theme, so
+    every colour here is a literal by necessity - the one place in Koda where
+    that is true of ordinary decoration rather than of data.
+
+    They are a pink-seeded M3 dark scheme rather than the neutral near-black the
+    previews used to carry, because a picker shows six of these in a row and a
+    grey card with a violet dot on it was the least appealing thing in a launcher
+    full of colour. Roles, so the whole family stays consistent:
+
+      surface        #FF1A1114   the card
+      surfaceHigh    #FF3A2C33   tonal controls
+      surfaceRow     #FF33262C   queue rows
+      primary        #FFFFB1C8   the hero
+      onPrimary      #FF5E1133   glyph on the hero - dark, because the hero is
+                                 a light tone and white on it fails contrast
+      onSurface      #FFF2DEE5   titles and glyphs on tonal controls
+      onSurfaceVar   #FFD6BFC8   subtitles
+      art            rose to violet, top to bottom
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FF1A1114" />
+    <corners android:radius="28dp" />
+</shape>

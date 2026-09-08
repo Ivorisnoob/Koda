@@ -17,4 +17,6 @@
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="0"
     android:description="@string/widget_console_description"
+    android:previewLayout="@layout/widget_preview_console"
+    android:previewImage="@drawable/widget_preview_console_image"
     android:initialLayout="@layout/glance_default_loading_layout" />

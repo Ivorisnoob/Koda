@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher picker fallback preview for the Deck widget (2x4 player). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="170dp"
+    android:height="330dp"
+    android:viewportWidth="170"
+    android:viewportHeight="330">
+
+    <path
+        android:fillColor="#FF1A1114"
+        android:pathData="M24,0 H146 Q170,0 170,24 V306 Q170,330 146,330 H24 Q0,330 0,306 V24 Q0,0 24,0 Z" />
+    <path
+        android:fillColor="#FFB47BE8"
+        android:pathData="M45,20 H125 Q145,20 145,40 V120 Q145,140 125,140 H45 Q25,140 25,120 V40 Q25,20 45,20 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M40,156 H130 V167 H40 Z" />
+    <path
+        android:fillColor="#FFD6BFC8"
+        android:pathData="M60,173 H110 V182 H60 Z" />
+    <path
+        android:fillColor="#FF3A2C33"
+        android:pathData="M25,196 H145 V202 H25 Z" />
+    <path
+        android:fillColor="#FFFFB1C8"
+        android:pathData="M25,196 H73 V202 H25 Z" />
+    <path
+        android:fillColor="#FF3A2C33"
+        android:pathData="M33,232 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 Z" />
+    <path
+        android:fillColor="#FFFFB1C8"
+        android:pathData="M66,232 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0 Z" />
+    <path
+        android:fillColor="#FF3A2C33"
+        android:pathData="M109,232 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M52,227 L42,232 L52,237 Z" />
+    <path
+        android:fillColor="#FF5E1133"
+        android:pathData="M79,223 L93,232 L79,241 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M118,227 L128,232 L118,237 Z" />
+    <path
+        android:fillColor="#FF3A2C33"
+        android:pathData="M63,272 H77 Q85,272 85,280 V294 Q85,302 77,302 H63 Q55,302 55,294 V280 Q55,272 63,272 Z" />
+    <path
+        android:fillColor="#FF3A2C33"
+        android:pathData="M93,272 H107 Q115,272 115,280 V294 Q115,302 107,302 H93 Q85,302 85,294 V280 Q85,272 93,272 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M67,287 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M97,287 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z" />
+</vector>

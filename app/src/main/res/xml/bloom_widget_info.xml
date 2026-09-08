@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    2x2 of album art cut into a twelve-lobed cookie, with the hero in the corner.
+    2x2 of album art cut into a twelve-lobed cookie, drawn with no card so it
+    sits on the wallpaper, with play and next along its lower edge.
 
     updatePeriodMillis is 0 for every widget in the family: MusicService pushes
     a redraw on each playback event, so scheduled polling would only burn
@@ -17,4 +18,6 @@
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="0"
     android:description="@string/widget_bloom_description"
+    android:previewLayout="@layout/widget_preview_bloom"
+    android:previewImage="@drawable/widget_preview_bloom_image"
     android:initialLayout="@layout/glance_default_loading_layout" />

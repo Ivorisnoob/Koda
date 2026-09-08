@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Picker preview for the Console widget (4x1 transport strip): previous,
+    hero, next, shuffle, repeat. No artwork, no text - like the widget.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_card"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:paddingStart="10dp"
+    android:paddingTop="4dp"
+    android:paddingEnd="10dp"
+    android:paddingBottom="4dp">
+
+    <FrameLayout
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/widget_preview_tonal">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/widget_action_previous"
+            android:tint="#FFF2DEE5"
+            android:src="@drawable/ic_media_previous" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginStart="6dp"
+        android:layout_marginEnd="6dp"
+        android:background="@drawable/widget_preview_play">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/widget_action_play"
+            android:tint="#FF5E1133"
+            android:src="@drawable/ic_media_play" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/widget_preview_tonal">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/widget_action_next"
+            android:tint="#FFF2DEE5"
+            android:src="@drawable/ic_media_next" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        android:layout_marginStart="12dp"
+        android:background="@drawable/widget_preview_tonal">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/widget_action_shuffle"
+            android:tint="#FFF2DEE5"
+            android:src="@drawable/ic_media_shuffle" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        android:layout_marginStart="6dp"
+        android:background="@drawable/widget_preview_tonal">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/widget_action_repeat"
+            android:tint="#FFF2DEE5"
+            android:src="@drawable/ic_media_repeat" />
+    </FrameLayout>
+</LinearLayout>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher picker fallback preview for the Orbit widget (1x1 round). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="110dp"
+    android:height="110dp"
+    android:viewportWidth="110"
+    android:viewportHeight="110">
+
+    <path
+        android:fillColor="#FFB47BE8"
+        android:pathData="M4,55 a51,51 0 1,0 102,0 a51,51 0 1,0 -102,0 Z" />
+    <path
+        android:fillColor="#99000000"
+        android:pathData="M31,55 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M49,44 L67,55 L49,66 Z" />
+</vector>
