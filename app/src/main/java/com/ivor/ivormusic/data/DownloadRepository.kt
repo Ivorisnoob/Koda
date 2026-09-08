@@ -149,6 +149,27 @@ class DownloadRepository private constructor(private val context: Context) {
     private val notificationHelper = DownloadNotificationHelper(context)
     private val storage = DownloadStorage(context)
 
+    val playlistStore = DownloadedPlaylistStore(context)
+
+    suspend fun rememberDownloadedPlaylist(id: String, title: String, artworkUrl: String?, songs: List<Song>): Boolean {
+        val downloadedIds = downloadedSongs.value.mapTo(hashSetOf()) { it.id }
+        // Downloaded files are LOCAL for playback, but are not device originals.
+        // Persist their YouTube identity so deleting a file cannot resurrect its URI.
+        val snapshot = DownloadedPlaylist(id, title, artworkUrl, songs.map { song ->
+            if (song.id in downloadedIds) song.copy(source = SongSource.YOUTUBE, uri = null)
+            else song
+        })
+        return try {
+            playlistStore.remember(snapshot)
+            true
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            KLog.e(TAG, "Cannot retain downloaded playlist", error)
+            false
+        }
+    }
+
     private val downloadsFile = File(context.filesDir, "downloaded_songs_metadata.json")
     private val videosFile = File(context.filesDir, "downloaded_videos_metadata.json")
 

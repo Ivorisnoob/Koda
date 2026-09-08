@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_playlist_available">%2$d में से %1$d गाने ऑफ़लाइन उपलब्ध हैं</string>
+</resources>

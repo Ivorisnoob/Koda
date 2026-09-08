@@ -132,12 +132,15 @@ private data class PlaylistDownloadSnapshot(
  */
 @Composable
 fun MusicPlaylistDownloadAction(
+    playlistId: String,
     playlistTitle: String,
+    artworkUrl: String? = null,
     songs: List<Song>,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val repository = remember(context) { DownloadRepository.getInstance(context) }
+    val repositoryScope = rememberCoroutineScope()
     val downloadedSongs by repository.downloadedSongs.collectAsState()
     val progress by repository.downloadProgress.collectAsState()
     var showSheet by remember(playlistTitle) { mutableStateOf(false) }
@@ -177,7 +180,19 @@ fun MusicPlaylistDownloadAction(
         snapshot = snapshot,
         totalItemCount = songs.size,
         enabled = songs.isNotEmpty(),
-        onClick = { showSheet = true },
+        onClick = {
+            if (snapshot.isComplete) {
+                repositoryScope.launch {
+                    val saved = repository.playlistStore.playlists.value.any { it.id == playlistId } ||
+                        repository.rememberDownloadedPlaylist(playlistId, playlistTitle, artworkUrl, songs)
+                    android.widget.Toast.makeText(
+                        context,
+                        if (saved) R.string.vd_added else R.string.sm_write_failed,
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } else showSheet = true
+        },
         modifier = modifier
     )
 
@@ -189,8 +204,10 @@ fun MusicPlaylistDownloadAction(
             snapshot = snapshot,
             onDismiss = { showSheet = false },
             onQueue = {
-                repository.downloadPlaylist(eligibleSongs)
-                true
+                if (repository.rememberDownloadedPlaylist(playlistId, playlistTitle, artworkUrl, songs)) {
+                    repository.downloadPlaylist(eligibleSongs)
+                    true
+                } else false
             }
         )
     }
@@ -275,7 +292,8 @@ private fun PlaylistDownloadButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val canOpen = enabled && snapshot.eligibleIds.isNotEmpty() && !snapshot.isComplete
+    val canOpen = enabled && (snapshot.eligibleIds.isNotEmpty() || snapshot.localOfflineCount > 0) &&
+        (kind == PlaylistDownloadKind.MUSIC || !snapshot.isComplete)
     val label = when {
         snapshot.isComplete -> stringResource(R.string.vh_available_offline)
         snapshot.activeCount > 0 && kind == PlaylistDownloadKind.VIDEO -> stringResource(R.string.pd_downloading_playlist)

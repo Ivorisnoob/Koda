@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_playlist_available">%2$d 曲中 %1$d 曲がオフラインで利用可能</string>
+</resources>

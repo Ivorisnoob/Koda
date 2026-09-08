@@ -3442,7 +3442,9 @@ fun PlaylistDetailScreen(
                             // actions because either can be useful without the other.
                             if (songs.isNotEmpty()) {
                                 MusicPlaylistDownloadAction(
+                                    playlistId = resolvedPlaylist.id,
                                     playlistTitle = resolvedPlaylist.name,
+                                    artworkUrl = resolvedPlaylist.thumbnailUrl,
                                     songs = songs,
                                     modifier = Modifier.heightIn(min = 48.dp)
                                 )
