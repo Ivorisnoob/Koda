@@ -25,7 +25,9 @@ import android.media.AudioManager
  */
 class AudioFocusController(
     context: Context,
-    /** Pause, keeping [wasPlayingBeforeLoss] so a later gain can resume. */
+    /** Whether playback was actively in progress before focus loss occurred. */
+    private val isPlaybackActive: () -> Boolean,
+    /** Pause, keeping loss-driven pause state so a later gain can resume. */
     private val onPause: () -> Unit,
     /** Resume after a transient loss that this controller paused for. */
     private val onResume: () -> Unit,
@@ -41,6 +43,8 @@ class AudioFocusController(
      * loss-driven pause is allowed to resume.
      */
     private var pausedByFocusLoss = false
+
+    val isPausedByFocusLoss: Boolean get() = pausedByFocusLoss
 
     private var holdsFocus = false
 
@@ -62,12 +66,20 @@ class AudioFocusController(
             }
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                pausedByFocusLoss = true
-                onDuck(1f)
-                onPause()
+                if (isPlaybackActive()) {
+                    pausedByFocusLoss = true
+                    onDuck(1f)
+                    onPause()
+                } else {
+                    pausedByFocusLoss = false
+                }
             }
 
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> onDuck(DUCK_GAIN)
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                if (isPlaybackActive()) {
+                    onDuck(DUCK_GAIN)
+                }
+            }
 
             AudioManager.AUDIOFOCUS_GAIN -> {
                 onDuck(1f)
@@ -98,9 +110,10 @@ class AudioFocusController(
     }
 
     fun abandon() {
-        if (!holdsFocus) return
-        audioManager.abandonAudioFocusRequest(request)
-        holdsFocus = false
+        if (holdsFocus) {
+            audioManager.abandonAudioFocusRequest(request)
+            holdsFocus = false
+        }
         pausedByFocusLoss = false
     }
 

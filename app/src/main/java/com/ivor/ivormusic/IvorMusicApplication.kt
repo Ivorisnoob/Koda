@@ -18,6 +18,7 @@ class IvorMusicApplication : Application(), ImageLoaderFactory {
         // Reconcile the persisted periodic job with the user's current opt-in.
         // The setting handler does the same immediately when the value changes.
         com.ivor.ivormusic.work.UploadCheckWorker.sync(this)
+        com.ivor.ivormusic.work.ScheduledBackupWorker.sync(this)
     }
 
     /**

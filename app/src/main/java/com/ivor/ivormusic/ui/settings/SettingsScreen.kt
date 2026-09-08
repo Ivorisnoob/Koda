@@ -103,6 +103,7 @@ import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.ToggleOn
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.BugReport
@@ -147,6 +148,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -263,7 +265,8 @@ internal enum class SettingsPage {
     LOCAL_LIBRARY,
     ADVANCED,
     DISPLAY_SIZE,
-    SPONSORBLOCK
+    SPONSORBLOCK,
+    APP_ICON
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -276,6 +279,7 @@ fun SettingsScreen(
     colorPalette: String = ThemePreferences.DEFAULT_COLOR_PALETTE,
     onNavigateToColorPalette: () -> Unit = {},
     paletteStyle: com.ivor.ivormusic.ui.theme.PaletteStyle = com.ivor.ivormusic.ui.theme.PaletteStyle.TONAL_SPOT,
+    appIcon: String = ThemePreferences.DEFAULT_APP_ICON,
     loadLocalSongs: Boolean,
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     ambientBackground: Boolean,
@@ -491,12 +495,12 @@ fun SettingsScreen(
                             stiffness = Spring.StiffnessMedium
                         )
                     )
-                    page = SettingsPage.HUB
+                    page = if (page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON) SettingsPage.APPEARANCE else SettingsPage.HUB
                 }
                 // A button press, or three-button navigation: no gesture to
                 // continue from, so the ordinary transition is still the right
                 // one and the peel stays out of it entirely.
-                hasPage -> page = SettingsPage.HUB
+                hasPage -> page = if (page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON) SettingsPage.APPEARANCE else SettingsPage.HUB
                 else -> searchQuery = ""
             }
         } catch (cancelled: CancellationException) {
@@ -558,6 +562,11 @@ fun SettingsScreen(
     // Dialog state for About
     var showAboutDialog by remember { mutableStateOf(false) }
 
+    // The one dialog behind every hold-to-explain gesture. Rows hand their
+    // request up through LocalSettingsInfoSink because a dialog owned by a
+    // page dies with the page transition.
+    var settingsInfo by remember { mutableStateOf<SettingsInfoData?>(null) }
+
     // Which per-network quality picker is open, if any
     var qualityDialogTarget by remember { mutableStateOf<QualityDialogTarget?>(null) }
 
@@ -599,6 +608,7 @@ fun SettingsScreen(
         supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
     )
 
+    CompositionLocalProvider(LocalSettingsInfoSink provides { settingsInfo = it }) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -757,6 +767,8 @@ fun SettingsScreen(
                     paletteStyle = paletteStyle,
                     currentThemeMode = currentThemeMode,
                     onThemeModeChange = onThemeModeChange,
+                    hapticsLevel = hapticsLevel,
+                    onHapticsLevelChange = onHapticsLevelChange,
                     colorPalette = colorPalette,
                     onNavigateToColorPalette = onNavigateToColorPalette,
                     amoledTheme = amoledTheme,
@@ -770,6 +782,8 @@ fun SettingsScreen(
                         onNonExpressiveNavigationBarToggle,
                     uiScale = uiScale,
                     onNavigateToDisplaySize = { page = SettingsPage.DISPLAY_SIZE },
+                    appIcon = appIcon,
+                    onNavigateToAppIcon = { page = SettingsPage.APP_ICON },
                     onBack = { page = SettingsPage.HUB }
                 )
 
@@ -797,6 +811,10 @@ fun SettingsScreen(
                     onBack = { page = SettingsPage.APPEARANCE }
                 )
 
+                SettingsPage.APP_ICON -> AppIconSettingsPage(
+                    onBack = { page = SettingsPage.APPEARANCE }
+                )
+
                 SettingsPage.PLAYER -> PlayerSettingsPage(
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
@@ -816,8 +834,6 @@ fun SettingsScreen(
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     rememberVideoBrightness = rememberVideoBrightness,
                     onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
-                    hapticsLevel = hapticsLevel,
-                    onHapticsLevelChange = onHapticsLevelChange,
                     autoLoadQueue = autoLoadQueue,
                     onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     saveMusicHistory = saveMusicHistory,
@@ -936,6 +952,12 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+    }
+
+    // Hold-to-explain host, one for every row on every page.
+    settingsInfo?.let { info ->
+        SettingsInfoDialog(info = info, onDismiss = { settingsInfo = null })
     }
 
     // YouTube Auth Dialog
@@ -1208,6 +1230,32 @@ private fun SettingsHub(
                 )
             }
 
+            // Teaches the hold-to-explain gesture once, where every row that
+            // supports it lives. Quiet on purpose: a tip, not a banner.
+            if (searchQuery.isBlank()) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.TouchApp,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.settings_hold_hint),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
             val results = searchSettings(searchQuery, searchEntries)
 
             if (searchQuery.isNotBlank()) {
@@ -1238,7 +1286,9 @@ private fun SettingsHub(
                             icon = Icons.Rounded.AccountCircle,
                             title = stringResource(R.string.settings_account),
                             value = accountValue,
-                            onClick = { onOpenPage(SettingsPage.ACCOUNT) }
+                            onClick = { onOpenPage(SettingsPage.ACCOUNT) },
+                            iconShape = MaterialShapes.Sunny.toShape(),
+                            explanation = stringResource(R.string.si_hub_account)
                         )
                     }
                 }
@@ -1261,14 +1311,20 @@ private fun SettingsHub(
                                     append(", ${(uiScale * 100).roundToInt()}%")
                                 }
                             },
-                            onClick = { onOpenPage(SettingsPage.APPEARANCE) }
+                            onClick = { onOpenPage(SettingsPage.APPEARANCE) },
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            iconShape = MaterialShapes.Cookie9Sided.toShape(),
+                            explanation = stringResource(R.string.si_hub_appearance)
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.PlayCircle,
                             title = stringResource(R.string.settings_player),
                             value = playerStyleLabel,
-                            onClick = { onOpenPage(SettingsPage.PLAYER) }
+                            onClick = { onOpenPage(SettingsPage.PLAYER) },
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            iconShape = MaterialShapes.Clover4Leaf.toShape(),
+                            explanation = stringResource(R.string.si_hub_player)
                         )
                     }
                 }
@@ -1282,21 +1338,30 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_playback_and_quality),
                             value = "${musicQualityLabel(musicQualityWifi)} music, " +
                                 "${videoQualityLabel(videoQualityWifi)} video on Wi-Fi",
-                            onClick = { onOpenPage(SettingsPage.PLAYBACK) }
+                            onClick = { onOpenPage(SettingsPage.PLAYBACK) },
+                            tint = MaterialTheme.colorScheme.secondary,
+                            iconShape = MaterialShapes.SoftBurst.toShape(),
+                            explanation = stringResource(R.string.si_hub_playback)
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.VideoLibrary,
                             title = stringResource(R.string.settings_content_and_feeds),
                             value = contentValue,
-                            onClick = { onOpenPage(SettingsPage.CONTENT) }
+                            onClick = { onOpenPage(SettingsPage.CONTENT) },
+                            tint = MaterialTheme.colorScheme.secondary,
+                            iconShape = MaterialShapes.Gem.toShape(),
+                            explanation = stringResource(R.string.si_hub_content)
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.Subscriptions,
                             title = stringResource(R.string.settings_subscriptions),
                             value = subscriptionSourceLabel(subscriptionSource),
-                            onClick = { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
+                            onClick = { onOpenPage(SettingsPage.SUBSCRIPTIONS) },
+                            tint = MaterialTheme.colorScheme.secondary,
+                            iconShape = MaterialShapes.Cookie6Sided.toShape(),
+                            explanation = stringResource(R.string.si_hub_subscriptions)
                         )
                         SettingsDivider()
                         SettingsHubRow(
@@ -1315,7 +1380,10 @@ private fun SettingsHub(
                                     R.plurals.sb_active_categories, active, active
                                 )
                             },
-                            onClick = { onOpenPage(SettingsPage.SPONSORBLOCK) }
+                            onClick = { onOpenPage(SettingsPage.SPONSORBLOCK) },
+                            tint = MaterialTheme.colorScheme.secondary,
+                            iconShape = MaterialShapes.Boom.toShape(),
+                            explanation = stringResource(R.string.si_hub_sponsorblock)
                         )
                     }
                 }
@@ -1328,7 +1396,9 @@ private fun SettingsHub(
                             icon = Icons.Rounded.Folder,
                             title = stringResource(R.string.settings_storage_and_cache),
                             value = storageValue,
-                            onClick = { onOpenPage(SettingsPage.STORAGE) }
+                            onClick = { onOpenPage(SettingsPage.STORAGE) },
+                            iconShape = MaterialShapes.Arch.toShape(),
+                            explanation = stringResource(R.string.si_hub_storage)
                         )
                         if (ThemePreferences.SUPPORTS_LIVE_UPDATES) {
                             SettingsDivider()
@@ -1341,7 +1411,9 @@ private fun SettingsHub(
                                     SettingsRowDefaults.destructiveTint
                                 } else {
                                     MaterialTheme.colorScheme.primary
-                                }
+                                },
+                                iconShape = MaterialShapes.Bun.toShape(),
+                                explanation = stringResource(R.string.si_hub_notifications)
                             )
                         }
                         SettingsDivider()
@@ -1349,14 +1421,18 @@ private fun SettingsHub(
                             icon = Icons.Rounded.MusicNote,
                             title = stringResource(R.string.settings_local_library),
                             value = localLibraryValue,
-                            onClick = { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
+                            onClick = { onOpenPage(SettingsPage.LOCAL_LIBRARY) },
+                            iconShape = MaterialShapes.Pentagon.toShape(),
+                            explanation = stringResource(R.string.si_hub_local_library)
                         )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.SettingsBackupRestore,
                             title = stringResource(R.string.settings_backup_and_restore),
                             value = backupValue,
-                            onClick = onNavigateToBackup
+                            onClick = onNavigateToBackup,
+                            iconShape = MaterialShapes.Clover8Leaf.toShape(),
+                            explanation = stringResource(R.string.si_hub_backup)
                         )
                         SettingsDivider()
                         SettingsHubRow(
@@ -1372,7 +1448,9 @@ private fun SettingsHub(
                                 MaterialTheme.colorScheme.tertiary
                             } else {
                                 MaterialTheme.colorScheme.primary
-                            }
+                            },
+                            iconShape = MaterialShapes.Cookie12Sided.toShape(),
+                            explanation = stringResource(R.string.si_hub_advanced)
                         )
                     }
                 }
@@ -2040,11 +2118,43 @@ private fun ExpressiveAboutDialog(
                                     .background(MaterialTheme.colorScheme.primaryContainer),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                androidx.compose.foundation.Image(
-                                    painter = painterResource(R.drawable.ic_launcher_foreground),
-                                    contentDescription = stringResource(R.string.app_name),
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                                // A saved style has no drawable behind it -
+                                // it is colours, not a resource - so the one
+                                // place Koda draws its own mark at size gets
+                                // the live renderer when one is active, and
+                                // the preset's artwork otherwise. Without this
+                                // a style someone saved would change nothing
+                                // they could ever see.
+                                val themePrefs = remember { ThemePreferences(context) }
+                                val styleStore = remember {
+                                    com.ivor.ivormusic.data.AppIconStyleStore(context)
+                                }
+                                val currentAppIconId by themePrefs.appIcon.collectAsState()
+                                val activeStyleId by styleStore.activeStyleId.collectAsState()
+                                val savedStyles by styleStore.styles.collectAsState()
+                                val currentAppIcon = remember(currentAppIconId) {
+                                    AppIcon.fromId(currentAppIconId)
+                                }
+                                val activeStyle = remember(activeStyleId, savedStyles) {
+                                    savedStyles.firstOrNull { it.id == activeStyleId }
+                                }
+                                if (activeStyle != null) {
+                                    KodaAppIcon(
+                                        style = activeStyle.toIconStyle(),
+                                        shape = androidx.compose.foundation.shape
+                                            .RoundedCornerShape(20.dp),
+                                        animateColors = false,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    androidx.compose.foundation.Image(
+                                        painter = painterResource(
+                                            currentAppIcon.previewForegroundRes
+                                        ),
+                                        contentDescription = stringResource(R.string.app_name),
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.height(14.dp))
                             Text(

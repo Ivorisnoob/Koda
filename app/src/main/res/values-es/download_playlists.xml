@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_playlist_available">%1$d de %2$d canciones disponibles sin conexión</string>
+</resources>

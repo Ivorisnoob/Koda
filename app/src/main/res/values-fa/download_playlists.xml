@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_playlist_available">%1$d از %2$d آهنگ به‌صورت آفلاین در دسترس است</string>
+</resources>

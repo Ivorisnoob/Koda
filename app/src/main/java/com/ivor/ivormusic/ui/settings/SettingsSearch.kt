@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.MoneyOff
@@ -56,6 +57,7 @@ import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
@@ -227,6 +229,14 @@ internal fun buildSettingsSearchIndex(
         )
     ) { onOpenPage(SettingsPage.SPONSORBLOCK) }
     entry(
+        "app_icon", stringResource(R.string.sp_app_icon), stringResource(R.string.settings_appearance), Icons.Rounded.AutoAwesome,
+        listOf(
+            "icon", "app icon", "launcher icon", "home screen icon", "logo",
+            "shortcut icon", "alternate icon", "icon color", "icon colour",
+            "icon style", "custom icon", "change icon", "app logo"
+        )
+    ) { onOpenPage(SettingsPage.APP_ICON) }
+    entry(
         "display_size", stringResource(R.string.sp_display_size), stringResource(R.string.settings_appearance), Icons.Rounded.FormatSize,
         listOf(
             "ui scale", "scale", "zoom", "font size", "text size", "bigger",
@@ -337,14 +347,16 @@ internal fun buildSettingsSearchIndex(
             "system brightness"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
+    // Lives on Appearance now: haptics answer every touch in the app, not
+    // playback, so both the row and this entry moved.
     entry(
-        "haptics", "Haptics", "Playback and quality",
+        "haptics", "Haptics", stringResource(R.string.settings_appearance),
         Icons.Rounded.Vibration,
         listOf(
             "haptics", "vibration", "vibrate", "feedback", "touch", "buzz",
             "rumble", "feel", "silent"
         )
-    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    ) { onOpenPage(SettingsPage.APPEARANCE) }
     entry(
         "upload_notifications", "Notify about new uploads", "Notifications",
         Icons.Rounded.NotificationsActive,
@@ -498,6 +510,13 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "playlists", "liked songs", "stats", "history", "keep", "protect",
             "lose", "wipe", "uninstall"
+        )
+    ) { onNavigateToBackup() }
+    entry(
+        "scheduled_backup", stringResource(R.string.bk_scheduled_title), stringResource(R.string.settings_backup_and_restore), Icons.Rounded.Schedule,
+        listOf(
+            "scheduled", "automatic", "schedule", "daily", "auto backup", "timer",
+            "recurring", "auto", "nightly", "retention"
         )
     ) { onNavigateToBackup() }
 

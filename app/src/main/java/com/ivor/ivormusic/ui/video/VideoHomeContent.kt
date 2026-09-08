@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotInterested
+import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -122,6 +123,8 @@ fun VideoHomeContent(
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
+    val localSubscriptions by viewModel.localSubscriptions.collectAsState()
+    val subscribedChannels by viewModel.subscribedChannels.collectAsState()
     val showOfflineDownloads = isOffline && downloadedVideos.isNotEmpty()
 
     // Notifications sheet state
@@ -242,11 +245,9 @@ fun VideoHomeContent(
                     )
                 }
                 
-                // Section title - changes based on whether user is logged in.
-                // It names the recommendation list, so with recommendations off
-                // there is nothing for it to title: the Shorts shelf carries its
-                // own header and the empty state says why the feed is quiet.
-                if (showOfflineDownloads || recommendationsEnabled) item {
+                // Section title - changes based on whether user is logged in
+                // or recommendations are disabled (in which case subscriptions are shown).
+                if (showOfflineDownloads || recommendationsEnabled || videos.isNotEmpty()) item {
                     AnimatedVisibility(
                         visible = isVisible,
                         enter = fadeIn() + slideInVertically(
@@ -257,6 +258,7 @@ fun VideoHomeContent(
                         Text(
                             text = when {
                                 showOfflineDownloads -> stringResource(R.string.vh_available_offline)
+                                !recommendationsEnabled -> stringResource(R.string.vh_from_subscriptions)
                                 isYouTubeConnected -> stringResource(R.string.vh_recommended_for_you)
                                 else -> stringResource(R.string.vh_trending_videos)
                             },
@@ -280,16 +282,16 @@ fun VideoHomeContent(
                 } else {
                     // Video cards, with the Shorts shelf slotted in after the
                     // first two like the YouTube home feed.
-                    val recommendationVideos = if (recommendationsEnabled) videos else emptyList()
+                    val feedVideos = videos
                     val leadingVideos = if (shorts.isEmpty()) {
-                        recommendationVideos
+                        feedVideos
                     } else {
-                        recommendationVideos.take(2)
+                        feedVideos.take(2)
                     }
                     val trailingVideos = if (shorts.isEmpty()) {
                         emptyList()
                     } else {
-                        recommendationVideos.drop(2)
+                        feedVideos.drop(2)
                     }
 
                     items(leadingVideos) { video ->
@@ -325,9 +327,11 @@ fun VideoHomeContent(
                 }
                 
                 // Empty state
-                if ((!recommendationsEnabled || videos.isEmpty()) &&
+                if (videos.isEmpty() &&
                     !isLoading && !showOfflineDownloads && shorts.isEmpty()
                 ) {
+                    val hasSubscriptions = isYouTubeConnected || subscribedChannels.isNotEmpty() || localSubscriptions.isNotEmpty()
+
                     item {
                         Box(
                             modifier = Modifier
@@ -340,10 +344,7 @@ fun VideoHomeContent(
                                     imageVector = if (recommendationsEnabled) {
                                         Icons.Rounded.VideoLibrary
                                     } else {
-                                        // A feed that is off on purpose should
-                                        // not wear the same face as one that
-                                        // came back empty.
-                                        Icons.Rounded.NotInterested
+                                        Icons.Rounded.Subscriptions
                                     },
                                     contentDescription = null,
                                     modifier = Modifier.size(64.dp),
@@ -353,17 +354,21 @@ fun VideoHomeContent(
                                 Text(
                                     text = when {
                                         !recommendationsEnabled ->
-                                            stringResource(R.string.vh_recommendations_off)
+                                            if (hasSubscriptions) {
+                                                stringResource(R.string.hvm_subs_feed_empty)
+                                            } else {
+                                                stringResource(R.string.vh_no_subscriptions)
+                                            }
                                         isOffline -> stringResource(R.string.vh_youre_offline)
                                         else -> stringResource(R.string.vh_no_videos_found)
                                     },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (!recommendationsEnabled) {
+                                if (!recommendationsEnabled && !hasSubscriptions) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = stringResource(R.string.vh_recommendations_off_sub),
+                                        text = stringResource(R.string.vh_no_subscriptions_sub),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

@@ -95,7 +95,8 @@ class BackupRepository(context: Context) {
             "saved_playlists",          // playlists kept as references, both modes
             "hidden_playlists",         // playlists the user told Koda not to show
             "search_history",
-            "ivor_track_loudness"       // measured per-track gain
+            "ivor_track_loudness",      // measured per-track gain
+            "koda_icon_styles"          // icon looks the user mixed themselves
         )
 
         /**

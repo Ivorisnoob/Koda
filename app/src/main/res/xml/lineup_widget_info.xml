@@ -2,9 +2,9 @@
 <!--
     4x2 queue: what is playing on top, the next few tracks below, each row a jump.
 
-    updatePeriodMillis is 0 for every widget in the family: MusicService pushes
-    a redraw on each playback event, so scheduled polling would only burn
-    battery redrawing the same picture.
+    MusicService pushes a redraw on each playback event; the 30-minute
+    updatePeriodMillis heartbeat (the platform floor) exists only so a widget
+    frozen by an OEM force-killing the app eventually corrects itself.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="250dp"
@@ -15,6 +15,8 @@
     android:targetCellHeight="2"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:updatePeriodMillis="0"
+    android:updatePeriodMillis="1800000"
     android:description="@string/widget_lineup_description"
+    android:previewLayout="@layout/widget_preview_lineup"
+    android:previewImage="@drawable/widget_preview_lineup_image"
     android:initialLayout="@layout/glance_default_loading_layout" />

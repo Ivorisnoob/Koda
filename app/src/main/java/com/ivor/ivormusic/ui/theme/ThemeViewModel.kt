@@ -20,6 +20,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val amoledTheme: StateFlow<Boolean> = themePreferences.amoledTheme
     val colorPalette: StateFlow<String> = themePreferences.colorPalette
     val paletteStyle: StateFlow<PaletteStyle> = themePreferences.paletteStyle
+    val appIcon: StateFlow<String> = themePreferences.appIcon
     val loadLocalSongs: StateFlow<Boolean> = themePreferences.loadLocalSongs
     val ambientBackground: StateFlow<Boolean> = themePreferences.ambientBackground
     val playerArtworkColors: StateFlow<Boolean> = themePreferences.playerArtworkColors

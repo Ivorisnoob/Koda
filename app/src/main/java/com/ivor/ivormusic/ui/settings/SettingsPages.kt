@@ -6,6 +6,7 @@ import kotlin.math.roundToInt
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -14,6 +15,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,11 +23,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SkipNext
@@ -60,6 +65,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SignalCellularAlt
@@ -162,7 +168,8 @@ internal fun AccountSettingsPage(
                                 "Watching does not touch your YouTube history"
                             },
                             enabled = saveVideoHistory,
-                            onToggle = onSaveVideoHistoryToggle
+                            onToggle = onSaveVideoHistoryToggle,
+                            explanation = stringResource(R.string.si_watch_history_account)
                         )
                         SettingsDivider()
                         SettingsRow(
@@ -232,6 +239,8 @@ internal fun AppearanceSettingsPage(
     paletteStyle: com.ivor.ivormusic.ui.theme.PaletteStyle,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    hapticsLevel: String,
+    onHapticsLevelChange: (String) -> Unit,
     colorPalette: String,
     onNavigateToColorPalette: () -> Unit,
     amoledTheme: Boolean,
@@ -244,14 +253,20 @@ internal fun AppearanceSettingsPage(
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
     uiScale: Float,
     onNavigateToDisplaySize: () -> Unit,
+    appIcon: String = ThemePreferences.DEFAULT_APP_ICON,
+    onNavigateToAppIcon: () -> Unit = {},
     onBack: () -> Unit
 ) {
+    val currentAppIcon = remember(appIcon) { AppIcon.fromId(appIcon) }
     val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
         "Dynamic (from wallpaper)"
     } else {
         com.ivor.ivormusic.ui.theme.findPalette(colorPalette)?.name ?: "Dynamic"
     }
 
+    // Regrouped from six single-row sections into four that answer real
+    // questions - "what colors", "what's on screen", "what does Home look
+    // like", "how does it feel" - instead of one section per setting.
     SettingsDetailScaffold(title = stringResource(R.string.settings_appearance), onBack = onBack) {
         item {
             SettingsSection(title = stringResource(R.string.sp_theme)) {
@@ -282,15 +297,37 @@ internal fun AppearanceSettingsPage(
                             "Standard dark backgrounds"
                         },
                         enabled = amoledTheme,
-                        onToggle = onAmoledThemeToggle
+                        onToggle = onAmoledThemeToggle,
+                        explanation = stringResource(R.string.si_amoled)
                     )
                 }
             }
         }
 
         item {
-            SettingsSection(title = stringResource(R.string.sp_backgrounds)) {
+            SettingsSection(title = stringResource(R.string.sp_display_section)) {
                 SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Rounded.AutoAwesome,
+                        title = stringResource(R.string.sp_app_icon),
+                        subtitle = stringResource(currentAppIcon.titleRes),
+                        onClick = onNavigateToAppIcon,
+                        showChevron = true,
+                        explanation = stringResource(R.string.si_app_icon)
+                    )
+                    SettingsDivider()
+                    // A page rather than a slider here: the scale is worth
+                    // previewing before it is applied, and a preview needs
+                    // room the hub list does not have.
+                    SettingsRow(
+                        icon = Icons.Rounded.FormatSize,
+                        title = stringResource(R.string.sp_display_size),
+                        subtitle = "${(uiScale * 100).roundToInt()}%",
+                        onClick = onNavigateToDisplaySize,
+                        showChevron = true,
+                        explanation = stringResource(R.string.si_display_size)
+                    )
+                    SettingsDivider()
                     SettingsToggleRow(
                         icon = Icons.Rounded.Palette,
                         title = stringResource(R.string.sp_ambient_background),
@@ -300,32 +337,42 @@ internal fun AppearanceSettingsPage(
                             "Solid background"
                         },
                         enabled = ambientBackground,
-                        onToggle = onAmbientBackgroundToggle
+                        onToggle = onAmbientBackgroundToggle,
+                        explanation = stringResource(R.string.si_ambient)
                     )
                 }
             }
         }
 
         item {
-            SettingsSection(title = stringResource(R.string.sp_display_size)) {
+            SettingsSection(title = stringResource(R.string.sp_home_and_navigation)) {
                 SettingsCard {
-                    // A page rather than a slider here: the scale is worth
-                    // previewing before it is applied, and a preview needs
-                    // room the hub list does not have.
-                    SettingsRow(
-                        icon = Icons.Rounded.FormatSize,
-                        title = stringResource(R.string.sp_display_size),
-                        subtitle = "${(uiScale * 100).roundToInt()}%",
-                        onClick = onNavigateToDisplaySize,
-                        showChevron = true
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Home,
+                        title = stringResource(R.string.sp_spotlight_home),
+                        subtitle = if (spotlightHome) {
+                            "Shortcut grid, quick picks and artwork shelves"
+                        } else {
+                            "Classic Home with a hero and carousels"
+                        },
+                        enabled = spotlightHome,
+                        onToggle = onSpotlightHomeToggle,
+                        explanation = stringResource(R.string.si_spotlight)
                     )
-                }
-            }
-        }
+                    // The toggle alone changed the whole Home screen blind.
+                    // These schematics show what each layout is before it is
+                    // chosen, and tapping one is the same choice as the switch.
+                    PreviewToggleCards(
+                        leftLabel = stringResource(R.string.sp_home_classic),
+                        rightLabel = stringResource(R.string.sp_home_spotlight),
+                        rightSelected = spotlightHome,
+                        onSelect = onSpotlightHomeToggle,
+                        leftPreview = { HomeClassicPreview() },
+                        rightPreview = { HomeSpotlightPreview() }
+                    )
 
-        item {
-            SettingsSection(title = stringResource(R.string.sp_navigation)) {
-                SettingsCard {
+                    SettingsDivider()
+
                     SettingsToggleRow(
                         icon = Icons.Rounded.Dashboard,
                         title = stringResource(R.string.sp_non_expressive_nav),
@@ -335,26 +382,377 @@ internal fun AppearanceSettingsPage(
                             "Expressive floating navigation"
                         },
                         enabled = nonExpressiveNavigationBar,
-                        onToggle = onNonExpressiveNavigationBarToggle
+                        onToggle = onNonExpressiveNavigationBarToggle,
+                        explanation = stringResource(R.string.si_nav_bar)
+                    )
+                    PreviewToggleCards(
+                        leftLabel = stringResource(R.string.sp_nav_floating),
+                        rightLabel = stringResource(R.string.sp_nav_standard),
+                        rightSelected = nonExpressiveNavigationBar,
+                        onSelect = onNonExpressiveNavigationBarToggle,
+                        leftPreview = { NavFloatingPreview() },
+                        rightPreview = { NavStandardPreview() }
                     )
                 }
             }
         }
 
+        // Moved here from Playback: haptics respond to every touch in the
+        // app - drags, toggles, the nav bar - not to playback, so they belong
+        // with look and feel.
         item {
-            SettingsSection(title = stringResource(R.string.tab_home)) {
+            SettingsSection(title = stringResource(R.string.sp_touch_feedback)) {
                 SettingsCard {
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.Dashboard,
-                        title = stringResource(R.string.sp_spotlight_home),
-                        subtitle = if (spotlightHome) {
-                            "Shortcut grid, quick picks and artwork shelves"
-                        } else {
-                            "Classic Home with a hero and carousels"
-                        },
-                        enabled = spotlightHome,
-                        onToggle = onSpotlightHomeToggle
+                    HapticsLevelSelector(
+                        hapticsLevel = hapticsLevel,
+                        onHapticsLevelChange = onHapticsLevelChange
                     )
+                }
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Appearance previews                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Two schematic option cards under a layout toggle. Tapping a card commits the
+ * choice, so the preview is a control rather than an illustration; the switch
+ * above stays because a switch is what settings muscle memory reaches for.
+ */
+@Composable
+private fun PreviewToggleCards(
+    leftLabel: String,
+    rightLabel: String,
+    rightSelected: Boolean,
+    onSelect: (Boolean) -> Unit,
+    leftPreview: @Composable () -> Unit,
+    rightPreview: @Composable () -> Unit,
+) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        PreviewOptionCard(
+            label = leftLabel,
+            selected = !rightSelected,
+            onClick = { if (rightSelected) { haptics.confirm(); onSelect(false) } },
+            modifier = Modifier.weight(1f),
+            preview = leftPreview
+        )
+        PreviewOptionCard(
+            label = rightLabel,
+            selected = rightSelected,
+            onClick = { if (!rightSelected) { haptics.confirm(); onSelect(true) } },
+            modifier = Modifier.weight(1f),
+            preview = rightPreview
+        )
+    }
+}
+
+@Composable
+private fun PreviewOptionCard(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    preview: @Composable () -> Unit,
+) {
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        },
+        label = "previewBorder"
+    )
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(2.dp, borderColor),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.78f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            ) {
+                preview()
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                }
+                Text(
+                    text = label,
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+        }
+    }
+}
+
+/** A thin schematic text line for the preview cards. */
+@Composable
+private fun PreviewLine(widthFraction: Float, color: Color) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(widthFraction)
+            .height(5.dp)
+            .clip(RoundedCornerShape(2.5.dp))
+            .background(color)
+    )
+}
+
+@Composable
+private fun HomeClassicPreview() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        PreviewLine(0.5f, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+        // The hero, the classic Home's signature.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+        )
+        repeat(2) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                repeat(3) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(
+                                if (row == 0) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.tertiaryContainer
+                                }
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeSpotlightPreview() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        PreviewLine(0.5f, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+        // The shortcut grid.
+        repeat(2) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                repeat(2) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(14.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(1.dp))
+        // Artwork shelves.
+        repeat(2) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                repeat(3) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(
+                                if (row == 0) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.tertiaryContainer
+                                }
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavPreviewContent() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        val line = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+        PreviewLine(0.55f, line)
+        PreviewLine(0.9f, line)
+        PreviewLine(0.75f, line)
+        PreviewLine(0.85f, line)
+    }
+}
+
+@Composable
+private fun NavDots(tint: Color) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(4) { index ->
+            Box(
+                modifier = Modifier
+                    .size(if (index == 0) 5.dp else 4.dp)
+                    .clip(CircleShape)
+                    .background(if (index == 0) tint else tint.copy(alpha = 0.45f))
+            )
+        }
+    }
+}
+
+@Composable
+private fun NavFloatingPreview() {
+    Box(modifier = Modifier.fillMaxSize()) {
+        NavPreviewContent()
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 8.dp)
+                .fillMaxWidth(0.7f)
+                .height(16.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            NavDots(MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+    }
+}
+
+@Composable
+private fun NavStandardPreview() {
+    Box(modifier = Modifier.fillMaxSize()) {
+        NavPreviewContent()
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(18.dp)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center
+        ) {
+            NavDots(MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * The haptics dial, extracted so Appearance can host it. It lived on the
+ * Playback page, but haptics answer every touch in the app - it was the one
+ * setting there that had nothing to do with playback.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun HapticsLevelSelector(
+    hapticsLevel: String,
+    onHapticsLevelChange: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.sp_haptics),
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        val levelSubtitle = when (hapticsLevel) {
+            "off" -> stringResource(R.string.sp_haptics_sub_off)
+            "subtle" -> stringResource(R.string.sp_haptics_sub_subtle)
+            "expressive" -> stringResource(R.string.sp_haptics_sub_expressive)
+            else -> stringResource(R.string.sp_haptics_sub_balanced)
+        }
+        Text(
+            text = levelSubtitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        val levels = listOf("off", "subtle", "balanced", "expressive")
+        val labels = listOf(
+            stringResource(R.string.haptic_level_off),
+            stringResource(R.string.haptic_level_subtle),
+            stringResource(R.string.haptic_level_balanced),
+            stringResource(R.string.haptic_level_rich)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                ButtonGroupDefaults.ConnectedSpaceBetween
+            ),
+        ) {
+            levels.forEachIndexed { index, value ->
+                ToggleButton(
+                    checked = hapticsLevel == value,
+                    onCheckedChange = { onHapticsLevelChange(value) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        levels.lastIndex ->
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.toggleButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(labels[index], maxLines = 1)
                 }
             }
         }
@@ -409,7 +807,8 @@ internal fun PlayerSettingsPage(
                         title = stringResource(R.string.sp_album_art_colors),
                         subtitle = stringResource(R.string.sp_album_art_colors_sub),
                         enabled = playerArtworkColors,
-                        onToggle = onPlayerArtworkColorsToggle
+                        onToggle = onPlayerArtworkColorsToggle,
+                        explanation = stringResource(R.string.si_artwork_colors)
                     )
                 }
             }
@@ -434,8 +833,6 @@ internal fun PlaybackSettingsPage(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
-    hapticsLevel: String,
-    onHapticsLevelChange: (String) -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     saveMusicHistory: Boolean,
@@ -474,6 +871,7 @@ internal fun PlaybackSettingsPage(
                                 onCrossfadeEnabledToggle(true)
                             }
                         },
+                        explanation = stringResource(R.string.si_crossfade),
                     )
 
                     Column(
@@ -572,7 +970,8 @@ internal fun PlaybackSettingsPage(
                         // reason one song is twice as loud as the last.
                         subtitle = stringResource(R.string.sp_normalise_volume_sub),
                         enabled = normalizeVolume,
-                        onToggle = onNormalizeVolumeToggle
+                        onToggle = onNormalizeVolumeToggle,
+                        explanation = stringResource(R.string.si_normalize)
                     )
 
                     SettingsDivider()
@@ -582,7 +981,8 @@ internal fun PlaybackSettingsPage(
                         title = stringResource(R.string.sp_auto_load_queue),
                         subtitle = stringResource(R.string.sp_auto_load_queue_sub),
                         enabled = autoLoadQueue,
-                        onToggle = onAutoLoadQueueToggle
+                        onToggle = onAutoLoadQueueToggle,
+                        explanation = stringResource(R.string.si_auto_queue)
                     )
 
                     SettingsDivider()
@@ -600,7 +1000,8 @@ internal fun PlaybackSettingsPage(
                             "Paused: new plays are not recorded"
                         },
                         enabled = saveMusicHistory,
-                        onToggle = onSaveMusicHistoryToggle
+                        onToggle = onSaveMusicHistoryToggle,
+                        explanation = stringResource(R.string.si_music_history)
                     )
                 }
             }
@@ -726,96 +1127,30 @@ internal fun PlaybackSettingsPage(
                         title = stringResource(R.string.sp_prefer_hdr),
                         subtitle = stringResource(R.string.sp_prefer_hdr_sub),
                         enabled = preferHdr,
-                        onToggle = onPreferHdrToggle
+                        onToggle = onPreferHdrToggle,
+                        explanation = stringResource(R.string.si_hdr)
                     )
                 }
             }
         }
 
         item {
-            SettingsSection(title = "Touch feedback") {
-                SettingsCard {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.sp_haptics),
-                            color = MaterialTheme.colorScheme.onBackground,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        val levelSubtitle = when (hapticsLevel) {
-                            "off" -> stringResource(R.string.sp_haptics_sub_off)
-                            "subtle" -> stringResource(R.string.sp_haptics_sub_subtle)
-                            "expressive" -> stringResource(R.string.sp_haptics_sub_expressive)
-                            else -> stringResource(R.string.sp_haptics_sub_balanced)
-                        }
-                        Text(
-                            text = levelSubtitle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        val levels = listOf("off", "subtle", "balanced", "expressive")
-                        val labels = listOf(
-                            stringResource(R.string.haptic_level_off),
-                            stringResource(R.string.haptic_level_subtle),
-                            stringResource(R.string.haptic_level_balanced),
-                            stringResource(R.string.haptic_level_rich)
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(
-                                ButtonGroupDefaults.ConnectedSpaceBetween
-                            ),
-                        ) {
-                            levels.forEachIndexed { index, value ->
-                                ToggleButton(
-                                    checked = hapticsLevel == value,
-                                    onCheckedChange = { onHapticsLevelChange(value) },
-                                    modifier = Modifier.weight(1f),
-                                    shapes = when (index) {
-                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                                        levels.lastIndex ->
-                                            ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                    },
-                                    colors = ToggleButtonDefaults.toggleButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                        checkedContainerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onSurface,
-                                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 8.dp)
-                                ) {
-                                    Text(labels[index], maxLines = 1)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            SettingsSection(title = "Video") {
+            SettingsSection(title = stringResource(R.string.sp_video_section)) {
                 SettingsCard {
                     // The fullscreen brightness drag. Default keeps the
                     // behaviour the player has always had; off means every
                     // fullscreen video reopens at the system level.
                     SettingsToggleRow(
                         icon = Icons.Rounded.BrightnessMedium,
-                        title = "Remember fullscreen brightness",
+                        title = stringResource(R.string.sp_remember_brightness),
                         subtitle = if (rememberVideoBrightness) {
                             "Videos reopen at the brightness you last set"
                         } else {
                             "Videos reopen at the system brightness"
                         },
                         enabled = rememberVideoBrightness,
-                        onToggle = onRememberVideoBrightnessToggle
+                        onToggle = onRememberVideoBrightnessToggle,
+                        explanation = stringResource(R.string.si_brightness)
                     )
                 }
             }
@@ -864,7 +1199,8 @@ internal fun ContentSettingsPage(
                             "YouTube features enabled"
                         },
                         enabled = localOnlyMode,
-                        onToggle = onLocalOnlyModeToggle
+                        onToggle = onLocalOnlyModeToggle,
+                        explanation = stringResource(R.string.si_local_only)
                     )
 
                     // Everything below is about YouTube content, which local-only
@@ -896,7 +1232,8 @@ internal fun ContentSettingsPage(
                                     "Change the mode here in Settings only"
                                 },
                                 enabled = homeModeToggleEnabled,
-                                onToggle = onHomeModeToggleChange
+                                onToggle = onHomeModeToggleChange,
+                                explanation = stringResource(R.string.si_home_mode_toggle)
                             )
                         }
                     }
@@ -927,7 +1264,8 @@ internal fun ContentSettingsPage(
                                 "Comments stay in the comment sheet"
                             },
                             enabled = timedCommentsEnabled,
-                            onToggle = onTimedCommentsToggle
+                            onToggle = onTimedCommentsToggle,
+                            explanation = stringResource(R.string.si_timed_comments)
                         )
 
                         SettingsDivider()
@@ -941,7 +1279,8 @@ internal fun ContentSettingsPage(
                                 stringResource(R.string.sp_shorts_disabled_sub)
                             },
                             enabled = shortsEnabled,
-                            onToggle = onShortsEnabledToggle
+                            onToggle = onShortsEnabledToggle,
+                            explanation = stringResource(R.string.si_shorts)
                         )
 
                         // Action-rail choices only apply to the dedicated swipe player.
@@ -984,7 +1323,8 @@ internal fun ContentSettingsPage(
                             title = stringResource(R.string.sp_show_recent_searches),
                             subtitle = stringResource(R.string.sp_show_recent_searches_sub),
                             enabled = showRecentSearches,
-                            onToggle = onShowRecentSearchesToggle
+                            onToggle = onShowRecentSearchesToggle,
+                            explanation = stringResource(R.string.si_recent_searches)
                         )
 
                         SettingsDivider()
@@ -994,7 +1334,8 @@ internal fun ContentSettingsPage(
                             title = stringResource(R.string.sp_compact_video_home),
                             subtitle = stringResource(R.string.sp_compact_video_home_sub),
                             enabled = compactVideoHome,
-                            onToggle = onCompactVideoHomeToggle
+                            onToggle = onCompactVideoHomeToggle,
+                            explanation = stringResource(R.string.si_compact_video_home)
                         )
 
                         SettingsDivider()
@@ -1004,7 +1345,8 @@ internal fun ContentSettingsPage(
                             title = stringResource(R.string.sp_show_related_videos),
                             subtitle = stringResource(R.string.sp_show_related_videos_sub),
                             enabled = showRelatedVideos,
-                            onToggle = onShowRelatedVideosToggle
+                            onToggle = onShowRelatedVideosToggle,
+                            explanation = stringResource(R.string.si_related_videos)
                         )
 
                         SettingsDivider()
@@ -1014,7 +1356,8 @@ internal fun ContentSettingsPage(
                             title = stringResource(R.string.sp_not_recommended),
                             subtitle = stringResource(R.string.sp_not_recommended_sub),
                             onClick = onNavigateToNotInterested,
-                            showChevron = true
+                            showChevron = true,
+                            explanation = stringResource(R.string.si_not_interested)
                         )
                     }
                 }
@@ -1252,7 +1595,8 @@ internal fun SubscriptionsSettingsPage(
                         title = stringResource(R.string.sp_subscriptions_shown),
                         subtitle = subscriptionSourceLabel(subscriptionSource),
                         onClick = { onOpenRoutingPicker(SubscriptionDialogTarget.SOURCE) },
-                        showChevron = true
+                        showChevron = true,
+                        explanation = stringResource(R.string.si_subs_source)
                     )
                     SettingsDivider()
                     SettingsRow(
@@ -1260,7 +1604,8 @@ internal fun SubscriptionsSettingsPage(
                         title = stringResource(R.string.sp_subscribe_saves_to),
                         subtitle = subscribeTargetLabel(subscribeTarget),
                         onClick = { onOpenRoutingPicker(SubscriptionDialogTarget.TARGET) },
-                        showChevron = true
+                        showChevron = true,
+                        explanation = stringResource(R.string.si_subs_target)
                     )
                 }
             }
@@ -1278,7 +1623,8 @@ internal fun SubscriptionsSettingsPage(
                             stringResource(R.string.sp_fast_refresh_off)
                         },
                         enabled = fastSubscriptionFeed,
-                        onToggle = onFastSubscriptionFeedToggle
+                        onToggle = onFastSubscriptionFeedToggle,
+                        explanation = stringResource(R.string.si_fast_refresh)
                     )
                 }
             }
@@ -1324,7 +1670,8 @@ internal fun StorageSettingsPage(
                             stringResource(R.string.sp_private_downloads_off)
                         },
                         enabled = privateDownloadsEnabled,
-                        onToggle = onPrivateDownloadsEnabledToggle
+                        onToggle = onPrivateDownloadsEnabledToggle,
+                        explanation = stringResource(R.string.si_private_downloads)
                     )
                 }
                 SettingsFootnote(
@@ -1342,7 +1689,8 @@ internal fun StorageSettingsPage(
                         title = stringResource(R.string.sp_cache_music),
                         subtitle = stringResource(R.string.sp_cache_music_sub),
                         enabled = cacheEnabled,
-                        onToggle = onCacheEnabledToggle
+                        onToggle = onCacheEnabledToggle,
+                        explanation = stringResource(R.string.si_cache_music)
                     )
 
                     SettingsDivider()
@@ -1352,7 +1700,8 @@ internal fun StorageSettingsPage(
                         title = stringResource(R.string.sp_cache_videos),
                         subtitle = stringResource(R.string.sp_cache_videos_sub),
                         enabled = videoCacheEnabled,
-                        onToggle = onVideoCacheEnabledToggle
+                        onToggle = onVideoCacheEnabledToggle,
+                        explanation = stringResource(R.string.si_cache_videos)
                     )
 
                     SettingsDivider()
@@ -1362,7 +1711,8 @@ internal fun StorageSettingsPage(
                         title = stringResource(R.string.sp_cache_shorts),
                         subtitle = stringResource(R.string.sp_cache_shorts_sub),
                         enabled = shortsCacheEnabled,
-                        onToggle = onShortsCacheEnabledToggle
+                        onToggle = onShortsCacheEnabledToggle,
+                        explanation = stringResource(R.string.si_cache_shorts)
                     )
 
                     SettingsDivider()
@@ -1372,7 +1722,8 @@ internal fun StorageSettingsPage(
                         title = stringResource(R.string.sp_playback_preload),
                         subtitle = stringResource(R.string.sp_playback_preload_sub),
                         enabled = playbackPreloadEnabled,
-                        onToggle = onPlaybackPreloadEnabledToggle
+                        onToggle = onPlaybackPreloadEnabledToggle,
+                        explanation = stringResource(R.string.si_preload)
                     )
 
                     SettingsDivider()
@@ -1633,7 +1984,8 @@ internal fun NotificationsSettingsPage(
                             stringResource(R.string.sp_notify_new_uploads_off)
                         },
                         enabled = uploadNotificationsEnabled,
-                        onToggle = onUploadNotificationsToggle
+                        onToggle = onUploadNotificationsToggle,
+                        explanation = stringResource(R.string.si_upload_notifications)
                     )
                 }
             }
@@ -1676,7 +2028,8 @@ internal fun NotificationsSettingsPage(
                         title = stringResource(R.string.sp_live_download_updates),
                         subtitle = stringResource(R.string.sp_live_download_updates_sub),
                         enabled = liveDownloadUpdates,
-                        onToggle = onLiveDownloadUpdatesToggle
+                        onToggle = onLiveDownloadUpdatesToggle,
+                        explanation = stringResource(R.string.si_live_download)
                     )
 
                     SettingsDivider()
@@ -1686,7 +2039,8 @@ internal fun NotificationsSettingsPage(
                         title = stringResource(R.string.sp_live_playback_updates),
                         subtitle = stringResource(R.string.sp_live_playback_updates_sub),
                         enabled = livePlaybackUpdates,
-                        onToggle = onLivePlaybackUpdatesToggle
+                        onToggle = onLivePlaybackUpdatesToggle,
+                        explanation = stringResource(R.string.si_live_playback)
                     )
 
                     // Promotion is a request the system can refuse. When the
@@ -1735,7 +2089,8 @@ internal fun LocalLibrarySettingsPage(
                             "YouTube Music only"
                         },
                         enabled = loadLocalSongs,
-                        onToggle = onLoadLocalSongsToggle
+                        onToggle = onLoadLocalSongsToggle,
+                        explanation = stringResource(R.string.si_load_local_songs)
                     )
 
                     AnimatedVisibility(
@@ -1805,7 +2160,8 @@ internal fun AdvancedSettingsPage(
                         title = stringResource(R.string.sp_daily_time_limit),
                         subtitle = stringResource(R.string.sp_daily_time_limit_sub),
                         onClick = onOpenTimeLimit,
-                        showChevron = true
+                        showChevron = true,
+                        explanation = stringResource(R.string.si_time_limit)
                     )
                 }
             }
@@ -1833,6 +2189,7 @@ internal fun AdvancedSettingsPage(
                         icon = Icons.Rounded.Security,
                         title = stringResource(R.string.sp_high_compat_scanning),
                         subtitle = stringResource(R.string.sp_high_compat_scanning_sub),
+                        explanation = stringResource(R.string.si_compat_scan),
                         enabled = manualScanEnabled,
                         onToggle = { enabled ->
                             if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -1855,6 +2212,7 @@ internal fun AdvancedSettingsPage(
                         icon = Icons.Rounded.FlashOn,
                         title = stringResource(R.string.sp_ignore_battery),
                         subtitle = stringResource(R.string.sp_ignore_battery_sub),
+                        explanation = stringResource(R.string.si_battery),
                         onClick = {
                             val packageName = context.packageName
                             val intent = Intent(

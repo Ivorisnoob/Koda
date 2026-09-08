@@ -1,7 +1,4 @@
 package com.ivor.ivormusic.ui.settings
-import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
-import androidx.compose.ui.res.stringResource
-import com.ivor.ivormusic.R
 
 import android.content.Intent
 import androidx.activity.compose.BackHandler
@@ -33,19 +30,31 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Power
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -54,6 +63,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,17 +74,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.BackupManifest
 import com.ivor.ivormusic.data.BackupRepository
 import com.ivor.ivormusic.data.BackupSnapshot
 import com.ivor.ivormusic.data.BackupTransfer
+import com.ivor.ivormusic.data.FolderStatus
 import com.ivor.ivormusic.data.ProfileKind
 import com.ivor.ivormusic.data.RestoreResult
+import com.ivor.ivormusic.data.ScheduledBackupRepository
+import com.ivor.ivormusic.data.ScheduledBackupResult
+import com.ivor.ivormusic.data.ScheduledBackupStatus
 import com.ivor.ivormusic.data.UnsupportedBackupException
+import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -100,6 +118,27 @@ fun BackupScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val repository = remember { BackupRepository(context) }
+    val scheduledRepo = remember { ScheduledBackupRepository(context) }
+
+    val scheduledEnabled by scheduledRepo.enabled.collectAsState()
+    val scheduledFolderUri by scheduledRepo.folderUri.collectAsState()
+    val scheduledFolderName by scheduledRepo.folderDisplayName.collectAsState()
+    val scheduledFrequencyHours by scheduledRepo.frequencyHours.collectAsState()
+    val scheduledRetentionLimit by scheduledRepo.retentionLimit.collectAsState()
+    val scheduledRequiresCharging by scheduledRepo.requiresCharging.collectAsState()
+    val scheduledRequiresDeviceIdle by scheduledRepo.requiresDeviceIdle.collectAsState()
+    val scheduledRequiresUnmetered by scheduledRepo.requiresUnmetered.collectAsState()
+    val scheduledLastRunAt by scheduledRepo.lastRunAt.collectAsState()
+    val scheduledLastRunStatus by scheduledRepo.lastRunStatus.collectAsState()
+    val scheduledLastRunError by scheduledRepo.lastRunError.collectAsState()
+
+    var showFrequencyDialog by remember { mutableStateOf(false) }
+    var showRetentionDialog by remember { mutableStateOf(false) }
+    var folderStatus by remember { mutableStateOf(FolderStatus.VALID) }
+
+    LaunchedEffect(scheduledFolderUri, scheduledEnabled) {
+        folderStatus = scheduledRepo.checkFolderStatus()
+    }
 
     var phase by remember { mutableStateOf(BackupPhase.IDLE) }
     var lastBackupAt by remember { mutableStateOf(BackupRepository.lastBackupAt(context)) }
@@ -128,6 +167,16 @@ fun BackupScreen(
                 lastBackupAt = manifest.createdAt
                 snackbarHostState.showSnackbar(backupWrittenMessage(manifest))
             }
+        }
+    }
+
+    val folderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            scheduledRepo.setFolder(uri)
+            scheduledRepo.setEnabled(true)
+            folderStatus = FolderStatus.VALID
         }
     }
 
@@ -210,6 +259,165 @@ fun BackupScreen(
                 }
             }
 
+            item(key = "scheduled") {
+                SettingsSection(title = stringResource(R.string.bk_scheduled_title)) {
+                    SettingsCard {
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.Schedule,
+                            title = stringResource(R.string.bk_scheduled_title),
+                            subtitle = stringResource(R.string.bk_scheduled_sub),
+                            enabled = scheduledEnabled,
+                            onToggle = { enable ->
+                                if (enable && scheduledFolderUri == null) {
+                                    folderLauncher.launch(null)
+                                } else {
+                                    scheduledRepo.setEnabled(enable)
+                                }
+                            }
+                        )
+
+                        AnimatedVisibility(
+                            visible = scheduledEnabled,
+                            enter = fadeIn() + expandVertically(
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                            ),
+                            exit = fadeOut() + shrinkVertically(
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy)
+                            )
+                        ) {
+                            Column {
+                                if (folderStatus == FolderStatus.PERMISSION_REVOKED || folderStatus == FolderStatus.FOLDER_MISSING) {
+                                    FolderWarningCard(
+                                        status = folderStatus,
+                                        onFix = { folderLauncher.launch(null) }
+                                    )
+                                }
+
+                                SettingsDivider()
+                                SettingsRow(
+                                    icon = Icons.Rounded.Folder,
+                                    title = stringResource(R.string.bk_folder_title),
+                                    subtitle = scheduledFolderName ?: stringResource(R.string.bk_folder_none),
+                                    onClick = { folderLauncher.launch(null) },
+                                    showChevron = true
+                                )
+
+                                SettingsDivider()
+                                SettingsRow(
+                                    icon = Icons.Rounded.Update,
+                                    title = stringResource(R.string.bk_freq_title),
+                                    subtitle = frequencyLabel(scheduledFrequencyHours),
+                                    onClick = { showFrequencyDialog = true },
+                                    showChevron = true
+                                )
+
+                                SettingsDivider()
+                                SettingsRow(
+                                    icon = Icons.Rounded.Layers,
+                                    title = stringResource(R.string.bk_retention_title),
+                                    subtitle = retentionLabel(scheduledRetentionLimit),
+                                    onClick = { showRetentionDialog = true },
+                                    showChevron = true
+                                )
+
+                                SettingsDivider()
+                                SettingsToggleRow(
+                                    icon = Icons.Rounded.Power,
+                                    title = stringResource(R.string.bk_constraint_charging),
+                                    subtitle = stringResource(R.string.bk_constraint_charging_sub),
+                                    enabled = scheduledRequiresCharging,
+                                    onToggle = { scheduledRepo.setRequiresCharging(it) }
+                                )
+
+                                SettingsDivider()
+                                SettingsToggleRow(
+                                    icon = Icons.Rounded.Bedtime,
+                                    title = stringResource(R.string.bk_constraint_idle),
+                                    subtitle = stringResource(R.string.bk_constraint_idle_sub),
+                                    enabled = scheduledRequiresDeviceIdle,
+                                    onToggle = { scheduledRepo.setRequiresDeviceIdle(it) }
+                                )
+
+                                SettingsDivider()
+                                SettingsToggleRow(
+                                    icon = Icons.Rounded.Wifi,
+                                    title = stringResource(R.string.bk_constraint_unmetered),
+                                    subtitle = stringResource(R.string.bk_constraint_unmetered_sub),
+                                    enabled = scheduledRequiresUnmetered,
+                                    onToggle = { scheduledRepo.setRequiresUnmetered(it) }
+                                )
+
+                                if (scheduledFolderUri != null && folderStatus == FolderStatus.VALID) {
+                                    SettingsDivider()
+                                    SettingsRow(
+                                        icon = Icons.Rounded.PlayArrow,
+                                        title = stringResource(R.string.bk_run_now),
+                                        subtitle = stringResource(R.string.bk_run_now_sub),
+                                        onClick = {
+                                            if (!busy) {
+                                                phase = BackupPhase.BACKING_UP
+                                                scope.launch {
+                                                    when (val result = scheduledRepo.executeBackup()) {
+                                                        is ScheduledBackupResult.Success -> {
+                                                            phase = BackupPhase.IDLE
+                                                            lastBackupAt = result.manifest.createdAt
+                                                            val baseMsg = context.getString(
+                                                                R.string.bk_backup_saved_to_folder,
+                                                                scheduledFolderName ?: ""
+                                                            )
+                                                            val fullMsg = if (result.prunedCount > 0) {
+                                                                baseMsg + " • " + context.getString(
+                                                                    R.string.bk_pruned_count,
+                                                                    result.prunedCount
+                                                                )
+                                                            } else {
+                                                                baseMsg
+                                                            }
+                                                            snackbarHostState.showSnackbar(fullMsg)
+                                                        }
+                                                        is ScheduledBackupResult.Failure -> {
+                                                            phase = BackupPhase.IDLE
+                                                            failure = result.message
+                                                            folderStatus = scheduledRepo.checkFolderStatus()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        showChevron = false
+                                    )
+
+                                    val statusCaption = when {
+                                        scheduledLastRunAt > 0L && scheduledLastRunStatus == ScheduledBackupStatus.SUCCESS -> {
+                                            stringResource(
+                                                R.string.bk_last_run_success,
+                                                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                                                    .format(Date(scheduledLastRunAt))
+                                            )
+                                        }
+                                        scheduledLastRunStatus != ScheduledBackupStatus.IDLE && scheduledLastRunError != null -> {
+                                            stringResource(R.string.bk_last_run_failed, scheduledLastRunError ?: "")
+                                        }
+                                        else -> stringResource(R.string.bk_last_run_never)
+                                    }
+
+                                    Text(
+                                        text = statusCaption,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (scheduledLastRunStatus == ScheduledBackupStatus.SUCCESS || scheduledLastRunStatus == ScheduledBackupStatus.IDLE) {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        } else {
+                                            MaterialTheme.colorScheme.error
+                                        },
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             item(key = "actions") {
                 SettingsSection(title = stringResource(R.string.bk_this_install)) {
                     SettingsCard {
@@ -278,6 +486,22 @@ fun BackupScreen(
                 }
             }
         }
+    }
+
+    if (showFrequencyDialog) {
+        FrequencyDialog(
+            currentHours = scheduledFrequencyHours,
+            onSelect = { scheduledRepo.setFrequencyHours(it) },
+            onDismiss = { showFrequencyDialog = false }
+        )
+    }
+
+    if (showRetentionDialog) {
+        RetentionDialog(
+            currentLimit = scheduledRetentionLimit,
+            onSelect = { scheduledRepo.setRetentionLimit(it) },
+            onDismiss = { showRetentionDialog = false }
+        )
     }
 
     preview?.let { snapshot ->
@@ -700,4 +924,280 @@ private fun restartApp(context: android.content.Context) {
         ?: return
     context.startActivity(intent)
     Runtime.getRuntime().exit(0)
+}
+
+
+@Composable
+private fun FolderWarningCard(
+    status: FolderStatus,
+    onFix: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (status == FolderStatus.PERMISSION_REVOKED) {
+                        stringResource(R.string.bk_folder_permission_lost)
+                    } else {
+                        stringResource(R.string.bk_folder_not_found)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = onFix,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                ) {
+                    Text(stringResource(R.string.bk_folder_pick), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FrequencyDialog(
+    currentHours: Long,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(32.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Update,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = stringResource(R.string.bk_freq_title),
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                ScheduledBackupRepository.FREQUENCY_OPTIONS.forEach { option ->
+                    val selected = option.hours == currentHours
+                    Surface(
+                        onClick = {
+                            haptics.confirm()
+                            onSelect(option.hours)
+                            onDismiss()
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        } else {
+                            androidx.compose.ui.graphics.Color.Transparent
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = stringResource(option.labelRes),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun RetentionDialog(
+    currentLimit: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(32.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Layers,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = stringResource(R.string.bk_retention_dialog_title),
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.bk_retention_dialog_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                ScheduledBackupRepository.RETENTION_OPTIONS.forEach { count ->
+                    val selected = count == currentLimit
+                    val label = when (count) {
+                        3 -> stringResource(R.string.bk_retention_keep_3)
+                        5 -> stringResource(R.string.bk_retention_keep_5)
+                        10 -> stringResource(R.string.bk_retention_keep_10)
+                        20 -> stringResource(R.string.bk_retention_keep_20)
+                        else -> stringResource(R.string.bk_retention_format, count)
+                    }
+                    Surface(
+                        onClick = {
+                            haptics.confirm()
+                            onSelect(count)
+                            onDismiss()
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        } else {
+                            androidx.compose.ui.graphics.Color.Transparent
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun frequencyLabel(hours: Long): String {
+    val opt = ScheduledBackupRepository.FREQUENCY_OPTIONS.firstOrNull { it.hours == hours }
+    return if (opt != null) stringResource(opt.labelRes) else "${hours}h"
+}
+
+@Composable
+private fun retentionLabel(limit: Int): String {
+    return when (limit) {
+        3 -> stringResource(R.string.bk_retention_keep_3)
+        5 -> stringResource(R.string.bk_retention_keep_5)
+        10 -> stringResource(R.string.bk_retention_keep_10)
+        20 -> stringResource(R.string.bk_retention_keep_20)
+        else -> stringResource(R.string.bk_retention_format, limit)
+    }
 }

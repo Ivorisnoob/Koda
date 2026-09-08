@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    2x2 of album art cut into a twelve-lobed cookie, with the hero in the corner.
+    2x2 of album art cut into a twelve-lobed cookie, drawn with no card so it
+    sits on the wallpaper, with play and next along its lower edge.
 
-    updatePeriodMillis is 0 for every widget in the family: MusicService pushes
-    a redraw on each playback event, so scheduled polling would only burn
-    battery redrawing the same picture.
+    MusicService pushes a redraw on each playback event; the 30-minute
+    updatePeriodMillis heartbeat (the platform floor) exists only so a widget
+    frozen by an OEM force-killing the app eventually corrects itself.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="140dp"
@@ -15,6 +16,8 @@
     android:targetCellHeight="2"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:updatePeriodMillis="0"
+    android:updatePeriodMillis="1800000"
     android:description="@string/widget_bloom_description"
+    android:previewLayout="@layout/widget_preview_bloom"
+    android:previewImage="@drawable/widget_preview_bloom_image"
     android:initialLayout="@layout/glance_default_loading_layout" />

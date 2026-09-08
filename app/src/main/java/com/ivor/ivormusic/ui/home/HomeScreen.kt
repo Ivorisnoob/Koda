@@ -303,6 +303,9 @@ fun HomeScreen(
     val isVideoHomeOffline by viewModel.isVideoHomeOffline.collectAsState()
     val downloadedVideos by viewModel.downloadedVideos.collectAsState()
     val shortsFeed by viewModel.shortsFeed.collectAsState()
+    val subscriptionFeed by viewModel.subscriptionFeed.collectAsState()
+    val isSubscriptionFeedLoading by viewModel.isSubscriptionFeedLoading.collectAsState()
+    val localSubscriptions by viewModel.localSubscriptions.collectAsState()
     
     // Load videos when video mode is enabled. Hiding the Home destination
     // takes the only surface these feeds are drawn on with it, so neither the
@@ -328,6 +331,19 @@ fun HomeScreen(
 
     // Fetch the Home-only Shorts shelf when the user opts in mid-session (the
     // load itself also gates on the preference).
+    LaunchedEffect(
+        videoMode,
+        videoHomeVisible,
+        videoHomeConfiguration.recommendationsEnabled,
+        isYouTubeConnected,
+        localSubscriptions.size,
+    ) {
+        if (videoMode && videoHomeVisible && !videoHomeConfiguration.recommendationsEnabled) {
+            viewModel.loadSubscriptions()
+            viewModel.loadSubscriptionFeed()
+        }
+    }
+
     LaunchedEffect(videoMode, shortsEnabled) {
         if (videoMode && shortsEnabled) {
             viewModel.loadShortsFeed()
@@ -667,8 +683,16 @@ fun HomeScreen(
                             } else if (videoModeContent) {
                                 VideoHomeContent(
                                     compact = compactVideoHome,
-                                    videos = trendingVideos,
-                                    isLoading = isVideoLoading,
+                                    videos = if (videoHomeConfiguration.recommendationsEnabled) {
+                                        trendingVideos
+                                    } else {
+                                        subscriptionFeed
+                                    },
+                                    isLoading = if (videoHomeConfiguration.recommendationsEnabled) {
+                                        isVideoLoading
+                                    } else {
+                                        isSubscriptionFeedLoading
+                                    },
                                     isOffline = isVideoHomeOffline,
                                     downloadedVideos = downloadedVideos,
                                     onVideoClick = { video ->
@@ -1337,7 +1361,12 @@ fun HomeScreen(
                 // reflects the account immediately instead of after a restart
                 viewModel.checkYouTubeConnection()
                 if (videoMode) {
-                    viewModel.loadTrendingVideos()
+                    if (videoHomeConfiguration.recommendationsEnabled) {
+                        viewModel.loadTrendingVideos()
+                    } else {
+                        viewModel.loadSubscriptions(force = true)
+                        viewModel.loadSubscriptionFeed(force = true)
+                    }
                     viewModel.loadYouTubeHistory()
                 } else {
                     viewModel.loadYouTubeRecommendations()
@@ -1535,12 +1564,11 @@ fun YourMixContent(
             }
             
             item {
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) { kotlinx.coroutines.delay(400); visible = true }
-                Column(Modifier.graphicsLayer {
-                    alpha = if (visible) 1f else 0f
-                    translationY = if (visible) 0f else 30f
-                }) {
+                // No entrance animation on this last section: the staggered
+                // fade/slide above only starts its timer when the item scrolls
+                // into composition, so this row sat at alpha 0 until scrolled
+                // to and popped in late (worse on high DPI). It renders static.
+                Column {
                     if (isInitialLoading) {
                         Spacer(modifier = Modifier.height(24.dp))
                         HomeCarouselSkeleton(

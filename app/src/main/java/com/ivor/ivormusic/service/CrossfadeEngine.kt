@@ -421,6 +421,8 @@ class CrossfadeEngine(
             val incomingSpeed = incoming.playbackParameters.speed.coerceAtLeast(0.01f)
             var incomingStallStartedMs = 0L
             var maxClockDriftMs = 0L
+            var lastClockDriftMs = 0L
+            var clockDriftOffsetMs = 0L
 
             while (scope.isActive) {
                 currentCoroutineContext().ensureActive()
@@ -466,10 +468,50 @@ class CrossfadeEngine(
                     (incoming.currentPosition - incomingStartPosition).coerceAtLeast(0L) /
                         incomingSpeed
                     ).toLong()
-                val clockDriftMs = kotlin.math.abs(outgoingElapsedMs - incomingElapsedMs)
-                maxClockDriftMs = maxOf(maxClockDriftMs, clockDriftMs)
-                if (clockDriftMs > MAX_CLOCK_DRIFT_MS) {
-                    KLog.w(TAG, "Playback clocks diverged by ${clockDriftMs}ms; abandoning the overlap")
+                // The reported clocks are estimates, and their errors arrive
+                // two ways. *Gradually*: the incoming player's AudioTrack is
+                // always fresh, and Media3's sink slews onto the AudioTimestamp
+                // clock at up to 10% of elapsed time per read [verified
+                // September 2026 against the 1.11.0 AudioTrackPositionTracker
+                // bytecode], accruing to the device's output latency. And as a
+                // *step*: that slew limit lives on the playback thread, while
+                // this loop reads ExoPlayerImpl's app-thread position, which
+                // extrapolates between internal anchors and re-anchors in one
+                // read - so the same settle can land as a single ~250ms step
+                // [measured September 2026, emulator: 249-280ms at every fade
+                // The spikes also *oscillate*: a read can land ~250ms off the
+                // trend and the next read return to it [measured September
+                // 2026, emulator: alternating +/-250ms pairs within 25-50ms],
+                // so the budget is *net* re-anchored displacement, never a sum
+                // of absolute steps - a spike and its return cancel, where a
+                // real discontinuity (a seek this coroutine missed, a reset)
+                // displaces the clock and never comes back. Its bound is the
+                // 1s discrepancy Media3 will smooth at all
+                // (MAX_POSITION_DRIFT_FOR_SMOOTHING_US), which caps every
+                // sanctioned correction. The audible discontinuities all
+                // announce themselves elsewhere: the service cancels on
+                // seeks, queueStillMatches catches item changes, STATE_IDLE
+                // catches errors.
+                val clockDriftMs = outgoingElapsedMs - incomingElapsedMs
+                val clockStepMs = clockDriftMs - lastClockDriftMs
+                lastClockDriftMs = clockDriftMs
+                if (kotlin.math.abs(clockStepMs) > MAX_CLOCK_STEP_MS) {
+                    clockDriftOffsetMs += clockStepMs
+                    if (kotlin.math.abs(clockDriftOffsetMs) > MAX_CLOCK_SETTLE_MS) {
+                        KLog.w(
+                            TAG,
+                            "Playback clock jumped by ${kotlin.math.abs(clockStepMs)}ms " +
+                                "(${clockDriftOffsetMs}ms net); abandoning the overlap"
+                        )
+                        abortInto(outgoing, incoming)
+                        return
+                    }
+                    KLog.d(TAG, "Playback clock stepped ${clockStepMs}ms; re-anchoring the overlap clock")
+                }
+                val residualDriftMs = clockDriftMs - clockDriftOffsetMs
+                maxClockDriftMs = maxOf(maxClockDriftMs, kotlin.math.abs(residualDriftMs))
+                if (kotlin.math.abs(residualDriftMs) > MAX_CLOCK_DRIFT_MS) {
+                    KLog.w(TAG, "Playback clocks diverged by ${kotlin.math.abs(residualDriftMs)}ms; abandoning the overlap")
                     abortInto(outgoing, incoming)
                     return
                 }
@@ -486,6 +528,20 @@ class CrossfadeEngine(
                 setFilterSweep(outgoing, filterSweepStrength * t)
 
                 if (t >= 1f) break
+                // The outgoing track running out is completion, not a race to
+                // lose. [fadeMs] was planned as remaining minus END_GUARD_MS
+                // on the outgoing clock, but the curve advances on the slower
+                // of two estimated clocks, and the incoming clock's settle
+                // legitimately lags by more than the guard. Waiting for t to
+                // reach 1 then lets Media3 advance the outgoing player itself
+                // - it still holds the full queue - which restarts, from zero
+                // and at full volume, the very song the standby has spent the
+                // whole fade audibly bringing in. Swap now: at worst the
+                // outgoing loses its final guard-window tail, which the fade
+                // had already planned to spend.
+                if (outgoing.duration > 0 &&
+                    outgoing.duration - outgoing.currentPosition <= END_GUARD_MS
+                ) break
                 // The outgoing player ending early (a short file, an error)
                 // must not leave this spinning against a frozen position.
                 if (outgoing.playbackState == Player.STATE_ENDED) break
@@ -714,7 +770,41 @@ class CrossfadeEngine(
         private const val INCOMING_CLOCK_TIMEOUT_MS = 750L
         private const val MIN_CLOCK_ADVANCE_MS = 8L
         private const val MAX_INCOMING_STALL_MS = 350L
-        private const val MAX_CLOCK_DRIFT_MS = 150L
+
+        /**
+         * A drift change this large between two 16ms ticks is a step, not the
+         * sink's gradual slew (at most ~10% of the interval, a couple of
+         * milliseconds per tick). A step is *detected* here but only
+         * re-anchored, not aborted - the app-thread position re-anchors onto
+         * the renderer clock in single reads, so a legitimate settle arrives
+         * as one step of roughly the output latency.
+         */
+        private const val MAX_CLOCK_STEP_MS = 150L
+
+        /**
+         * Net re-anchored displacement the fade tolerates before treating the
+         * clock as broken. Net, not a sum of absolute steps: reads spike off
+         * the trend and return within a tick or two, and summing the churn
+         * burned any budget in seconds while nothing had actually moved. The
+         * bound is derived from the sink rather than guessed: Media3 only
+         * smooths a discrepancy below MAX_POSITION_DRIFT_FOR_SMOOTHING_US
+         * (1s), so every sanctioned correction - slewed, stepped, or
+         * flickering - stays under 1000ms of net displacement. Past this is a
+         * real discontinuity (an unnoticed seek, a reset) and the plan behind
+         * the fade is mistimed.
+         */
+        private const val MAX_CLOCK_SETTLE_MS = 1_100L
+
+        /**
+         * Backstop for gradual runaway divergence, measured net of
+         * re-anchored steps, with the same 1s-ceiling derivation as
+         * [MAX_CLOCK_SETTLE_MS]. History of this number: a flat 150ms cap
+         * abandoned every overlap on higher-latency outputs, which is how
+         * crossfade and AutoMix silently stopped working outside low-latency
+         * wired output, and 750ms would have kept that failure for long
+         * AutoMix overlaps (10% of a 15s fade out-accrues it).
+         */
+        private const val MAX_CLOCK_DRIFT_MS = 1_100L
         /**
          * Media3's own floor. DefaultAudioSink constrains the rate to
          * 0.1f..8f, and a request below it is clamped by the sink while the

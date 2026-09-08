@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Picker preview: queue row background, matches the 12dp row radius. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FF33262C" />
+    <corners android:radius="12dp" />
+</shape>

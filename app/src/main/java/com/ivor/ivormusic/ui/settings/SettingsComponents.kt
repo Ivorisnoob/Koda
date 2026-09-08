@@ -3,8 +3,10 @@ package com.ivor.ivormusic.ui.settings
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -36,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -44,12 +48,17 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import com.ivor.ivormusic.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +74,82 @@ import androidx.compose.ui.unit.sp
  * roles - only the destructive rows ever wanted something else, and those say so
  * with [SettingsRowDefaults.destructiveTint].
  */
+
+/**
+ * What one hold-to-explain gesture surfaces: the row's own icon and title over
+ * a longer explanation than a subtitle has room for.
+ *
+ * Rows do not host the dialog themselves - a dialog owned by a row dies with
+ * the page transition (the same reason SettingsScreen hosts every other
+ * dialog), so rows hand the request up through [LocalSettingsInfoSink] and the
+ * screen shows one dialog for all of them.
+ */
+internal data class SettingsInfoData(
+    val icon: ImageVector,
+    val title: String,
+    val text: String,
+)
+
+/**
+ * Where a long-pressed row sends its explanation. Null when no host is around
+ * (a row reused outside the settings screen), in which case the gesture simply
+ * does not exist rather than crashing.
+ */
+internal val LocalSettingsInfoSink =
+    staticCompositionLocalOf<((SettingsInfoData) -> Unit)?> { null }
+
+/**
+ * The dialog behind every hold-to-explain gesture, in the house dialog style:
+ * icon box, centered title, one dismiss action.
+ */
+@Composable
+internal fun SettingsInfoDialog(
+    info: SettingsInfoData,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(32.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = info.icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = info.title,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Text(
+                text = info.text,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.si_got_it), fontWeight = FontWeight.SemiBold)
+            }
+        }
+    )
+}
 
 object SettingsRowDefaults {
     /**
@@ -116,6 +201,7 @@ internal fun SettingsCard(
  * Android settings screen. [showChevron] is for the ones that navigate; leave it
  * off for rows that act in place.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun SettingsRow(
     icon: ImageVector,
@@ -124,7 +210,9 @@ internal fun SettingsRow(
     onClick: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
     titleColor: Color = MaterialTheme.colorScheme.onBackground,
-    showChevron: Boolean = false
+    showChevron: Boolean = false,
+    /** Long-press explanation. Null keeps the row a plain tap target. */
+    explanation: String? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -134,19 +222,26 @@ internal fun SettingsRow(
         label = "rowScale"
     )
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val infoSink = LocalSettingsInfoSink.current
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = {
                     haptics.subtle()
                     onClick()
-                }
+                },
+                onLongClick = if (explanation != null && infoSink != null) {
+                    {
+                        haptics.longPress()
+                        infoSink(SettingsInfoData(icon, title, explanation))
+                    }
+                } else null
             )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -185,6 +280,7 @@ internal fun SettingsRow(
  * Icon + title/subtitle row with a switch. The whole row is the hit target, not
  * just the switch.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun SettingsToggleRow(
     icon: ImageVector,
@@ -192,7 +288,9 @@ internal fun SettingsToggleRow(
     subtitle: String,
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
-    tint: Color = MaterialTheme.colorScheme.primary
+    tint: Color = MaterialTheme.colorScheme.primary,
+    /** Long-press explanation. Null keeps the row a plain toggle. */
+    explanation: String? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -202,19 +300,27 @@ internal fun SettingsToggleRow(
         label = "toggleScale"
     )
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val infoSink = LocalSettingsInfoSink.current
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
-                indication = null
-            ) {
-                haptics.toggle(!enabled)
-                onToggle(!enabled)
-            }
+                indication = null,
+                onClick = {
+                    haptics.toggle(!enabled)
+                    onToggle(!enabled)
+                },
+                onLongClick = if (explanation != null && infoSink != null) {
+                    {
+                        haptics.longPress()
+                        infoSink(SettingsInfoData(icon, title, explanation))
+                    }
+                } else null
+            )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -252,13 +358,21 @@ internal fun SettingsToggleRow(
     }
 }
 
-/** The 48dp tinted icon box every settings row leads with. */
+/**
+ * The 48dp tinted icon box every settings row leads with. [shape] lets the hub
+ * give each category a die-cut identity (the player-style-wheel language);
+ * detail rows keep the default squircle so pages read calmer than the hub.
+ */
 @Composable
-private fun SettingsRowIcon(icon: ImageVector, tint: Color) {
+private fun SettingsRowIcon(
+    icon: ImageVector,
+    tint: Color,
+    shape: Shape = RoundedCornerShape(14.dp)
+) {
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(shape)
             .background(tint.copy(alpha = 0.12f)),
         contentAlignment = Alignment.Center
     ) {
@@ -288,13 +402,17 @@ internal fun SettingsDivider() {
  * point of splitting the screen up, and a row without it is a worse version of
  * the flat list it replaced.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun SettingsHubRow(
     icon: ImageVector,
     title: String,
     value: String,
     onClick: () -> Unit,
-    tint: Color = MaterialTheme.colorScheme.primary
+    tint: Color = MaterialTheme.colorScheme.primary,
+    iconShape: Shape = RoundedCornerShape(14.dp),
+    /** Long press explains what the category holds without opening it. */
+    explanation: String? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -303,21 +421,29 @@ internal fun SettingsHubRow(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "hubScale"
     )
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val infoSink = LocalSettingsInfoSink.current
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick
+                onClick = onClick,
+                onLongClick = if (explanation != null && infoSink != null) {
+                    {
+                        haptics.longPress()
+                        infoSink(SettingsInfoData(icon, title, explanation))
+                    }
+                } else null
             )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        SettingsRowIcon(icon = icon, tint = tint)
+        SettingsRowIcon(icon = icon, tint = tint, shape = iconShape)
 
         Spacer(modifier = Modifier.width(16.dp))
 
@@ -357,6 +483,15 @@ internal fun SettingsHubRow(
 internal fun SettingsDetailScaffold(
     title: String,
     onBack: () -> Unit,
+    /**
+     * Drawn between the top bar and the list, and it does not scroll.
+     *
+     * For a page whose whole job is judging one thing while you change it - the
+     * app icon, where the controls run past a screen and the preview is the
+     * point - a header inside the list scrolls off exactly when it starts being
+     * needed. Most pages want nothing here.
+     */
+    header: (@Composable () -> Unit)? = null,
     content: LazyListScope.() -> Unit
 ) {
     Column(
@@ -396,6 +531,12 @@ internal fun SettingsDetailScaffold(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
         )
+
+        if (header != null) {
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                header()
+            }
+        }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),

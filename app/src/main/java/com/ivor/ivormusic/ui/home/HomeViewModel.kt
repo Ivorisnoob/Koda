@@ -536,6 +536,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             loadTrendingVideos()
         } else {
             loadShortsFeed()
+            loadSubscriptions()
+            loadSubscriptionFeed()
             _trendingVideos.value = emptyList()
             _isVideoLoading.value = false
             _isVideoLoadingMore.value = false
@@ -1859,6 +1861,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun fetchPlaylistSongs(playlistId: String): List<Song> {
+        val downloadedPlaylist = downloadRepository.playlistStore.playlists.value.find { it.id == playlistId }
+        val offlineSongs = downloadedPlaylist?.offlineSongs(downloadRepository.downloadedSongs.value).orEmpty()
+        if (downloadedPlaylist != null &&
+            (!hasNetworkConnection() || themePreferences.isLocalOnlyModeEnabled())) {
+            return offlineSongs
+        }
         // "Liked Songs" is assembled locally so it works without a YouTube
         // login: stored metadata + YT-account likes + liked local songs.
         if (playlistId == "LM" || playlistId == "VLLM") {
@@ -1878,11 +1886,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (localPlaylist != null) {
             return localPlaylist.songs
         }
-        // Fallback to YouTube
+        // Fallback to the explicit download snapshot when the live list is unavailable.
         return try {
-            youtubeRepository.getPlaylist(playlistId)
+            youtubeRepository.getPlaylist(playlistId).ifEmpty { offlineSongs }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            emptyList()
+            offlineSongs
         }
 
     }
@@ -2443,7 +2453,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         loadShortsFeed()
-        if (!themePreferences.areVideoRecommendationsEnabled()) return
+        if (!themePreferences.areVideoRecommendationsEnabled()) {
+            loadSubscriptions(force = true)
+            loadSubscriptionFeed(force = true)
+            return
+        }
         viewModelScope.launch {
             _isVideoLoading.value = true
             try {

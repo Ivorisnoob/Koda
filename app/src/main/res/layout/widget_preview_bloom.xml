@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Picker preview for the Bloom widget (2x2 art tile): the cover cut to a
+    twelve-lobed cookie, with play and next floating along its lower edge.
+
+    No card background, because the widget has none - it draws straight onto
+    the wallpaper, and a preview with a rounded card behind it would be
+    advertising the wrong widget.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:padding="4dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/widget_preview_art_cookie" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/widget_preview_play">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/widget_action_play"
+                android:tint="#FF5E1133"
+                android:src="@drawable/ic_media_play" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_preview_tonal_square">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/widget_action_next"
+                android:tint="#FFF2DEE5"
+                android:src="@drawable/ic_media_next" />
+        </FrameLayout>
+    </LinearLayout>
+</FrameLayout>
