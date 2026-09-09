@@ -461,6 +461,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _videoSurfaceBounds.value = bounds
     }
 
+    /**
+     * The portrait watch page's video box, for the minimize transition to
+     * interpolate from.
+     *
+     * Deliberately a layout size and an inset rather than the window rectangle
+     * [videoSurfaceBounds] already carries: that one is measured with
+     * `boundsInWindow`, which includes the transform the transition itself is
+     * applying, so driving the animation from it would feed the animation its
+     * own output. A layout size is unaffected by a graphicsLayer.
+     *
+     * Null whenever the inline box is not the layout on screen - fullscreen and
+     * the full-bleed vertical live player both publish nothing - which is also
+     * how the overlay knows the shared-element transition has somewhere to go.
+     */
+    private val _inlineVideoBox = MutableStateFlow<InlineVideoBox?>(null)
+    val inlineVideoBox: StateFlow<InlineVideoBox?> = _inlineVideoBox.asStateFlow()
+
+    fun setInlineVideoBox(box: InlineVideoBox?) {
+        _inlineVideoBox.value = box
+    }
+
     fun setMiniVideoSurfaceBounds(bounds: android.graphics.Rect?) {
         _miniVideoSurfaceBounds.value = bounds
     }
@@ -487,7 +508,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     )
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
 
-    private val _playbackSpeed = MutableStateFlow(1f)
+    private val _playbackSpeed = MutableStateFlow(themePreferences.getVideoPlaybackSpeed())
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
     private var playbackReportJob: kotlinx.coroutines.Job? = null
@@ -832,6 +853,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             attachPlaybackListener(this)
         }.also { player ->
             _exoPlayer = player
+            // Speed is persisted the same way as repeat: without this a
+            // process restart rebuilds the player at 1x while the sheet
+            // still shows the remembered rate.
+            player.setPlaybackSpeed(_playbackSpeed.value)
         }
     }
 
@@ -1610,10 +1635,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         themePreferences.setVideoRepeatEnabled(enabled)
     }
 
-    /** Set the playback speed for the current video. Resets to 1x on video change. */
+    /** Set the playback speed for the current video and remember it for the next one. */
     fun setPlaybackSpeed(speed: Float) {
-        _playbackSpeed.value = speed
-        _exoPlayer?.setPlaybackSpeed(speed)
+        val bounded = speed.coerceIn(0.25f, 2f)
+        _playbackSpeed.value = bounded
+        _exoPlayer?.setPlaybackSpeed(bounded)
+        // A live broadcast always plays at 1x: a manual change there is a
+        // momentary adjustment, not the rate the next VOD should reopen at.
+        if (_isLive.value || _currentVideo.value?.isLive == true) return
+        themePreferences.setVideoPlaybackSpeed(bounded)
     }
 
     /** Jump to a chapter's start position. */
@@ -2281,9 +2311,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         pendingLiveChat.clear()
         seenLiveChatIds.clear()
 
-        // Speed is per-video, like YouTube
-        _playbackSpeed.value = 1f
-        _exoPlayer?.setPlaybackSpeed(1f)
+        // Speed carries over like YouTube: the rate the user last picked is
+        // re-applied to the next video. Live broadcasts always play at 1x
+        // without overwriting the stored VOD rate.
+        val rememberedSpeed = if (video.isLive) {
+            1f
+        } else {
+            themePreferences.getVideoPlaybackSpeed()
+        }
+        _playbackSpeed.value = rememberedSpeed
+        _exoPlayer?.setPlaybackSpeed(rememberedSpeed)
 
         if (deferStreamLoad) {
             val position = effectiveResumePositionMs?.coerceAtLeast(0L) ?: 0L

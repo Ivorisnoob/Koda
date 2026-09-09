@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Picker preview: stand-in album art. A rose-to-violet tile, not the app icon.
+    The violet end is at the bottom, which is where the hero sits on the Bloom
+    preview - a pink button needs something other than pink underneath it.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#FFFFA8C9"
+        android:centerColor="#FFE887C9"
+        android:endColor="#FF9B6BE0" />
+    <corners android:radius="16dp" />
+</shape>

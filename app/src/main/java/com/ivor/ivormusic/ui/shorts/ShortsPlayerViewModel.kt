@@ -233,6 +233,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * fetches so prefetch never starves the playing Short's buffer.
      */
     private fun prefetchAround(index: Int) {
+        if (!ThemePreferences.isPlaybackPreloadEnabled(context)) return
         val list = _shorts.value
         val nextId = list.getOrNull(index + 1)?.videoId
         val streamTargets =
@@ -295,6 +296,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * byte-addressable progressive files.
      */
     private suspend fun warmPlayableHead(qualities: List<VideoQuality>) {
+        if (!ThemePreferences.isPlaybackPreloadEnabled(context)) return
         if (qualities.isEmpty()) return
         val quality = pickDefaultQuality(qualities)
         if (quality.isDASH || quality.isLive) return
@@ -383,7 +385,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * the class would still be an uninitialised delegate at that point.
      */
     private val streamDataSourceFactory =
-        com.ivor.ivormusic.data.CacheManager.createVideoPlaybackDataSourceFactory(context)
+        com.ivor.ivormusic.data.CacheManager.createVideoPlaybackDataSourceFactory(context, shorts = true)
 
     init {
         observeProfileSwitches()

@@ -89,6 +89,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -211,6 +212,7 @@ fun HomeScreen(
      */
     onOpenChannel: (String) -> Unit = {},
     shortsEnabled: Boolean = false,
+    compactVideoHome: Boolean = false,
     loadLocalSongs: Boolean = false,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
@@ -301,6 +303,9 @@ fun HomeScreen(
     val isVideoHomeOffline by viewModel.isVideoHomeOffline.collectAsState()
     val downloadedVideos by viewModel.downloadedVideos.collectAsState()
     val shortsFeed by viewModel.shortsFeed.collectAsState()
+    val subscriptionFeed by viewModel.subscriptionFeed.collectAsState()
+    val isSubscriptionFeedLoading by viewModel.isSubscriptionFeedLoading.collectAsState()
+    val localSubscriptions by viewModel.localSubscriptions.collectAsState()
     
     // Load videos when video mode is enabled. Hiding the Home destination
     // takes the only surface these feeds are drawn on with it, so neither the
@@ -326,6 +331,19 @@ fun HomeScreen(
 
     // Fetch the Home-only Shorts shelf when the user opts in mid-session (the
     // load itself also gates on the preference).
+    LaunchedEffect(
+        videoMode,
+        videoHomeVisible,
+        videoHomeConfiguration.recommendationsEnabled,
+        isYouTubeConnected,
+        localSubscriptions.size,
+    ) {
+        if (videoMode && videoHomeVisible && !videoHomeConfiguration.recommendationsEnabled) {
+            viewModel.loadSubscriptions()
+            viewModel.loadSubscriptionFeed()
+        }
+    }
+
     LaunchedEffect(videoMode, shortsEnabled) {
         if (videoMode && shortsEnabled) {
             viewModel.loadShortsFeed()
@@ -664,8 +682,17 @@ fun HomeScreen(
                                 )
                             } else if (videoModeContent) {
                                 VideoHomeContent(
-                                    videos = trendingVideos,
-                                    isLoading = isVideoLoading,
+                                    compact = compactVideoHome,
+                                    videos = if (videoHomeConfiguration.recommendationsEnabled) {
+                                        trendingVideos
+                                    } else {
+                                        subscriptionFeed
+                                    },
+                                    isLoading = if (videoHomeConfiguration.recommendationsEnabled) {
+                                        isVideoLoading
+                                    } else {
+                                        isSubscriptionFeedLoading
+                                    },
                                     isOffline = isVideoHomeOffline,
                                     downloadedVideos = downloadedVideos,
                                     onVideoClick = { video ->
@@ -924,6 +951,14 @@ fun HomeScreen(
                                     bottom = listContentPadding.calculateBottomPadding()
                                 ),
                                 topBar = {
+                                    Column {
+                                    com.ivor.ivormusic.ui.video.DownloadedContentLibraryCard(
+                                        onClick = onNavigateToDownloads,
+                                        modifier = Modifier.padding(
+                                            start = 16.dp, end = 16.dp,
+                                            top = listContentPadding.calculateTopPadding()
+                                        )
+                                    )
                                     Text(
                                         text = stringResource(R.string.dv_on_this_device),
                                         style = MaterialTheme.typography.headlineSmall,
@@ -932,10 +967,11 @@ fun HomeScreen(
                                         modifier = Modifier.padding(
                                             start = 20.dp,
                                             end = 20.dp,
-                                            top = listContentPadding.calculateTopPadding(),
+                                            top = 12.dp,
                                             bottom = 8.dp
                                         )
                                     )
+                                    }
                                 },
                                 folderTopBar = { title, onBack ->
                                     com.ivor.ivormusic.ui.video.DeviceFolderTopBar(
@@ -949,6 +985,7 @@ fun HomeScreen(
                             )
                         } else if (videoMode) {
                             com.ivor.ivormusic.ui.video.VideoLibraryContent(
+                                onOpenDownloads = onNavigateToDownloads,
                                 viewModel = viewModel,
                                 onOpenChannel = onOpenChannel,
                                 onVideoClick = { video ->
@@ -1188,6 +1225,16 @@ fun HomeScreen(
             )
         }
 
+        // Published for the video overlay, which is drawn above the NavHost and
+        // therefore above this player. Cleared on dispose as well as on
+        // collapse: leaving Home while the player is open drops the remembered
+        // flag here, and a stale true would keep the video bar hidden for the
+        // rest of the session.
+        DisposableEffect(showPlayerSheet) {
+            playerViewModel.setPlayerExpanded(showPlayerSheet)
+            onDispose { playerViewModel.setPlayerExpanded(false) }
+        }
+
         // Expandable Player (Mini <-> Full Screen)
         ExpandablePlayer(
             isExpanded = showPlayerSheet,
@@ -1314,7 +1361,12 @@ fun HomeScreen(
                 // reflects the account immediately instead of after a restart
                 viewModel.checkYouTubeConnection()
                 if (videoMode) {
-                    viewModel.loadTrendingVideos()
+                    if (videoHomeConfiguration.recommendationsEnabled) {
+                        viewModel.loadTrendingVideos()
+                    } else {
+                        viewModel.loadSubscriptions(force = true)
+                        viewModel.loadSubscriptionFeed(force = true)
+                    }
                     viewModel.loadYouTubeHistory()
                 } else {
                     viewModel.loadYouTubeRecommendations()
@@ -1512,12 +1564,11 @@ fun YourMixContent(
             }
             
             item {
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) { kotlinx.coroutines.delay(400); visible = true }
-                Column(Modifier.graphicsLayer {
-                    alpha = if (visible) 1f else 0f
-                    translationY = if (visible) 0f else 30f
-                }) {
+                // No entrance animation on this last section: the staggered
+                // fade/slide above only starts its timer when the item scrolls
+                // into composition, so this row sat at alpha 0 until scrolled
+                // to and popped in late (worse on high DPI). It renders static.
+                Column {
                     if (isInitialLoading) {
                         Spacer(modifier = Modifier.height(24.dp))
                         HomeCarouselSkeleton(

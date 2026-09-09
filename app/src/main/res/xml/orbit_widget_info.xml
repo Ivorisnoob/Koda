@@ -2,9 +2,9 @@
 <!--
     1x1 round cover with a play button centred on it.
 
-    updatePeriodMillis is 0 for every widget in the family: MusicService pushes
-    a redraw on each playback event, so scheduled polling would only burn
-    battery redrawing the same picture.
+    MusicService pushes a redraw on each playback event; the 30-minute
+    updatePeriodMillis heartbeat (the platform floor) exists only so a widget
+    frozen by an OEM force-killing the app eventually corrects itself.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="90dp"
@@ -15,6 +15,8 @@
     android:targetCellHeight="1"
     android:resizeMode="none"
     android:widgetCategory="home_screen"
-    android:updatePeriodMillis="0"
+    android:updatePeriodMillis="1800000"
     android:description="@string/widget_orbit_description"
+    android:previewLayout="@layout/widget_preview_orbit"
+    android:previewImage="@drawable/widget_preview_orbit_image"
     android:initialLayout="@layout/glance_default_loading_layout" />

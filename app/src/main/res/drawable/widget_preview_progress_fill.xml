@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Picker preview: the played span of the Deck widget's progress strip. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFB1C8" />
+    <corners android:radius="2dp" />
+</shape>

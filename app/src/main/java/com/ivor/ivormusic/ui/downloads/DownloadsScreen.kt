@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
@@ -50,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +65,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -68,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.DownloadMediaType
 import com.ivor.ivormusic.data.DownloadProgress
+import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.DownloadRequest
 import com.ivor.ivormusic.data.DownloadStatus
 import com.ivor.ivormusic.data.DownloadedVideo
@@ -78,8 +84,14 @@ private enum class DownloadsTab(val label: String) {
     VIDEO("Video")
 }
 
-/** Outer radius of a connected group. Matches AlbumScreen's track list. */
-private val SEGMENT_CORNER = 28.dp
+/**
+ * Outer radius of a connected group. Matches AlbumScreen's track list.
+ *
+ * Internal rather than private because [DownloadedPlaylistCard] is the head of
+ * one of these groups and has to round its top by the same amount; a second
+ * literal there is how the header and its tracks drift into two containers.
+ */
+internal val SEGMENT_CORNER = 28.dp
 
 /**
  * Shape for one row of a connected list: only the group's outer corners are
@@ -95,6 +107,19 @@ private fun segmentedShape(index: Int, count: Int): Shape = when {
     )
     else -> RectangleShape
 }
+
+/**
+ * Shape for a row inside a group whose top is already drawn by a header - an
+ * expanded playlist's tracks. Only the last row rounds, because the header owns
+ * the group's top corners and rounding the first row too would put a seam
+ * across the middle of one container.
+ */
+private fun expandedTrackShape(index: Int, count: Int): Shape =
+    if (index == count - 1) {
+        RoundedCornerShape(bottomStart = SEGMENT_CORNER, bottomEnd = SEGMENT_CORNER)
+    } else {
+        RectangleShape
+    }
 
 /**
  * Hairline between connected rows, inset past the artwork so it aligns with the
@@ -130,10 +155,13 @@ fun DownloadsScreen(
     onDeleteVideo: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
     onRetryDownload: (DownloadRequest) -> Unit,
+    onPauseDownload: (String) -> Unit,
+    onResumeDownload: (String) -> Unit,
+    initiallyShowVideos: Boolean = false,
     onCancelAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(DownloadsTab.MUSIC) }
+    var selectedTab by rememberSaveable { mutableStateOf(if (initiallyShowVideos) DownloadsTab.VIDEO else DownloadsTab.MUSIC) }
 
     // Split by the media type of the request itself rather than by which list
     // the finished item lands in, so queued and failed entries route correctly
@@ -248,7 +276,9 @@ fun DownloadsScreen(
                         onPlayQueue = onPlayQueue,
                         onDelete = onDeleteDownload,
                         onCancel = onCancelDownload,
-                        onRetry = onRetryDownload
+                        onRetry = onRetryDownload,
+                        onPause = onPauseDownload,
+                        onResume = onResumeDownload
                     )
 
                     DownloadsTab.VIDEO -> VideoTab(
@@ -257,7 +287,9 @@ fun DownloadsScreen(
                         onPlay = { video -> onPlayVideo(downloadedVideos, video) },
                         onDelete = onDeleteVideo,
                         onCancel = onCancelDownload,
-                        onRetry = onRetryDownload
+                        onRetry = onRetryDownload,
+                        onPause = onPauseDownload,
+                        onResume = onResumeDownload
                     )
                 }
             }
@@ -272,14 +304,94 @@ private fun MusicTab(
     onPlayQueue: (List<Song>, Song) -> Unit,
     onDelete: (String) -> Unit,
     onCancel: (String) -> Unit,
-    onRetry: (DownloadRequest) -> Unit
+    onRetry: (DownloadRequest) -> Unit,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val repository = remember(context) { DownloadRepository.getInstance(context) }
+    val playlists by repository.playlistStore.playlists.collectAsState()
+    var expandedPlaylist by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Resolved once per change rather than inside the lazy scope: offlineSongs
+    // indexes the whole downloads list, and doing that per playlist on every
+    // recomposition of the list body is a pass over every download for every
+    // card on screen.
+    val offline = remember(playlists, songs) {
+        playlists.map { playlist -> playlist to playlist.offlineSongs(songs) }
+    }
+
     // No spacedBy: rows in a connected group sit flush and are separated by
     // dividers, not gaps. Section spacing is added explicitly instead.
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp)
     ) {
+        if (offline.isNotEmpty()) {
+            item(key = "playlists_header") {
+                SectionHeader(stringResource(R.string.section_playlists))
+            }
+            offline.forEach { (playlist, available) ->
+                val isExpanded = expandedPlaylist == playlist.id
+                item(key = "pl_${playlist.id}") {
+                    DownloadedPlaylistCard(
+                        playlist = playlist,
+                        available = available,
+                        expanded = isExpanded,
+                        onClick = {
+                            // An accordion: opening one closes the other, so a
+                            // long playlist can never bury the rest of the tab.
+                            expandedPlaylist = if (isExpanded) null else playlist.id
+                        },
+                        onPlay = {
+                            available.firstOrNull()?.let { onPlayQueue(available, it) }
+                        },
+                        modifier = Modifier.animateItem()
+                    )
+                }
+                if (isExpanded) {
+                    if (available.isEmpty()) {
+                        item(key = "pl_${playlist.id}_empty") {
+                            DownloadedPlaylistEmptyRow(modifier = Modifier.animateItem())
+                        }
+                    } else {
+                        // The tracks stay separate lazy items rather than living
+                        // inside the card behind an AnimatedVisibility: a
+                        // downloaded playlist runs to hundreds of rows, and an
+                        // expand animation that composes all of them at once is
+                        // paid on every open. animateItem gives the same fade
+                        // and the same settle of everything below, one row at a
+                        // time, off the list itself.
+                        itemsIndexed(
+                            items = available,
+                            // Occurrence-qualified: a playlist may legitimately
+                            // list the same track twice, so the id alone would
+                            // collide and crash the list.
+                            key = { index, song -> "pl_${playlist.id}_${song.id}_$index" }
+                        ) { index, song ->
+                            Column(modifier = Modifier.animateItem()) {
+                                SegmentDivider(inset = 74.dp)
+                                DownloadedRow(
+                                    title = song.title,
+                                    subtitle = song.artist,
+                                    artworkUrl = song.albumArtUri?.toString()
+                                        ?: song.thumbnailUrl,
+                                    fallbackIcon = Icons.Rounded.MusicNote,
+                                    shape = expandedTrackShape(index, available.size),
+                                    onPlay = { onPlayQueue(available, song) },
+                                    onDelete = { onDelete(song.id) }
+                                )
+                            }
+                        }
+                    }
+                }
+                item(key = "pl_${playlist.id}_gap") {
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+            item(key = "playlists_gap") { Spacer(modifier = Modifier.height(12.dp)) }
+        }
+
         if (progress.isNotEmpty()) {
             item { SectionHeader(stringResource(R.string.in_progress)) }
             itemsIndexed(progress, key = { _, it -> "p_${it.songId}" }) { index, item ->
@@ -287,7 +399,9 @@ private fun MusicTab(
                     item = item,
                     shape = segmentedShape(index, progress.size),
                     onCancel = onCancel,
-                    onRetry = onRetry
+                    onRetry = onRetry,
+                    onPause = onPause,
+                    onResume = onResume
                 )
                 if (index < progress.lastIndex) SegmentDivider(inset = 46.dp)
             }
@@ -310,7 +424,7 @@ private fun MusicTab(
             }
         }
 
-        if (songs.isEmpty() && progress.isEmpty()) {
+        if (songs.isEmpty() && progress.isEmpty() && offline.isEmpty()) {
             item { EmptyState("No downloaded music", Icons.Rounded.MusicNote) }
         }
     }
@@ -323,7 +437,9 @@ private fun VideoTab(
     onPlay: (DownloadedVideo) -> Unit,
     onDelete: (String) -> Unit,
     onCancel: (String) -> Unit,
-    onRetry: (DownloadRequest) -> Unit
+    onRetry: (DownloadRequest) -> Unit,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -336,7 +452,9 @@ private fun VideoTab(
                     item = item,
                     shape = segmentedShape(index, progress.size),
                     onCancel = onCancel,
-                    onRetry = onRetry
+                    onRetry = onRetry,
+                    onPause = onPause,
+                    onResume = onResume
                 )
                 if (index < progress.lastIndex) SegmentDivider(inset = 46.dp)
             }
@@ -383,10 +501,13 @@ private fun ProgressCard(
     item: DownloadProgress,
     shape: Shape,
     onCancel: (String) -> Unit,
-    onRetry: (DownloadRequest) -> Unit
+    onRetry: (DownloadRequest) -> Unit,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit
 ) {
     val failed = item.status == DownloadStatus.FAILED
     val queued = item.status == DownloadStatus.QUEUED
+    val paused = item.status == DownloadStatus.PAUSED
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -398,6 +519,7 @@ private fun ProgressCard(
                 Icon(
                     imageVector = when {
                         failed -> Icons.Rounded.ErrorOutline
+                        paused -> Icons.Rounded.Pause
                         queued -> Icons.Rounded.Schedule
                         else -> Icons.Rounded.Download
                     },
@@ -420,6 +542,7 @@ private fun ProgressCard(
                     Text(
                         text = when {
                             failed -> stringResource(R.string.dl_failed)
+                            paused -> stringResource(R.string.dl_paused)
                             queued -> stringResource(R.string.dl_waiting)
                             item.totalBytes > 0 -> "%.1f / %.1f MB".format(
                                 item.bytesDownloaded / (1024 * 1024f),
@@ -436,6 +559,16 @@ private fun ProgressCard(
                     )
                 }
 
+                if (paused || queued || item.status == DownloadStatus.DOWNLOADING) {
+                    IconButton(onClick = {
+                        if (paused) onResume(item.songId) else onPause(item.songId)
+                    }) {
+                        Icon(
+                            if (paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                            contentDescription = stringResource(if (paused) R.string.dl_resume else R.string.cd_pause)
+                        )
+                    }
+                }
                 if (failed) {
                     IconButton(onClick = { onRetry(item.request) }) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Retry")

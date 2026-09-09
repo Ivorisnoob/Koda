@@ -64,7 +64,16 @@ val MINI_VIDEO_MARGIN = 16.dp
  * 88dp bar - enough that the picture reads as picture - while leaving the
  * title room to say something on a narrow screen.
  */
-private val MINI_VIDEO_THUMB_WIDTH = 92.dp
+internal val MINI_VIDEO_THUMB_WIDTH = 92.dp
+
+/** Inset of the bar's content from the card edge. */
+internal val MINI_VIDEO_BAR_PADDING = 12.dp
+
+/** Rounding of the video frame inside the bar. */
+internal val MINI_VIDEO_THUMB_CORNER = 12.dp
+
+/** Rounding of the bar itself. */
+internal val MINI_VIDEO_BAR_CORNER = 28.dp
 
 /**
  * The video player's collapsed bar: the video still playing, what it is, and
@@ -82,7 +91,16 @@ private val MINI_VIDEO_THUMB_WIDTH = 92.dp
  */
 @OptIn(UnstableApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
+fun MiniVideoPlayerContent(
+    viewModel: VideoPlayerViewModel,
+    /**
+     * False while the minimize transition is still carrying the picture into
+     * this frame. Only one view may hold the player's surface, so during the
+     * hand-off the bar draws everything except the video and the travelling
+     * watch page supplies the picture, landing exactly on the empty frame.
+     */
+    showSurface: Boolean = true,
+) {
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
@@ -99,7 +117,7 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = MINI_VIDEO_BAR_PADDING),
         verticalAlignment = Alignment.CenterVertically
     ) {
         MiniVideoSurface(
@@ -107,7 +125,8 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
             isBuffering = isBuffering,
             isPortrait = isPortrait,
             isLive = isLive,
-            progress = progress
+            progress = progress,
+            showSurface = showSurface
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -203,8 +222,9 @@ fun MiniVideoPlayerContent(viewModel: VideoPlayerViewModel) {
  * below the mini bar as a hard dark rectangle, and what looked like a rounded
  * video was the card showing through a square hole. `surface_type` is only
  * settable in the constructor, which is the whole reason `mini_video_surface`
- * is a layout file. The full-screen player keeps its SurfaceView, where the
- * bounds match the window and there is nothing to clip against.
+ * is a layout file. The portrait watch page now does the same, because the
+ * minimize transition scales and rounds the picture on its way into this frame;
+ * fullscreen and HDR keep their SurfaceView.
  *
  * **Fit, not zoom, for a portrait source.** The frame is 16:9 and a vertical
  * video cropped to it loses its top and bottom, which is exactly where a
@@ -219,7 +239,8 @@ private fun MiniVideoSurface(
     isBuffering: Boolean,
     isPortrait: Boolean,
     isLive: Boolean,
-    progress: Float
+    progress: Float,
+    showSurface: Boolean
 ) {
     val resizeMode = remember(isPortrait) {
         if (isPortrait) AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -244,14 +265,14 @@ private fun MiniVideoSurface(
                     )
                 )
             }
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(MINI_VIDEO_THUMB_CORNER))
             // Letterbox bars are the absence of picture, not a themed surface,
             // so they stay black in either theme. The documented exception to
             // the palette rule, same as the watch page's own video box.
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        AndroidView(
+        if (showSurface) AndroidView(
             factory = { ctx ->
                 LayoutInflater.from(ctx)
                     .inflate(R.layout.mini_video_surface, null) as PlayerView

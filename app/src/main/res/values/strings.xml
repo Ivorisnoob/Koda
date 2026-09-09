@@ -29,7 +29,7 @@
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">What is playing and what is next; tap a track to jump</string>
     <string name="widget_bloom_label">Bloom</string>
-    <string name="widget_bloom_description">Album art as a scalloped tile with one play button</string>
+    <string name="widget_bloom_description">Album art as a scalloped tile on your wallpaper, with play and next</string>
     <string name="widget_orbit_label">Orbit</string>
     <string name="widget_orbit_description">A round cover in a single cell</string>
 
@@ -43,6 +43,13 @@
     <string name="widget_action_repeat_one">Repeat one</string>
     <string name="widget_action_repeat_all">Repeat all</string>
     <string name="widget_nothing_up_next">Nothing up next</string>
+
+    <!-- Static sample content for the launcher picker previews (previewLayout).
+        Never shown on an installed widget; the live Glance UI owns that. -->
+    <string name="widget_preview_title">Midnight Drive</string>
+    <string name="widget_preview_artist">Neon Coast</string>
+    <string name="widget_preview_next_1">Glasshouse</string>
+    <string name="widget_preview_next_2">Ultraviolet</string>
 
     <!-- Background upload check (#137): its notification channel and grouped title. -->
     <string name="upload_check_channel_name">New uploads</string>
@@ -180,6 +187,12 @@
     <string name="song_options_not_interested">Not interested</string>
     <string name="song_options_not_interested_subtitle">Stop recommending this song</string>
     <string name="song_options_block_artist">Don\'t recommend %1$s</string>
+
+    <!-- Playback speed control in the now-playing overflow sheet -->
+    <string name="song_options_speed">Playback speed</string>
+    <string name="song_options_speed_value">%1$d%%</string>
+    <string name="song_options_speed_normal">Normal speed</string>
+    <string name="cd_speed_reset">Reset to normal speed</string>
 
     <!-- Add to playlist sheet -->
     <string name="add_to_playlist_title">Add to Playlist</string>
@@ -361,6 +374,8 @@
     <string name="sp_local_only">Local Only</string>
     <string name="sp_home_mode_toggle">Home Screen Mode Toggle</string>
     <string name="sp_timed_comments">Timed Comments</string>
+    <string name="sp_compact_video_home">Compact video home</string>
+    <string name="sp_compact_video_home_sub">Show smaller thumbnails with titles and channels beside them</string>
     <string name="sp_shorts">Shorts</string>
     <string name="sp_no_description">No description</string>
     <string name="sp_shorts_enabled_sub">Shown on Home and opened in the swipe player</string>
@@ -426,14 +441,25 @@
     <string name="sp_private_downloads_off">New audio and video appear in Downloads/Koda</string>
     <string name="sp_private_downloads_note">Album art stays hidden from Gallery in either mode. Existing downloads stay where they are.</string>
     <string name="sp_cache">Cache</string>
-    <string name="sp_cache_music">Cache Playback</string>
-    <string name="sp_cache_music_sub">Store streamed songs and videos for faster replay and seeking</string>
-    <string name="sp_local_cache">Local Cache</string>
-    <string name="sp_max_cache_size">Max Cache Size</string>
+    <string name="sp_cache_videos">Cache videos</string>
+    <string name="sp_cache_videos_sub">Keep temporary video data for seeking and replay</string>
+    <string name="sp_cache_shorts">Cache Shorts</string>
+    <string name="sp_cache_shorts_sub">Keep temporary Shorts data for swipe-back and replay</string>
+    <string name="sp_playback_preload">Preload upcoming media</string>
+    <string name="sp_playback_preload_sub">Prepare upcoming music and Shorts before you play them</string>
+    <string name="sp_clear_video_cache">Clear video cache</string>
+    <string name="sp_clear_video_cache_sub">Remove temporary video data; keep downloads</string>
+    <string name="sp_clear_shorts_cache">Clear Shorts cache</string>
+    <string name="sp_clear_shorts_cache_sub">Remove temporary Shorts data; keep downloads</string>
+    <string name="sp_playback_cache_note">Music uses the storage limit above. Video and Shorts data clears five minutes after both players close. Turning caching off stops new writes on the next load. Downloads are kept separately. Crossfade may still prepare the next song when enabled.</string>
+    <string name="sp_cache_music">Cache music</string>
+    <string name="sp_cache_music_sub">Keep streamed songs for faster replay and offline listening</string>
+    <string name="sp_local_cache">Music cache</string>
+    <string name="sp_max_cache_size">Music cache limit</string>
     <string name="sp_cache_size_large_warning">Koda only fills the cache as you listen, but it can grow to %1$s of device storage before it starts evicting older songs.</string>
     <string name="sp_cache_size_low_space">Only %1$s free on this device. The cache will stop growing when the space runs out, and other apps have to share it.</string>
-    <string name="sp_clear_cache">Clear Cache</string>
-    <string name="sp_clear_cache_sub">Free up storage space</string>
+    <string name="sp_clear_cache">Clear music cache</string>
+    <string name="sp_clear_cache_sub">Remove temporarily stored songs; keep downloads</string>
     <string name="sp_live_updates">Live updates</string>
     <string name="sp_live_download_updates">Live download updates</string>
     <string name="sp_live_download_updates_sub">Show download progress as a live status bar chip</string>
@@ -548,6 +574,9 @@
     <string name="vh_available_offline">Available offline</string>
     <string name="vh_recommended_for_you">Recommended For You</string>
     <string name="vh_trending_videos">Trending Videos</string>
+    <string name="vh_from_subscriptions">From your subscriptions</string>
+    <string name="vh_no_subscriptions">No subscriptions yet</string>
+    <string name="vh_no_subscriptions_sub">Subscribe to channels to see their latest videos on Home</string>
     <string name="vh_youre_offline">You\'re offline</string>
     <string name="vh_removed_from_history">Removed from watch history</string>
     <string name="vh_clear_history">Clear watch history</string>
@@ -730,6 +759,49 @@
     <string name="bk_sign_in_again">Open Settings, Account when it comes back to sign in again.</string>
     <string name="bk_restart_now">Restart now</string>
     <string name="bk_failed_title">That didn\'t work</string>
+
+    <!-- Scheduled Backups -->
+    <string name="bk_scheduled_title">Scheduled backups</string>
+    <string name="bk_scheduled_sub">Automatically protect your data on a schedule</string>
+    <string name="bk_folder_title">Backup folder</string>
+    <string name="bk_folder_none">No folder selected</string>
+    <string name="bk_folder_pick">Choose folder</string>
+    <string name="bk_folder_change">Change folder</string>
+    <string name="bk_folder_permission_lost">Storage access was revoked. Tap to choose the folder again.</string>
+    <string name="bk_folder_not_found">The backup folder is unavailable or missing. Tap to choose a new folder.</string>
+    <string name="bk_freq_title">Frequency</string>
+    <string name="bk_freq_daily">Daily</string>
+    <string name="bk_freq_3days">Every 3 days</string>
+    <string name="bk_freq_weekly">Weekly</string>
+    <string name="bk_freq_2weeks">Every 2 weeks</string>
+    <string name="bk_freq_monthly">Monthly</string>
+    <string name="bk_retention_title">Backups to keep</string>
+    <string name="bk_retention_format">Keep last %1$d backups</string>
+    <string name="bk_retention_dialog_title">Backup retention</string>
+    <string name="bk_retention_dialog_desc">Older backups in the selected folder will be deleted automatically after a new backup completes.</string>
+    <string name="bk_retention_keep_3">Keep last 3 backups</string>
+    <string name="bk_retention_keep_5">Keep last 5 backups (recommended)</string>
+    <string name="bk_retention_keep_10">Keep last 10 backups</string>
+    <string name="bk_retention_keep_20">Keep last 20 backups</string>
+    <string name="bk_constraint_charging">Only when charging</string>
+    <string name="bk_constraint_charging_sub">Back up while plugged in to preserve battery</string>
+    <string name="bk_constraint_idle">Only when idle</string>
+    <string name="bk_constraint_idle_sub">Wait until your device is not actively in use</string>
+    <string name="bk_constraint_unmetered">Only on unmetered Wi-Fi</string>
+    <string name="bk_constraint_unmetered_sub">Recommended when backing up to cloud-synced storage</string>
+    <string name="bk_run_now">Back up now to folder</string>
+    <string name="bk_run_now_sub">Write a backup to your chosen folder immediately</string>
+    <string name="bk_last_run_never">No automatic backups yet</string>
+    <string name="bk_last_run_success">Last automatic backup: %1$s</string>
+    <string name="bk_last_run_failed">Last automatic backup failed: %1$s</string>
+    <string name="bk_pruned_count">Pruned %1$d older backup(s)</string>
+    <string name="bk_backup_saved_to_folder">Backup saved to %1$s</string>
+    <string name="bk_channel_name">Scheduled backups</string>
+    <string name="bk_channel_desc">Notifications about automatic backup progress and storage issues</string>
+    <string name="bk_notif_failed_title">Scheduled backup failed</string>
+    <string name="bk_notif_perm_revoked">Storage access was revoked. Tap to choose a backup folder.</string>
+    <string name="bk_notif_folder_missing">Backup folder could not be found. Tap to select a backup folder.</string>
+    <string name="bk_notif_failed_repeated">Backup failed %1$d times in a row. Tap to check backup settings.</string>
 
     <!-- Update screen -->
     <string name="us_title">Software Update</string>
@@ -1225,4 +1297,127 @@
     <string name="palette_style_expressive">Expressive</string>
     <string name="palette_style_fruit_salad">Fruit Salad</string>
     <string name="palette_style_monochrome">Monochrome</string>
+    <string name="dl_paused">Paused · resume when you’re ready</string>
+    <string name="dl_resume">Resume download</string>
+    <string name="vl_downloaded_content">Downloaded content</string>
+    <string name="vl_downloaded_content_sub">Watch saved videos and manage downloads</string>
+
+    <!-- App Icon Customizer -->
+    <string name="sp_app_icon">App icon</string>
+    <string name="sp_app_icon_subtitle">Customize launcher icon style and colors</string>
+    <string name="app_icon_classic">Koda Classic</string>
+    <string name="app_icon_classic_desc">Deep purple with cream note &amp; neon lime spark</string>
+    <string name="app_icon_crimson">Crimson Beat</string>
+    <string name="app_icon_crimson_desc">Ruby red with rose note &amp; golden amber spark</string>
+    <string name="app_icon_midnight">Midnight Cyber</string>
+    <string name="app_icon_midnight_desc">Stealth obsidian with glowing cyan note &amp; hot pink spark</string>
+    <string name="app_icon_emerald">Emerald Groove</string>
+    <string name="app_icon_emerald_desc">Botanical green with fresh mint note &amp; sun yellow spark</string>
+    <string name="app_icon_sunset">Electric Sunset</string>
+    <string name="app_icon_sunset_desc">Sunset orange with peach note &amp; deep violet spark</string>
+    <string name="app_icon_ocean">Ocean Breeze</string>
+    <string name="app_icon_ocean_desc">Deep marine blue with ice-blue note &amp; coral spark</string>
+    <string name="app_icon_blossom">Pastel Blossom</string>
+    <string name="app_icon_blossom_desc">Dreamy lavender with pearl note &amp; bright sky blue spark</string>
+    <string name="app_icon_monochrome">Monochrome</string>
+    <string name="app_icon_monochrome_desc">Minimalist noir with pure white note &amp; silver spark</string>
+    <string name="app_icon_solar">Solar Gold</string>
+    <string name="app_icon_solar_desc">Golden honey with electric indigo spark</string>
+    <string name="app_icon_section_presets">Launcher presets</string>
+    <string name="app_icon_section_presets_sub">Changes the launcher icon on your home screen and app drawer</string>
+    <string name="app_icon_section_studio">Icon Studio</string>
+    <string name="app_icon_section_studio_sub">Personalize colors and preview how your icon looks</string>
+    <string name="app_icon_shape_preview">Preview shape</string>
+    <string name="app_icon_color_blob">Aura color</string>
+    <string name="app_icon_color_note">Note color</string>
+    <string name="app_icon_color_dot">Accent spark</string>
+    <string name="app_icon_color_bg">Background</string>
+    <string name="app_icon_applied_notice">App icon updated. Some launchers take a moment to refresh.</string>
+    <string name="app_icon_apply_failed">Android refused the icon change. Nothing was altered.</string>
+    <string name="app_icon_current">Active</string>
+    <string name="app_icon_apply_button">Apply to Home Screen</string>
+    <string name="app_icon_closest_preset">Matches "%1$s" preset</string>
+    <string name="app_icon_reset">Reset</string>
+    <string name="app_icon_shape_squircle">Squircle</string>
+    <string name="app_icon_shape_circle">Circle</string>
+    <string name="app_icon_shape_square">Square</string>
+    <string name="app_icon_shape_burst">Burst</string>
+    <string name="app_icon_shape_cookie">Cookie</string>
+    <string name="app_icon_shape_clover">Clover</string>
+    <string name="app_icon_custom_title">Custom style</string>
+    <string name="app_icon_launcher_note">Custom colors stay inside Koda. Your launcher shows the closest preset, %1$s.</string>
+    <string name="app_icon_save_style">Save style</string>
+    <string name="app_icon_save_style_title">Name this style</string>
+    <string name="app_icon_save_style_hint">Style name</string>
+    <string name="app_icon_section_saved">Your styles</string>
+    <string name="app_icon_section_saved_sub">Kept on this device, and included in backups</string>
+    <string name="app_icon_delete_style">Delete style</string>
+    <string name="app_icon_delete_style_body">"%1$s" will be removed from this device.</string>
+
+    <!-- Settings redesign: hold-to-explain, previews, regrouped sections -->
+    <string name="settings_hold_hint">Touch and hold any setting to learn what it does</string>
+    <string name="si_got_it">Got it</string>
+    <string name="sp_touch_feedback">Touch feedback</string>
+    <string name="sp_display_section">Display</string>
+    <string name="sp_home_and_navigation">Home and navigation</string>
+    <string name="sp_video_section">Video</string>
+    <string name="sp_remember_brightness">Remember fullscreen brightness</string>
+    <string name="sp_home_classic">Classic</string>
+    <string name="sp_home_spotlight">Spotlight</string>
+    <string name="sp_nav_floating">Floating</string>
+    <string name="sp_nav_standard">Standard</string>
+
+    <!-- Hub category explanations (long press) -->
+    <string name="si_hub_account">Connect a YouTube Music account to bring in your playlists, likes, history and subscriptions. Koda works fully signed out; signing in unlocks the personalised feeds.</string>
+    <string name="si_hub_appearance">Everything about how Koda looks and feels: theme, colors, app icon, display size, Home layout, navigation style and touch feedback.</string>
+    <string name="si_hub_player">Choose between eight now-playing designs and control how the player uses album artwork colors.</string>
+    <string name="si_hub_playback">Song transitions, volume levelling, queue behavior, and streaming quality chosen per network.</string>
+    <string name="si_hub_content">Switch between music and video mode, go fully offline, and tune Shorts, feeds and recommendations.</string>
+    <string name="si_hub_subscriptions">Manage followed channels, choose whether they live on this device or your account, and how the feed refreshes.</string>
+    <string name="si_hub_sponsorblock">Skips sponsor reads and other segments in videos automatically, using community-submitted timestamps. Off by default.</string>
+    <string name="si_hub_storage">Where downloads are kept, what gets cached for instant replays, and how much space Koda is allowed to use.</string>
+    <string name="si_hub_notifications">Alerts for new uploads from channels you follow, and live status-bar progress for downloads and playback.</string>
+    <string name="si_hub_local_library">Show music files already on this device alongside YouTube Music in your library.</string>
+    <string name="si_hub_backup">Save settings, playlists, history and stats into one file you can restore on any device.</string>
+    <string name="si_hub_advanced">Fixes for aggressive battery savers, Android Auto help, a daily time limit, and bug reporting.</string>
+
+    <!-- Individual setting explanations (long press) -->
+    <string name="si_amoled">Uses pure black instead of dark gray in the dark theme. On OLED screens black pixels switch off entirely, which deepens contrast and saves battery.</string>
+    <string name="si_ambient">Tints the app background with soft colors pulled from the album art of whatever is playing.</string>
+    <string name="si_app_icon">Pick a different look for Koda\'s icon on your home screen from a set of shape and color presets.</string>
+    <string name="si_display_size">Scales the whole interface up or down without touching your system font size. You preview the change before it applies.</string>
+    <string name="si_spotlight">Two Home designs showing the same content. Classic leads with a large hero and carousels; Spotlight is a denser grid of shortcuts, quick picks and artwork shelves.</string>
+    <string name="si_nav_bar">The floating toolbar hides while you scroll down and returns when you scroll up. The standard bar is a fixed Material 3 navigation bar with labels.</string>
+    <string name="si_haptics">How strongly Koda vibrates in response to touch: drags, toggles, skips and taps. Rich uses the full vocabulary; Subtle keeps only the moments that matter.</string>
+    <string name="si_artwork_colors">Tints the player\'s controls and background with colors pulled from the current album cover instead of the app theme.</string>
+    <string name="si_crossfade">How one song hands over to the next. AutoMix analyses tempo and silence to blend compatible songs; Manual always overlaps by a fixed time; Off changes tracks cleanly.</string>
+    <string name="si_normalize">Evens out loudness between songs, so a quiet acoustic track and a loudly mastered one play at a similar level.</string>
+    <string name="si_auto_queue">When your queue runs out, Koda keeps the music going with similar songs instead of stopping.</string>
+    <string name="si_music_history">Keeps a log on this device of the songs you play. It powers your stats and recently played. Separate from your YouTube account\'s history.</string>
+    <string name="si_hdr">When a video has an HDR version and your screen supports it, Koda plays the HDR one. Richer colors, but more data and battery.</string>
+    <string name="si_brightness">Koda remembers the brightness you drag to in fullscreen video and reapplies it next time, instead of resetting to the system level.</string>
+    <string name="si_local_only">Cuts all internet use. Only downloads and files on this device play; search, streaming and every YouTube surface stay off until you switch back.</string>
+    <string name="si_home_mode_toggle">Shows a music/video switch in the Home header so you can change modes without opening Settings.</string>
+    <string name="si_timed_comments">Shows comments pinned to the moment they talk about, floating above the seek bar as the video plays.</string>
+    <string name="si_shorts">Show or hide Shorts across the app. Hidden Shorts are not just tucked away - they stop being fetched at all.</string>
+    <string name="si_recent_searches">Shows your past searches when you tap the search field. Turning this off hides them without deleting them.</string>
+    <string name="si_compact_video_home">Smaller video cards in the video Home feed, so more fit on one screen.</string>
+    <string name="si_related_videos">The suggestions under a playing video. Turning them off removes the distraction; playlists and queues keep working.</string>
+    <string name="si_not_interested">Everything you have told Koda to stop recommending - hidden videos and blocked channels. Anything can be un-hidden here.</string>
+    <string name="si_private_downloads">Stores downloads inside Koda\'s private folder, invisible to other apps and the gallery, instead of the shared Downloads/Koda folder.</string>
+    <string name="si_cache_music">Keeps recently streamed songs on disk so replays start instantly and cost no data. The oldest entries are evicted when the limit below is reached.</string>
+    <string name="si_cache_videos">Keeps recently streamed video temporarily for smooth scrubbing and instant replays. It clears itself a few minutes after you stop watching.</string>
+    <string name="si_cache_shorts">Caches Shorts you watch so swiping back replays them instantly.</string>
+    <string name="si_preload">Fetches the beginning of upcoming songs and Shorts before you reach them, so skips start instantly. Costs some data on metered networks.</string>
+    <string name="si_fast_refresh">Fast mode reads each channel\'s lightweight RSS feed - roughly twenty times less data - but cannot show video durations or live badges.</string>
+    <string name="si_subs_source">Which subscriptions the feed shows: the ones saved on this device, the ones on your YouTube account, or both merged together.</string>
+    <string name="si_subs_target">Where the Subscribe button saves a new channel: on this device only, invisible to YouTube, or on your YouTube account.</string>
+    <string name="si_load_local_songs">Scans this device for music files and shows them in your library next to YouTube Music. Needs the audio files permission.</string>
+    <string name="si_compat_scan">Reads music files directly from storage instead of Android\'s media index. Fixes songs missing on HyperOS and MIUI, but needs the all-files permission.</string>
+    <string name="si_battery">Aggressive battery savers kill background playback. This asks Android to leave Koda running while music plays.</string>
+    <string name="si_upload_notifications">Koda periodically checks followed channels in the background and notifies you about new uploads. Uses a little battery and data.</string>
+    <string name="si_live_download">Shows download progress as a Live Update chip in the status bar while a transfer runs.</string>
+    <string name="si_live_playback">Shows the playing song as a Live Update chip in the status bar.</string>
+    <string name="si_time_limit">Set a daily usage budget for Koda. When it runs out, the app locks until the next day.</string>
+    <string name="si_watch_history_account">When on, videos you watch in Koda are added to your YouTube account\'s watch history, exactly as if you watched on youtube.com.</string>
 </resources>

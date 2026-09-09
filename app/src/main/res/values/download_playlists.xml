@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_playlist_available">%1$d of %2$d tracks available offline</string>
+    <string name="download_playlist_expanded">Expanded</string>
+    <string name="download_playlist_collapsed">Collapsed</string>
+    <string name="download_playlist_none_offline">None of these tracks are on this device yet</string>
+</resources>

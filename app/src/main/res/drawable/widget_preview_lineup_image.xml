@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher picker fallback preview for the Lineup widget (4x2 queue). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="300dp"
+    android:height="210dp"
+    android:viewportWidth="300"
+    android:viewportHeight="210">
+
+    <path
+        android:fillColor="#FF1A1114"
+        android:pathData="M24,0 H276 Q300,0 300,24 V186 Q300,210 276,210 H24 Q0,210 0,186 V24 Q0,0 24,0 Z" />
+    <path
+        android:fillColor="#FFB47BE8"
+        android:pathData="M28,16 H56 Q68,16 68,28 V56 Q68,68 56,68 H28 Q16,68 16,56 V28 Q16,16 28,16 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M80,28 H210 V40 H80 Z" />
+    <path
+        android:fillColor="#FFD6BFC8"
+        android:pathData="M80,46 H170 V56 H80 Z" />
+    <path
+        android:fillColor="#FFFFB1C8"
+        android:pathData="M242,42 a20,20 0 1,0 40,0 a20,20 0 1,0 -40,0 Z" />
+    <path
+        android:fillColor="#FF5E1133"
+        android:pathData="M256,33 L270,42 L256,51 Z" />
+    <path
+        android:fillColor="#FF33262C"
+        android:pathData="M28,84 H272 Q284,84 284,96 V116 Q284,128 272,128 H28 Q16,128 16,116 V96 Q16,84 28,84 Z" />
+    <path
+        android:fillColor="#FF33262C"
+        android:pathData="M28,136 H272 Q284,136 284,148 V168 Q284,180 272,180 H28 Q16,180 16,168 V148 Q16,136 28,136 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M32,98 H170 V109 H32 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M32,150 H150 V161 H32 Z" />
+</vector>

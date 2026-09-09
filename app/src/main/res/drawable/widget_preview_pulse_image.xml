@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher picker fallback preview for the Pulse widget (4x1 row). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="300dp"
+    android:height="110dp"
+    android:viewportWidth="300"
+    android:viewportHeight="110">
+
+    <path
+        android:fillColor="#FF1A1114"
+        android:pathData="M24,0 H276 Q300,0 300,24 V86 Q300,110 276,110 H24 Q0,110 0,86 V24 Q0,0 24,0 Z" />
+    <path
+        android:fillColor="#FFB47BE8"
+        android:pathData="M30,23 H66 Q80,23 80,37 V73 Q80,87 66,87 H30 Q16,87 16,73 V37 Q16,23 30,23 Z" />
+    <path
+        android:fillColor="#FFF2DEE5"
+        android:pathData="M98,38 H206 Q212,38 212,44 V44 Q212,50 206,50 H98 Q92,50 92,44 V44 Q92,38 98,38 Z" />
+    <path
+        android:fillColor="#FFD6BFC8"
+        android:pathData="M97,56 H171 Q176,56 176,61 V61 Q176,66 171,66 H97 Q92,66 92,61 V61 Q92,56 97,56 Z" />
+    <path
+        android:fillColor="#FFFFB1C8"
+        android:pathData="M238,55 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z" />
+    <path
+        android:fillColor="#FF5E1133"
+        android:pathData="M256,43 L274,55 L256,67 Z" />
+</vector>

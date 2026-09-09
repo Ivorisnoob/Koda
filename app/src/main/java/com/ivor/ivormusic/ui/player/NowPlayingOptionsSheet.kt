@@ -1,12 +1,19 @@
 package com.ivor.ivormusic.ui.player
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,27 +25,40 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
+import com.ivor.ivormusic.data.ThemePreferences
+import kotlin.math.roundToInt
 
 /**
  * Everything you can do to the song that is playing, from any of the eight
@@ -147,6 +167,9 @@ fun NowPlayingOptionsSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             SongOptionsHeader(song)
+
+            // How it plays, before what to do with it - see the row's own note.
+            OptionGroup { PlaybackSpeedRow(viewModel) }
 
             // What to do with this song.
             OptionGroup {
@@ -293,3 +316,142 @@ fun NowPlayingOptionsSheet(
         }
     }
 }
+
+/**
+ * The playback rate, as a slider over the whole group's width.
+ *
+ * **A control rather than an action, and the only one in this sheet.** It sits
+ * directly under the header for that reason: everything below is a row you tap
+ * once and are done with, while this is the thing someone opens the menu to
+ * adjust, and burying it under four action rows would put it under the fold on
+ * a small screen at the moment it is being looked for.
+ *
+ * **The rate applies as it moves and persists once, when the finger lifts.**
+ * Speed is judged by ear, so a slider that only took effect on release is one
+ * the user has to guess at; but writing preferences on every frame of a drag
+ * is forty writes for one decision. [PlayerViewModel.setPlaybackSpeed] carries
+ * that distinction and the service honours it.
+ *
+ * **Values snap to five percent.** The slider is continuous, but the thumb is
+ * drawn at the rounded value, so the label, the thumb and what is audible all
+ * agree - and a drag past the recorded speed detents onto it with a haptic,
+ * because 100% is the one value people want to land on exactly. Material's own
+ * tick marks were the alternative and 38 of them read as clutter.
+ */
+@Composable
+private fun PlaybackSpeedRow(viewModel: PlayerViewModel) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val speed by viewModel.playbackSpeed.collectAsState()
+    var dragging by remember { mutableStateOf(false) }
+    var sliderSpeed by remember { mutableFloatStateOf(speed) }
+    // Follow the service while the control is at rest - another surface, or a
+    // restored session, can change the rate under an open sheet - but never
+    // under the finger, where it would fight the drag.
+    LaunchedEffect(speed, dragging) { if (!dragging) sliderSpeed = speed }
+
+    val percent = (sliderSpeed * 100f).roundToInt()
+    val isNormal = percent == 100
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(
+            modifier = Modifier.heightIn(min = 48.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Speed,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = stringResource(R.string.song_options_speed),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = stringResource(R.string.song_options_speed_value, percent),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isNormal) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                // A minimum width, so the row does not shuffle sideways as the
+                // number goes from two digits to three during a drag.
+                modifier = Modifier.widthIn(min = 48.dp)
+            )
+            // Only where it leads somewhere: at the recorded speed there is
+            // nothing to reset to, and a permanently dead button beside a
+            // control is worse than none.
+            AnimatedVisibility(visible = !isNormal) {
+                IconButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        dragging = false
+                        sliderSpeed = ThemePreferences.DEFAULT_PLAYBACK_SPEED
+                        viewModel.setPlaybackSpeed(ThemePreferences.DEFAULT_PLAYBACK_SPEED)
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = stringResource(R.string.cd_speed_reset),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Slider(
+            value = sliderSpeed,
+            onValueChange = { raw ->
+                dragging = true
+                val snapped = snapPlaybackSpeed(raw)
+                if (snapped != sliderSpeed) {
+                    // One tick as the thumb crosses the recorded speed, so the
+                    // detent can be felt without looking at the number.
+                    if (snapped == ThemePreferences.DEFAULT_PLAYBACK_SPEED) {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    }
+                    sliderSpeed = snapped
+                    // persist = false: this is one frame of a gesture, not a
+                    // decision. It still applies, because the choice is made
+                    // by ear.
+                    viewModel.setPlaybackSpeed(snapped, persist = false)
+                }
+            },
+            onValueChangeFinished = {
+                dragging = false
+                viewModel.setPlaybackSpeed(sliderSpeed)
+            },
+            valueRange = ThemePreferences.MIN_PLAYBACK_SPEED..ThemePreferences.MAX_PLAYBACK_SPEED,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/**
+ * Round a raw slider position to the nearest five percent, with a wider catch
+ * around the recorded speed so a drag settles on exactly 100% rather than on
+ * the 95% or 105% either side of it.
+ */
+private fun snapPlaybackSpeed(raw: Float): Float {
+    val bounded = raw.coerceIn(
+        ThemePreferences.MIN_PLAYBACK_SPEED,
+        ThemePreferences.MAX_PLAYBACK_SPEED,
+    )
+    if (kotlin.math.abs(bounded - ThemePreferences.DEFAULT_PLAYBACK_SPEED) < SPEED_DETENT) {
+        return ThemePreferences.DEFAULT_PLAYBACK_SPEED
+    }
+    return (bounded * 20f).roundToInt() / 20f
+}
+
+/** Half a step either side of the recorded speed, so 100% is easy to hit. */
+private const val SPEED_DETENT = 0.03f

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_playlist_available">มีเพลง %1$d จาก %2$d เพลงพร้อมฟังแบบออฟไลน์</string>
+</resources>

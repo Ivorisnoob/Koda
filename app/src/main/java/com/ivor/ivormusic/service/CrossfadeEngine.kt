@@ -155,6 +155,42 @@ class CrossfadeEngine(
         playerB.repeatMode = mode
     }
 
+    /**
+     * The user's playback rate, and the engine's definition of "normal".
+     *
+     * Every tempo write below is relative to this rather than to 1.0. The
+     * transition speeds this engine applies are small corrections around the
+     * source tempo - [MIN_TRANSITION_SPEED]..[MAX_TRANSITION_SPEED], about four
+     * percent either way - so they multiply the base rather than replacing it,
+     * and the tempo release eases back to the base instead of to 1.0. Before
+     * this existed every resting write here was a literal 1.0, so any
+     * transition would have snapped a user who had chosen another speed back
+     * to the recorded one, mid-song and without warning.
+     */
+    private var baseSpeed = 1f
+
+    /** [PlaybackParameters] at the user's rate: this engine's resting tempo. */
+    private fun baseParameters() = PlaybackParameters(baseSpeed, 1f)
+
+    /**
+     * Change the resting tempo of both engines.
+     *
+     * A running overlap is abandoned rather than retuned, for the reason
+     * [setShuffleState] and [setRepeatMode] abandon one: the plan behind it -
+     * its cue, its beat alignment, and the clock speeds [runFade] captured
+     * before its loop started - was made against the tempo that just changed.
+     * The caller's ordinary advance is a better answer than a mix drifting
+     * against a moved clock.
+     */
+    fun setBaseSpeed(speed: Float) {
+        val next = speed.coerceAtLeast(MIN_BASE_SPEED)
+        if (kotlin.math.abs(next - baseSpeed) < 0.001f) return
+        baseSpeed = next
+        cancelTransition()
+        playerA.playbackParameters = baseParameters()
+        playerB.playbackParameters = baseParameters()
+    }
+
     /** Rebuild the audible player's permutation after its queue was edited. */
     fun refreshActiveShuffleOrder() {
         applyPlaybackOrder(active)
@@ -250,7 +286,7 @@ class CrossfadeEngine(
         // Retire that writer before this overlap captures either clock speed.
         tempoReleaseJob?.cancel()
         tempoReleaseJob = null
-        outgoing.playbackParameters = PlaybackParameters.DEFAULT
+        outgoing.playbackParameters = baseParameters()
 
         return try {
             fadingIntoId = nextItem.mediaId
@@ -259,7 +295,8 @@ class CrossfadeEngine(
             // time, from the live timeline rather than a stale snapshot.
             incoming.setMediaItem(nextItem, incomingStartMs.coerceAtLeast(0L))
             incoming.playbackParameters = PlaybackParameters(
-                incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED), 1f
+                baseSpeed * incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED),
+                1f
             )
             incoming.volume = 0f
             incoming.prepare()
@@ -384,6 +421,8 @@ class CrossfadeEngine(
             val incomingSpeed = incoming.playbackParameters.speed.coerceAtLeast(0.01f)
             var incomingStallStartedMs = 0L
             var maxClockDriftMs = 0L
+            var lastClockDriftMs = 0L
+            var clockDriftOffsetMs = 0L
 
             while (scope.isActive) {
                 currentCoroutineContext().ensureActive()
@@ -429,10 +468,50 @@ class CrossfadeEngine(
                     (incoming.currentPosition - incomingStartPosition).coerceAtLeast(0L) /
                         incomingSpeed
                     ).toLong()
-                val clockDriftMs = kotlin.math.abs(outgoingElapsedMs - incomingElapsedMs)
-                maxClockDriftMs = maxOf(maxClockDriftMs, clockDriftMs)
-                if (clockDriftMs > MAX_CLOCK_DRIFT_MS) {
-                    KLog.w(TAG, "Playback clocks diverged by ${clockDriftMs}ms; abandoning the overlap")
+                // The reported clocks are estimates, and their errors arrive
+                // two ways. *Gradually*: the incoming player's AudioTrack is
+                // always fresh, and Media3's sink slews onto the AudioTimestamp
+                // clock at up to 10% of elapsed time per read [verified
+                // September 2026 against the 1.11.0 AudioTrackPositionTracker
+                // bytecode], accruing to the device's output latency. And as a
+                // *step*: that slew limit lives on the playback thread, while
+                // this loop reads ExoPlayerImpl's app-thread position, which
+                // extrapolates between internal anchors and re-anchors in one
+                // read - so the same settle can land as a single ~250ms step
+                // [measured September 2026, emulator: 249-280ms at every fade
+                // The spikes also *oscillate*: a read can land ~250ms off the
+                // trend and the next read return to it [measured September
+                // 2026, emulator: alternating +/-250ms pairs within 25-50ms],
+                // so the budget is *net* re-anchored displacement, never a sum
+                // of absolute steps - a spike and its return cancel, where a
+                // real discontinuity (a seek this coroutine missed, a reset)
+                // displaces the clock and never comes back. Its bound is the
+                // 1s discrepancy Media3 will smooth at all
+                // (MAX_POSITION_DRIFT_FOR_SMOOTHING_US), which caps every
+                // sanctioned correction. The audible discontinuities all
+                // announce themselves elsewhere: the service cancels on
+                // seeks, queueStillMatches catches item changes, STATE_IDLE
+                // catches errors.
+                val clockDriftMs = outgoingElapsedMs - incomingElapsedMs
+                val clockStepMs = clockDriftMs - lastClockDriftMs
+                lastClockDriftMs = clockDriftMs
+                if (kotlin.math.abs(clockStepMs) > MAX_CLOCK_STEP_MS) {
+                    clockDriftOffsetMs += clockStepMs
+                    if (kotlin.math.abs(clockDriftOffsetMs) > MAX_CLOCK_SETTLE_MS) {
+                        KLog.w(
+                            TAG,
+                            "Playback clock jumped by ${kotlin.math.abs(clockStepMs)}ms " +
+                                "(${clockDriftOffsetMs}ms net); abandoning the overlap"
+                        )
+                        abortInto(outgoing, incoming)
+                        return
+                    }
+                    KLog.d(TAG, "Playback clock stepped ${clockStepMs}ms; re-anchoring the overlap clock")
+                }
+                val residualDriftMs = clockDriftMs - clockDriftOffsetMs
+                maxClockDriftMs = maxOf(maxClockDriftMs, kotlin.math.abs(residualDriftMs))
+                if (kotlin.math.abs(residualDriftMs) > MAX_CLOCK_DRIFT_MS) {
+                    KLog.w(TAG, "Playback clocks diverged by ${kotlin.math.abs(residualDriftMs)}ms; abandoning the overlap")
                     abortInto(outgoing, incoming)
                     return
                 }
@@ -449,6 +528,20 @@ class CrossfadeEngine(
                 setFilterSweep(outgoing, filterSweepStrength * t)
 
                 if (t >= 1f) break
+                // The outgoing track running out is completion, not a race to
+                // lose. [fadeMs] was planned as remaining minus END_GUARD_MS
+                // on the outgoing clock, but the curve advances on the slower
+                // of two estimated clocks, and the incoming clock's settle
+                // legitimately lags by more than the guard. Waiting for t to
+                // reach 1 then lets Media3 advance the outgoing player itself
+                // - it still holds the full queue - which restarts, from zero
+                // and at full volume, the very song the standby has spent the
+                // whole fade audibly bringing in. Swap now: at worst the
+                // outgoing loses its final guard-window tail, which the fade
+                // had already planned to spend.
+                if (outgoing.duration > 0 &&
+                    outgoing.duration - outgoing.currentPosition <= END_GUARD_MS
+                ) break
                 // The outgoing player ending early (a short file, an error)
                 // must not leave this spinning against a frozen position.
                 if (outgoing.playbackState == Player.STATE_ENDED) break
@@ -544,7 +637,7 @@ class CrossfadeEngine(
                 outgoing.volume = 0f
                 outgoing.stop()
                 outgoing.clearMediaItems()
-                outgoing.playbackParameters = PlaybackParameters.DEFAULT
+                outgoing.playbackParameters = baseParameters()
                 setFilterSweep(outgoing, 0f)
             }.onFailure { KLog.w(TAG, "Could not fully retire outgoing player: ${it.message}") }
             runCatching { releaseTempo(incoming) }
@@ -561,7 +654,7 @@ class CrossfadeEngine(
             runCatching {
                 incoming.stop()
                 incoming.clearMediaItems()
-                incoming.playbackParameters = PlaybackParameters.DEFAULT
+                incoming.playbackParameters = baseParameters()
                 setFilterSweep(incoming, 0f)
                 setFilterSweep(outgoing, 0f)
                 outgoing.volume = gainFor(outgoing) * duckGain
@@ -585,7 +678,7 @@ class CrossfadeEngine(
             incoming.stop()
             incoming.clearMediaItems()
             incoming.volume = 0f
-            incoming.playbackParameters = PlaybackParameters.DEFAULT
+            incoming.playbackParameters = baseParameters()
             setFilterSweep(incoming, 0f)
             setFilterSweep(outgoing, 0f)
             outgoing.volume = gainFor(outgoing) * duckGain
@@ -601,7 +694,7 @@ class CrossfadeEngine(
     fun cancelTransition() {
         tempoReleaseJob?.cancel()
         tempoReleaseJob = null
-        active.playbackParameters = PlaybackParameters.DEFAULT
+        active.playbackParameters = baseParameters()
         val job = fadeJob
         if (job?.isActive == true) job.cancel()
         fadeJob = null
@@ -611,7 +704,7 @@ class CrossfadeEngine(
             standby.stop()
             standby.clearMediaItems()
             standby.volume = 0f
-            standby.playbackParameters = PlaybackParameters.DEFAULT
+            standby.playbackParameters = baseParameters()
             setFilterSweep(standby, 0f)
             setFilterSweep(active, 0f)
             active.volume = gainFor(active) * duckGain
@@ -622,8 +715,8 @@ class CrossfadeEngine(
     private fun releaseTempo(player: ExoPlayer) {
         tempoReleaseJob?.cancel()
         val start = player.playbackParameters.speed
-        if (kotlin.math.abs(start - 1f) < 0.001f) {
-            player.playbackParameters = PlaybackParameters.DEFAULT
+        if (kotlin.math.abs(start - baseSpeed) < 0.001f) {
+            player.playbackParameters = baseParameters()
             return
         }
         val occurrence = player.currentMediaItem ?: return
@@ -634,7 +727,8 @@ class CrossfadeEngine(
                     player.currentMediaItem?.isSameQueueItemAs(occurrence) != true
                 ) return@launch
                 val t = (index + 1f) / steps
-                player.playbackParameters = PlaybackParameters(start + (1f - start) * t, 1f)
+                player.playbackParameters =
+                    PlaybackParameters(start + (baseSpeed - start) * t, 1f)
                 delay(TEMPO_RELEASE_STEP_MS)
             }
         }
@@ -676,7 +770,48 @@ class CrossfadeEngine(
         private const val INCOMING_CLOCK_TIMEOUT_MS = 750L
         private const val MIN_CLOCK_ADVANCE_MS = 8L
         private const val MAX_INCOMING_STALL_MS = 350L
-        private const val MAX_CLOCK_DRIFT_MS = 150L
+
+        /**
+         * A drift change this large between two 16ms ticks is a step, not the
+         * sink's gradual slew (at most ~10% of the interval, a couple of
+         * milliseconds per tick). A step is *detected* here but only
+         * re-anchored, not aborted - the app-thread position re-anchors onto
+         * the renderer clock in single reads, so a legitimate settle arrives
+         * as one step of roughly the output latency.
+         */
+        private const val MAX_CLOCK_STEP_MS = 150L
+
+        /**
+         * Net re-anchored displacement the fade tolerates before treating the
+         * clock as broken. Net, not a sum of absolute steps: reads spike off
+         * the trend and return within a tick or two, and summing the churn
+         * burned any budget in seconds while nothing had actually moved. The
+         * bound is derived from the sink rather than guessed: Media3 only
+         * smooths a discrepancy below MAX_POSITION_DRIFT_FOR_SMOOTHING_US
+         * (1s), so every sanctioned correction - slewed, stepped, or
+         * flickering - stays under 1000ms of net displacement. Past this is a
+         * real discontinuity (an unnoticed seek, a reset) and the plan behind
+         * the fade is mistimed.
+         */
+        private const val MAX_CLOCK_SETTLE_MS = 1_100L
+
+        /**
+         * Backstop for gradual runaway divergence, measured net of
+         * re-anchored steps, with the same 1s-ceiling derivation as
+         * [MAX_CLOCK_SETTLE_MS]. History of this number: a flat 150ms cap
+         * abandoned every overlap on higher-latency outputs, which is how
+         * crossfade and AutoMix silently stopped working outside low-latency
+         * wired output, and 750ms would have kept that failure for long
+         * AutoMix overlaps (10% of a 15s fade out-accrues it).
+         */
+        private const val MAX_CLOCK_DRIFT_MS = 1_100L
+        /**
+         * Media3's own floor. DefaultAudioSink constrains the rate to
+         * 0.1f..8f, and a request below it is clamped by the sink while the
+         * player goes on reporting the value it was handed - which would
+         * desync [runFade]'s clock normalization from the audio it is mixing.
+         */
+        private const val MIN_BASE_SPEED = 0.1f
         private const val MIN_TRANSITION_SPEED = 0.96f
         private const val MAX_TRANSITION_SPEED = 1.04f
         private const val TEMPO_RELEASE_MS = 2_500L

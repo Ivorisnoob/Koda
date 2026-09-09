@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The portrait watch page's video, as a TextureView rather than the SurfaceView
+  PlayerView uses by default.
+
+  This is the same trade the mini bar makes in mini_video_surface.xml, for the
+  same underlying reason and one more. A SurfaceView is composited by
+  SurfaceFlinger in its own layer behind the app window, so it does not follow
+  anything Compose does to its ancestors: it cannot be clipped to a rounded
+  frame, it cannot be faded, and it does not scale or translate with a
+  graphicsLayer. The minimize transition does all three at once - the picture
+  travels from this box into the bar's 92dp thumbnail - so on a SurfaceView the
+  chrome would animate and the video would sit still.
+
+  Fullscreen deliberately keeps its SurfaceView: it never minimizes, its bounds
+  are the window, and that path is the cheaper one for power, frame timing and
+  HDR output. An HDR rendition keeps a SurfaceView here too, and takes the
+  curtain transition instead - see VideoPlayerOverlay.
+-->
+<androidx.media3.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent"
+    app:surface_type="texture_view"
+    app:use_controller="false"
+    app:hide_on_touch="false" />
