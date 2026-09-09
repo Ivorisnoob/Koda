@@ -40,7 +40,12 @@ data class Song(
     // Device-library album position. Null means the file/provider supplied no
     // usable tag; album views sort those deterministically after tagged tracks.
     val trackNumber: Int? = null,
-    val discNumber: Int? = null
+    val discNumber: Int? = null,
+    // Canonical music release identity. Null for legacy rows or when the
+    // source supplies no relationship/year; dateAdded is not a release date.
+    val albumId: String? = null,
+    val releaseYear: Int? = null,
+    val releaseType: MusicReleaseType? = null
 ) {
     val highResThumbnailUrl: String?
         get() = thumbnailUrl?.let { url ->

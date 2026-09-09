@@ -434,7 +434,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             uploaderName = playlist.uploaderName,
             thumbnailUrl = playlist.thumbnailUrl,
             itemCount = playlist.itemCount,
-            isAlbum = isAlbum
+            isAlbum = isAlbum,
+            releaseType = playlist.releaseType,
+            releaseYear = playlist.releaseYear
         )
     )
 

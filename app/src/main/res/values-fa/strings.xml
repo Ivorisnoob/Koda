@@ -213,4 +213,5 @@
     <string name="vh_recommendations_off_sub">Shorts در صورت فعال بودن، همچنان می‌تواند اینجا نمایش داده شود.</string>
     <string name="vp_resumed_from">ادامه از %1$s</string>
     <string name="vp_play_from_start">پخش از ابتدا</string>
+    <string name="section_releases">آثار منتشرشده</string>
 </resources>

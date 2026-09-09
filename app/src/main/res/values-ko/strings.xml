@@ -208,4 +208,5 @@
     <string name="vh_recommendations_off_sub">사용 설정하면 여기에 Shorts가 계속 표시될 수 있어요.</string>
     <string name="vp_resumed_from">%1$s부터 이어서 재생했어요</string>
     <string name="vp_play_from_start">처음부터 재생</string>
+    <string name="section_releases">발매작</string>
 </resources>

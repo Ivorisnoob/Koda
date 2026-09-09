@@ -208,4 +208,5 @@
     <string name="vh_recommendations_off_sub">Shorts ยังคงปรากฏที่นี่ได้เมื่อเปิดใช้งาน</string>
     <string name="vp_resumed_from">เล่นต่อจาก %1$s</string>
     <string name="vp_play_from_start">เล่นตั้งแต่ต้น</string>
+    <string name="section_releases">ผลงานที่เผยแพร่</string>
 </resources>

@@ -217,4 +217,5 @@
     <string name="vh_recommendations_off_sub">Shorts усе ще можуть з\'являтися тут, якщо їх увімкнено.</string>
     <string name="vp_resumed_from">Відновлено з %1$s</string>
     <string name="vp_play_from_start">Відтворити спочатку</string>
+    <string name="section_releases">Релізи</string>
 </resources>

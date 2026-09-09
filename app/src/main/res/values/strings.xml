@@ -1166,6 +1166,8 @@
     <string name="lib_drag_hint">Drag a handle to reorder</string>
     <string name="lib_tap_remove_hint">Tap to remove tracks</string>
     <string name="label_album">Album</string>
+    <string name="label_ep">EP</string>
+    <string name="label_single">Single</string>
     <string name="lib_saved_to_library">Saved to your library</string>
     <string name="lib_copy_editable">Save as editable copy</string>
     <string name="lib_copy_editable_done">Copied to your library. Edit it there.</string>
@@ -1438,4 +1440,5 @@
     <string name="sp_motion_artwork_wifi">Motion artwork on Wi-Fi only</string>
     <string name="sp_motion_artwork_wifi_sub">Use unmetered Wi-Fi for cover lookups and animation</string>
     <string name="si_motion_artwork">Looks up the song title and artist with Apple Music; no account is needed. Not every song has an animated cover. Uses extra data and battery, and keeps the original cover when unavailable. Animation stops when music is paused or the player is closed, and stays off in Battery Saver, Data Saver, reduced motion, Local Only and Incognito.</string>
+    <string name="section_releases">Releases</string>
 </resources>

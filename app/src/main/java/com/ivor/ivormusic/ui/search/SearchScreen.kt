@@ -2,6 +2,8 @@ package com.ivor.ivormusic.ui.search
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.components.displaySubtitle
+import com.ivor.ivormusic.ui.components.hasReleaseMetadata
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -2103,7 +2105,8 @@ fun PlaylistResultCard(
                       )
                       Spacer(modifier = Modifier.size(6.dp))
                       val metadata = if (isAlbum) {
-                          stringResource(R.string.album_metadata, item.uploaderName)
+                          if (item.hasReleaseMetadata) item.displaySubtitle()
+                          else stringResource(R.string.album_metadata, item.uploaderName)
                       } else {
                           buildList {
                               add(stringResource(R.string.label_playlist))

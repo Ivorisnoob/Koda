@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.artist
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.components.releaseCaption
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -271,6 +272,8 @@ fun ArtistScreen(
     LaunchedEffect(artistName, artistId, songs) {
         isLoading = true
         visibleSongCount = 20
+        artistSongs = emptyList()
+        fetchedAlbums = emptyList()
 
         // Only genuinely local files take the offline path. Liked/downloaded
         // YouTube songs shouldn't block fetching the full artist page.
@@ -492,7 +495,7 @@ fun ArtistScreen(
                     item {
                         Spacer(modifier = Modifier.height(24.dp))
                         Text(
-                            stringResource(R.string.section_albums),
+                            stringResource(if (hasLocalSongs) R.string.section_albums else R.string.section_releases),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
@@ -507,17 +510,29 @@ fun ArtistScreen(
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             val validAlbums = albums.filter { !isUnknownAlbum(it) }
-                            items(validAlbums.size) { index ->
+                            val validReleases = fetchedAlbums.filter { !isUnknownAlbum(it.name) }
+                            items(validAlbums.size, key = { index ->
+                                if (hasLocalSongs) validAlbums[index] else validReleases[index].id
+                            }) { index ->
                                 val albumName = validAlbums[index]
                                 val albumSongs = if (hasLocalSongs) {
                                     artistSongs.filter { it.album == albumName }.sortedInAlbumOrder()
                                 } else emptyList()
                                 
-                                val fetchedAlbum = fetchedAlbums.find { it.name == albumName }
+                                val fetchedAlbum = if (hasLocalSongs) null else validReleases[index]
                                 val albumSubtitle = if (hasLocalSongs) {
                                     "${albumSongs.size} songs"
                                 } else {
-                                    fetchedAlbum?.uploaderName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.label_playlist)
+                                    // Type and year when the card carried them,
+                                    // the creator when it did not, and never an
+                                    // empty line under the artwork.
+                                    releaseCaption(
+                                        fetchedAlbum?.releaseType,
+                                        fetchedAlbum?.releaseYear
+                                    ).ifBlank {
+                                        fetchedAlbum?.uploaderName?.takeIf { it.isNotBlank() }
+                                            ?: stringResource(R.string.label_album)
+                                    }
                                 }
                                 val thumbnailUrl = if (hasLocalSongs) {
                                     albumSongs.firstOrNull()?.let { it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() }

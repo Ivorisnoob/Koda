@@ -792,6 +792,9 @@ class ThemePreferences(context: Context) {
         private const val KEY_LAST_SONG_ALBUM = "last_song_album"
         private const val KEY_LAST_SONG_ARTWORK = "last_song_artwork"
         private const val KEY_LAST_SONG_DURATION = "last_song_duration"
+        private const val KEY_LAST_SONG_ALBUM_ID = "last_song_album_id"
+        private const val KEY_LAST_SONG_RELEASE_YEAR = "last_song_release_year"
+        private const val KEY_LAST_SONG_RELEASE_TYPE = "last_song_release_type"
     }
     
     // --- Last Played Song ---
@@ -807,6 +810,9 @@ class ThemePreferences(context: Context) {
             .putString(KEY_LAST_SONG_ALBUM, song.album)
             .putString(KEY_LAST_SONG_ARTWORK, song.thumbnailUrl ?: song.albumArtUri?.toString() ?: "")
             .putLong(KEY_LAST_SONG_DURATION, song.duration)
+            .putString(KEY_LAST_SONG_ALBUM_ID, song.albumId)
+            .putInt(KEY_LAST_SONG_RELEASE_YEAR, song.releaseYear ?: 0)
+            .putString(KEY_LAST_SONG_RELEASE_TYPE, song.releaseType?.name)
             .apply()
     }
     
@@ -823,6 +829,9 @@ class ThemePreferences(context: Context) {
             album = prefs.getString(KEY_LAST_SONG_ALBUM, "") ?: "",
             thumbnailUrl = artwork.ifEmpty { null },
             duration = prefs.getLong(KEY_LAST_SONG_DURATION, 0L),
+            albumId = prefs.getString(KEY_LAST_SONG_ALBUM_ID, null),
+            releaseYear = prefs.getInt(KEY_LAST_SONG_RELEASE_YEAR, 0).takeIf { it in 1900..2099 },
+            releaseType = MusicReleaseType.entries.firstOrNull { it.name == prefs.getString(KEY_LAST_SONG_RELEASE_TYPE, null) },
             source = SongSource.YOUTUBE
         )
     }
@@ -838,6 +847,9 @@ class ThemePreferences(context: Context) {
             .remove(KEY_LAST_SONG_ALBUM)
             .remove(KEY_LAST_SONG_ARTWORK)
             .remove(KEY_LAST_SONG_DURATION)
+            .remove(KEY_LAST_SONG_ALBUM_ID)
+            .remove(KEY_LAST_SONG_RELEASE_YEAR)
+            .remove(KEY_LAST_SONG_RELEASE_TYPE)
             .apply()
     }
 

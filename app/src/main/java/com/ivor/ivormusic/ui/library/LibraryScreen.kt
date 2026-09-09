@@ -3,6 +3,7 @@ import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.components.displaySubtitle
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
@@ -1409,8 +1410,8 @@ fun PlaylistsGrid(
                 // A saved playlist's author is the thing that tells it apart
                 // from the user's own at a glance, so it wins the subtitle.
                 subtitle = when {
-                    isSavedPlaylist -> playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) }
-                    playlist.itemCount < 0 -> playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) }
+                    isSavedPlaylist || playlist.itemCount < 0 ->
+                        playlist.displaySubtitle().ifBlank { stringResource(R.string.label_playlist) }
                     else -> null
                 },
                 thumbnailUrl = playlist.thumbnailUrl,
@@ -3555,10 +3556,14 @@ fun PlaylistDetailScreen(
                         val totalDurationLabel = remember(songs) {
                             formatTotalDuration(songs.sumOf { it.duration })
                         }
+                        val releaseType = songs.firstOrNull()?.releaseType ?: resolvedPlaylist.releaseType
+                        val releaseYear = songs.firstOrNull()?.releaseYear ?: resolvedPlaylist.releaseYear
+                        val kindLabel = stringResource(releaseType?.labelRes ?: R.string.label_album)
                         Text(
                             text = listOfNotNull(
-                                if (isAlbum) stringResource(R.string.label_album) else stringResource(R.string.label_playlist),
+                                if (isAlbum) kindLabel else stringResource(R.string.label_playlist),
                                 resolvedPlaylist.uploaderName.takeIf { isAlbum && it.isNotBlank() },
+                                releaseYear?.toString()?.takeIf { isAlbum },
                                 if (songs.size == 1) "1 track" else "${songs.size} tracks",
                                 totalDurationLabel
                             ).joinToString("  ·  "),
