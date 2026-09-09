@@ -48,6 +48,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -83,6 +84,11 @@ import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.albumArtistLabel
+import com.ivor.ivormusic.data.groupSongsByAlbum
+import com.ivor.ivormusic.data.groupSongsByArtist
+import com.ivor.ivormusic.data.isUnknownAlbum
+import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.sortedInAlbumOrder
 import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
@@ -172,6 +178,12 @@ fun LibraryContent(
      */
     onSongLongPress: ((Song) -> Unit)? = null,
     /**
+     * Queue a song from a playlist row. Same hoisting as [onSongLongPress]:
+     * the queue lives in HomeScreen's PlayerViewModel. Null disarms the queue
+     * swipe action. The boolean is play-next.
+     */
+    onEnqueueSong: ((Song, Boolean) -> Unit)? = null,
+    /**
      * Hoisted by HomeScreen for the main route's All tab, which is the one the
      * tab opens on. The other sub-tabs and the playlist/artist/album routes keep
      * their own states, since each is a different list and sharing one would
@@ -221,7 +233,10 @@ fun LibraryContent(
     // honest outcome for a name the library does not have.
     LaunchedEffect(initialAlbum, songs) {
         if (initialAlbum != null) {
-            val albumSongs = songs.filter { it.album == initialAlbum }.sortedInAlbumOrder()
+            val requested = initialAlbum.trim()
+            val albumSongs = songs.filter {
+                it.album.trim().equals(requested, ignoreCase = true)
+            }.sortedInAlbumOrder()
             if (albumSongs.isNotEmpty()) {
                 selectedAlbumName = initialAlbum
                 selectedAlbumSongs = albumSongs
@@ -313,17 +328,23 @@ fun LibraryContent(
                         onPlayQueue = onPlayQueue,
                         viewModel = viewModel,
                         isAlbum = false,
-                        onSongLongPress = onSongLongPress
+                        onSongLongPress = onSongLongPress,
+                        onEnqueueSong = onEnqueueSong
                     )
                 }
             }
             LibraryRoute.Album -> {
                 selectedAlbumName?.let { album ->
-                    // Construct a pseudo-playlist item for the album wrapper
+                    // Construct a pseudo-playlist item for the album wrapper.
+                    // The artist line names the album's artist, or Various
+                    // Artists for a compilation - never one contributor.
                     val albumItem = PlaylistDisplayItem(
                         name = album,
                         url = album, // ID is the name for local albums usually
-                        uploaderName = selectedAlbumSongs.firstOrNull()?.artist ?: "Unknown Artist",
+                        uploaderName = albumArtistLabel(
+                            selectedAlbumSongs,
+                            stringResource(R.string.various_artists)
+                        ),
                         itemCount = selectedAlbumSongs.size,
                         thumbnailUrl = selectedAlbumSongs.firstOrNull()?.albumArtUri.toString()
                     )
@@ -334,7 +355,8 @@ fun LibraryContent(
                         viewModel = viewModel,
                         preloadedSongs = selectedAlbumSongs,
                         isAlbum = true,
-                        onSongLongPress = onSongLongPress
+                        onSongLongPress = onSongLongPress,
+                        onEnqueueSong = onEnqueueSong
                     )
                 }
             }
@@ -397,7 +419,8 @@ fun LibraryContent(
                     viewModel = viewModel,
                     preloadedSongs = readyOffline.songs,
                     isAlbum = false,
-                    onSongLongPress = onSongLongPress
+                    onSongLongPress = onSongLongPress,
+                    onEnqueueSong = onEnqueueSong
                 )
             }
         }
@@ -844,7 +867,9 @@ fun AllSongsList(
         ),
         modifier = Modifier.fillMaxSize()
     ) {
-        // Liked Songs hero banner
+        // Liked Songs stays the single hero. Downloads, Ready offline and
+        // Listening history collapse into one grouped shortcuts card below it,
+        // so three full-width banners no longer stack before the music starts.
         if (likedSongs.isNotEmpty()) {
             item(key = "liked_hero") {
                 ExpressiveLikedSongsCard(
@@ -854,31 +879,17 @@ fun AllSongsList(
             }
         }
 
-        // Downloads quick access
-        if (downloadedSongs.isNotEmpty()) {
-            item(key = "downloads_card") {
-                DownloadsQuickCard(
-                    count = downloadedSongs.size,
-                    onClick = onDownloadsClick
-                )
-            }
-        }
-
-        if (readyOfflineCount > 0 || (readyOfflineHistoryDisabled && readyOfflineUnnamed > 0)) {
-            item(key = "ready_offline_card") {
-                ReadyOfflineQuickCard(
-                    count = readyOfflineCount,
-                    totalBytes = readyOfflineBytes,
-                    unnamedCount = readyOfflineUnnamed,
-                    onClick = onReadyOfflineClick.takeIf { readyOfflineCount > 0 }
-                )
-            }
-        }
-
-        item(key = "history_card") {
-            ListeningHistoryQuickCard(
-                playCount = playCounts.values.sum(),
-                onClick = onNavigateToHistory
+        item(key = "library_shortcuts") {
+            LibraryShortcutsCard(
+                downloadCount = downloadedSongs.size.takeIf { it > 0 },
+                onDownloadsClick = onDownloadsClick,
+                readyOfflineCount = readyOfflineCount,
+                readyOfflineBytes = readyOfflineBytes,
+                readyOfflineUnnamed = readyOfflineUnnamed,
+                readyOfflineHistoryDisabled = readyOfflineHistoryDisabled,
+                onReadyOfflineClick = onReadyOfflineClick,
+                historyPlayCount = playCounts.values.sum(),
+                onHistoryClick = onNavigateToHistory
             )
         }
 
@@ -1050,155 +1061,174 @@ fun AllSongsList(
     }
 }
 
+/**
+ * Downloads, Ready offline and Listening history as one grouped shortcuts card.
+ *
+ * Liked Songs stays the single hero above this; these three are utilities, not
+ * heroes, and each had a full-width 76dp banner in its own container color,
+ * which is what stacked into ~370dp of chrome before any music. Grouping them
+ * into one [surfaceContainerLow] card with settings-hub rows keeps every
+ * destination (including the permanent history entry point) while costing one
+ * card slot. The leading icon dots carry the old per-card colors so nothing
+ * loses its identity: secondary for downloads, primary for ready-offline,
+ * tertiary for history. All colors resolve through ColorScheme; press feedback
+ * is a spring scale per DESIGN.md.
+ */
 @Composable
-private fun DownloadsQuickCard(count: Int, onClick: () -> Unit) {
+private fun LibraryShortcutsCard(
+    downloadCount: Int?,
+    onDownloadsClick: () -> Unit,
+    readyOfflineCount: Int,
+    readyOfflineBytes: Long,
+    readyOfflineUnnamed: Int,
+    readyOfflineHistoryDisabled: Boolean,
+    onReadyOfflineClick: () -> Unit,
+    historyPlayCount: Int,
+    onHistoryClick: () -> Unit
+) {
+    val showReadyOffline =
+        readyOfflineCount > 0 || (readyOfflineHistoryDisabled && readyOfflineUnnamed > 0)
+    val readyOfflineSubtitle = when {
+        readyOfflineCount > 0 -> buildString {
+            append(if (readyOfflineCount == 1) "1 song" else "$readyOfflineCount songs")
+            if (readyOfflineBytes > 0) append(" · ${formatCacheSize(readyOfflineBytes)}")
+        }
+        // Deliberately names the setting rather than saying "unavailable": the
+        // fix is one toggle and the user is the only one who can make it.
+        readyOfflineUnnamed == 1 -> "1 cached song. Turn on listening history to list it"
+        else -> "$readyOfflineUnnamed cached songs. Turn on listening history to list them"
+    }
+    // Not clickable in the explanatory state - there is nothing behind it,
+    // and a row that opens an empty screen is worse than one that does not move.
+    val readyOfflineClickable = readyOfflineCount > 0
+
     Surface(
-        onClick = onClick,
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(76.dp)
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(44.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.DownloadDone,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.fab_downloads),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            var needsDivider = false
+            if (downloadCount != null) {
+                LibraryShortcutRow(
+                    icon = Icons.Rounded.DownloadDone,
+                    iconContainerColor = MaterialTheme.colorScheme.secondary,
+                    iconContentColor = MaterialTheme.colorScheme.onSecondary,
+                    title = stringResource(R.string.fab_downloads),
+                    subtitle = "$downloadCount songs available offline",
+                    onClick = onDownloadsClick
                 )
-                Text(
-                    "$count songs available offline",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                )
+                needsDivider = true
             }
-            Icon(
-                Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer
+            if (showReadyOffline) {
+                if (needsDivider) LibraryShortcutDivider()
+                LibraryShortcutRow(
+                    icon = Icons.Rounded.OfflineBolt,
+                    iconContainerColor = if (readyOfflineClickable) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
+                    iconContentColor = if (readyOfflineClickable) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    title = stringResource(R.string.ready_offline),
+                    subtitle = readyOfflineSubtitle,
+                    onClick = if (readyOfflineClickable) onReadyOfflineClick else null
+                )
+                needsDivider = true
+            }
+            if (needsDivider) LibraryShortcutDivider()
+            LibraryShortcutRow(
+                icon = Icons.Rounded.History,
+                iconContainerColor = MaterialTheme.colorScheme.tertiary,
+                iconContentColor = MaterialTheme.colorScheme.onTertiary,
+                title = stringResource(R.string.fab_listening_history),
+                subtitle = when {
+                    historyPlayCount <= 0 -> stringResource(R.string.lib_everything_in_order)
+                    else -> pluralStringResource(R.plurals.n_plays, historyPlayCount, historyPlayCount)
+                },
+                onClick = onHistoryClick
             )
         }
     }
 }
 
-/**
- * The way into "Ready offline".
- *
- * Sits below Downloads and reads as its temporary counterpart on purpose: the
- * two are both "plays without a network", and the only thing separating them is
- * that one was chosen and kept and the other happened by listening and can be
- * evicted. Hence the subtitle carrying the size rather than a promise - it is
- * the honest thing to say about a list the app maintains on the user's behalf,
- * and it doubles as the answer to "what is my cache actually holding".
- *
- * Hidden when nothing is cached. It stays when songs *are* cached but cannot be
- * named - listening history off, so there is nothing to resolve the ids against
- * - and then it explains that instead of navigating, because the list behind it
- * would be an empty screen with no way to say why.
- */
 @Composable
-private fun ReadyOfflineQuickCard(
-    count: Int,
-    totalBytes: Long,
-    unnamedCount: Int,
+private fun LibraryShortcutRow(
+    icon: ImageVector,
+    iconContainerColor: Color,
+    iconContentColor: Color,
+    title: String,
+    subtitle: String,
     onClick: (() -> Unit)?
 ) {
-    val subtitle = when {
-        count > 0 -> buildString {
-            append(if (count == 1) "1 song" else "$count songs")
-            if (totalBytes > 0) append(" · ${formatCacheSize(totalBytes)}")
-        }
-        // Deliberately names the setting rather than saying "unavailable": the
-        // fix is one toggle and the user is the only one who can make it.
-        unnamedCount == 1 -> "1 cached song. Turn on listening history to list it"
-        else -> "$unnamedCount cached songs. Turn on listening history to list them"
-    }
-
-    Surface(
-        // Not clickable in the explanatory state - there is nothing behind it,
-        // and a card that opens an empty screen is worse than one that does not
-        // move.
-        onClick = onClick ?: {},
-        enabled = onClick != null,
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && onClick != null) 0.98f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "shortcutRowScale"
+    )
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(76.dp)
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (onClick != null) Modifier.clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick
+                ) else Modifier
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            shape = CircleShape,
+            color = iconContainerColor,
+            modifier = Modifier.size(44.dp)
         ) {
-            Surface(
-                shape = CircleShape,
-                color = if (onClick != null) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
-                },
-                modifier = Modifier.size(44.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.OfflineBolt,
-                        contentDescription = null,
-                        tint = if (onClick != null) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.ready_offline),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (onClick != null) {
+            Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    Icons.Rounded.ChevronRight,
+                    icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = iconContentColor,
+                    modifier = Modifier.size(22.dp)
                 )
             }
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (onClick != null) {
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -1209,73 +1239,14 @@ private fun formatCacheSize(bytes: Long): String {
     return if (mb >= 1024) String.format("%.1f GB", mb / 1024) else "${mb.toInt()} MB"
 }
 
-/**
- * The way into the listening history.
- *
- * A card rather than a header button: the Library title is `displayLarge` and
- * leaves room for exactly one action, which Statistics already holds. Shown
- * unconditionally, unlike the Downloads and Liked cards above it, because it is
- * the only permanent entry point and a screen nobody can find is not shipped -
- * the history screen has a proper empty state for the case where there is
- * nothing behind this yet.
- */
 @Composable
-private fun ListeningHistoryQuickCard(playCount: Int, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
+private fun LibraryShortcutDivider() {    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(76.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.size(44.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.History,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onTertiary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.fab_listening_history),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-                Text(
-                    // The live value, the same as every settings hub row: a
-                    // card that says nothing about what is inside is a worse
-                    // version of the link it replaced.
-                    when {
-                        playCount <= 0 -> stringResource(R.string.lib_everything_in_order)
-                        else -> pluralStringResource(R.plurals.n_plays, playCount, playCount)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
-                )
-            }
-            Icon(
-                Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onTertiaryContainer
-            )
-        }
-    }
+            .padding(horizontal = 20.dp, vertical = 4.dp)
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    )
 }
 
 @Composable
@@ -1596,10 +1567,8 @@ fun ArtistsGrid(
     contentPadding: PaddingValues
 ) {
     val artists = remember(songs) {
-        songs.filter { it.artist.isNotBlank() && !it.artist.startsWith("Unknown", ignoreCase = true) }
-            .groupBy { it.artist }
-            .toList()
-            .sortedBy { (name, _) -> name.lowercase() }
+        songs.filterNot { isUnknownArtist(it.artist) }
+            .groupSongsByArtist()
     }
 
     if (artists.isEmpty()) {
@@ -1667,10 +1636,8 @@ fun AlbumsGrid(
     // Filter BEFORE building grid items — filtering inside the item lambda
     // leaves blank holes in the grid for skipped albums.
     val albums = remember(songs) {
-        songs.filter { it.album.isNotBlank() && !it.album.startsWith("Unknown", ignoreCase = true) }
-            .groupBy { it.album }
-            .toList()
-            .sortedBy { (name, _) -> name.lowercase() }
+        songs.filterNot { isUnknownAlbum(it.album) }
+            .groupSongsByAlbum()
     }
 
     if (albums.isEmpty()) {
@@ -1701,7 +1668,10 @@ fun AlbumsGrid(
                 name = album,
                 count = albumSongs.size,
                 thumbnailUrl = art,
-                subtitle = albumSongs.firstOrNull()?.artist,
+                subtitle = albumArtistLabel(
+                    albumSongs,
+                    stringResource(R.string.various_artists)
+                ),
                 onClick = { onAlbumClick(album, albumSongs) }
             )
         }
@@ -2433,7 +2403,15 @@ private fun PlaylistTrackRow(
     onClick: () -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    /**
+     * Connected-group geometry: the list gives the first row a round top and
+     * the last row a round bottom while the seams between rows stay small, so
+     * the whole track list reads as one container like the library shortcuts
+     * card. A dragged row still lifts into a fully round card of its own.
+     */
+    topCorner: Dp = 20.dp,
+    bottomCorner: Dp = 20.dp
 ) {
     val liftSpec = spring<Dp>(
         dampingRatio = Spring.DampingRatioNoBouncy,
@@ -2443,15 +2421,20 @@ private fun PlaylistTrackRow(
         targetValue = if (isDragging) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {
-            Color.Transparent
+            MaterialTheme.colorScheme.surfaceContainerLow
         },
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "trackContainer"
     )
-    val cornerRadius by animateDpAsState(
-        targetValue = if (isDragging) 20.dp else 0.dp,
+    val topRadius by animateDpAsState(
+        targetValue = if (isDragging) 24.dp else topCorner,
         animationSpec = liftSpec,
-        label = "trackCorner"
+        label = "trackTopCorner"
+    )
+    val bottomRadius by animateDpAsState(
+        targetValue = if (isDragging) 24.dp else bottomCorner,
+        animationSpec = liftSpec,
+        label = "trackBottomCorner"
     )
     val shadowElevation by animateDpAsState(
         targetValue = if (isDragging) 12.dp else 0.dp,
@@ -2473,7 +2456,13 @@ private fun PlaylistTrackRow(
             scaleY = liftScale
         },
         color = containerColor,
-        shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
+        shape = RoundedCornerShape(
+            topStart = topRadius.coerceAtLeast(0.dp),
+            topEnd = topRadius.coerceAtLeast(0.dp),
+            bottomStart = bottomRadius.coerceAtLeast(0.dp),
+            bottomEnd = bottomRadius.coerceAtLeast(0.dp)
+        ),
+        tonalElevation = 2.dp,
         shadowElevation = shadowElevation.coerceAtLeast(0.dp)
     ) {
         ListItem(
@@ -2562,6 +2551,180 @@ private fun PlaylistTrackRow(
 }
 
 /**
+ * The swipe chrome around one playlist row. Both directions arm from the
+ * swipe-actions setting, each naming its own action - remove, play or the
+ * options sheet - so a right swipe can play while a left swipe removes.
+ *
+ * A swipe never keeps a dismissed row: removal leaves the list on its own
+ * (a local row with an undo, a remote row through its confirm dialog), and
+ * play and options leave nothing behind at all.
+ */
+@Composable
+private fun PlaylistTrackSwipeContainer(
+    startAction: String?,
+    endAction: String?,
+    onAction: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    // `rememberSwipeToDismissBoxState` holds the lambda it was first given,
+    // so the actions resolve through updated state - a settings change must
+    // reach rows that are already on screen.
+    val currentStart by rememberUpdatedState(startAction)
+    val currentEnd by rememberUpdatedState(endAction)
+    val currentAction by rememberUpdatedState(onAction)
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            val action = when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> currentStart
+                SwipeToDismissBoxValue.EndToStart -> currentEnd
+                SwipeToDismissBoxValue.Settled -> null
+            }
+            if (action != null) currentAction(action)
+            false
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        // A null direction does not arm rather than snapping back from a
+        // gesture that looked like it worked.
+        enableDismissFromStartToEnd = startAction != null,
+        enableDismissFromEndToStart = endAction != null,
+        backgroundContent = {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val widthPx = with(LocalDensity.current) { maxWidth.toPx() }
+                // A snapshot read, so the backdrop recomposes with every
+                // pixel of the drag rather than only past the threshold.
+                val offsetPx = runCatching { dismissState.requireOffset() }.getOrDefault(0f)
+                PlaylistTrackSwipeBackground(
+                    offsetPx = offsetPx,
+                    widthPx = widthPx,
+                    startAction = startAction,
+                    endAction = endAction,
+                )
+            }
+        },
+        modifier = modifier,
+    ) {
+        content()
+    }
+}
+
+/**
+ * What sits behind a playlist row being swiped: a tonal wash in the action's
+ * color with the action riding it as a solid pill - icon plus name. The label
+ * is the point: a wash alone does not say whether letting go plays the song
+ * or removes it.
+ *
+ * The pill grows out of the drag - small and faint at first touch, full size
+ * and ink at the threshold - leans slightly toward the finger, and lifts with
+ * a shadow once past it, so "letting go runs this" is visible before it
+ * happens. Finger-driven throughout, so values map straight off the offset
+ * with no spring or tween involved.
+ *
+ * @param offsetPx live drag offset, 0 at rest. Its sign picks the side, its
+ * magnitude the intensity: 1.0 is the dismiss threshold, half the row.
+ */
+@Composable
+private fun PlaylistTrackSwipeBackground(
+    offsetPx: Float,
+    widthPx: Float,
+    startAction: String?,
+    endAction: String?,
+) {
+    val action = when {
+        offsetPx > 0.5f -> startAction
+        offsetPx < -0.5f -> endAction
+        else -> null
+    }
+    val intensity = if (widthPx > 0f) {
+        (kotlin.math.abs(offsetPx) / widthPx / 0.5f).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    // Nothing to show at rest: the row covers this layer entirely, so settled
+    // rows in a long list skip the icon and label work below.
+    if (intensity <= 0f) return
+    val container = when (action) {
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE -> MaterialTheme.colorScheme.errorContainer
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_PLAY -> MaterialTheme.colorScheme.primaryContainer
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE -> MaterialTheme.colorScheme.secondaryContainer
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_OPTIONS -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val content = when (action) {
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE -> MaterialTheme.colorScheme.onErrorContainer
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_PLAY -> MaterialTheme.colorScheme.onPrimaryContainer
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE -> MaterialTheme.colorScheme.onSecondaryContainer
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_OPTIONS -> MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val icon = when (action) {
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE -> Icons.Rounded.DeleteOutline
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_PLAY -> Icons.Rounded.PlayArrow
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE -> Icons.AutoMirrored.Rounded.QueueMusic
+        else -> Icons.Rounded.MoreVert
+    }
+    val label = when (action) {
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE -> stringResource(R.string.swipe_action_remove)
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_PLAY -> stringResource(R.string.swipe_action_play)
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE -> stringResource(R.string.swipe_action_queue)
+        ThemePreferences.PLAYLIST_SWIPE_ACTION_OPTIONS -> stringResource(R.string.swipe_action_options)
+        else -> null
+    }
+    // Past the dismiss threshold the finger has committed.
+    val committed = intensity >= 1f
+
+    // No clip of its own: the swipe container is already clipped to the row's
+    // connected-group shape, so this wash is exactly card-shaped for free.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(container.copy(alpha = 0.35f + 0.65f * intensity)),
+        contentAlignment = if (offsetPx < 0f) Alignment.CenterEnd else Alignment.CenterStart
+    ) {
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = container,
+            contentColor = content,
+            tonalElevation = 2.dp,
+            shadowElevation = if (committed) 6.dp else 0.dp,
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .graphicsLayer {
+                    val scale = (0.6f + 0.4f * intensity) * (if (committed) 1.08f else 1f)
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = intensity
+                    // The pill leans toward the finger without chasing it.
+                    translationX = (offsetPx * 0.18f).coerceIn(-72f, 72f)
+                }
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                if (label != null) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * Playlist / album detail page.
  *
  * Layout follows the house grammar: one hero (the artwork), one primary action
@@ -2588,7 +2751,14 @@ fun PlaylistDetailScreen(
     viewModel: HomeViewModel,
     preloadedSongs: List<Song>? = null,
     isAlbum: Boolean = false,
-    onSongLongPress: ((Song) -> Unit)? = null
+    onSongLongPress: ((Song) -> Unit)? = null,
+    /**
+     * Queue a song without playing it. Hoisted like [onSongLongPress] because
+     * the queue lives in the PlayerViewModel up in HomeScreen. Null leaves the
+     * queue swipe action disarmed. The boolean is play-next: true inserts after
+     * the current song, false appends at the end.
+     */
+    onEnqueueSong: ((Song, Boolean) -> Unit)? = null
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
@@ -2669,6 +2839,13 @@ fun PlaylistDetailScreen(
     val headerScrolledAway by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
 
     val shareContext = LocalContext.current
+
+    // Swipe actions, read live so a settings change reaches rows that are
+    // already on screen - no DI here, one instance per screen.
+    val swipePrefs = remember(shareContext) { ThemePreferences(shareContext) }
+    val swipeEnabled by swipePrefs.playlistSwipeEnabled.collectAsState()
+    val swipeStartSetting by swipePrefs.playlistSwipeStartAction.collectAsState()
+    val swipeEndSetting by swipePrefs.playlistSwipeEndAction.collectAsState()
 
     // Search state
     var searchQuery by remember { mutableStateOf("") }
@@ -2927,6 +3104,28 @@ fun PlaylistDetailScreen(
             // YouTube account - for "LM" it removes the like outright - so it
             // is confirmed rather than offered with an undo.
             songPendingRemoval = song
+        }
+    }
+
+    // A swipe direction names its action in settings. Remove only arms where
+    // this page can actually remove, queue only where someone above handed a
+    // queue over, options only where a sheet exists to open. A YouTube list
+    // that is not yours cannot be edited from here at all, so only the two
+    // actions that leave the playlist alone arm there: play it, or queue
+    // from it.
+    val queueOnly = isYouTubePlaylist && !canEditSongs
+    val resolveSwipeSetting: (String) -> String? = { setting ->
+        when {
+            setting == ThemePreferences.PLAYLIST_SWIPE_ACTION_OFF -> null
+            setting == ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE && !canEditSongs -> null
+            setting == ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE && onEnqueueSong == null -> null
+            setting == ThemePreferences.PLAYLIST_SWIPE_ACTION_OPTIONS &&
+                (queueOnly || onSongLongPress == null) -> null
+            setting != ThemePreferences.PLAYLIST_SWIPE_ACTION_PLAY &&
+                setting != ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE &&
+                setting != ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE &&
+                setting != ThemePreferences.PLAYLIST_SWIPE_ACTION_OPTIONS -> null
+            else -> setting
         }
     }
 
@@ -3271,7 +3470,11 @@ fun PlaylistDetailScreen(
                                         scaleY = shrink
                                         alpha = 1f - collapse * 0.75f
                                     },
-                                shadowElevation = 12.dp,
+                                // No shadow: the art rides a scroll-driven
+                                // parallax, scale and fade, and a shadow drawn
+                                // under a layer that is moving every frame
+                                // shimmers instead of grounding it.
+                                shadowElevation = 0.dp,
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
                                 if (resolvedPlaylist.thumbnailUrl != null && resolvedPlaylist.thumbnailUrl != "null") {
@@ -3309,7 +3512,9 @@ fun PlaylistDetailScreen(
                                 Surface(
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.primaryContainer,
-                                    shadowElevation = 4.dp,
+                                    // Same scrolling layer as the art it sits
+                                    // on - same reason for no shadow.
+                                    shadowElevation = 0.dp,
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
                                         .padding(6.dp)
@@ -3536,7 +3741,7 @@ fun PlaylistDetailScreen(
                 else -> itemsIndexed(
                     items = filteredRows,
                     key = { _, row -> row.key }
-                ) { _, row ->
+                ) { index, row ->
                     val song = row.song
                     // Manage mode: song removal for local and YouTube playlists.
                     // Drag reordering works locally and on owned "PL" playlists
@@ -3576,27 +3781,93 @@ fun PlaylistDetailScreen(
                         }
                     } else Modifier
 
-                    PlaylistTrackRow(
-                        song = song,
-                        manageEnabled = manageEnabled,
-                        reorderEnabled = reorderEnabled,
-                        isDragging = isDragging,
-                        dragHandleModifier = handleDrag,
-                        onClick = { onPlayQueue(filteredSongs, song) },
-                        onLongClick = onSongLongPress?.let { press -> { press(song) } },
-                        onRemove = { removeSong(row) },
+                    // Connected track group: rows sit flush inside one visual
+                    // container - round outer corners, small seams, a divider
+                    // between rows - instead of floating as separate cards.
+                    // The dividers live outside the swipe container so a swipe
+                    // moves only its own row, and indices are untouched because
+                    // no extra lazy items are added (reorder math relies on that).
+                    val isFirstTrack = index == 0
+                    val isLastTrack = index == filteredRows.lastIndex
+                    val trackTopCorner = if (isFirstTrack) 24.dp else 8.dp
+                    val trackBottomCorner = if (isLastTrack) 24.dp else 8.dp
+                    val trackShape = RoundedCornerShape(
+                        topStart = trackTopCorner,
+                        topEnd = trackTopCorner,
+                        bottomStart = trackBottomCorner,
+                        bottomEnd = trackBottomCorner
+                    )
+
+                    // The swipe disarms while the row is managed or dragged:
+                    // both gestures start from the same finger, and a reorder
+                    // that ends in an accidental removal is the worst outcome
+                    // either of them can produce.
+                    val swipeArmed = swipeEnabled && !manageEnabled && !isDragging
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            // Constant inset, never animated: this feeds
-                            // Modifier.padding, which throws on a negative
-                            // value, and it aligns row text to the 24dp the
-                            // header and section titles use.
-                            .padding(horizontal = 8.dp)
                             .then(if (isDragging) Modifier else Modifier.animateItem())
+                            // The group's 20dp inset and its breathing room
+                            // live here, on the item, so the swipe wash behind
+                            // each row shares the row's exact bounds instead
+                            // of flooding past the card.
+                            .padding(
+                                start = 20.dp,
+                                end = 20.dp,
+                                top = if (isFirstTrack) 12.dp else 0.dp,
+                                bottom = if (isLastTrack) 16.dp else 0.dp
+                            )
+                    ) {
+                        if (!isFirstTrack) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .height(1.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                    )
+                            )
+                        }
+                    PlaylistTrackSwipeContainer(
+                        startAction = if (swipeArmed) resolveSwipeSetting(swipeStartSetting) else null,
+                        endAction = if (swipeArmed) resolveSwipeSetting(swipeEndSetting) else null,
+                        onAction = { action ->
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            when (action) {
+                                ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE -> removeSong(row)
+                                ThemePreferences.PLAYLIST_SWIPE_ACTION_PLAY -> onPlayQueue(filteredSongs, song)
+                                ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE -> onEnqueueSong?.invoke(song, false)
+                                ThemePreferences.PLAYLIST_SWIPE_ACTION_OPTIONS -> onSongLongPress?.invoke(song)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // The swipe wash stays inside the group's rounded
+                            // corners. Skipped while dragging so it never clips
+                            // the lifted row's shadow.
+                            .then(if (isDragging) Modifier else Modifier.clip(trackShape))
                             .zIndex(if (isDragging) 2f else 0f)
                             .offset { IntOffset(0, if (isDragging) dragOffsetY.roundToInt() else 0) }
                             .then(rowDrag)
-                    )
+                    ) {
+                        PlaylistTrackRow(
+                            song = song,
+                            manageEnabled = manageEnabled,
+                            reorderEnabled = reorderEnabled,
+                            isDragging = isDragging,
+                            dragHandleModifier = handleDrag,
+                            onClick = { onPlayQueue(filteredSongs, song) },
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } },
+                            onRemove = { removeSong(row) },
+                            topCorner = trackTopCorner,
+                            bottomCorner = trackBottomCorner,
+                            // No padding of its own: the inset lives on the
+                            // item above so the swipe wash matches these bounds.
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    }
                 }
             }
         }

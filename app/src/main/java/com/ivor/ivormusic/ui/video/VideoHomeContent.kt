@@ -6,9 +6,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +45,7 @@ import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -65,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -443,6 +449,8 @@ internal fun VideoTopBarSection(
     
     val userAvatar by viewModel.userAvatar.collectAsState()
     val downloadingIds by viewModel.downloadingIds.collectAsState()
+    val context = LocalContext.current
+    val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
     
     Row(
         modifier = Modifier
@@ -451,41 +459,66 @@ internal fun VideoTopBarSection(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Profile avatar
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(surfaceColor)
-                .clickable(onClick = onProfileClick),
-            contentAlignment = Alignment.Center
-        ) {
-            if (userAvatar != null) {
-                AsyncImage(
-                    model = userAvatar,
-                    contentDescription = stringResource(R.string.cd_profile),
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = stringResource(R.string.cd_profile),
-                    tint = iconColor,
-                    modifier = Modifier.size(26.dp)
-                )
+        // Profile avatar. Incognito shows as a badge on the avatar itself
+        // rather than a chip beside it, so the bar keeps its shape whether
+        // history is paused or not.
+        Box {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(surfaceColor)
+                    .clickable(onClick = onProfileClick),
+                contentAlignment = Alignment.Center
+            ) {
+                if (userAvatar != null) {
+                    AsyncImage(
+                        model = userAvatar,
+                        contentDescription = stringResource(R.string.cd_profile),
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = stringResource(R.string.cd_profile),
+                        tint = iconColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+            // The history-paused mark. Tonal fill so it reads as "a mode is on"
+            // without taking over the bar; the badge itself carries the label,
+            // so a screen reader announces it alongside the profile button.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = incognito,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 2.dp, y = 2.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        .border(
+                            width = 2.dp,
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.VisibilityOff,
+                        contentDescription = stringResource(R.string.incognito_active),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
             }
         }
-
-        // Video mode carried no incognito indicator at all, so the one mode
-        // where somebody is most likely to want history paused was the one
-        // that never said it was. Compact here: this bar already holds four
-        // controls and the mode toggle, and a labelled chip would push them.
-        com.ivor.ivormusic.ui.components.IncognitoIndicator(
-            onClick = onProfileClick,
-            modifier = Modifier.padding(start = 10.dp),
-            compact = true
-        )
 
         // Right side icons
         Row(
