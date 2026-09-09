@@ -65,6 +65,11 @@ class ThemePreferences(context: Context) {
     private val _ambientBackground = MutableStateFlow(getAmbientBackgroundPreference())
     val ambientBackground: StateFlow<Boolean> = _ambientBackground.asStateFlow()
 
+    private val _motionArtwork = MutableStateFlow(getMotionArtworkPreference())
+    val motionArtwork: StateFlow<Boolean> = _motionArtwork.asStateFlow()
+    private val _motionArtworkWifiOnly = MutableStateFlow(getMotionArtworkWifiOnlyPreference())
+    val motionArtworkWifiOnly: StateFlow<Boolean> = _motionArtworkWifiOnly.asStateFlow()
+
     private val _playerArtworkColors = MutableStateFlow(getPlayerArtworkColorsPreference())
     val playerArtworkColors: StateFlow<Boolean> = _playerArtworkColors.asStateFlow()
     
@@ -290,6 +295,8 @@ class ThemePreferences(context: Context) {
             KEY_PALETTE_STYLE -> _paletteStyle.value = getPaletteStylePreference()
             KEY_LOAD_LOCAL_SONGS -> _loadLocalSongs.value = getLoadLocalSongsPreference()
             KEY_AMBIENT_BACKGROUND -> _ambientBackground.value = getAmbientBackgroundPreference()
+            KEY_MOTION_ARTWORK -> _motionArtwork.value = getMotionArtworkPreference()
+            KEY_MOTION_ARTWORK_WIFI_ONLY -> _motionArtworkWifiOnly.value = getMotionArtworkWifiOnlyPreference()
             KEY_PLAYER_ARTWORK_COLORS -> _playerArtworkColors.value = getPlayerArtworkColorsPreference()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
@@ -413,6 +420,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_LOAD_LOCAL_SONGS_DEFAULT_MIGRATED =
             "load_local_songs_default_migrated"
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
+        private const val KEY_MOTION_ARTWORK = "motion_artwork"
+        private const val KEY_MOTION_ARTWORK_WIFI_ONLY = "motion_artwork_wifi_only"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
         private const val KEY_VIDEO_MODE = "video_mode"
         private const val KEY_LAST_MUSIC_TAB = "last_music_tab"
@@ -927,10 +936,20 @@ class ThemePreferences(context: Context) {
         _ambientBackground.value = enabled
     }
 
-    /**
-     * Get the stored album-art player colors preference. Defaults to true:
-     * expanded player buttons take their colors from the current cover.
-     */
+    private fun getMotionArtworkPreference(): Boolean = prefs.getBoolean(KEY_MOTION_ARTWORK, false)
+    private fun getMotionArtworkWifiOnlyPreference(): Boolean = prefs.getBoolean(KEY_MOTION_ARTWORK_WIFI_ONLY, true)
+
+    fun setMotionArtwork(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MOTION_ARTWORK, enabled).apply()
+        _motionArtwork.value = enabled
+    }
+
+    fun setMotionArtworkWifiOnly(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MOTION_ARTWORK_WIFI_ONLY, enabled).apply()
+        _motionArtworkWifiOnly.value = enabled
+    }
+
+    /** Expanded player buttons take their colors from the cover by default. */
     private fun getPlayerArtworkColorsPreference(): Boolean {
         return prefs.getBoolean(KEY_PLAYER_ARTWORK_COLORS, true)
     }

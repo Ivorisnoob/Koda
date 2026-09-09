@@ -769,6 +769,10 @@ internal fun PlayerSettingsPage(
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     playerArtworkColors: Boolean,
     onPlayerArtworkColorsToggle: (Boolean) -> Unit,
+    motionArtwork: Boolean,
+    onMotionArtworkToggle: (Boolean) -> Unit,
+    motionArtworkWifiOnly: Boolean,
+    onMotionArtworkWifiOnlyToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_player), onBack = onBack) {
@@ -796,6 +800,35 @@ internal fun PlayerSettingsPage(
             SettingsNotice(
                 icon = Icons.Rounded.Info,
                 text = stringResource(R.string.sp_style_switch_hint),
+            )
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.sp_motion_artwork)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.PlayCircle,
+                        title = stringResource(R.string.sp_motion_artwork),
+                        subtitle = stringResource(R.string.sp_motion_artwork_sub),
+                        enabled = motionArtwork,
+                        onToggle = onMotionArtworkToggle,
+                        explanation = stringResource(R.string.si_motion_artwork)
+                    )
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Wifi,
+                        title = stringResource(R.string.sp_motion_artwork_wifi),
+                        subtitle = stringResource(R.string.sp_motion_artwork_wifi_sub),
+                        enabled = motionArtworkWifiOnly,
+                        onToggle = onMotionArtworkWifiOnlyToggle
+                    )
+                }
+            }
+        }
+        item {
+            SettingsNotice(
+                icon = Icons.Rounded.Info,
+                text = stringResource(R.string.si_motion_artwork)
             )
         }
 
