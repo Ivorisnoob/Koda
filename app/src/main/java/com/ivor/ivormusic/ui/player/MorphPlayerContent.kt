@@ -347,11 +347,11 @@ fun MorphPlayerSheetContent(
                             cap = StrokeCap.Round
                         )
                         Box(contentAlignment = Alignment.Center) {
-                            LinearWavyProgressIndicator(
+                            ExpressiveScrubber(
                                 progress = { animatedFraction },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(12.dp),
+                                    .height(scrubberTrackHeight(12.dp)),
                                 color = primaryColor,
                                 trackColor = onSurfaceVariantColor.copy(alpha = 0.15f),
                                 stroke = lineStroke,
@@ -359,6 +359,7 @@ fun MorphPlayerSheetContent(
                                 amplitude = { if (isPlaying) 1f else 0f }
                             )
                             Slider(
+                                interactionSource = LocalPlayerScrubInteraction.current,
                                 value = scrubPosition ?: progress.toFloat(),
                                 onValueChange = { scrubPosition = it },
                                 onValueChangeFinished = {

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.sqrt
 
 /**
  * Where the player visualizer's band levels live between the audio thread that
@@ -100,7 +101,78 @@ object VisualizerBus {
 }
 
 /**
- * A pass-through tap on Koda's own decoded PCM, feeding [VisualizerBus].
+ * The loudest sample heard since the last read, for the waveform seek bar.
+ *
+ * Separate from [VisualizerBus] because the two want different work. The visualizer needs a
+ * spectrum and only while something is drawing it; the waveform needs one number and wants it
+ * for the whole of every song, whether or not the player is on screen - so gating it on the
+ * visualizer would have meant running an FFT forty times a second purely to reach a peak, or
+ * only ever measuring the part of a song someone happened to be watching.
+ *
+ * A crossfade has two writers, and like the visualizer they merge by taking the louder, which
+ * is what an overlap actually sounds like. The few seconds where both contribute are recorded
+ * against the incoming song's timeline; that is a known and deliberate smear rather than a
+ * correctness claim.
+ */
+object WaveformTap {
+
+    private val subscribers = AtomicInteger(0)
+    private val lock = Any()
+    private var energy = 0.0
+    private var windows = 0
+
+    /** False means the taps skip the measurement entirely. */
+    val isActive: Boolean get() = subscribers.get() > 0
+
+    fun acquire() {
+        subscribers.incrementAndGet()
+    }
+
+    fun release() {
+        if (subscribers.decrementAndGet() <= 0) {
+            subscribers.set(0)
+            synchronized(lock) {
+                energy = 0.0
+                windows = 0
+            }
+        }
+    }
+
+    /**
+     * Called from an audio thread, once per analysed window, with that window's mean square.
+     *
+     * [scar] This carried the window's *peak* first, and it made the bar nearly flat on most
+     * songs. Peak amplitude in anything mastered sits near full scale almost everywhere, so
+     * every bucket saturated and a whole song drew as one rectangle. Loudness that visibly
+     * differs between a verse and a chorus is RMS, so energy is what accumulates here and the
+     * root is taken once on the way out.
+     */
+    fun submitEnergy(meanSquare: Float) {
+        if (!meanSquare.isFinite() || meanSquare < 0f) return
+        synchronized(lock) {
+            energy += meanSquare.toDouble()
+            windows++
+        }
+    }
+
+    /**
+     * Root-mean-square since the previous call, and resets. Read-and-reset rather than a plain
+     * read so a sampler still measures everything it stepped over, instead of whatever happened
+     * to be playing at the instant it looked. Returns -1 when nothing was heard at all, which a
+     * caller must not confuse with a measured silence.
+     */
+    fun takeRms(): Float = synchronized(lock) {
+        if (windows == 0) return -1f
+        val mean = energy / windows
+        energy = 0.0
+        windows = 0
+        sqrt(mean).toFloat()
+    }
+}
+
+/**
+ * A pass-through tap on Koda's own decoded PCM, feeding [VisualizerBus]
+ * and [WaveformTap].
  *
  * This is why the visualizer needs no permission. Both engines already build
  * their sink with an app-owned processor chain for the AutoMix filter, so the
@@ -120,6 +192,7 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
     private val scratchReal = FloatArray(VisualizerMath.FFT_SIZE)
     private val scratchImaginary = FloatArray(VisualizerMath.FFT_SIZE)
     private var filled = 0
+    private var windowEnergy = 0.0
 
     private var bands = FloatArray(0)
     private var edges = IntArray(0)
@@ -141,7 +214,7 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
         inputBuffer.order(ByteOrder.nativeOrder())
         output.put(inputBuffer)
         output.flip()
-        if (!VisualizerBus.isActive) return
+        if (!VisualizerBus.isActive && !WaveformTap.isActive) return
         // Read the copy rather than rewinding the input: the pipeline decides
         // whether to keep feeding this processor from what the input buffer has
         // left, so putting its position back would re-queue the same PCM.
@@ -153,10 +226,16 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
         while (samples.remaining() >= 2 * channels) {
             var sum = 0f
             for (channel in 0 until channels) sum += samples.short / 32768f
-            window[filled++] = sum / channels
+            val mono = sum / channels
+            window[filled++] = mono
+            windowEnergy += mono.toDouble() * mono
             if (filled == VisualizerMath.FFT_SIZE) {
                 filled = 0
-                analyze()
+                if (VisualizerBus.isActive) analyze()
+                if (WaveformTap.isActive) {
+                    WaveformTap.submitEnergy((windowEnergy / VisualizerMath.FFT_SIZE).toFloat())
+                }
+                windowEnergy = 0.0
             }
         }
     }
@@ -173,10 +252,12 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
 
     override fun onFlush() {
         filled = 0
+        windowEnergy = 0.0
     }
 
     override fun onReset() {
         filled = 0
+        windowEnergy = 0.0
         bands = FloatArray(0)
         edges = IntArray(0)
     }

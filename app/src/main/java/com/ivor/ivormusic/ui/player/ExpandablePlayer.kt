@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,6 +98,12 @@ fun ExpandablePlayer(
         song = currentSong,
         active = isExpanded && isPlaying && !styleWheel.isOpen
     )
+    // Provided here rather than per style, so every style's progress bar reaches the measured
+    // waveform through one wiring instead of eight that can each be forgotten. The scrub
+    // interaction travels the same way: each style's transparent Slider still owns the gesture
+    // and publishes it here, which is what the visual under it reads to bloom its thumb.
+    val playerWaveform = rememberPlayerWaveform(currentSong?.id)
+    val scrubInteraction = remember { MutableInteractionSource() }
     LaunchedEffect(isExpanded) {
         if (!isExpanded) styleWheel.dismiss()
     }
@@ -412,7 +419,9 @@ fun ExpandablePlayer(
                             label = "PlayerStyleSwap"
                         ) { activeStyle ->
                         CompositionLocalProvider(
-                            LocalMotionArtwork provides motionArtworkSession.takeIf { activeStyle == playerStyle }
+                            LocalMotionArtwork provides motionArtworkSession.takeIf { activeStyle == playerStyle },
+                            LocalPlayerWaveform provides playerWaveform,
+                            LocalPlayerScrubInteraction provides scrubInteraction,
                         ) {
                         when (activeStyle) {
                             PlayerStyle.CLASSIC -> {

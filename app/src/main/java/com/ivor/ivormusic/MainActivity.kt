@@ -58,6 +58,7 @@ import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 import com.ivor.ivormusic.ui.theme.PaletteStyle
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
+import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.PlayerStyle
 import androidx.compose.ui.unit.dp
 
@@ -171,6 +172,8 @@ class MainActivity : ComponentActivity() {
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val motionArtwork by themeViewModel.motionArtwork.collectAsState()
             val motionArtworkWifiOnly by themeViewModel.motionArtworkWifiOnly.collectAsState()
+            val motionArtworkQuality by themeViewModel.motionArtworkQuality.collectAsState()
+            val waveformSeekBar by themeViewModel.waveformSeekBar.collectAsState()
             val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
@@ -277,6 +280,10 @@ class MainActivity : ComponentActivity() {
                         onMotionArtworkToggle = themeViewModel::setMotionArtwork,
                         motionArtworkWifiOnly = motionArtworkWifiOnly,
                         onMotionArtworkWifiOnlyToggle = themeViewModel::setMotionArtworkWifiOnly,
+                        motionArtworkQuality = motionArtworkQuality,
+                        onMotionArtworkQualityChange = themeViewModel::setMotionArtworkQuality,
+                        waveformSeekBar = waveformSeekBar,
+                        onWaveformSeekBarToggle = themeViewModel::setWaveformSeekBar,
                         videoMode = videoMode,
                         onVideoModeToggle = { themeViewModel.setVideoMode(it) },
                         homeModeToggleEnabled = homeModeToggleEnabled,
@@ -609,6 +616,10 @@ fun MusicApp(
     onMotionArtworkToggle: (Boolean) -> Unit,
     motionArtworkWifiOnly: Boolean,
     onMotionArtworkWifiOnlyToggle: (Boolean) -> Unit,
+    motionArtworkQuality: MotionArtworkQuality,
+    onMotionArtworkQualityChange: (MotionArtworkQuality) -> Unit,
+    waveformSeekBar: Boolean,
+    onWaveformSeekBarToggle: (Boolean) -> Unit,
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean,
@@ -1098,6 +1109,10 @@ fun MusicApp(
                     onMotionArtworkToggle = onMotionArtworkToggle,
                     motionArtworkWifiOnly = motionArtworkWifiOnly,
                     onMotionArtworkWifiOnlyToggle = onMotionArtworkWifiOnlyToggle,
+                    motionArtworkQuality = motionArtworkQuality,
+                    onMotionArtworkQualityChange = onMotionArtworkQualityChange,
+                    waveformSeekBar = waveformSeekBar,
+                    onWaveformSeekBarToggle = onWaveformSeekBarToggle,
                     videoMode = videoMode,
                     onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,

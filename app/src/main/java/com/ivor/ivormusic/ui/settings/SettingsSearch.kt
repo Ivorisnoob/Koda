@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
@@ -292,6 +293,14 @@ internal fun buildSettingsSearchIndex(
     entry(
         "motion_artwork_wifi", stringResource(R.string.sp_motion_artwork_wifi), stringResource(R.string.settings_player), Icons.Rounded.Wifi,
         listOf("motion", "artwork", "wifi", "wi-fi", "mobile", "data")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "motion_artwork_quality", stringResource(R.string.sp_motion_artwork_quality), stringResource(R.string.settings_player), Icons.Rounded.HighQuality,
+        listOf("motion", "artwork", "quality", "resolution", "hd", "1080", "4k", "data", "canvas", "cover")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "waveform_seek_bar", stringResource(R.string.sp_waveform), stringResource(R.string.settings_player), Icons.Rounded.GraphicEq,
+        listOf("waveform", "wave", "seek", "seekbar", "progress", "scrubber", "amplitude", "loudness", "bar")
     ) { onOpenPage(SettingsPage.PLAYER) }
     entry(
         "visualizer", stringResource(R.string.sp_visualizer), stringResource(R.string.settings_player), Icons.Rounded.GraphicEq,

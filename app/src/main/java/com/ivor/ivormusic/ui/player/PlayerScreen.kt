@@ -232,11 +232,11 @@ fun PlayerScreen(
                     val thickStrokeWidth = with(LocalDensity.current) { 6.dp.toPx() }
                     val thickStroke = Stroke(width = thickStrokeWidth, cap = StrokeCap.Round)
 
-                    LinearWavyProgressIndicator(
+                    ExpressiveScrubber(
                         progress = { animatedProgress },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(12.dp),
+                            .height(scrubberTrackHeight(12.dp)),
                         stroke = thickStroke,
                         trackStroke = thickStroke,
                         color = primaryColor,
@@ -245,6 +245,7 @@ fun PlayerScreen(
 
                     // Transparent Slider for interaction
                     Slider(
+                        interactionSource = LocalPlayerScrubInteraction.current,
                         value = progress.toFloat(),
                         onValueChange = { viewModel.seekTo(it.toLong()) },
                         valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),

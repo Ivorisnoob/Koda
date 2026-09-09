@@ -28,38 +28,42 @@ internal class MotionArtworkRepository(context: Context) {
     private val client = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS).callTimeout(12, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).build()
-    private data class CachedArtwork(val url: String?, val until: Long)
-    private val results = object : LinkedHashMap<MotionArtworkResolver.Track, CachedArtwork>(24, .75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<MotionArtworkResolver.Track, CachedArtwork>?) = size > 24
+    private data class CachedArtwork(val urls: List<String>, val until: Long)
+    /** Keyed by tier as well as track: changing the picker must not serve the old rendition for six hours. */
+    private data class Key(val track: MotionArtworkResolver.Track, val quality: MotionArtworkQuality)
+    private val results = object : LinkedHashMap<Key, CachedArtwork>(24, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, CachedArtwork>?) = size > 24
     }
     private var token: String? = null
     private var retryAfter = 0L
 
-    suspend fun resolve(song: Song): String? = withContext(Dispatchers.IO) {
+    /** An ordered fallback chain for the surface to work down, or empty when there is no cover. */
+    suspend fun resolve(song: Song, quality: MotionArtworkQuality): List<String> = withContext(Dispatchers.IO) {
         lock.withLock {
             val track = MotionArtworkResolver.Track(song.title, song.artist, song.album, song.duration)
+            val key = Key(track, quality)
             val now = System.currentTimeMillis()
-            results[track]?.takeIf { it.until > now }?.let { return@withLock it.url }
-            if (now < retryAfter || track.title.isBlank() || track.artist.isBlank()) return@withLock null
-            val url = try {
-                withTimeoutOrNull(25_000) { lookup(track) }
+            results[key]?.takeIf { it.until > now }?.let { return@withLock it.urls }
+            if (now < retryAfter || track.title.isBlank() || track.artist.isBlank()) return@withLock emptyList()
+            val urls = try {
+                withTimeoutOrNull(25_000) { lookup(track, quality) } ?: emptyList()
             } catch (e: IOException) {
                 // Provider failures must never turn every skip into another request storm,
                 // but they must not be invisible either: this whole feature shipped as a
                 // silent no-op because nothing here said why it had given up.
                 KLog.w(TAG, "Motion artwork lookup failed; using static cover", e)
                 retryAfter = now + 60_000
-                null
+                emptyList()
             } catch (e: org.json.JSONException) {
                 KLog.w(TAG, "Motion artwork catalog reply was not readable JSON", e)
-                null
+                emptyList()
             }
-            results[track] = CachedArtwork(url, now + if (url == null) 15 * 60_000 else 6 * 60 * 60_000)
-            url
+            results[key] = CachedArtwork(urls, now + if (urls.isEmpty()) 15 * 60_000 else 6 * 60 * 60_000)
+            urls
         }
     }
 
-    private suspend fun lookup(track: MotionArtworkResolver.Track): String? {
+    private suspend fun lookup(track: MotionArtworkResolver.Track, quality: MotionArtworkQuality): List<String> {
         val url = "https://amp-api-edge.music.apple.com/v1/catalog/us/search".toHttpUrl().newBuilder()
             .addQueryParameter("term", "${track.title} ${track.artist}")
             .addQueryParameter("types", "songs").addQueryParameter("include[songs]", "albums")
@@ -67,7 +71,7 @@ internal class MotionArtworkRepository(context: Context) {
             .addQueryParameter("l", "en-US").addQueryParameter("limit", "10")
             .addQueryParameter("platform", "web").build()
         repeat(2) { attempt ->
-            val bearer = webToken() ?: return null
+            val bearer = webToken() ?: return emptyList()
             val request = Request.Builder().url(url).header("Authorization", "Bearer $bearer")
                 .header("Origin", HOME).header("Referer", "$HOME/").build()
             val response = get(request, 2_000_000)
@@ -82,18 +86,18 @@ internal class MotionArtworkRepository(context: Context) {
             if (master == null) {
                 // Most songs simply have no animated cover; this is the ordinary outcome.
                 KLog.d(TAG, "No matching album with motion artwork in the catalog reply")
-                return null
+                return emptyList()
             }
             val playlist = get(Request.Builder().url(master).build(), 256_000)
             if (playlist.code !in 200..299) {
                 throw IOException("Artwork playlist unavailable (HTTP ${playlist.code})")
             }
-            val rendition = MotionArtworkResolver.rendition(master, playlist.text)
-            KLog.i(TAG, if (rendition == null) "Motion artwork found but no usable H.264 SDR rendition"
-                else "Motion artwork rendition selected")
-            return rendition
+            val chain = MotionArtworkResolver.renditions(master, playlist.text, quality)
+            KLog.i(TAG, if (chain.isEmpty()) "Motion artwork found but no rendition the $quality tier admits"
+                else "Motion artwork rendition selected for $quality with ${chain.size - 1} fallback(s)")
+            return chain
         }
-        return null
+        return emptyList()
     }
 
     private suspend fun webToken(): String? {

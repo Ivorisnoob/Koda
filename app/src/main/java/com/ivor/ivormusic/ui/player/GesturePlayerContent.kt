@@ -536,9 +536,9 @@ private fun GestureNowPlayingView(
 
                             // Wavy progress with invisible slider overlay for touch
                             Box(contentAlignment = Alignment.Center) {
-                                LinearWavyProgressIndicator(
+                                ExpressiveScrubber(
                                     progress = { animatedProgress },
-                                    modifier = Modifier.fillMaxWidth().height(14.dp),
+                                    modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
                                     stroke = thickStroke,
                                     trackStroke = thickStroke,
                                     color = primaryColor,
@@ -547,6 +547,7 @@ private fun GestureNowPlayingView(
 
                                 // Invisible slider for touch interaction
                                 Slider(
+                                    interactionSource = LocalPlayerScrubInteraction.current,
                                     value = scrubPosition ?: progress.toFloat(),
                                     onValueChange = { scrubPosition = it },
                                     onValueChangeFinished = {

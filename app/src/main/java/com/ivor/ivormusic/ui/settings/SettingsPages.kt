@@ -114,6 +114,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.style.TextOverflow
 import com.ivor.ivormusic.data.CacheManager
+import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
@@ -761,6 +762,84 @@ private fun HapticsLevelSelector(
     }
 }
 
+/**
+ * Which rung of Apple's ladder a cover is drawn from. A segmented control rather than a
+ * dialog for the reason Spotlight's filter row is one: four mutually exclusive settings of
+ * the same dial, which M3 Expressive draws as connected [ToggleButton]s.
+ *
+ * The subtitle names the resolution and the data cost of the selected tier, because the
+ * difference between them is bytes rather than anything visible in the row itself.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MotionArtworkQualitySelector(
+    quality: MotionArtworkQuality,
+    onQualityChange: (MotionArtworkQuality) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.sp_motion_artwork_quality),
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = stringResource(
+                when (quality) {
+                    MotionArtworkQuality.SAVER -> R.string.sp_motion_artwork_quality_sub_saver
+                    MotionArtworkQuality.BALANCED -> R.string.sp_motion_artwork_quality_sub_balanced
+                    MotionArtworkQuality.HIGH -> R.string.sp_motion_artwork_quality_sub_high
+                    MotionArtworkQuality.MAXIMUM -> R.string.sp_motion_artwork_quality_sub_maximum
+                }
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        val tiers = MotionArtworkQuality.entries
+        val labels = listOf(
+            stringResource(R.string.motion_quality_saver),
+            stringResource(R.string.motion_quality_balanced),
+            stringResource(R.string.motion_quality_high),
+            stringResource(R.string.motion_quality_maximum)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                ButtonGroupDefaults.ConnectedSpaceBetween
+            ),
+        ) {
+            tiers.forEachIndexed { index, tier ->
+                ToggleButton(
+                    checked = quality == tier,
+                    onCheckedChange = { onQualityChange(tier) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        tiers.lastIndex ->
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.toggleButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(labels[index], maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Player                                                              */
 /* ------------------------------------------------------------------ */
@@ -775,6 +854,10 @@ internal fun PlayerSettingsPage(
     onMotionArtworkToggle: (Boolean) -> Unit,
     motionArtworkWifiOnly: Boolean,
     onMotionArtworkWifiOnlyToggle: (Boolean) -> Unit,
+    motionArtworkQuality: MotionArtworkQuality,
+    onMotionArtworkQualityChange: (MotionArtworkQuality) -> Unit,
+    waveformSeekBar: Boolean,
+    onWaveformSeekBarToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_player), onBack = onBack) {
@@ -824,6 +907,13 @@ internal fun PlayerSettingsPage(
                         enabled = motionArtworkWifiOnly,
                         onToggle = onMotionArtworkWifiOnlyToggle
                     )
+                    if (motionArtwork) {
+                        SettingsDivider()
+                        MotionArtworkQualitySelector(
+                            quality = motionArtworkQuality,
+                            onQualityChange = onMotionArtworkQualityChange,
+                        )
+                    }
                 }
             }
         }
@@ -844,6 +934,21 @@ internal fun PlayerSettingsPage(
                         enabled = playerArtworkColors,
                         onToggle = onPlayerArtworkColorsToggle,
                         explanation = stringResource(R.string.si_artwork_colors)
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.sp_waveform)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.GraphicEq,
+                        title = stringResource(R.string.sp_waveform),
+                        subtitle = stringResource(R.string.sp_waveform_sub),
+                        enabled = waveformSeekBar,
+                        onToggle = onWaveformSeekBarToggle,
+                        explanation = stringResource(R.string.si_waveform)
                     )
                 }
             }

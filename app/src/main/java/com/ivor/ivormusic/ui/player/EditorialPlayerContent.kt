@@ -530,11 +530,11 @@ private fun EditorialNowPlayingView(
                     Box(contentAlignment = Alignment.Center) {
                         // Wavy played portion, flat remainder - the wave
                         // settles flat when paused.
-                        LinearWavyProgressIndicator(
+                        ExpressiveScrubber(
                             progress = { animatedProgress },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(14.dp),
+                                .height(scrubberTrackHeight(14.dp)),
                             color = accent,
                             trackColor = accent.copy(alpha = 0.35f),
                             stroke = lineStroke,
@@ -542,6 +542,7 @@ private fun EditorialNowPlayingView(
                             amplitude = { if (isPlaying) 1f else 0f }
                         )
                         Slider(
+                            interactionSource = LocalPlayerScrubInteraction.current,
                             value = scrubPosition ?: progress.toFloat(),
                             onValueChange = { scrubPosition = it },
                             onValueChangeFinished = {

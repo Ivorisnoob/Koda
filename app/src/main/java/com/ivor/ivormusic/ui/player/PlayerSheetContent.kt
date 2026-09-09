@@ -507,9 +507,9 @@ private fun ExpressiveNowPlayingView(
 
                 val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
 
-                LinearWavyProgressIndicator(
+                ExpressiveScrubber(
                     progress = { animatedProgress },
-                    modifier = Modifier.fillMaxWidth().height(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
                     stroke = thickStroke,
                     trackStroke = thickStroke,
                     color = primaryColor,
@@ -518,6 +518,7 @@ private fun ExpressiveNowPlayingView(
 
                 // Invisible slider for touch interaction
                 Slider(
+                    interactionSource = LocalPlayerScrubInteraction.current,
                     value = scrubPosition ?: progress.toFloat(),
                     onValueChange = { scrubPosition = it },
                     onValueChangeFinished = {

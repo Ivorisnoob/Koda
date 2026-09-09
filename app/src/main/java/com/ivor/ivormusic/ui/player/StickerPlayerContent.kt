@@ -358,11 +358,11 @@ fun StickerPlayerSheetContent(
                             cap = StrokeCap.Round
                         )
                         Box(contentAlignment = Alignment.Center) {
-                            LinearWavyProgressIndicator(
+                            ExpressiveScrubber(
                                 progress = { animatedFraction },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(14.dp),
+                                    .height(scrubberTrackHeight(14.dp)),
                                 color = accent,
                                 trackColor = inkVariant.copy(alpha = 0.25f),
                                 stroke = lineStroke,
@@ -370,6 +370,7 @@ fun StickerPlayerSheetContent(
                                 amplitude = { if (isPlaying) 1f else 0f }
                             )
                             Slider(
+                                interactionSource = LocalPlayerScrubInteraction.current,
                                 value = scrubPosition ?: progress.toFloat(),
                                 onValueChange = { scrubPosition = it },
                                 onValueChangeFinished = {
