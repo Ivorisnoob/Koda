@@ -23,6 +23,11 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val appIcon: StateFlow<String> = themePreferences.appIcon
     val loadLocalSongs: StateFlow<Boolean> = themePreferences.loadLocalSongs
     val ambientBackground: StateFlow<Boolean> = themePreferences.ambientBackground
+    val motionArtwork: StateFlow<Boolean> = themePreferences.motionArtwork
+    val motionArtworkWifiOnly: StateFlow<Boolean> = themePreferences.motionArtworkWifiOnly
+    fun setMotionArtwork(enabled: Boolean) = themePreferences.setMotionArtwork(enabled)
+    fun setMotionArtworkWifiOnly(enabled: Boolean) = themePreferences.setMotionArtworkWifiOnly(enabled)
+
     val playerArtworkColors: StateFlow<Boolean> = themePreferences.playerArtworkColors
     val videoMode: StateFlow<Boolean> = themePreferences.videoMode
     val homeModeToggleEnabled: StateFlow<Boolean> = themePreferences.homeModeToggleEnabled

@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Restore
@@ -281,6 +282,15 @@ internal fun buildSettingsSearchIndex(
     entry(
         "artwork_colors", stringResource(R.string.sp_album_art_colors), stringResource(R.string.settings_player), Icons.Rounded.Palette,
         listOf("artwork", "colour", "buttons", "tint", "cover")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+
+    entry(
+        "motion_artwork", stringResource(R.string.sp_motion_artwork), stringResource(R.string.settings_player), Icons.Rounded.PlayCircle,
+        listOf("animated", "motion", "cover", "artwork", "apple music", "canvas")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "motion_artwork_wifi", stringResource(R.string.sp_motion_artwork_wifi), stringResource(R.string.settings_player), Icons.Rounded.Wifi,
+        listOf("motion", "artwork", "wifi", "wi-fi", "mobile", "data")
     ) { onOpenPage(SettingsPage.PLAYER) }
 
     // Playback and quality

@@ -93,6 +93,10 @@ fun ExpandablePlayer(
     // live underneath it. The controller streams the hold-drag-release
     // gesture from the artwork into the wheel.
     val styleWheel = rememberPlayerStyleWheelController()
+    val motionArtworkSession = rememberMotionArtworkSession(
+        song = currentSong,
+        active = isExpanded && isPlaying && !styleWheel.isOpen
+    )
     LaunchedEffect(isExpanded) {
         if (!isExpanded) styleWheel.dismiss()
     }
@@ -407,6 +411,9 @@ fun ExpandablePlayer(
                             animationSpec = MaterialTheme.motionScheme.slowEffectsSpec(),
                             label = "PlayerStyleSwap"
                         ) { activeStyle ->
+                        CompositionLocalProvider(
+                            LocalMotionArtwork provides motionArtworkSession.takeIf { activeStyle == playerStyle }
+                        ) {
                         when (activeStyle) {
                             PlayerStyle.CLASSIC -> {
                                 PlayerSheetContent(
@@ -504,6 +511,7 @@ fun ExpandablePlayer(
                                     onAlbumClick = onAlbumClick
                                 )
                             }
+                        }
                         }
                         }
                         }

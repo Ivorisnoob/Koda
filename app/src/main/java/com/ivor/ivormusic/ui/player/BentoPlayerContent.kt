@@ -72,7 +72,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
-import com.ivor.ivormusic.ui.components.SongArtwork
 
 /**
  * Bento Player - the squish grid style.
@@ -301,7 +300,7 @@ fun BentoPlayerSheetContent(
                             } else {
                                 val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
                                 if (artSong != null) {
-                                    SongArtwork(
+                                    PlayerArtwork(
                                         song = artSong,
                                         contentDescription = "Album Art",
                                         modifier = Modifier.fillMaxSize(),

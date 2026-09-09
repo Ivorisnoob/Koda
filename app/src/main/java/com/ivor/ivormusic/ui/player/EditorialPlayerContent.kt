@@ -109,7 +109,6 @@ import com.ivor.ivormusic.ui.components.queueDragLongPress
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.rememberFocusedQueueListState
-import com.ivor.ivormusic.ui.components.SongArtwork
 import kotlin.math.abs
 
 /**
@@ -738,7 +737,7 @@ private fun EditorialDieCutArt(
         ) {
             val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
             if (artSong != null) {
-                SongArtwork(
+                PlayerArtwork(
                     song = artSong,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),

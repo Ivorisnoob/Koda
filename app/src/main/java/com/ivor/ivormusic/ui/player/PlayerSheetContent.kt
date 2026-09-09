@@ -422,7 +422,7 @@ private fun ExpressiveNowPlayingView(
                                     // Album Art
                                     val artSong = currentSong?.takeIf { it.albumArtUri != null || it.thumbnailUrl != null }
                                     if (artSong != null) {
-                                        SongArtwork(
+                                        PlayerArtwork(
                                             song = artSong,
                                             contentDescription = stringResource(R.string.cd_album_art),
                                             modifier = Modifier

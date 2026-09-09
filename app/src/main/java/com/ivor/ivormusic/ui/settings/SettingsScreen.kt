@@ -286,6 +286,10 @@ fun SettingsScreen(
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     playerArtworkColors: Boolean = true,
     onPlayerArtworkColorsToggle: (Boolean) -> Unit = {},
+    motionArtwork: Boolean,
+    onMotionArtworkToggle: (Boolean) -> Unit,
+    motionArtworkWifiOnly: Boolean,
+    onMotionArtworkWifiOnlyToggle: (Boolean) -> Unit,
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean = true,
@@ -820,6 +824,10 @@ fun SettingsScreen(
                     onPlayerStyleChange = onPlayerStyleChange,
                     playerArtworkColors = playerArtworkColors,
                     onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
+                    motionArtwork = motionArtwork,
+                    onMotionArtworkToggle = onMotionArtworkToggle,
+                    motionArtworkWifiOnly = motionArtworkWifiOnly,
+                    onMotionArtworkWifiOnlyToggle = onMotionArtworkWifiOnlyToggle,
                     onBack = { page = SettingsPage.HUB }
                 )
 

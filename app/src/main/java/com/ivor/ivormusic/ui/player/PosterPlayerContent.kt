@@ -4,23 +4,20 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,7 +51,6 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -64,9 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -74,8 +73,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
-import com.ivor.ivormusic.ui.components.SongArtwork
-import kotlinx.coroutines.delay
+
+/** Where the cover stops being sharp and starts dissolving into the frosted foot. */
+private const val CANVAS_ART_FRACTION = 0.70f
 
 /**
  * Canvas Player - the full-bleed artwork style (replaces the old kinetic
@@ -124,7 +124,6 @@ fun PosterPlayerSheetContent(
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
-    var controlsVisible by remember { mutableStateOf(true) }
 
     val playerHaptics = rememberPlayerHaptics()
     val styleWheel = LocalPlayerStyleWheelController.current
@@ -140,13 +139,14 @@ fun PosterPlayerSheetContent(
         onPrevious = { skipDirection = -1; playerHaptics.skip(); viewModel.skipToPrevious() }
     )
 
-    // The chrome slips away on its own while music plays; any tap on the
-    // canvas summons it back.
-    LaunchedEffect(controlsVisible, isPlaying) {
-        if (controlsVisible && isPlaying) {
-            delay(5000)
-            controlsVisible = false
-        }
+    // Measured down the art box, not the screen: the cover is solid for most of its
+    // height and gives out over the last fifth, so there is no seam to see.
+    val artFootMask = remember {
+        Brush.verticalGradient(
+            0.72f to Color.Black,
+            0.88f to Color.Black.copy(alpha = 0.35f),
+            1f to Color.Transparent,
+        )
     }
 
     // Monochrome UI over the art: white glyphs, black scrims. Reads over
@@ -191,17 +191,28 @@ fun PosterPlayerSheetContent(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { controlsVisible = true }
                         // Off while lyrics are up: that view scrolls and seeks.
                         .swipeToSkip(swipeToSkip, enabled = !showLyrics)
                         // Last in the chain: consumes the post-long-press
                         // hold stream before the tap and swipe detectors.
                         .styleWheelHold(styleWheel)
                 ) {
-                    // ========== THE CANVAS: full-bleed artwork ==========
+                    // ========== THE FIELD ==========
+                    // Built from the cover's own bottom edge so the join is continuous
+                    // by construction - see CanvasField. ChromaticMistBackground was the
+                    // obvious reuse and is wrong here twice over: it answers a null model
+                    // with a flat rectangle, and it is fed highResThumbnailUrl, which is
+                    // null for every device-library song, so it drew plain white. Its
+                    // colours are also palette-derived rather than edge-derived, which
+                    // cannot close a seam even when it does find artwork.
+                    CanvasField(
+                        song = currentSong,
+                        joinAt = CANVAS_ART_FRACTION,
+                        scrim = scrim,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // ========== THE CANVAS: the cover itself ==========
                     AnimatedContent(
                         targetState = currentSong,
                         transitionSpec = {
@@ -220,14 +231,24 @@ fun PosterPlayerSheetContent(
                                 ) { (-it / 3) * dir } + fadeOut())
                         },
                         modifier = Modifier
-                            .fillMaxSize()
-                            // Full-bleed art moves less than a framed cover
-                            // would: at 0.5x the crop edges show.
-                            .graphicsLayer { translationX = swipeToSkip.offset * 0.35f },
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .fillMaxHeight(CANVAS_ART_FRACTION)
+                            .graphicsLayer {
+                                // Art moves less than the finger: at 0.5x the crop shows.
+                                translationX = swipeToSkip.offset * 0.35f
+                                // So the foot can be masked away without taking the
+                                // field behind it out too.
+                                compositingStrategy = CompositingStrategy.Offscreen
+                            }
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(brush = artFootMask, blendMode = BlendMode.DstIn)
+                            },
                         label = "CanvasSongSwitch"
                     ) { song ->
                         if (song != null && (song.thumbnailUrl != null || song.albumArtUri != null)) {
-                            SongArtwork(
+                            PlayerArtwork(
                                 song = song,
                                 contentDescription = "Album Art",
                                 modifier = Modifier.fillMaxSize(),
@@ -250,17 +271,12 @@ fun PosterPlayerSheetContent(
                         }
                     }
 
-                    // Scrims fade with the chrome so the resting screen is
-                    // pure artwork.
-                    val scrimAlpha by animateFloatAsState(
-                        targetValue = if (controlsVisible || showLyrics) 1f else 0f,
-                        animationSpec = spring(stiffness = Spring.StiffnessLow),
-                        label = "CanvasScrimAlpha"
-                    )
+                    // The chrome never leaves, so the scrim that keeps white glyphs
+                    // legible over an arbitrary cover never leaves either. It also
+                    // carries the whole bottom on API 30, where blur is a no-op.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .alpha(scrimAlpha)
                             .background(
                                 Brush.verticalGradient(
                                     0f to scrim.copy(alpha = 0.35f),
@@ -296,12 +312,7 @@ fun PosterPlayerSheetContent(
                     }
 
                     // ========== TOP BAR ==========
-                    AnimatedVisibility(
-                        visible = controlsVisible,
-                        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-                        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-                        modifier = Modifier.align(Alignment.TopCenter)
-                    ) {
+                    Box(modifier = Modifier.align(Alignment.TopCenter)) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -362,12 +373,7 @@ fun PosterPlayerSheetContent(
                     }
 
                     // ========== BOTTOM CLUSTER ==========
-                    AnimatedVisibility(
-                        visible = controlsVisible,
-                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                        modifier = Modifier.align(Alignment.BottomCenter)
-                    ) {
+                    Box(modifier = Modifier.align(Alignment.BottomCenter)) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
