@@ -371,6 +371,8 @@ fun BentoPlayerSheetContent(
                         onTileVariant = onTileVariant
                     )
 
+                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
                     // ========== TRANSPORT ROW (squish physics) ==========
                     Row(
                         modifier = Modifier

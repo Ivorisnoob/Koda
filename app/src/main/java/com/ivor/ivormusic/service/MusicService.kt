@@ -603,13 +603,17 @@ class MusicService : MediaLibraryService() {
         // owned by [audioFocus] instead.
         val buildPlayer: () -> ExoPlayer = {
             val transitionFilter = TransitionFilterAudioProcessor()
+            // After the filter, so the strip shows what is actually heard
+            // during an overlap. This is why the visualizer needs no
+            // permission: the PCM is already ours on its way to the sink.
+            val visualizerTap = VisualizerAudioProcessor()
             val renderersFactory = object : DefaultRenderersFactory(this) {
                 override fun buildAudioSink(
                     context: android.content.Context,
                     enableFloatOutput: Boolean,
                     enableAudioTrackPlaybackParams: Boolean,
                 ): AudioSink = DefaultAudioSink.Builder(context)
-                    .setAudioProcessors(arrayOf(transitionFilter))
+                    .setAudioProcessors(arrayOf(transitionFilter, visualizerTap))
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .build()

@@ -585,6 +585,8 @@ private fun GestureNowPlayingView(
                 }
             }
             
+            PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
             // ========== 6. FLOATING TOOLBAR (Action Buttons) ==========
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally

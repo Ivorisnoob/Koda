@@ -402,6 +402,8 @@ fun StickerPlayerSheetContent(
                         }
                     }
 
+                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // ========== CHIPS ==========

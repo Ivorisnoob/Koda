@@ -120,6 +120,7 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoHomeConfiguration
 import com.ivor.ivormusic.data.VideoHomeDestination
 import com.ivor.ivormusic.ui.player.PlayerStylePicker
+import com.ivor.ivormusic.ui.player.VisualizerSettingsSection
 import com.ivor.ivormusic.ui.theme.ThemeMode
 
 /**
@@ -846,6 +847,10 @@ internal fun PlayerSettingsPage(
                     )
                 }
             }
+        }
+
+        item {
+            VisualizerSettingsSection()
         }
     }
 }

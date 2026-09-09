@@ -269,6 +269,8 @@ fun DialPlayerSheetContent(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
                     Spacer(modifier = Modifier.height(6.dp))
 
                     // ========== TITLE / ARTIST ==========

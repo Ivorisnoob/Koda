@@ -1440,5 +1440,17 @@
     <string name="sp_motion_artwork_wifi">Motion artwork on Wi-Fi only</string>
     <string name="sp_motion_artwork_wifi_sub">Use unmetered Wi-Fi for cover lookups and animation</string>
     <string name="si_motion_artwork">Looks up the song title and artist with Apple Music; no account is needed. Not every song has an animated cover. Uses extra data and battery, and keeps the original cover when unavailable. Animation stops when music is paused or the player is closed, and stays off in Battery Saver, Data Saver, reduced motion, Local Only and Incognito.</string>
+    <string name="sp_visualizer">Music visualizer</string>
+    <string name="sp_visualizer_sub">Animated bars that dance with the music in the full player</string>
+    <string name="sp_visualizer_style">Style</string>
+    <string name="sp_visualizer_style_bars">Bars</string>
+    <string name="sp_visualizer_style_wave">Wave</string>
+    <string name="sp_visualizer_style_dots">Dots</string>
+    <string name="sp_visualizer_density">Density</string>
+    <string name="sp_visualizer_density_hint">How many bars the strip draws</string>
+    <string name="sp_visualizer_sensitivity">Sensitivity</string>
+    <string name="sp_visualizer_sensitivity_hint">How strongly quiet passages move the strip</string>
+    <string name="si_visualizer">Shows an animated strip under the progress row in every expanded player style. It reads the audio Koda is already playing, so it needs no microphone permission and records nothing. It dances while music plays and settles when paused, follows the app colors, and stands still under reduced motion or Battery Saver.</string>
+    <string name="cd_visualizer">Audio visualizer</string>
     <string name="section_releases">Releases</string>
 </resources>

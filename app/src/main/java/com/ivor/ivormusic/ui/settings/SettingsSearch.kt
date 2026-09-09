@@ -293,6 +293,13 @@ internal fun buildSettingsSearchIndex(
         "motion_artwork_wifi", stringResource(R.string.sp_motion_artwork_wifi), stringResource(R.string.settings_player), Icons.Rounded.Wifi,
         listOf("motion", "artwork", "wifi", "wi-fi", "mobile", "data")
     ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "visualizer", stringResource(R.string.sp_visualizer), stringResource(R.string.settings_player), Icons.Rounded.GraphicEq,
+        listOf(
+            "visualizer", "visualiser", "bars", "wave", "spectrum", "fft",
+            "dance", "animated", "reactive", "equalizer", "eq"
+        )
+    ) { onOpenPage(SettingsPage.PLAYER) }
 
     // Playback and quality
     entry(

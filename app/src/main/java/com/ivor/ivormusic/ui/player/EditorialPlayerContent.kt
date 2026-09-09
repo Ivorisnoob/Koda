@@ -576,6 +576,8 @@ private fun EditorialNowPlayingView(
                 }
             }
 
+            PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
             Spacer(modifier = Modifier.height(16.dp))
 
             // ========== CHIPS ROW ==========

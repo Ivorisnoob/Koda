@@ -391,6 +391,8 @@ fun MorphPlayerSheetContent(
                         }
                     }
 
+                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
                     // ========== SUMMONED FLOATING TOOLBAR ==========
                     AnimatedVisibility(
                         visible = controlsVisible,
