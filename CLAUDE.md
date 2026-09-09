@@ -540,7 +540,7 @@ Two more: **adding an account must clear the WebView cookie jar first** (Google'
 
 **Persisted rather than held in memory, so it fails closed.** A service restarted after the app was evicted must not start recording again on its own. The preference is written before the in-memory flag for the same reason - the reverse order records nothing this session and everything after the next process death. It is excluded from backups because it describes a session.
 
-**The indicator is not optional.** A chip beside the avatar whenever it is on, because a mode that silently stops recording is a promise, and a promise whose state cannot be seen is one someone will assume is off at the wrong moment.
+**The indicator is not optional.** A badge on the avatar whenever it is on, because a mode that silently stops recording is a promise, and a promise whose state cannot be seen is one someone will assume is off at the wrong moment.
 
 ### Backup and restore
 
