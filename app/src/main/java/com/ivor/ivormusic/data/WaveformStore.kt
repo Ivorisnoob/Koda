@@ -36,6 +36,9 @@ object WaveformStore {
     /** Persisting on every sample would write several times a second for no benefit. */
     private const val FLUSH_INTERVAL_MS = 15_000L
 
+    /** Enough of a song measured to draw it as a whole one. See [readySnapshot]. */
+    private const val READY_COVERAGE = 0.9f
+
     private val lock = Any()
     private var prefs: SharedPreferences? = null
 
@@ -69,11 +72,70 @@ object WaveformStore {
         return synchronized(lock) { cache.getOrPut(songId) { envelope } }
     }
 
-    /** Fold one measured peak into a song's envelope. Cheap enough for a 200ms sampler. */
+    /**
+     * Fold one measured peak into a song's envelope. Cheap enough for a 100ms sampler.
+     *
+     * A song [WaveformAnalyzer] has already measured end to end is left alone. The two paths
+     * measure different signals - the file's own PCM against what the sink was handed after
+     * gain and normalisation - so letting a listening sample raise a bucket of an analysed
+     * envelope would slowly pull one song's shape out of shape across replays, and there is
+     * nothing it could add to an envelope that is already whole.
+     */
     fun record(context: Context, songId: String, fraction: Float, peak: Float) {
         if (songId.isBlank()) return
-        if (!envelope(context, songId).record(fraction, peak)) return
+        val envelope = envelope(context, songId)
+        if (envelope.isComplete) return
+        if (!envelope.record(fraction, peak)) return
         synchronized(lock) { dirty += songId }
+        _version.value++
+    }
+
+    /** Whether this song has been measured end to end, so nothing needs to measure it again. */
+    fun isComplete(context: Context, songId: String): Boolean =
+        songId.isNotBlank() && envelope(context, songId).isComplete
+
+    /**
+     * A frozen copy of [songId]'s envelope once it covers enough of the song to draw as a whole
+     * one, or null while it does not.
+     *
+     * The threshold is not 100%: [WaveformEnvelope.bars] interpolates gaps, so a song the live
+     * sampler measured across a couple of pauses reads as one continuous waveform well before
+     * every bucket has been visited, and holding out for the last few would leave a plain bar
+     * on a song whose shape is plainly known. An analysed envelope is complete and passes on
+     * its first ask.
+     */
+    fun readySnapshot(context: Context, songId: String): WaveformEnvelope? =
+        envelope(context, songId).takeIf { it.coverage >= READY_COVERAGE }?.snapshot()
+
+    /**
+     * The same, from memory alone.
+     *
+     * The seek bar asks this first, during composition, because reaching disk there would be a
+     * blocking read on the frame that opens the player - and because a song whose envelope is
+     * only found one frame later makes the whole progress row shrink and grow again as the
+     * waveform layout arrives late. [MusicService][com.ivor.ivormusic.service.MusicService]
+     * loads the playing song's envelope when it starts sampling it, so by the time anybody can
+     * see the bar the answer is normally already here.
+     */
+    fun cachedReadySnapshot(songId: String): WaveformEnvelope? =
+        synchronized(lock) { cache[songId] }
+            ?.takeIf { it.coverage >= READY_COVERAGE }
+            ?.snapshot()
+
+    /**
+     * Replace a song's envelope with one measured in a single pass, and persist it now.
+     *
+     * Written through rather than left to [flushIfDue] because this is the expensive
+     * measurement: it cost a decode of the whole track, and losing it to a process death
+     * minutes later means paying for it again.
+     */
+    fun publish(context: Context, songId: String, envelope: WaveformEnvelope) {
+        if (songId.isBlank()) return
+        synchronized(lock) {
+            cache[songId] = envelope
+            dirty += songId
+        }
+        flushIfDue(context, force = true)
         _version.value++
     }
 

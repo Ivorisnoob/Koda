@@ -7,12 +7,13 @@ import kotlin.math.sqrt
  * One song's amplitude envelope: [BUCKETS] peak levels spread across its duration,
  * which is what the waveform seek bar draws instead of a plain track.
  *
- * Levels are measured rather than synthesised. They arrive from Koda's own decoded
- * PCM through [com.ivor.ivormusic.service.WaveformTap] as the song plays, so a song
- * gains its shape on the first listen and has it instantly on every replay - which is
- * why this is stored rather than recomputed. There is deliberately no offline decode
- * pass: for a YouTube stream that would mean fetching and decoding the whole track
- * before the bar could draw, to learn something playing it teaches for free.
+ * Levels are measured rather than synthesised, by either of two paths. [WaveformAnalyzer]
+ * decodes the whole track at load and publishes a complete envelope through
+ * [Companion.measured], which is what lets the bar show the loud and quiet parts of a
+ * song *before* they arrive. [com.ivor.ivormusic.service.WaveformTap] folds Koda's own
+ * playing PCM in through [record], and is the fallback for the songs that pass cannot
+ * reach - an unsupported container, a stream on mobile data - so a song still gains its
+ * shape by being listened to.
  *
  * A bucket holds the loudest sample seen in it, never an average of the visits, so
  * replaying a song cannot erode its own peaks. Byte 0 means "never measured" and is
@@ -20,9 +21,31 @@ import kotlin.math.sqrt
  */
 class WaveformEnvelope internal constructor(internal val levels: ByteArray) {
 
+    /**
+     * How many buckets hold a measurement, maintained rather than counted.
+     *
+     * [coverage] is read on every draw decision and [isComplete] on every recorded sample, so
+     * a 512-byte scan at either of those rates is work for an answer that changes at most once
+     * per sample.
+     */
+    @Volatile
+    private var measuredBuckets: Int = levels.count { it != UNMEASURED }
+
     /** Fraction of the song that has been measured at least once. */
     val coverage: Float
-        get() = synchronized(levels) { levels.count { it != UNMEASURED }.toFloat() / BUCKETS }
+        get() = measuredBuckets.toFloat() / BUCKETS
+
+    /**
+     * Every bucket holds a measurement, so the drawn bar is the whole song rather than the part
+     * of it somebody has heard.
+     *
+     * This is what [WaveformStore] gates its live recording on: once a song has been measured
+     * end to end there is nothing left for a listening sample to add, and letting one in anyway
+     * would mix two measurements taken through different paths - the file's own PCM against
+     * whatever the sink was fed after gain and normalisation - into one envelope.
+     */
+    val isComplete: Boolean
+        get() = measuredBuckets == BUCKETS
 
     /**
      * Fold one measured peak into the bucket holding [fraction].
@@ -35,7 +58,9 @@ class WaveformEnvelope internal constructor(internal val levels: ByteArray) {
         val bucket = (fraction * BUCKETS).toInt().coerceIn(0, BUCKETS - 1)
         val encoded = encode(peak)
         synchronized(levels) {
-            if (encoded <= (levels[bucket].toInt() and 0xFF)) return false
+            val existing = levels[bucket].toInt() and 0xFF
+            if (encoded <= existing) return false
+            if (existing == 0) measuredBuckets++
             levels[bucket] = encoded.toByte()
         }
         return true
@@ -110,6 +135,17 @@ class WaveformEnvelope internal constructor(internal val levels: ByteArray) {
     }
 
     /**
+     * An independent copy, taken under the lock.
+     *
+     * What the seek bar draws has to be frozen: the same object is still being folded into by
+     * the live sampler on another thread, and a bar whose levels change under it is exactly the
+     * moving waveform this exists to stop. A snapshot also lets the drawing side memoize its
+     * resampled bars, since nothing behind them can change.
+     */
+    fun snapshot(): WaveformEnvelope =
+        WaveformEnvelope(synchronized(levels) { levels.copyOf() })
+
+    /**
      * [java.util.Base64] rather than `android.util.Base64` on purpose: the android.jar the
      * JVM tests run against is stubbed, so the platform one would encode every envelope to
      * nothing in a test that still passed. Real on API 26 and up; minSdk here is 30.
@@ -117,34 +153,35 @@ class WaveformEnvelope internal constructor(internal val levels: ByteArray) {
     fun encodeToString(): String =
         Base64.getEncoder().encodeToString(synchronized(levels) { levels.copyOf() })
 
-    /** Fill NaN runs by walking in from whichever measured neighbours exist. */
-    private fun interpolateGaps(values: FloatArray) {
-        var index = 0
-        while (index < values.size) {
-            if (!values[index].isNaN()) {
-                index++
-                continue
-            }
-            var end = index
-            while (end < values.size && values[end].isNaN()) end++
-            val before = if (index > 0) values[index - 1] else Float.NaN
-            val after = if (end < values.size) values[end] else Float.NaN
-            for (gap in index until end) {
-                values[gap] = when {
-                    before.isNaN() && after.isNaN() -> RESTING
-                    before.isNaN() -> after
-                    after.isNaN() -> before
-                    else -> {
-                        val step = (gap - index + 1).toFloat() / (end - index + 1)
-                        before + (after - before) * step
+    companion object {
+
+        /** Fill NaN runs by walking in from whichever measured neighbours exist. */
+        private fun interpolateGaps(values: FloatArray) {
+            var index = 0
+            while (index < values.size) {
+                if (!values[index].isNaN()) {
+                    index++
+                    continue
+                }
+                var end = index
+                while (end < values.size && values[end].isNaN()) end++
+                val before = if (index > 0) values[index - 1] else Float.NaN
+                val after = if (end < values.size) values[end] else Float.NaN
+                for (gap in index until end) {
+                    values[gap] = when {
+                        before.isNaN() && after.isNaN() -> RESTING
+                        before.isNaN() -> after
+                        after.isNaN() -> before
+                        else -> {
+                            val step = (gap - index + 1).toFloat() / (end - index + 1)
+                            before + (after - before) * step
+                        }
                     }
                 }
+                index = end
             }
-            index = end
         }
-    }
 
-    companion object {
         /**
          * Roughly four buckets per drawn bar on a phone-width track, so resampling reduces real
          * measurements rather than stretching a handful of them. Half a kilobyte per song.
@@ -180,6 +217,25 @@ class WaveformEnvelope internal constructor(internal val levels: ByteArray) {
         }
 
         fun empty() = WaveformEnvelope(ByteArray(BUCKETS))
+
+        /**
+         * A whole-song envelope from an offline measurement pass, or null when the pass reached
+         * nothing usable.
+         *
+         * [levels] is one RMS per bucket in 0..1 with `NaN` where the decoder produced no audio
+         * for that stretch. Those gaps are interpolated *here* rather than at draw time, so the
+         * envelope this returns is genuinely complete: [isComplete] holds, which is the signal
+         * the seek bar draws on and the signal [WaveformStore] stops recording live samples on.
+         * A decoder that skipped a bucket at the very end of a track must not leave the song
+         * looking part-heard forever.
+         */
+        fun measured(levels: FloatArray): WaveformEnvelope? {
+            if (levels.size != BUCKETS) return null
+            if (levels.none { !it.isNaN() }) return null
+            val filled = levels.copyOf()
+            interpolateGaps(filled)
+            return WaveformEnvelope(ByteArray(BUCKETS) { encode(filled[it]).toByte() })
+        }
 
         fun decodeFromString(value: String?): WaveformEnvelope? {
             if (value.isNullOrBlank()) return null

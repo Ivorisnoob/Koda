@@ -52,6 +52,7 @@ import com.ivor.ivormusic.data.SongRepository
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.StatsRepository
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.WaveformAnalyzer
 import com.ivor.ivormusic.data.WaveformStore
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.widget.PlayerWidgetStore
@@ -65,6 +66,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
@@ -245,6 +247,16 @@ class MusicService : MediaLibraryService() {
          * one, and a bucket fed by a single reading is what made the drawn bar coarse.
          */
         private const val WAVEFORM_SAMPLE_MS = 100L
+
+        /**
+         * How often the whole-song measurement looks for something new to measure.
+         *
+         * A poll rather than a media-item listener because the thing it waits for is not a
+         * transition: a YouTube song enters the queue as a placeholder and gains its real URI
+         * when resolution replaces the source under it, which emits nothing. Half a second is
+         * far below how long a decode takes, so nothing is gained by noticing sooner.
+         */
+        private const val WAVEFORM_ANALYSIS_POLL_MS = 500L
         private const val PROFILE_TIMEOUT_MS = 30_000L
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
         private const val CACHED_PREFIX = "https://cached.ivormusic/"
@@ -2398,28 +2410,67 @@ class MusicService : MediaLibraryService() {
      */
     private suspend fun sampleWaveformWhileEnabled() {
         themePreferences.waveformSeekBar.collectLatest { enabled ->
-            if (!enabled) return@collectLatest
-            WaveformTap.acquire()
-            try {
-                while (currentCoroutineContext().isActive) {
-                    delay(WAVEFORM_SAMPLE_MS)
-                    val level = WaveformTap.takeRms()
-                    val songId = player.currentMediaItem?.mediaId
-                    val duration = player.duration
-                    // A negative level means no PCM reached the tap at all, which is not the
-                    // same as a measured silence and must not be recorded as one.
-                    if (level < 0f || songId.isNullOrBlank() || !player.isPlaying) continue
-                    if (duration == C.TIME_UNSET || duration <= 0L) continue
-                    val position = player.currentPosition.coerceIn(0L, duration)
-                    WaveformStore.record(
-                        this@MusicService, songId, position.toFloat() / duration, level
-                    )
-                    WaveformStore.flushIfDue(this@MusicService)
-                }
-            } finally {
-                WaveformTap.release()
-                WaveformStore.flushIfDue(this@MusicService, force = true)
+            if (!enabled) {
+                WaveformAnalyzer.reset()
+                return@collectLatest
             }
+            coroutineScope {
+                launch { analyzeSongsWhileEnabled() }
+                WaveformTap.acquire()
+                try {
+                    while (currentCoroutineContext().isActive) {
+                        delay(WAVEFORM_SAMPLE_MS)
+                        val level = WaveformTap.takeRms()
+                        val songId = player.currentMediaItem?.mediaId
+                        val duration = player.duration
+                        // A negative level means no PCM reached the tap at all, which is not
+                        // the same as a measured silence and must not be recorded as one.
+                        if (level < 0f || songId.isNullOrBlank() || !player.isPlaying) continue
+                        if (duration == C.TIME_UNSET || duration <= 0L) continue
+                        val position = player.currentPosition.coerceIn(0L, duration)
+                        WaveformStore.record(
+                            this@MusicService, songId, position.toFloat() / duration, level
+                        )
+                        WaveformStore.flushIfDue(this@MusicService)
+                    }
+                } finally {
+                    WaveformTap.release()
+                    WaveformStore.flushIfDue(this@MusicService, force = true)
+                }
+            }
+        }
+    }
+
+    /**
+     * Measure the whole of whatever is playing, so the seek bar can show the song's loud and
+     * quiet stretches before they arrive rather than drawing them in behind the playhead.
+     *
+     * The URI is taken from the player rather than resolved again here: by the time an item is
+     * current it already carries the source playback is reading, which is the one thing this
+     * needs and the one thing this must not re-derive - a second resolution would be a second
+     * stream URL, cached under the same key, for the same song.
+     *
+     * A placeholder is skipped rather than waited on - resolution has not finished, and the next
+     * poll picks up the real URI - and an error URI means it never will. The `cached` sentinel
+     * is deliberately *not* skipped: it is only ever handed out for a song already whole on
+     * disk, which is the cheapest song there is to measure, and the analyzer reads it back
+     * through the same cache under the same key without touching the network.
+     */
+    private suspend fun analyzeSongsWhileEnabled() {
+        while (currentCoroutineContext().isActive) {
+            delay(WAVEFORM_ANALYSIS_POLL_MS)
+            val item = player.currentMediaItem ?: continue
+            val songId = item.mediaId.takeIf { it.isNotBlank() } ?: continue
+            val uri = item.localConfiguration?.uri ?: continue
+            val url = uri.toString()
+            if (url.startsWith(PLACEHOLDER_PREFIX) || uri.scheme == "error") continue
+            WaveformAnalyzer.request(
+                context = this@MusicService,
+                songId = songId,
+                uri = uri,
+                durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0L },
+                musicCacheEnabled = isCacheEnabled,
+            )
         }
     }
 

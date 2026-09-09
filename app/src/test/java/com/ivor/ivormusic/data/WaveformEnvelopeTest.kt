@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -135,5 +136,71 @@ class WaveformEnvelopeTest {
         assertEquals(1, WaveformEnvelope.encode(0f))
         assertEquals(255, WaveformEnvelope.encode(1f))
         assertEquals(255, WaveformEnvelope.encode(9f))
+    }
+
+    /**
+     * Completeness is what the seek bar draws on and what stops the live sampler writing, so it
+     * has to mean every bucket rather than nearly every bucket.
+     */
+    @Test fun anEnvelopeIsCompleteOnlyOnceEveryBucketHoldsAMeasurement() {
+        val envelope = WaveformEnvelope.empty()
+        assertFalse(envelope.isComplete)
+        assertEquals(0f, envelope.coverage, 0f)
+        repeat(WaveformEnvelope.BUCKETS - 1) { bucket ->
+            envelope.record(bucket.toFloat() / WaveformEnvelope.BUCKETS, 0.4f)
+        }
+        assertFalse(envelope.isComplete)
+        envelope.record(1f, 0.4f)
+        assertTrue(envelope.isComplete)
+        assertEquals(1f, envelope.coverage, 0f)
+    }
+
+    /** Coverage counts buckets reached, not samples taken: replays must not inflate it. */
+    @Test fun recordingTheSameBucketAgainDoesNotRaiseCoverage() {
+        val envelope = WaveformEnvelope.empty()
+        envelope.record(0f, 0.2f)
+        val once = envelope.coverage
+        repeat(10) { envelope.record(0f, 0.2f + it / 100f) }
+        assertEquals(once, envelope.coverage, 0f)
+    }
+
+    /**
+     * The whole reason the drawn waveform stops moving: what the bar holds is a copy, and the
+     * envelope the sampler goes on folding into is a different object.
+     */
+    @Test fun aSnapshotDoesNotFollowTheEnvelopeItCameFrom() {
+        val envelope = WaveformEnvelope.empty()
+        repeat(WaveformEnvelope.BUCKETS) { bucket ->
+            envelope.record(bucket.toFloat() / WaveformEnvelope.BUCKETS, 0.3f)
+        }
+        val frozen = envelope.snapshot()
+        val before = frozen.bars(48)
+
+        // A later listen finds a much louder second half, which rescales the live envelope.
+        repeat(WaveformEnvelope.BUCKETS / 2) { step ->
+            val bucket = WaveformEnvelope.BUCKETS / 2 + step
+            envelope.record(bucket.toFloat() / WaveformEnvelope.BUCKETS, 0.9f)
+        }
+        assertFalse(envelope.bars(48).contentEquals(before))
+        assertTrue(frozen.bars(48).contentEquals(before))
+    }
+
+    /** An offline pass hands over levels, not samples, and what comes back is whole. */
+    @Test fun aMeasuredEnvelopeIsCompleteEvenWithGapsInThePass() {
+        val levels = FloatArray(WaveformEnvelope.BUCKETS) { Float.NaN }
+        for (bucket in levels.indices step 4) {
+            levels[bucket] = if (bucket < WaveformEnvelope.BUCKETS / 2) 0.2f else 0.8f
+        }
+        val envelope = WaveformEnvelope.measured(levels)
+        assertTrue(envelope != null)
+        assertTrue(envelope!!.isComplete)
+        val bars = envelope.bars(64)
+        // The quiet half and the loud half are still told apart after the gaps were filled.
+        assertTrue(bars.take(24).average() < bars.takeLast(24).average())
+    }
+
+    @Test fun aMeasuredEnvelopeRefusesTheWrongShapeAndAnEmptyPass() {
+        assertNull(WaveformEnvelope.measured(FloatArray(8)))
+        assertNull(WaveformEnvelope.measured(FloatArray(WaveformEnvelope.BUCKETS) { Float.NaN }))
     }
 }
