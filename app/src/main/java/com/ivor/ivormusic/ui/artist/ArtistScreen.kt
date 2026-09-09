@@ -84,6 +84,9 @@ import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.sortedInAlbumOrder
+import com.ivor.ivormusic.data.isUnknownAlbum
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.ui.components.SEARCH_FIELD_MIN_ITEMS
 import com.ivor.ivormusic.ui.components.SearchField
@@ -131,7 +134,7 @@ private fun List<Song>.arrangedForArtist(sort: ArtistSongSort, query: String): L
         // Album order within an album, albums themselves alphabetical, and
         // anything untagged last rather than under a blank heading.
         ArtistSongSort.Album -> filtered.sortedWith(
-            compareBy<Song> { it.album.isBlank() || it.album.startsWith("Unknown") }
+            compareBy<Song> { isUnknownAlbum(it.album) }
                 .thenBy { it.album.lowercase() }
                 .thenBy { it.discNumber ?: Int.MAX_VALUE }
                 .thenBy { it.trackNumber ?: Int.MAX_VALUE }
@@ -388,7 +391,7 @@ fun ArtistScreen(
                     }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         CreatorHeader(
-                            name = artistName.takeIf { !it.startsWith("Unknown") }
+                            name = artistName.takeIf { !isUnknownArtist(it) }
                                 ?: stringResource(R.string.unknown_artist),
                             // The channel avatar when there is one, and the
                             // artwork of what they made when there is not -
@@ -485,7 +488,7 @@ fun ArtistScreen(
                 }
                 
                 // ========== ALBUMS SECTION (Local songs only) ==========
-                if (albums.isNotEmpty() && albums.any { it.isNotBlank() && !it.startsWith("Unknown") }) {
+                if (albums.isNotEmpty() && albums.any { !isUnknownAlbum(it) }) {
                     item {
                         Spacer(modifier = Modifier.height(24.dp))
                         Text(
@@ -503,7 +506,7 @@ fun ArtistScreen(
                             contentPadding = PaddingValues(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            val validAlbums = albums.filter { it.isNotBlank() && !it.startsWith("Unknown") }
+                            val validAlbums = albums.filter { !isUnknownAlbum(it) }
                             items(validAlbums.size) { index ->
                                 val albumName = validAlbums[index]
                                 val albumSongs = if (hasLocalSongs) {
@@ -934,7 +937,7 @@ private fun ArtistSongCard(
         ListItem(
             headlineContent = {
                 Text(
-                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.untitled_song),
+                    text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                     color = textColor,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
@@ -944,7 +947,7 @@ private fun ArtistSongCard(
             },
             supportingContent = {
                 Text(
-                    text = song.album.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_album),
+                    text = song.album.takeIf { !isUnknownAlbum(it) } ?: stringResource(R.string.unknown_album),
                     color = secondaryTextColor,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,

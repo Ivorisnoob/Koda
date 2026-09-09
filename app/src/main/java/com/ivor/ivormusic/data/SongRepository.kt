@@ -68,12 +68,19 @@ class SongRepository(private val context: Context) {
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
-                val title = cursor.getString(titleColumn)
-                val artist = cursor.getString(artistColumn)
-                val album = cursor.getString(albumColumn)
+                val filePath = cursor.getString(dataColumn) ?: ""
+                // MediaStore hands back null, blank or the literal
+                // "<unknown>" for missing tags. Normalise at the boundary so
+                // grouping, filtering and display all see one spelling; the
+                // title falls back to the file name, never to another field.
+                val title = normalizeLocalTitle(
+                    cursor.getString(titleColumn),
+                    File(filePath).nameWithoutExtension.takeIf { it.isNotBlank() } ?: "Untitled"
+                )
+                val artist = normalizeLocalArtist(cursor.getString(artistColumn))
+                val album = normalizeLocalAlbum(cursor.getString(albumColumn))
                 val duration = cursor.getLong(durationColumn)
                 val albumId = cursor.getLong(albumIdColumn)
-                val filePath = cursor.getString(dataColumn) ?: ""
                 // DATE_ADDED is seconds, not millis. 0 means the provider had
                 // nothing, which is "unknown" rather than 1970.
                 val dateAdded = cursor.getLong(dateAddedColumn).takeIf { it > 0 }?.times(1000L)
@@ -96,10 +103,16 @@ class SongRepository(private val context: Context) {
                     id
                 )
 
-                val albumArtUri = ContentUris.withAppendedId(
-                    Uri.parse("content://media/external/audio/albumart"),
-                    albumId
-                )
+                // An album id of 0 means MediaStore has no album row; the art
+                // URI would point at nothing and every lookup would miss.
+                val albumArtUri = if (albumId > 0) {
+                    ContentUris.withAppendedId(
+                        Uri.parse("content://media/external/audio/albumart"),
+                        albumId
+                    )
+                } else {
+                    null
+                }
 
                 songs.add(
                     Song.fromLocal(
@@ -209,9 +222,13 @@ class SongRepository(private val context: Context) {
                     val metadata = readManualMetadata(file)
                     val song = Song(
                         id = file.absolutePath.hashCode().toString(),
-                        title = metadata?.title ?: file.nameWithoutExtension,
-                        artist = metadata?.artist ?: "Unknown Artist",
-                        album = metadata?.album ?: dir.name,
+                        title = normalizeLocalTitle(
+                            metadata?.title,
+                            file.nameWithoutExtension.takeIf { it.isNotBlank() } ?: "Untitled"
+                        ),
+                        artist = normalizeLocalArtist(metadata?.artist),
+                        album = metadata?.album?.trim().takeUnless { isUnknownAlbum(it) }
+                            ?: dir.name.trim().takeIf { it.isNotEmpty() } ?: UNKNOWN_ALBUM,
                         duration = metadata?.durationMs ?: 0L,
                         uri = Uri.fromFile(file),
                         source = SongSource.LOCAL,

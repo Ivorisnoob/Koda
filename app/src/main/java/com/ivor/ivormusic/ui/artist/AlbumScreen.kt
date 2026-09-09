@@ -78,6 +78,9 @@ import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.sortedInAlbumOrder
+import com.ivor.ivormusic.data.isUnknownAlbum
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 
 /**
  * Segmented list shape helper for Expressive design
@@ -304,7 +307,7 @@ private fun AlbumHeroHeader(
             
             // Album name
             Text(
-                text = albumName.takeIf { it.isNotBlank() && !it.startsWith("Unknown") } ?: stringResource(R.string.unknown_album),
+                text = albumName.takeIf { !isUnknownAlbum(it) } ?: stringResource(R.string.unknown_album),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = textColor,
@@ -318,7 +321,7 @@ private fun AlbumHeroHeader(
             
             // Artist name
             Text(
-                text = artistName.takeIf { it.isNotBlank() && !it.startsWith("Unknown") } ?: stringResource(R.string.unknown_artist),
+                text = artistName.takeIf { !isUnknownArtist(it) } ?: stringResource(R.string.unknown_artist),
                 style = MaterialTheme.typography.bodyLarge,
                 color = secondaryTextColor,
                 textAlign = TextAlign.Center,
@@ -475,7 +478,7 @@ private fun AlbumSongCard(
         ListItem(
             headlineContent = {
                 Text(
-                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: "Track $trackNumber",
+                    text = song.title.takeIf { !isUnknownTitle(it) } ?: "Track $trackNumber",
                     color = textColor,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,

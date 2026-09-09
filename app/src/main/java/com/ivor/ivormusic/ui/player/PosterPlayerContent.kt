@@ -72,6 +72,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 
 /** Where the cover stops being sharp and starts dissolving into the frosted foot. */
@@ -390,7 +392,7 @@ fun PosterPlayerSheetContent(
                                 ) {
                                     Text(
                                         text = currentSong?.title
-                                            ?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                                            ?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
                                         style = MaterialTheme.typography.headlineMedium.copy(
                                             fontWeight = FontWeight.Black
                                         ),
@@ -399,7 +401,7 @@ fun PosterPlayerSheetContent(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     val artistName = currentSong?.artist
-                                        ?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
+                                        ?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
                                     Text(
                                         text = artistName,
                                         style = MaterialTheme.typography.titleSmall,

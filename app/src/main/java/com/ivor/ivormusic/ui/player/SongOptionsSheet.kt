@@ -35,6 +35,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.isUnknownArtist
 
 /**
  * What you get for long-pressing a song anywhere in music mode.
@@ -113,7 +114,7 @@ fun SongOptionsSheet(
     val likedIds by viewModel.likedSongIds.collectAsState()
     val isLiked = song.id in likedIds
     val isDownloaded = remember(song.id) { viewModel.isDownloaded(song.id) }
-    val artist = song.artist.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) }
+    val artist = song.artist.takeIf { !isUnknownArtist(it) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

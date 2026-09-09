@@ -58,6 +58,8 @@ import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.isUnknownAlbum
+import com.ivor.ivormusic.data.isUnknownArtist
 import kotlin.math.roundToInt
 
 /**
@@ -138,11 +140,11 @@ fun NowPlayingOptionsSheet(
     val isDownloading = remember(downloadingIds, song.id) { viewModel.isDownloading(song.id) }
     val isLocalOriginal = remember(song.id) { viewModel.isLocalOriginal(song) }
 
-    val artist = song.artist.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) }
+    val artist = song.artist.takeIf { !isUnknownArtist(it) }
     // A device file's album name is the key the Library groups by, so it opens
     // a real page. A YouTube song's is free text with no browse id behind it.
     val album = song.album
-        .takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) }
+        .takeIf { !isUnknownAlbum(it) }
         ?.takeIf { song.source == SongSource.LOCAL }
     val shareUrl = "https://music.youtube.com/watch?v=${song.id}"
         .takeIf { song.source == SongSource.YOUTUBE }

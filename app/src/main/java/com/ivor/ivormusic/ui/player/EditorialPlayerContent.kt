@@ -102,6 +102,8 @@ import androidx.media3.common.Player
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
@@ -383,7 +385,7 @@ private fun EditorialNowPlayingView(
         // ========== HEADLINE ==========
         // Wrapped so the song information is one swipe target the full width
         // of the player, not two text-shaped ones.
-        val title = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled"
+        val title = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled"
         val headlineBase = when {
             title.length <= 12 -> MaterialTheme.typography.displayLarge
             title.length <= 24 -> MaterialTheme.typography.displayMedium
@@ -410,7 +412,7 @@ private fun EditorialNowPlayingView(
                     .padding(horizontal = 24.dp)
             )
 
-            val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
+            val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
             Text(
                 text = artistName.uppercase(),
                 style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),

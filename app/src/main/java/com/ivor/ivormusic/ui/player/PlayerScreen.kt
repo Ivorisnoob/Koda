@@ -66,6 +66,8 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 
@@ -177,7 +179,7 @@ fun PlayerScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = (currentSong?.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown") } ?: "Untitled Song"),
+                        text = (currentSong?.title.takeIf { !isUnknownTitle(it) } ?: "Untitled Song"),
                         style = MaterialTheme.typography.headlineMedium.copy(
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = (-0.5).sp,
@@ -193,7 +195,7 @@ fun PlayerScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = (currentSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown") } ?: "Unknown Artist"),
+                        text = (currentSong?.artist.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"),
                         style = MaterialTheme.typography.titleMedium,
                         color = onSurfaceVariantColor,
                         maxLines = 1,

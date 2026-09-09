@@ -71,6 +71,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 
 /**
@@ -334,14 +336,14 @@ fun BentoPlayerSheetContent(
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
                             Text(
-                                text = currentSong?.title?.takeIf { !it.startsWith("Unknown") }
+                                text = currentSong?.title?.takeIf { !isUnknownTitle(it) }
                                     ?: "Untitled",
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = onTile,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
+                            val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
                                 ?: "Unknown Artist"
                             Text(
                                 text = artistName,
