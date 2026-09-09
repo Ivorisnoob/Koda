@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Subscriptions
@@ -551,6 +552,10 @@ internal fun buildSettingsSearchIndex(
         "excluded_folders", stringResource(R.string.sp_excluded_folders), "Local library", Icons.Rounded.FolderOff,
         listOf("exclude", "ignore", "hide folder", "ringtones", "whatsapp", "recordings")
     ) { onOpenFolderExclusion() }
+    entry(
+        "playlist_swipe", stringResource(R.string.sp_playlist_swipe), "Local library", Icons.Rounded.SwapHoriz,
+        listOf("swipe", "gesture", "dismiss", "remove song", "quick action", "playlist row", "swipe right", "swipe left", "play", "queue", "add to queue", "options")
+    ) { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
 
     // Advanced
     entry(

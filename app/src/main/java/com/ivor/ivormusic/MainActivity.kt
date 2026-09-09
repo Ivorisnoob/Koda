@@ -184,6 +184,9 @@ class MainActivity : ComponentActivity() {
             val showRecentSearches by themeViewModel.showRecentSearches.collectAsState()
             val showRelatedVideos by themeViewModel.showRelatedVideos.collectAsState()
             val compactVideoHome by themeViewModel.compactVideoHome.collectAsState()
+            val playlistSwipeEnabled by themeViewModel.playlistSwipeEnabled.collectAsState()
+            val playlistSwipeStartAction by themeViewModel.playlistSwipeStartAction.collectAsState()
+            val playlistSwipeEndAction by themeViewModel.playlistSwipeEndAction.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
@@ -331,6 +334,12 @@ class MainActivity : ComponentActivity() {
                         onShowRelatedVideosToggle = { themeViewModel.setShowRelatedVideos(it) },
                         compactVideoHome = compactVideoHome,
                         onCompactVideoHomeToggle = { themeViewModel.setCompactVideoHome(it) },
+                        playlistSwipeEnabled = playlistSwipeEnabled,
+                        onPlaylistSwipeEnabledToggle = { themeViewModel.setPlaylistSwipeEnabled(it) },
+                        playlistSwipeStartAction = playlistSwipeStartAction,
+                        onPlaylistSwipeStartActionChange = { themeViewModel.setPlaylistSwipeStartAction(it) },
+                        playlistSwipeEndAction = playlistSwipeEndAction,
+                        onPlaylistSwipeEndActionChange = { themeViewModel.setPlaylistSwipeEndAction(it) },
                         shortsEnabled = shortsEnabled,
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
                         shortsHiddenActions = shortsHiddenActions,
@@ -646,6 +655,12 @@ fun MusicApp(
     onShowRelatedVideosToggle: (Boolean) -> Unit,
     compactVideoHome: Boolean,
     onCompactVideoHomeToggle: (Boolean) -> Unit,
+    playlistSwipeEnabled: Boolean,
+    onPlaylistSwipeEnabledToggle: (Boolean) -> Unit,
+    playlistSwipeStartAction: String,
+    onPlaylistSwipeStartActionChange: (String) -> Unit,
+    playlistSwipeEndAction: String,
+    onPlaylistSwipeEndActionChange: (String) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
@@ -1116,6 +1131,12 @@ fun MusicApp(
                     onShowRelatedVideosToggle = onShowRelatedVideosToggle,
                     compactVideoHome = compactVideoHome,
                     onCompactVideoHomeToggle = onCompactVideoHomeToggle,
+                    playlistSwipeEnabled = playlistSwipeEnabled,
+                    onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
+                    playlistSwipeStartAction = playlistSwipeStartAction,
+                    onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
+                    playlistSwipeEndAction = playlistSwipeEndAction,
+                    onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
                     shortsHiddenActions = shortsHiddenActions,

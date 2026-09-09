@@ -422,6 +422,18 @@
     <string name="sp_show_recent_searches_sub">Your past queries under the search bar</string>
     <string name="sp_show_related_videos">Show related videos</string>
     <string name="sp_show_related_videos_sub">Suggestions under a video while it plays</string>
+    <string name="sp_playlist_songs">Playlist songs</string>
+    <string name="sp_playlist_swipe">Swipe actions</string>
+    <string name="sp_playlist_swipe_sub_on">Swipe a song for its quick action</string>
+    <string name="sp_playlist_swipe_sub_off">Songs do nothing when swiped</string>
+    <string name="sp_playlist_swipe_right">Swipe right</string>
+    <string name="sp_playlist_swipe_left">Swipe left</string>
+    <string name="swipe_action_off">Off</string>
+    <string name="swipe_action_remove">Remove</string>
+    <string name="swipe_action_play">Play</string>
+    <string name="swipe_action_queue">Queue</string>
+    <string name="swipe_action_options">Options</string>
+    <string name="si_playlist_swipe">Quick actions when you swipe a song in a playlist. Queue appends it to the playing queue. Remove only swipes where the playlist can be edited, and a YouTube list that is not yours only ever offers Play and Queue.</string>
     <string name="sp_not_recommended">Not Recommended</string>
     <string name="sp_not_recommended_sub">Videos and channels you\'ve hidden from your feeds</string>
     <string name="sp_manage_subscriptions">Manage Subscriptions</string>
@@ -937,6 +949,7 @@
     <string name="ar_more_play_options">More play options</string>
     <string name="ar_start_radio">Start radio</string>
     <string name="unknown_album">Unknown Album</string>
+    <string name="various_artists">Various Artists</string>
     <string name="ab_tracks">Tracks</string>
     <string name="ab_download_all">Download all</string>
 

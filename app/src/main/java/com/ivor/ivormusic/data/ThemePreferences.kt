@@ -281,6 +281,18 @@ class ThemePreferences(context: Context) {
     private val _compactVideoHome = MutableStateFlow(getCompactVideoHomePreference())
     val compactVideoHome: StateFlow<Boolean> = _compactVideoHome.asStateFlow()
 
+    // Swipe actions on playlist song rows. Each direction names its own
+    // action so a right swipe can play while a left swipe removes - or
+    // either can be off. "remove" only arms where the playlist is editable.
+    private val _playlistSwipeEnabled = MutableStateFlow(getPlaylistSwipeEnabledPreference())
+    val playlistSwipeEnabled: StateFlow<Boolean> = _playlistSwipeEnabled.asStateFlow()
+
+    private val _playlistSwipeStartAction = MutableStateFlow(getPlaylistSwipeStartActionPreference())
+    val playlistSwipeStartAction: StateFlow<String> = _playlistSwipeStartAction.asStateFlow()
+
+    private val _playlistSwipeEndAction = MutableStateFlow(getPlaylistSwipeEndActionPreference())
+    val playlistSwipeEndAction: StateFlow<String> = _playlistSwipeEndAction.asStateFlow()
+
     // Every screen/service news up its own ThemePreferences (no DI), so a setter
     // called on one instance must still reach the flows of every other instance.
     // All instances share the same process-wide SharedPreferences object, so a
@@ -370,6 +382,9 @@ class ThemePreferences(context: Context) {
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_COMPACT_VIDEO_HOME -> _compactVideoHome.value = getCompactVideoHomePreference()
+            KEY_PLAYLIST_SWIPE_ENABLED -> _playlistSwipeEnabled.value = getPlaylistSwipeEnabledPreference()
+            KEY_PLAYLIST_SWIPE_START_ACTION -> _playlistSwipeStartAction.value = getPlaylistSwipeStartActionPreference()
+            KEY_PLAYLIST_SWIPE_END_ACTION -> _playlistSwipeEndAction.value = getPlaylistSwipeEndActionPreference()
         }
     }
 
@@ -744,6 +759,16 @@ class ThemePreferences(context: Context) {
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
         private const val KEY_COMPACT_VIDEO_HOME = "compact_video_home"
+        private const val KEY_PLAYLIST_SWIPE_ENABLED = "playlist_swipe_enabled"
+        private const val KEY_PLAYLIST_SWIPE_START_ACTION = "playlist_swipe_start_action"
+        private const val KEY_PLAYLIST_SWIPE_END_ACTION = "playlist_swipe_end_action"
+
+        /** Swipe actions a playlist row direction can take. "off" arms nothing. */
+        const val PLAYLIST_SWIPE_ACTION_OFF = "off"
+        const val PLAYLIST_SWIPE_ACTION_REMOVE = "remove"
+        const val PLAYLIST_SWIPE_ACTION_PLAY = "play"
+        const val PLAYLIST_SWIPE_ACTION_QUEUE = "queue"
+        const val PLAYLIST_SWIPE_ACTION_OPTIONS = "options"
 
         /**
          * Fallback sort order for the Library's All tab. Mirrors the name of
@@ -2034,6 +2059,32 @@ class ThemePreferences(context: Context) {
     fun setShowRelatedVideos(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_RELATED_VIDEOS, show).apply()
         _showRelatedVideos.value = show
+    }
+
+    private fun getPlaylistSwipeEnabledPreference(): Boolean =
+        prefs.getBoolean(KEY_PLAYLIST_SWIPE_ENABLED, true)
+
+    fun setPlaylistSwipeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PLAYLIST_SWIPE_ENABLED, enabled).apply()
+        _playlistSwipeEnabled.value = enabled
+    }
+
+    private fun getPlaylistSwipeStartActionPreference(): String =
+        prefs.getString(KEY_PLAYLIST_SWIPE_START_ACTION, PLAYLIST_SWIPE_ACTION_PLAY)
+            ?: PLAYLIST_SWIPE_ACTION_PLAY
+
+    fun setPlaylistSwipeStartAction(action: String) {
+        prefs.edit().putString(KEY_PLAYLIST_SWIPE_START_ACTION, action).apply()
+        _playlistSwipeStartAction.value = action
+    }
+
+    private fun getPlaylistSwipeEndActionPreference(): String =
+        prefs.getString(KEY_PLAYLIST_SWIPE_END_ACTION, PLAYLIST_SWIPE_ACTION_REMOVE)
+            ?: PLAYLIST_SWIPE_ACTION_REMOVE
+
+    fun setPlaylistSwipeEndAction(action: String) {
+        prefs.edit().putString(KEY_PLAYLIST_SWIPE_END_ACTION, action).apply()
+        _playlistSwipeEndAction.value = action
     }
 
     private fun getOnboardingCompletedPreference(): Boolean {

@@ -323,6 +323,12 @@ fun SettingsScreen(
     onShowRelatedVideosToggle: (Boolean) -> Unit,
     compactVideoHome: Boolean,
     onCompactVideoHomeToggle: (Boolean) -> Unit,
+    playlistSwipeEnabled: Boolean,
+    onPlaylistSwipeEnabledToggle: (Boolean) -> Unit,
+    playlistSwipeStartAction: String,
+    onPlaylistSwipeStartActionChange: (String) -> Unit,
+    playlistSwipeEndAction: String,
+    onPlaylistSwipeEndActionChange: (String) -> Unit,
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
@@ -946,6 +952,12 @@ fun SettingsScreen(
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     excludedFolderCount = excludedFolders.size,
                     onOpenFolderExclusion = openFolderExclusion,
+                    playlistSwipeEnabled = playlistSwipeEnabled,
+                    onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
+                    playlistSwipeStartAction = playlistSwipeStartAction,
+                    onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
+                    playlistSwipeEndAction = playlistSwipeEndAction,
+                    onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
                     onBack = { page = SettingsPage.HUB }
                 )
 

@@ -74,6 +74,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val showRecentSearches: StateFlow<Boolean> = themePreferences.showRecentSearches
     val showRelatedVideos: StateFlow<Boolean> = themePreferences.showRelatedVideos
     val compactVideoHome: StateFlow<Boolean> = themePreferences.compactVideoHome
+    val playlistSwipeEnabled: StateFlow<Boolean> = themePreferences.playlistSwipeEnabled
+    val playlistSwipeStartAction: StateFlow<String> = themePreferences.playlistSwipeStartAction
+    val playlistSwipeEndAction: StateFlow<String> = themePreferences.playlistSwipeEndAction
     val crossfadeEnabled: StateFlow<Boolean> = themePreferences.crossfadeEnabled
     val crossfadeAuto: StateFlow<Boolean> = themePreferences.crossfadeAuto
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
@@ -303,6 +306,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setShowRelatedVideos(show: Boolean) = themePreferences.setShowRelatedVideos(show)
     fun setCompactVideoHome(enabled: Boolean) = themePreferences.setCompactVideoHome(enabled)
+    fun setPlaylistSwipeEnabled(enabled: Boolean) = themePreferences.setPlaylistSwipeEnabled(enabled)
+    fun setPlaylistSwipeStartAction(action: String) = themePreferences.setPlaylistSwipeStartAction(action)
+    fun setPlaylistSwipeEndAction(action: String) = themePreferences.setPlaylistSwipeEndAction(action)
 
     
     fun clearCacheAction() {

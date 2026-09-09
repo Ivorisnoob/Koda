@@ -78,6 +78,7 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Recommend
 import androidx.compose.material.icons.rounded.ViewList
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -2107,6 +2108,12 @@ internal fun LocalLibrarySettingsPage(
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     excludedFolderCount: Int,
     onOpenFolderExclusion: () -> Unit,
+    playlistSwipeEnabled: Boolean,
+    onPlaylistSwipeEnabledToggle: (Boolean) -> Unit,
+    playlistSwipeStartAction: String,
+    onPlaylistSwipeStartActionChange: (String) -> Unit,
+    playlistSwipeEndAction: String,
+    onPlaylistSwipeEndActionChange: (String) -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_local_library), onBack = onBack) {
@@ -2150,6 +2157,121 @@ internal fun LocalLibrarySettingsPage(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Swipe actions apply to every playlist song list - local, YouTube
+        // and saved - so they sit beside the library switches rather than
+        // inside the device-music section above.
+        item {
+            SettingsSection(title = stringResource(R.string.sp_playlist_songs)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.SwapHoriz,
+                        title = stringResource(R.string.sp_playlist_swipe),
+                        subtitle = if (playlistSwipeEnabled) {
+                            stringResource(R.string.sp_playlist_swipe_sub_on)
+                        } else {
+                            stringResource(R.string.sp_playlist_swipe_sub_off)
+                        },
+                        enabled = playlistSwipeEnabled,
+                        onToggle = onPlaylistSwipeEnabledToggle,
+                        explanation = stringResource(R.string.si_playlist_swipe)
+                    )
+
+                    AnimatedVisibility(
+                        visible = playlistSwipeEnabled,
+                        enter = fadeIn(tween(200)) + slideInVertically(
+                            initialOffsetY = { -it / 4 },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                        ),
+                        exit = fadeOut(tween(150))
+                    ) {
+                        Column {
+                            SettingsDivider()
+                            PlaylistSwipeActionSelector(
+                                title = stringResource(R.string.sp_playlist_swipe_right),
+                                selected = playlistSwipeStartAction,
+                                onSelect = onPlaylistSwipeStartActionChange
+                            )
+                            SettingsDivider()
+                            PlaylistSwipeActionSelector(
+                                title = stringResource(R.string.sp_playlist_swipe_left),
+                                selected = playlistSwipeEndAction,
+                                onSelect = onPlaylistSwipeEndActionChange
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One swipe direction's action, as a connected button group - the same
+ * control the haptics level uses, so the choice reads as a setting rather
+ * than a navigation.
+ */
+@Composable
+private fun PlaylistSwipeActionSelector(
+    title: String,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        val actions = listOf(
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_OFF,
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE,
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_PLAY,
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE,
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_OPTIONS,
+        )
+        val labels = listOf(
+            stringResource(R.string.swipe_action_off),
+            stringResource(R.string.swipe_action_remove),
+            stringResource(R.string.swipe_action_play),
+            stringResource(R.string.swipe_action_queue),
+            stringResource(R.string.swipe_action_options),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                ButtonGroupDefaults.ConnectedSpaceBetween
+            ),
+        ) {
+            actions.forEachIndexed { index, value ->
+                ToggleButton(
+                    checked = selected == value,
+                    onCheckedChange = { onSelect(value) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        actions.lastIndex ->
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.toggleButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(labels[index], maxLines = 1)
                 }
             }
         }
