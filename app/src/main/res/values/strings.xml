@@ -1441,7 +1441,7 @@
     <string name="sp_motion_artwork_wifi_sub">Use unmetered Wi-Fi for cover lookups and animation</string>
     <string name="sp_waveform">Waveform seek bar</string>
     <string name="sp_waveform_sub">Show the whole song\'s loudness along the progress bar</string>
-    <string name="si_waveform">Koda reads the song\'s own audio and draws the whole track, so you can see the quiet intro and the loud chorus before you reach them. The bars appear as the song loads and then stay put. Files on your device are measured instantly. A song streamed from YouTube is measured on Wi-Fi using the same audio it is about to play, so it costs no extra data unless you skip; on mobile data it keeps the plain bar and gains its waveform from being listened to. Measurements are a cache rather than something backed up, and no permission is needed.</string>
+    <string name="si_waveform">Koda reads the song\'s own audio and draws the whole track, so you can see the quiet intro and the loud chorus before you reach them. The bars appear as the song loads and then stay put. Files on your device are measured instantly. A song streamed from YouTube is measured using the same audio it is about to play, so it costs no extra data unless you skip away from it. Turning off music caching stops that, and so does Local Only. Measurements are a cache rather than something backed up, and no permission is needed.</string>
     <string name="sp_motion_artwork_quality">Motion artwork quality</string>
     <string name="sp_motion_artwork_quality_sub_saver">Around 360px. Lowest data use.</string>
     <string name="sp_motion_artwork_quality_sub_balanced">Around 480px. Low data use.</string>

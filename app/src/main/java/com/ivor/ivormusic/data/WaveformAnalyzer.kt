@@ -37,7 +37,7 @@ import kotlin.math.sqrt
  * the eye for the whole of a first listen. So a song is decoded up front and drawn once, frozen.
  *
  * [com.ivor.ivormusic.service.WaveformTap]'s live sampling stays as the fallback for what this
- * cannot reach - an unsupported container, a stream on mobile data - which is why
+ * cannot reach - an unsupported container, a song whose bytes may not be stored - which is why
  * [WaveformEnvelope] still accepts single samples. A song measured here is complete, and
  * [WaveformStore.record] then leaves it alone.
  *
@@ -46,9 +46,10 @@ import kotlin.math.sqrt
  * fetched, and the whole point of routing that through [CacheManager]'s cache-backed source
  * under the song's own cache key is that they are the *same* bytes playback is about to read -
  * so a song listened through costs nothing extra and starts from disk. A song skipped away from
- * has cost the rest of its audio, which is why [canAnalyze] refuses a stream on a metered
- * network or with the music cache off, where that trade stops being free. Those refusals are not
- * failures: the song simply keeps the plain wavy bar and gains its shape from listening.
+ * has cost the rest of its audio, and that is the accepted trade on any connection: someone who
+ * does not want the app spending data ahead of the playhead has the caching and Local Only
+ * switches to say so, and [canAnalyze] reads exactly those. A refusal is not a failure - the
+ * song simply keeps the plain wavy bar and gains its shape from listening.
  *
  * Every network read goes through the ordinary playback data source, so invariant 3's bounded
  * ranged requests and [YouTubeRepository.uaForPlaybackUri]'s per-client User-Agent both hold
@@ -143,11 +144,22 @@ object WaveformAnalyzer {
     }
 
     /**
-     * Whether measuring this source now is free enough to be worth doing.
+     * Whether measuring this source is something the user's settings allow.
      *
-     * A file on the device always is. A stream is only when its bytes serve playback too: the
-     * cache has to be on and the connection unmetered, or the song already fully cached, in
-     * which case there is nothing left to fetch at all.
+     * A file on the device always is, and so is a song already whole in the cache - there is
+     * nothing left to fetch for either. A stream is measured whenever its bytes can be *kept*,
+     * because that is what makes the fetch shared rather than duplicated: with the music cache
+     * on, reading ahead is the same download playback is about to make, and the song starts from
+     * disk. With it off the analyzer would pull a second copy of the audio that nothing else
+     * could use, and would be writing to a store the user switched off.
+     *
+     * [judgement] There is deliberately no metered check. The measurement is of the song being
+     * listened to, not a guess at the next one, so on any connection it is the same bytes moved
+     * earlier rather than extra bytes - only skipping away mid-song actually spends more, and a
+     * connection-shaped rule would have hidden the feature entirely from anyone mostly on mobile
+     * data. The switches that mean "do not spend data on media I have not asked for" already
+     * exist and are read above; guessing a second policy on top of them is the app deciding
+     * something its owner already decided.
      */
     private fun canAnalyze(
         context: Context,
@@ -160,9 +172,7 @@ object WaveformAnalyzer {
             "http", "https" -> when {
                 ThemePreferences.isLocalOnly(context) -> false
                 CacheManager.isFullyCached(songId) -> true
-                !musicCacheEnabled -> false
-                ThemePreferences.isNetworkMetered(context) -> false
-                else -> true
+                else -> musicCacheEnabled
             }
             else -> false
         }
