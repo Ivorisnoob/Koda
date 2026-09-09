@@ -7,7 +7,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Typeface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -314,7 +313,17 @@ class PlaylistRepository(private val context: Context) {
     }
     
     /**
-     * Generates a gradient cover with the first letter of the playlist name.
+     * Generates a gradient cover with generative geometric motifs.
+     *
+     * No letters or text: a giant initial reads as an unfinished placeholder,
+     * and two playlists starting with the same letter were near-identical
+     * tiles. The artwork is bauhaus-style geometry instead - an orb, a ring, a
+     * diagonal band, a dot field - composed from the palette gradient, so it
+     * looks designed rather than stamped.
+     *
+     * Everything is seeded by the playlist id: re-running the generator on a
+     * rename hands back the same cover, and two playlists on one palette still
+     * do not look identical.
      *
      * [coverSeeds] are the user's own accent colors, resolved by the caller
      * from the active palette. Without them this fell back to two random vivid
@@ -348,25 +357,8 @@ class PlaylistRepository(private val context: Context) {
         )
         
         canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
-        
-        // Draw text (First Letter)
-        val letter = name.take(1).uppercase()
-        val textPaint = Paint().apply {
-            color = Color.WHITE
-            textSize = size * 0.5f // Large text
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
-            isAntiAlias = true
-            
-            // Add shadow
-            setShadowLayer(20f, 0f, 10f, Color.argb(100, 0, 0, 0))
-        }
-        
-        // Center text
-        val xPos = size / 2f
-        val yPos = (size / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2)
-        
-        canvas.drawText(letter, xPos, yPos, textPaint)
+
+        drawCoverMotifs(canvas, id, color1, color2)
         
         // Timestamped, and the previous generation is deleted. Writing over
         // the same path would leave Coil - which caches by URL - serving the
@@ -383,13 +375,181 @@ class PlaylistRepository(private val context: Context) {
     }
 
     /**
+     * Geometric motifs over the cover gradient: one diagonal band for depth,
+     * then a seeded family of orb / ring / dot-field shapes in translucent
+     * white plus a small solid accent disc. All positions and sizes come from
+     * a Random seeded by the playlist id, so the composition is stable across
+     * regenerations and distinct between playlists.
+     */
+    private fun drawCoverMotifs(canvas: Canvas, id: String, color1: Int, color2: Int) {
+        val size = COVER_SIZE.toFloat()
+        val rng = Random(id.hashCode())
+        val family = (id.hashCode() and 0x7FFFFFFF) % 3
+
+        // Soft bottom depth so the tile never reads flat.
+        val scrim = Paint().apply {
+            shader = android.graphics.LinearGradient(
+                0f, size * 0.5f, 0f, size,
+                Color.TRANSPARENT, Color.argb(70, 0, 0, 0),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, size, size, scrim)
+
+        // Diagonal band in the gradient's own deep end, tilted for movement.
+        val band = Paint().apply {
+            isAntiAlias = true
+            color = darken(color2, 0.7f)
+            alpha = 150
+        }
+        val bandTop = size * (0.58f + rng.nextFloat() * 0.15f)
+        canvas.save()
+        canvas.rotate(-18f, size / 2f, size / 2f)
+        canvas.drawRect(-size, bandTop, size * 2f, bandTop + size * 0.24f, band)
+        canvas.restore()
+
+        val softWhite = Paint().apply {
+            isAntiAlias = true
+            color = Color.WHITE
+            alpha = 45
+        }
+        val ringWhite = Paint().apply {
+            isAntiAlias = true
+            color = Color.WHITE
+            alpha = 150
+            style = Paint.Style.STROKE
+            strokeWidth = size * 0.035f
+        }
+        val accent = Paint().apply {
+            isAntiAlias = true
+            color = lighten(color1, 0.55f)
+            alpha = 235
+        }
+
+        when (family) {
+            0 -> {
+                // Giant orb bleeding off the top-right, ring anchored low-left.
+                canvas.drawCircle(
+                    size * (0.78f + rng.nextFloat() * 0.15f),
+                    size * (0.10f + rng.nextFloat() * 0.12f),
+                    size * (0.38f + rng.nextFloat() * 0.12f),
+                    softWhite
+                )
+                canvas.drawCircle(
+                    size * (0.16f + rng.nextFloat() * 0.1f),
+                    size * (0.68f + rng.nextFloat() * 0.1f),
+                    size * (0.16f + rng.nextFloat() * 0.05f),
+                    ringWhite
+                )
+                canvas.drawCircle(
+                    size * (0.30f + rng.nextFloat() * 0.4f),
+                    size * (0.30f + rng.nextFloat() * 0.2f),
+                    size * 0.055f,
+                    accent
+                )
+            }
+            1 -> {
+                // Ring high, dot field low, accent disc off to the side.
+                canvas.drawCircle(
+                    size * (0.24f + rng.nextFloat() * 0.12f),
+                    size * (0.22f + rng.nextFloat() * 0.1f),
+                    size * (0.20f + rng.nextFloat() * 0.06f),
+                    ringWhite
+                )
+                drawDotField(
+                    canvas,
+                    originX = size * (0.52f + rng.nextFloat() * 0.12f),
+                    originY = size * (0.60f + rng.nextFloat() * 0.1f),
+                    step = size * 0.075f,
+                    radius = size * 0.013f
+                )
+                canvas.drawCircle(
+                    size * (0.68f + rng.nextFloat() * 0.14f),
+                    size * (0.24f + rng.nextFloat() * 0.12f),
+                    size * 0.075f,
+                    accent
+                )
+            }
+            else -> {
+                // Twin orbs on a diagonal plus thin parallel lines.
+                val orbCX = size * (0.7f + rng.nextFloat() * 0.15f)
+                val orbCY = size * (0.24f + rng.nextFloat() * 0.12f)
+                canvas.drawCircle(orbCX, orbCY, size * 0.30f, softWhite)
+                canvas.drawCircle(
+                    orbCX - size * 0.34f, orbCY + size * 0.36f,
+                    size * 0.17f, softWhite
+                )
+                val lines = Paint().apply {
+                    isAntiAlias = true
+                    color = Color.WHITE
+                    alpha = 110
+                    strokeWidth = size * 0.012f
+                }
+                val lineY = size * (0.62f + rng.nextFloat() * 0.1f)
+                canvas.save()
+                canvas.rotate(-18f, size / 2f, size / 2f)
+                canvas.drawLine(-size, lineY, size * 2f, lineY, lines)
+                canvas.drawLine(-size, lineY + size * 0.05f, size * 2f, lineY + size * 0.05f, lines)
+                canvas.restore()
+                canvas.drawCircle(
+                    size * (0.2f + rng.nextFloat() * 0.15f),
+                    size * (0.2f + rng.nextFloat() * 0.12f),
+                    size * 0.05f,
+                    accent
+                )
+            }
+        }
+    }
+
+    /** 4x4 dot field used by one motif family. */
+    private fun drawDotField(
+        canvas: Canvas,
+        originX: Float,
+        originY: Float,
+        step: Float,
+        radius: Float
+    ) {
+        val dot = Paint().apply {
+            isAntiAlias = true
+            color = Color.WHITE
+            alpha = 70
+        }
+        for (row in 0 until 4) {
+            for (col in 0 until 4) {
+                canvas.drawCircle(originX + col * step, originY + row * step, radius, dot)
+            }
+        }
+    }
+
+    /** Scale the RGB channels toward black, keeping alpha. */
+    private fun darken(color: Int, factor: Float): Int {
+        return Color.argb(
+            Color.alpha(color),
+            (Color.red(color) * factor).toInt().coerceIn(0, 255),
+            (Color.green(color) * factor).toInt().coerceIn(0, 255),
+            (Color.blue(color) * factor).toInt().coerceIn(0, 255)
+        )
+    }
+
+    /** Mix toward white by [amount] 0..1, keeping alpha. */
+    private fun lighten(color: Int, amount: Float): Int {
+        val mix = amount.coerceIn(0f, 1f)
+        return Color.argb(
+            Color.alpha(color),
+            (Color.red(color) + (255 - Color.red(color)) * mix).toInt().coerceIn(0, 255),
+            (Color.green(color) + (255 - Color.green(color)) * mix).toInt().coerceIn(0, 255),
+            (Color.blue(color) + (255 - Color.blue(color)) * mix).toInt().coerceIn(0, 255)
+        )
+    }
+
+    /**
      * Two ends of a gradient from the palette's own accents, nudged per
      * [variation] so a library of playlists on one palette still has some
      * range instead of twenty identical tiles.
      *
      * Value and saturation are pinned rather than taken from the seed: the
      * pastel and aesthetic palettes are pale enough that a cover made from
-     * them raw would not carry white text.
+     * them raw would look washed out.
      */
     private fun shadePair(seedA: Int, seedB: Int, variation: Int): Pair<Int, Int> {
         val hsvA = FloatArray(3).also { Color.colorToHSV(seedA, it) }
