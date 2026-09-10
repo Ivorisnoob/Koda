@@ -114,4 +114,46 @@ class VideoPlaybackCacheTest {
         assertFalse(isVideoPlaybackCacheKey("abc123"))
         assertFalse(isNonMusicPlaybackCacheKey("abc123"))
     }
+
+    @Test
+    fun `live playlists and segments never reach the cache`() {
+        // The reload of this URL is the only way the player hears about new
+        // segments, so a cached copy strands a broadcast at the live edge.
+        assertTrue(
+            isUncacheablePlaybackUrl(
+                "https://manifest.googlevideo.com/api/manifest/hls_playlist/expire/1/" +
+                    "ei/x/ip/0.0.0.0/id/abc.1/itag/96/file/index.m3u8"
+            )
+        )
+        assertTrue(
+            isUncacheablePlaybackUrl(
+                "https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1/" +
+                    "id/abc.1/file/index.m3u8"
+            )
+        )
+        assertTrue(
+            isUncacheablePlaybackUrl(
+                "https://r5---sn-abc.googlevideo.com/videoplayback/expire/1/id/abc.1/" +
+                    "itag/96/sq/1234/goap/x/file/seg.ts"
+            )
+        )
+        assertTrue(
+            isUncacheablePlaybackUrl("https://manifest.googlevideo.com/api/manifest/dash/id/abc.1/index.mpd")
+        )
+    }
+
+    @Test
+    fun `progressive renditions stay cacheable`() {
+        assertFalse(
+            isUncacheablePlaybackUrl(
+                "https://r2---sn-abc.googlevideo.com/videoplayback?expire=1&itag=137&clen=5&mime=video%2Fmp4"
+            )
+        )
+        assertFalse(
+            isUncacheablePlaybackUrl("https://r2.googlevideo.com/videoplayback?itag=140&c=IOS")
+        )
+        // A device file has no URL shape to read at all.
+        assertFalse(isUncacheablePlaybackUrl("content://media/external/video/media/42"))
+        assertFalse(isUncacheablePlaybackUrl("file:///storage/emulated/0/Movies/clip.mp4"))
+    }
 }

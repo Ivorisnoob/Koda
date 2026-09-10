@@ -649,9 +649,17 @@ object CacheManager {
         override fun open(dataSpec: DataSpec): Long {
             val scheme = dataSpec.uri.scheme
             val isNetwork = scheme == "http" || scheme == "https"
-            active = if (isNetwork) {
-                if (isCacheEnabled()) cached ?: direct else readOnlyCache ?: direct
-            } else direct
+            active = when {
+                !isNetwork -> direct
+                // An adaptive manifest or playlist is re-fetched from the same
+                // URL precisely because its contents change; serving one from
+                // the cache freezes a live stream's segment list. Read-only
+                // mode is no escape either - it still reads what is stored.
+                // See isUncacheablePlaybackUrl.
+                isUncacheablePlaybackUrl(dataSpec.uri.toString()) -> direct
+                isCacheEnabled() -> cached ?: direct
+                else -> readOnlyCache ?: direct
+            }
             return checkNotNull(active).open(dataSpec)
         }
 
