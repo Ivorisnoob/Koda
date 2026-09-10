@@ -22,3 +22,6 @@ keystore/
 
 # Kotlin build session data
 .kotlin/
+
+# Local desktop (Windows/macOS) experiment - not part of the Android build
+/Desktop/
