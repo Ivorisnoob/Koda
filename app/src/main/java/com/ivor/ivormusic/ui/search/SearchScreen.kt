@@ -1590,7 +1590,12 @@ private fun SearchHeroHeader(
                                 onClick = { launchVoiceSearch() },
                                 shape = MaterialShapes.Cookie4Sided.toShape(),
                                 color = primaryContainerColor,
-                                contentColor = primaryColor,
+                                // onPrimaryContainer, not primary: monochrome
+                                // palettes fix their containers per palette while
+                                // the ink follows the app mode, so primary can
+                                // coincide with its container (black on black,
+                                // white on light grey) and the icon vanishes.
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Box(
