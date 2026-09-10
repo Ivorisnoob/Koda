@@ -26,6 +26,7 @@ import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
 import org.schabi.newpipe.extractor.ListExtractor
 import org.schabi.newpipe.extractor.Page
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
@@ -43,6 +44,7 @@ class YouTubeRepository(private val context: Context) {
 
     private val sessionManager = SessionManager(context)
     private val videoHistoryRepository by lazy { VideoHistoryRepository(context) }
+    private val videoHistoryPreferences by lazy { ThemePreferences(context) }
 
     companion object {
         private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
@@ -4400,7 +4402,9 @@ class YouTubeRepository(private val context: Context) {
                 uploadedDate = uploadDate,
                 isLive = isLive,
                 dismissal = parseDismissalTokens(metadata),
-                collaborators = collaborators
+                collaborators = collaborators,
+                watchedProgress = parseVideoWatchProgress(lockupViewModel),
+                watchProgressUpdatedAtMs = System.currentTimeMillis()
             )
         } catch (e: Exception) {
             return null
@@ -6982,55 +6986,92 @@ class YouTubeRepository(private val context: Context) {
      * www.youtube.com: the WEB_REMIX/music flow does not register plain
      * videos. Requires login.
      */
-    suspend fun reportVideoPlayback(videoId: String) = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext
-        if (IncognitoMode.isEnabled(context)) return@withContext
+    suspend fun reportVideoPlayback(videoId: String) {
+        beginVideoHistorySession(videoId, 0L)
+    }
+
+    internal suspend fun beginVideoHistorySession(
+        videoId: String,
+        positionMs: Long,
+    ): VideoHistorySession? = withContext(Dispatchers.IO) {
+        val profile = ProfileManager.activeProfileId(context)
+        val cookies = sessionManager.getCookies() ?: return@withContext null
+        if (!canReportVideoHistory(profile, cookies)) return@withContext null
         try {
             val cpn = generateCpn()
-            val raw = postWatchApi(
-                "player",
-                org.json.JSONObject()
-                    .put("context", webContext())
-                    .put("videoId", videoId)
-                    .put("cpn", cpn)
-            ) ?: return@withContext
-            val baseUrl = org.json.JSONObject(raw)
-                .optJSONObject("playbackTracking")
-                ?.optJSONObject("videostatsPlaybackUrl")
-                ?.optString("baseUrl")
-            if (baseUrl.isNullOrEmpty()) {
-                KLog.w("YouTubeRepo", "No videostatsPlaybackUrl for $videoId")
-                return@withContext
-            }
-            val trackingUrl = buildString {
-                append(baseUrl)
-                if (!baseUrl.contains("cpn=")) {
-                    append(if (baseUrl.contains("?")) "&" else "?")
-                    append("cpn=$cpn")
-                }
-                append("&ver=2&c=WEB")
-            }
-            val cookies = sessionManager.getCookies() ?: return@withContext
-            val builder = okhttp3.Request.Builder()
-                .url(trackingUrl)
-                .get()
-                .addHeader("User-Agent", BROWSER_USER_AGENT)
-                .addHeader("Origin", "https://www.youtube.com")
-                .addHeader("Referer", "https://www.youtube.com/watch?v=$videoId")
-                .addHeader("Cookie", cookies)
-            YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://www.youtube.com")?.let {
-                builder.addHeader("Authorization", it)
-                builder.addHeader("X-Goog-AuthUser", "0")
-            }
-            okHttpClient.newCall(builder.build()).execute().use { response ->
-                if (response.isSuccessful) {
-                    KLog.d("YouTubeRepo", "Video history sync SUCCESS for $videoId")
-                } else {
-                    KLog.w("YouTubeRepo", "Video history sync failed: ${response.code}")
-                }
-            }
+            val raw = postWatchApi("player", org.json.JSONObject()
+                .put("context", webContext()).put("videoId", videoId).put("cpn", cpn))
+                ?: return@withContext null
+            val tracking = org.json.JSONObject(raw).optJSONObject("playbackTracking")
+                ?: return@withContext null
+            val playback = tracking.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
+            val watchtime = tracking.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")
+            if (playback.isNullOrBlank() || watchtime.isNullOrBlank()) return@withContext null
+            val session = VideoHistorySession(videoId, profile, cookies, cpn, playback, watchtime)
+            if (sendVideoHistoryPing(session, playback, positionMs, positionMs, false)) session else null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error in reportVideoPlayback", e)
+            KLog.w("YouTubeRepo", "Could not start video history reporting", e)
+            null
+        }
+    }
+
+    /** WEB watchtime and FEhistory readback verified September 2026 (60s of a 634s VOD -> 10%). */
+    internal suspend fun reportVideoWatchProgress(
+        session: VideoHistorySession,
+        startMs: Long,
+        positionMs: Long,
+        final: Boolean,
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            sendVideoHistoryPing(session, session.watchtimeUrl, startMs, positionMs, final)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w("YouTubeRepo", "Could not report video watch progress", e)
+            false
+        }
+    }
+
+    private fun canReportVideoHistory(profileId: String, cookies: String): Boolean =
+        ProfileManager.activeProfileId(context) == profileId &&
+            sessionManager.isLoggedIn() && sessionManager.getCookies() == cookies &&
+            !IncognitoMode.isEnabled(context) && videoHistoryPreferences.isSaveVideoHistoryEnabled()
+
+    private fun sendVideoHistoryPing(
+        session: VideoHistorySession,
+        baseUrl: String,
+        startMs: Long,
+        positionMs: Long,
+        final: Boolean,
+    ): Boolean {
+        if (!canReportVideoHistory(session.profileId, session.cookies)) return false
+        val url = baseUrl.toHttpUrlOrNull() ?: return false
+        // Credentials only go to the YouTube tracking hosts returned by /player.
+        if (url.scheme != "https" || url.host !in setOf("s.youtube.com", "www.youtube.com")) return false
+        val position = (positionMs.coerceAtLeast(0L) / 1000.0).toString()
+        val trackingUrl = url.newBuilder()
+            .setQueryParameter("cpn", session.cpn)
+            .setQueryParameter("ver", "2").setQueryParameter("c", "WEB")
+            .setQueryParameter("cver", WEB_VERSION)
+            .setQueryParameter("cmt", position)
+            .setQueryParameter("st", (startMs.coerceIn(0L, positionMs.coerceAtLeast(0L)) / 1000.0).toString())
+            .setQueryParameter("et", position)
+            .setQueryParameter("state", if (final) "paused" else "playing")
+            .setQueryParameter("final", if (final) "1" else "0")
+            .build()
+        val builder = okhttp3.Request.Builder().url(trackingUrl)
+            .header("User-Agent", BROWSER_USER_AGENT)
+            .header("Origin", "https://www.youtube.com")
+            .header("Referer", "https://www.youtube.com/watch?v=${session.videoId}")
+            .header("Cookie", session.cookies)
+        YouTubeAuthUtils.getAuthorizationHeader(session.cookies, "https://www.youtube.com")?.let {
+            builder.header("Authorization", it).header("X-Goog-AuthUser", "0")
+        }
+        return okHttpClient.newCall(builder.build()).execute().use { response ->
+            if (!response.isSuccessful) KLog.w("YouTubeRepo", "Video history ping failed: ${response.code}")
+            response.isSuccessful
         }
     }
 

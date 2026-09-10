@@ -6,6 +6,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.runtime.collectAsState
+import com.ivor.ivormusic.data.VideoHistoryRepository
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BrokenImage
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -219,41 +224,63 @@ fun VideoThumbnail(
     indicatorSize: Dp = 36.dp,
     placeholderColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
 ) {
-    // A device video carries no thumbnail URL - its frame is drawn by the
-    // MediaStore fetcher from the file itself. Watch history stores nothing but
-    // the VideoItem, so this is the one place that can tell the two apart for
-    // every surface that lists videos.
-    val deviceUri = remember(video.videoId) { LocalVideo.uriFor(video.videoId) }
-    if (deviceUri != null) {
-        Box(
-            modifier = modifier.background(placeholderColor),
-            contentAlignment = Alignment.Center
-        ) {
-            // Drawn under the frame rather than instead of it, so a file whose
-            // thumbnail could not be decoded still reads as a video.
-            Icon(
-                imageVector = Icons.Rounded.PlayArrow,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                modifier = Modifier.size(indicatorSize * 0.6f)
-            )
-            AsyncImage(
-                model = LocalVideoThumbnail(deviceUri),
+    val context = LocalContext.current
+    val repository = remember(context) { VideoHistoryRepository(context) }
+    val history by repository.history.collectAsState()
+    val local = history.firstOrNull { it.videoId == video.videoId }
+    val progress = if (video.isLive) null else {
+        if (local?.watchedProgress != null &&
+            (video.watchedProgress == null || local.watchProgressUpdatedAtMs >= video.watchProgressUpdatedAtMs)) {
+            local.watchedProgress
+        } else video.watchedProgress
+    }
+    Box(modifier = modifier) {
+        // A device video carries no thumbnail URL - its frame is drawn by the
+        // MediaStore fetcher from the file itself. Watch history stores nothing but
+        // the VideoItem, so this is the one place that can tell the two apart for
+        // every surface that lists videos.
+        val deviceUri = remember(video.videoId) { LocalVideo.uriFor(video.videoId) }
+        if (deviceUri != null) {
+            Box(
+                modifier = Modifier.matchParentSize().background(placeholderColor),
+                contentAlignment = Alignment.Center
+            ) {
+                // Drawn under the frame rather than instead of it, so a file whose
+                // thumbnail could not be decoded still reads as a video.
+                Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                    modifier = Modifier.size(indicatorSize * 0.6f)
+                )
+                AsyncImage(
+                    model = LocalVideoThumbnail(deviceUri),
+                    contentDescription = video.title,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = contentScale
+                )
+            }
+        } else {
+            VideoThumbnail(
+                thumbnailUrl = video.thumbnailUrl,
+                highResThumbnailUrl = video.highResThumbnailUrl,
                 contentDescription = video.title,
                 modifier = Modifier.matchParentSize(),
-                contentScale = contentScale
+                contentScale = contentScale,
+                showProgress = showProgress,
+                indicatorSize = indicatorSize,
+                placeholderColor = placeholderColor
             )
         }
-        return
+        progress?.takeIf { it > 0f }?.let { watched ->
+            LinearProgressIndicator(
+                progress = { watched.coerceIn(0f, 1f) },
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                gapSize = 0.dp,
+                drawStopIndicator = {},
+            )
+        }
     }
-    VideoThumbnail(
-        thumbnailUrl = video.thumbnailUrl,
-        highResThumbnailUrl = video.highResThumbnailUrl,
-        contentDescription = video.title,
-        modifier = modifier,
-        contentScale = contentScale,
-        showProgress = showProgress,
-        indicatorSize = indicatorSize,
-        placeholderColor = placeholderColor
-    )
 }

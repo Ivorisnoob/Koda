@@ -63,7 +63,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Chat
@@ -95,6 +98,11 @@ import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -348,6 +356,11 @@ fun FullscreenPlayerContent(
     onPreviousInQueue: () -> Unit = {},
     onNextInQueue: () -> Unit = {},
     isLive: Boolean = false,
+    /**
+     * Distance behind the newest media the player deliberately holds - the
+     * live edge itself, not slack. See VideoPlayerViewModel.liveTargetOffsetMs.
+     */
+    liveTargetOffsetMs: Long = 0L,
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
     /**
@@ -693,7 +706,9 @@ fun FullscreenPlayerContent(
                             }
                             if (isLive) {
                                 LiveEdgeChip(
-                                    behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
+                                    behindLiveMs = liveWindowOffsetMs(
+                                        duration, currentPosition, liveTargetOffsetMs
+                                    ),
                                     onClick = onSeekToLive
                                 )
                             }
@@ -755,7 +770,9 @@ fun FullscreenPlayerContent(
                             if (isLive) {
                                 LiveEdgeChip(
                                     // Unknown windows omit the offset until the timeline arrives.
-                                    behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
+                                    behindLiveMs = liveWindowOffsetMs(
+                                        duration, currentPosition, liveTargetOffsetMs
+                                    ),
                                     onClick = onSeekToLive
                                 )
                             } else {
@@ -806,6 +823,11 @@ fun PortraitPlayerContent(
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
     captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
     isLive: Boolean = false,
+    /**
+     * Distance behind the newest media the player deliberately holds - the
+     * live edge itself, not slack. See VideoPlayerViewModel.liveTargetOffsetMs.
+     */
+    liveTargetOffsetMs: Long = 0L,
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
     /**
@@ -1050,7 +1072,9 @@ fun PortraitPlayerContent(
                         if (isLive) {
                             LiveEdgeChip(
                                 // Unknown windows omit the offset until the timeline arrives.
-                                behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
+                                behindLiveMs = liveWindowOffsetMs(
+                                    duration, currentPosition, liveTargetOffsetMs
+                                ),
                                 onClick = onSeekToLive
                             )
                         } else {
@@ -2234,7 +2258,7 @@ private fun SeekFeedbackBadge(
     }
 }
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun VideoInfoSection(
     video: VideoItem,
@@ -2276,22 +2300,35 @@ fun VideoInfoSection(
     liveViewerCount: String? = null,
     onLiveChatClick: () -> Unit = {}
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 20.dp)
-            // Applied inside verticalScroll, so this is scrolling clearance
-            // rather than a viewport inset: the list passes under the
-            // navigation bar and only its last item has to clear it. The
-            // parent no longer takes the bottom inset for the same reason.
-            .padding(
-                bottom = 80.dp +
-                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            ),
+    // Hoisted above the LazyColumn below: its content lambda is a DSL scope,
+    // not a composition scope, so remember and dialogs cannot live inside it.
+    val collaborators = engagement?.collaborators.orEmpty()
+    val isCollab = collaborators.size > 1 && onOpenChannelId != null
+    var showCollaborators by remember(video.videoId) { mutableStateOf(false) }
+    if (showCollaborators && isCollab) {
+        CollaboratorsSheet(
+            collaborators = collaborators,
+            onOpenChannel = { channelId -> onOpenChannelId?.invoke(channelId) },
+            onDismiss = { showCollaborators = false }
+        )
+    }
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = 20.dp,
+            // Scrolling clearance rather than a viewport inset: the list
+            // passes under the navigation bar and only its last item has to
+            // clear it. The parent no longer takes the bottom inset for the
+            // same reason.
+            bottom = 80.dp +
+                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        ),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         // Title & Stats Group
+        item(key = "title") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = video.title,
@@ -2324,30 +2361,38 @@ fun VideoInfoSection(
                 )
             }
         }
+        }
 
         // The playlist this is being watched through. Directly under the title
         // because it is context for what is on screen rather than a section of
         // its own, and it is the only thing on the page that says where the
         // next video is coming from.
         if (queue != null) {
+            item(key = "queue") {
             PlayingFromPlaylistCard(queue = queue, onClick = onOpenQueue)
+            }
         }
 
-        // Like / Dislike + Save + Share Actions (scrolls like YouTube's chip
-        // row so the pills never squash on narrow screens)
-        if (!isOffline) Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.horizontalScroll(rememberScrollState())
-        ) {
-            LikeDislikeBar(
-                engagement = engagement,
-                onLikeClick = onLikeClick,
-                onDislikeClick = onDislikeClick
-            )
-            SaveVideoButton(onClick = onSaveClick)
-            ShareVideoButton(video = video)
-            DownloadVideoButton(video = video, onDownloadClick = onDownloadClick)
+        // The action dock: one surfaceContainerHigh container under the title,
+        // sticky so the actions survive the first swipe instead of scrolling
+        // away. Order is Like, Save, Share, Download. Its row still scrolls
+        // internally so the buttons never squash on narrow screens.
+        if (!isOffline) stickyHeader(key = "action_dock") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(vertical = 4.dp)
+            ) {
+                ActionDock(
+                    engagement = engagement,
+                    video = video,
+                    onLikeClick = onLikeClick,
+                    onDislikeClick = onDislikeClick,
+                    onSaveClick = onSaveClick,
+                    onDownloadClick = onDownloadClick
+                )
+            }
         }
 
         // Channel Info Surface (tap navigates to the channel)
@@ -2357,18 +2402,8 @@ fun VideoInfoSection(
         // to and nothing for Subscribe to act on - the row becomes the way into
         // the list instead. Only ever entered when the response actually
         // carried collaborators, so an ordinary video is untouched.
-        val collaborators = engagement?.collaborators.orEmpty()
-        val isCollab = collaborators.size > 1 && onOpenChannelId != null
-        var showCollaborators by remember(video.videoId) { mutableStateOf(false) }
-        if (showCollaborators && isCollab) {
-            CollaboratorsSheet(
-                collaborators = collaborators,
-                onOpenChannel = { channelId -> onOpenChannelId?.invoke(channelId) },
-                onDismiss = { showCollaborators = false }
-            )
-        }
-        if (!isOffline) Surface(
-            shape = RoundedCornerShape(16.dp),
+        if (!isOffline) item(key = "channel") { Surface(
+            shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth(),
             onClick = if (isCollab) {
@@ -2461,6 +2496,7 @@ fun VideoInfoSection(
                 )
             )
         }
+        }
 
         // Live chat entry. On a live stream this replaces comments outright
         // rather than sitting above them: chat is where the conversation
@@ -2468,8 +2504,8 @@ fun VideoInfoSection(
         // usually empty or disabled, so offering both sent people to the dead
         // one.
         if (isLive) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
+            item(key = "live_chat") { Surface(
+                shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onLiveChatClick
@@ -2501,19 +2537,25 @@ fun VideoInfoSection(
                 }
             }
         }
+        }
 
-        // Comments Entry
+        // Comments + description share one card now. The comments half stays
+        // a door - the list itself is never rendered inline, it slides up on
+        // tap - and the card itself is never clickable, so the comments row
+        // and the description links keep their own tap targets.
         if (!isLive && !isOffline) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
+            item(key = "about_${video.videoId}") { Surface(
+                shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onCommentsClick,
-                enabled = engagement?.commentsToken != null
+                modifier = Modifier.fillMaxWidth()
             ) {
+                Column {
+                val commentsAvailable = engagement?.commentsToken != null
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = commentsAvailable, onClick = onCommentsClick)
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -2521,12 +2563,15 @@ fun VideoInfoSection(
                     Icon(
                         Icons.AutoMirrored.Rounded.Comment,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (commentsAvailable) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = stringResource(R.string.cd_comments),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
+                        color = if (commentsAvailable) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
                     )
                     Icon(
@@ -2535,16 +2580,13 @@ fun VideoInfoSection(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-        }
         
-        // Description Surface
-        if (!video.description.isNullOrBlank()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+                // Description Surface
+                if (!video.description.isNullOrBlank()) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
                 Column(Modifier.padding(16.dp)) {
                     Text(
                         text = stringResource(R.string.vp_description),
@@ -2606,12 +2648,14 @@ fun VideoInfoSection(
                         }
                     }
                 }
-            }
-        }
-        
+                } // if (!video.description.isNullOrBlank())
+                } // merged info card Column
+            } // Surface
+            } // item
+        } // if (!isLive && !isOffline)
         // Related Videos Section
         if (relatedVideos.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            item(key = "related_header") {
                 Text(
                     // "Up Next" is a promise about what plays when this ends,
                     // and inside a playlist that promise belongs to the queue.
@@ -2621,8 +2665,8 @@ fun VideoInfoSection(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                
-                relatedVideos.forEach { relatedVideo ->
+            }
+            items(relatedVideos, key = { it.videoId }) { relatedVideo ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2643,7 +2687,7 @@ fun VideoInfoSection(
                             modifier = Modifier
                                 .width(144.dp)
                                 .aspectRatio(16f/9f)
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         ) {
                             if (relatedVideo.thumbnailUrl != null) {
@@ -2707,7 +2751,6 @@ fun VideoInfoSection(
                             }
                         }
                     }
-                }
             }
         }
     }
@@ -2814,46 +2857,84 @@ private fun PlayingFromPlaylistCard(
 }
 
 /**
- * Save pill beside Share: opens the save-to-playlist sheet with Watch Later
- * pinned on top. Matches the pill shape of the like/dislike bar.
+ * Labeled tonal button for the action dock. Labels stay on every control -
+ * an icon-only dock reads cleaner until the first time someone has to guess
+ * what the third glyph does.
  */
 @Composable
-private fun SaveVideoButton(onClick: () -> Unit) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        onClick = onClick
+private fun DockActionButton(
+    icon: ImageVector,
+    label: String,
+    contentDescription: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.height(48.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
-        ) {
-            Icon(
-                Icons.Rounded.WatchLater,
-                contentDescription = stringResource(R.string.video_options_watch_later),
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = stringResource(R.string.action_save),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
 /**
- * Download pill. A new download opens the quality-and-size sheet; an active or
- * completed one retains its cancel/delete behavior. This keeps the convenient
- * status control without bypassing the user's quality choice.
+ * Save entry in the dock: opens the save-to-playlist sheet with Watch Later
+ * pinned on top. Behavior unchanged, only the container changed.
  */
 @Composable
-private fun DownloadVideoButton(
+private fun DockSaveButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    DockActionButton(
+        icon = Icons.Rounded.WatchLater,
+        label = stringResource(R.string.action_save),
+        contentDescription = stringResource(R.string.video_options_watch_later),
+        onClick = onClick,
+        modifier = modifier
+    )
+}
+
+/**
+ * Share entry in the dock. Fires the system share sheet with the video's
+ * watch URL, same as before - only the container changed.
+ */
+@Composable
+private fun DockShareButton(video: VideoItem, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    DockActionButton(
+        icon = Icons.Rounded.Share,
+        label = stringResource(R.string.video_options_share),
+        contentDescription = stringResource(R.string.video_options_share),
+        onClick = {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, "https://youtube.com/watch?v=${video.videoId}")
+            }
+            context.startActivity(Intent.createChooser(send, context.getString(R.string.video_options_share_chooser)))
+        },
+        modifier = modifier
+    )
+}
+
+/**
+ * Download entry in the dock, last in the action order. A new download opens
+ * the quality-and-size sheet; an active or completed one retains its
+ * cancel/delete behavior. This keeps the convenient status control without
+ * bypassing the user's quality choice.
+ */
+@Composable
+private fun DockDownloadButton(
     video: VideoItem,
     onDownloadClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val repository = remember(context) {
@@ -2868,159 +2949,143 @@ private fun DownloadVideoButton(
         (progress.status == com.ivor.ivormusic.data.DownloadStatus.DOWNLOADING ||
             progress.status == com.ivor.ivormusic.data.DownloadStatus.QUEUED)
 
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+    FilledTonalButton(
         onClick = {
             when {
                 downloaded -> repository.deleteVideoDownload(video.videoId)
                 inFlight -> repository.cancelDownload(video.videoId)
                 else -> onDownloadClick()
             }
-        }
+        },
+        modifier = modifier.height(48.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
-        ) {
-            Icon(
-                imageVector = when {
-                    downloaded -> Icons.Rounded.CheckCircle
-                    inFlight -> Icons.Rounded.Close
-                    else -> Icons.Rounded.Download
-                },
-                contentDescription = "Download",
-                modifier = Modifier.size(20.dp),
-                tint = if (downloaded) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                }
-            )
-            Text(
-                text = when {
-                    downloaded -> stringResource(R.string.song_options_downloaded)
-                    inFlight -> "${((progress?.progress ?: 0f) * 100).toInt()}%"
-                    else -> stringResource(R.string.song_options_download)
-                },
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
+        Icon(
+            imageVector = when {
+                downloaded -> Icons.Rounded.CheckCircle
+                inFlight -> Icons.Rounded.Close
+                else -> Icons.Rounded.Download
+            },
+            contentDescription = stringResource(R.string.song_options_download),
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = when {
+                downloaded -> stringResource(R.string.song_options_downloaded)
+                inFlight -> "${((progress?.progress ?: 0f) * 100).toInt()}%"
+                else -> stringResource(R.string.song_options_download)
+            },
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
 /**
- * Share pill that fires the system share sheet with the video's watch URL,
- * matching the pill shape of the like/dislike bar it sits beside.
+ * Like/dislike as an M3E connected button group: the active side fills with
+ * primary and shape-morphs on select. Disabled until engagement loads. First
+ * in the dock order, ahead of Save.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ShareVideoButton(video: VideoItem) {
-    val context = LocalContext.current
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        onClick = {
-            val send = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, "https://youtube.com/watch?v=${video.videoId}")
-            }
-            context.startActivity(Intent.createChooser(send, context.getString(R.string.video_options_share_chooser)))
-        }
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
-        ) {
-            Icon(
-                Icons.Rounded.Share,
-                contentDescription = stringResource(R.string.video_options_share),
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = stringResource(R.string.video_options_share),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
-
-/**
- * YouTube-style segmented like/dislike pill. Disabled until engagement loads.
- */
-@Composable
-private fun LikeDislikeBar(
+private fun ExpressiveLikeDislikeGroup(
     engagement: VideoEngagement?,
     onLikeClick: () -> Unit,
-    onDislikeClick: () -> Unit
+    onDislikeClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
     val enabled = engagement != null
+    val groupColors = ToggleButtonDefaults.toggleButtonColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        checkedContainerColor = MaterialTheme.colorScheme.primary,
+        checkedContentColor = MaterialTheme.colorScheme.onPrimary
+    )
 
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+        modifier = modifier
+    ) {
+        // Like segment
+        ToggleButton(
+            checked = likeStatus == LikeStatus.LIKE,
+            onCheckedChange = { onLikeClick() },
+            enabled = enabled,
+            shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+            colors = groupColors,
+            modifier = Modifier.height(48.dp)
+        ) {
+            Icon(
+                imageVector = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
+                contentDescription = if (likeStatus == LikeStatus.LIKE) stringResource(R.string.vp_remove_like) else stringResource(R.string.like),
+                modifier = Modifier.size(18.dp)
+            )
+            val likeCount = engagement?.likeCount
+            if (!likeCount.isNullOrBlank()) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = likeCount,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        // Dislike segment
+        ToggleButton(
+            checked = likeStatus == LikeStatus.DISLIKE,
+            onCheckedChange = { onDislikeClick() },
+            enabled = enabled,
+            shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+            colors = groupColors,
+            modifier = Modifier.height(48.dp)
+        ) {
+            Icon(
+                imageVector = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown,
+                contentDescription = if (likeStatus == LikeStatus.DISLIKE) stringResource(R.string.vp_remove_dislike) else stringResource(R.string.cd_dislike),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/**
+ * The watch page's single action bar, in the user's order: Like, Save,
+ * Share, Download. One surfaceContainerHigh container under the title, one
+ * hero for the whole info column - everything else on the page is content.
+ * Subscribe stays where it was, in the channel row below.
+ */
+@Composable
+private fun ActionDock(
+    engagement: VideoEngagement?,
+    video: VideoItem,
+    onLikeClick: () -> Unit,
+    onDislikeClick: () -> Unit,
+    onSaveClick: () -> Unit,
+    onDownloadClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainer
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier.fillMaxWidth()
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.height(IntrinsicSize.Min)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(12.dp)
         ) {
-            // Like segment
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(enabled = enabled) { onLikeClick() }
-                    .padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)
-            ) {
-                Icon(
-                    imageVector = if (likeStatus == LikeStatus.LIKE) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
-                    contentDescription = if (likeStatus == LikeStatus.LIKE) stringResource(R.string.vp_remove_like) else stringResource(R.string.like),
-                    modifier = Modifier.size(20.dp),
-                    tint = if (likeStatus == LikeStatus.LIKE) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface
-                )
-                val likeCount = engagement?.likeCount
-                if (!likeCount.isNullOrBlank()) {
-                    Text(
-                        text = likeCount,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (likeStatus == LikeStatus.LIKE) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            VerticalDivider(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .padding(vertical = 10.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
+            ExpressiveLikeDislikeGroup(
+                engagement = engagement,
+                onLikeClick = onLikeClick,
+                onDislikeClick = onDislikeClick
             )
-
-            // Dislike segment
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(enabled = enabled) { onDislikeClick() }
-                    .padding(start = 16.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)
-            ) {
-                Icon(
-                    imageVector = if (likeStatus == LikeStatus.DISLIKE) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDown,
-                    contentDescription = if (likeStatus == LikeStatus.DISLIKE) stringResource(R.string.vp_remove_dislike) else stringResource(R.string.cd_dislike),
-                    modifier = Modifier.size(20.dp),
-                    tint = if (likeStatus == LikeStatus.DISLIKE) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface
-                )
-            }
+            DockSaveButton(onClick = onSaveClick)
+            DockShareButton(video = video)
+            DockDownloadButton(video = video, onDownloadClick = onDownloadClick)
         }
     }
 }

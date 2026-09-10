@@ -37,6 +37,7 @@ internal fun retainedVideoResumePosition(positionMs: Long, durationMs: Long): Lo
 class VideoHistoryRepository(context: Context) {
 
     private val appContext = context.applicationContext
+    private val preferences by lazy { ThemePreferences(appContext) }
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     init {
@@ -266,6 +267,25 @@ class VideoHistoryRepository(context: Context) {
         }
     }
 
+    /** Update in place: checkpoints must not reorder history or resurrect a removed row. */
+    fun saveWatchProgress(videoId: String, positionMs: Long, durationMs: Long) {
+        if (durationMs <= 0L || IncognitoMode.isEnabled(appContext) ||
+            !preferences.isSaveVideoHistoryEnabled()) return
+        synchronized(LOCK) {
+            val current = load()
+            val index = current.indexOfFirst { it.videoId == videoId }
+            if (index < 0) return
+            val progress = (positionMs.toDouble() / durationMs).toFloat().coerceIn(0f, 1f)
+            if (current[index].watchedProgress == progress) return
+            save(current.toMutableList().apply {
+                this[index] = this[index].copy(
+                    watchedProgress = progress,
+                    watchProgressUpdatedAtMs = System.currentTimeMillis(),
+                )
+            })
+        }
+    }
+
     fun clearResumePosition(videoId: String) {
         if (videoId.isBlank()) return
         synchronized(LOCK) { removeResumePositionLocked(videoId) }
@@ -330,6 +350,8 @@ class VideoHistoryRepository(context: Context) {
                 put("viewCount", video.viewCount)
                 put("uploadedDate", video.uploadedDate ?: JSONObject.NULL)
                 put("isLive", video.isLive)
+                put("watchedProgress", video.watchedProgress ?: JSONObject.NULL)
+                put("watchProgressUpdatedAtMs", video.watchProgressUpdatedAtMs)
             })
         }
         prefs.edit().putString(historyKey(), array.toString()).apply()
@@ -339,6 +361,8 @@ class VideoHistoryRepository(context: Context) {
         val raw = prefs.getString(historyKey(), null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
+            // Older installs already have useful checkpoints, but no progress field.
+            val checkpoints = loadResumePositions().associateBy { it.videoId }
             (0 until array.length()).mapNotNull { i ->
                 val obj = array.optJSONObject(i) ?: return@mapNotNull null
                 val videoId = obj.optString("videoId")
@@ -353,7 +377,13 @@ class VideoHistoryRepository(context: Context) {
                     duration = obj.optLong("duration"),
                     viewCount = obj.optString("viewCount"),
                     uploadedDate = obj.optString("uploadedDate").takeIf { it.isNotBlank() && it != "null" },
-                    isLive = obj.optBoolean("isLive", false)
+                    isLive = obj.optBoolean("isLive", false),
+                    watchedProgress = obj.optDouble("watchedProgress", Double.NaN)
+                        .takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 1f) ?: checkpoints[videoId]?.let {
+                            (it.positionMs.toDouble() / it.durationMs).toFloat().coerceIn(0f, 1f)
+                        },
+                    watchProgressUpdatedAtMs = obj.optLong("watchProgressUpdatedAtMs")
+                        .takeIf { it > 0L } ?: checkpoints[videoId]?.updatedAt ?: 0L
                 )
             }
         } catch (e: Exception) {

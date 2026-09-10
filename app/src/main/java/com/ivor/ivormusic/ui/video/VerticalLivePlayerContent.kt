@@ -161,6 +161,11 @@ fun VerticalLivePlayerContent(
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
     onSeekToLive: () -> Unit,
+    /**
+     * Distance behind the newest media the player deliberately holds - the
+     * live edge itself, not slack. See VideoPlayerViewModel.liveTargetOffsetMs.
+     */
+    liveTargetOffsetMs: Long = 0L,
     onBack: () -> Unit,
     onExitToPage: () -> Unit,
     onOpenFullChat: () -> Unit,
@@ -572,7 +577,11 @@ fun VerticalLivePlayerContent(
                                 onTonalSurface = true
                             )
                             LiveEdgeChip(
-                                behindLiveMs = liveWindowOffsetMs(duration, (progress.toDouble() * duration).toLong()),
+                                behindLiveMs = liveWindowOffsetMs(
+                                    duration,
+                                    (progress.toDouble() * duration).toLong(),
+                                    liveTargetOffsetMs,
+                                ),
                                 onClick = onSeekToLive,
                                 contentTint = MaterialTheme.colorScheme.onSurfaceVariant
                             )

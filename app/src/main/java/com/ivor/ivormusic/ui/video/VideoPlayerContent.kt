@@ -190,6 +190,7 @@ fun VideoPlayerContent(
     val videoPlaylists by viewModel.videoPlaylists.collectAsState()
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
+    val liveTargetOffsetMs by viewModel.liveTargetOffsetMs.collectAsState()
     val isLocalPlayback by viewModel.isLocalPlayback.collectAsState()
     val isPortraitVideo by viewModel.isPortraitVideo.collectAsState()
     val liveViewerCount by viewModel.liveViewerCount.collectAsState()
@@ -654,6 +655,7 @@ fun VideoPlayerContent(
                 onPreviousInQueue = { viewModel.playPreviousInQueue() },
                 onNextInQueue = { viewModel.playNextInQueue() },
                 isLive = isLive,
+                liveTargetOffsetMs = liveTargetOffsetMs,
                 onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                 // A pillarboxed 9:16 stream and a docked chat column are the
                 // one pairing where landscape wastes nothing - but only if the
@@ -848,6 +850,7 @@ fun VideoPlayerContent(
                     onScrubbingChanged = { isSeekScrubbing = it },
                     onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
                     onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
+                    liveTargetOffsetMs = liveTargetOffsetMs,
                     onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                     onBack = onBackClick,
                     onExitToPage = { showVideoPageForVerticalLive = true },
@@ -999,6 +1002,7 @@ fun VideoPlayerContent(
                         onPreviousInQueue = { viewModel.playPreviousInQueue() },
                         onNextInQueue = { viewModel.playNextInQueue() },
                         isLive = isLive,
+                        liveTargetOffsetMs = liveTargetOffsetMs,
                         onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                         minimizeDragEnabled = true,
                         onMinimizeDragDelta = { delta ->
