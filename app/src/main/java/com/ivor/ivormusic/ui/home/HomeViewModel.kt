@@ -2045,8 +2045,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * The request is started on the ViewModel's own scope rather than inside
      * the timeout, because [YouTubeRepository.getTrendingVideos] can reach a
      * blocking extractor and a coroutine timeout does not return while an
-     * uninterruptible child is still inside one - the same non-fix section 8
-     * of CLAUDE.md describes for music resolution. Detached, the deadline
+     * uninterruptible child is still inside one - the same non-fix docs/playback-streams.md
+     * describes for music resolution. Detached, the deadline
      * actually fires and the caller can put the downloaded videos up while the
      * orphan finishes against its own client timeouts.
      *

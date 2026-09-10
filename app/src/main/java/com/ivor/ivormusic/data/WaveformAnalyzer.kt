@@ -182,8 +182,8 @@ object WaveformAnalyzer {
      * Decode the track and return one RMS per bucket, `NaN` where no audio landed.
      *
      * Blocking, and deliberately so - [MediaExtractor] and [MediaCodec] are both blocking APIs
-     * and wrapping them in a coroutine timeout would not interrupt either (section 8's NewPipe
-     * scar, in miniature). Cancellation is cooperative instead: [isActive] is read once per
+     * and wrapping them in a coroutine timeout would not interrupt either (the NewPipe scar in
+     * docs/playback-streams.md, in miniature). Cancellation is cooperative instead: [isActive] is read once per
      * codec turn and at the top of every network read, so abandoning a song stops the pass
      * within one buffer rather than at the end of the track.
      */
@@ -421,7 +421,7 @@ object WaveformAnalyzer {
      * through the app's own playback pipeline instead of opening its own connection.
      *
      * That indirection is the point. Handing the extractor an https URL would give it an
-     * unbounded GET with the wrong User-Agent - the two things §7 and invariant 3 say never to
+     * unbounded GET with the wrong User-Agent - the two things docs/youtube-data.md and invariant 3 say never to
      * do to googlevideo - and would fetch bytes nothing else could use. Going through
      * [CacheManager]'s cache-backed factory under the song's own cache key means every request
      * is chunked by [ChunkedStreamDataSource], carries the User-Agent its issuing client needs,

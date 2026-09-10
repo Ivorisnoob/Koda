@@ -57,7 +57,7 @@ import kotlin.math.exp
  *
  * Provided once by the player host so every style's progress bar reaches it through one
  * wiring rather than eight that can each be forgotten - the per-call-site parameter trap
- * section 9 describes, which is how the Home feed shipped with `onEnqueueVideo` unset.
+ * docs/screens.md describes, which is how the Home feed shipped with `onEnqueueVideo` unset.
  */
 internal val LocalPlayerWaveform = staticCompositionLocalOf<PlayerWaveform?> { null }
 

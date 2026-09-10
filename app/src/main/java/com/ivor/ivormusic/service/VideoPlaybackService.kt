@@ -32,7 +32,7 @@ import com.ivor.ivormusic.R
  * anything at all. It was also playing audio in the background with no
  * foreground service, which is exactly the state Android kills processes for.
  *
- * The player deliberately stays owned by `VideoPlayerViewModel` (see CLAUDE.md:
+ * The player deliberately stays owned by `VideoPlayerViewModel` (see docs/playback-video.md:
  * the video pipeline is a plain ExoPlayer, not a service, so the surface, PiP
  * and quality switching stay in one place). This service borrows it: it wraps
  * the ViewModel's player in a session and owns nothing but that session, and it
