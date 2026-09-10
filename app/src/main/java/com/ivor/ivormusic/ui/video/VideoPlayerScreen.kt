@@ -852,12 +852,18 @@ fun PortraitPlayerContent(
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
     /**
-     * Draw into a TextureView so the minimize transition can scale, clip and
-     * round this box on its way to the mini bar. False for an HDR rendition,
-     * which needs the SurfaceView and takes the curtain transition instead -
-     * see portrait_video_surface.xml.
+     * Draw into a TextureView so the minimize transition can clip and fade
+     * this box as the page grows out of and shrinks into the mini bar. False
+     * for an HDR rendition, which needs the SurfaceView and takes the curtain
+     * transition instead - see portrait_video_surface.xml.
      */
     useTextureSurface: Boolean = true,
+    /**
+     * Whether this view draws the picture right now. The minimize transition
+     * hands the player's surface between this box and the mini bar's frame
+     * mid-animation (see bindVideoSurface); anywhere else it is always this one.
+     */
+    holdsVideoSurface: () -> Boolean = { true },
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes
@@ -902,8 +908,9 @@ fun PortraitPlayerContent(
                     } else {
                         PlayerView(ctx).apply { useController = false }
                     }
+                    // Bound in update, which runs straight after this and
+                    // decides whether this box or the mini bar holds the surface.
                     view.apply {
-                        player = exoPlayer
                         disableBuiltInSubtitles()
                         layoutParams = FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -912,7 +919,9 @@ fun PortraitPlayerContent(
                     }
                 },
                 update = { playerView ->
-                    playerView.player = exoPlayer
+                    // Reading holdsVideoSurface here re-runs this block, not the
+                    // page, when the minimize transition moves the picture.
+                    playerView.bindVideoSurface(exoPlayer, holdsVideoSurface())
                 },
                 // Hand the surface back before this view is destroyed - the same
                 // ExoPlayer is also rendered by the mini and PiP PlayerViews.

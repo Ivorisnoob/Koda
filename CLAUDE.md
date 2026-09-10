@@ -201,7 +201,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### Video playback -> `docs/playback-video.md`
 - `VideoPlayerViewModel` owns its `ExoPlayer` (built lazily); `VideoPlaybackService` borrows it for the media session and never releases it. Load is two phases: stream qualities, then one `/next` for everything else - add no extractions.
 - `VideoWatchTracker` owns history qualification, local progress and authenticated watch-time reports, rechecking history-off/incognito/profile before remote writes.
-- Mini-to-expanded is a shared element (`videoMinimizeGeometry`); portrait uses a TextureView except HDR and vertical live (`supportsSharedElementMinimize`). Never read transition progress in composition; only one view holds the surface.
+- Mini-to-expanded is the music player's container transform (`PlayerContainerTransform.kt`, shared with `ExpandablePlayer`); portrait uses a TextureView except HDR and vertical live, which keep the curtain (`supportsAnimatedMinimize`). Never read transition progress in composition; only one view holds the surface.
 - `VideoQueue` is index-addressed; `playQueue` establishes it and `playVideo` clears it. Resume has two stores (active session vs per-video history). Chromecast is gone; do not reintroduce a `Player` indirection.
 - Every `PlayerView` Koda draws captions over calls `disableBuiltInSubtitles()`.
 - SponsorBlock: opt-in, sends only a hash prefix, per-category skip/manual/ignore, read-only, not on live.
