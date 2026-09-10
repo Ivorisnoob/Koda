@@ -348,6 +348,11 @@ fun FullscreenPlayerContent(
     onPreviousInQueue: () -> Unit = {},
     onNextInQueue: () -> Unit = {},
     isLive: Boolean = false,
+    /**
+     * Distance behind the newest media the player deliberately holds - the
+     * live edge itself, not slack. See VideoPlayerViewModel.liveTargetOffsetMs.
+     */
+    liveTargetOffsetMs: Long = 0L,
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
     /**
@@ -693,7 +698,9 @@ fun FullscreenPlayerContent(
                             }
                             if (isLive) {
                                 LiveEdgeChip(
-                                    behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
+                                    behindLiveMs = liveWindowOffsetMs(
+                                        duration, currentPosition, liveTargetOffsetMs
+                                    ),
                                     onClick = onSeekToLive
                                 )
                             }
@@ -755,7 +762,9 @@ fun FullscreenPlayerContent(
                             if (isLive) {
                                 LiveEdgeChip(
                                     // Unknown windows omit the offset until the timeline arrives.
-                                    behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
+                                    behindLiveMs = liveWindowOffsetMs(
+                                        duration, currentPosition, liveTargetOffsetMs
+                                    ),
                                     onClick = onSeekToLive
                                 )
                             } else {
@@ -806,6 +815,11 @@ fun PortraitPlayerContent(
     captionTextColor: CaptionTextColor = CaptionTextColor.WHITE,
     captionBackground: CaptionBackground = CaptionBackground.TRANSLUCENT,
     isLive: Boolean = false,
+    /**
+     * Distance behind the newest media the player deliberately holds - the
+     * live edge itself, not slack. See VideoPlayerViewModel.liveTargetOffsetMs.
+     */
+    liveTargetOffsetMs: Long = 0L,
     /** Jump to the live edge of the DVR window. */
     onSeekToLive: () -> Unit = {},
     /**
@@ -1050,7 +1064,9 @@ fun PortraitPlayerContent(
                         if (isLive) {
                             LiveEdgeChip(
                                 // Unknown windows omit the offset until the timeline arrives.
-                                behindLiveMs = liveWindowOffsetMs(duration, currentPosition),
+                                behindLiveMs = liveWindowOffsetMs(
+                                    duration, currentPosition, liveTargetOffsetMs
+                                ),
                                 onClick = onSeekToLive
                             )
                         } else {

@@ -13,6 +13,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
@@ -583,6 +584,30 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val isLive: StateFlow<Boolean> = _isLive.asStateFlow()
 
     /**
+     * How far behind the newest media in the window the player deliberately
+     * sits, straight off the timeline the source published.
+     *
+     * A live HLS player is never *at* the end of its playlist. With no
+     * `EXT-X-START` and no `HOLD-BACK` in the manifest - which is what YouTube
+     * sends - Media3 targets `3 x targetDuration` back from the end [verified
+     * September 2026 against 1.11's HlsMediaSource.getTargetLiveOffsetUs], so
+     * with YouTube's ~5s segments the live edge is 15-16s short of the window
+     * end. [scar] The behind-live readout measured from the window end and
+     * called anything past a flat 10s "behind", so a stream sitting exactly
+     * where the manifest asks it to sit reported a permanent -0:15 and the
+     * chip never said LIVE. Measuring against this instead makes the number
+     * mean what a viewer reads it as: how far *they* have scrubbed back.
+     *
+     * Zero when the timeline is not live or has not arrived, which reduces the
+     * arithmetic to the old window-end measurement rather than inventing one.
+     */
+    private val _liveTargetOffsetMs = MutableStateFlow(0L)
+    val liveTargetOffsetMs: StateFlow<Long> = _liveTargetOffsetMs.asStateFlow()
+
+    /** Reused across timeline callbacks; only ever touched on the app thread. */
+    private val liveTimelineWindow = Timeline.Window()
+
+    /**
      * Whether the source frame is portrait. Set in Phase 1 off the stream
      * dimensions so the vertical live layout can be composed before the first
      * frame exists, then confirmed by the player's own video size once it does
@@ -872,6 +897,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
             override fun onTracksChanged(tracks: Tracks) {
                 publishSelectableTracks(tracks)
+            }
+
+            /**
+             * The live target offset is a property of the loaded playlist, so
+             * it is re-read whenever the source republishes its timeline - an
+             * HLS media playlist reload does exactly that as the window slides.
+             */
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                updateLiveTargetOffset(timeline)
             }
 
             /**
@@ -2293,6 +2327,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 .build()
         }
         _isLive.value = false
+        _liveTargetOffsetMs.value = 0L
         _isPortraitVideo.value = false
         // Carrying the previous video's shape over would size the watch page's
         // box for the wrong video until the first frame of this one decodes -
@@ -2872,6 +2907,26 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * buildUpon() so this composes with the video-track suspend/restore in
      * [onEnterBackground] / [onEnterForeground] instead of overwriting it.
      */
+    /**
+     * Read the player's own target live offset out of [timeline].
+     *
+     * `Timeline.Window.liveConfiguration` is what HlsMediaSource publishes
+     * after every playlist load, so this follows a manifest that changes its
+     * hold-back mid-broadcast rather than pinning the opening value. A window
+     * that is not live, or a source that declares no target, leaves it at zero.
+     */
+    private fun updateLiveTargetOffset(timeline: Timeline) {
+        val index = _exoPlayer?.currentMediaItemIndex ?: 0
+        if (timeline.isEmpty || index !in 0 until timeline.windowCount) {
+            _liveTargetOffsetMs.value = 0L
+            return
+        }
+        val window = timeline.getWindow(index, liveTimelineWindow)
+        val target = window.liveConfiguration?.targetOffsetMs ?: C.TIME_UNSET
+        _liveTargetOffsetMs.value =
+            if (window.isLive() && target != C.TIME_UNSET) target.coerceAtLeast(0L) else 0L
+    }
+
     private fun applyLiveQualityCap(quality: VideoQuality) {
         val player = _exoPlayer ?: return
         val height = quality.resolution.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
