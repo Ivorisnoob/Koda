@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +49,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.ui.player.rememberPlayerHaptics
 
 /** Height of the collapsed bar. Shared with the overlay that sizes it. */
@@ -75,6 +77,9 @@ internal val MINI_VIDEO_THUMB_CORNER = 12.dp
 /** Rounding of the bar itself. */
 internal val MINI_VIDEO_BAR_CORNER = 28.dp
 
+/** Depth of the bar, which the container transform starts from and lands on. */
+internal val MINI_VIDEO_BAR_SHADOW = 12.dp
+
 /**
  * The video player's collapsed bar: the video still playing, what it is, and
  * the two controls worth reaching for without opening the player.
@@ -94,10 +99,11 @@ internal val MINI_VIDEO_BAR_CORNER = 28.dp
 fun MiniVideoPlayerContent(
     viewModel: VideoPlayerViewModel,
     /**
-     * False while the minimize transition is still carrying the picture into
-     * this frame. Only one view may hold the player's surface, so during the
-     * hand-off the bar draws everything except the video and the travelling
-     * watch page supplies the picture, landing exactly on the empty frame.
+     * False while the bar is drawn inside the container transform, where the
+     * watch page opening out of it holds the player's surface. Only one view
+     * may hold it, and handing it back and forth mid-animation would be a
+     * black frame, so the frame shows the video's thumbnail instead for the
+     * few frames it is legible.
      */
     showSurface: Boolean = true,
 ) {
@@ -126,7 +132,8 @@ fun MiniVideoPlayerContent(
             isPortrait = isPortrait,
             isLive = isLive,
             progress = progress,
-            showSurface = showSurface
+            showSurface = showSurface,
+            thumbnailUrl = video.thumbnailUrl
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -222,9 +229,9 @@ fun MiniVideoPlayerContent(
  * below the mini bar as a hard dark rectangle, and what looked like a rounded
  * video was the card showing through a square hole. `surface_type` is only
  * settable in the constructor, which is the whole reason `mini_video_surface`
- * is a layout file. The portrait watch page now does the same, because the
- * minimize transition scales and rounds the picture on its way into this frame;
- * fullscreen and HDR keep their SurfaceView.
+ * is a layout file. The portrait watch page does the same, because the minimize
+ * transition clips and fades it on its way into this bar; fullscreen and HDR
+ * keep their SurfaceView.
  *
  * **Fit, not zoom, for a portrait source.** The frame is 16:9 and a vertical
  * video cropped to it loses its top and bottom, which is exactly where a
@@ -240,7 +247,8 @@ private fun MiniVideoSurface(
     isPortrait: Boolean,
     isLive: Boolean,
     progress: Float,
-    showSurface: Boolean
+    showSurface: Boolean,
+    thumbnailUrl: String?
 ) {
     val resizeMode = remember(isPortrait) {
         if (isPortrait) AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -289,7 +297,21 @@ private fun MiniVideoSurface(
             // racing the full player's own view for it.
             onRelease = { pv -> pv.player = null },
             modifier = Modifier.fillMaxSize()
-        )
+        ) else {
+            // The page opening out of this bar holds the surface, so the frame
+            // shows what the video looks like rather than a black hole. Framed
+            // the way the surface would be: filled for landscape, fitted for a
+            // portrait source.
+            VideoThumbnail(
+                thumbnailUrl = thumbnailUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = if (isPortrait) ContentScale.Fit else ContentScale.Crop,
+                showProgress = false,
+                // The frame's own black stands behind it, as the letterbox does.
+                placeholderColor = Color.Transparent,
+            )
+        }
 
         if (isBuffering) {
             // The watch page's own choice over video: it draws its own
