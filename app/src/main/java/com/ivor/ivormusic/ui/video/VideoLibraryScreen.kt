@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.video
 import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -38,7 +39,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.BookmarkRemove
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Login
@@ -68,6 +69,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -522,15 +524,31 @@ private fun LibraryRoot(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.height(4.dp))
+                    val totalLists = playlists.size + savedPlaylists.size
+                    val historyLine = when {
+                        historyVideos.isEmpty() -> null
+                        historyVideos.size == 1 -> stringResource(R.string.dv_one_video)
+                        else -> stringResource(R.string.dv_many_videos, historyVideos.size)
+                    }
                     Text(
-                        text = stringResource(R.string.vl_library_sub),
+                        text = listOfNotNull(
+                            pluralStringResource(
+                                R.plurals.n_playlists,
+                                totalLists,
+                                totalLists
+                            ).takeIf { totalLists > 0 },
+                            historyLine
+                        ).joinToString(" • ")
+                            .ifEmpty { stringResource(R.string.vl_library_sub) },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            // Pinned entries: Watch Later + Liked videos (need login)
+            // Four big doors: Watch Later, Liked, History and the device, plus
+            // downloads as a slim row under them. No fetching, no entrance
+            // animation - just there.
             if (isLoggedIn) {
                 item {
                     Row(
@@ -539,19 +557,23 @@ private fun LibraryRoot(
                             .padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        PinnedLibraryCard(
+                        BigNavButton(
                             title = stringResource(R.string.video_options_watch_later),
+                            subtitle = null,
                             icon = Icons.Rounded.WatchLater,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tileColor = MaterialTheme.colorScheme.primaryContainer,
+                            onTileColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             onClick = {
                                 onOpenPlaylist(VideoPlaylist("WL", "Watch Later"))
                             },
                             modifier = Modifier.weight(1f)
                         )
-                        PinnedLibraryCard(
+                        BigNavButton(
                             title = stringResource(R.string.liked_videos),
+                            subtitle = null,
                             icon = Icons.Rounded.ThumbUp,
-                            tint = MaterialTheme.colorScheme.tertiary,
+                            tileColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            onTileColor = MaterialTheme.colorScheme.onTertiaryContainer,
                             onClick = {
                                 onOpenPlaylist(VideoPlaylist("LL", "Liked Videos"))
                             },
@@ -561,30 +583,60 @@ private fun LibraryRoot(
                 }
             }
 
-            // The device's own videos. Sits with the pinned account feeds
-            // rather than below the playlists because it is the same kind of
-            // thing - a place videos live - and unlike those two it is there
-            // whether or not anyone is signed in, which is the whole point of
-            // it in a tab that is otherwise all account content.
             item {
-                DeviceVideosLibraryCard(
-                    videoCount = deviceVideoCount,
-                    onClick = onOpenDeviceVideos,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    BigNavButton(
+                        title = stringResource(R.string.history),
+                        subtitle = when {
+                            historyVideos.isEmpty() -> null
+                            historyVideos.size == 1 -> stringResource(R.string.dv_one_video)
+                            else -> stringResource(R.string.dv_many_videos, historyVideos.size)
+                        },
+                        icon = Icons.Rounded.History,
+                        tileColor = MaterialTheme.colorScheme.secondaryContainer,
+                        onTileColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        onClick = onOpenHistory,
+                        modifier = Modifier.weight(1f)
+                    )
+                    BigNavButton(
+                        title = stringResource(R.string.dv_on_this_device),
+                        subtitle = when {
+                            deviceVideoCount == null -> stringResource(R.string.dv_card_subtitle)
+                            deviceVideoCount == 1 -> stringResource(R.string.dv_one_video)
+                            else -> stringResource(R.string.dv_many_videos, deviceVideoCount)
+                        },
+                        icon = Icons.Rounded.PhoneAndroid,
+                        tileColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        onTileColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        onClick = onOpenDeviceVideos,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             item {
-                DownloadedContentLibraryCard(
-                    onClick = onOpenDownloads,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+                Column {
+                    SlimDoorRow(
+                        icon = Icons.Rounded.DownloadDone,
+                        title = stringResource(R.string.vl_downloaded_content),
+                        subtitle = stringResource(R.string.vl_downloaded_content_sub),
+                        onClick = onOpenDownloads,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    PlaylistRowDivider()
+                }
             }
 
             // History preview
             if (historyVideos.isNotEmpty()) {
                 item {
-                    SectionHeader(
+                    ChapterHeader(
+                        number = "01",
                         title = stringResource(R.string.history),
                         actionLabel = stringResource(R.string.view_all),
                         onAction = onOpenHistory
@@ -606,14 +658,15 @@ private fun LibraryRoot(
                 }
             } else {
                 item {
-                    SectionHeader(title = stringResource(R.string.history), actionLabel = stringResource(R.string.view_all), onAction = onOpenHistory)
+                    ChapterHeader(number = "01", title = stringResource(R.string.history), actionLabel = stringResource(R.string.view_all), onAction = onOpenHistory)
                 }
             }
 
             // Playlists. Creating one no longer needs a session: signed out it
             // goes on the device, which is the whole point of the local store.
             item {
-                SectionHeader(
+                ChapterHeader(
+                    number = "02",
                     title = stringResource(R.string.your_playlists),
                     actionLabel = stringResource(R.string.action_new),
                     actionIcon = Icons.Rounded.Add,
@@ -625,13 +678,16 @@ private fun LibraryRoot(
             // account's list rather than lost at the end of it. They are also
             // the half that survives being signed out.
             items(savedPlaylists, key = { "saved_${it.playlistId}" }) { playlist ->
-                PlaylistRow(
-                    playlist = playlist,
-                    onClick = { onOpenPlaylist(playlist) },
-                    isSaved = true,
-                    onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+                Column {
+                    PlaylistRow(
+                        playlist = playlist,
+                        onClick = { onOpenPlaylist(playlist) },
+                        isSaved = true,
+                        onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    PlaylistRowDivider()
+                }
             }
 
             when {
@@ -662,16 +718,19 @@ private fun LibraryRoot(
 
                 else -> items(playlists, key = { it.playlistId }) { playlist ->
                     val isLocal = LocalVideoPlaylistsRepository.isLocal(playlist.playlistId)
-                    PlaylistRow(
-                        playlist = playlist,
-                        onClick = { onOpenPlaylist(playlist) },
-                        onDelete = { onDeletePlaylist(playlist) },
-                        isLocal = isLocal,
-                        onRename = if (isLocal) {
-                            { name -> onRenamePlaylist(playlist, name) }
-                        } else null,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
+                    Column {
+                        PlaylistRow(
+                            playlist = playlist,
+                            onClick = { onOpenPlaylist(playlist) },
+                            onDelete = { onDeletePlaylist(playlist) },
+                            isLocal = isLocal,
+                            onRename = if (isLocal) {
+                                { name -> onRenamePlaylist(playlist, name) }
+                            } else null,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        PlaylistRowDivider()
+                    }
                 }
             }
 
@@ -737,7 +796,8 @@ private fun ClearHistoryDialog(
 }
 
 @Composable
-private fun SectionHeader(
+private fun ChapterHeader(
+    number: String,
     title: String,
     actionLabel: String? = null,
     actionIcon: ImageVector = Icons.Rounded.ChevronRight,
@@ -747,11 +807,18 @@ private fun SectionHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Bottom
     ) {
         Text(
-            text = title,
+            text = number,
             style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.weight(1f)
@@ -909,120 +976,134 @@ private fun RenamePlaylistDialog(
     )
 }
 
+/**
+ * One of the four big doors: Watch Later, Liked, History, the device.
+ * Colored container, icon and label with an optional count line - safe
+ * rounded corners throughout, nothing to clip, no entrance animation.
+ */
 @Composable
-private fun PinnedLibraryCard(
+private fun BigNavButton(
     title: String,
+    subtitle: String?,
     icon: ImageVector,
-    tint: Color,
+    tileColor: Color,
+    onTileColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
-        // Clip before the click handler so the ripple follows the card's corners
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
+        onClick = onClick,
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 1.dp
+        color = tileColor,
+        contentColor = onTileColor,
+        modifier = modifier.height(120.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(tint.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp)
             )
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = onTileColor.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
     }
 }
 
 /**
- * The Library's entry to the device's own videos.
- *
- * A full-width row rather than a third pinned card: Watch Later and Liked are a
- * pair by construction and splitting the row three ways would leave three
- * cramped cards, while this one has a count to show and is not tied to an
- * account.
+ * A destination that stays a destination: liked videos, the device,
+ * downloads. Divider-separated slim row with a tonal icon box - deliberately
+ * quieter than the inbox above it.
  */
 @Composable
-private fun DeviceVideosLibraryCard(
-    videoCount: Int?,
+private fun SlimDoorRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 1.dp
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.PhoneAndroid,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.dv_on_this_device),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    // Before the first scan the count is genuinely unknown, and
-                    // a "0 videos" that later turns into 84 is worse than not
-                    // claiming a number at all.
-                    text = when {
-                        videoCount == null -> stringResource(R.string.dv_card_subtitle)
-                        videoCount == 1 -> stringResource(R.string.dv_one_video)
-                        else -> stringResource(R.string.dv_many_videos, videoCount)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
             Icon(
-                Icons.Rounded.ChevronRight,
+                imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(20.dp)
             )
         }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Icon(
+            Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
+}
+
+/**
+ * Inset rule under a container-less playlist row. Editorial rows carry no
+ * surface, so the divider does the separating.
+ */
+@Composable
+private fun PlaylistRowDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant
+    )
 }
 
 @Composable
@@ -1152,14 +1233,15 @@ private fun PlaylistRow(
     }
 
     Surface(
-        // Clip before the click handler so the ripple follows the card's corners
+        // Clip before the click handler so the ripple follows the row's corners.
+        // Editorial rows carry no surface of their own - the divider below
+        // does the separating - so this stays transparent.
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 1.dp
+        color = Color.Transparent
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -1170,7 +1252,7 @@ private fun PlaylistRow(
                 modifier = Modifier
                     .width(120.dp)
                     .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                 contentAlignment = Alignment.Center
             ) {
