@@ -512,7 +512,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _playbackSpeed = MutableStateFlow(themePreferences.getVideoPlaybackSpeed())
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
-    private var playbackReportJob: kotlinx.coroutines.Job? = null
+    private val watchTracker = com.ivor.ivormusic.data.VideoWatchTracker(context, viewModelScope, youtubeRepository)
+    private var watchProfileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(context)
 
     // Track quality change listener to prevent leaks
     private var qualityChangeListener: Player.Listener? = null
@@ -954,7 +955,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     queueErrorSkipCount = 0
                 }
                 if (playbackState == Player.STATE_ENDED) {
-                    _currentVideo.value?.videoId?.let(videoHistoryRepository::clearResumePosition)
+                    if (watchProfileId == com.ivor.ivormusic.data.ProfileManager.activeProfileId(context) &&
+                        themePreferences.isSaveVideoHistoryEnabled() &&
+                        !com.ivor.ivormusic.data.IncognitoMode.isEnabled(context)) {
+                        _currentVideo.value?.videoId?.let(videoHistoryRepository::clearResumePosition)
+                    }
                     // Repeat-one normally prevents STATE_ENDED entirely.
                     // The guard keeps a transient player/state mismatch
                     // from advancing away from a video meant to loop.
@@ -1213,6 +1218,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Save a reusable per-video checkpoint, separate from the one active-session snapshot. */
     private fun saveCurrentVideoResumePosition() {
+        if (watchProfileId != com.ivor.ivormusic.data.ProfileManager.activeProfileId(context)) return
         val video = _currentVideo.value ?: return
         if (_isLive.value || video.isLive) return
         if (video.videoId.startsWith("external:")) return
@@ -2239,6 +2245,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // explicit session restore position wins; ordinary opens use this
         // profile's last meaningful checkpoint for that video.
         saveCurrentVideoResumePosition()
+        watchTracker.close()
+        watchProfileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(context)
         val checkpointMs = if (resumePositionMs == null &&
             themePreferences.isSaveVideoHistoryEnabled() && !video.isLive &&
             !video.videoId.startsWith("external:")
@@ -2389,7 +2397,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
 
         if (localSource != null) {
-            playbackReportJob?.cancel()
+            watchTracker.close()
             clearVideoPlaybackSession()
             try {
                 _exoPlayer?.stop()
@@ -2573,78 +2581,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
         }
         
-        // Report Playback (cancel previous if user switched videos)
-        // Only report if saveVideoHistory setting is enabled
-        playbackReportJob?.cancel()
-        playbackReportJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(10000)
-            // A stream still buffering (or briefly paused) at the 10s mark must
-            // not lose its report — wait up to a minute for playback to run.
-            var waitedMs = 0
-            while (!_isPlaying.value && waitedMs < 60_000) {
-                kotlinx.coroutines.delay(1000)
-                waitedMs += 1000
-            }
-            // Fresh pref read: the settings screen toggles through its own
-            // ThemePreferences instance, so this VM's StateFlow copy is stale.
-            if (_isPlaying.value && themePreferences.isSaveVideoHistoryEnabled()) {
-                // Local history: works without login and feeds recommendations.
-                // Use the current video state — Phase 2 may have enriched it.
-                val watched = _currentVideo.value?.takeIf { it.videoId == video.videoId } ?: video
-                videoHistoryRepository.addVideo(watched)
-                // WEB client flow: the music (WEB_REMIX) reporter does not
-                // register plain videos in YouTube watch history
-                youtubeRepository.reportVideoPlayback(video.videoId)
-            }
-        }
+        startWatchTracking()
     }
 
-    /**
-     * Record a locally played video in Koda's own watch history.
-     *
-     * A file on the device is still something the user watched, and leaving it
-     * out made the history list quietly incomplete - a folder of holiday clips
-     * watched all evening left no trace, while the one YouTube video in between
-     * did. Nothing is told to YouTube: there is no id to report, and a device
-     * file is nobody's upload.
-     *
-     * The same 10s-of-actual-playback rule as the online path, so opening a
-     * file and immediately backing out does not record it, and the same fresh
-     * pref read, because the settings screen toggles through its own
-     * ThemePreferences instance. Incognito and the profile scope are enforced
-     * inside [VideoHistoryRepository.addVideo], which is the whole reason that
-     * gate lives there rather than at each call site.
-     *
-     * Deliberately not extended to an externally opened one-off URI: a grant
-     * from another app dies with the task, so the entry would be a row that
-     * cannot be replayed. [LocalVideo.playbackIdFor] is what decides whether an
-     * incoming file is a MediaStore row worth remembering.
-     */
+    private fun startWatchTracking() {
+        _exoPlayer?.let { player -> watchTracker.start(player, { _currentVideo.value }) }
+    }
+
     private fun recordLocalWatch(video: VideoItem) {
-        // Only entries that can be opened again. A downloaded video keeps its
-        // real YouTube id, a gallery file keeps a device id the URI is rebuilt
-        // from, and a one-off external grant keeps neither - a row for that
-        // would be a dead link the moment the task ends.
-        val replayable = LocalVideo.uriFor(video.videoId) != null ||
-            !video.videoId.startsWith("external:")
-        if (!replayable) return
-        playbackReportJob?.cancel()
-        playbackReportJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(10000)
-            var waitedMs = 0
-            while (!_isPlaying.value && waitedMs < 60_000) {
-                kotlinx.coroutines.delay(1000)
-                waitedMs += 1000
-            }
-            if (!_isPlaying.value) return@launch
-            if (_currentVideo.value?.videoId != video.videoId) return@launch
-            if (!themePreferences.isSaveVideoHistoryEnabled()) return@launch
-            // Prefer the current state: a device file's row is renamed from the
-            // decoder on the first onTracksChanged, so the enriched item is the
-            // one worth keeping.
-            val watched = _currentVideo.value?.takeIf { it.videoId == video.videoId } ?: video
-            videoHistoryRepository.addVideo(watched)
-        }
+        if (!video.videoId.startsWith("external:")) startWatchTracking()
     }
 
     private fun isCurrentVideoLoad(videoId: String, generation: Long): Boolean =
@@ -3117,6 +3062,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     fun closePlayer() {
+        watchTracker.close()
         saveCurrentVideoResumePosition()
         _resumedFromMs.value = null
         // Remove quality change listener to prevent leaks if player closed before STATE_READY
@@ -3974,6 +3920,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     override fun onCleared() {
+        watchTracker.close()
         super.onCleared()
         // Remove quality change listener to prevent leaks
         qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
