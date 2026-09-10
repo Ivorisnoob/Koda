@@ -35,6 +35,7 @@ import androidx.activity.compose.PredictiveBackHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -91,6 +92,12 @@ private const val EXPAND_HANDOFF_PROGRESS = 0.04f
  * being resized is playing.
  */
 private const val VIDEO_BACK_PEEK = 0.82f
+
+/**
+ * Least travel for the settle to end in a haptic tick. A restored collapsed
+ * player "animates" from 0 to 0 on its first frame, and must not buzz on launch.
+ */
+private const val SETTLE_HAPTIC_MIN_TRAVEL = 0.05f
 
 /**
  * Put the app into system Picture-in-Picture now.
@@ -353,7 +360,9 @@ fun VideoPlayerOverlay(
             }
         }
 
-        // Which transition owns the expanded page. It depends only on state
+        // Which host draws this player, collapsed and expanded both: the
+        // container transform rests as the bar itself, so a session it can
+        // carry never uses the curtain's bar at all. It depends only on state
         // that cannot change without re-preparing playback - the rendition,
         // and live-and-portrait - because the host must not change
         // mid-animation: moving the page between parents disposes the video
@@ -366,8 +375,7 @@ fun VideoPlayerOverlay(
         // it in the first place - live and portrait - which holds for a whole
         // video and so cannot move the page between hosts mid-animation.
         val isLiveVideo by viewModel.isLive.collectAsState()
-        val containerTransform = showExpandedSurface &&
-            supportsAnimatedMinimize(playingQuality) &&
+        val animatedHost = supportsAnimatedMinimize(playingQuality) &&
             !(isLiveVideo && isPortraitVideo)
 
         // Live value while a finger is down. The drag deliberately does not go
@@ -383,6 +391,35 @@ fun VideoPlayerOverlay(
         // real travel instead of an absolute position on the screen.
         var dragStartProgress by remember { mutableFloatStateOf(1f) }
 
+        // The transition's progress, read only inside offset, layout, layer and
+        // AndroidView update blocks, never in composition: it changes every
+        // frame of the gesture, and recomposing on it would take the whole
+        // watch page - and its Android video view - with it.
+        val transformProgress = remember {
+            { (if (isDragging) dragProgress else expandProgress.value).coerceIn(0f, 1f) }
+        }
+
+        // Which of the two video views under the container transform draws the
+        // picture; only one may hold the player's surface. The bar's frame takes
+        // it the moment its content starts fading in on the way down - under a
+        // finger, or once a collapse has committed - so the bar never shows
+        // anything but the live video. The page holds it the rest of the time,
+        // from the first frame of an expansion, so it has pictures before it is
+        // visible. The one letting go keeps its last frame (bindVideoSurface).
+        val barHoldsSurface = remember {
+            derivedStateOf {
+                (!isExpanded || isDragging) && containerMiniAlpha(transformProgress()) > 0f
+            }
+        }
+        val barHoldsSurfaceNow = remember { { barHoldsSurface.value } }
+        val pageHoldsSurface: () -> Boolean = remember(animatedHost) {
+            if (animatedHost) {
+                { !barHoldsSurface.value }
+            } else {
+                { true }
+            }
+        }
+
         // Declared after isDragging so it can clear it. Once expanded/collapsed
         // has actually changed, any drag is over by definition, and this is the
         // backstop that guarantees the flag cannot survive into the next one -
@@ -395,8 +432,8 @@ fun VideoPlayerOverlay(
                 retainExpanded = true
                 hasExpanded = true
             } else {
-                collapseWasTransform = containerTransform
-                if (!containerTransform) {
+                collapseWasTransform = animatedHost
+                if (!animatedHost) {
                     // Overlap the hand-off with the settle rather than
                     // sequencing them: cancelled with this effect if the player
                     // is reopened mid-close, which leaves the surface mounted
@@ -410,10 +447,14 @@ fun VideoPlayerOverlay(
                     }
                 }
             }
-            expandProgress.animateTo(
-                if (isExpanded) 1f else 0f,
-                MINIMIZE_SETTLE_SPRING
-            )
+            val target = if (isExpanded) 1f else 0f
+            // One small tick once the player has arrived, open or put away,
+            // rather than while the finger is still deciding. Only for a
+            // transition that moved; an interrupted one throws out of
+            // animateTo and never gets here.
+            val travelled = abs(expandProgress.value - target) > SETTLE_HAPTIC_MIN_TRAVEL
+            expandProgress.animateTo(target, MINIMIZE_SETTLE_SPRING)
+            if (travelled) haptics.subtle()
             if (!isExpanded) retainExpanded = false
         }
 
@@ -430,7 +471,7 @@ fun VideoPlayerOverlay(
         // page's top edge, which travels from the top of the window down to the
         // bar's; under the curtain, one screen height. No player content is
         // remeasured while dragging.
-        val dragRangePx = if (containerTransform) {
+        val dragRangePx = if (animatedHost) {
             (fullHeightPx - barBottomInsetPx - barHeightPx).coerceAtLeast(1f)
         } else {
             fullHeightPx
@@ -565,8 +606,8 @@ fun VideoPlayerOverlay(
         }
 
         // The expanded watch page, hosted by whichever transition is running.
-        // Extracted so the shared-element path and the curtain path cannot
-        // drift into two differently wired copies of the player.
+        // Extracted so the container transform and the curtain cannot drift
+        // into two differently wired copies of the player.
         val expandedPage: @Composable () -> Unit = {
             VideoPlayerContent(
                 viewModel = viewModel,
@@ -576,6 +617,7 @@ fun VideoPlayerOverlay(
                 timedCommentsFeatureEnabled = timedCommentsEnabled,
                 showRelatedVideos = showRelatedVideos,
                 onOpenChannel = onOpenChannel,
+                holdsVideoSurface = pageHoldsSurface,
                 onMinimizeDragDelta = { dy ->
                     if (!isDragging) {
                         isDragging = true
@@ -588,7 +630,7 @@ fun VideoPlayerOverlay(
                     // short of the bar: nothing there moves, so the rest of
                     // the travel would only squash the expanded layout into
                     // an unreadable sliver.
-                    val floor = if (containerTransform) 0f else 0.25f
+                    val floor = if (animatedHost) 0f else 0.25f
                     dragProgress = (dragProgress - dy / dragRangePx)
                         .coerceIn(floor, 1f)
                 },
@@ -632,6 +674,130 @@ fun VideoPlayerOverlay(
             )
         }
 
+        // The collapsed bar's drags, one modifier for both hosts so the bar
+        // answers the same way whichever of them is drawing it.
+        val miniBarGestures = Modifier
+            .pointerInput(
+                showExpandedSurface,
+                miniExpandThresholdPx,
+                miniDismissThresholdPx,
+                miniFlingVelocityPx
+            ) {
+                if (showExpandedSurface) return@pointerInput
+                var gestureTravelY = 0f
+                var dragStartOffsetY = 0f
+                var thresholdFeedbackSent = false
+                val velocityTracker = VelocityTracker()
+                detectVerticalDragGestures(
+                    onDragStart = {
+                        gestureTravelY = 0f
+                        dragStartOffsetY = miniSettleOffset.value
+                        thresholdFeedbackSent = false
+                        velocityTracker.resetTracking()
+                        miniDragY = dragStartOffsetY
+                        isMiniDragging = true
+                        scope.launch { miniSettleOffset.stop() }
+                    },
+                    onDragEnd = {
+                        val velocityY = velocityTracker.calculateVelocity().y
+                        val expand = gestureTravelY < -miniExpandThresholdPx ||
+                            (gestureTravelY < 0f && velocityY < -miniFlingVelocityPx)
+                        val dismiss = gestureTravelY > miniDismissThresholdPx ||
+                            (gestureTravelY > 0f && velocityY > miniFlingVelocityPx)
+                        when {
+                            expand -> {
+                                // No tick here: the expansion answers with
+                                // its own when the player lands.
+                                val releasedOffset = miniDragY
+                                scope.launch {
+                                    miniSettleOffset.snapTo(releasedOffset)
+                                    isMiniDragging = false
+                                    miniSettleOffset.animateTo(
+                                        0f,
+                                        miniOffsetAnimationSpec
+                                    )
+                                }
+                                viewModel.setExpanded(true)
+                            }
+                            dismiss -> {
+                                if (!thresholdFeedbackSent) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                }
+                                isDismissingMini = true
+                                val releasedOffset = miniDragY
+                                scope.launch {
+                                    miniSettleOffset.snapTo(releasedOffset)
+                                    isMiniDragging = false
+                                    miniSettleOffset.animateTo(
+                                        fullHeightPx,
+                                        miniOffsetAnimationSpec
+                                    )
+                                    viewModel.closePlayer()
+                                    isDismissingMini = false
+                                    miniDragY = 0f
+                                    miniSettleOffset.snapTo(0f)
+                                }
+                            }
+                            else -> {
+                                val releasedOffset = miniDragY
+                                scope.launch {
+                                    miniSettleOffset.snapTo(releasedOffset)
+                                    isMiniDragging = false
+                                    miniSettleOffset.animateTo(
+                                        0f,
+                                        miniOffsetAnimationSpec
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        val releasedOffset = miniDragY
+                        scope.launch {
+                            miniSettleOffset.snapTo(releasedOffset)
+                            isMiniDragging = false
+                            miniSettleOffset.animateTo(
+                                0f,
+                                miniOffsetAnimationSpec
+                            )
+                        }
+                    },
+                    onVerticalDrag = { change, dragAmount ->
+                        gestureTravelY += dragAmount
+                        // Track a synthetic position made from the deltas.
+                        // The bar itself follows downward pulls, so pointer
+                        // coordinates relative to it under-report velocity.
+                        velocityTracker.addPosition(
+                            change.uptimeMillis,
+                            Offset(0f, gestureTravelY)
+                        )
+
+                        // Only the dismiss edge ticks. Expanding says so
+                        // when the player lands, not mid-gesture.
+                        val crossedThreshold = gestureTravelY >= miniDismissThresholdPx
+                        if (crossedThreshold && !thresholdFeedbackSent) {
+                            thresholdFeedbackSent = true
+                            haptics.performHapticFeedback(
+                                HapticFeedbackType.GestureThresholdActivate
+                            )
+                        } else if (!crossedThreshold) {
+                            // Re-arm after the finger returns inside the
+                            // commit zone, matching the visual snap-back.
+                            thresholdFeedbackSent = false
+                        }
+
+                        change.consume()
+                        // Keep the full travel for deciding the gesture,
+                        // while limiting only the visual upward preview.
+                        // Previously the same value was clamped to 24dp
+                        // and then compared with a 48dp expand threshold,
+                        // making distance-based swipe-up impossible.
+                        miniDragY = (dragStartOffsetY + gestureTravelY)
+                            .coerceAtLeast(-miniLiftLimitPx)
+                    }
+                )
+            }
+
         // Offset and fade live on a wrapper rather than on the Surface itself.
         // A graphicsLayer on an elevated Surface makes its shadow render
         // against the layer's rectangular bounds instead of the rounded
@@ -642,10 +808,10 @@ fun VideoPlayerOverlay(
         // including its Android video view. The Animatable is reserved for the
         // release settle; retargeting it for every drag delta made the bar lag
         // behind the finger on slower devices.
-        // Single expression on purpose: the container transform draws the
-        // expanded page itself, in its own growing container, so this one is
-        // only the collapsed bar and the curtain transition.
-        if (!containerTransform)
+        // Single expression on purpose: a session the container transform can
+        // carry never uses this host, collapsed or expanded, so this is only
+        // the bar and the curtain for HDR and the vertical live player.
+        if (!animatedHost)
         Box(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
@@ -663,127 +829,7 @@ fun VideoPlayerOverlay(
             enabled = !showExpandedSurface,
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(
-                    showExpandedSurface,
-                    miniExpandThresholdPx,
-                    miniDismissThresholdPx,
-                    miniFlingVelocityPx
-                ) {
-                    if (showExpandedSurface) return@pointerInput
-                    var gestureTravelY = 0f
-                    var dragStartOffsetY = 0f
-                    var thresholdFeedbackSent = false
-                    val velocityTracker = VelocityTracker()
-                    detectVerticalDragGestures(
-                        onDragStart = {
-                            gestureTravelY = 0f
-                            dragStartOffsetY = miniSettleOffset.value
-                            thresholdFeedbackSent = false
-                            velocityTracker.resetTracking()
-                            miniDragY = dragStartOffsetY
-                            isMiniDragging = true
-                            scope.launch { miniSettleOffset.stop() }
-                        },
-                        onDragEnd = {
-                            val velocityY = velocityTracker.calculateVelocity().y
-                            val expand = gestureTravelY < -miniExpandThresholdPx ||
-                                (gestureTravelY < 0f && velocityY < -miniFlingVelocityPx)
-                            val dismiss = gestureTravelY > miniDismissThresholdPx ||
-                                (gestureTravelY > 0f && velocityY > miniFlingVelocityPx)
-                            when {
-                                expand -> {
-                                    if (!thresholdFeedbackSent) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                                    }
-                                    val releasedOffset = miniDragY
-                                    scope.launch {
-                                        miniSettleOffset.snapTo(releasedOffset)
-                                        isMiniDragging = false
-                                        miniSettleOffset.animateTo(
-                                            0f,
-                                            miniOffsetAnimationSpec
-                                        )
-                                    }
-                                    viewModel.setExpanded(true)
-                                }
-                                dismiss -> {
-                                    if (!thresholdFeedbackSent) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                                    }
-                                    isDismissingMini = true
-                                    val releasedOffset = miniDragY
-                                    scope.launch {
-                                        miniSettleOffset.snapTo(releasedOffset)
-                                        isMiniDragging = false
-                                        miniSettleOffset.animateTo(
-                                            fullHeightPx,
-                                            miniOffsetAnimationSpec
-                                        )
-                                        viewModel.closePlayer()
-                                        isDismissingMini = false
-                                        miniDragY = 0f
-                                        miniSettleOffset.snapTo(0f)
-                                    }
-                                }
-                                else -> {
-                                    val releasedOffset = miniDragY
-                                    scope.launch {
-                                        miniSettleOffset.snapTo(releasedOffset)
-                                        isMiniDragging = false
-                                        miniSettleOffset.animateTo(
-                                            0f,
-                                            miniOffsetAnimationSpec
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        onDragCancel = {
-                            val releasedOffset = miniDragY
-                            scope.launch {
-                                miniSettleOffset.snapTo(releasedOffset)
-                                isMiniDragging = false
-                                miniSettleOffset.animateTo(
-                                    0f,
-                                    miniOffsetAnimationSpec
-                                )
-                            }
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            gestureTravelY += dragAmount
-                            // Track a synthetic position made from the deltas.
-                            // The bar itself follows downward pulls, so pointer
-                            // coordinates relative to it under-report velocity.
-                            velocityTracker.addPosition(
-                                change.uptimeMillis,
-                                Offset(0f, gestureTravelY)
-                            )
-
-                            val crossedThreshold =
-                                gestureTravelY <= -miniExpandThresholdPx ||
-                                    gestureTravelY >= miniDismissThresholdPx
-                            if (crossedThreshold && !thresholdFeedbackSent) {
-                                thresholdFeedbackSent = true
-                                haptics.performHapticFeedback(
-                                    HapticFeedbackType.GestureThresholdActivate
-                                )
-                            } else if (!crossedThreshold) {
-                                // Re-arm after the finger returns inside the
-                                // commit zone, matching the visual snap-back.
-                                thresholdFeedbackSent = false
-                            }
-
-                            change.consume()
-                            // Keep the full travel for deciding the gesture,
-                            // while limiting only the visual upward preview.
-                            // Previously the same value was clamped to 24dp
-                            // and then compared with a 48dp expand threshold,
-                            // making distance-based swipe-up impossible.
-                            miniDragY = (dragStartOffsetY + gestureTravelY)
-                                .coerceAtLeast(-miniLiftLimitPx)
-                        }
-                    )
-                },
+                .then(miniBarGestures),
             shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = if (showExpandedSurface) 0.dp else 4.dp,
@@ -824,7 +870,7 @@ fun VideoPlayerOverlay(
         }
         }
 
-        if (containerTransform) {
+        if (animatedHost) {
             val barCornerPx = with(density) { MINI_VIDEO_BAR_CORNER.toPx() }
             val barShadowPx = with(density) { MINI_VIDEO_BAR_SHADOW.toPx() }
             val windowWidthPx = constraints.maxWidth.toFloat()
@@ -833,14 +879,6 @@ fun VideoPlayerOverlay(
             // player's, this container never hands over to its content: it
             // stays opaque the whole way.
             val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-
-            // Read only inside the offset, layout and layer blocks below, never
-            // in composition: it changes every frame of the gesture, and
-            // recomposing here would take the whole watch page - and its
-            // Android video view - with it.
-            val transformProgress = remember {
-                { (if (isDragging) dragProgress else expandProgress.value).coerceIn(0f, 1f) }
-            }
             val frame = {
                 playerContainerFrame(
                     progress = transformProgress(),
@@ -853,21 +891,27 @@ fun VideoPlayerOverlay(
                 )
             }
 
-            // The music player's container transform: one rounded container
-            // grows out of the collapsed bar into the window, the bar's own
-            // content fading out early while the watch page - measured once at
-            // window size - rides its top edge and fades in. At rest expanded
-            // it is the whole window with square corners, hosting the page with
-            // nothing animating.
+            // The music player's container transform, and the collapsed bar
+            // itself: one rounded container rests as the bar and grows out of
+            // it into the window, the bar's content fading out early while the
+            // watch page - measured once at window size - rides its top edge
+            // and fades in. Resting as the bar, rather than handing over to a
+            // separate one, is what keeps the bar's video view alive across the
+            // landing: a fresh view at rest has no picture for its first frames.
+            //
+            // Position, size and the bar's own motion - a drag, a dismiss, a
+            // restored player's entrance - live on this wrapper, and the depth
+            // on the container inside it, for the reason the curtain's bar keeps
+            // them apart: a layer over an elevated shape draws its shadow
+            // against the layer's rectangle.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset {
                         val f = frame()
-                        // Follows the host's toolbar while collapsed, exactly
-                        // as the resting bar does, and lets go of it as the
-                        // player opens: a full-screen player has no navigation
-                        // bar to sit above.
+                        // Follows the host's toolbar while collapsed, and lets
+                        // go of it as the player opens: a full-screen player has
+                        // no navigation bar to sit above.
                         val follow = hostChromeFollowOffsetPx() * (1f - transformProgress())
                         IntOffset(f.left.roundToInt(), (f.top + follow).roundToInt())
                     }
@@ -879,34 +923,61 @@ fun VideoPlayerOverlay(
                         layout(width, height) { placeable.place(0, 0) }
                     }
                     .graphicsLayer {
-                        shape = RoundedCornerShape(frame().cornerRadius)
-                        clip = true
-                        // The resting bar's depth at the collapsed end, gone
-                        // once the player owns the window.
-                        shadowElevation = barShadowPx * (1f - transformProgress())
+                        val gestureOffset = if (isMiniDragging) miniDragY else miniSettleOffset.value
+                        // A restored collapsed player rises into place once.
+                        // After that the transform is the entrance, and the
+                        // page flag dropping at the end of a collapse must not
+                        // blink the bar out for the frame before the entrance
+                        // effect catches up.
+                        val entrance = if (hasExpanded || showExpandedSurface) 1f else miniEntrance.value
+                        translationY = gestureOffset + (1f - entrance) * miniEnterOffsetPx
+                        val fadeLimit = if (isDismissingMini) 1f else 0.5f
+                        alpha = entrance * (
+                            1f - (gestureOffset.coerceAtLeast(0f) / (miniDismissThresholdPx * 2f))
+                                .coerceIn(0f, fadeLimit)
+                            )
                     }
-                    .background(containerColor)
             ) {
-                ContainerMiniLayer(
-                    viewModel = viewModel,
-                    width = fullWidth - MINI_VIDEO_MARGIN * 2,
-                    progress = transformProgress,
-                )
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        // Escape the animated container's constraints in both
-                        // axes, so the page is measured once at window size and
-                        // the container only reveals it: the clip's changing
-                        // size never reaches the page or its video view.
-                        .wrapContentSize(Alignment.TopCenter, unbounded = true)
-                        .requiredSize(fullWidth, fullHeight)
-                        // Alpha only. The page already rises with the
-                        // container's top edge, and a lift of its own would put
-                        // two speeds on one object.
-                        .graphicsLayer { alpha = containerFullAlpha(transformProgress()) }
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            shape = RoundedCornerShape(frame().cornerRadius)
+                            clip = true
+                            // The bar's depth at the collapsed end, gone once
+                            // the player owns the window.
+                            shadowElevation = barShadowPx * (1f - transformProgress())
+                        }
+                        .background(containerColor)
+                        .then(miniBarGestures)
+                        // Inside the clip, so the ripple follows the rounding.
+                        .clickable(enabled = !showExpandedSurface) { viewModel.setExpanded(true) }
                 ) {
-                    expandedPage()
+                    ContainerMiniLayer(
+                        viewModel = viewModel,
+                        width = fullWidth - MINI_VIDEO_MARGIN * 2,
+                        progress = transformProgress,
+                        holdsSurface = barHoldsSurfaceNow,
+                    )
+                    if (showExpandedSurface) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                // Escape the animated container's constraints
+                                // in both axes, so the page is measured once at
+                                // window size and the container only reveals
+                                // it: the clip's changing size never reaches the
+                                // page or its video view.
+                                .wrapContentSize(Alignment.TopCenter, unbounded = true)
+                                .requiredSize(fullWidth, fullHeight)
+                                // Alpha only. The page already rises with the
+                                // container's top edge, and a lift of its own
+                                // would put two speeds on one object.
+                                .graphicsLayer { alpha = containerFullAlpha(transformProgress()) }
+                        ) {
+                            expandedPage()
+                        }
+                    }
                 }
             }
         }
@@ -914,8 +985,8 @@ fun VideoPlayerOverlay(
 }
 
 /**
- * The collapsed bar's content inside the container transform: solid at the
- * collapsed end, gone over the first stretch of an expansion.
+ * The collapsed bar's content inside the container transform: the whole bar at
+ * rest, gone over the first stretch of an expansion.
  *
  * Its own composable so the one composition read it needs - whether it is
  * visible at all - recomposes this and nothing else. The watch page beside it
@@ -926,6 +997,7 @@ private fun BoxScope.ContainerMiniLayer(
     viewModel: VideoPlayerViewModel,
     width: Dp,
     progress: () -> Float,
+    holdsSurface: () -> Boolean,
 ) {
     val visible by remember(progress) {
         derivedStateOf { containerMiniAlpha(progress()) > 0f }
@@ -934,12 +1006,12 @@ private fun BoxScope.ContainerMiniLayer(
     Box(
         modifier = Modifier
             .align(Alignment.BottomCenter)
-            // Measured once at the bar's width, as the resting bar is, rather
-            // than re-laid-out against the container on every frame.
+            // Measured once at the bar's width rather than re-laid-out against
+            // the container on every frame.
             .requiredWidth(width)
             .height(MINI_VIDEO_HEIGHT)
             .graphicsLayer { alpha = containerMiniAlpha(progress()) }
     ) {
-        MiniVideoPlayerContent(viewModel = viewModel, showSurface = false)
+        MiniVideoPlayerContent(viewModel = viewModel, holdsSurface = holdsSurface)
     }
 }

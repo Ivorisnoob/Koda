@@ -119,7 +119,14 @@ fun VideoPlayerContent(
     // Swipe-down-to-minimize: raw drag deltas / release velocity from the
     // portrait video surface, driving the overlay's expand progress
     onMinimizeDragDelta: (Float) -> Unit = {},
-    onMinimizeDragRelease: (Float) -> Unit = {}
+    onMinimizeDragRelease: (Float) -> Unit = {},
+    /**
+     * Whether the portrait box draws the picture right now, rather than the
+     * mini bar's frame the minimize transition is handing it to. Read inside
+     * the video view's update block, so it moves the picture without
+     * recomposing this page.
+     */
+    holdsVideoSurface: () -> Boolean = { true }
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -933,6 +940,7 @@ fun VideoPlayerContent(
                         // An HDR rendition needs the SurfaceView, and gives up
                         // the animated minimize for it.
                         useTextureSurface = supportsAnimatedMinimize(currentQuality),
+                        holdsVideoSurface = holdsVideoSurface,
                         videoId = currentVideo.videoId,
                         showControls = showControls,
                         onToggleControls = { showControls = !showControls },

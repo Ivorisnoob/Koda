@@ -39,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,7 +48,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.ivor.ivormusic.R
-import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.ui.player.rememberPlayerHaptics
 
 /** Height of the collapsed bar. Shared with the overlay that sizes it. */
@@ -99,13 +97,12 @@ internal val MINI_VIDEO_BAR_SHADOW = 12.dp
 fun MiniVideoPlayerContent(
     viewModel: VideoPlayerViewModel,
     /**
-     * False while the bar is drawn inside the container transform, where the
-     * watch page opening out of it holds the player's surface. Only one view
-     * may hold it, and handing it back and forth mid-animation would be a
-     * black frame, so the frame shows the video's thumbnail instead for the
-     * few frames it is legible.
+     * Whether the bar's frame draws the picture right now. Inside the container
+     * transform the watch page holds the player's surface while it is on
+     * screen, and hands it to this frame as the bar comes back on the way down
+     * (see bindVideoSurface). Anywhere else the bar always holds it.
      */
-    showSurface: Boolean = true,
+    holdsSurface: () -> Boolean = { true },
 ) {
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -132,8 +129,7 @@ fun MiniVideoPlayerContent(
             isPortrait = isPortrait,
             isLive = isLive,
             progress = progress,
-            showSurface = showSurface,
-            thumbnailUrl = video.thumbnailUrl
+            holdsSurface = holdsSurface
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -247,8 +243,7 @@ private fun MiniVideoSurface(
     isPortrait: Boolean,
     isLive: Boolean,
     progress: Float,
-    showSurface: Boolean,
-    thumbnailUrl: String?
+    holdsSurface: () -> Boolean
 ) {
     val resizeMode = remember(isPortrait) {
         if (isPortrait) AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -280,38 +275,26 @@ private fun MiniVideoSurface(
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        if (showSurface) AndroidView(
+        AndroidView(
             factory = { ctx ->
                 LayoutInflater.from(ctx)
                     .inflate(R.layout.mini_video_surface, null) as PlayerView
             },
             update = { pv ->
-                // Re-attached rather than only bound at construction: error
-                // recovery can hand the ViewModel a new ExoPlayer, and a view
-                // still holding the old one shows a frozen last frame.
-                if (pv.player !== viewModel.exoPlayer) pv.player = viewModel.exoPlayer
                 pv.resizeMode = resizeMode
+                // Re-bound on every update rather than only at construction:
+                // error recovery can hand the ViewModel a new ExoPlayer, and a
+                // view still holding the old one shows a frozen last frame.
+                // Reading holdsSurface here re-runs this block, not the bar,
+                // when the transition moves the picture.
+                pv.bindVideoSurface(viewModel.exoPlayer, holdsSurface())
             },
             // Release the shared player before this view's surface goes away,
             // so expanding and collapsing hand it over cleanly instead of
             // racing the full player's own view for it.
             onRelease = { pv -> pv.player = null },
             modifier = Modifier.fillMaxSize()
-        ) else {
-            // The page opening out of this bar holds the surface, so the frame
-            // shows what the video looks like rather than a black hole. Framed
-            // the way the surface would be: filled for landscape, fitted for a
-            // portrait source.
-            VideoThumbnail(
-                thumbnailUrl = thumbnailUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = if (isPortrait) ContentScale.Fit else ContentScale.Crop,
-                showProgress = false,
-                // The frame's own black stands behind it, as the letterbox does.
-                placeholderColor = Color.Transparent,
-            )
-        }
+        )
 
         if (isBuffering) {
             // The watch page's own choice over video: it draws its own
