@@ -2,6 +2,8 @@ package com.ivor.ivormusic.ui.search
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.components.displaySubtitle
+import com.ivor.ivormusic.ui.components.hasReleaseMetadata
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -11,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.RepeatMode
@@ -30,8 +33,10 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +49,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -124,6 +130,8 @@ import com.ivor.ivormusic.data.YouTubeLinkParser
 import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.VideoPlaylist
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toShape
@@ -1357,7 +1365,7 @@ fun SearchScreen(
 /**
  * Hero Header with Search Bar
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SearchHeroHeader(
     query: String,
@@ -1441,114 +1449,164 @@ private fun SearchHeroHeader(
             )
             
             Spacer(modifier = Modifier.height(20.dp))
-            
-            // Search Field with beautiful rounded corners
-            Surface(
+
+            // Flat expressive search field: no elevation, no shadow. The shape
+            // is the design - a pill container on surfaceContainerHigh with a
+            // hairline outlineVariant border that becomes a 1.5dp primary ring
+            // on focus - instead of depth. PixelPlayer's DockedSearchBar this
+            // is measured against tints everything primaryContainer and paints
+            // its placeholder in primary; this stays neutral until focus, then
+            // answers with the primary border and leading icon.
+            val searchInteraction = remember { MutableInteractionSource() }
+            val isFieldFocused by searchInteraction.collectIsFocusedAsState()
+            LaunchedEffect(isFieldFocused) { onFocusChanged(isFieldFocused) }
+            val fieldContainer by animateColorAsState(
+                targetValue = if (isFieldFocused || query.isNotEmpty()) {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                },
+                label = "searchFieldContainer"
+            )
+            val fieldBorder by animateColorAsState(
+                targetValue = if (isFieldFocused) {
+                    primaryColor
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                },
+                label = "searchFieldBorder"
+            )
+            val fieldBorderWidth by animateFloatAsState(
+                targetValue = if (isFieldFocused) 1.5f else 1f,
+                label = "searchFieldBorderWidth"
+            )
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { onFocusChanged(it.isFocused) },
-                shape = RoundedCornerShape(28.dp),
-                color = surfaceColor,
-                tonalElevation = 4.dp,
-                shadowElevation = 8.dp
+                    .heightIn(min = 60.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(fieldContainer)
+                    .border(
+                        width = fieldBorderWidth.dp,
+                        color = fieldBorder,
+                        shape = RoundedCornerShape(28.dp)
+                    )
+                    .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    placeholder = {
-                        // Small and single-line: the placeholder is a hint, not
-                        // content, and on narrow screens the full phrase wraps
-                        // and stretches the field's height.
+                // Morph the magnifier into a link icon (with a springy
+                // pop) the moment a YouTube URL is detected.
+                AnimatedContent(
+                    targetState = isLinkDetected,
+                    transitionSpec = {
+                        (scaleIn(
+                            initialScale = 0.4f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        ) + fadeIn(tween(120))) togetherWith
+                            (scaleOut(targetScale = 0.4f, animationSpec = tween(120)) + fadeOut(tween(120)))
+                    },
+                    label = "searchLeadingIcon"
+                ) { linkDetected ->
+                    Icon(
+                        if (linkDetected) Icons.Rounded.Link else Icons.Default.Search,
+                        contentDescription = null,
+                        tint = if (linkDetected || isFieldFocused) primaryColor
+                        else secondaryTextColor,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .padding(9.dp)
+                    )
+                }
+
+                Box(modifier = Modifier.weight(1f)) {
+                    if (query.isEmpty()) {
                         Text(
                             placeholderText,
                             color = secondaryTextColor,
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                    }
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(primaryColor),
+                        interactionSource = searchInteraction,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                        ),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onSearch = { onSearch(query) }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                    )
+                }
+
+                // Mic while the field is empty - the one-tap voice
+                // entry point - morphing to a clear button the moment
+                // there is something to clear. The mic gets the tonal
+                // container so the voice target reads as its own button;
+                // the clear stays quiet because dismissing text is not
+                // the action to advertise.
+                AnimatedContent(
+                    targetState = query.isNotEmpty(),
+                    transitionSpec = {
+                        (scaleIn(
+                            initialScale = 0.4f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        ) + fadeIn(tween(120))) togetherWith
+                            (scaleOut(targetScale = 0.4f, animationSpec = tween(120)) + fadeOut(tween(120)))
                     },
-                    leadingIcon = {
-                        // Morph the magnifier into a link icon (with a springy
-                        // pop) the moment a YouTube URL is detected.
-                        AnimatedContent(
-                            targetState = isLinkDetected,
-                            transitionSpec = {
-                                (scaleIn(
-                                    initialScale = 0.4f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                ) + fadeIn(tween(120))) togetherWith
-                                    (scaleOut(targetScale = 0.4f, animationSpec = tween(120)) + fadeOut(tween(120)))
-                            },
-                            label = "searchLeadingIcon"
-                        ) { linkDetected ->
+                    label = "searchTrailingIcon"
+                ) { hasQuery ->
+                    if (hasQuery) {
+                        IconButton(onClick = { onQueryChange("") }) {
                             Icon(
-                                if (linkDetected) Icons.Rounded.Link else Icons.Default.Search,
-                                contentDescription = null,
-                                tint = primaryColor
+                                Icons.Default.Clear,
+                                contentDescription = stringResource(R.string.cd_clear),
+                                tint = secondaryTextColor
                             )
                         }
-                    },
-                    trailingIcon = {
-                        // Mic while the field is empty - the one-tap voice
-                        // entry point - morphing to a clear button the moment
-                        // there is something to clear. Same springy swap the
-                        // leading icon uses, so the two read as one system.
-                        AnimatedContent(
-                            targetState = query.isNotEmpty(),
-                            transitionSpec = {
-                                (scaleIn(
-                                    initialScale = 0.4f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                ) + fadeIn(tween(120))) togetherWith
-                                    (scaleOut(targetScale = 0.4f, animationSpec = tween(120)) + fadeOut(tween(120)))
-                            },
-                            label = "searchTrailingIcon"
-                        ) { hasQuery ->
-                            if (hasQuery) {
-                                IconButton(onClick = { onQueryChange("") }) {
-                                    Icon(
-                                        Icons.Default.Clear,
-                                        contentDescription = stringResource(R.string.cd_clear),
-                                        tint = secondaryTextColor
-                                    )
-                                }
-                            } else {
-                                IconButton(onClick = { launchVoiceSearch() }) {
+                    } else {
+                        // 48dp touch target with a 40dp tonal cookie inside,
+                        // so the visible button stays compact while the tap
+                        // area meets the minimum.
+                        Box(
+                            modifier = Modifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(
+                                onClick = { launchVoiceSearch() },
+                                shape = MaterialShapes.Cookie4Sided.toShape(),
+                                color = primaryContainerColor,
+                                contentColor = primaryColor,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Icon(
                                         Icons.Rounded.KeyboardVoice,
                                         contentDescription = stringResource(R.string.cd_voice_search),
-                                        tint = primaryColor
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
                         }
-                    },
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        imeAction = androidx.compose.ui.text.input.ImeAction.Search
-                    ),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                        onSearch = { onSearch(query) }
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = textColor,
-                        unfocusedTextColor = textColor,
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        cursorColor = primaryColor,
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent
-                    ),
-                    shape = RoundedCornerShape(28.dp),
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester)
-                )
+                    }
+                }
             }
             
             Spacer(modifier = Modifier.height(20.dp))
@@ -1627,7 +1685,7 @@ private fun SearchSongCard(
         ListItem(
             headlineContent = {
                 Text(
-                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.untitled_song),
+                    text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                     color = textColor,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
@@ -1637,7 +1695,7 @@ private fun SearchSongCard(
             },
             supportingContent = {
                 Text(
-                    text = song.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_artist),
+                    text = song.artist.takeIf { !isUnknownArtist(it) } ?: stringResource(R.string.unknown_artist),
                     color = secondaryTextColor,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
@@ -2047,7 +2105,8 @@ fun PlaylistResultCard(
                       )
                       Spacer(modifier = Modifier.size(6.dp))
                       val metadata = if (isAlbum) {
-                          stringResource(R.string.album_metadata, item.uploaderName)
+                          if (item.hasReleaseMetadata) item.displaySubtitle()
+                          else stringResource(R.string.album_metadata, item.uploaderName)
                       } else {
                           buildList {
                               add(stringResource(R.string.label_playlist))

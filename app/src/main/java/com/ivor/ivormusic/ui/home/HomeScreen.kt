@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -149,6 +150,8 @@ import com.ivor.ivormusic.R
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 
 /**
  * Height of the video top bar when the shell draws it: a 44dp control row with
@@ -853,6 +856,10 @@ fun HomeScreen(
                         onProfileClick = onProfileClick,
                         onOpenChannel = onOpenChannel,
                         onSongLongPress = { song -> songOptionsTarget = song },
+                        onEnqueueSong = { song, playNext ->
+                            if (playNext) playerViewModel.playNext(song)
+                            else playerViewModel.addToQueue(song)
+                        },
                         contentPadding = listContentPadding,
                         viewModel = viewModel,
                         isDarkMode = isDarkMode,
@@ -909,6 +916,10 @@ fun HomeScreen(
                                 onStatsClick = onNavigateToStats,
                                 onOpenChannel = onOpenChannel,
                                 onSongLongPress = { song -> songOptionsTarget = song },
+                                onEnqueueSong = { song, playNext ->
+                                    if (playNext) playerViewModel.playNext(song)
+                                    else playerViewModel.addToQueue(song)
+                                },
                                 allSongsListState = musicLibraryScrollState
                             )
                         }
@@ -1616,6 +1627,7 @@ fun TopBarSection(
 
     val userAvatar by viewModel.userAvatar.collectAsState()
     val downloadingIds by viewModel.downloadingIds.collectAsState()
+    val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
     
     Row(
         modifier = Modifier
@@ -1626,71 +1638,97 @@ fun TopBarSection(
     ) {
         // Profile avatar. Tap opens the switcher; long-press flips straight
         // back to the last profile, which is the whole point of a switcher for
-        // someone bouncing between two accounts.
+        // someone bouncing between two accounts. Incognito shows as a badge on
+        // the avatar itself rather than a chip beside it, so the bar keeps its
+        // shape whether history is paused or not.
         val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
         val accountSwitcher = remember(context) {
             com.ivor.ivormusic.data.AccountSwitcher(context)
         }
         val isSwitching by accountSwitcher.switching.collectAsState()
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(surfaceColor)
-                .combinedClickable(
-                    onClick = onProfileClick,
-                    onLongClick = {
-                        // A long-press that does nothing reads as broken, so
-                        // this only fires when there is somewhere to go.
-                        if (accountSwitcher.quickSwitchTarget() != null) {
-                            haptics.performHapticFeedback(
-                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
-                            )
-                            accountSwitcher.quickSwitch()
+        Box {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(surfaceColor)
+                    .combinedClickable(
+                        onClick = onProfileClick,
+                        onLongClick = {
+                            // A long-press that does nothing reads as broken, so
+                            // this only fires when there is somewhere to go.
+                            if (accountSwitcher.quickSwitchTarget() != null) {
+                                haptics.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                                )
+                                accountSwitcher.quickSwitch()
+                            }
                         }
-                    }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (userAvatar != null) {
-                AsyncImage(
-                    model = userAvatar,
-                    contentDescription = stringResource(R.string.cd_profile),
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = stringResource(R.string.cd_profile),
-                    tint = iconColor,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-            // Progress rides on the avatar rather than blocking the screen: the
-            // switch itself is instant, but the feeds behind it are refetching,
-            // and the status belongs where the user just tapped.
-            androidx.compose.animation.AnimatedVisibility(
-                visible = isSwitching,
-                enter = androidx.compose.animation.fadeIn(),
-                exit = androidx.compose.animation.fadeOut()
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.fillMaxSize(),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                if (userAvatar != null) {
+                    AsyncImage(
+                        model = userAvatar,
+                        contentDescription = stringResource(R.string.cd_profile),
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = stringResource(R.string.cd_profile),
+                        tint = iconColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                // Progress rides on the avatar rather than blocking the screen: the
+                // switch itself is instant, but the feeds behind it are refetching,
+                // and the status belongs where the user just tapped.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isSwitching,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut()
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.fillMaxSize(),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            // The history-paused mark. Tonal fill so it reads as "a mode is on"
+            // without taking over the bar; the badge itself carries the label,
+            // so a screen reader announces it alongside the profile button.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = incognito,
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 2.dp, y = 2.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        .border(
+                            width = 2.dp,
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.VisibilityOff,
+                        contentDescription = stringResource(R.string.incognito_active),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
             }
         }
-
-        // Incognito rides beside the avatar because that is both where it was
-        // turned on and the one control on this bar that is about identity.
-        // The chip itself lives in ui/components, since video mode's bar needs
-        // the same one.
-        com.ivor.ivormusic.ui.components.IncognitoIndicator(
-            onClick = onProfileClick,
-            modifier = Modifier.padding(start = 10.dp)
-        )
         
         // Right side icons with shape morphing
         Row(
@@ -1807,8 +1845,8 @@ fun HeroSection(
                 )
             } else {
                 Text(
-                    text = (firstSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_artist)).let { artist ->
-                        (secondSong?.artist.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) })?.let { second -> stringResource(R.string.artists_joined, artist, second) } ?: artist
+                    text = (firstSong?.artist.takeIf { !isUnknownArtist(it) } ?: stringResource(R.string.unknown_artist)).let { artist ->
+                        (secondSong?.artist.takeIf { !isUnknownArtist(it) })?.let { second -> stringResource(R.string.artists_joined, artist, second) } ?: artist
                     },
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                     color = secondaryTextColor,
@@ -2263,6 +2301,12 @@ fun SearchContent(
      */
     onPlayVideoQueue: ((com.ivor.ivormusic.data.VideoQueue) -> Unit)? = null,
     onEnqueueVideo: ((com.ivor.ivormusic.data.VideoItem, Boolean) -> Unit)? = null,
+    /**
+     * Queue a song from a playlist opened through search. Hoisted like
+     * [onSongLongPress]: the queue lives in HomeScreen's PlayerViewModel.
+     * Null disarms the queue swipe action. The boolean is play-next.
+     */
+    onEnqueueSong: ((Song, Boolean) -> Unit)? = null,
     onProfileClick: () -> Unit = {},
     /** Open a creator's page, from a Channels result or the long-press sheet. */
     onOpenChannel: (String) -> Unit = {},
@@ -2386,12 +2430,13 @@ fun SearchContent(
 
             "playlist" -> {
                  viewedPlaylist?.let { playlist ->
-                    com.ivor.ivormusic.ui.library.PlaylistDetailScreen(
+                     com.ivor.ivormusic.ui.library.PlaylistDetailScreen(
                         playlist = playlist,
                         onBack = { viewedPlaylist = null },
                         onPlayQueue = onPlayQueue,
                         viewModel = viewModel,
-                        onSongLongPress = onSongLongPress
+                        onSongLongPress = onSongLongPress,
+                        onEnqueueSong = onEnqueueSong
                     )
                 }
             }
@@ -2606,14 +2651,14 @@ fun JumpBackInSection(
                     // captions grow with the user's font scale instead of being
                     // cut off by a hardcoded carousel height.
                     Text(
-                        text = song.title.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.untitled_song),
+                        text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge,
                         color = textColor
                     )
                     Text(
-                        text = song.artist.takeIf { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_artist),
+                        text = song.artist.takeIf { !isUnknownArtist(it) } ?: stringResource(R.string.unknown_artist),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelMedium,

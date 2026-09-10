@@ -58,6 +58,8 @@ import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.rememberFocusedQueueListState
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.data.LyricsResult
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 
 /**
  *  Material 3 Expressive Music Player
@@ -505,9 +507,9 @@ private fun ExpressiveNowPlayingView(
 
                 val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
 
-                LinearWavyProgressIndicator(
+                ExpressiveScrubber(
                     progress = { animatedProgress },
-                    modifier = Modifier.fillMaxWidth().height(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
                     stroke = thickStroke,
                     trackStroke = thickStroke,
                     color = primaryColor,
@@ -516,6 +518,7 @@ private fun ExpressiveNowPlayingView(
 
                 // Invisible slider for touch interaction
                 Slider(
+                    interactionSource = LocalPlayerScrubInteraction.current,
                     value = scrubPosition ?: progress.toFloat(),
                     onValueChange = { scrubPosition = it },
                     onValueChangeFinished = {
@@ -541,7 +544,9 @@ private fun ExpressiveNowPlayingView(
                 Text(formatDuration(duration), style = MaterialTheme.typography.labelMedium, color = onSurfaceVariantColor)
             }
             
-            Spacer(modifier = Modifier.height(20.dp))
+            PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Song Title & Artist
             Column(
@@ -552,7 +557,7 @@ private fun ExpressiveNowPlayingView(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: stringResource(R.string.untitled_song),
+                    text = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -560,7 +565,7 @@ private fun ExpressiveNowPlayingView(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 // Clickable artist name
-                val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
+                val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
                 Text(
                     text = artistName,
                     style = MaterialTheme.typography.titleMedium,
@@ -1046,7 +1051,7 @@ private fun ExpressiveQueueView(
                                 
                                 // Song info
                                 Text(
-                                    text = song.title.takeIf { !it.startsWith("Unknown") } ?: stringResource(R.string.untitled_song),
+                                    text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -1054,7 +1059,7 @@ private fun ExpressiveQueueView(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = song.artist.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist",
+                                    text = song.artist.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = onSurfaceVariantColor,
                                     maxLines = 1,

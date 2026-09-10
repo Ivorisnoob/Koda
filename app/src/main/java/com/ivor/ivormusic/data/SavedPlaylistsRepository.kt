@@ -31,14 +31,18 @@ data class SavedPlaylist(
     val thumbnailUrl: String? = null,
     val itemCount: Int = -1,
     val isAlbum: Boolean = false,
-    val savedAt: Long = System.currentTimeMillis()
+    val savedAt: Long = System.currentTimeMillis(),
+    val releaseType: MusicReleaseType? = null,
+    val releaseYear: Int? = null
 ) {
     fun toDisplayItem(): PlaylistDisplayItem = PlaylistDisplayItem(
         name = name,
         url = url,
         uploaderName = uploaderName,
         itemCount = itemCount,
-        thumbnailUrl = thumbnailUrl
+        thumbnailUrl = thumbnailUrl,
+        releaseType = releaseType,
+        releaseYear = releaseYear
     )
 
     /**
@@ -160,7 +164,9 @@ class SavedPlaylistsRepository(context: Context) {
                     // A page that has not counted its tracks yet reports -1;
                     // that is "unknown", not "empty", and must not overwrite a
                     // count we already have.
-                    itemCount = if (item.itemCount >= 0) item.itemCount else it.itemCount
+                    itemCount = if (item.itemCount >= 0) item.itemCount else it.itemCount,
+                    releaseType = item.releaseType ?: it.releaseType,
+                    releaseYear = item.releaseYear ?: it.releaseYear
                 )
             }
         }
@@ -199,6 +205,8 @@ class SavedPlaylistsRepository(context: Context) {
                     put("count", item.itemCount)
                     put("album", item.isAlbum)
                     put("savedAt", item.savedAt)
+                    item.releaseType?.let { put("releaseType", it.name) }
+                    item.releaseYear?.let { put("releaseYear", it) }
                 }
             )
         }
@@ -220,7 +228,9 @@ class SavedPlaylistsRepository(context: Context) {
                     thumbnailUrl = obj.optString("thumbnail").takeIf { it.isNotBlank() },
                     itemCount = obj.optInt("count", -1),
                     isAlbum = obj.optBoolean("album", false),
-                    savedAt = obj.optLong("savedAt", 0L)
+                    savedAt = obj.optLong("savedAt", 0L),
+                    releaseType = MusicReleaseType.entries.firstOrNull { it.name == obj.optString("releaseType") },
+                    releaseYear = obj.optInt("releaseYear").takeIf { it in 1900..2099 }
                 )
             }
         } catch (e: Exception) {

@@ -58,6 +58,7 @@ import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 import com.ivor.ivormusic.ui.theme.PaletteStyle
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
+import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.PlayerStyle
 import androidx.compose.ui.unit.dp
 
@@ -171,6 +172,8 @@ class MainActivity : ComponentActivity() {
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val motionArtwork by themeViewModel.motionArtwork.collectAsState()
             val motionArtworkWifiOnly by themeViewModel.motionArtworkWifiOnly.collectAsState()
+            val motionArtworkQuality by themeViewModel.motionArtworkQuality.collectAsState()
+            val waveformSeekBar by themeViewModel.waveformSeekBar.collectAsState()
             val playerArtworkColors by themeViewModel.playerArtworkColors.collectAsState()
             val videoMode by themeViewModel.videoMode.collectAsState()
             val homeModeToggleEnabled by themeViewModel.homeModeToggleEnabled.collectAsState()
@@ -184,6 +187,9 @@ class MainActivity : ComponentActivity() {
             val showRecentSearches by themeViewModel.showRecentSearches.collectAsState()
             val showRelatedVideos by themeViewModel.showRelatedVideos.collectAsState()
             val compactVideoHome by themeViewModel.compactVideoHome.collectAsState()
+            val playlistSwipeEnabled by themeViewModel.playlistSwipeEnabled.collectAsState()
+            val playlistSwipeStartAction by themeViewModel.playlistSwipeStartAction.collectAsState()
+            val playlistSwipeEndAction by themeViewModel.playlistSwipeEndAction.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
@@ -274,6 +280,10 @@ class MainActivity : ComponentActivity() {
                         onMotionArtworkToggle = themeViewModel::setMotionArtwork,
                         motionArtworkWifiOnly = motionArtworkWifiOnly,
                         onMotionArtworkWifiOnlyToggle = themeViewModel::setMotionArtworkWifiOnly,
+                        motionArtworkQuality = motionArtworkQuality,
+                        onMotionArtworkQualityChange = themeViewModel::setMotionArtworkQuality,
+                        waveformSeekBar = waveformSeekBar,
+                        onWaveformSeekBarToggle = themeViewModel::setWaveformSeekBar,
                         videoMode = videoMode,
                         onVideoModeToggle = { themeViewModel.setVideoMode(it) },
                         homeModeToggleEnabled = homeModeToggleEnabled,
@@ -331,6 +341,12 @@ class MainActivity : ComponentActivity() {
                         onShowRelatedVideosToggle = { themeViewModel.setShowRelatedVideos(it) },
                         compactVideoHome = compactVideoHome,
                         onCompactVideoHomeToggle = { themeViewModel.setCompactVideoHome(it) },
+                        playlistSwipeEnabled = playlistSwipeEnabled,
+                        onPlaylistSwipeEnabledToggle = { themeViewModel.setPlaylistSwipeEnabled(it) },
+                        playlistSwipeStartAction = playlistSwipeStartAction,
+                        onPlaylistSwipeStartActionChange = { themeViewModel.setPlaylistSwipeStartAction(it) },
+                        playlistSwipeEndAction = playlistSwipeEndAction,
+                        onPlaylistSwipeEndActionChange = { themeViewModel.setPlaylistSwipeEndAction(it) },
                         shortsEnabled = shortsEnabled,
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
                         shortsHiddenActions = shortsHiddenActions,
@@ -600,6 +616,10 @@ fun MusicApp(
     onMotionArtworkToggle: (Boolean) -> Unit,
     motionArtworkWifiOnly: Boolean,
     onMotionArtworkWifiOnlyToggle: (Boolean) -> Unit,
+    motionArtworkQuality: MotionArtworkQuality,
+    onMotionArtworkQualityChange: (MotionArtworkQuality) -> Unit,
+    waveformSeekBar: Boolean,
+    onWaveformSeekBarToggle: (Boolean) -> Unit,
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean,
@@ -646,6 +666,12 @@ fun MusicApp(
     onShowRelatedVideosToggle: (Boolean) -> Unit,
     compactVideoHome: Boolean,
     onCompactVideoHomeToggle: (Boolean) -> Unit,
+    playlistSwipeEnabled: Boolean,
+    onPlaylistSwipeEnabledToggle: (Boolean) -> Unit,
+    playlistSwipeStartAction: String,
+    onPlaylistSwipeStartActionChange: (String) -> Unit,
+    playlistSwipeEndAction: String,
+    onPlaylistSwipeEndActionChange: (String) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String>,
@@ -1083,6 +1109,10 @@ fun MusicApp(
                     onMotionArtworkToggle = onMotionArtworkToggle,
                     motionArtworkWifiOnly = motionArtworkWifiOnly,
                     onMotionArtworkWifiOnlyToggle = onMotionArtworkWifiOnlyToggle,
+                    motionArtworkQuality = motionArtworkQuality,
+                    onMotionArtworkQualityChange = onMotionArtworkQualityChange,
+                    waveformSeekBar = waveformSeekBar,
+                    onWaveformSeekBarToggle = onWaveformSeekBarToggle,
                     videoMode = videoMode,
                     onVideoModeToggle = switchPlaybackMode,
                     homeModeToggleEnabled = homeModeToggleEnabled,
@@ -1116,6 +1146,12 @@ fun MusicApp(
                     onShowRelatedVideosToggle = onShowRelatedVideosToggle,
                     compactVideoHome = compactVideoHome,
                     onCompactVideoHomeToggle = onCompactVideoHomeToggle,
+                    playlistSwipeEnabled = playlistSwipeEnabled,
+                    onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
+                    playlistSwipeStartAction = playlistSwipeStartAction,
+                    onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
+                    playlistSwipeEndAction = playlistSwipeEndAction,
+                    onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
                     shortsHiddenActions = shortsHiddenActions,

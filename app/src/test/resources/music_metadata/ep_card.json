@@ -1,0 +1,60 @@
+{
+  "thumbnailRenderer": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {
+        "thumbnails": [
+          {
+            "url": "https://yt3.googleusercontent.com/PWbYyuP74iJMKgZ7kGU1vcSXEGvRCgQhuWjrYMXCusbyPNFkhdR8DiBK--KFncjYAnsDRlUgiPUF2c3z3Q=w226-h226-l90-rj",
+            "width": 226,
+            "height": 226
+          },
+          {
+            "url": "https://yt3.googleusercontent.com/PWbYyuP74iJMKgZ7kGU1vcSXEGvRCgQhuWjrYMXCusbyPNFkhdR8DiBK--KFncjYAnsDRlUgiPUF2c3z3Q=w544-h544-l90-rj",
+            "width": 544,
+            "height": 544
+          }
+        ]
+      }
+    }
+  },
+  "title": {
+    "runs": [
+      {
+        "text": "the rest",
+        "navigationEndpoint": {
+          "browseEndpoint": {
+            "browseId": "MPREb_moznxmUWnGr",
+            "browseEndpointContextSupportedConfigs": {
+              "browseEndpointContextMusicConfig": {
+                "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "subtitle": {
+    "runs": [
+      {
+        "text": "EP"
+      },
+      {
+        "text": " • "
+      },
+      {
+        "text": "2023"
+      }
+    ]
+  },
+  "navigationEndpoint": {
+    "browseEndpoint": {
+      "browseId": "MPREb_moznxmUWnGr",
+      "browseEndpointContextSupportedConfigs": {
+        "browseEndpointContextMusicConfig": {
+          "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+        }
+      }
+    }
+  }
+}

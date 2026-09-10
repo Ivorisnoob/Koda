@@ -1,0 +1,60 @@
+{
+  "thumbnailRenderer": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {
+        "thumbnails": [
+          {
+            "url": "https://yt3.googleusercontent.com/EUopjhIPRSytSEXkj14NcHwGo55g5P6q6oEKZAnauWeS5f1Ba5iXV3X2JmV20_IyuMzZC6wVa4UsNAk=w226-h226-l90-rj",
+            "width": 226,
+            "height": 226
+          },
+          {
+            "url": "https://yt3.googleusercontent.com/EUopjhIPRSytSEXkj14NcHwGo55g5P6q6oEKZAnauWeS5f1Ba5iXV3X2JmV20_IyuMzZC6wVa4UsNAk=w544-h544-l90-rj",
+            "width": 544,
+            "height": 544
+          }
+        ]
+      }
+    }
+  },
+  "title": {
+    "runs": [
+      {
+        "text": "The Parting Glass",
+        "navigationEndpoint": {
+          "browseEndpoint": {
+            "browseId": "MPREb_YefKyujuxew",
+            "browseEndpointContextSupportedConfigs": {
+              "browseEndpointContextMusicConfig": {
+                "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "subtitle": {
+    "runs": [
+      {
+        "text": "Single"
+      },
+      {
+        "text": " • "
+      },
+      {
+        "text": "2023"
+      }
+    ]
+  },
+  "navigationEndpoint": {
+    "browseEndpoint": {
+      "browseId": "MPREb_YefKyujuxew",
+      "browseEndpointContextSupportedConfigs": {
+        "browseEndpointContextMusicConfig": {
+          "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+        }
+      }
+    }
+  }
+}

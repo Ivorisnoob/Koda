@@ -84,6 +84,59 @@ class MotionArtworkResolverTest {
         val hls = "#EXTM3U\n" + variant("tiny.m3u8", size = "270x270") + variant("small.m3u8", size = "360x360")
         assertEquals("https://mvod.itunes.apple.com/art/small.m3u8", MotionArtworkResolver.rendition(master, hls))
     }
+    /** The rungs Apple actually publishes for a square cover [verified September 2026]. */
+    private val ladder = "#EXTM3U\n" +
+        variant("tiny.m3u8", size = "360x360", bitrate = 293_430) +
+        variant("small.m3u8", size = "486x486", bitrate = 887_529) +
+        variant("mid.m3u8", size = "960x960", bitrate = 3_322_441) +
+        variant("big.m3u8", codec = "avc1.640020", size = "1080x1080", bitrate = 12_894_431) +
+        variant("huge.m3u8", codec = "hvc1.2.20000000.H150.B0", size = "2160x2160", bitrate = 30_635_508)
+
+    private fun art(name: String) = "https://mvod.itunes.apple.com/art/$name"
+
+    @Test fun eachTierTakesItsOwnRungAndBalancedIsUnchanged() {
+        assertEquals(art("tiny.m3u8"), MotionArtworkResolver.rendition(master, ladder, MotionArtworkQuality.SAVER))
+        assertEquals(art("small.m3u8"), MotionArtworkResolver.rendition(master, ladder, MotionArtworkQuality.BALANCED))
+        assertEquals(art("big.m3u8"), MotionArtworkResolver.rendition(master, ladder, MotionArtworkQuality.HIGH))
+        assertEquals(art("huge.m3u8"), MotionArtworkResolver.rendition(master, ladder, MotionArtworkQuality.MAXIMUM))
+        // The default tier must keep selecting what it always did, so no existing install moves.
+        assertEquals(MotionArtworkResolver.rendition(master, ladder), MotionArtworkResolver.rendition(master, ladder, MotionArtworkQuality.BALANCED))
+    }
+
+    @Test fun onlyMaximumReachesHevcAndOnlyHighReachesFullResolution() {
+        for (tier in listOf(MotionArtworkQuality.SAVER, MotionArtworkQuality.BALANCED, MotionArtworkQuality.HIGH)) {
+            assertFalse(tier.name, MotionArtworkResolver.renditions(master, ladder, tier).contains(art("huge.m3u8")))
+        }
+        assertFalse(MotionArtworkResolver.renditions(master, ladder, MotionArtworkQuality.BALANCED).contains(art("big.m3u8")))
+    }
+
+    @Test fun fallbackChainOnlyEverStepsDown() {
+        assertEquals(listOf(art("huge.m3u8"), art("big.m3u8"), art("small.m3u8"), art("tiny.m3u8")),
+            MotionArtworkResolver.renditions(master, ladder, MotionArtworkQuality.MAXIMUM))
+        assertEquals(listOf(art("big.m3u8"), art("small.m3u8"), art("tiny.m3u8")),
+            MotionArtworkResolver.renditions(master, ladder, MotionArtworkQuality.HIGH))
+        // A saving tier must never acquire a costlier rung behind it, only cheaper ones.
+        assertEquals(listOf(art("small.m3u8"), art("tiny.m3u8")),
+            MotionArtworkResolver.renditions(master, ladder, MotionArtworkQuality.BALANCED))
+        assertEquals(listOf(art("tiny.m3u8")), MotionArtworkResolver.renditions(master, ladder, MotionArtworkQuality.SAVER))
+    }
+
+    @Test fun everyTierStillRefusesHdrAndForeignHosts() {
+        val hostile = "#EXTM3U\n" + variant("hdr.m3u8", codec = "hvc1.2", size = "2160x2160", bitrate = 20_000_000, range = "PQ") +
+            variant("https://example.com/video.m3u8", size = "1080x1080", bitrate = 5_000_000)
+        for (tier in MotionArtworkQuality.entries) {
+            assertEquals(tier.name, emptyList<String>(), MotionArtworkResolver.renditions(master, hostile, tier))
+        }
+    }
+
+    @Test fun storedTierNamesAreFrozenAndUnknownValuesFallBack() {
+        assertEquals(listOf("SAVER", "BALANCED", "HIGH", "MAXIMUM"), MotionArtworkQuality.entries.map { it.name })
+        assertEquals(MotionArtworkQuality.HIGH, MotionArtworkQuality.fromName("HIGH"))
+        assertEquals(MotionArtworkQuality.DEFAULT, MotionArtworkQuality.fromName("UNLIMITED"))
+        assertEquals(MotionArtworkQuality.DEFAULT, MotionArtworkQuality.fromName(null))
+        assertEquals(MotionArtworkQuality.BALANCED, MotionArtworkQuality.DEFAULT)
+    }
+
     @Test fun webTokenMustHaveCorrectIssuerAndTimeToLive() {
         fun token(issuer: String, expires: Long) = "eyJheader." + Base64.getUrlEncoder().withoutPadding()
             .encodeToString("""{"iss":"$issuer","exp":$expires}""".toByteArray()) + ".signature"

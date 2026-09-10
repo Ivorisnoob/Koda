@@ -68,12 +68,19 @@ class SongRepository(private val context: Context) {
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
-                val title = cursor.getString(titleColumn)
-                val artist = cursor.getString(artistColumn)
-                val album = cursor.getString(albumColumn)
+                val filePath = cursor.getString(dataColumn) ?: ""
+                // MediaStore hands back null, blank or the literal
+                // "<unknown>" for missing tags. Normalise at the boundary so
+                // grouping, filtering and display all see one spelling; the
+                // title falls back to the file name, never to another field.
+                val title = normalizeLocalTitle(
+                    cursor.getString(titleColumn),
+                    File(filePath).nameWithoutExtension.takeIf { it.isNotBlank() } ?: "Untitled"
+                )
+                val artist = normalizeLocalArtist(cursor.getString(artistColumn))
+                val album = normalizeLocalAlbum(cursor.getString(albumColumn))
                 val duration = cursor.getLong(durationColumn)
                 val albumId = cursor.getLong(albumIdColumn)
-                val filePath = cursor.getString(dataColumn) ?: ""
                 // DATE_ADDED is seconds, not millis. 0 means the provider had
                 // nothing, which is "unknown" rather than 1970.
                 val dateAdded = cursor.getLong(dateAddedColumn).takeIf { it > 0 }?.times(1000L)
@@ -85,21 +92,23 @@ class SongRepository(private val context: Context) {
 
                 // Check if this song's folder is excluded
                 val parentFolder = File(filePath).parent ?: ""
-                if (excludedFolders.any { excluded -> 
-                    parentFolder == excluded || parentFolder.startsWith("$excluded/") 
-                }) {
-                    continue
-                }
+                if (isExcludedFolder(parentFolder, excludedFolders)) continue
 
                 val contentUri: Uri = ContentUris.withAppendedId(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                     id
                 )
 
-                val albumArtUri = ContentUris.withAppendedId(
-                    Uri.parse("content://media/external/audio/albumart"),
-                    albumId
-                )
+                // An album id of 0 means MediaStore has no album row; the art
+                // URI would point at nothing and every lookup would miss.
+                val albumArtUri = if (albumId > 0) {
+                    ContentUris.withAppendedId(
+                        Uri.parse("content://media/external/audio/albumart"),
+                        albumId
+                    )
+                } else {
+                    null
+                }
 
                 songs.add(
                     Song.fromLocal(
@@ -118,7 +127,11 @@ class SongRepository(private val context: Context) {
                 )
             }
         }
-        songs
+        // _ID is unique per row, so this only ever collapses one real case:
+        // a file some OEMs index twice because it is reachable by two paths.
+        // Rows whose DATA the provider withheld keep their own identity rather
+        // than merging into one another.
+        songs.distinctBy { song -> song.filePath?.takeIf { it.isNotBlank() } ?: "id:${song.id}" }
     }
     
     /**
@@ -169,32 +182,48 @@ class SongRepository(private val context: Context) {
      */
     private fun getSongsViaManualScan(excludedFolders: Set<String>): List<Song> {
         val songs = mutableListOf<Song>()
-        val rootPaths = listOfNotNull(
-            System.getenv("EXTERNAL_STORAGE"),
-            "/storage/emulated/0",
-            "/sdcard"
-        ).distinct()
+        // See resolveScanRoots: these three candidates are aliases of one tree
+        // on most devices, and walking them all listed every song twice.
+        val rootPaths = resolveScanRoots(
+            listOf(System.getenv("EXTERNAL_STORAGE"), "/storage/emulated/0", "/sdcard")
+        ) { path -> runCatching { File(path).canonicalPath }.getOrNull() }
 
         val audioExtensions = setOf("mp3", "m4a", "wav", "flac", "ogg", "aac", "opus")
 
+        // Canonical directories already walked. A second root that turns out to
+        // share a subtree, and a symlink pointing back up its own tree, are the
+        // same problem: without this the latter recurses until the stack goes.
+        val visited = mutableSetOf<String>()
         rootPaths.forEach { root ->
             val rootFile = File(root)
             if (rootFile.exists() && rootFile.isDirectory) {
-                scanDir(rootFile, songs, excludedFolders, audioExtensions)
+                scanDir(rootFile, songs, excludedFolders, audioExtensions, visited)
             }
         }
-        return songs.distinctBy { it.id }.sortedBy { it.title.lowercase() }
+        // Keyed by canonical path rather than by id: id is a 32-bit hash of the
+        // path, so a hash collision here would silently drop somebody's song.
+        return songs
+            .distinctBy { song -> song.filePath?.let(::canonicalOrSelf) ?: song.id }
+            .sortedBy { it.title.lowercase() }
     }
+
+    private fun canonicalOrSelf(path: String): String =
+        runCatching { File(path).canonicalPath }.getOrDefault(path)
 
     private fun scanDir(
         dir: File,
         results: MutableList<Song>,
         excludedFolders: Set<String>,
-        extensions: Set<String>
+        extensions: Set<String>,
+        visited: MutableSet<String>
     ) {
-        // Skip hidden and excluded folders
-        if (dir.name.startsWith(".") || excludedFolders.contains(dir.absolutePath)) return
-        
+        // Skip hidden folders, and anything inside an excluded one - the
+        // MediaStore path has always excluded subfolders too.
+        if (dir.name.startsWith(".")) return
+        val canonical = runCatching { dir.canonicalPath }.getOrNull() ?: dir.absolutePath
+        if (isExcludedFolder(canonical, excludedFolders)) return
+        if (!visited.add(canonical)) return
+
         // Skip common Android system/data dirs
         val name = dir.name.lowercase()
         if (name == "android" || name == "data" || name == "obb") return
@@ -202,16 +231,20 @@ class SongRepository(private val context: Context) {
         val files = dir.listFiles() ?: return
         for (file in files) {
             if (file.isDirectory) {
-                scanDir(file, results, excludedFolders, extensions)
+                scanDir(file, results, excludedFolders, extensions, visited)
             } else if (file.isFile) {
                 val ext = file.extension.lowercase()
                 if (ext in extensions) {
                     val metadata = readManualMetadata(file)
                     val song = Song(
                         id = file.absolutePath.hashCode().toString(),
-                        title = metadata?.title ?: file.nameWithoutExtension,
-                        artist = metadata?.artist ?: "Unknown Artist",
-                        album = metadata?.album ?: dir.name,
+                        title = normalizeLocalTitle(
+                            metadata?.title,
+                            file.nameWithoutExtension.takeIf { it.isNotBlank() } ?: "Untitled"
+                        ),
+                        artist = normalizeLocalArtist(metadata?.artist),
+                        album = metadata?.album?.trim().takeUnless { isUnknownAlbum(it) }
+                            ?: dir.name.trim().takeIf { it.isNotEmpty() } ?: UNKNOWN_ALBUM,
                         duration = metadata?.durationMs ?: 0L,
                         uri = Uri.fromFile(file),
                         source = SongSource.LOCAL,
@@ -266,6 +299,52 @@ class SongRepository(private val context: Context) {
         }
     }
 }
+
+/**
+ * The distinct storage trees a manual scan should walk.
+ *
+ * [scar] The candidate list is three aliases of the same place. On nearly
+ * every device `EXTERNAL_STORAGE` is `/sdcard`, which is a symlink chain onto
+ * `/storage/emulated/0`, so a plain `distinct()` on the strings removes only
+ * the literal repeat and leaves two roots pointing at one tree. Every file was
+ * then scanned twice, and the pass that was supposed to catch that deduplicated
+ * by `absolutePath.hashCode()` - and the two visits have genuinely different
+ * absolute paths, so nothing collapsed. The result was every song on the device
+ * listed exactly twice, with every artist and album count doubled to match.
+ * That is the duplicate-songs report, and it only reached the people who turned
+ * the OEM manual scan on.
+ *
+ * Canonicalising is also what makes folder exclusions work here at all: the
+ * excluded paths come from `getAvailableFolders`, which reads MediaStore's DATA
+ * column and therefore stores `/storage/emulated/0/...`, so a scan walking
+ * `/sdcard/...` could never match one.
+ *
+ * [canonicalize] is injected so this can be tested without real symlinks; it
+ * answers null for a path that cannot be resolved, which falls back to the
+ * candidate itself rather than dropping a root that may still exist.
+ */
+internal fun resolveScanRoots(
+    candidates: List<String?>,
+    canonicalize: (String) -> String?
+): List<String> {
+    val roots = mutableListOf<String>()
+    val seen = mutableSetOf<String>()
+    for (candidate in candidates) {
+        val path = candidate?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+        val resolved = canonicalize(path) ?: path
+        if (seen.add(resolved)) roots.add(resolved)
+    }
+    return roots
+}
+
+/**
+ * Whether [folder] sits inside one of [excluded], which is what "exclude this
+ * folder" has always meant on the MediaStore path. The manual scan used an
+ * exact-equality check instead, so excluding a folder there left every one of
+ * its subfolders still playing.
+ */
+internal fun isExcludedFolder(folder: String, excluded: Set<String>): Boolean =
+    excluded.any { it.isNotBlank() && (folder == it || folder.startsWith("$it/")) }
 
 /**
  * Information about a folder containing music files.

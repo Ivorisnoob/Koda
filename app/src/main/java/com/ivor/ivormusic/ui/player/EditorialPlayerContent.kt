@@ -102,6 +102,8 @@ import androidx.media3.common.Player
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
@@ -383,7 +385,7 @@ private fun EditorialNowPlayingView(
         // ========== HEADLINE ==========
         // Wrapped so the song information is one swipe target the full width
         // of the player, not two text-shaped ones.
-        val title = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled"
+        val title = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled"
         val headlineBase = when {
             title.length <= 12 -> MaterialTheme.typography.displayLarge
             title.length <= 24 -> MaterialTheme.typography.displayMedium
@@ -410,7 +412,7 @@ private fun EditorialNowPlayingView(
                     .padding(horizontal = 24.dp)
             )
 
-            val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
+            val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
             Text(
                 text = artistName.uppercase(),
                 style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
@@ -528,11 +530,11 @@ private fun EditorialNowPlayingView(
                     Box(contentAlignment = Alignment.Center) {
                         // Wavy played portion, flat remainder - the wave
                         // settles flat when paused.
-                        LinearWavyProgressIndicator(
+                        ExpressiveScrubber(
                             progress = { animatedProgress },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(14.dp),
+                                .height(scrubberTrackHeight(14.dp)),
                             color = accent,
                             trackColor = accent.copy(alpha = 0.35f),
                             stroke = lineStroke,
@@ -540,6 +542,7 @@ private fun EditorialNowPlayingView(
                             amplitude = { if (isPlaying) 1f else 0f }
                         )
                         Slider(
+                            interactionSource = LocalPlayerScrubInteraction.current,
                             value = scrubPosition ?: progress.toFloat(),
                             onValueChange = { scrubPosition = it },
                             onValueChangeFinished = {
@@ -573,6 +576,8 @@ private fun EditorialNowPlayingView(
                     }
                 }
             }
+
+            PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
 
             Spacer(modifier = Modifier.height(16.dp))
 

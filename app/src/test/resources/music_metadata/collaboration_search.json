@@ -1,0 +1,111 @@
+{
+  "thumbnail": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {
+        "thumbnails": [
+          {
+            "url": "https://yt3.googleusercontent.com/nBQ2yRYxNzSE_I2IbybljvKJhTyHISC3TVew_uraAkvH7trJ7lXc7LlYc4WLqs1IHsHDyLm24W-7Pic=w60-h60-l90-rj",
+            "width": 60,
+            "height": 60
+          },
+          {
+            "url": "https://yt3.googleusercontent.com/nBQ2yRYxNzSE_I2IbybljvKJhTyHISC3TVew_uraAkvH7trJ7lXc7LlYc4WLqs1IHsHDyLm24W-7Pic=w120-h120-l90-rj",
+            "width": 120,
+            "height": 120
+          }
+        ]
+      }
+    }
+  },
+  "flexColumns": [
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "lovely",
+              "navigationEndpoint": {
+                "watchEndpoint": {
+                  "videoId": "MMfpp0-lnw4"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "Billie Eilish",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UCERrDZ8oN0U_n9MphMKERcg",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": " & "
+            },
+            {
+              "text": "Khalid",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UCnfeNQJ7TgUCPCBD0q5Zh-Q",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "lovely",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "MPREb_6HPBhVgaSYO",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "3:21"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "4.4B plays"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "playlistItemData": {
+    "videoId": "MMfpp0-lnw4"
+  }
+}

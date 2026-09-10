@@ -202,6 +202,7 @@ import com.ivor.ivormusic.data.YouTubeAuthUtils
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.ui.components.coveredBy
+import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlinx.coroutines.CancellationException
@@ -290,6 +291,10 @@ fun SettingsScreen(
     onMotionArtworkToggle: (Boolean) -> Unit,
     motionArtworkWifiOnly: Boolean,
     onMotionArtworkWifiOnlyToggle: (Boolean) -> Unit,
+    motionArtworkQuality: MotionArtworkQuality,
+    onMotionArtworkQualityChange: (MotionArtworkQuality) -> Unit,
+    waveformSeekBar: Boolean,
+    onWaveformSeekBarToggle: (Boolean) -> Unit,
     videoMode: Boolean,
     onVideoModeToggle: (Boolean) -> Unit,
     homeModeToggleEnabled: Boolean = true,
@@ -323,6 +328,12 @@ fun SettingsScreen(
     onShowRelatedVideosToggle: (Boolean) -> Unit,
     compactVideoHome: Boolean,
     onCompactVideoHomeToggle: (Boolean) -> Unit,
+    playlistSwipeEnabled: Boolean,
+    onPlaylistSwipeEnabledToggle: (Boolean) -> Unit,
+    playlistSwipeStartAction: String,
+    onPlaylistSwipeStartActionChange: (String) -> Unit,
+    playlistSwipeEndAction: String,
+    onPlaylistSwipeEndActionChange: (String) -> Unit,
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
@@ -828,6 +839,10 @@ fun SettingsScreen(
                     onMotionArtworkToggle = onMotionArtworkToggle,
                     motionArtworkWifiOnly = motionArtworkWifiOnly,
                     onMotionArtworkWifiOnlyToggle = onMotionArtworkWifiOnlyToggle,
+                    motionArtworkQuality = motionArtworkQuality,
+                    onMotionArtworkQualityChange = onMotionArtworkQualityChange,
+                    waveformSeekBar = waveformSeekBar,
+                    onWaveformSeekBarToggle = onWaveformSeekBarToggle,
                     onBack = { page = SettingsPage.HUB }
                 )
 
@@ -946,6 +961,12 @@ fun SettingsScreen(
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
                     excludedFolderCount = excludedFolders.size,
                     onOpenFolderExclusion = openFolderExclusion,
+                    playlistSwipeEnabled = playlistSwipeEnabled,
+                    onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
+                    playlistSwipeStartAction = playlistSwipeStartAction,
+                    onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
+                    playlistSwipeEndAction = playlistSwipeEndAction,
+                    onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
                     onBack = { page = SettingsPage.HUB }
                 )
 

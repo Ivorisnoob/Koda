@@ -1,0 +1,118 @@
+{
+  "title": {
+    "runs": [
+      {
+        "text": "lovely"
+      }
+    ]
+  },
+  "longBylineText": {
+    "runs": [
+      {
+        "text": "Billie Eilish",
+        "navigationEndpoint": {
+          "browseEndpoint": {
+            "browseId": "UCERrDZ8oN0U_n9MphMKERcg",
+            "browseEndpointContextSupportedConfigs": {
+              "browseEndpointContextMusicConfig": {
+                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+              }
+            }
+          }
+        }
+      },
+      {
+        "text": " & "
+      },
+      {
+        "text": "Khalid",
+        "navigationEndpoint": {
+          "browseEndpoint": {
+            "browseId": "UCnfeNQJ7TgUCPCBD0q5Zh-Q",
+            "browseEndpointContextSupportedConfigs": {
+              "browseEndpointContextMusicConfig": {
+                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+              }
+            }
+          }
+        }
+      },
+      {
+        "text": " • "
+      },
+      {
+        "text": "lovely",
+        "navigationEndpoint": {
+          "browseEndpoint": {
+            "browseId": "MPREb_6HPBhVgaSYO",
+            "browseEndpointContextSupportedConfigs": {
+              "browseEndpointContextMusicConfig": {
+                "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+              }
+            }
+          }
+        }
+      },
+      {
+        "text": " • "
+      },
+      {
+        "text": "2018"
+      }
+    ]
+  },
+  "thumbnail": {
+    "thumbnails": [
+      {
+        "url": "https://yt3.googleusercontent.com/nBQ2yRYxNzSE_I2IbybljvKJhTyHISC3TVew_uraAkvH7trJ7lXc7LlYc4WLqs1IHsHDyLm24W-7Pic=w60-h60-l90-rj",
+        "width": 60,
+        "height": 60
+      },
+      {
+        "url": "https://yt3.googleusercontent.com/nBQ2yRYxNzSE_I2IbybljvKJhTyHISC3TVew_uraAkvH7trJ7lXc7LlYc4WLqs1IHsHDyLm24W-7Pic=w120-h120-l90-rj",
+        "width": 120,
+        "height": 120
+      },
+      {
+        "url": "https://yt3.googleusercontent.com/nBQ2yRYxNzSE_I2IbybljvKJhTyHISC3TVew_uraAkvH7trJ7lXc7LlYc4WLqs1IHsHDyLm24W-7Pic=w180-h180-l90-rj",
+        "width": 180,
+        "height": 180
+      },
+      {
+        "url": "https://yt3.googleusercontent.com/nBQ2yRYxNzSE_I2IbybljvKJhTyHISC3TVew_uraAkvH7trJ7lXc7LlYc4WLqs1IHsHDyLm24W-7Pic=w226-h226-l90-rj",
+        "width": 226,
+        "height": 226
+      },
+      {
+        "url": "https://yt3.googleusercontent.com/nBQ2yRYxNzSE_I2IbybljvKJhTyHISC3TVew_uraAkvH7trJ7lXc7LlYc4WLqs1IHsHDyLm24W-7Pic=w302-h302-l90-rj",
+        "width": 302,
+        "height": 302
+      },
+      {
+        "url": "https://yt3.googleusercontent.com/nBQ2yRYxNzSE_I2IbybljvKJhTyHISC3TVew_uraAkvH7trJ7lXc7LlYc4WLqs1IHsHDyLm24W-7Pic=w544-h544-l90-rj",
+        "width": 544,
+        "height": 544
+      }
+    ]
+  },
+  "lengthText": {
+    "runs": [
+      {
+        "text": "3:21"
+      }
+    ]
+  },
+  "navigationEndpoint": {
+    "watchEndpoint": {
+      "videoId": "MMfpp0-lnw4"
+    }
+  },
+  "videoId": "MMfpp0-lnw4",
+  "shortBylineText": {
+    "runs": [
+      {
+        "text": "Billie Eilish & Khalid"
+      }
+    ]
+  }
+}

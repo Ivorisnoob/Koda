@@ -1,0 +1,96 @@
+{
+  "thumbnail": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {
+        "thumbnails": [
+          {
+            "url": "https://yt3.googleusercontent.com/mXJjWX4E6Gpr03CUYl18PdVXlczmoL2Tm-LEBGafIr_8smlHnl8AHniJu0_7Y80e-aeloJxcryQQx0ZJ=w60-h60-l90-rj",
+            "width": 60,
+            "height": 60
+          },
+          {
+            "url": "https://yt3.googleusercontent.com/mXJjWX4E6Gpr03CUYl18PdVXlczmoL2Tm-LEBGafIr_8smlHnl8AHniJu0_7Y80e-aeloJxcryQQx0ZJ=w120-h120-l90-rj",
+            "width": 120,
+            "height": 120
+          }
+        ]
+      }
+    }
+  },
+  "flexColumns": [
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "SKINNY",
+              "navigationEndpoint": {
+                "watchEndpoint": {
+                  "videoId": "GgGarnL54Fw"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "Billie Eilish",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UCERrDZ8oN0U_n9MphMKERcg",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "HIT ME HARD AND SOFT",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "MPREb_Wp9Aj8HpTsB",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "fixedColumns": [
+    {
+      "musicResponsiveListItemFixedColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "3:40"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "playlistItemData": {
+    "videoId": "GgGarnL54Fw"
+  }
+}

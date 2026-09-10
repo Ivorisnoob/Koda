@@ -261,9 +261,7 @@ class NotInterestedRepository(context: Context) {
         val entry = HiddenVideo(
             videoId = song.id,
             title = song.title.takeIf { it.isNotBlank() } ?: song.id,
-            channelName = song.artist.takeIf {
-                it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true)
-            }
+            channelName = song.artist.takeIf { !isUnknownArtist(it) }
         )
         saveHidden((listOf(entry) + hiddenState.value).take(MAX_HIDDEN_VIDEOS))
         sharedLastAction!!.value = UndoableAction(
@@ -282,7 +280,7 @@ class NotInterestedRepository(context: Context) {
      * every signed-out video dismissal.
      */
     fun blockArtist(name: String) {
-        if (name.isBlank() || name.startsWith("Unknown", ignoreCase = true)) return
+        if (isUnknownArtist(name)) return
         blockChannel(channelId = null, name = name)
     }
 

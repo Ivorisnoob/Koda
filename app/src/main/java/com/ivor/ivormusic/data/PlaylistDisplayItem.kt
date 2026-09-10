@@ -6,7 +6,9 @@ data class PlaylistDisplayItem(
     val uploaderName: String,
     val itemCount: Int = -1,
     val thumbnailUrl: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    val releaseType: MusicReleaseType? = null,
+    val releaseYear: Int? = null
 ) {
     val id: String
         get() = when {

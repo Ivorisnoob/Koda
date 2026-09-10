@@ -8,6 +8,8 @@ import com.ivor.ivormusic.data.SongSource
 
 /** Stable identity for one occurrence of a song in the playback queue. */
 internal const val EXTRA_QUEUE_ITEM_ID = "com.ivor.ivormusic.QUEUE_ITEM_ID"
+internal const val EXTRA_MUSIC_ALBUM_ID = "com.ivor.ivormusic.MUSIC_ALBUM_ID"
+internal const val EXTRA_MUSIC_RELEASE_TYPE = "com.ivor.ivormusic.MUSIC_RELEASE_TYPE"
 
 /** The identity of this exact queue occurrence, when Koda created the item. */
 internal val MediaItem.queueItemId: String?
@@ -70,6 +72,8 @@ internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
     val extras = Bundle().apply {
         putString(EXTRA_QUEUE_ITEM_ID, id)
         putString(MusicService.EXTRA_SONG_SOURCE, song.source.name)
+        song.albumId?.let { putString(EXTRA_MUSIC_ALBUM_ID, it) }
+        song.releaseType?.let { putString(EXTRA_MUSIC_RELEASE_TYPE, it.name) }
     }
     val metadata = MediaMetadata.Builder()
         .setTitle(song.title)
@@ -77,6 +81,7 @@ internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
         .setAlbumTitle(song.album.takeIf { it.isNotBlank() })
         .setTrackNumber(song.trackNumber)
         .setDiscNumber(song.discNumber)
+        .setReleaseYear(song.releaseYear)
         .setDurationMs(song.duration.takeIf { it > 0L })
         .setArtworkUri(
             if (song.source == SongSource.LOCAL) {

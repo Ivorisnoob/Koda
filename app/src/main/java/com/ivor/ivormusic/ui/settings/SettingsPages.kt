@@ -78,6 +78,7 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Recommend
 import androidx.compose.material.icons.rounded.ViewList
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -113,12 +114,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.style.TextOverflow
 import com.ivor.ivormusic.data.CacheManager
+import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoHomeConfiguration
 import com.ivor.ivormusic.data.VideoHomeDestination
 import com.ivor.ivormusic.ui.player.PlayerStylePicker
+import com.ivor.ivormusic.ui.player.VisualizerSettingsSection
 import com.ivor.ivormusic.ui.theme.ThemeMode
 
 /**
@@ -759,6 +762,84 @@ private fun HapticsLevelSelector(
     }
 }
 
+/**
+ * Which rung of Apple's ladder a cover is drawn from. A segmented control rather than a
+ * dialog for the reason Spotlight's filter row is one: four mutually exclusive settings of
+ * the same dial, which M3 Expressive draws as connected [ToggleButton]s.
+ *
+ * The subtitle names the resolution and the data cost of the selected tier, because the
+ * difference between them is bytes rather than anything visible in the row itself.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MotionArtworkQualitySelector(
+    quality: MotionArtworkQuality,
+    onQualityChange: (MotionArtworkQuality) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.sp_motion_artwork_quality),
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = stringResource(
+                when (quality) {
+                    MotionArtworkQuality.SAVER -> R.string.sp_motion_artwork_quality_sub_saver
+                    MotionArtworkQuality.BALANCED -> R.string.sp_motion_artwork_quality_sub_balanced
+                    MotionArtworkQuality.HIGH -> R.string.sp_motion_artwork_quality_sub_high
+                    MotionArtworkQuality.MAXIMUM -> R.string.sp_motion_artwork_quality_sub_maximum
+                }
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        val tiers = MotionArtworkQuality.entries
+        val labels = listOf(
+            stringResource(R.string.motion_quality_saver),
+            stringResource(R.string.motion_quality_balanced),
+            stringResource(R.string.motion_quality_high),
+            stringResource(R.string.motion_quality_maximum)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                ButtonGroupDefaults.ConnectedSpaceBetween
+            ),
+        ) {
+            tiers.forEachIndexed { index, tier ->
+                ToggleButton(
+                    checked = quality == tier,
+                    onCheckedChange = { onQualityChange(tier) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        tiers.lastIndex ->
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.toggleButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(labels[index], maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Player                                                              */
 /* ------------------------------------------------------------------ */
@@ -773,6 +854,10 @@ internal fun PlayerSettingsPage(
     onMotionArtworkToggle: (Boolean) -> Unit,
     motionArtworkWifiOnly: Boolean,
     onMotionArtworkWifiOnlyToggle: (Boolean) -> Unit,
+    motionArtworkQuality: MotionArtworkQuality,
+    onMotionArtworkQualityChange: (MotionArtworkQuality) -> Unit,
+    waveformSeekBar: Boolean,
+    onWaveformSeekBarToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_player), onBack = onBack) {
@@ -822,6 +907,13 @@ internal fun PlayerSettingsPage(
                         enabled = motionArtworkWifiOnly,
                         onToggle = onMotionArtworkWifiOnlyToggle
                     )
+                    if (motionArtwork) {
+                        SettingsDivider()
+                        MotionArtworkQualitySelector(
+                            quality = motionArtworkQuality,
+                            onQualityChange = onMotionArtworkQualityChange,
+                        )
+                    }
                 }
             }
         }
@@ -845,6 +937,25 @@ internal fun PlayerSettingsPage(
                     )
                 }
             }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.sp_waveform)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.GraphicEq,
+                        title = stringResource(R.string.sp_waveform),
+                        subtitle = stringResource(R.string.sp_waveform_sub),
+                        enabled = waveformSeekBar,
+                        onToggle = onWaveformSeekBarToggle,
+                        explanation = stringResource(R.string.si_waveform)
+                    )
+                }
+            }
+        }
+
+        item {
+            VisualizerSettingsSection()
         }
     }
 }
@@ -2107,6 +2218,12 @@ internal fun LocalLibrarySettingsPage(
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     excludedFolderCount: Int,
     onOpenFolderExclusion: () -> Unit,
+    playlistSwipeEnabled: Boolean,
+    onPlaylistSwipeEnabledToggle: (Boolean) -> Unit,
+    playlistSwipeStartAction: String,
+    onPlaylistSwipeStartActionChange: (String) -> Unit,
+    playlistSwipeEndAction: String,
+    onPlaylistSwipeEndActionChange: (String) -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_local_library), onBack = onBack) {
@@ -2150,6 +2267,121 @@ internal fun LocalLibrarySettingsPage(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Swipe actions apply to every playlist song list - local, YouTube
+        // and saved - so they sit beside the library switches rather than
+        // inside the device-music section above.
+        item {
+            SettingsSection(title = stringResource(R.string.sp_playlist_songs)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.SwapHoriz,
+                        title = stringResource(R.string.sp_playlist_swipe),
+                        subtitle = if (playlistSwipeEnabled) {
+                            stringResource(R.string.sp_playlist_swipe_sub_on)
+                        } else {
+                            stringResource(R.string.sp_playlist_swipe_sub_off)
+                        },
+                        enabled = playlistSwipeEnabled,
+                        onToggle = onPlaylistSwipeEnabledToggle,
+                        explanation = stringResource(R.string.si_playlist_swipe)
+                    )
+
+                    AnimatedVisibility(
+                        visible = playlistSwipeEnabled,
+                        enter = fadeIn(tween(200)) + slideInVertically(
+                            initialOffsetY = { -it / 4 },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                        ),
+                        exit = fadeOut(tween(150))
+                    ) {
+                        Column {
+                            SettingsDivider()
+                            PlaylistSwipeActionSelector(
+                                title = stringResource(R.string.sp_playlist_swipe_right),
+                                selected = playlistSwipeStartAction,
+                                onSelect = onPlaylistSwipeStartActionChange
+                            )
+                            SettingsDivider()
+                            PlaylistSwipeActionSelector(
+                                title = stringResource(R.string.sp_playlist_swipe_left),
+                                selected = playlistSwipeEndAction,
+                                onSelect = onPlaylistSwipeEndActionChange
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One swipe direction's action, as a connected button group - the same
+ * control the haptics level uses, so the choice reads as a setting rather
+ * than a navigation.
+ */
+@Composable
+private fun PlaylistSwipeActionSelector(
+    title: String,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        val actions = listOf(
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_OFF,
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_REMOVE,
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_PLAY,
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_QUEUE,
+            com.ivor.ivormusic.data.ThemePreferences.PLAYLIST_SWIPE_ACTION_OPTIONS,
+        )
+        val labels = listOf(
+            stringResource(R.string.swipe_action_off),
+            stringResource(R.string.swipe_action_remove),
+            stringResource(R.string.swipe_action_play),
+            stringResource(R.string.swipe_action_queue),
+            stringResource(R.string.swipe_action_options),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                ButtonGroupDefaults.ConnectedSpaceBetween
+            ),
+        ) {
+            actions.forEachIndexed { index, value ->
+                ToggleButton(
+                    checked = selected == value,
+                    onCheckedChange = { onSelect(value) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        actions.lastIndex ->
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.toggleButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(labels[index], maxLines = 1)
                 }
             }
         }
