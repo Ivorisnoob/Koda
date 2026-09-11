@@ -133,7 +133,33 @@ class PlaylistRepository(private val context: Context) {
         val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
         savePlaylist(playlist.copy(songs = songs))
     }
-    
+
+    suspend fun exportPlaylistToM3u(playlistId: String): String? = withContext(Dispatchers.IO) {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext null
+        PlaylistExport.toM3u(playlist)
+    }
+
+    suspend fun importPlaylistFromM3u(
+        name: String,
+        m3uContent: String,
+        coverSeeds: Pair<Int, Int>? = null
+    ): String = withContext(Dispatchers.IO) {
+        val songs = PlaylistImport.parseM3u(m3uContent)
+        val id = UUID.randomUUID().toString()
+        val coverPath = generateCoverArt(name, id, coverSeeds)
+
+        val newPlaylist = UserPlaylist(
+            id = id,
+            name = name,
+            description = "Imported M3U playlist",
+            coverUri = "file://$coverPath",
+            songs = songs
+        )
+
+        savePlaylist(newPlaylist)
+        id
+    }
+
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         val file = File(playlistDir, "$playlistId.json")
         if (file.exists()) file.delete()
