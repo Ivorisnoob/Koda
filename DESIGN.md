@@ -28,7 +28,7 @@ These are counts from the current source tree, not aspirations.
 | `spring()` animation specs | 127, across 45 files |
 | `animate*AsState` call sites | 81 |
 | Built-in color palettes | 28, in 6 families |
-| Player styles | 8, each a full independent layout |
+| Player styles | 9, each a full independent layout |
 | Material 3 version | `1.5.0-alpha24` (Expressive APIs) |
 
 There is no fallback path, no "classic mode", and no abstraction layer between the app and Material 3. `ExperimentalMaterial3ExpressiveApi` is opted into **globally** at the compiler level in `app/build.gradle.kts`, because the Expressive surface is used widely enough that per-file annotations would be noise:
@@ -213,8 +213,9 @@ The player styles are the clearest demonstration that Expressive is a constructi
 | Sticker | Die-cut sticker with drag, peel, squash-and-stretch |
 | Morph | Living hero shape cycling organic cuts while playing |
 | Dial | Rotary tick-ring instrument spun to scrub |
+| Hero | Full-bleed cover over a tonal deck with an oversized play disc |
 
-Eight visually distinct players share one theme, one motion scheme, and one shape library. That is the point of a design system, and it is why adding a ninth style is a contained piece of work while replacing the design language is not.
+Nine visually distinct players share one theme, one motion scheme, and one shape library. That is the point of a design system, and it is why adding a ninth style is a contained piece of work while replacing the design language is not.
 
 **The same reasoning runs the other way, and a creator's identity is where it shows.** A creator's channel page in video mode and their artist page in music mode are two screens over genuinely different content - an upload feed and a discography - so they are two screens. But they are one person, and a viewer arriving from either mode should not feel like they arrived at two different people, so the identity has one source: the same `ChannelHeader` gives both screens their avatar, verified tick and follower count. The channel page draws it as `ui/channel/CreatorHeader.kt`, with Subscribe and Share in its actions slot; the artist page draws the same facts over an immersive, full-bleed artist photo, with Play, Shuffle and Radio under it. **Share the part that must not differ; do not share the part that genuinely does.** Two identities maintained separately drift until the same name has two avatars and two follower counts, and nothing fails when they do.
 

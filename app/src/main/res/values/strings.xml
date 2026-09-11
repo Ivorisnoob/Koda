@@ -1075,6 +1075,7 @@
     <string name="ps_style_sticker">Sticker</string>
     <string name="ps_style_morph">Morph</string>
     <string name="ps_style_dial">Dial</string>
+    <string name="ps_style_hero">Hero</string>
     <string name="ps_sub_classic">Button controls for playback</string>
     <string name="ps_sub_gesture">Swipe album art to navigate</string>
     <string name="ps_sub_editorial">Two-tone magazine layout</string>
@@ -1083,6 +1084,7 @@
     <string name="ps_sub_sticker">Die-cut art with toy physics</string>
     <string name="ps_sub_morph">Living shape that breathes</string>
     <string name="ps_sub_dial">Rotary ring, spin to scrub</string>
+    <string name="ps_sub_hero">Full-bleed art, big play button</string>
     <string name="hs_classic">Classic</string>
     <string name="hs_classic_desc">One big hero, then rows</string>
     <string name="hs_spotlight_desc">Shortcuts, quick picks, shelves</string>

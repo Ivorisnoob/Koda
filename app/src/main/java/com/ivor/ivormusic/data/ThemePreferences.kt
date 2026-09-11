@@ -2238,5 +2238,7 @@ enum class PlayerStyle {
     /** Living hero shape that cycles organic cuts while playing */
     MORPH,
     /** Rotary instrument: a tick-ring dial spun to scrub */
-    DIAL
+    DIAL,
+    /** Full-bleed artwork over a tonal deck with an oversized play disc */
+    HERO
 }

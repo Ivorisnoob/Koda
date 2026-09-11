@@ -527,6 +527,19 @@ fun ExpandablePlayer(
                                     onOpenAlbum = onOpenAlbum
                                 )
                             }
+                            PlayerStyle.HERO -> {
+                                HeroPlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
+                                )
+                            }
                         }
                         }
                         }
