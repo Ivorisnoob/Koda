@@ -422,6 +422,18 @@
     <string name="sp_show_recent_searches_sub">Your past queries under the search bar</string>
     <string name="sp_show_related_videos">Show related videos</string>
     <string name="sp_show_related_videos_sub">Suggestions under a video while it plays</string>
+    <string name="sp_playlist_songs">Playlist songs</string>
+    <string name="sp_playlist_swipe">Swipe actions</string>
+    <string name="sp_playlist_swipe_sub_on">Swipe a song for its quick action</string>
+    <string name="sp_playlist_swipe_sub_off">Songs do nothing when swiped</string>
+    <string name="sp_playlist_swipe_right">Swipe right</string>
+    <string name="sp_playlist_swipe_left">Swipe left</string>
+    <string name="swipe_action_off">Off</string>
+    <string name="swipe_action_remove">Remove</string>
+    <string name="swipe_action_play">Play</string>
+    <string name="swipe_action_queue">Queue</string>
+    <string name="swipe_action_options">Options</string>
+    <string name="si_playlist_swipe">Quick actions when you swipe a song in a playlist. Queue appends it to the playing queue. Remove only swipes where the playlist can be edited, and a YouTube list that is not yours only ever offers Play and Queue.</string>
     <string name="sp_not_recommended">Not Recommended</string>
     <string name="sp_not_recommended_sub">Videos and channels you\'ve hidden from your feeds</string>
     <string name="sp_manage_subscriptions">Manage Subscriptions</string>
@@ -937,6 +949,7 @@
     <string name="ar_more_play_options">More play options</string>
     <string name="ar_start_radio">Start radio</string>
     <string name="unknown_album">Unknown Album</string>
+    <string name="various_artists">Various Artists</string>
     <string name="ab_tracks">Tracks</string>
     <string name="ab_download_all">Download all</string>
 
@@ -1153,6 +1166,8 @@
     <string name="lib_drag_hint">Drag a handle to reorder</string>
     <string name="lib_tap_remove_hint">Tap to remove tracks</string>
     <string name="label_album">Album</string>
+    <string name="label_ep">EP</string>
+    <string name="label_single">Single</string>
     <string name="lib_saved_to_library">Saved to your library</string>
     <string name="lib_copy_editable">Save as editable copy</string>
     <string name="lib_copy_editable_done">Copied to your library. Edit it there.</string>
@@ -1424,5 +1439,30 @@
     <string name="sp_motion_artwork_sub">Animate supported album covers in the full player</string>
     <string name="sp_motion_artwork_wifi">Motion artwork on Wi-Fi only</string>
     <string name="sp_motion_artwork_wifi_sub">Use unmetered Wi-Fi for cover lookups and animation</string>
+    <string name="sp_waveform">Waveform seek bar</string>
+    <string name="sp_waveform_sub">Show the whole song\'s loudness along the progress bar</string>
+    <string name="si_waveform">Koda reads the song\'s own audio and draws the whole track, so you can see the quiet intro and the loud chorus before you reach them. The bars appear as the song loads and then stay put. Files on your device are measured instantly. A song streamed from YouTube is measured using the same audio it is about to play, so it costs no extra data unless you skip away from it. Turning off music caching stops that, and so does Local Only. Measurements are a cache rather than something backed up, and no permission is needed.</string>
+    <string name="sp_motion_artwork_quality">Motion artwork quality</string>
+    <string name="sp_motion_artwork_quality_sub_saver">Around 360px. Lowest data use.</string>
+    <string name="sp_motion_artwork_quality_sub_balanced">Around 480px. Low data use.</string>
+    <string name="sp_motion_artwork_quality_sub_high">Up to 1080px, the sharpest a phone screen can show. Several times the data.</string>
+    <string name="sp_motion_artwork_quality_sub_maximum">Up to 2160px where offered, beyond what the screen draws. Very large downloads; drops back a step if the device cannot decode it.</string>
+    <string name="motion_quality_saver">Saver</string>
+    <string name="motion_quality_balanced">Balanced</string>
+    <string name="motion_quality_high">High</string>
+    <string name="motion_quality_maximum">Max</string>
     <string name="si_motion_artwork">Looks up the song title and artist with Apple Music; no account is needed. Not every song has an animated cover. Uses extra data and battery, and keeps the original cover when unavailable. Animation stops when music is paused or the player is closed, and stays off in Battery Saver, Data Saver, reduced motion, Local Only and Incognito.</string>
+    <string name="sp_visualizer">Music visualizer</string>
+    <string name="sp_visualizer_sub">Animated bars that dance with the music in the full player</string>
+    <string name="sp_visualizer_style">Style</string>
+    <string name="sp_visualizer_style_bars">Bars</string>
+    <string name="sp_visualizer_style_wave">Wave</string>
+    <string name="sp_visualizer_style_dots">Dots</string>
+    <string name="sp_visualizer_density">Density</string>
+    <string name="sp_visualizer_density_hint">How many bars the strip draws</string>
+    <string name="sp_visualizer_sensitivity">Sensitivity</string>
+    <string name="sp_visualizer_sensitivity_hint">How strongly quiet passages move the strip</string>
+    <string name="si_visualizer">Shows an animated strip under the progress row in every expanded player style. It reads the audio Koda is already playing, so it needs no microphone permission and records nothing. It dances while music plays and settles when paused, follows the app colors, and stands still under reduced motion or Battery Saver.</string>
+    <string name="cd_visualizer">Audio visualizer</string>
+    <string name="section_releases">Releases</string>
 </resources>

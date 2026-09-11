@@ -103,7 +103,7 @@ class RecommendationEngine(
         val artistScores = HashMap<String, Double>()
         for ((id, score) in songScores) {
             val artist = entryById[id]?.artist ?: continue
-            if (artist.isBlank() || artist.startsWith("Unknown", ignoreCase = true)) continue
+            if (isUnknownArtist(artist)) continue
             artistScores.merge(artist, score, Double::plus)
         }
         val topArtists = artistScores.entries

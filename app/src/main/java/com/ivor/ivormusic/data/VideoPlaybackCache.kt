@@ -90,3 +90,44 @@ internal fun playbackCacheCategoryKey(key: String, shorts: Boolean): String =
     if (shorts) "shorts:$key" else key
 
 internal fun isShortsCacheKey(key: String): Boolean = key.startsWith("shorts:")
+
+/**
+ * Whether [url] addresses YouTube's adaptive pipeline - an HLS/DASH manifest,
+ * an HLS media playlist, or a live segment - rather than a progressive media
+ * file worth keeping on disk.
+ *
+ * [scar] None of these may be served from the playback cache. An HLS media
+ * playlist is re-fetched from the *same* URL every target duration, and that
+ * reload is the only way the player learns a broadcast has produced new
+ * segments. Media3 asks for it with an ordinary cacheable DataSpec
+ * (FLAG_ALLOW_GZIP, no key) and CacheDataSource resolves the unset length from
+ * the stored content metadata and reads the first copy straight back off disk
+ * [verified September 2026 against Media3 1.11's DefaultHlsPlaylistTracker and
+ * CacheDataSource bytecode] - so the segment list froze at whatever the first
+ * fetch held. A live stream played out the handful of segments it opened with
+ * and then stalled at the live edge, while seeking back into the DVR window
+ * went on working, because those segments were already listed in the frozen
+ * copy. That asymmetry is the whole signature of this bug.
+ *
+ * The googlevideo half of the rule is the discriminator [ChunkedStreamDataSource]
+ * already uses: a progressive URL carries a query string
+ * (`?expire=...&itag=...`), while every URL in the live pipeline - the variant
+ * and media playlists on manifest.googlevideo.com and the segments they point
+ * at - is path-style with no query at all [verified August 2026]. Excluding
+ * the segments as well as the playlists is deliberate: the video cache has no
+ * byte ceiling, and an hour of a broadcast is an hour of media nobody replays.
+ */
+internal fun isUncacheablePlaybackUrl(url: String): Boolean {
+    val afterScheme = url.substringAfter("://", missingDelimiterValue = "")
+    if (afterScheme.isEmpty()) return false
+    val authorityEnd = afterScheme.indexOfFirst { it == '/' || it == '?' || it == '#' }
+    val authority = if (authorityEnd < 0) afterScheme else afterScheme.take(authorityEnd)
+    val rest = if (authorityEnd < 0) "" else afterScheme.substring(authorityEnd)
+    val host = authority.substringAfterLast('@').substringBefore(':').lowercase()
+    val path = rest.substringBefore('?').substringBefore('#')
+    if (path.endsWith(".m3u8", ignoreCase = true) || path.endsWith(".mpd", ignoreCase = true)) {
+        return true
+    }
+    val googleVideo = host == "googlevideo.com" || host.endsWith(".googlevideo.com")
+    return googleVideo && path.isNotEmpty() && !rest.contains('?')
+}

@@ -208,4 +208,5 @@
     <string name="vh_recommendations_off_sub">有効にすると、ここに Shorts が表示されることがあります。</string>
     <string name="vp_resumed_from">%1$s から再開しました</string>
     <string name="vp_play_from_start">最初から再生</string>
+    <string name="section_releases">リリース</string>
 </resources>

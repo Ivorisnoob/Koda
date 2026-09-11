@@ -2,7 +2,6 @@ package com.ivor.ivormusic.ui.player
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -11,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +32,10 @@ import androidx.compose.ui.unit.lerp
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
+import com.ivor.ivormusic.ui.components.PLAYER_CONTAINER_SPRING
+import com.ivor.ivormusic.ui.components.containerBackdropAlpha
+import com.ivor.ivormusic.ui.components.containerFullAlpha
+import com.ivor.ivormusic.ui.components.containerMiniAlpha
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -97,6 +101,12 @@ fun ExpandablePlayer(
         song = currentSong,
         active = isExpanded && isPlaying && !styleWheel.isOpen
     )
+    // Provided here rather than per style, so every style's progress bar reaches the measured
+    // waveform through one wiring instead of eight that can each be forgotten. The scrub
+    // interaction travels the same way: each style's transparent Slider still owns the gesture
+    // and publishes it here, which is what the visual under it reads to bloom its thumb.
+    val playerWaveform = rememberPlayerWaveform(currentSong?.id)
+    val scrubInteraction = remember { MutableInteractionSource() }
     LaunchedEffect(isExpanded) {
         if (!isExpanded) styleWheel.dismiss()
     }
@@ -120,17 +130,15 @@ fun ExpandablePlayer(
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
     
-    // Single animated progress (0f = collapsed, 1f = expanded)
-    //
-    // Near-critically damped so the sheet never bounces against its bounds,
-    // but stiff enough to arrive: at 180 this settled over roughly twice
-    // Material's own slow spatial spec and read as mush rather than as calm.
-    // 0.95 leaves overshoot far below a pixel, so the coerce below is a
-    // guard rather than something the eye ever sees working.
+    // Single animated progress (0f = collapsed, 1f = expanded), settling on
+    // the spring the video player's container transform shares with this one
+    // (PlayerContainerTransform.kt). Its overshoot is far below a pixel, so
+    // the coerce below is a guard rather than something the eye ever sees
+    // working.
     //
     // An Animatable rather than animateFloatAsState so a back gesture can
     // scrub it and an interrupted transition continues from its current value.
-    val expandSpec = remember { spring<Float>(dampingRatio = 0.95f, stiffness = 350f) }
+    val expandSpec = PLAYER_CONTAINER_SPRING
     val expand = remember { Animatable(if (isExpanded) 1f else 0f) }
     LaunchedEffect(isExpanded) {
         expand.animateTo(if (isExpanded) 1f else 0f, expandSpec)
@@ -197,14 +205,10 @@ fun ExpandablePlayer(
     // Soft floating-pill depth while collapsed, gone once fullscreen
     val pillShadowElevation = lerp(8.dp, 0.dp, expandProgress)
 
-    // Collapsed shows surface, expanded shows transparent - but not on a
-    // straight ramp. Fading the container in step with the progress made the
-    // growing pill half transparent exactly while the player content inside it
-    // was also half transparent, so mid-expansion you saw Home through both.
-    // The container therefore stays opaque until the content behind it is
-    // solid, and only then hands over.
+    // Collapsed shows surface, expanded shows transparent - but opaque until
+    // the content inside is solid; see containerBackdropAlpha for why.
     val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
-        alpha = 1f - ((expandProgress - 0.7f) / 0.3f).coerceIn(0f, 1f)
+        alpha = containerBackdropAlpha(expandProgress)
     )
 
     // Swipe Logic for expand/collapse (vertical)
@@ -329,7 +333,7 @@ fun ExpandablePlayer(
 
                 // --- Mini layer: fades out over the first part of the expansion ---
                 if (expandProgress < 0.999f) {
-                    val miniAlpha = (1f - expandProgress / 0.28f).coerceIn(0f, 1f)
+                    val miniAlpha = containerMiniAlpha(expandProgress)
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -360,7 +364,7 @@ fun ExpandablePlayer(
                     // Solid by the halfway point rather than only at the very
                     // end, so the second half of the motion is one opaque
                     // screen growing instead of a washed-out one.
-                    val fullAlpha = ((expandProgress - 0.12f) / 0.38f).coerceIn(0f, 1f)
+                    val fullAlpha = containerFullAlpha(expandProgress)
                     // Optionally re-theme the expanded player's accent roles
                     // from the album cover; every style's buttons read
                     // MaterialTheme.colorScheme, so one wrapper covers them
@@ -412,7 +416,9 @@ fun ExpandablePlayer(
                             label = "PlayerStyleSwap"
                         ) { activeStyle ->
                         CompositionLocalProvider(
-                            LocalMotionArtwork provides motionArtworkSession.takeIf { activeStyle == playerStyle }
+                            LocalMotionArtwork provides motionArtworkSession.takeIf { activeStyle == playerStyle },
+                            LocalPlayerWaveform provides playerWaveform,
+                            LocalPlayerScrubInteraction provides scrubInteraction,
                         ) {
                         when (activeStyle) {
                             PlayerStyle.CLASSIC -> {

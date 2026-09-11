@@ -8,9 +8,9 @@
   SurfaceFlinger in its own layer behind the app window, so it does not follow
   anything Compose does to its ancestors: it cannot be clipped to a rounded
   frame, it cannot be faded, and it does not scale or translate with a
-  graphicsLayer. The minimize transition does all three at once - the picture
-  travels from this box into the bar's 92dp thumbnail - so on a SurfaceView the
-  chrome would animate and the video would sit still.
+  graphicsLayer. The minimize transition clips and fades the watch page as it
+  grows out of and shrinks into the mini bar, so on a SurfaceView the chrome
+  would animate and the video would sit on top of it, unclipped.
 
   Fullscreen deliberately keeps its SurfaceView: it never minimizes, its bounds
   are the window, and that path is the cheaper one for power, frame timing and

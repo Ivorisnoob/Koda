@@ -1,0 +1,151 @@
+{
+  "musicResponsiveHeaderRenderer": {
+    "thumbnail": {
+      "musicThumbnailRenderer": {
+        "thumbnail": {
+          "thumbnails": [
+            {
+              "url": "https://yt3.googleusercontent.com/r2KSuMUFdAE96Q5ho9LCkg__GQJt2GIgD_zUyy8O9ttPPh1M7pT7CTUUSrx91Ysc_i0yACbGz0RCU9ME=w60-h60-l90-rj",
+              "width": 60,
+              "height": 60
+            },
+            {
+              "url": "https://yt3.googleusercontent.com/r2KSuMUFdAE96Q5ho9LCkg__GQJt2GIgD_zUyy8O9ttPPh1M7pT7CTUUSrx91Ysc_i0yACbGz0RCU9ME=w120-h120-l90-rj",
+              "width": 120,
+              "height": 120
+            },
+            {
+              "url": "https://yt3.googleusercontent.com/r2KSuMUFdAE96Q5ho9LCkg__GQJt2GIgD_zUyy8O9ttPPh1M7pT7CTUUSrx91Ysc_i0yACbGz0RCU9ME=w226-h226-l90-rj",
+              "width": 226,
+              "height": 226
+            },
+            {
+              "url": "https://yt3.googleusercontent.com/r2KSuMUFdAE96Q5ho9LCkg__GQJt2GIgD_zUyy8O9ttPPh1M7pT7CTUUSrx91Ysc_i0yACbGz0RCU9ME=w544-h544-l90-rj",
+              "width": 544,
+              "height": 544
+            }
+          ]
+        }
+      }
+    },
+    "title": {
+      "runs": [
+        {
+          "text": "BILLIE EILISH."
+        }
+      ]
+    },
+    "subtitle": {
+      "runs": [
+        {
+          "text": "Single"
+        },
+        {
+          "text": " • "
+        },
+        {
+          "text": "2022"
+        }
+      ]
+    },
+    "straplineTextOne": {
+      "runs": [
+        {
+          "text": "Armani White",
+          "navigationEndpoint": {
+            "browseEndpoint": {
+              "browseId": "UChx3Pzruo8Zq_-pHBjNhZ0g",
+              "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                  "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "secondSubtitle": {
+      "runs": [
+        {
+          "text": "1 song"
+        },
+        {
+          "text": " • "
+        },
+        {
+          "text": "1 minute, 40 seconds"
+        }
+      ]
+    }
+  },
+  "contents": [
+    {
+      "musicShelfRenderer": {
+        "contents": [
+          {
+            "musicResponsiveListItemRenderer": {
+              "flexColumns": [
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "BILLIE EILISH.",
+                          "navigationEndpoint": {
+                            "watchEndpoint": {
+                              "videoId": "4vYOwhll1fs"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {}
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "192M plays"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "fixedColumns": [
+                {
+                  "musicResponsiveListItemFixedColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "1:40"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "playlistItemData": {
+                "videoId": "4vYOwhll1fs"
+              },
+              "index": {
+                "runs": [
+                  {
+                    "text": "1"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "thumbnail": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {
+        "thumbnails": [
+          {
+            "url": "https://yt3.googleusercontent.com/kkybs523JOqnfkcxy8mywojh5JB8fO4IpQjiF9nJaUoqvPuYMq96Mz1IY9wYr_8gLCg6FYIGOim7OQA6LA=w60-h60-l90-rj",
+            "width": 60,
+            "height": 60
+          },
+          {
+            "url": "https://yt3.googleusercontent.com/kkybs523JOqnfkcxy8mywojh5JB8fO4IpQjiF9nJaUoqvPuYMq96Mz1IY9wYr_8gLCg6FYIGOim7OQA6LA=w120-h120-l90-rj",
+            "width": 120,
+            "height": 120
+          },
+          {
+            "url": "https://yt3.googleusercontent.com/kkybs523JOqnfkcxy8mywojh5JB8fO4IpQjiF9nJaUoqvPuYMq96Mz1IY9wYr_8gLCg6FYIGOim7OQA6LA=w226-h226-l90-rj",
+            "width": 226,
+            "height": 226
+          },
+          {
+            "url": "https://yt3.googleusercontent.com/kkybs523JOqnfkcxy8mywojh5JB8fO4IpQjiF9nJaUoqvPuYMq96Mz1IY9wYr_8gLCg6FYIGOim7OQA6LA=w544-h544-l90-rj",
+            "width": 544,
+            "height": 544
+          }
+        ]
+      }
+    }
+  },
+  "flexColumns": [
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "boygenius"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "EP"
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "boygenius",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UCxMaQtHvN4Jw5kYfo8Bi5fw",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": ", "
+            },
+            {
+              "text": "Julien Baker",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UC93QsTG5LEfU3zpP87XvQSA",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": ", "
+            },
+            {
+              "text": "Lucy Dacus",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UCt-KqR_ceCdjeMljGYiXSww",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": " & "
+            },
+            {
+              "text": "Phoebe Bridgers",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UCprIJgC2-qqSHNVztFjRFmw",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "2018"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "navigationEndpoint": {
+    "browseEndpoint": {
+      "browseId": "MPREb_P2giBg1fgkA",
+      "browseEndpointContextSupportedConfigs": {
+        "browseEndpointContextMusicConfig": {
+          "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+        }
+      }
+    }
+  }
+}

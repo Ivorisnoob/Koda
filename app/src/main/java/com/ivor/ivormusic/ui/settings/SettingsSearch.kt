@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
@@ -61,6 +62,7 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Subscriptions
@@ -291,6 +293,21 @@ internal fun buildSettingsSearchIndex(
     entry(
         "motion_artwork_wifi", stringResource(R.string.sp_motion_artwork_wifi), stringResource(R.string.settings_player), Icons.Rounded.Wifi,
         listOf("motion", "artwork", "wifi", "wi-fi", "mobile", "data")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "motion_artwork_quality", stringResource(R.string.sp_motion_artwork_quality), stringResource(R.string.settings_player), Icons.Rounded.HighQuality,
+        listOf("motion", "artwork", "quality", "resolution", "hd", "1080", "4k", "data", "canvas", "cover")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "waveform_seek_bar", stringResource(R.string.sp_waveform), stringResource(R.string.settings_player), Icons.Rounded.GraphicEq,
+        listOf("waveform", "wave", "seek", "seekbar", "progress", "scrubber", "amplitude", "loudness", "bar")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "visualizer", stringResource(R.string.sp_visualizer), stringResource(R.string.settings_player), Icons.Rounded.GraphicEq,
+        listOf(
+            "visualizer", "visualiser", "bars", "wave", "spectrum", "fft",
+            "dance", "animated", "reactive", "equalizer", "eq"
+        )
     ) { onOpenPage(SettingsPage.PLAYER) }
 
     // Playback and quality
@@ -551,6 +568,10 @@ internal fun buildSettingsSearchIndex(
         "excluded_folders", stringResource(R.string.sp_excluded_folders), "Local library", Icons.Rounded.FolderOff,
         listOf("exclude", "ignore", "hide folder", "ringtones", "whatsapp", "recordings")
     ) { onOpenFolderExclusion() }
+    entry(
+        "playlist_swipe", stringResource(R.string.sp_playlist_swipe), "Local library", Icons.Rounded.SwapHoriz,
+        listOf("swipe", "gesture", "dismiss", "remove song", "quick action", "playlist row", "swipe right", "swipe left", "play", "queue", "add to queue", "options")
+    ) { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
 
     // Advanced
     entry(

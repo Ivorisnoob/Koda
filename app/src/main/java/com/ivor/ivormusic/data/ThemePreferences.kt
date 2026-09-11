@@ -69,6 +69,10 @@ class ThemePreferences(context: Context) {
     val motionArtwork: StateFlow<Boolean> = _motionArtwork.asStateFlow()
     private val _motionArtworkWifiOnly = MutableStateFlow(getMotionArtworkWifiOnlyPreference())
     val motionArtworkWifiOnly: StateFlow<Boolean> = _motionArtworkWifiOnly.asStateFlow()
+    private val _motionArtworkQuality = MutableStateFlow(getMotionArtworkQualityPreference())
+    val motionArtworkQuality: StateFlow<MotionArtworkQuality> = _motionArtworkQuality.asStateFlow()
+    private val _waveformSeekBar = MutableStateFlow(getWaveformSeekBarPreference())
+    val waveformSeekBar: StateFlow<Boolean> = _waveformSeekBar.asStateFlow()
 
     private val _playerArtworkColors = MutableStateFlow(getPlayerArtworkColorsPreference())
     val playerArtworkColors: StateFlow<Boolean> = _playerArtworkColors.asStateFlow()
@@ -281,6 +285,18 @@ class ThemePreferences(context: Context) {
     private val _compactVideoHome = MutableStateFlow(getCompactVideoHomePreference())
     val compactVideoHome: StateFlow<Boolean> = _compactVideoHome.asStateFlow()
 
+    // Swipe actions on playlist song rows. Each direction names its own
+    // action so a right swipe can play while a left swipe removes - or
+    // either can be off. "remove" only arms where the playlist is editable.
+    private val _playlistSwipeEnabled = MutableStateFlow(getPlaylistSwipeEnabledPreference())
+    val playlistSwipeEnabled: StateFlow<Boolean> = _playlistSwipeEnabled.asStateFlow()
+
+    private val _playlistSwipeStartAction = MutableStateFlow(getPlaylistSwipeStartActionPreference())
+    val playlistSwipeStartAction: StateFlow<String> = _playlistSwipeStartAction.asStateFlow()
+
+    private val _playlistSwipeEndAction = MutableStateFlow(getPlaylistSwipeEndActionPreference())
+    val playlistSwipeEndAction: StateFlow<String> = _playlistSwipeEndAction.asStateFlow()
+
     // Every screen/service news up its own ThemePreferences (no DI), so a setter
     // called on one instance must still reach the flows of every other instance.
     // All instances share the same process-wide SharedPreferences object, so a
@@ -297,6 +313,8 @@ class ThemePreferences(context: Context) {
             KEY_AMBIENT_BACKGROUND -> _ambientBackground.value = getAmbientBackgroundPreference()
             KEY_MOTION_ARTWORK -> _motionArtwork.value = getMotionArtworkPreference()
             KEY_MOTION_ARTWORK_WIFI_ONLY -> _motionArtworkWifiOnly.value = getMotionArtworkWifiOnlyPreference()
+            KEY_MOTION_ARTWORK_QUALITY -> _motionArtworkQuality.value = getMotionArtworkQualityPreference()
+            KEY_WAVEFORM_SEEK_BAR -> _waveformSeekBar.value = getWaveformSeekBarPreference()
             KEY_PLAYER_ARTWORK_COLORS -> _playerArtworkColors.value = getPlayerArtworkColorsPreference()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
@@ -370,6 +388,9 @@ class ThemePreferences(context: Context) {
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_COMPACT_VIDEO_HOME -> _compactVideoHome.value = getCompactVideoHomePreference()
+            KEY_PLAYLIST_SWIPE_ENABLED -> _playlistSwipeEnabled.value = getPlaylistSwipeEnabledPreference()
+            KEY_PLAYLIST_SWIPE_START_ACTION -> _playlistSwipeStartAction.value = getPlaylistSwipeStartActionPreference()
+            KEY_PLAYLIST_SWIPE_END_ACTION -> _playlistSwipeEndAction.value = getPlaylistSwipeEndActionPreference()
         }
     }
 
@@ -422,6 +443,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_AMBIENT_BACKGROUND = "ambient_background"
         private const val KEY_MOTION_ARTWORK = "motion_artwork"
         private const val KEY_MOTION_ARTWORK_WIFI_ONLY = "motion_artwork_wifi_only"
+        private const val KEY_MOTION_ARTWORK_QUALITY = "motion_artwork_quality"
+        private const val KEY_WAVEFORM_SEEK_BAR = "waveform_seek_bar"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
         private const val KEY_VIDEO_MODE = "video_mode"
         private const val KEY_LAST_MUSIC_TAB = "last_music_tab"
@@ -744,6 +767,16 @@ class ThemePreferences(context: Context) {
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
         private const val KEY_COMPACT_VIDEO_HOME = "compact_video_home"
+        private const val KEY_PLAYLIST_SWIPE_ENABLED = "playlist_swipe_enabled"
+        private const val KEY_PLAYLIST_SWIPE_START_ACTION = "playlist_swipe_start_action"
+        private const val KEY_PLAYLIST_SWIPE_END_ACTION = "playlist_swipe_end_action"
+
+        /** Swipe actions a playlist row direction can take. "off" arms nothing. */
+        const val PLAYLIST_SWIPE_ACTION_OFF = "off"
+        const val PLAYLIST_SWIPE_ACTION_REMOVE = "remove"
+        const val PLAYLIST_SWIPE_ACTION_PLAY = "play"
+        const val PLAYLIST_SWIPE_ACTION_QUEUE = "queue"
+        const val PLAYLIST_SWIPE_ACTION_OPTIONS = "options"
 
         /**
          * Fallback sort order for the Library's All tab. Mirrors the name of
@@ -767,6 +800,9 @@ class ThemePreferences(context: Context) {
         private const val KEY_LAST_SONG_ALBUM = "last_song_album"
         private const val KEY_LAST_SONG_ARTWORK = "last_song_artwork"
         private const val KEY_LAST_SONG_DURATION = "last_song_duration"
+        private const val KEY_LAST_SONG_ALBUM_ID = "last_song_album_id"
+        private const val KEY_LAST_SONG_RELEASE_YEAR = "last_song_release_year"
+        private const val KEY_LAST_SONG_RELEASE_TYPE = "last_song_release_type"
     }
     
     // --- Last Played Song ---
@@ -782,6 +818,9 @@ class ThemePreferences(context: Context) {
             .putString(KEY_LAST_SONG_ALBUM, song.album)
             .putString(KEY_LAST_SONG_ARTWORK, song.thumbnailUrl ?: song.albumArtUri?.toString() ?: "")
             .putLong(KEY_LAST_SONG_DURATION, song.duration)
+            .putString(KEY_LAST_SONG_ALBUM_ID, song.albumId)
+            .putInt(KEY_LAST_SONG_RELEASE_YEAR, song.releaseYear ?: 0)
+            .putString(KEY_LAST_SONG_RELEASE_TYPE, song.releaseType?.name)
             .apply()
     }
     
@@ -798,6 +837,9 @@ class ThemePreferences(context: Context) {
             album = prefs.getString(KEY_LAST_SONG_ALBUM, "") ?: "",
             thumbnailUrl = artwork.ifEmpty { null },
             duration = prefs.getLong(KEY_LAST_SONG_DURATION, 0L),
+            albumId = prefs.getString(KEY_LAST_SONG_ALBUM_ID, null),
+            releaseYear = prefs.getInt(KEY_LAST_SONG_RELEASE_YEAR, 0).takeIf { it in 1900..2099 },
+            releaseType = MusicReleaseType.entries.firstOrNull { it.name == prefs.getString(KEY_LAST_SONG_RELEASE_TYPE, null) },
             source = SongSource.YOUTUBE
         )
     }
@@ -813,6 +855,9 @@ class ThemePreferences(context: Context) {
             .remove(KEY_LAST_SONG_ALBUM)
             .remove(KEY_LAST_SONG_ARTWORK)
             .remove(KEY_LAST_SONG_DURATION)
+            .remove(KEY_LAST_SONG_ALBUM_ID)
+            .remove(KEY_LAST_SONG_RELEASE_YEAR)
+            .remove(KEY_LAST_SONG_RELEASE_TYPE)
             .apply()
     }
 
@@ -947,6 +992,26 @@ class ThemePreferences(context: Context) {
     fun setMotionArtworkWifiOnly(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_MOTION_ARTWORK_WIFI_ONLY, enabled).apply()
         _motionArtworkWifiOnly.value = enabled
+    }
+
+    /** Unknown names fall back to the default, so an older and a newer build cannot poison each other. */
+    private fun getMotionArtworkQualityPreference(): MotionArtworkQuality =
+        MotionArtworkQuality.fromName(prefs.getString(KEY_MOTION_ARTWORK_QUALITY, null))
+
+    fun setMotionArtworkQuality(quality: MotionArtworkQuality) {
+        prefs.edit().putString(KEY_MOTION_ARTWORK_QUALITY, quality.name).apply()
+        _motionArtworkQuality.value = quality
+    }
+
+    /**
+     * Off by default: it changes the shape of the seek bar in every player style, and the
+     * envelope behind it is only measured while it is on, so leaving it off costs nothing.
+     */
+    private fun getWaveformSeekBarPreference(): Boolean = prefs.getBoolean(KEY_WAVEFORM_SEEK_BAR, false)
+
+    fun setWaveformSeekBar(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_WAVEFORM_SEEK_BAR, enabled).apply()
+        _waveformSeekBar.value = enabled
     }
 
     /** Expanded player buttons take their colors from the cover by default. */
@@ -2034,6 +2099,32 @@ class ThemePreferences(context: Context) {
     fun setShowRelatedVideos(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_RELATED_VIDEOS, show).apply()
         _showRelatedVideos.value = show
+    }
+
+    private fun getPlaylistSwipeEnabledPreference(): Boolean =
+        prefs.getBoolean(KEY_PLAYLIST_SWIPE_ENABLED, true)
+
+    fun setPlaylistSwipeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_PLAYLIST_SWIPE_ENABLED, enabled).apply()
+        _playlistSwipeEnabled.value = enabled
+    }
+
+    private fun getPlaylistSwipeStartActionPreference(): String =
+        prefs.getString(KEY_PLAYLIST_SWIPE_START_ACTION, PLAYLIST_SWIPE_ACTION_PLAY)
+            ?: PLAYLIST_SWIPE_ACTION_PLAY
+
+    fun setPlaylistSwipeStartAction(action: String) {
+        prefs.edit().putString(KEY_PLAYLIST_SWIPE_START_ACTION, action).apply()
+        _playlistSwipeStartAction.value = action
+    }
+
+    private fun getPlaylistSwipeEndActionPreference(): String =
+        prefs.getString(KEY_PLAYLIST_SWIPE_END_ACTION, PLAYLIST_SWIPE_ACTION_REMOVE)
+            ?: PLAYLIST_SWIPE_ACTION_REMOVE
+
+    fun setPlaylistSwipeEndAction(action: String) {
+        prefs.edit().putString(KEY_PLAYLIST_SWIPE_END_ACTION, action).apply()
+        _playlistSwipeEndAction.value = action
     }
 
     private fun getOnboardingCompletedPreference(): Boolean {

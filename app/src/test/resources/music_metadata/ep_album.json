@@ -1,0 +1,334 @@
+{
+  "musicResponsiveHeaderRenderer": {
+    "thumbnail": {
+      "musicThumbnailRenderer": {
+        "thumbnail": {
+          "thumbnails": [
+            {
+              "url": "https://yt3.googleusercontent.com/PWbYyuP74iJMKgZ7kGU1vcSXEGvRCgQhuWjrYMXCusbyPNFkhdR8DiBK--KFncjYAnsDRlUgiPUF2c3z3Q=w60-h60-l90-rj",
+              "width": 60,
+              "height": 60
+            },
+            {
+              "url": "https://yt3.googleusercontent.com/PWbYyuP74iJMKgZ7kGU1vcSXEGvRCgQhuWjrYMXCusbyPNFkhdR8DiBK--KFncjYAnsDRlUgiPUF2c3z3Q=w120-h120-l90-rj",
+              "width": 120,
+              "height": 120
+            },
+            {
+              "url": "https://yt3.googleusercontent.com/PWbYyuP74iJMKgZ7kGU1vcSXEGvRCgQhuWjrYMXCusbyPNFkhdR8DiBK--KFncjYAnsDRlUgiPUF2c3z3Q=w226-h226-l90-rj",
+              "width": 226,
+              "height": 226
+            },
+            {
+              "url": "https://yt3.googleusercontent.com/PWbYyuP74iJMKgZ7kGU1vcSXEGvRCgQhuWjrYMXCusbyPNFkhdR8DiBK--KFncjYAnsDRlUgiPUF2c3z3Q=w544-h544-l90-rj",
+              "width": 544,
+              "height": 544
+            }
+          ]
+        }
+      }
+    },
+    "title": {
+      "runs": [
+        {
+          "text": "the rest"
+        }
+      ]
+    },
+    "subtitle": {
+      "runs": [
+        {
+          "text": "EP"
+        },
+        {
+          "text": " • "
+        },
+        {
+          "text": "2023"
+        }
+      ]
+    },
+    "straplineTextOne": {
+      "runs": [
+        {
+          "text": "boygenius",
+          "navigationEndpoint": {
+            "browseEndpoint": {
+              "browseId": "UCxMaQtHvN4Jw5kYfo8Bi5fw",
+              "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": {
+                  "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "secondSubtitle": {
+      "runs": [
+        {
+          "text": "4 songs"
+        },
+        {
+          "text": " • "
+        },
+        {
+          "text": "12 minutes, 8 seconds"
+        }
+      ]
+    }
+  },
+  "contents": [
+    {
+      "musicShelfRenderer": {
+        "contents": [
+          {
+            "musicResponsiveListItemRenderer": {
+              "flexColumns": [
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "Black Hole",
+                          "navigationEndpoint": {
+                            "watchEndpoint": {
+                              "videoId": "aqppZxzDAd0"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {}
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "474K plays"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "fixedColumns": [
+                {
+                  "musicResponsiveListItemFixedColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "2:22"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "playlistItemData": {
+                "videoId": "aqppZxzDAd0"
+              },
+              "index": {
+                "runs": [
+                  {
+                    "text": "1"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemRenderer": {
+              "flexColumns": [
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "Afraid of Heights",
+                          "navigationEndpoint": {
+                            "watchEndpoint": {
+                              "videoId": "tB0YjuHYbPE"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {}
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "612K plays"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "fixedColumns": [
+                {
+                  "musicResponsiveListItemFixedColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "2:42"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "playlistItemData": {
+                "videoId": "tB0YjuHYbPE"
+              },
+              "index": {
+                "runs": [
+                  {
+                    "text": "2"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemRenderer": {
+              "flexColumns": [
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "Voyager",
+                          "navigationEndpoint": {
+                            "watchEndpoint": {
+                              "videoId": "RTrOEKbgHIg"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {}
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "720K plays"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "fixedColumns": [
+                {
+                  "musicResponsiveListItemFixedColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "2:49"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "playlistItemData": {
+                "videoId": "RTrOEKbgHIg"
+              },
+              "index": {
+                "runs": [
+                  {
+                    "text": "3"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "musicResponsiveListItemRenderer": {
+              "flexColumns": [
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "Powers",
+                          "navigationEndpoint": {
+                            "watchEndpoint": {
+                              "videoId": "lWCgeXVZ_eU"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {}
+                  }
+                },
+                {
+                  "musicResponsiveListItemFlexColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "351K plays"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "fixedColumns": [
+                {
+                  "musicResponsiveListItemFixedColumnRenderer": {
+                    "text": {
+                      "runs": [
+                        {
+                          "text": "4:15"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "playlistItemData": {
+                "videoId": "lWCgeXVZ_eU"
+              },
+              "index": {
+                "runs": [
+                  {
+                    "text": "4"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

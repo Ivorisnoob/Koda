@@ -208,4 +208,5 @@
     <string name="vh_recommendations_off_sub">啟用後，Shorts 仍可能顯示在這裡。</string>
     <string name="vp_resumed_from">已從 %1$s 繼續播放</string>
     <string name="vp_play_from_start">從頭播放</string>
+    <string name="section_releases">發行作品</string>
 </resources>

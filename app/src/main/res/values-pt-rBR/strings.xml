@@ -1137,4 +1137,5 @@
         <item quantity="one">%1$d resultado</item>
         <item quantity="other">%1$d resultados</item>
     </plurals>
+    <string name="section_releases">Lançamentos</string>
 </resources>

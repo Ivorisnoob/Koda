@@ -334,7 +334,10 @@ class DownloadRepository private constructor(private val context: Context) {
                         thumbnailUrl = localArtUri?.toString() ?: artUrl,
                         source = SongSource.LOCAL,
                         lyricsUri = lyricsUri,
-                        dateAdded = addedAt
+                        dateAdded = addedAt,
+                        albumId = obj.optString("albumId").takeIf { it.isNotBlank() },
+                        releaseYear = obj.optInt("releaseYear").takeIf { it in 1900..2099 },
+                        releaseType = MusicReleaseType.entries.firstOrNull { it.name == obj.optString("releaseType") }
                     )
                 )
             }
@@ -386,6 +389,9 @@ class DownloadRepository private constructor(private val context: Context) {
                     put("title", song.title)
                     put("artist", song.artist)
                     put("album", song.album)
+                    song.albumId?.let { put("albumId", it) }
+                    song.releaseYear?.let { put("releaseYear", it) }
+                    song.releaseType?.let { put("releaseType", it.name) }
                     put("duration", song.duration)
                     // Private downloads are deliberately stored as file:// URIs
                     // under noBackupFilesDir/downloads. The old localPath shape remains

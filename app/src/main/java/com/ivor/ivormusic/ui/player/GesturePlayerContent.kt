@@ -66,6 +66,9 @@ import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.rememberFocusedQueueListState
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.data.LyricsResult
+import com.ivor.ivormusic.data.isUnknownAlbum
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -278,7 +281,7 @@ private fun GestureNowPlayingView(
     )
     
     // Get album info
-    val albumName = currentSong?.album?.takeIf { it.isNotEmpty() && !it.startsWith("Unknown") } ?: "Unknown Album"
+    val albumName = currentSong?.album?.takeIf { !isUnknownAlbum(it) } ?: "Unknown Album"
     val albumArtUrl = currentSong?.highResThumbnailUrl 
         ?: currentSong?.thumbnailUrl 
         ?: currentSong?.albumArtUri?.toString()
@@ -489,7 +492,7 @@ private fun GestureNowPlayingView(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                                text = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
                                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -497,7 +500,7 @@ private fun GestureNowPlayingView(
                                 textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist"
+                            val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
                             Text(
                                 text = artistName,
                                 style = MaterialTheme.typography.titleMedium,
@@ -533,9 +536,9 @@ private fun GestureNowPlayingView(
 
                             // Wavy progress with invisible slider overlay for touch
                             Box(contentAlignment = Alignment.Center) {
-                                LinearWavyProgressIndicator(
+                                ExpressiveScrubber(
                                     progress = { animatedProgress },
-                                    modifier = Modifier.fillMaxWidth().height(14.dp),
+                                    modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
                                     stroke = thickStroke,
                                     trackStroke = thickStroke,
                                     color = primaryColor,
@@ -544,6 +547,7 @@ private fun GestureNowPlayingView(
 
                                 // Invisible slider for touch interaction
                                 Slider(
+                                    interactionSource = LocalPlayerScrubInteraction.current,
                                     value = scrubPosition ?: progress.toFloat(),
                                     onValueChange = { scrubPosition = it },
                                     onValueChangeFinished = {
@@ -582,6 +586,8 @@ private fun GestureNowPlayingView(
                 }
             }
             
+            PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
             // ========== 6. FLOATING TOOLBAR (Action Buttons) ==========
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -1278,7 +1284,7 @@ private fun GestureQueueView(
                                 }
                                 
                                 Text(
-                                    text = song.title.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                                    text = song.title.takeIf { !isUnknownTitle(it) } ?: "Untitled",
                                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -1286,7 +1292,7 @@ private fun GestureQueueView(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = song.artist.takeIf { !it.startsWith("Unknown") } ?: "Unknown Artist",
+                                    text = song.artist.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = onSurfaceVariantColor,
                                     maxLines = 1,

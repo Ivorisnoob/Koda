@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.artist
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.components.releaseCaption
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -84,6 +85,9 @@ import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.sortedInAlbumOrder
+import com.ivor.ivormusic.data.isUnknownAlbum
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.ui.components.SEARCH_FIELD_MIN_ITEMS
 import com.ivor.ivormusic.ui.components.SearchField
@@ -131,7 +135,7 @@ private fun List<Song>.arrangedForArtist(sort: ArtistSongSort, query: String): L
         // Album order within an album, albums themselves alphabetical, and
         // anything untagged last rather than under a blank heading.
         ArtistSongSort.Album -> filtered.sortedWith(
-            compareBy<Song> { it.album.isBlank() || it.album.startsWith("Unknown") }
+            compareBy<Song> { isUnknownAlbum(it.album) }
                 .thenBy { it.album.lowercase() }
                 .thenBy { it.discNumber ?: Int.MAX_VALUE }
                 .thenBy { it.trackNumber ?: Int.MAX_VALUE }
@@ -268,6 +272,8 @@ fun ArtistScreen(
     LaunchedEffect(artistName, artistId, songs) {
         isLoading = true
         visibleSongCount = 20
+        artistSongs = emptyList()
+        fetchedAlbums = emptyList()
 
         // Only genuinely local files take the offline path. Liked/downloaded
         // YouTube songs shouldn't block fetching the full artist page.
@@ -388,7 +394,7 @@ fun ArtistScreen(
                     }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         CreatorHeader(
-                            name = artistName.takeIf { !it.startsWith("Unknown") }
+                            name = artistName.takeIf { !isUnknownArtist(it) }
                                 ?: stringResource(R.string.unknown_artist),
                             // The channel avatar when there is one, and the
                             // artwork of what they made when there is not -
@@ -485,11 +491,11 @@ fun ArtistScreen(
                 }
                 
                 // ========== ALBUMS SECTION (Local songs only) ==========
-                if (albums.isNotEmpty() && albums.any { it.isNotBlank() && !it.startsWith("Unknown") }) {
+                if (albums.isNotEmpty() && albums.any { !isUnknownAlbum(it) }) {
                     item {
                         Spacer(modifier = Modifier.height(24.dp))
                         Text(
-                            stringResource(R.string.section_albums),
+                            stringResource(if (hasLocalSongs) R.string.section_albums else R.string.section_releases),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = textColor,
@@ -503,18 +509,30 @@ fun ArtistScreen(
                             contentPadding = PaddingValues(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            val validAlbums = albums.filter { it.isNotBlank() && !it.startsWith("Unknown") }
-                            items(validAlbums.size) { index ->
+                            val validAlbums = albums.filter { !isUnknownAlbum(it) }
+                            val validReleases = fetchedAlbums.filter { !isUnknownAlbum(it.name) }
+                            items(validAlbums.size, key = { index ->
+                                if (hasLocalSongs) validAlbums[index] else validReleases[index].id
+                            }) { index ->
                                 val albumName = validAlbums[index]
                                 val albumSongs = if (hasLocalSongs) {
                                     artistSongs.filter { it.album == albumName }.sortedInAlbumOrder()
                                 } else emptyList()
                                 
-                                val fetchedAlbum = fetchedAlbums.find { it.name == albumName }
+                                val fetchedAlbum = if (hasLocalSongs) null else validReleases[index]
                                 val albumSubtitle = if (hasLocalSongs) {
                                     "${albumSongs.size} songs"
                                 } else {
-                                    fetchedAlbum?.uploaderName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.label_playlist)
+                                    // Type and year when the card carried them,
+                                    // the creator when it did not, and never an
+                                    // empty line under the artwork.
+                                    releaseCaption(
+                                        fetchedAlbum?.releaseType,
+                                        fetchedAlbum?.releaseYear
+                                    ).ifBlank {
+                                        fetchedAlbum?.uploaderName?.takeIf { it.isNotBlank() }
+                                            ?: stringResource(R.string.label_album)
+                                    }
                                 }
                                 val thumbnailUrl = if (hasLocalSongs) {
                                     albumSongs.firstOrNull()?.let { it.highResThumbnailUrl ?: it.thumbnailUrl ?: it.albumArtUri?.toString() }
@@ -934,7 +952,7 @@ private fun ArtistSongCard(
         ListItem(
             headlineContent = {
                 Text(
-                    text = song.title.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.untitled_song),
+                    text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                     color = textColor,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
@@ -944,7 +962,7 @@ private fun ArtistSongCard(
             },
             supportingContent = {
                 Text(
-                    text = song.album.takeIf { !it.isNullOrBlank() && !it.startsWith("Unknown", ignoreCase = true) } ?: stringResource(R.string.unknown_album),
+                    text = song.album.takeIf { !isUnknownAlbum(it) } ?: stringResource(R.string.unknown_album),
                     color = secondaryTextColor,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,

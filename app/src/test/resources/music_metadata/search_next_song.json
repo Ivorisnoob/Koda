@@ -1,0 +1,95 @@
+{
+  "thumbnail": {
+    "musicThumbnailRenderer": {
+      "thumbnail": {
+        "thumbnails": [
+          {
+            "url": "https://yt3.googleusercontent.com/2vhA3p73paNJ8ptp3K-ALvl7ruhzQDQiOsJLBxHBXCIMRpoHUscQIHurAZXQmbHys7EdBsKRoiEeOV1_=w60-h60-l90-rj",
+            "width": 60,
+            "height": 60
+          },
+          {
+            "url": "https://yt3.googleusercontent.com/2vhA3p73paNJ8ptp3K-ALvl7ruhzQDQiOsJLBxHBXCIMRpoHUscQIHurAZXQmbHys7EdBsKRoiEeOV1_=w120-h120-l90-rj",
+            "width": 120,
+            "height": 120
+          }
+        ]
+      }
+    }
+  },
+  "flexColumns": [
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "party favor",
+              "navigationEndpoint": {
+                "watchEndpoint": {
+                  "videoId": "ADZalnqEyx0"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "Billie Eilish",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "UCERrDZ8oN0U_n9MphMKERcg",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "dont smile at me",
+              "navigationEndpoint": {
+                "browseEndpoint": {
+                  "browseId": "MPREb_1Ju8u992G4O",
+                  "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "text": " • "
+            },
+            {
+              "text": "3:25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "musicResponsiveListItemFlexColumnRenderer": {
+        "text": {
+          "runs": [
+            {
+              "text": "82M plays"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "playlistItemData": {
+    "videoId": "ADZalnqEyx0"
+  }
+}

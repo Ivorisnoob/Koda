@@ -67,6 +67,8 @@ import androidx.compose.ui.unit.sp
 import androidx.graphics.shapes.Morph
 import androidx.media3.common.Player
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -267,6 +269,8 @@ fun DialPlayerSheetContent(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
                     Spacer(modifier = Modifier.height(6.dp))
 
                     // ========== TITLE / ARTIST ==========
@@ -279,7 +283,7 @@ fun DialPlayerSheetContent(
                             .swipeToSkipFollow(swipeToSkip)
                     ) {
                         Text(
-                            text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                            text = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = ink,
                             maxLines = 1,
@@ -289,7 +293,7 @@ fun DialPlayerSheetContent(
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp)
                         )
-                        val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
+                        val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
                             ?: "Unknown Artist"
                         Text(
                             text = artistName,

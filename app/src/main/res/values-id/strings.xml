@@ -208,4 +208,5 @@
     <string name="vh_recommendations_off_sub">Shorts masih bisa muncul di sini jika diaktifkan.</string>
     <string name="vp_resumed_from">Dilanjutkan dari %1$s</string>
     <string name="vp_play_from_start">Putar dari awal</string>
+    <string name="section_releases">Rilisan</string>
 </resources>

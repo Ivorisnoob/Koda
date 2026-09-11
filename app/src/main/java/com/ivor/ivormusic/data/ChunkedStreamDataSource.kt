@@ -79,10 +79,14 @@ class ChunkedStreamDataSource private constructor(
          * chunk, hits EOF at ~300 KB, reopens at the new position, and the
          * server re-serves the whole segment from the start. It terminates,
          * but every segment gets downloaded twice. Verified August 2026.
+         *
+         * "Adaptive, so not a whole file" is the same judgement the playback
+         * cache has to make, so both read it from [isUncacheablePlaybackUrl]
+         * rather than keeping two copies of the URL shape to drift apart.
          */
         private fun shouldChunk(uri: android.net.Uri): Boolean {
             if (uri.host?.endsWith(".googlevideo.com") != true) return false
-            return !uri.query.isNullOrEmpty()
+            return !isUncacheablePlaybackUrl(uri.toString())
         }
     }
 

@@ -89,6 +89,8 @@ import androidx.compose.ui.unit.sp
 import androidx.graphics.shapes.Morph
 import androidx.media3.common.Player
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.isUnknownArtist
+import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import kotlin.math.abs
 import kotlinx.coroutines.delay
@@ -297,7 +299,7 @@ fun MorphPlayerSheetContent(
                             .swipeToSkipFollow(swipeToSkip)
                     ) {
                         Text(
-                            text = currentSong?.title?.takeIf { !it.startsWith("Unknown") } ?: "Untitled",
+                            text = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
                             style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
                             color = onSurfaceColor,
                             maxLines = 1,
@@ -307,7 +309,7 @@ fun MorphPlayerSheetContent(
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp)
                         )
-                        val artistName = currentSong?.artist?.takeIf { !it.startsWith("Unknown") }
+                        val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
                             ?: "Unknown Artist"
                         Text(
                             text = artistName,
@@ -345,11 +347,11 @@ fun MorphPlayerSheetContent(
                             cap = StrokeCap.Round
                         )
                         Box(contentAlignment = Alignment.Center) {
-                            LinearWavyProgressIndicator(
+                            ExpressiveScrubber(
                                 progress = { animatedFraction },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(12.dp),
+                                    .height(scrubberTrackHeight(12.dp)),
                                 color = primaryColor,
                                 trackColor = onSurfaceVariantColor.copy(alpha = 0.15f),
                                 stroke = lineStroke,
@@ -357,6 +359,7 @@ fun MorphPlayerSheetContent(
                                 amplitude = { if (isPlaying) 1f else 0f }
                             )
                             Slider(
+                                interactionSource = LocalPlayerScrubInteraction.current,
                                 value = scrubPosition ?: progress.toFloat(),
                                 onValueChange = { scrubPosition = it },
                                 onValueChangeFinished = {
@@ -388,6 +391,8 @@ fun MorphPlayerSheetContent(
                             )
                         }
                     }
+
+                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
 
                     // ========== SUMMONED FLOATING TOOLBAR ==========
                     AnimatedVisibility(

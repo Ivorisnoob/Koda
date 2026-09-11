@@ -39,6 +39,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.ivor.ivormusic.data.IncognitoMode
+import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.MotionArtworkRepository
 import com.ivor.ivormusic.data.MotionArtworkResolver
 import com.ivor.ivormusic.data.Song
@@ -76,6 +77,7 @@ internal fun rememberMotionArtworkSession(song: Song, active: Boolean): MotionAr
     val preferences = remember(context) { ThemePreferences(context) }
     val enabled by preferences.motionArtwork.collectAsState()
     val wifiOnly by preferences.motionArtworkWifiOnly.collectAsState()
+    val quality by preferences.motionArtworkQuality.collectAsState()
     val localOnly by preferences.localOnlyMode.collectAsState()
     val incognito by remember(context) { IncognitoMode.enabled(context) }.collectAsState()
     val repository = remember(context) { MotionArtworkRepository(context) }
@@ -83,12 +85,14 @@ internal fun rememberMotionArtworkSession(song: Song, active: Boolean): MotionAr
     if (!enabled || !active || localOnly || incognito) return null
     val allowed = rememberMotionArtworkAllowed(wifiOnly)
     if (!allowed) return null
-    var url by remember(song) { mutableStateOf<String?>(null) }
-    LaunchedEffect(song, repository) { url = repository.resolve(song) }
-    val resolvedUrl = url ?: return null
-    var session by remember(song, resolvedUrl) { mutableStateOf<MotionArtworkSession?>(null) }
-    DisposableEffect(song, resolvedUrl) {
-        val created = MotionArtworkSession.create(context, song.id, resolvedUrl)
+    // The old chain keeps playing while a changed tier resolves, so the picker never drops the
+    // cover back to a still frame on its way to a sharper one.
+    var urls by remember(song) { mutableStateOf(emptyList<String>()) }
+    LaunchedEffect(song, repository, quality) { urls = repository.resolve(song, quality) }
+    val chain = urls.takeIf { it.isNotEmpty() } ?: return null
+    var session by remember(song, chain, quality) { mutableStateOf<MotionArtworkSession?>(null) }
+    DisposableEffect(song, chain, quality) {
+        val created = MotionArtworkSession.create(context, song.id, chain, quality)
         session = created
         onDispose { created?.release() }
     }
@@ -153,13 +157,18 @@ private fun rememberMotionArtworkAllowed(wifiOnly: Boolean): Boolean {
 internal class MotionArtworkSession private constructor(
     context: Context,
     val songId: String,
-    url: String,
+    private val chain: List<String>,
+    quality: MotionArtworkQuality,
     private val database: StandaloneDatabaseProvider,
     private val cache: SimpleCache,
 ) {
     var firstFrame by mutableStateOf(false)
         private set
     var failed by mutableStateOf(false)
+        private set
+
+    /** Which link of the fallback chain is playing. Read by the watchdog so it re-arms per attempt. */
+    var attempt by mutableStateOf(0)
         private set
     private var surface: TextureView? = null
     private val player = ExoPlayer.Builder(context)
@@ -171,7 +180,7 @@ internal class MotionArtworkSession private constructor(
                 dataSpec
             })))
         .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(2_000, 5_000, 500, 1_000)
-            .setTargetBufferBytes(4 * 1024 * 1024).setPrioritizeTimeOverSizeThresholds(false).build())
+            .setTargetBufferBytes(targetBufferBytes(quality)).setPrioritizeTimeOverSizeThresholds(false).build())
         .build().apply {
             volume = 0f
             setAudioAttributes(androidx.media3.common.AudioAttributes.DEFAULT, false)
@@ -181,11 +190,9 @@ internal class MotionArtworkSession private constructor(
             repeatMode = Player.REPEAT_MODE_ONE
             addListener(object : Player.Listener {
                 override fun onRenderedFirstFrame() { firstFrame = true }
-                override fun onPlayerError(error: PlaybackException) {
-                    fail()
-                }
+                override fun onPlayerError(error: PlaybackException) { stepDown() }
             })
-            setMediaItem(MediaItem.fromUri(url))
+            setMediaItem(MediaItem.fromUri(chain.first()))
         }
 
     fun attach(view: TextureView) {
@@ -218,13 +225,51 @@ internal class MotionArtworkSession private constructor(
         player.stop()
     }
 
+    /**
+     * The top tier hands the device a 2160x2160 HEVC clip and not every decoder takes one, so a
+     * failure walks the resolver's chain down to a rung that will play rather than abandoning the
+     * cover. Only an exhausted chain is a real failure.
+     */
+    fun stepDown() {
+        if (failed) return
+        val next = chain.getOrNull(attempt + 1)
+        if (next == null || surface == null) {
+            fail()
+            return
+        }
+        attempt++
+        firstFrame = false
+        player.setMediaItem(MediaItem.fromUri(next))
+        player.prepare()
+        player.play()
+    }
+
     companion object {
-        fun create(context: Context, songId: String, url: String): MotionArtworkSession? {
+        /** A single 2160 loop can run to tens of megabytes, so the store is sized by the tier that fills it. */
+        private fun cacheBytes(quality: MotionArtworkQuality): Long = when (quality) {
+            MotionArtworkQuality.SAVER, MotionArtworkQuality.BALANCED -> 32L * 1024 * 1024
+            MotionArtworkQuality.HIGH -> 128L * 1024 * 1024
+            MotionArtworkQuality.MAXIMUM -> 256L * 1024 * 1024
+        }
+
+        private fun targetBufferBytes(quality: MotionArtworkQuality): Int = when (quality) {
+            MotionArtworkQuality.SAVER, MotionArtworkQuality.BALANCED -> 4 * 1024 * 1024
+            MotionArtworkQuality.HIGH -> 24 * 1024 * 1024
+            MotionArtworkQuality.MAXIMUM -> 48 * 1024 * 1024
+        }
+
+        fun create(
+            context: Context,
+            songId: String,
+            chain: List<String>,
+            quality: MotionArtworkQuality,
+        ): MotionArtworkSession? {
+            if (chain.isEmpty()) return null
             val database = StandaloneDatabaseProvider(context)
             var cache: SimpleCache? = null
             return try {
-                cache = SimpleCache(File(context.cacheDir, "motion-artwork-media"), LeastRecentlyUsedCacheEvictor(32L * 1024 * 1024), database)
-                MotionArtworkSession(context, songId, url, database, cache)
+                cache = SimpleCache(File(context.cacheDir, "motion-artwork-media"), LeastRecentlyUsedCacheEvictor(cacheBytes(quality)), database)
+                MotionArtworkSession(context, songId, chain, quality, database, cache)
             } catch (_: RuntimeException) {
                 // Disk/cache ownership failure must not break the music player.
                 cache?.release()
@@ -238,9 +283,9 @@ internal class MotionArtworkSession private constructor(
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun MotionArtworkSurface(session: MotionArtworkSession, contentScale: ContentScale, modifier: Modifier) {
-    LaunchedEffect(session) {
+    LaunchedEffect(session, session.attempt) {
         delay(12_000)
-        if (!session.firstFrame) session.fail()
+        if (!session.firstFrame) session.stepDown()
     }
     AndroidView(
         modifier = modifier,

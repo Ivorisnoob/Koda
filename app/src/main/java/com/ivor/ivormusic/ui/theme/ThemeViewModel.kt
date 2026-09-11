@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.work.UploadCheckWorker
 import kotlinx.coroutines.flow.StateFlow
@@ -25,8 +26,12 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val ambientBackground: StateFlow<Boolean> = themePreferences.ambientBackground
     val motionArtwork: StateFlow<Boolean> = themePreferences.motionArtwork
     val motionArtworkWifiOnly: StateFlow<Boolean> = themePreferences.motionArtworkWifiOnly
+    val motionArtworkQuality: StateFlow<MotionArtworkQuality> = themePreferences.motionArtworkQuality
+    val waveformSeekBar: StateFlow<Boolean> = themePreferences.waveformSeekBar
     fun setMotionArtwork(enabled: Boolean) = themePreferences.setMotionArtwork(enabled)
     fun setMotionArtworkWifiOnly(enabled: Boolean) = themePreferences.setMotionArtworkWifiOnly(enabled)
+    fun setMotionArtworkQuality(quality: MotionArtworkQuality) = themePreferences.setMotionArtworkQuality(quality)
+    fun setWaveformSeekBar(enabled: Boolean) = themePreferences.setWaveformSeekBar(enabled)
 
     val playerArtworkColors: StateFlow<Boolean> = themePreferences.playerArtworkColors
     val videoMode: StateFlow<Boolean> = themePreferences.videoMode
@@ -74,6 +79,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val showRecentSearches: StateFlow<Boolean> = themePreferences.showRecentSearches
     val showRelatedVideos: StateFlow<Boolean> = themePreferences.showRelatedVideos
     val compactVideoHome: StateFlow<Boolean> = themePreferences.compactVideoHome
+    val playlistSwipeEnabled: StateFlow<Boolean> = themePreferences.playlistSwipeEnabled
+    val playlistSwipeStartAction: StateFlow<String> = themePreferences.playlistSwipeStartAction
+    val playlistSwipeEndAction: StateFlow<String> = themePreferences.playlistSwipeEndAction
     val crossfadeEnabled: StateFlow<Boolean> = themePreferences.crossfadeEnabled
     val crossfadeAuto: StateFlow<Boolean> = themePreferences.crossfadeAuto
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
@@ -303,6 +311,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setShowRelatedVideos(show: Boolean) = themePreferences.setShowRelatedVideos(show)
     fun setCompactVideoHome(enabled: Boolean) = themePreferences.setCompactVideoHome(enabled)
+    fun setPlaylistSwipeEnabled(enabled: Boolean) = themePreferences.setPlaylistSwipeEnabled(enabled)
+    fun setPlaylistSwipeStartAction(action: String) = themePreferences.setPlaylistSwipeStartAction(action)
+    fun setPlaylistSwipeEndAction(action: String) = themePreferences.setPlaylistSwipeEndAction(action)
 
     
     fun clearCacheAction() {

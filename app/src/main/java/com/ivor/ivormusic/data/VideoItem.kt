@@ -67,7 +67,11 @@ data class VideoItem(
      * it holds the uploader so that tapping through still lands somewhere
      * sensible, and this holds the rest so a surface can offer the choice.
      */
-    val collaborators: List<VideoCollaborator> = emptyList()
+    val collaborators: List<VideoCollaborator> = emptyList(),
+    /** Last playback position as a fraction; null means no progress was supplied. */
+    val watchedProgress: Float? = null,
+    /** Snapshot time used to choose between local playback and refreshed account history. */
+    val watchProgressUpdatedAtMs: Long = 0L
 ) {
     /**
      * Destination understood by the channel screen.

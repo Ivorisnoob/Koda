@@ -655,7 +655,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 album = metadata.albumTitle?.toString() ?: "",
                 duration = metadata.durationMs ?: 0L,
                 thumbnailUrl = metadata.artworkUri?.toString(),
-                source = com.ivor.ivormusic.data.SongSource.YOUTUBE
+                source = com.ivor.ivormusic.data.SongSource.YOUTUBE,
+                albumId = metadata.extras?.getString(com.ivor.ivormusic.service.EXTRA_MUSIC_ALBUM_ID),
+                releaseYear = metadata.releaseYear,
+                releaseType = com.ivor.ivormusic.data.MusicReleaseType.entries.firstOrNull {
+                    it.name == metadata.extras?.getString(com.ivor.ivormusic.service.EXTRA_MUSIC_RELEASE_TYPE)
+                }
             )
         }
     }

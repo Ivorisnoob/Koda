@@ -171,7 +171,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private var nextSequenceParams: String? = null
     private var isLoadingMore = false
     private var playJob: Job? = null
-    private var historyReportJob: Job? = null
+    private val watchTracker = com.ivor.ivormusic.data.VideoWatchTracker(context, viewModelScope, youtubeRepository)
     private var recoveryJob: Job? = null
 
     // Retry budgets for the current Short, reset by playIndex - see handlePlayerError.
@@ -517,7 +517,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     fun close() {
         _isActive.value = false
         playJob?.cancel()
-        historyReportJob?.cancel()
+        watchTracker.close()
         recoveryJob?.cancel()
         _exoPlayer?.stop()
         _exoPlayer?.clearMediaItems()
@@ -743,7 +743,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private fun playIndex(index: Int) {
         val item = _shorts.value.getOrNull(index) ?: return
         playJob?.cancel()
-        historyReportJob?.cancel()
+        watchTracker.close()
         recoveryJob?.cancel()
         // Per Short, so a run of unrelated failures across the feed does not
         // exhaust the budget for the one the user is actually watching.
@@ -824,21 +824,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             }
         }
 
-        // History: Shorts are short, report after 5s of actual playback
-        historyReportJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(5_000)
-            var waitedMs = 0
-            while (!_isPlaying.value && waitedMs < 30_000) {
-                kotlinx.coroutines.delay(1_000)
-                waitedMs += 1_000
-            }
-            // Fresh pref read: Settings toggles through its own instance
-            if (_isPlaying.value && themePreferences.isSaveVideoHistoryEnabled()) {
-                val watched = _currentVideo.value?.takeIf { it.videoId == item.videoId }
-                    ?: item.toVideoItem()
-                videoHistoryRepository.addVideo(watched)
-                youtubeRepository.reportVideoPlayback(item.videoId)
-            }
+        _exoPlayer?.let { player ->
+            watchTracker.start(player, { _currentVideo.value }, thresholdMs = 5_000L)
         }
     }
 
@@ -1178,6 +1165,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     override fun onCleared() {
+        watchTracker.close()
         super.onCleared()
         _exoPlayer?.release()
         _exoPlayer = null
