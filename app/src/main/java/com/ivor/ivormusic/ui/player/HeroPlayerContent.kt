@@ -105,8 +105,8 @@ private val HERO_DECK_MAX = 184.dp
  *   no colour is picked here, and none is hardcoded.
  * - The art fades into the deck at its foot, and the title sits on that fade
  *   in the deck's ink, so it reads on any cover in both themes.
- * - The play disc is the state: a settled circle while playing, squared
- *   shoulders while paused, morphing on the house bouncy spring.
+ * - The play disc is the state: squared shoulders while playing, a settled
+ *   circle while paused, morphing on the house bouncy spring.
  * - Skip pills and toggles squish under the thumb; checked toggles square up
  *   and take the disc's colour.
  */
@@ -573,8 +573,8 @@ fun HeroPlayerSheetContent(
 }
 
 /**
- * The oversized play control. Its shape is the state: a settled circle while
- * playing, squared shoulders while paused, so it reads from across a room;
+ * The oversized play control. Its shape is the state: squared shoulders while
+ * playing, a settled circle while paused, so it reads from across a room;
  * a press dips it on the bouncy spring.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -590,7 +590,7 @@ private fun HeroPlayDisc(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val corner by animateFloatAsState(
-        targetValue = if (isPlaying) 50f else 30f,
+        targetValue = if (isPlaying) 30f else 50f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow
