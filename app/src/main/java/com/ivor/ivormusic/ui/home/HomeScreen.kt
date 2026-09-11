@@ -2453,7 +2453,13 @@ fun SearchContent(
                         onOpenAlbum = { albumItem -> viewedPlaylist = albumItem },
                         viewModel = viewModel,
                         onSongLongPress = onSongLongPress,
-                        onOpenChannel = onOpenChannel
+                        onOpenChannel = onOpenChannel,
+                        // Another artist replaces this one in place, as in the
+                        // Library; a playlist stacks over it and pops back here.
+                        onOpenArtist = { name, id ->
+                            viewedArtist = com.ivor.ivormusic.data.ArtistItem(id = id, name = name)
+                        },
+                        onOpenPlaylist = { playlistItem -> viewedPlaylist = playlistItem }
                     )
                 }
             }

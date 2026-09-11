@@ -1258,6 +1258,12 @@
     <string name="section_playlists">Playlists</string>
     <string name="section_artists">Artists</string>
     <string name="section_albums">Albums</string>
+    <!-- Artist page sections backed by the YouTube Music artist browse -->
+    <string name="ar_section_popular">Popular songs</string>
+    <string name="ar_section_about">About</string>
+    <string name="ar_section_singles_eps">Singles &amp; EPs</string>
+    <string name="ar_section_similar">Fans also like</string>
+    <string name="ar_section_featured_on">Featured on</string>
     <string name="source_youtube_videos">YouTube Videos</string>
     <string name="source_youtube_music">YouTube Music</string>
     <string name="source_local_library">Local Library</string>

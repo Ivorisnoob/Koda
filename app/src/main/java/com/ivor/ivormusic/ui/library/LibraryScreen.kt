@@ -219,6 +219,9 @@ fun LibraryContent(
     // Arguments for routes
     var selectedPlaylist by remember { mutableStateOf<PlaylistDisplayItem?>(null) }
     var selectedArtistName by remember { mutableStateOf<String?>(null) }
+    // The UC id behind the artist route when one resolved it (similar-artist
+    // taps carry it); null means the screen resolves from the name itself.
+    var selectedArtistId by remember { mutableStateOf<String?>(null) }
     // True while the open artist came from outside the Library (the player):
     // back returns to the caller rather than the Library root. Set with the
     // initial-artist request, cleared on any Library-internal artist opening.
@@ -230,6 +233,7 @@ fun LibraryContent(
     LaunchedEffect(initialArtist) {
         if (initialArtist != null) {
             selectedArtistName = initialArtist
+            selectedArtistId = null
             artistReturnsToCaller = initialArtistReturnToCaller
             currentRoute = LibraryRoute.Artist
             onInitialArtistConsumed()
@@ -302,6 +306,7 @@ fun LibraryContent(
                 },
                 onNavigateToArtist = { artist ->
                     selectedArtistName = artist
+                    selectedArtistId = null
                     artistReturnsToCaller = false
                     currentRoute = LibraryRoute.Artist
                 },
@@ -399,7 +404,7 @@ fun LibraryContent(
                 selectedArtistName?.let { artist ->
                     ArtistScreen(
                         artistName = artist,
-                        artistId = artist,
+                        artistId = selectedArtistId ?: artist,
                         songs = songs, // Pass all songs, screen filters locally or fetches
                         onBack = { backFromArtist() },
                         onPlayQueue = onPlayQueue,
@@ -415,7 +420,16 @@ fun LibraryContent(
                         },
                         viewModel = viewModel,
                         onSongLongPress = onSongLongPress,
-                        onOpenChannel = onOpenChannel
+                        onOpenChannel = onOpenChannel,
+                        onOpenArtist = { name, id ->
+                            selectedArtistName = name
+                            selectedArtistId = id
+                            currentRoute = LibraryRoute.Artist
+                        },
+                        onOpenPlaylist = { playlist ->
+                            selectedPlaylist = playlist
+                            currentRoute = LibraryRoute.Playlist
+                        }
                     )
                 }
             }
