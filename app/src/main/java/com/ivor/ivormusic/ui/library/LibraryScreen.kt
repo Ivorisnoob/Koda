@@ -155,17 +155,16 @@ fun LibraryContent(
     initialArtist: String? = null,
     onInitialArtistConsumed: () -> Unit = {},
     /**
-     * Whether the [initialArtist] request came from the player rather than the
-     * Library itself. Back from such an artist returns to the caller instead
-     * of the Library root: the artist was never part of this tab's flow, and
-     * dropping the user in it reads as the navigation having lost their place.
-     * Cleared together with the request and on every Library-internal artist
-     * navigation, so only the externally opened artist returns outward.
+     * Whether the next hand-off ([initialArtist], [initialPlaylist] or
+     * [initialAlbum]) came from another tab. Back from what it opens - or from
+     * anything reached inside it - returns to that tab through
+     * [onReturnToCaller] instead of the Library root: the excursion was never
+     * part of this tab's flow, and dropping the user on the root reads as the
+     * navigation having lost their place.
      */
-    initialArtistReturnToCaller: Boolean = false,
-    onInitialArtistReturnConsumed: () -> Unit = {},
-    /** Send back to the artist's caller (the player sheet over its tab). */
-    onReturnToArtistCaller: () -> Unit = {},
+    initialReturnToCaller: Boolean = false,
+    /** End an excursion that began on another tab: go back to that tab. */
+    onReturnToCaller: () -> Unit = {},
     /**
      * Open straight onto a playlist, for callers outside the Library that have
      * one in hand - Spotlight's shortcut grid and shelves. Same hand-off shape
@@ -222,10 +221,11 @@ fun LibraryContent(
     // The UC id behind the artist route when one resolved it (similar-artist
     // taps carry it); null means the screen resolves from the name itself.
     var selectedArtistId by remember { mutableStateOf<String?>(null) }
-    // True while the open artist came from outside the Library (the player):
-    // back returns to the caller rather than the Library root. Set with the
-    // initial-artist request, cleared on any Library-internal artist opening.
-    var artistReturnsToCaller by remember { mutableStateOf(false) }
+    // True while the open route is an excursion handed over from another tab:
+    // back from it, or from anything opened inside it, ends the excursion on
+    // that tab rather than on the Library root. Set with the hand-off that
+    // opened it, cleared when back leaves.
+    var returnsToCaller by remember { mutableStateOf(false) }
     var selectedAlbumName by remember { mutableStateOf<String?>(null) }
     var selectedAlbumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
 
@@ -234,10 +234,9 @@ fun LibraryContent(
         if (initialArtist != null) {
             selectedArtistName = initialArtist
             selectedArtistId = null
-            artistReturnsToCaller = initialArtistReturnToCaller
+            returnsToCaller = initialReturnToCaller
             currentRoute = LibraryRoute.Artist
             onInitialArtistConsumed()
-            onInitialArtistReturnConsumed()
         }
     }
 
@@ -245,6 +244,7 @@ fun LibraryContent(
     LaunchedEffect(initialPlaylist) {
         if (initialPlaylist != null) {
             selectedPlaylist = initialPlaylist
+            returnsToCaller = initialReturnToCaller
             currentRoute = LibraryRoute.Playlist
             onInitialPlaylistConsumed()
         }
@@ -263,6 +263,7 @@ fun LibraryContent(
             if (albumSongs.isNotEmpty()) {
                 selectedAlbumName = initialAlbum
                 selectedAlbumSongs = albumSongs
+                returnsToCaller = initialReturnToCaller
                 currentRoute = LibraryRoute.Album
                 onInitialAlbumConsumed()
             }
@@ -273,13 +274,13 @@ fun LibraryContent(
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
 
-    // Back from the artist: outward when it came from outside the Library,
-    // root otherwise. One function so the screen back control and the system
-    // gesture agree with each other.
-    fun backFromArtist() {
-        if (artistReturnsToCaller) {
-            artistReturnsToCaller = false
-            onReturnToArtistCaller()
+    // Back from any Library route: out to the tab an excursion began on, or
+    // to the root. One function, so every screen's back control and the
+    // system gesture agree with each other.
+    fun back() {
+        if (returnsToCaller) {
+            returnsToCaller = false
+            onReturnToCaller()
         } else {
             currentRoute = LibraryRoute.Main
         }
@@ -287,10 +288,10 @@ fun LibraryContent(
 
     PredictiveBackStack(
         childOpen = currentRoute != LibraryRoute.Main,
-        onBack = {
-            if (currentRoute == LibraryRoute.Artist) backFromArtist()
-            else currentRoute = LibraryRoute.Main
-        },
+        onBack = { back() },
+        // An excursion's back lands on another tab, not on the root the peel
+        // would reveal, so it is not previewed; the tab slide carries it.
+        previewable = currentRoute != LibraryRoute.Main && !returnsToCaller,
         background = {
             LibraryMainScreen(
                 songs = songs,
@@ -307,7 +308,7 @@ fun LibraryContent(
                 onNavigateToArtist = { artist ->
                     selectedArtistName = artist
                     selectedArtistId = null
-                    artistReturnsToCaller = false
+                    returnsToCaller = false
                     currentRoute = LibraryRoute.Artist
                 },
                 onNavigateToAlbum = { album, songs ->
@@ -364,7 +365,7 @@ fun LibraryContent(
                 selectedPlaylist?.let { playlist ->
                     PlaylistDetailScreen(
                         playlist = playlist,
-                        onBack = { currentRoute = LibraryRoute.Main },
+                        onBack = { back() },
                         onPlayQueue = onPlayQueue,
                         viewModel = viewModel,
                         isAlbum = false,
@@ -390,7 +391,7 @@ fun LibraryContent(
                     )
                     PlaylistDetailScreen(
                         playlist = albumItem,
-                        onBack = { currentRoute = LibraryRoute.Main },
+                        onBack = { back() },
                         onPlayQueue = onPlayQueue,
                         viewModel = viewModel,
                         preloadedSongs = selectedAlbumSongs,
@@ -406,7 +407,7 @@ fun LibraryContent(
                         artistName = artist,
                         artistId = selectedArtistId ?: artist,
                         songs = songs, // Pass all songs, screen filters locally or fetches
-                        onBack = { backFromArtist() },
+                        onBack = { back() },
                         onPlayQueue = onPlayQueue,
                         onSongClick = onSongClick,
                         onAlbumClick = { album, songs ->
@@ -435,14 +436,14 @@ fun LibraryContent(
             }
             LibraryRoute.Stats -> {
                 StatsScreen(
-                    onBack = { currentRoute = LibraryRoute.Main },
+                    onBack = { back() },
                     viewModel = viewModel,
                     contentPadding = contentPadding
                 )
             }
             LibraryRoute.History -> {
                 ListeningHistoryScreen(
-                    onBack = { currentRoute = LibraryRoute.Main },
+                    onBack = { back() },
                     viewModel = viewModel,
                     onPlayQueue = onPlayQueue,
                     contentPadding = contentPadding
@@ -463,7 +464,7 @@ fun LibraryContent(
                 )
                 PlaylistDetailScreen(
                     playlist = readyOfflineItem,
-                    onBack = { currentRoute = LibraryRoute.Main },
+                    onBack = { back() },
                     onPlayQueue = onPlayQueue,
                     viewModel = viewModel,
                     preloadedSongs = readyOffline.songs,

@@ -473,11 +473,17 @@ fun HomeScreen(
     
     // Artist screen state (for navigation from player)
     var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
-    // Where the player-opened artist returns to on back: the tab under the
-    // sheet, with the sheet reopened. Without it back strands the user in
-    // the Library tab, which they never navigated through.
-    var artistReturnToPlayer by remember { mutableStateOf(false) }
-    var artistOriginTab by remember { mutableIntStateOf(2) }
+    // Where a Library sub-screen handed over from another tab goes back to:
+    // that tab, with the player left exactly as it was. Without it back
+    // strands the user in a Library they never navigated through; the older
+    // answer, reopening the player sheet, replayed its whole expand animation
+    // over a screen the user was trying to leave. Null when the hand-off began
+    // in the Library itself, or crossed a mode switch - the tab it began on
+    // then belongs to the other mode.
+    var libraryReturnTab by remember { mutableStateOf<Int?>(null) }
+    fun noteLibraryReturn() {
+        libraryReturnTab = if (videoMode) null else selectedTab.takeIf { it != 2 }
+    }
 
     // The album counterpart, from the player's overflow menu. A name rather
     // than a PlaylistDisplayItem, because a device album is identified by its
@@ -495,6 +501,7 @@ fun HomeScreen(
             // is video history while the video toggle is on. Asking for it is
             // therefore asking to be in music mode; leaving the toggle alone
             // would land on the wrong tab and look like the link did nothing.
+            noteLibraryReturn()
             if (videoMode) onVideoModeToggle(false)
             viewedArtistFromPlayer = artist
             selectedTab = 2
@@ -521,6 +528,7 @@ fun HomeScreen(
     val pendingPlaylistPage by viewModel.pendingPlaylistPage.collectAsState()
     LaunchedEffect(pendingPlaylistPage) {
         pendingPlaylistPage?.let { playlist ->
+            noteLibraryReturn()
             if (videoMode) onVideoModeToggle(false)
             viewedPlaylistFromHome = playlist
             selectedTab = 2
@@ -777,6 +785,7 @@ fun HomeScreen(
                                                 // onto it, the same deep-link shape the
                                                 // player already uses for artists.
                                                 onPlaylistClick = { playlist ->
+                                                    noteLibraryReturn()
                                                     viewedPlaylistFromHome = playlist
                                                     selectedTab = 2
                                                 },
@@ -944,11 +953,12 @@ fun HomeScreen(
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
                                 onInitialArtistConsumed = { viewedArtistFromPlayer = null },
-                                initialArtistReturnToCaller = artistReturnToPlayer,
-                                onInitialArtistReturnConsumed = { artistReturnToPlayer = false },
-                                onReturnToArtistCaller = {
-                                    selectedTab = artistOriginTab
-                                    showPlayerSheet = true
+                                initialReturnToCaller = libraryReturnTab != null,
+                                onReturnToCaller = {
+                                    // The tab slide reads as going back; the
+                                    // player keeps whatever state it was in.
+                                    libraryReturnTab?.let { selectedTab = it }
+                                    libraryReturnTab = null
                                 },
                                 initialPlaylist = viewedPlaylistFromHome,
                                 onInitialPlaylistConsumed = { viewedPlaylistFromHome = null },
@@ -1308,15 +1318,15 @@ fun HomeScreen(
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
             onArtistClick = { artistName ->
                 // Collapse player and navigate to Library tab to show artist.
-                // The origin tab is remembered so back returns to the sheet
-                // rather than stranding the user in the Library.
-                artistOriginTab = selectedTab
-                artistReturnToPlayer = true
+                // The origin tab is remembered so back returns to it rather
+                // than stranding the user in the Library.
+                noteLibraryReturn()
                 showPlayerSheet = false
                 viewedArtistFromPlayer = artistName
                 selectedTab = 2 // Library tab
             },
             onAlbumClick = { albumName ->
+                noteLibraryReturn()
                 showPlayerSheet = false
                 viewedAlbumFromPlayer = albumName
                 selectedTab = 2 // Library tab
@@ -1324,6 +1334,7 @@ fun HomeScreen(
             onOpenAlbum = { albumItem ->
                 // A stream's album opens the playlist detail the same way a
                 // Spotlight shelf does: hand it over and switch tab.
+                noteLibraryReturn()
                 if (videoMode) onVideoModeToggle(false)
                 showPlayerSheet = false
                 viewedPlaylistFromHome = albumItem
@@ -1395,13 +1406,13 @@ fun HomeScreen(
             // Nothing else passed this, which left the sheet's own artist row
             // unreachable from every surface in the app.
             onArtistClick = { artist ->
+                noteLibraryReturn()
                 if (videoMode) onVideoModeToggle(false)
-                artistOriginTab = selectedTab
-                artistReturnToPlayer = true
                 viewedArtistFromPlayer = artist
                 selectedTab = 2
             },
             onOpenAlbum = { albumItem ->
+                noteLibraryReturn()
                 if (videoMode) onVideoModeToggle(false)
                 viewedPlaylistFromHome = albumItem
                 selectedTab = 2
