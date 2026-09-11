@@ -473,6 +473,11 @@ fun HomeScreen(
     
     // Artist screen state (for navigation from player)
     var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
+    // Where the player-opened artist returns to on back: the tab under the
+    // sheet, with the sheet reopened. Without it back strands the user in
+    // the Library tab, which they never navigated through.
+    var artistReturnToPlayer by remember { mutableStateOf(false) }
+    var artistOriginTab by remember { mutableIntStateOf(2) }
 
     // The album counterpart, from the player's overflow menu. A name rather
     // than a PlaylistDisplayItem, because a device album is identified by its
@@ -909,6 +914,12 @@ fun HomeScreen(
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
                                 onInitialArtistConsumed = { viewedArtistFromPlayer = null },
+                                initialArtistReturnToCaller = artistReturnToPlayer,
+                                onInitialArtistReturnConsumed = { artistReturnToPlayer = false },
+                                onReturnToArtistCaller = {
+                                    selectedTab = artistOriginTab
+                                    showPlayerSheet = true
+                                },
                                 initialPlaylist = viewedPlaylistFromHome,
                                 onInitialPlaylistConsumed = { viewedPlaylistFromHome = null },
                                 initialAlbum = viewedAlbumFromPlayer,
@@ -1266,7 +1277,11 @@ fun HomeScreen(
             collapsedBottomSpacing = miniPlayerCollapsedSpacing,
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
             onArtistClick = { artistName ->
-                // Collapse player and navigate to Library tab to show artist
+                // Collapse player and navigate to Library tab to show artist.
+                // The origin tab is remembered so back returns to the sheet
+                // rather than stranding the user in the Library.
+                artistOriginTab = selectedTab
+                artistReturnToPlayer = true
                 showPlayerSheet = false
                 viewedArtistFromPlayer = artistName
                 selectedTab = 2 // Library tab
@@ -1274,6 +1289,14 @@ fun HomeScreen(
             onAlbumClick = { albumName ->
                 showPlayerSheet = false
                 viewedAlbumFromPlayer = albumName
+                selectedTab = 2 // Library tab
+            },
+            onOpenAlbum = { albumItem ->
+                // A stream's album opens the playlist detail the same way a
+                // Spotlight shelf does: hand it over and switch tab.
+                if (videoMode) onVideoModeToggle(false)
+                showPlayerSheet = false
+                viewedPlaylistFromHome = albumItem
                 selectedTab = 2 // Library tab
             },
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -1343,7 +1366,14 @@ fun HomeScreen(
             // unreachable from every surface in the app.
             onArtistClick = { artist ->
                 if (videoMode) onVideoModeToggle(false)
+                artistOriginTab = selectedTab
+                artistReturnToPlayer = true
                 viewedArtistFromPlayer = artist
+                selectedTab = 2
+            },
+            onOpenAlbum = { albumItem ->
+                if (videoMode) onVideoModeToggle(false)
+                viewedPlaylistFromHome = albumItem
                 selectedTab = 2
             },
             // Only for songs a feed could have recommended. A file on this

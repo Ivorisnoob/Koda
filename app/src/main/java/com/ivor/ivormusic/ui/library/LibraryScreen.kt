@@ -155,6 +155,18 @@ fun LibraryContent(
     initialArtist: String? = null,
     onInitialArtistConsumed: () -> Unit = {},
     /**
+     * Whether the [initialArtist] request came from the player rather than the
+     * Library itself. Back from such an artist returns to the caller instead
+     * of the Library root: the artist was never part of this tab's flow, and
+     * dropping the user in it reads as the navigation having lost their place.
+     * Cleared together with the request and on every Library-internal artist
+     * navigation, so only the externally opened artist returns outward.
+     */
+    initialArtistReturnToCaller: Boolean = false,
+    onInitialArtistReturnConsumed: () -> Unit = {},
+    /** Send back to the artist's caller (the player sheet over its tab). */
+    onReturnToArtistCaller: () -> Unit = {},
+    /**
      * Open straight onto a playlist, for callers outside the Library that have
      * one in hand - Spotlight's shortcut grid and shelves. Same hand-off shape
      * as [initialArtist]: the caller clears it through the consumed callback so
@@ -207,6 +219,10 @@ fun LibraryContent(
     // Arguments for routes
     var selectedPlaylist by remember { mutableStateOf<PlaylistDisplayItem?>(null) }
     var selectedArtistName by remember { mutableStateOf<String?>(null) }
+    // True while the open artist came from outside the Library (the player):
+    // back returns to the caller rather than the Library root. Set with the
+    // initial-artist request, cleared on any Library-internal artist opening.
+    var artistReturnsToCaller by remember { mutableStateOf(false) }
     var selectedAlbumName by remember { mutableStateOf<String?>(null) }
     var selectedAlbumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
 
@@ -214,8 +230,10 @@ fun LibraryContent(
     LaunchedEffect(initialArtist) {
         if (initialArtist != null) {
             selectedArtistName = initialArtist
+            artistReturnsToCaller = initialArtistReturnToCaller
             currentRoute = LibraryRoute.Artist
             onInitialArtistConsumed()
+            onInitialArtistReturnConsumed()
         }
     }
 
@@ -251,9 +269,24 @@ fun LibraryContent(
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
 
+    // Back from the artist: outward when it came from outside the Library,
+    // root otherwise. One function so the screen back control and the system
+    // gesture agree with each other.
+    fun backFromArtist() {
+        if (artistReturnsToCaller) {
+            artistReturnsToCaller = false
+            onReturnToArtistCaller()
+        } else {
+            currentRoute = LibraryRoute.Main
+        }
+    }
+
     PredictiveBackStack(
         childOpen = currentRoute != LibraryRoute.Main,
-        onBack = { currentRoute = LibraryRoute.Main },
+        onBack = {
+            if (currentRoute == LibraryRoute.Artist) backFromArtist()
+            else currentRoute = LibraryRoute.Main
+        },
         background = {
             LibraryMainScreen(
                 songs = songs,
@@ -269,6 +302,7 @@ fun LibraryContent(
                 },
                 onNavigateToArtist = { artist ->
                     selectedArtistName = artist
+                    artistReturnsToCaller = false
                     currentRoute = LibraryRoute.Artist
                 },
                 onNavigateToAlbum = { album, songs ->
@@ -367,7 +401,7 @@ fun LibraryContent(
                         artistName = artist,
                         artistId = artist,
                         songs = songs, // Pass all songs, screen filters locally or fetches
-                        onBack = { currentRoute = LibraryRoute.Main },
+                        onBack = { backFromArtist() },
                         onPlayQueue = onPlayQueue,
                         onSongClick = onSongClick,
                         onAlbumClick = { album, songs ->
