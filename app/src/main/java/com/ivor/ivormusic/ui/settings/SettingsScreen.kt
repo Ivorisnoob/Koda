@@ -266,6 +266,7 @@ internal enum class SettingsPage {
     LOCAL_LIBRARY,
     ADVANCED,
     DISPLAY_SIZE,
+    LYRICS,
     SPONSORBLOCK,
     APP_ICON
 }
@@ -407,6 +408,8 @@ fun SettingsScreen(
     onLocalOnlyModeToggle: (Boolean) -> Unit = {},
     uiScale: Float = UI_SCALE_DEFAULT,
     onUiScaleChange: (Float) -> Unit = {},
+    lyricsConfiguration: com.ivor.ivormusic.data.LyricsConfiguration,
+    onLyricsConfigurationChange: (com.ivor.ivormusic.data.LyricsConfiguration) -> Unit,
     sponsorBlockEnabled: Boolean = false,
     onSponsorBlockEnabledToggle: (Boolean) -> Unit = {},
     sponsorBlockActions: Map<SponsorCategory, SegmentAction> = emptyMap(),
@@ -673,6 +676,7 @@ fun SettingsScreen(
                 colorPalette = colorPalette,
                 spotlightHome = spotlightHome,
                 uiScale = uiScale,
+                lyricsConfiguration = lyricsConfiguration,
                 sponsorBlockEnabled = sponsorBlockEnabled,
                 sponsorBlockActions = sponsorBlockActions,
                 playerStyle = playerStyle,
@@ -802,9 +806,11 @@ fun SettingsScreen(
                     onBack = { page = SettingsPage.HUB }
                 )
 
-                // Back lands on Appearance rather than the hub: this page is
-                // opened from there, and the scale is usually adjusted more
-                // than once before it is right.
+                SettingsPage.LYRICS -> LyricsSettingsPage(
+                    configuration = lyricsConfiguration,
+                    onChange = onLyricsConfigurationChange,
+                    onBack = { page = SettingsPage.HUB }
+                )
                 SettingsPage.SPONSORBLOCK -> SponsorBlockSettingsPage(
                     enabled = sponsorBlockEnabled,
                     onEnabledToggle = onSponsorBlockEnabledToggle,
@@ -820,6 +826,9 @@ fun SettingsScreen(
                     onBack = { page = SettingsPage.HUB }
                 )
 
+                // Back lands on Appearance rather than the hub: this page is
+                // opened from there, and the scale is usually adjusted more
+                // than once before it is right.
                 SettingsPage.DISPLAY_SIZE -> DisplaySizeSettingsPage(
                     uiScale = uiScale,
                     onUiScaleChange = onUiScaleChange,
@@ -1119,6 +1128,7 @@ private fun SettingsHub(
     colorPalette: String,
     spotlightHome: Boolean,
     uiScale: Float,
+    lyricsConfiguration: com.ivor.ivormusic.data.LyricsConfiguration,
     sponsorBlockEnabled: Boolean,
     sponsorBlockActions: Map<SponsorCategory, SegmentAction>,
     playerStyle: PlayerStyle,
@@ -1391,6 +1401,18 @@ private fun SettingsHub(
                             tint = MaterialTheme.colorScheme.secondary,
                             iconShape = MaterialShapes.Cookie6Sided.toShape(),
                             explanation = stringResource(R.string.si_hub_subscriptions)
+                        )
+                        SettingsDivider()
+                        SettingsHubRow(
+                            icon = Icons.Rounded.MusicNote,
+                            title = stringResource(R.string.lyrics_settings_title),
+                            value = if (lyricsConfiguration.remoteEnabled && lyricsConfiguration.enabledProviders.isNotEmpty())
+                                stringResource(R.string.lyrics_provider_summary, lyricsConfiguration.enabledProviders.size, lyricsConfiguration.enabledProviders.first())
+                            else stringResource(R.string.lyrics_local_only),
+                            onClick = { onOpenPage(SettingsPage.LYRICS) },
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            iconShape = MaterialShapes.Cookie6Sided.toShape(),
+                            explanation = stringResource(R.string.lyrics_settings_intro)
                         )
                         SettingsDivider()
                         SettingsHubRow(

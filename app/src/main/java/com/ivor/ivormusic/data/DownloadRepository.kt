@@ -145,7 +145,7 @@ class DownloadRepository private constructor(private val context: Context) {
         .build()
 
     private val youtubeRepository = YouTubeRepository(context)
-    private val lyricsRepository = LyricsRepository()
+    private val lyricsRepository = LyricsRepository(context)
     private val notificationHelper = DownloadNotificationHelper(context)
     private val storage = DownloadStorage(context)
 
@@ -835,7 +835,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     // transfer rather than extending every playlist item by up
                     // to two provider timeouts after its bytes have arrived.
                     val lyricsDeferred = async {
-                        (lyricsRepository.fetchLyrics(song) as? LyricsResult.Success)
+                        (lyricsRepository.fetchLyrics(song, allowRemote = !ThemePreferences(context).isLocalOnlyModeEnabled()) as? LyricsResult.Success)
                             ?.toDownloadLyrics()
                             ?.takeIf(String::isNotBlank)
                     }

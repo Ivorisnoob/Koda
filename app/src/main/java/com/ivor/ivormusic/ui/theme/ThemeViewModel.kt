@@ -17,6 +17,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val themePreferences = ThemePreferences(application)
 
+    val lyricsConfiguration = themePreferences.lyricsConfiguration
+    fun setLyricsConfiguration(value: com.ivor.ivormusic.data.LyricsConfiguration) =
+        themePreferences.setLyricsConfiguration(value)
+
     val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
     val amoledTheme: StateFlow<Boolean> = themePreferences.amoledTheme
     val colorPalette: StateFlow<String> = themePreferences.colorPalette
