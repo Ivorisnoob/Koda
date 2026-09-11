@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Interests
+import androidx.compose.material.icons.rounded.Landscape
 import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.RadioButtonChecked
@@ -112,6 +113,10 @@ internal val playerStyleCatalog: List<PlayerStyleInfo> = listOf(
     PlayerStyleInfo(
         PlayerStyle.DIAL, "Dial", "Rotary ring, spin to scrub",
         Icons.Rounded.RadioButtonChecked, MaterialShapes.Sunny
+    ),
+    PlayerStyleInfo(
+        PlayerStyle.HERO, "Hero", "Full-bleed art, big play button",
+        Icons.Rounded.Landscape, MaterialShapes.Arch
     )
 )
 
@@ -495,6 +500,56 @@ private fun PlayerStylePreview(style: PlayerStyle, modifier: Modifier = Modifier
                     )
                 }
             }
+
+            // Art over the top, then the big disc beside two tall pills.
+            PlayerStyle.HERO -> Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1.2f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(art)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .padding(5.dp)
+                    ) {
+                        PreviewLine(
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                            widthFraction = 0.55f
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .aspectRatio(1f)
+                            .clip(CircleShape)
+                            .background(art)
+                    )
+                    repeat(2) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(0.85f)
+                                .clip(RoundedCornerShape(percent = 50))
+                                .background(soft)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -535,6 +590,7 @@ internal fun playerStyleLabel(style: PlayerStyle): String = when (style) {
     PlayerStyle.STICKER -> stringResource(R.string.ps_style_sticker)
     PlayerStyle.MORPH -> stringResource(R.string.ps_style_morph)
     PlayerStyle.DIAL -> stringResource(R.string.ps_style_dial)
+    PlayerStyle.HERO -> stringResource(R.string.ps_style_hero)
 }
 
 @Composable
@@ -547,4 +603,5 @@ internal fun playerStyleSubtitle(style: PlayerStyle): String = when (style) {
     PlayerStyle.STICKER -> stringResource(R.string.ps_sub_sticker)
     PlayerStyle.MORPH -> stringResource(R.string.ps_sub_morph)
     PlayerStyle.DIAL -> stringResource(R.string.ps_sub_dial)
+    PlayerStyle.HERO -> stringResource(R.string.ps_sub_hero)
 }

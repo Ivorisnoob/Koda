@@ -60,6 +60,7 @@ import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 
 /**
  *  Material 3 Expressive Music Player
@@ -79,7 +80,8 @@ fun PlayerSheetContent(
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
     onArtistClick: (String) -> Unit = {},
-    onAlbumClick: (String) -> Unit = {}
+    onAlbumClick: (String) -> Unit = {},
+    onOpenAlbum: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {}
 ) {
     // Handle back press to collapse player instead of quitting app
     // Back is handled once by ExpandablePlayer, which previews the collapse
@@ -201,7 +203,8 @@ fun PlayerSheetContent(
                 viewModel = viewModel,
                 onDismiss = { showOptions = false },
                 onArtistClick = onArtistClick,
-                onAlbumClick = onAlbumClick
+                onAlbumClick = onAlbumClick,
+                onOpenAlbum = onOpenAlbum
             )
         }
     }

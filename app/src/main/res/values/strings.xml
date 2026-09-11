@@ -1075,6 +1075,7 @@
     <string name="ps_style_sticker">Sticker</string>
     <string name="ps_style_morph">Morph</string>
     <string name="ps_style_dial">Dial</string>
+    <string name="ps_style_hero">Hero</string>
     <string name="ps_sub_classic">Button controls for playback</string>
     <string name="ps_sub_gesture">Swipe album art to navigate</string>
     <string name="ps_sub_editorial">Two-tone magazine layout</string>
@@ -1083,6 +1084,7 @@
     <string name="ps_sub_sticker">Die-cut art with toy physics</string>
     <string name="ps_sub_morph">Living shape that breathes</string>
     <string name="ps_sub_dial">Rotary ring, spin to scrub</string>
+    <string name="ps_sub_hero">Full-bleed art, big play button</string>
     <string name="hs_classic">Classic</string>
     <string name="hs_classic_desc">One big hero, then rows</string>
     <string name="hs_spotlight_desc">Shortcuts, quick picks, shelves</string>
@@ -1258,6 +1260,22 @@
     <string name="section_playlists">Playlists</string>
     <string name="section_artists">Artists</string>
     <string name="section_albums">Albums</string>
+    <!-- Artist page sections backed by the YouTube Music artist browse -->
+    <string name="ar_section_popular">Popular songs</string>
+    <string name="ar_section_about">About</string>
+    <string name="ar_section_singles_eps">Singles &amp; EPs</string>
+    <string name="ar_section_similar">Fans also like</string>
+    <string name="ar_section_featured_on">Featured on</string>
+    <!-- Spin: the song wheel over the music Home -->
+    <string name="spin_title">Spin</string>
+    <string name="spin_subtitle">Let the wheel pick what plays next</string>
+    <string name="spin_action">Spin</string>
+    <string name="spin_source_mix">Your mix</string>
+    <string name="spin_source_for_you">For you</string>
+    <string name="spin_source_liked">Liked</string>
+    <string name="spin_source_recent">Recent</string>
+    <string name="spin_empty">Nothing on the wheel yet</string>
+    <string name="spin_empty_hint">Play or like a few songs and they will turn up here.</string>
     <string name="source_youtube_videos">YouTube Videos</string>
     <string name="source_youtube_music">YouTube Music</string>
     <string name="source_local_library">Local Library</string>
@@ -1465,4 +1483,37 @@
     <string name="si_visualizer">Shows an animated strip under the progress row in every expanded player style. It reads the audio Koda is already playing, so it needs no microphone permission and records nothing. It dances while music plays and settles when paused, follows the app colors, and stands still under reduced motion or Battery Saver.</string>
     <string name="cd_visualizer">Audio visualizer</string>
     <string name="section_releases">Releases</string>
+    <string name="lyrics_settings_title">Lyrics</string>
+    <string name="lyrics_hero_title">Your lyrics, your sources</string>
+    <string name="lyrics_settings_intro">Choose the services you trust and put your favorites first.</string>
+    <string name="lyrics_local_note">Lyrics saved with a song always come first.</string>
+    <string name="lyrics_remote">Online lyrics</string>
+    <string name="lyrics_remote_sub">Look up missing lyrics using your enabled providers.</string>
+    <string name="lyrics_matching">Finding the right lyrics</string>
+    <string name="lyrics_prefer_synced">Prefer synced lyrics</string>
+    <string name="lyrics_prefer_synced_sub">Favor word timing, then line timing. Your order breaks ties.</string>
+    <string name="lyrics_strict_order_sub">Use the first match in your order, even if a later source has better timing.</string>
+    <string name="lyrics_plain">Allow plain text</string>
+    <string name="lyrics_plain_sub">Show lyrics without timing when no synced match is found. With sync preference off, provider order wins.</string>
+    <string name="lyrics_provider_order">Provider priority</string>
+    <string name="lyrics_order_sub">Higher means preferred. Use the arrows to reorder and switches to exclude sources. Your choices are saved automatically.</string>
+    <string name="lyrics_local_only">Local lyrics only</string>
+    <string name="lyrics_local_only_note">Online lookup is off. Only lyrics saved with your songs will be used; you can still arrange your providers below.</string>
+    <string name="lyrics_provider_on">Included in online lookup</string>
+    <string name="lyrics_provider_off">Excluded from online lookup</string>
+    <string name="lyrics_move_up">Move %1$s up</string>
+    <string name="lyrics_move_down">Move %1$s down</string>
+    <string name="lyrics_reset">Restore lyrics defaults</string>
+    <string name="lyrics_apply_note">Changes apply on the next lyrics lookup, including new downloads. Local-only mode also blocks online lookup.</string>
+    <string name="lyrics_provider_summary">%1$d enabled · %2$s first</string>
+    <string name="lyrics_drag_hint">Drag to reorder. Switch off any source to skip it.</string>
+    <string name="lyrics_reorder_provider">Reorder %1$s</string>
+    <string name="lyrics_source_disabled">Off</string>
+    <string name="lyrics_first_choice">First choice</string>
+    <string name="lyrics_priority_number">Priority %1$d</string>
+    <string name="lyrics_selection_title">Choose a match</string>
+    <string name="lyrics_synced_first">Synced first</string>
+    <string name="lyrics_my_order">My order</string>
+    <string name="lyrics_plain_short">Include lyrics without timing.</string>
+    <string name="lyrics_footer">Lyrics saved with a song always come first. Changes apply to the next lookup and new downloads.</string>
 </resources>

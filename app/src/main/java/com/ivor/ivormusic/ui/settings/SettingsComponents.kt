@@ -492,6 +492,8 @@ internal fun SettingsDetailScaffold(
      * needed. Most pages want nothing here.
      */
     header: (@Composable () -> Unit)? = null,
+    listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
+    itemSpacing: androidx.compose.ui.unit.Dp = 20.dp,
     content: LazyListScope.() -> Unit
 ) {
     Column(
@@ -541,7 +543,8 @@ internal fun SettingsDetailScaffold(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(itemSpacing)
         ) {
             content()
             item { Spacer(modifier = Modifier.height(32.dp)) }

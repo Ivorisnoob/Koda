@@ -44,6 +44,30 @@ class ThemePreferences(context: Context) {
         PREFS_NAME, Context.MODE_PRIVATE
     )
 
+    private val _lyricsConfiguration = MutableStateFlow(readLyricsConfiguration())
+    val lyricsConfiguration: StateFlow<LyricsConfiguration> = _lyricsConfiguration.asStateFlow()
+
+    fun readLyricsConfiguration(): LyricsConfiguration = LyricsConfiguration(
+        providerOrder = prefs.getString(KEY_LYRICS_PROVIDER_ORDER, null)?.split(",")
+            ?: LyricsConfiguration.DEFAULT_ORDER,
+        disabledProviders = prefs.getStringSet(KEY_LYRICS_DISABLED_PROVIDERS, emptySet()).orEmpty().toSet(),
+        remoteEnabled = prefs.getBoolean(KEY_LYRICS_REMOTE_ENABLED, true),
+        preferSynced = prefs.getBoolean(KEY_LYRICS_PREFER_SYNCED, true),
+        allowPlainText = prefs.getBoolean(KEY_LYRICS_ALLOW_PLAIN_TEXT, true)
+    ).normalized()
+
+    fun setLyricsConfiguration(value: LyricsConfiguration) {
+        val normalized = value.normalized()
+        prefs.edit()
+            .putString(KEY_LYRICS_PROVIDER_ORDER, normalized.providerOrder.joinToString(","))
+            .putStringSet(KEY_LYRICS_DISABLED_PROVIDERS, normalized.disabledProviders)
+            .putBoolean(KEY_LYRICS_REMOTE_ENABLED, normalized.remoteEnabled)
+            .putBoolean(KEY_LYRICS_PREFER_SYNCED, normalized.preferSynced)
+            .putBoolean(KEY_LYRICS_ALLOW_PLAIN_TEXT, normalized.allowPlainText)
+            .apply()
+        _lyricsConfiguration.value = normalized
+    }
+
     private val _themeMode = MutableStateFlow(getThemeModePreference())
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
@@ -304,6 +328,8 @@ class ThemePreferences(context: Context) {
     // only holds listeners weakly and would otherwise garbage-collect it.
     private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
+            KEY_LYRICS_PROVIDER_ORDER, KEY_LYRICS_DISABLED_PROVIDERS, KEY_LYRICS_REMOTE_ENABLED, KEY_LYRICS_PREFER_SYNCED, KEY_LYRICS_ALLOW_PLAIN_TEXT ->
+                _lyricsConfiguration.value = readLyricsConfiguration()
             KEY_THEME_MODE -> _themeMode.value = getThemeModePreference()
             KEY_AMOLED_THEME -> _amoledTheme.value = getAmoledThemePreference()
             KEY_COLOR_PALETTE -> _colorPalette.value = getColorPalettePreference()
@@ -426,6 +452,11 @@ class ThemePreferences(context: Context) {
     }
 
     companion object {
+        private const val KEY_LYRICS_PROVIDER_ORDER = "lyrics_provider_order"
+        private const val KEY_LYRICS_DISABLED_PROVIDERS = "lyrics_disabled_providers"
+        private const val KEY_LYRICS_REMOTE_ENABLED = "lyrics_remote_enabled"
+        private const val KEY_LYRICS_PREFER_SYNCED = "lyrics_prefer_synced"
+        private const val KEY_LYRICS_ALLOW_PLAIN_TEXT = "lyrics_allow_plain_text"
         private const val PREFS_NAME = "ivor_music_theme_prefs"
         private const val KEY_THEME_MODE = "theme_mode_enum"
         private const val KEY_OLD_DARK_MODE = "dark_mode" // For migration
@@ -2238,5 +2269,7 @@ enum class PlayerStyle {
     /** Living hero shape that cycles organic cuts while playing */
     MORPH,
     /** Rotary instrument: a tick-ring dial spun to scrub */
-    DIAL
+    DIAL,
+    /** Full-bleed artwork over a tonal deck with an oversized play disc */
+    HERO
 }

@@ -1,0 +1,424 @@
+{
+ "header": {
+  "musicCarouselShelfBasicHeaderRenderer": {
+   "title": {
+    "runs": [
+     {
+      "text": "Fans might also like"
+     }
+    ]
+   },
+   "accessibilityData": {
+    "accessibilityData": {
+     "label": "Fans might also like"
+    }
+   },
+   "headerStyle": "MUSIC_CAROUSEL_SHELF_BASIC_HEADER_STYLE_DISPLAY_TWO"
+  }
+ },
+ "contents": [
+  {
+   "musicTwoRowItemRenderer": {
+    "thumbnailRenderer": {
+     "musicThumbnailRenderer": {
+      "thumbnail": {
+       "thumbnails": [
+        {
+         "url": "https://yt3.googleusercontent.com/ZPa3GuJRbvtOYYgGfslq7XIyzmATk9rncc2RTOFkLh6n4RyYYeGw-_AjqNpOCaC3a02xFHys5EZe97TY=w226-h226-p-l90-rj",
+         "width": 226,
+         "height": 226
+        },
+        {
+         "url": "https://yt3.googleusercontent.com/ZPa3GuJRbvtOYYgGfslq7XIyzmATk9rncc2RTOFkLh6n4RyYYeGw-_AjqNpOCaC3a02xFHys5EZe97TY=w544-h544-p-l90-rj",
+         "width": 544,
+         "height": 544
+        }
+       ]
+      },
+      "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_CIRCLE",
+      "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FILL"
+     }
+    },
+    "aspectRatio": "MUSIC_TWO_ROW_ITEM_THUMBNAIL_ASPECT_RATIO_SQUARE",
+    "title": {
+     "runs": [
+      {
+       "text": "Cigarettes After Sex",
+       "navigationEndpoint": {
+        "clickTrackingParams": "CFoQoLMCGAAiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+        "browseEndpoint": {
+         "browseId": "UCIMuwfTAzgZ5Dg84TmYxYkA",
+         "browseEndpointContextSupportedConfigs": {
+          "browseEndpointContextMusicConfig": {
+           "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "subtitle": {
+     "runs": [
+      {
+       "text": "46.3M monthly audience"
+      }
+     ]
+    },
+    "navigationEndpoint": {
+     "clickTrackingParams": "CFoQoLMCGAAiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+     "browseEndpoint": {
+      "browseId": "UCIMuwfTAzgZ5Dg84TmYxYkA",
+      "browseEndpointContextSupportedConfigs": {
+       "browseEndpointContextMusicConfig": {
+        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+       }
+      }
+     }
+    },
+    "menu": {
+     "menuRenderer": {
+      "items": [
+       {
+        "menuNavigationItemRenderer": {
+         "text": {
+          "runs": [
+           {
+            "text": "Shuffle play"
+           }
+          ]
+         },
+         "icon": {
+          "iconType": "MUSIC_SHUFFLE"
+         },
+         "navigationEndpoint": {
+          "clickTrackingParams": "CGAQmvMFGAAiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "watchPlaylistEndpoint": {
+           "playlistId": "RDAOKGfuPgnuOACykuookqvo7w",
+           "params": "wAEB8gECGAE%3D"
+          }
+         }
+        }
+       },
+       {
+        "menuNavigationItemRenderer": {
+         "text": {
+          "runs": [
+           {
+            "text": "Start mix"
+           }
+          ]
+         },
+         "icon": {
+          "iconType": "MIX"
+         },
+         "navigationEndpoint": {
+          "clickTrackingParams": "CF8Qm_MFGAEiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "watchPlaylistEndpoint": {
+           "playlistId": "RDEMKGfuPgnuOACykuookqvo7w",
+           "params": "wAEB"
+          }
+         }
+        }
+       },
+       {
+        "toggleMenuServiceItemRenderer": {
+         "defaultText": {
+          "runs": [
+           {
+            "text": "Subscribe"
+           }
+          ]
+         },
+         "defaultIcon": {
+          "iconType": "SUBSCRIBE"
+         },
+         "defaultServiceEndpoint": {
+          "clickTrackingParams": "CF0QqJwGGAIiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "modalEndpoint": {
+           "modal": {
+            "modalWithTitleAndButtonRenderer": {
+             "title": {
+              "runs": [
+               {
+                "text": "Subscribe to this artist"
+               }
+              ]
+             },
+             "content": {
+              "runs": [
+               {
+                "text": "Sign in to subscribe to this artist and never miss a beat"
+               }
+              ]
+             },
+             "button": {
+              "buttonRenderer": {
+               "style": "STYLE_BLUE_TEXT",
+               "isDisabled": false,
+               "text": {
+                "runs": [
+                 {
+                  "text": "Sign in"
+                 }
+                ]
+               },
+               "navigationEndpoint": {
+                "clickTrackingParams": "CF4Q8FsiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+                "signInEndpoint": {
+                 "hack": true
+                }
+               }
+              }
+             }
+            }
+           }
+          }
+         },
+         "toggledText": {
+          "runs": [
+           {
+            "text": "Unsubscribe"
+           }
+          ]
+         },
+         "toggledIcon": {
+          "iconType": "SUBSCRIBE"
+         }
+        }
+       },
+       {
+        "menuNavigationItemRenderer": {
+         "text": {
+          "runs": [
+           {
+            "text": "Share"
+           }
+          ]
+         },
+         "icon": {
+          "iconType": "SHARE"
+         },
+         "navigationEndpoint": {
+          "clickTrackingParams": "CFwQkfsFGAMiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "shareEntityEndpoint": {
+           "serializedShareEntity": "GhhVQ0lNdXdmVEF6Z1o1RGc4NFRtWXhZa0E%3D",
+           "sharePanelType": "SHARE_PANEL_TYPE_UNIFIED_SHARE_PANEL"
+          }
+         }
+        }
+       }
+      ],
+      "accessibility": {
+       "accessibilityData": {
+        "label": "Action menu"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "musicTwoRowItemRenderer": {
+    "thumbnailRenderer": {
+     "musicThumbnailRenderer": {
+      "thumbnail": {
+       "thumbnails": [
+        {
+         "url": "https://yt3.googleusercontent.com/Kltd3rGFy1TXSTpsnxH_me2Bq_6eTT4DWJRbxvg1DEH8JOMEoqoDfLX6dk9F_byx_uXfPhuO7eYBavw=w226-h226-p-l90-rj",
+         "width": 226,
+         "height": 226
+        },
+        {
+         "url": "https://yt3.googleusercontent.com/Kltd3rGFy1TXSTpsnxH_me2Bq_6eTT4DWJRbxvg1DEH8JOMEoqoDfLX6dk9F_byx_uXfPhuO7eYBavw=w544-h544-p-l90-rj",
+         "width": 544,
+         "height": 544
+        }
+       ]
+      },
+      "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_CIRCLE",
+      "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FILL"
+     }
+    },
+    "aspectRatio": "MUSIC_TWO_ROW_ITEM_THUMBNAIL_ASPECT_RATIO_SQUARE",
+    "title": {
+     "runs": [
+      {
+       "text": "Labrinth",
+       "navigationEndpoint": {
+        "clickTrackingParams": "CFIQoLMCGAEiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+        "browseEndpoint": {
+         "browseId": "UCLx8m3I4zQAQc0tdASjdAfw",
+         "browseEndpointContextSupportedConfigs": {
+          "browseEndpointContextMusicConfig": {
+           "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+          }
+         }
+        }
+       }
+      }
+     ]
+    },
+    "subtitle": {
+     "runs": [
+      {
+       "text": "32.2M monthly audience"
+      }
+     ]
+    },
+    "navigationEndpoint": {
+     "clickTrackingParams": "CFIQoLMCGAEiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+     "browseEndpoint": {
+      "browseId": "UCLx8m3I4zQAQc0tdASjdAfw",
+      "browseEndpointContextSupportedConfigs": {
+       "browseEndpointContextMusicConfig": {
+        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+       }
+      }
+     }
+    },
+    "menu": {
+     "menuRenderer": {
+      "items": [
+       {
+        "menuNavigationItemRenderer": {
+         "text": {
+          "runs": [
+           {
+            "text": "Shuffle play"
+           }
+          ]
+         },
+         "icon": {
+          "iconType": "MUSIC_SHUFFLE"
+         },
+         "navigationEndpoint": {
+          "clickTrackingParams": "CFgQmvMFGAAiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "watchPlaylistEndpoint": {
+           "playlistId": "RDAO3BN_8fU-wPQ_dpb9xoytJg",
+           "params": "wAEB8gECGAE%3D"
+          }
+         }
+        }
+       },
+       {
+        "menuNavigationItemRenderer": {
+         "text": {
+          "runs": [
+           {
+            "text": "Start mix"
+           }
+          ]
+         },
+         "icon": {
+          "iconType": "MIX"
+         },
+         "navigationEndpoint": {
+          "clickTrackingParams": "CFcQm_MFGAEiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "watchPlaylistEndpoint": {
+           "playlistId": "RDEM3BN_8fU-wPQ_dpb9xoytJg",
+           "params": "wAEB"
+          }
+         }
+        }
+       },
+       {
+        "toggleMenuServiceItemRenderer": {
+         "defaultText": {
+          "runs": [
+           {
+            "text": "Subscribe"
+           }
+          ]
+         },
+         "defaultIcon": {
+          "iconType": "SUBSCRIBE"
+         },
+         "defaultServiceEndpoint": {
+          "clickTrackingParams": "CFUQqJwGGAIiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "modalEndpoint": {
+           "modal": {
+            "modalWithTitleAndButtonRenderer": {
+             "title": {
+              "runs": [
+               {
+                "text": "Subscribe to this artist"
+               }
+              ]
+             },
+             "content": {
+              "runs": [
+               {
+                "text": "Sign in to subscribe to this artist and never miss a beat"
+               }
+              ]
+             },
+             "button": {
+              "buttonRenderer": {
+               "style": "STYLE_BLUE_TEXT",
+               "isDisabled": false,
+               "text": {
+                "runs": [
+                 {
+                  "text": "Sign in"
+                 }
+                ]
+               },
+               "navigationEndpoint": {
+                "clickTrackingParams": "CFYQ8FsiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+                "signInEndpoint": {
+                 "hack": true
+                }
+               }
+              }
+             }
+            }
+           }
+          }
+         },
+         "toggledText": {
+          "runs": [
+           {
+            "text": "Unsubscribe"
+           }
+          ]
+         },
+         "toggledIcon": {
+          "iconType": "SUBSCRIBE"
+         }
+        }
+       },
+       {
+        "menuNavigationItemRenderer": {
+         "text": {
+          "runs": [
+           {
+            "text": "Share"
+           }
+          ]
+         },
+         "icon": {
+          "iconType": "SHARE"
+         },
+         "navigationEndpoint": {
+          "clickTrackingParams": "CFQQkfsFGAMiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "shareEntityEndpoint": {
+           "serializedShareEntity": "GhhVQ0x4OG0zSTR6UUFRYzB0ZEFTamRBZnc%3D",
+           "sharePanelType": "SHARE_PANEL_TYPE_UNIFIED_SHARE_PANEL"
+          }
+         }
+        }
+       }
+      ],
+      "accessibility": {
+       "accessibilityData": {
+        "label": "Action menu"
+       }
+      }
+     }
+    }
+   }
+  }
+ ],
+ "itemSize": "COLLECTION_STYLE_ITEM_SIZE_MEDIUM"
+}

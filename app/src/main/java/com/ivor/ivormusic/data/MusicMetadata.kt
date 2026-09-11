@@ -175,6 +175,82 @@ internal object MusicMetadata {
         (objects(root, "musicTwoRowItemRenderer") + objects(root, "musicResponsiveListItemRenderer"))
             .mapNotNull { release(it, defaultType, artist) }.distinctBy { it.id }
 
+    /**
+     * The identity block of an InnerTube artist browse
+     * (`musicImmersiveHeaderRenderer`): name, biography, monthly audience and
+     * the widest banner thumbnail. Null when the response carries no immersive
+     * header (e.g. a discography page). Verified September 2026.
+     */
+    fun artistHeader(root: JSONObject): ArtistHeader? {
+        val header = objects(root, "musicImmersiveHeaderRenderer").firstOrNull() ?: return null
+        val name = text(header.optJSONObject("title")).takeIf(String::isNotBlank) ?: return null
+        return ArtistHeader(
+            name = name,
+            bio = text(header.optJSONObject("description")).takeIf(String::isNotBlank),
+            monthlyAudience = text(header.optJSONObject("monthlyListenerCount")).takeIf(String::isNotBlank),
+            bannerUrl = thumbnail(header),
+        )
+    }
+
+    /** The carousel shelf with this exact header title, or null. Titles are
+     * matched in English, the language every request pins (`hl=en`). */
+    fun carousel(root: JSONObject, title: String): JSONObject? =
+        objects(root, "musicCarouselShelfRenderer").firstOrNull { shelf ->
+            text(
+                shelf.optJSONObject("header")
+                    ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")?.optJSONObject("title")
+            ) == title
+        }
+
+    /** "Fans might also like" shelf: artist id, name, audience, thumbnail. */
+    fun similarArtists(root: JSONObject): List<SimilarArtist> {
+        val shelf = carousel(root, "Fans might also like") ?: return emptyList()
+        return objects(shelf, "musicTwoRowItemRenderer").mapNotNull { row ->
+            val id = endpoint(row)?.optString("browseId")?.takeIf { it.startsWith("UC") } ?: return@mapNotNull null
+            val name = text(row.optJSONObject("title")).takeIf(String::isNotBlank) ?: return@mapNotNull null
+            SimilarArtist(
+                id = id,
+                name = name,
+                audienceText = text(row.optJSONObject("subtitle")).takeIf(String::isNotBlank),
+                thumbnailUrl = thumbnail(row),
+            )
+        }.distinctBy { it.id }
+    }
+
+    /** "Featured on" shelf: playlists carrying this artist. */
+    fun featuredPlaylists(root: JSONObject): List<FeaturedPlaylist> {
+        val shelf = carousel(root, "Featured on") ?: return emptyList()
+        return objects(shelf, "musicTwoRowItemRenderer").mapNotNull { row ->
+            val id = endpoint(row)?.optString("browseId")?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            val title = text(row.optJSONObject("title")).takeIf(String::isNotBlank) ?: return@mapNotNull null
+            FeaturedPlaylist(
+                id = id,
+                title = title,
+                subtitle = text(row.optJSONObject("subtitle")).takeIf(String::isNotBlank),
+                thumbnailUrl = thumbnail(row),
+            )
+        }.distinctBy { it.id }
+    }
+
+    /**
+     * Where a song lives, from one music `/next` panel renderer (the first
+     * `playlistPanelVideoRenderer` is the requested song itself). Its
+     * `longBylineText` runs are exactly artist link, album link, year.
+     * Verified September 2026.
+     */
+    fun songAlbumRef(panel: JSONObject): SongAlbumRef? {
+        val runs = runs(panel.optJSONObject("longBylineText"))
+        val albumRun = runs.firstOrNull { isAlbum(endpoint(it)) } ?: return null
+        val albumId = endpoint(albumRun)?.optString("browseId")?.takeIf(String::isNotBlank) ?: return null
+        val artistRun = runs.firstOrNull { isArtist(endpoint(it)) }
+        return SongAlbumRef(
+            albumId = albumId,
+            albumTitle = albumRun.optString("text").trim().takeIf(String::isNotBlank),
+            artistId = endpoint(artistRun)?.optString("browseId")?.takeIf(String::isNotBlank),
+            year = year(runs),
+        )
+    }
+
     fun albumSongs(root: JSONObject, browseId: String): List<Song> {
         val header = (objects(root, "musicResponsiveHeaderRenderer") + objects(root, "musicDetailHeaderRenderer")).firstOrNull()
         val title = text(header?.optJSONObject("title"))

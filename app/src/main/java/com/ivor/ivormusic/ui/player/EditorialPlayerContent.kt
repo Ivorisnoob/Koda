@@ -104,6 +104,7 @@ import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
@@ -139,7 +140,8 @@ fun EditorialPlayerSheetContent(
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
     onArtistClick: (String) -> Unit = {},
-    onAlbumClick: (String) -> Unit = {}
+    onAlbumClick: (String) -> Unit = {},
+    onOpenAlbum: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {}
 ) {
     // Back is handled once by ExpandablePlayer, which previews the collapse
     // as a gesture instead of firing at the end of one. A BackHandler here
@@ -249,7 +251,8 @@ fun EditorialPlayerSheetContent(
                 viewModel = viewModel,
                 onDismiss = { showOptions = false },
                 onArtistClick = onArtistClick,
-                onAlbumClick = onAlbumClick
+                onAlbumClick = onAlbumClick,
+                onOpenAlbum = onOpenAlbum
             )
         }
     }
