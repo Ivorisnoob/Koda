@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -58,6 +59,7 @@ import com.ivor.ivormusic.data.PlaylistDisplayItem
 @Composable
 fun AddToPlaylistSheet(
     playlists: List<PlaylistDisplayItem>,
+    containingPlaylistIds: Set<String> = emptySet(),
     onPlaylistClick: (PlaylistDisplayItem) -> Unit,
     onCreateNewClick: (String, String?) -> Unit,
     onDismissRequest: () -> Unit
@@ -131,13 +133,15 @@ fun AddToPlaylistSheet(
                 }
 
                 items(playlists) { playlist ->
+                    val isContained = playlist.id in containingPlaylistIds
                     ListItem(
                         headlineContent = {
                             Text(
                                 playlist.name,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (isContained) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
                         },
                         supportingContent = {
@@ -149,7 +153,7 @@ fun AddToPlaylistSheet(
                         leadingContent = {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = if (isContained) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                                 modifier = Modifier.size(56.dp)
                             ) {
                                 if (playlist.thumbnailUrl != null) {
@@ -162,9 +166,19 @@ fun AddToPlaylistSheet(
                                 } else {
                                     AccessIcon(
                                         Icons.Rounded.PlaylistPlay,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        tint = if (isContained) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                            }
+                        },
+                        trailingContent = {
+                            if (isContained) {
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    contentDescription = stringResource(R.string.cd_in_this_playlist),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
                             }
                         },
                         modifier = Modifier
@@ -172,7 +186,9 @@ fun AddToPlaylistSheet(
                             .clickable { onPlaylistClick(playlist) }
                             .padding(horizontal = 16.dp, vertical = 4.dp)
                             .clip(RoundedCornerShape(16.dp)),
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        colors = ListItemDefaults.colors(
+                            containerColor = if (isContained) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
+                        )
                     )
                 }
             }
