@@ -19,7 +19,7 @@ env:
   OWNER_URL: "https://ivorisnoob.lol"
 
 jobs:
-  # Star Milestone (only notify on 10, 20, 30, 40, 50, etc.)
+  # Star Milestone (only notify on 50, 100, 150, 200, etc.)
   notify-star-milestone:
     # Never run in a fork: the notifications belong to this repository's owner.
     if: >-
@@ -34,8 +34,8 @@ jobs:
         env:
           STAR_COUNT: ${{ github.event.repository.stargazers_count }}
         run: |
-          # Notify on every 10 stars (10, 20, 30, 40, 50, etc.)
-          if [ $((STAR_COUNT % 10)) -eq 0 ] && [ "$STAR_COUNT" -gt 0 ]; then
+          # Notify on every 50 stars (50, 100, 150, 200, etc.)
+          if [ $((STAR_COUNT % 50)) -eq 0 ] && [ "$STAR_COUNT" -gt 0 ]; then
             echo "is_milestone=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_milestone=false" >> "$GITHUB_OUTPUT"
