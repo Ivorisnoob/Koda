@@ -619,16 +619,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _shortsFeed = MutableStateFlow<List<com.ivor.ivormusic.data.ShortsItem>>(emptyList())
 
     /**
-     * Shorts shelf minus individually hidden Shorts.
-     *
-     * Only video ids can be filtered here: a shelf ShortsItem carries no
-     * channel at all (see ShortsItem), so a channel block cannot reach it.
-     * The block still applies the moment the Short is opened and enriched -
-     * it just cannot pre-empt the shelf.
+     * Shorts shelf minus hidden videos and blocked channels/creators.
      */
     val shortsFeed: StateFlow<List<com.ivor.ivormusic.data.ShortsItem>> =
-        combine(_shortsFeed, notInterestedRepository.hiddenVideos) { shorts, _ ->
-            shorts.filterNot { notInterestedRepository.isVideoHidden(it.videoId) }
+        combine(_shortsFeed, notInterestedRepository.hiddenVideos, notInterestedRepository.blockedChannels) { shorts, _, _ ->
+            shorts.filterNot { item ->
+                notInterestedRepository.isVideoHidden(item.videoId) ||
+                    notInterestedRepository.isCreatorBlocked(item.channelId, item.channelName)
+            }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     
     private val _isHistoryLoading = MutableStateFlow(false)
