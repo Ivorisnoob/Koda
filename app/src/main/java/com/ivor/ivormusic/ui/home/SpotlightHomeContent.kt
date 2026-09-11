@@ -110,6 +110,8 @@ fun SpotlightHomeContent(
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
     onOpenLiked: () -> Unit = {},
     onShowAllInLibrary: () -> Unit = {},
+    /** Opens Spin, the wheel over this Home. */
+    onSpinClick: () -> Unit,
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
@@ -214,6 +216,19 @@ fun SpotlightHomeContent(
                                 is Shortcut.Track -> onRecentClick(shortcut.song)
                             }
                         },
+                    )
+                }
+            }
+
+            // Spin sits under the shortcuts, unfiltered only: it spins its own
+            // pools, so offering it inside a filter would suggest it obeys one.
+            if (filter == SpotlightFilter.All) {
+                item(key = "spin") {
+                    SpinEntryCard(
+                        onClick = onSpinClick,
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .padding(top = 12.dp, bottom = 4.dp)
                     )
                 }
             }

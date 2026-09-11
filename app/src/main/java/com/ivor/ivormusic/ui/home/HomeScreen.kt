@@ -733,101 +733,131 @@ fun HomeScreen(
                                     listState = videoHomeScrollState
                                 )
                             }
-                            // Music Mode, Spotlight: the shortcut-grid and
-                            // shelves alternative. Same flows, same overlays,
-                            // same tab system - only the composition of this one
-                            // tab differs, which is the move the video toggle
-                            // already established.
-                            else if (spotlightHome) {
-                                val spotlightPlaylists by viewModel.userPlaylists.collectAsState()
-                                val spotlightLiked by viewModel.likedSongs.collectAsState()
-                                SpotlightHomeContent(
-                                    songs = songs,
-                                    recentlyPlayed = recentlyPlayed,
-                                    likedSongs = spotlightLiked,
-                                    playlists = spotlightPlaylists,
-                                    isInitialLoading = isLoading && songs.isEmpty(),
-                                    onSongLongPress = { song -> songOptionsTarget = song },
-                                    onSongClick = { song ->
-                                        playerViewModel.playQueue(songs, song)
-                                        showPlayerSheet = true
-                                    },
-                                    onPlaySongs = { queue, start ->
-                                        playerViewModel.playQueue(queue, start)
-                                        showPlayerSheet = true
-                                    },
-                                    onRecentClick = { song ->
-                                        playerViewModel.playQueue(recentlyPlayed, song)
-                                        showPlayerSheet = true
-                                    },
-                                    // Playlist detail lives in LibraryContent, so
-                                    // Spotlight hands the playlist over and
-                                    // switches tab: the Library opens straight
-                                    // onto it, the same deep-link shape the
-                                    // player already uses for artists.
-                                    onPlaylistClick = { playlist ->
-                                        viewedPlaylistFromHome = playlist
-                                        selectedTab = 2
-                                    },
-                                    onOpenLiked = { selectedTab = 2 },
-                                    onShowAllInLibrary = { selectedTab = 2 },
-                                    onProfileClick = onProfileClick,
-                                    onSettingsClick = onNavigateToSettings,
-                                    onDownloadsClick = onNavigateToDownloads,
-                                    isDarkMode = isDarkMode,
-                                    contentPadding = listContentPadding,
-                                    viewModel = viewModel,
-                                    excludedFolders = excludedFolders,
-                                    manualScan = manualScan,
-                                    videoMode = videoMode,
-                                    onVideoModeToggle = onVideoModeToggle,
-                                    showModeToggle = showModeToggle,
-                                    modeToggleState = modeToggleState,
-                                    listState = musicHomeScrollState
-                                )
-                            }
-                            // Music Mode: Show original content. The first load
-                            // renders the real screen with placeholders in the
-                            // data-backed sections rather than a full-screen
-                            // spinner - the top bar, titles and nav have
-                            // nothing to wait for.
                             else {
-                                YourMixContent(
-                                    songs = songs,
-                                    isInitialLoading = isLoading && songs.isEmpty(),
-                                    recentlyPlayed = recentlyPlayed,
-                                    onRecentClick = { song ->
-                                        // Resume from the history rail: the
-                                        // recents are the queue, not the mix.
-                                        playerViewModel.playQueue(recentlyPlayed, song)
-                                        showPlayerSheet = true
-                                    },
-                                    onShowAllInLibrary = { selectedTab = 2 },
-                                    onSongLongPress = { song -> songOptionsTarget = song },
-                                    onSongClick = { song ->
-                                        playerViewModel.playQueue(songs, song)
-                                        showPlayerSheet = true
-                                    },
-                                    onPlayClick = {
-                                        if (songs.isNotEmpty()) {
-                                            playerViewModel.playQueue(songs)
-                                            showPlayerSheet = true
+                                // Spin, the wheel, rides over whichever music
+                                // Home is showing as a child page: back peels it
+                                // away to the Home underneath. Declared here so
+                                // leaving the tab closes it, as it closes a
+                                // Library sub-screen.
+                                var spinOpen by remember { mutableStateOf(false) }
+                                com.ivor.ivormusic.ui.components.PredictiveBackStack(
+                                    childOpen = spinOpen,
+                                    onBack = { spinOpen = false },
+                                    background = {
+                                        // Music Mode, Spotlight: the shortcut-grid and
+                                        // shelves alternative. Same flows, same overlays,
+                                        // same tab system - only the composition of this one
+                                        // tab differs, which is the move the video toggle
+                                        // already established.
+                                        if (spotlightHome) {
+                                            val spotlightPlaylists by viewModel.userPlaylists.collectAsState()
+                                            val spotlightLiked by viewModel.likedSongs.collectAsState()
+                                            SpotlightHomeContent(
+                                                songs = songs,
+                                                recentlyPlayed = recentlyPlayed,
+                                                likedSongs = spotlightLiked,
+                                                playlists = spotlightPlaylists,
+                                                isInitialLoading = isLoading && songs.isEmpty(),
+                                                onSongLongPress = { song -> songOptionsTarget = song },
+                                                onSongClick = { song ->
+                                                    playerViewModel.playQueue(songs, song)
+                                                    showPlayerSheet = true
+                                                },
+                                                onPlaySongs = { queue, start ->
+                                                    playerViewModel.playQueue(queue, start)
+                                                    showPlayerSheet = true
+                                                },
+                                                onRecentClick = { song ->
+                                                    playerViewModel.playQueue(recentlyPlayed, song)
+                                                    showPlayerSheet = true
+                                                },
+                                                // Playlist detail lives in LibraryContent, so
+                                                // Spotlight hands the playlist over and
+                                                // switches tab: the Library opens straight
+                                                // onto it, the same deep-link shape the
+                                                // player already uses for artists.
+                                                onPlaylistClick = { playlist ->
+                                                    viewedPlaylistFromHome = playlist
+                                                    selectedTab = 2
+                                                },
+                                                onOpenLiked = { selectedTab = 2 },
+                                                onShowAllInLibrary = { selectedTab = 2 },
+                                                onSpinClick = { spinOpen = true },
+                                                onProfileClick = onProfileClick,
+                                                onSettingsClick = onNavigateToSettings,
+                                                onDownloadsClick = onNavigateToDownloads,
+                                                isDarkMode = isDarkMode,
+                                                contentPadding = listContentPadding,
+                                                viewModel = viewModel,
+                                                excludedFolders = excludedFolders,
+                                                manualScan = manualScan,
+                                                videoMode = videoMode,
+                                                onVideoModeToggle = onVideoModeToggle,
+                                                showModeToggle = showModeToggle,
+                                                modeToggleState = modeToggleState,
+                                                listState = musicHomeScrollState
+                                            )
+                                        } else {
+                                            // Music Mode: Show original content. The first load
+                                            // renders the real screen with placeholders in the
+                                            // data-backed sections rather than a full-screen
+                                            // spinner - the top bar, titles and nav have
+                                            // nothing to wait for.
+                                            YourMixContent(
+                                                songs = songs,
+                                                isInitialLoading = isLoading && songs.isEmpty(),
+                                                recentlyPlayed = recentlyPlayed,
+                                                onRecentClick = { song ->
+                                                    // Resume from the history rail: the
+                                                    // recents are the queue, not the mix.
+                                                    playerViewModel.playQueue(recentlyPlayed, song)
+                                                    showPlayerSheet = true
+                                                },
+                                                onShowAllInLibrary = { selectedTab = 2 },
+                                                onSpinClick = { spinOpen = true },
+                                                onSongLongPress = { song -> songOptionsTarget = song },
+                                                onSongClick = { song ->
+                                                    playerViewModel.playQueue(songs, song)
+                                                    showPlayerSheet = true
+                                                },
+                                                onPlayClick = {
+                                                    if (songs.isNotEmpty()) {
+                                                        playerViewModel.playQueue(songs)
+                                                        showPlayerSheet = true
+                                                    }
+                                                },
+                                                onProfileClick = onProfileClick,
+                                                onSettingsClick = onNavigateToSettings,
+                                                onDownloadsClick = onNavigateToDownloads,
+                                                isDarkMode = isDarkMode,
+                                                contentPadding = listContentPadding,
+                                                viewModel = viewModel,
+                                                excludedFolders = excludedFolders,
+                                                manualScan = manualScan,
+                                                videoMode = videoMode,
+                                                onVideoModeToggle = onVideoModeToggle,
+                                                showModeToggle = showModeToggle,
+                                                modeToggleState = modeToggleState,
+                                                listState = musicHomeScrollState
+                                            )
                                         }
-                                    },
-                                    onProfileClick = onProfileClick,
-                                    onSettingsClick = onNavigateToSettings,
-                                    onDownloadsClick = onNavigateToDownloads,
-                                    isDarkMode = isDarkMode,
-                                    contentPadding = listContentPadding,
-                                    viewModel = viewModel,
-                                    excludedFolders = excludedFolders,
-                                    manualScan = manualScan,
-                                    videoMode = videoMode,
-                                    onVideoModeToggle = onVideoModeToggle,
-                                    showModeToggle = showModeToggle,
-                                    modeToggleState = modeToggleState,
-                                    listState = musicHomeScrollState
-                                )
+                                    }
+                                ) { committedByGesture ->
+                                    SpinOverlay(
+                                        open = spinOpen,
+                                        committedByGesture = committedByGesture,
+                                        mix = songs,
+                                        recent = recentlyPlayed,
+                                        viewModel = viewModel,
+                                        contentPadding = listContentPadding,
+                                        onPlay = { queue, start ->
+                                            playerViewModel.playQueue(queue, start)
+                                            showPlayerSheet = true
+                                        },
+                                        onSongLongPress = { song -> songOptionsTarget = song },
+                                        onBack = { spinOpen = false }
+                                    )
+                                }
                             }
                         }
                     }
@@ -1483,6 +1513,8 @@ fun YourMixContent(
     onSongClick: (Song) -> Unit,
     onSongLongPress: ((Song) -> Unit)? = null,
     onPlayClick: () -> Unit,
+    /** Opens Spin, the wheel over this Home. Required: an entry left unwired is a dead card. */
+    onSpinClick: () -> Unit,
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
@@ -1574,6 +1606,19 @@ fun YourMixContent(
                             onSongLongPress = onSongLongPress
                         )
                     }
+                }
+            }
+
+            // The wheel, for when choosing is the chore. Under the mix rather
+            // than above it: the mix is the page, Spin is the way out of it.
+            if (!isInitialLoading) {
+                item(key = "spin") {
+                    SpinEntryCard(
+                        onClick = onSpinClick,
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp)
+                            .padding(top = 28.dp)
+                    )
                 }
             }
             
