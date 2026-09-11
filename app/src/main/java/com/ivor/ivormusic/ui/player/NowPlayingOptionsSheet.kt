@@ -111,12 +111,17 @@ fun NowPlayingOptionsSheet(
     // through to it.
     LaunchedEffect(Unit) { viewModel.loadYouTubePlaylistsForSheet() }
 
+    val rawUserPlaylists by viewModel.rawUserPlaylists.collectAsState()
+    val containingPlaylistIds = remember(rawUserPlaylists, song.id) {
+        rawUserPlaylists.filter { playlist -> playlist.songs.any { it.id == song.id } }.map { it.id }.toSet()
+    }
+
     if (showPlaylists) {
         AddToPlaylistSheet(
             playlists = addToPlaylistItems,
+            containingPlaylistIds = containingPlaylistIds,
             onPlaylistClick = { playlist ->
-                viewModel.addToPlaylist(playlist.id, song)
-                onDismiss()
+                viewModel.toggleSongInPlaylist(playlist.id, song)
             },
             onCreateNewClick = { name, desc ->
                 viewModel.createPlaylistWithSong(name, desc, song)
