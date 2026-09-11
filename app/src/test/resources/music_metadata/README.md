@@ -16,6 +16,16 @@ menu commands, continuation tokens and account data are omitted.
 - `single_album`: BILLIE EILISH., `MPREb_Y4KWN0glLx2`, header and one track row.
 - `album_card`, `ep_card`, `single_card`: the record, the rest and The Parting
   Glass from the boygenius artist page.
+- `artist_header`: the Billie Eilish immersive header: bio, monthly audience,
+  banner.
+- `artist_top_song`: BIRDS OF A FEATHER top-songs row with artist and album
+  links in separate flex columns.
+- `similar_shelf` / `featured_shelf`: Fans might also like and Featured on
+  carousels, trimmed to two entries each.
+- `album_header`: HIT ME HARD AND SOFT responsive header plus two track rows
+  with empty artist columns (attribution comes from the header strapline).
+- `next_panel`: the requested song's own `playlistPanelVideoRenderer` from a
+  music `/next` reply; its byline runs name artist, album and year.
 
 Header/track fixtures omit recommendation carousels. Tests separately inject
 out-of-shelf rows, missing links, conflicting page types, duplicate tracks and
