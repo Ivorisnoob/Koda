@@ -68,4 +68,14 @@ class VideoWatchProgressTest {
         assertFalse(clock.sample(60_000L, true, true))
         assertEquals(2_000L, clock.playedMs)
     }
+
+    @Test fun `rapid playback state transitions sample correctly`() {
+        val clock = VideoWatchClock(3_000L)
+        clock.sample(0L, true, true)
+        clock.sample(1_000L, true, true)
+        clock.sample(1_500L, false, true)
+        clock.sample(2_000L, true, true)
+        clock.sample(3_500L, true, true)
+        assertTrue(clock.sample(4_000L, true, true))
+    }
 }

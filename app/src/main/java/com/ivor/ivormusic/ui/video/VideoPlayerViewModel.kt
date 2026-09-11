@@ -2255,6 +2255,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isLocalPlayback.value = localSource != null
 
         _currentVideo.value = video
+        startWatchTracking()
         if (video.isLive) {
             // Live broadcasts have no stable resume position. Clear the VOD
             // watched before this one so it is not resurrected if the process
@@ -2559,8 +2560,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 }
             }
         }
-        
-        startWatchTracking()
     }
 
     private fun startWatchTracking() {
