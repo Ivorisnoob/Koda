@@ -21,6 +21,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.snapping.SnapPosition
@@ -51,7 +52,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -60,6 +60,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LoadingIndicator
@@ -100,6 +101,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -144,8 +146,11 @@ import kotlinx.coroutines.launch
  * memory-cache hit rather than a network fetch and a decode mid-spin.
  */
 
-/** Where the wheel's songs come from. Not persisted: a spin is a moment. */
-private enum class SpinSource { Mix, ForYou, Liked, Recent }
+/**
+ * Where the wheel's songs come from. Not persisted: a spin is a moment. Each
+ * Home opens the wheel on the pool it is showing, so "spin these" means these.
+ */
+enum class SpinSource { Mix, ForYou, Liked, Recent }
 
 @Composable
 private fun spinSourceLabel(source: SpinSource): String = when (source) {
@@ -194,6 +199,7 @@ private val SpinEasing = CubicBezierEasing(0.12f, 0.72f, 0.18f, 1f)
 internal fun SpinOverlay(
     open: Boolean,
     committedByGesture: Boolean,
+    initialSource: SpinSource,
     mix: List<Song>,
     recent: List<Song>,
     viewModel: HomeViewModel,
@@ -230,6 +236,7 @@ internal fun SpinOverlay(
             val forYou by viewModel.discoverySongs.collectAsState()
             val forYouLoading by viewModel.isDiscoveryLoading.collectAsState()
             SpinScreen(
+                initialSource = initialSource,
                 mix = mix,
                 forYou = forYou,
                 isForYouLoading = forYouLoading,
@@ -250,6 +257,7 @@ internal fun SpinOverlay(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SpinScreen(
+    initialSource: SpinSource,
     mix: List<Song>,
     forYou: List<Song>,
     isForYouLoading: Boolean,
@@ -268,7 +276,7 @@ private fun SpinScreen(
     val rowPx = with(density) { SPIN_ROW_HEIGHT.toPx() }
     val coverPx = with(density) { SPIN_DISC_SIZE.roundToPx() }
 
-    var source by rememberSaveable { mutableStateOf(SpinSource.Mix) }
+    var source by rememberSaveable { mutableStateOf(initialSource) }
     // Asked for only when chosen: it is several searches and a radio call.
     LaunchedEffect(source) {
         if (source == SpinSource.ForYou) onRequestForYou()
@@ -923,81 +931,82 @@ private fun SpinEmpty(modifier: Modifier = Modifier) {
 }
 
 /**
- * The way into Spin from either Home: a card whose die turns into place as it
- * arrives. A one-shot turn rather than a loop, so the Home it sits on is not
- * drawing a frame every vsync for a decoration.
+ * The way into Spin beside Play all in Spotlight's quick picks: a die on a
+ * tonal button that morphs on press, in the Play all pill's own colour so the
+ * two read as a pair. Rolled into place once as it appears - one-shot rather
+ * than a loop, so the Home it sits on is not drawing a frame every vsync for
+ * a decoration.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun SpinEntryCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun SpinButton(onClick: () -> Unit, size: Dp, modifier: Modifier = Modifier) {
+    val turn = remember { Animatable(-150f) }
+    LaunchedEffect(Unit) {
+        turn.animateTo(0f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow))
+    }
+    FilledTonalIconButton(
+        onClick = onClick,
+        shapes = IconButtonDefaults.shapes(),
+        colors = IconButtonDefaults.filledTonalIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ),
+        modifier = modifier.size(size)
+    ) {
+        Icon(
+            Icons.Rounded.Casino,
+            contentDescription = stringResource(R.string.spin_title),
+            modifier = Modifier
+                .size(size * 0.46f)
+                .graphicsLayer { rotationZ = turn.value }
+        )
+    }
+}
+
+/**
+ * Spin as a badge on Your Mix's Play button, sat the way the incognito badge
+ * sits on the profile avatar: a small disc on the lower edge, ringed in the
+ * page colour so it reads as cut out of what it sits on. The theme's accent
+ * rather than a second palette, so Play and the wheel read as one control
+ * with two ways in. Dips on press and rolls into place once as it appears.
+ */
+@Composable
+internal fun SpinBadge(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.97f else 1f,
+        targetValue = if (pressed) 0.88f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
         ),
-        label = "SpinCardPress"
+        label = "SpinBadgePress"
     )
     val turn = remember { Animatable(-150f) }
     LaunchedEffect(Unit) {
         turn.animateTo(0f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow))
     }
-
     Surface(
         onClick = onClick,
         interactionSource = interaction,
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        border = BorderStroke(3.dp, MaterialTheme.colorScheme.background),
         modifier = modifier
-            .fillMaxWidth()
+            .size(44.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .graphicsLayer { rotationZ = turn.value }
-                    .clip(MaterialShapes.Cookie9Sided.toShape())
-                    .background(MaterialTheme.colorScheme.tertiary),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Rounded.Casino,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onTertiary,
-                    modifier = Modifier
-                        .size(28.dp)
-                        // Counter-turned, so the die stays upright while its
-                        // cookie rolls in.
-                        .graphicsLayer { rotationZ = -turn.value }
-                )
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.spin_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = stringResource(R.string.spin_card_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
-                )
-            }
+        Box(contentAlignment = Alignment.Center) {
             Icon(
-                Icons.AutoMirrored.Rounded.ArrowForward,
-                contentDescription = null,
-                modifier = Modifier.size(22.dp)
+                Icons.Rounded.Casino,
+                contentDescription = stringResource(R.string.spin_title),
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer { rotationZ = turn.value }
             )
         }
     }

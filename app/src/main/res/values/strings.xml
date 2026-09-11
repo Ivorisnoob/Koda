@@ -1276,7 +1276,6 @@
     <string name="spin_source_recent">Recent</string>
     <string name="spin_empty">Nothing on the wheel yet</string>
     <string name="spin_empty_hint">Play or like a few songs and they will turn up here.</string>
-    <string name="spin_card_subtitle">Stuck choosing? Let the wheel pick</string>
     <string name="source_youtube_videos">YouTube Videos</string>
     <string name="source_youtube_music">YouTube Music</string>
     <string name="source_local_library">Local Library</string>

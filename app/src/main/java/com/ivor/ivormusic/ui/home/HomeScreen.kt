@@ -748,6 +748,7 @@ fun HomeScreen(
                                 // leaving the tab closes it, as it closes a
                                 // Library sub-screen.
                                 var spinOpen by remember { mutableStateOf(false) }
+                                var spinSource by remember { mutableStateOf(SpinSource.Mix) }
                                 com.ivor.ivormusic.ui.components.PredictiveBackStack(
                                     childOpen = spinOpen,
                                     onBack = { spinOpen = false },
@@ -791,7 +792,10 @@ fun HomeScreen(
                                                 },
                                                 onOpenLiked = { selectedTab = 2 },
                                                 onShowAllInLibrary = { selectedTab = 2 },
-                                                onSpinClick = { spinOpen = true },
+                                                onSpinClick = { source ->
+                                                    spinSource = source
+                                                    spinOpen = true
+                                                },
                                                 onProfileClick = onProfileClick,
                                                 onSettingsClick = onNavigateToSettings,
                                                 onDownloadsClick = onNavigateToDownloads,
@@ -823,7 +827,10 @@ fun HomeScreen(
                                                     showPlayerSheet = true
                                                 },
                                                 onShowAllInLibrary = { selectedTab = 2 },
-                                                onSpinClick = { spinOpen = true },
+                                                onSpinClick = {
+                                                    spinSource = SpinSource.Mix
+                                                    spinOpen = true
+                                                },
                                                 onSongLongPress = { song -> songOptionsTarget = song },
                                                 onSongClick = { song ->
                                                     playerViewModel.playQueue(songs, song)
@@ -855,6 +862,7 @@ fun HomeScreen(
                                     SpinOverlay(
                                         open = spinOpen,
                                         committedByGesture = committedByGesture,
+                                        initialSource = spinSource,
                                         mix = songs,
                                         recent = recentlyPlayed,
                                         viewModel = viewModel,
@@ -1593,6 +1601,7 @@ fun YourMixContent(
                     HeroSection(
                         songs = songs,
                         onPlayClick = onPlayClick,
+                        onSpinClick = onSpinClick,
                         isDarkMode = isDarkMode,
                         isLoading = isInitialLoading,
                         skeletonAlpha = skeletonAlpha
@@ -1617,19 +1626,6 @@ fun YourMixContent(
                             onSongLongPress = onSongLongPress
                         )
                     }
-                }
-            }
-
-            // The wheel, for when choosing is the chore. Under the mix rather
-            // than above it: the mix is the page, Spin is the way out of it.
-            if (!isInitialLoading) {
-                item(key = "spin") {
-                    SpinEntryCard(
-                        onClick = onSpinClick,
-                        modifier = Modifier
-                            .padding(horizontal = 20.dp)
-                            .padding(top = 28.dp)
-                    )
                 }
             }
             
@@ -1887,6 +1883,8 @@ fun TopBarSection(
 fun HeroSection(
     songs: List<Song>,
     onPlayClick: () -> Unit,
+    /** Opens Spin on the mix: the other way to start it, by the wheel. */
+    onSpinClick: () -> Unit,
     isDarkMode: Boolean = true,
     /** First load: the artist line has no data yet, the rest of this is static. */
     isLoading: Boolean = false,
@@ -1942,7 +1940,10 @@ fun HeroSection(
             }
         }
         
-        // Right side - Large Play button with shape morphing
+        // Right side - Play, with Spin as a badge on its lower-right edge: the
+        // two ways to start the mix, in order or by the wheel, as one control.
+        // It sits the way the incognito badge sits on the profile avatar, and
+        // keeps the hero at its own height with Play where it always was.
         Box(modifier = Modifier.padding(top = 32.dp)) {
             FilledIconButton(
                 onClick = onPlayClick,
@@ -1959,6 +1960,12 @@ fun HeroSection(
                     modifier = Modifier.size(IconButtonDefaults.largeIconSize)
                 )
             }
+            SpinBadge(
+                onClick = onSpinClick,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 4.dp, y = 4.dp)
+            )
         }
     }
 }
