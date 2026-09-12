@@ -76,4 +76,33 @@ class PlaylistImportExportTest {
         assertEquals("Bare YouTube ID Song", songs[2].title)
         assertEquals(SongSource.YOUTUBE, songs[2].source)
     }
+
+    @Test
+    fun parseM3uHeaderNameExtractsTitleCorrectly() {
+        val m3uInput = """
+            #EXTM3U
+            #PLAYLIST:Rock Classics
+            #EXTINF:212,Artist - Title
+            https://www.youtube.com/watch?v=dQw4w9WgXcQ
+        """.trimIndent()
+
+        val headerName = PlaylistImport.parseM3uHeaderName(m3uInput)
+        assertEquals("Rock Classics", headerName)
+    }
+
+    @Test
+    fun parseM3uHandlesExtendedAttributesInExtinf() {
+        val m3uInput = """
+            #EXTM3U
+            #EXTINF:215 tvg-id="song1" group-title="Rock",Artist Name - Track Title
+            https://www.youtube.com/watch?v=dQw4w9WgXcQ
+        """.trimIndent()
+
+        val songs = PlaylistImport.parseM3u(m3uInput)
+        assertEquals(1, songs.size)
+        assertEquals("dQw4w9WgXcQ", songs[0].id)
+        assertEquals("Track Title", songs[0].title)
+        assertEquals("Artist Name", songs[0].artist)
+        assertEquals(215000L, songs[0].duration)
+    }
 }

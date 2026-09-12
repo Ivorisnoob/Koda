@@ -6,6 +6,22 @@ package com.ivor.ivormusic.data
 object PlaylistImport {
 
     /**
+     * Extracts the playlist title from a `#PLAYLIST:` header directive in M3U content, if present.
+     */
+    fun parseM3uHeaderName(content: String): String? {
+        for (rawLine in content.lines()) {
+            val line = rawLine.trim()
+            if (line.startsWith("#PLAYLIST:", ignoreCase = true)) {
+                val name = line.substring("#PLAYLIST:".length).trim()
+                if (name.isNotBlank()) {
+                    return name
+                }
+            }
+        }
+        return null
+    }
+
+    /**
      * Parses M3U or M3U8 string content and extracts [Song] entries.
      */
     fun parseM3u(content: String): List<Song> {
@@ -27,7 +43,13 @@ object PlaylistImport {
                     val durationStr = info.substring(0, commaIndex).trim()
                     val titleArtist = info.substring(commaIndex + 1).trim()
 
-                    val seconds = durationStr.toLongOrNull() ?: -1L
+                    val firstSpaceIndex = durationStr.indexOf(' ')
+                    val numericDuration = if (firstSpaceIndex != -1) {
+                        durationStr.substring(0, firstSpaceIndex).trim()
+                    } else {
+                        durationStr
+                    }
+                    val seconds = numericDuration.toLongOrNull() ?: -1L
                     currentDurationMs = if (seconds > 0) seconds * 1000L else 0L
 
                     if (titleArtist.contains(" - ")) {
