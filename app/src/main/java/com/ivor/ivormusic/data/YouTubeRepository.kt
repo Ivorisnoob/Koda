@@ -2860,8 +2860,7 @@ class YouTubeRepository(private val context: Context) {
             val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
             val cpn = generateCpn()
             
-            // Visitor Data (default fallback)
-            val visitorData = "Cgt6SUNYVzB2VkJDbyjGrrSmBg%3D%3D"
+            val visitorData = getVisitorData()
 
             // Client constants - using WEB_REMIX (web player)
             val clientName = "WEB_REMIX"
@@ -2869,28 +2868,22 @@ class YouTubeRepository(private val context: Context) {
 
             // Step 1: Call player endpoint to get tracking URLs
             val playerUrl = "https://music.youtube.com/youtubei/v1/player"
-            val jsonBody = """
-                {
-                    "context": {
-                        "client": {
-                            "clientName": "$clientName",
-                            "clientVersion": "$clientVersion",
-                            "hl": "${systemHl()}",
-                            "gl": "${systemGl()}",
-                            "visitorData": "$visitorData"
-                        }
-                    },
-                    "videoId": "$videoId",
-                    "cpn": "$cpn",
-                    "playbackContext": {
-                        "contentPlaybackContext": {
-                            "signatureTimestamp": ${System.currentTimeMillis() / 1000}
-                        }
-                    }
-                }
-            """.trimIndent()
+            val clientObj = org.json.JSONObject()
+                .put("clientName", clientName)
+                .put("clientVersion", clientVersion)
+                .put("hl", systemHl())
+                .put("gl", systemGl())
+            if (visitorData.isNotBlank()) {
+                clientObj.put("visitorData", visitorData)
+            }
+            val jsonBodyObj = org.json.JSONObject()
+                .put("context", org.json.JSONObject().put("client", clientObj))
+                .put("videoId", videoId)
+                .put("cpn", cpn)
+                .put("playbackContext", org.json.JSONObject().put("contentPlaybackContext", org.json.JSONObject().put("signatureTimestamp", System.currentTimeMillis() / 1000)))
+            val jsonBody = jsonBodyObj.toString()
 
-            val playerRequest = okhttp3.Request.Builder()
+            val playerRequestBuilder = okhttp3.Request.Builder()
                 .url(playerUrl)
                 .post(jsonBody.toRequestBody("application/json".toMediaType()))
                 .addHeader("Cookie", cookies)
@@ -2902,8 +2895,10 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("X-Goog-Api-Format-Version", "1")
                 .addHeader("X-YouTube-Client-Name", "67") // WEB_REMIX numeric ID
                 .addHeader("X-YouTube-Client-Version", clientVersion)
-                .addHeader("X-Goog-Visitor-Id", visitorData)
-                .build()
+            if (visitorData.isNotBlank()) {
+                playerRequestBuilder.addHeader("X-Goog-Visitor-Id", visitorData)
+            }
+            val playerRequest = playerRequestBuilder.build()
 
             val playerResponse = okHttpClient.newCall(playerRequest).execute()
             val playerResponseBody = playerResponse.body?.string()
