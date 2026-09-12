@@ -194,6 +194,22 @@
     <string name="song_options_speed_normal">Normal speed</string>
     <string name="cd_speed_reset">Reset to normal speed</string>
 
+    <!-- Now-playing overflow sheet: tile labels, pills and the volume control.
+         Tile labels are one word on purpose - a tile is a quarter of the sheet
+         wide, and the longer phrasing lives on the list rows above. -->
+    <string name="np_tile_radio">Radio</string>
+    <string name="np_tile_playlist">Playlist</string>
+    <string name="np_tile_like">Like</string>
+    <string name="np_tile_liked">Liked</string>
+    <string name="np_tile_download">Download</string>
+    <string name="np_tile_downloading">Saving</string>
+    <string name="np_tile_downloaded">Saved</string>
+    <string name="np_pill_block">Don\'t recommend</string>
+    <string name="np_volume">Volume</string>
+    <string name="np_volume_value">%1$d%%</string>
+    <string name="cd_volume_mute">Mute</string>
+    <string name="cd_volume_unmute">Unmute</string>
+
     <!-- Add to playlist sheet -->
     <string name="add_to_playlist_title">Add to Playlist</string>
     <string name="new_playlist_label">New Playlist</string>

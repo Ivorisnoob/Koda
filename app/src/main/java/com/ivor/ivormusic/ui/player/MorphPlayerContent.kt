@@ -336,16 +336,14 @@ fun MorphPlayerSheetContent(
                     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                         var scrubPosition by remember { mutableStateOf<Float?>(null) }
                         val displayedProgress = scrubPosition?.toLong() ?: progress
-                        val fraction = if (duration > 0) {
-                            displayedProgress.toFloat() / duration.toFloat()
-                        } else 0f
-                        val animatedFraction by animateFloatAsState(
-                            targetValue = fraction.coerceIn(0f, 1f),
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessLow
-                            ),
-                            label = "MorphScrub"
+                        // Advanced from the clock each frame rather than sprung
+                        // toward a once-a-second sample - see
+                        // rememberSmoothProgress.
+                        val smoothProgress = rememberSmoothProgress(
+                            positionMs = progress,
+                            durationMs = duration,
+                            isPlaying = isPlaying,
+                            scrubPositionMs = scrubPosition
                         )
                         val lineStroke = Stroke(
                             width = with(LocalDensity.current) { 3.dp.toPx() },
@@ -353,7 +351,7 @@ fun MorphPlayerSheetContent(
                         )
                         Box(contentAlignment = Alignment.Center) {
                             ExpressiveScrubber(
-                                progress = { animatedFraction },
+                                progress = { smoothProgress.value },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(scrubberTrackHeight(12.dp)),

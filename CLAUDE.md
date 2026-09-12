@@ -119,6 +119,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | `subscription/subscribe` and `youtubei/v1/feedback` signed out | Answer HTTP 200 having done nothing | `youtube-data.md`, `subscriptions.md` |
 | Timedtext `&fmt=` appended rather than replaced | Returns srv3 XML under a `text/vtt` MIME type | `youtube-data.md` |
 | A per-call-site wiring parameter defaulting to null | Feature ships half-wired, nothing compile-fails | `screens.md`, `player-ui.md` |
+| A tab-index hand-off assigned across the video toggle | Tab 2 is two different screens, and `selectedTab`'s `videoMode` key discards the write; use `goToTab` | `screens.md` |
 | Queue row keys qualified by index | `animateItem` has nothing to animate | `player-ui.md` |
 | A new history/search/stats write not gated on `IncognitoMode` | Records silently while the switch says it is paused | `identity.md` |
 | A profile-scoped store left in `BackupRepository`'s raw preference copy | Restores onto whichever profile is that device's legacy one | `identity.md` |
@@ -243,7 +244,8 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Player UI -> `docs/player-ui.md`
 - Nine styles; adding one touches the `PlayerStyle` constant, a `<Name>PlayerContent.kt`, `ExpandablePlayer`'s `when`, and `playerStyleCatalog`, plus an overflow button opening `NowPlayingOptionsSheet`. **`POSTER` is the Canvas player - do not rename.**
-- Shared contracts: `SwipeToSkip`, `ExpressiveScrubber` (visual only; haptics through `KodaHaptics`), the waveform (decoded through the cache-backed source, frozen once drawn).
+- Shared contracts: `SwipeToSkip`, `ExpressiveScrubber` (visual only; haptics through `KodaHaptics`), the waveform (decoded through the cache-backed source, frozen once drawn), `rememberSmoothProgress` (the position is extrapolated from the 1Hz sample at `LocalPlaybackSpeed`; **read it only inside a deferred lambda**).
+- `NowPlayingOptionsSheet` is a control panel - tiles, then pills, then the speed and volume deck - while `SongOptionsSheet` stays a list. Volume is the device's `STREAM_MUSIC` level (`util/MediaVolume.kt`), never an app-level gain on `player.volume`. It wears the app palette whole (`appColorScheme()`): a surface takes the app scheme **or** the artwork scheme, never roles from both.
 - Three queue views share `QueueReorder`/`QueueRowContainer`: drag handle first, swaps per frame, occurrence-qualified keys, guarded auto-scroll.
 - Option sheets share `PlayerOptionRows` and must scroll. `SongOptionsSheet` is hosted once in `HomeScreen`.
 - Motion artwork is an opt-in hero layer with frozen quality tiers and a fallback chain.

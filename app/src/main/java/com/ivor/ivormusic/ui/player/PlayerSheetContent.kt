@@ -503,21 +503,20 @@ private fun ExpressiveNowPlayingView(
             // rebuffering storms on streamed tracks.
             var scrubPosition by remember { mutableStateOf<Float?>(null) }
             val displayedProgress = scrubPosition?.toLong() ?: progress
+            // The position advances every frame from the clock rather than a
+            // spring chasing a once-a-second sample, which is what made the
+            // thumb step. See rememberSmoothProgress.
+            val smoothProgress = rememberSmoothProgress(
+                positionMs = progress,
+                durationMs = duration,
+                isPlaying = isPlaying,
+                scrubPositionMs = scrubPosition
+            )
             Box(contentAlignment = Alignment.Center) {
-                val progressFraction = if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
-                val animatedProgress by animateFloatAsState(
-                    targetValue = progressFraction,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    ),
-                    label = "Progress"
-                )
-
                 val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
 
                 ExpressiveScrubber(
-                    progress = { animatedProgress },
+                    progress = { smoothProgress.value },
                     modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
                     stroke = thickStroke,
                     trackStroke = thickStroke,

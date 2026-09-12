@@ -523,15 +523,13 @@ private fun EditorialNowPlayingView(
                     // rebuffer if seeked per drag frame).
                     var scrubPosition by remember { mutableStateOf<Float?>(null) }
                     val displayedProgress = scrubPosition?.toLong() ?: progress
-                    val progressFraction =
-                        if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
-                    val animatedProgress by animateFloatAsState(
-                        targetValue = progressFraction,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "EditorialProgress"
+                    // Advanced from the clock each frame rather than sprung
+                    // toward a once-a-second sample - see rememberSmoothProgress.
+                    val smoothProgress = rememberSmoothProgress(
+                        positionMs = progress,
+                        durationMs = duration,
+                        isPlaying = isPlaying,
+                        scrubPositionMs = scrubPosition
                     )
                     val lineStroke = Stroke(
                         width = with(LocalDensity.current) { 4.dp.toPx() },
@@ -542,7 +540,7 @@ private fun EditorialNowPlayingView(
                         // Wavy played portion, flat remainder - the wave
                         // settles flat when paused.
                         ExpressiveScrubber(
-                            progress = { animatedProgress },
+                            progress = { smoothProgress.value },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(scrubberTrackHeight(14.dp)),

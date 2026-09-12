@@ -531,14 +531,14 @@ private fun GestureNowPlayingView(
                             // release instead of on every drag frame (rebuffer storms).
                             var scrubPosition by remember { mutableStateOf<Float?>(null) }
                             val displayedProgress = scrubPosition?.toLong() ?: progress
-                            val progressFraction = if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
-                            val animatedProgress by animateFloatAsState(
-                                targetValue = progressFraction,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessLow
-                                ),
-                                label = "WavyProgress"
+                            // Advanced from the clock each frame rather than
+                            // sprung toward a once-a-second sample - see
+                            // rememberSmoothProgress.
+                            val smoothProgress = rememberSmoothProgress(
+                                positionMs = progress,
+                                durationMs = duration,
+                                isPlaying = isPlaying,
+                                scrubPositionMs = scrubPosition
                             )
 
                             val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
@@ -546,7 +546,7 @@ private fun GestureNowPlayingView(
                             // Wavy progress with invisible slider overlay for touch
                             Box(contentAlignment = Alignment.Center) {
                                 ExpressiveScrubber(
-                                    progress = { animatedProgress },
+                                    progress = { smoothProgress.value },
                                     modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
                                     stroke = thickStroke,
                                     trackStroke = thickStroke,
