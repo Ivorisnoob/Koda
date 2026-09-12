@@ -18,7 +18,7 @@ The app is past the point of proving itself. The core loops all work end to end:
 
 **Two playback pipelines.** Music runs through `MusicService`, a Media3 `MediaLibraryService` with background playback, notifications, and a queue. Video owns its own `ExoPlayer` with DASH, PiP, chapters, captions, hold-to-2x, and a playlist queue when one was opened from a playlist. Both fetch media through bounded ranged requests, because googlevideo throttles open-ended reads to roughly the media bitrate.
 
-**No user-supplied API keys, and no mandatory account.** YouTube content comes from NewPipe Extractor and direct InnerTube calls; optional motion artwork uses Apple's public web catalog. Search, streaming, downloads, a local taste profile, subscriptions, and the "don't recommend" blocklist all work signed out. Signing in adds the real YouTube feeds on top rather than unlocking the app.
+**No mandatory API keys or account.** YouTube content comes from NewPipe Extractor and direct InnerTube calls; optional motion artwork uses Apple's public web catalog. Search, streaming, downloads, a local taste profile, subscriptions, and the "don't recommend" blocklist all work signed out. Signing in adds the real YouTube feeds on top rather than unlocking the app.
 
 **Identity is plural.** Several YouTube accounts and device-only local profiles sit side by side, switchable with one preference write and no re-authentication, no network, and no interruption to playback.
 
@@ -390,6 +390,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 ---
 
 ## Shipped
+
+- **Optional Last.fm integration:** off by default, with browser authorization using the user's own Last.fm API key and shared secret, music scrobbling and an offline queue, an account overview with avatar and profile details, artwork-led listening history grouped by day, a separate account tab, and complete disable/disconnect controls. Incognito and Local Only pause it. Local implementation is ready for credential-backed and device verification; see `docs/lastfm.md`.
 
 - Lyrics settings now use compact connected provider rows with drag ordering, seven individual source switches, online lookup, synced-first versus strict-order matching, plain-text fallback and reset defaults. Player and download lookups share these preferences; local lyrics stay first. Device checks: reorder and toggle sources, revisit after restart, try large fonts and landscape, and start another track to verify the selected source.
 

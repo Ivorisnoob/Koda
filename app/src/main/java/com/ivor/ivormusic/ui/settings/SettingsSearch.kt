@@ -191,6 +191,11 @@ internal fun buildSettingsSearchIndex(
         listOf("lyrics", "providers", "priority", "order", "karaoke", "synced", "plain text", "offline", "YouLyPlus", "BetterLyrics", "NetEase", "SimpMusic", "LRCLIB", "KuGou", "Unison")
     ) { onOpenPage(SettingsPage.LYRICS) }
 
+    entry("lastfm", stringResource(R.string.lastfm_title), "Last.fm", Icons.Rounded.History,
+        listOf("lastfm", "last.fm", "scrobble", "scrobbling", "sync", "api key", "login", "listening history")) {
+        onOpenPage(SettingsPage.LASTFM)
+    }
+
     // Account
     entry(
         "account", stringResource(R.string.settings_account), "Account", Icons.Rounded.AccountCircle,
