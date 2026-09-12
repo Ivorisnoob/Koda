@@ -199,6 +199,7 @@ class MainActivity : ComponentActivity() {
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
             val uiScale by themeViewModel.uiScale.collectAsState()
+            val lyricsConfiguration by themeViewModel.lyricsConfiguration.collectAsState()
             val sponsorBlockEnabled by themeViewModel.sponsorBlockEnabled.collectAsState()
             val sponsorBlockActions by themeViewModel.sponsorBlockActions.collectAsState()
             val sponsorBlockShowOnSeekBar by
@@ -301,6 +302,8 @@ class MainActivity : ComponentActivity() {
                         spotlightHome = spotlightHome,
                         uiScale = uiScale,
                         onUiScaleChange = { themeViewModel.setUiScale(it) },
+                        lyricsConfiguration = lyricsConfiguration,
+                        onLyricsConfigurationChange = themeViewModel::setLyricsConfiguration,
                         sponsorBlockEnabled = sponsorBlockEnabled,
                         onSponsorBlockEnabledToggle = { themeViewModel.setSponsorBlockEnabled(it) },
                         sponsorBlockActions = sponsorBlockActions,
@@ -634,6 +637,8 @@ fun MusicApp(
     spotlightHome: Boolean,
     uiScale: Float,
     onUiScaleChange: (Float) -> Unit,
+    lyricsConfiguration: com.ivor.ivormusic.data.LyricsConfiguration,
+    onLyricsConfigurationChange: (com.ivor.ivormusic.data.LyricsConfiguration) -> Unit,
     sponsorBlockEnabled: Boolean,
     onSponsorBlockEnabledToggle: (Boolean) -> Unit,
     sponsorBlockActions: Map<com.ivor.ivormusic.data.SponsorCategory, com.ivor.ivormusic.data.SegmentAction>,
@@ -1221,6 +1226,8 @@ fun MusicApp(
                     onLocalOnlyModeToggle = onLocalOnlyModeToggle,
                     uiScale = uiScale,
                     onUiScaleChange = onUiScaleChange,
+                    lyricsConfiguration = lyricsConfiguration,
+                    onLyricsConfigurationChange = onLyricsConfigurationChange,
                     sponsorBlockEnabled = sponsorBlockEnabled,
                     onSponsorBlockEnabledToggle = onSponsorBlockEnabledToggle,
                     sponsorBlockActions = sponsorBlockActions,

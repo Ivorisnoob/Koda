@@ -44,6 +44,31 @@ fun googleImageAtSize(url: String?, px: Int): String? {
 }
 
 /**
+ * The same URL cropped to [widthPx] x [heightPx], for a frame whose shape
+ * differs from the source's; the URL unchanged when it is not a Google image
+ * or carries no `w<n>-h<n>` directive to rewrite.
+ *
+ * Built for the artist hero: the immersive banner is served 2.4:1 with a
+ * portrait pillarboxed inside it, and its `-p` directive makes Google crop the
+ * full-resolution source to whatever box is asked for (verified September
+ * 2026), so asking for the hero's own shape is sharper than cropping the wide
+ * banner on the device and never shows its bars. The rest of the directive
+ * (`-p`, `-l90`, `-rj`) is kept as served.
+ */
+fun googleImageCropped(url: String?, widthPx: Int, heightPx: Int): String? {
+    val source = url?.takeIf { it.isNotBlank() } ?: return null
+    if (!source.contains("googleusercontent.com") && !source.contains("ggpht.com")) {
+        return source
+    }
+    val separator = source.lastIndexOf('=')
+    if (separator < 0) return source
+    val directives = source.substring(separator)
+    if (!SIZE_WH.containsMatchIn(directives)) return source
+    return source.substring(0, separator) +
+        directives.replace(SIZE_WH, "w${widthPx.coerceAtLeast(1)}-h${heightPx.coerceAtLeast(1)}")
+}
+
+/**
  * A creator's avatar at a size worth drawing large.
  *
  * 512 rather than 1080: an avatar is square and is never drawn above ~180dp

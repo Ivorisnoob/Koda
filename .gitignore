@@ -25,3 +25,6 @@ keystore/
 
 # Local desktop (Windows/macOS) experiment - not part of the Android build
 /Desktop/
+
+# Local design reference images for planned polish work - not part of the build
+/design-ideas/

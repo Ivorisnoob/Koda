@@ -231,4 +231,63 @@ class MusicMetadataTest {
         assertEquals("grid", MusicMetadata.continuation(JSONObject("""{"items":[{"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"grid"}}}}]}""")))
         assertNull(MusicMetadata.continuation(JSONObject()))
     }
+
+    @Test fun `artist header carries bio audience and banner`() {
+        val root = JSONObject().put("musicImmersiveHeaderRenderer", fixture("artist_header"))
+        val header = MusicMetadata.artistHeader(root)!!
+        assertEquals("Billie Eilish", header.name)
+        assertTrue(header.bio!!.startsWith("Billie Eilish Pirate Baird"))
+        assertEquals("371M monthly audience", header.monthlyAudience)
+        assertTrue(header.bannerUrl!!.contains("lh3.googleusercontent.com"))
+        // A discography page has shelves but no immersive header.
+        assertNull(MusicMetadata.artistHeader(JSONObject()))
+    }
+
+    @Test fun `top song row links artist and album by page type`() {
+        val song = MusicMetadata.song(fixture("artist_top_song"))!!
+        assertEquals("BIRDS OF A FEATHER", song.title)
+        assertEquals("Billie Eilish", song.artist)
+        assertEquals("HIT ME HARD AND SOFT", song.album)
+        assertEquals("MPREb_Wp9Aj8HpTsB", song.albumId)
+        assertEquals("WKZO-CWeOVA", song.id)
+    }
+
+    @Test fun `fans also like parses artists with audience`() {
+        val root = JSONObject().put("musicCarouselShelfRenderer", fixture("similar_shelf"))
+        val similar = MusicMetadata.similarArtists(root)
+        assertEquals(2, similar.size)
+        assertTrue(similar.all { it.id.startsWith("UC") })
+        assertTrue(similar.all { it.name.isNotBlank() })
+        assertTrue(similar.all { !it.audienceText.isNullOrBlank() })
+        assertTrue(similar.all { !it.thumbnailUrl.isNullOrBlank() })
+        assertTrue(MusicMetadata.similarArtists(JSONObject()).isEmpty())
+    }
+
+    @Test fun `featured on parses playlists`() {
+        val root = JSONObject().put("musicCarouselShelfRenderer", fixture("featured_shelf"))
+        val featured = MusicMetadata.featuredPlaylists(root)
+        assertEquals(2, featured.size)
+        assertTrue(featured.all { it.id.isNotBlank() && it.title.isNotBlank() })
+        assertTrue(MusicMetadata.featuredPlaylists(JSONObject()).isEmpty())
+    }
+
+    @Test fun `next panel resolves the song album artist and year`() {
+        val ref = MusicMetadata.songAlbumRef(fixture("next_panel"))!!
+        assertEquals("MPREb_Wp9Aj8HpTsB", ref.albumId)
+        assertEquals("HIT ME HARD AND SOFT", ref.albumTitle)
+        assertEquals("UCERrDZ8oN0U_n9MphMKERcg", ref.artistId)
+        assertEquals(2024, ref.year)
+        // A panel without an album link resolves to nothing, never a guess.
+        assertNull(MusicMetadata.songAlbumRef(JSONObject()))
+    }
+
+    @Test fun `album header names the artist link for track attribution`() {
+        val header = MusicMetadata.artistHeader(fixture("album_header"))
+        // Album pages use the responsive header, never the immersive one.
+        assertNull(header)
+        val songs = MusicMetadata.albumSongs(fixture("album_header"), "MPREb_Wp9Aj8HpTsB")
+        assertTrue(songs.isNotEmpty())
+        assertTrue(songs.all { it.albumId == "MPREb_Wp9Aj8HpTsB" })
+        assertTrue(songs.all { it.artist == "Billie Eilish" })
+    }
 }

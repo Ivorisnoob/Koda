@@ -110,6 +110,8 @@ fun SpotlightHomeContent(
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
     onOpenLiked: () -> Unit = {},
     onShowAllInLibrary: () -> Unit = {},
+    /** Opens Spin on the pool the quick picks are showing. */
+    onSpinClick: (SpinSource) -> Unit,
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
@@ -245,6 +247,9 @@ fun SpotlightHomeContent(
                         subtitle = spotlightQuickPickCaption(filter),
                         actionLabel = stringResource(R.string.action_play_all),
                         onAction = { onPlaySongs(quickPicks, quickPicks.firstOrNull()) },
+                        // Spin these: the wheel opens on the pool this header
+                        // is showing, beside the other way to start it.
+                        onSpin = { onSpinClick(filter.spinSource()) },
                     )
                 }
                 item(key = "quick-picks") {
@@ -454,6 +459,14 @@ internal enum class SpotlightFilter(val label: String, val quickPickCaption: Str
     Liked("Liked", "From songs you liked"),
     Recent("Recent", "From what you played lately"),
     Playlists("Playlists", null),
+}
+
+/** The Spin pool matching what a filter shows, so "spin these" means these. */
+private fun SpotlightFilter.spinSource(): SpinSource = when (this) {
+    SpotlightFilter.Recommended -> SpinSource.ForYou
+    SpotlightFilter.Liked -> SpinSource.Liked
+    SpotlightFilter.Recent -> SpinSource.Recent
+    SpotlightFilter.All, SpotlightFilter.Playlists -> SpinSource.Mix
 }
 
 /**
@@ -969,6 +982,7 @@ private fun SpotlightSectionHeader(
     subtitle: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    onSpin: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -990,6 +1004,10 @@ private fun SpotlightSectionHeader(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+        if (onSpin != null) {
+            SpinButton(onClick = onSpin, size = 40.dp)
+            Spacer(Modifier.width(8.dp))
         }
         if (actionLabel != null && onAction != null) {
             Surface(

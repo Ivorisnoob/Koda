@@ -1,0 +1,409 @@
+{
+ "title": {
+  "runs": [
+   {
+    "text": "Billie Eilish"
+   }
+  ]
+ },
+ "subscriptionButton": {
+  "subscribeButtonRenderer": {
+   "subscriberCountText": {
+    "runs": [
+     {
+      "text": "58.6M"
+     }
+    ]
+   },
+   "subscribed": false,
+   "enabled": true,
+   "type": "FREE",
+   "channelId": "UCiGm_E4ZwYSHV3bcW1pnSeQ",
+   "showPreferences": false,
+   "subscriberCountWithSubscribeText": {
+    "runs": [
+     {
+      "text": "58.6M"
+     }
+    ]
+   },
+   "subscribedButtonText": {
+    "runs": [
+     {
+      "text": "Subscribed"
+     }
+    ]
+   },
+   "unsubscribedButtonText": {
+    "runs": [
+     {
+      "text": "Subscribe"
+     }
+    ]
+   },
+   "unsubscribeButtonText": {
+    "runs": [
+     {
+      "text": "Unsubscribe"
+     }
+    ]
+   },
+   "serviceEndpoints": [
+    {
+     "clickTrackingParams": "CAgQmysiEwirhrrXvOaWAxXhpdgFHfvxBJYyD3l0bV9hcnRpc3RfcGFnZcoBBAIhpd0=",
+     "subscribeEndpoint": {
+      "channelIds": [
+       "UCiGm_E4ZwYSHV3bcW1pnSeQ"
+      ],
+      "params": "EgIIGxgA"
+     }
+    },
+    {
+     "clickTrackingParams": "CAgQmysiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+     "signalServiceEndpoint": {
+      "signal": "CLIENT_SIGNAL",
+      "actions": [
+       {
+        "clickTrackingParams": "CAgQmysiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+        "openPopupAction": {
+         "popup": {
+          "confirmDialogRenderer": {
+           "dialogMessages": [
+            {
+             "runs": [
+              {
+               "text": "Unsubscribe from "
+              },
+              {
+               "text": "Billie Eilish"
+              },
+              {
+               "text": "?"
+              }
+             ]
+            }
+           ],
+           "confirmButton": {
+            "buttonRenderer": {
+             "style": "STYLE_BRAND",
+             "size": "SIZE_DEFAULT",
+             "text": {
+              "runs": [
+               {
+                "text": "Unsubscribe"
+               }
+              ]
+             },
+             "serviceEndpoint": {
+              "clickTrackingParams": "CAwQ8FsiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+              "unsubscribeEndpoint": {
+               "channelIds": [
+                "UCiGm_E4ZwYSHV3bcW1pnSeQ"
+               ]
+              }
+             }
+            }
+           },
+           "cancelButton": {
+            "buttonRenderer": {
+             "style": "STYLE_TEXT",
+             "size": "SIZE_DEFAULT",
+             "text": {
+              "runs": [
+               {
+                "text": "Cancel"
+               }
+              ]
+             }
+            }
+           }
+          }
+         },
+         "popupType": "DIALOG"
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "longSubscriberCountText": {
+    "runs": [
+     {
+      "text": "58.6M subscribers"
+     }
+    ],
+    "accessibility": {
+     "accessibilityData": {
+      "label": "58.6 million subscribers"
+     }
+    }
+   },
+   "shortSubscriberCountText": {
+    "runs": [
+     {
+      "text": "58.6M"
+     }
+    ]
+   },
+   "subscribeAccessibility": {
+    "accessibilityData": {
+     "label": "Subscribe to this channel. 58.6 million"
+    }
+   },
+   "unsubscribeAccessibility": {
+    "accessibilityData": {
+     "label": "Unsubscribe from this channel. 58.6 million"
+    }
+   },
+   "signInEndpoint": {
+    "clickTrackingParams": "CAgQmysiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+    "modalEndpoint": {
+     "modal": {
+      "modalWithTitleAndButtonRenderer": {
+       "title": {
+        "runs": [
+         {
+          "text": "Subscribe to this artist"
+         }
+        ]
+       },
+       "content": {
+        "runs": [
+         {
+          "text": "Sign in to subscribe to this artist and never miss a beat"
+         }
+        ]
+       },
+       "button": {
+        "buttonRenderer": {
+         "style": "STYLE_BLUE_TEXT",
+         "isDisabled": false,
+         "text": {
+          "runs": [
+           {
+            "text": "Sign in"
+           }
+          ]
+         },
+         "navigationEndpoint": {
+          "clickTrackingParams": "CAkQ8FsiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+          "signInEndpoint": {
+           "hack": true
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "description": {
+  "runs": [
+   {
+    "text": "Billie Eilish Pirate Baird O'Connell is an American singer-songwriter. Known for her distinctive musical sound and vocal style, she is a prominent figure in 2020s pop culture. Eilish's production style frequently uses harmony lines and vocal layering, an extension of double tracking.\nEilish first gained public attention in 2015 with her debut single, \"Ocean Eyes\", which was written and produced by her brother, Finneas O'Connell. In 2017, she released her debut EP, Don't Smile at Me, which was commercially successful in various countries, including the United States, the United Kingdom, and Australia. Her first full-length album, When We All Fall Asleep, Where Do We Go?, debuted atop the US Billboard 200 and UK Albums Chart and was one of the year's best-selling albums. Its single \"Bad Guy\" became the first by an artist born in the 21st century to top the US Billboard Hot 100 and be certified Diamond by the Recording Industry Association of America.\nEilish's second studio album, Happier Than Ever, became her second to debut atop the Billboard 200 and featured three US top-ten singles: \"My Future\", \"Therefore I Am\", and \"Your Power\".\n\nFrom Wikipedia ("
+   },
+   {
+    "text": "https://en.wikipedia.org/wiki/Billie_...",
+    "navigationEndpoint": {
+     "clickTrackingParams": "CAEQ-NwCIhMIq4a617zmlgMV4aXYBR378QSWygEEAiGl3Q==",
+     "urlEndpoint": {
+      "url": "https://en.wikipedia.org/wiki/Billie_Eilish",
+      "target": "TARGET_NEW_WINDOW"
+     }
+    }
+   },
+   {
+    "text": ") under Creative Commons Attribution CC-BY-SA 3.0 ("
+   },
+   {
+    "text": "http://creativecommons.org/licenses/b...",
+    "navigationEndpoint": {
+     "clickTrackingParams": "CAEQ-NwCIhMIq4a617zmlgMV4aXYBR378QSWygEEAiGl3Q==",
+     "urlEndpoint": {
+      "url": "http://creativecommons.org/licenses/by-sa/3.0/legalcode",
+      "target": "TARGET_NEW_WINDOW"
+     }
+    }
+   },
+   {
+    "text": ")"
+   }
+  ]
+ },
+ "moreButton": {
+  "toggleButtonRenderer": {
+   "isToggled": false,
+   "isDisabled": false,
+   "defaultIcon": {
+    "iconType": "EXPAND"
+   },
+   "defaultText": {
+    "runs": [
+     {
+      "text": "More"
+     }
+    ]
+   },
+   "toggledIcon": {
+    "iconType": "COLLAPSE"
+   },
+   "toggledText": {
+    "runs": [
+     {
+      "text": "Less"
+     }
+    ]
+   }
+  }
+ },
+ "menu": {
+  "menuRenderer": {
+   "items": [
+    {
+     "menuNavigationItemRenderer": {
+      "text": {
+       "runs": [
+        {
+         "text": "Share"
+        }
+       ]
+      },
+      "icon": {
+       "iconType": "SHARE"
+      },
+      "navigationEndpoint": {
+       "clickTrackingParams": "CAYQkfsFGAAiEwirhrrXvOaWAxXhpdgFHfvxBJbKAQQCIaXd",
+       "shareEntityEndpoint": {
+        "serializedShareEntity": "GhhVQ0VSckRaOG9OMFVfbjlNcGhNS0VSY2c%3D",
+        "sharePanelType": "SHARE_PANEL_TYPE_UNIFIED_SHARE_PANEL"
+       }
+      }
+     }
+    }
+   ],
+   "accessibility": {
+    "accessibilityData": {
+     "label": "Action menu"
+    }
+   }
+  }
+ },
+ "thumbnail": {
+  "musicThumbnailRenderer": {
+   "thumbnail": {
+    "thumbnails": [
+     {
+      "url": "https://lh3.googleusercontent.com/tQC4rOL6xz6FhmFr0ggQExxyGbYSOsyveXVSnPBh2WjEyIzQ9pMHablLJ-0GlMBrLBlBrbWQGmzrV6KN=w540-h225-p-l90-rj",
+      "width": 540,
+      "height": 225
+     },
+     {
+      "url": "https://lh3.googleusercontent.com/tQC4rOL6xz6FhmFr0ggQExxyGbYSOsyveXVSnPBh2WjEyIzQ9pMHablLJ-0GlMBrLBlBrbWQGmzrV6KN=w816-h340-p-l90-rj",
+      "width": 816,
+      "height": 340
+     },
+     {
+      "url": "https://lh3.googleusercontent.com/tQC4rOL6xz6FhmFr0ggQExxyGbYSOsyveXVSnPBh2WjEyIzQ9pMHablLJ-0GlMBrLBlBrbWQGmzrV6KN=w1440-h600-p-l90-rj",
+      "width": 1440,
+      "height": 600
+     },
+     {
+      "url": "https://lh3.googleusercontent.com/tQC4rOL6xz6FhmFr0ggQExxyGbYSOsyveXVSnPBh2WjEyIzQ9pMHablLJ-0GlMBrLBlBrbWQGmzrV6KN=w1920-h800-p-l90-rj",
+      "width": 1920,
+      "height": 800
+     },
+     {
+      "url": "https://lh3.googleusercontent.com/tQC4rOL6xz6FhmFr0ggQExxyGbYSOsyveXVSnPBh2WjEyIzQ9pMHablLJ-0GlMBrLBlBrbWQGmzrV6KN=w2880-h1200-p-l90-rj",
+      "width": 2880,
+      "height": 1200
+     }
+    ]
+   },
+   "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+   "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FILL"
+  }
+ },
+ "playButton": {
+  "buttonRenderer": {
+   "style": "STYLE_DARK_ON_WHITE",
+   "size": "SIZE_DEFAULT",
+   "text": {
+    "runs": [
+     {
+      "text": "Shuffle"
+     }
+    ]
+   },
+   "icon": {
+    "iconType": "MUSIC_SHUFFLE"
+   },
+   "navigationEndpoint": {
+    "clickTrackingParams": "CAMQ6YQEIhMIq4a617zmlgMV4aXYBR378QSWygEEAiGl3Q==",
+    "watchEndpoint": {
+     "videoId": "WKZO-CWeOVA",
+     "playlistId": "RDAOcce0hP5SVByOVCd8UWUHEA",
+     "params": "wAEB8gECGAE%3D"
+    }
+   },
+   "accessibility": {
+    "label": "Shuffle"
+   },
+   "accessibilityData": {
+    "accessibilityData": {
+     "label": "Shuffle"
+    }
+   }
+  }
+ },
+ "startRadioButton": {
+  "buttonRenderer": {
+   "text": {
+    "runs": [
+     {
+      "text": "Mix"
+     }
+    ]
+   },
+   "icon": {
+    "iconType": "MIX"
+   },
+   "navigationEndpoint": {
+    "clickTrackingParams": "CAIQ84QEIhMIq4a617zmlgMV4aXYBR378QSWygEEAiGl3Q==",
+    "watchEndpoint": {
+     "videoId": "WKZO-CWeOVA",
+     "playlistId": "RDEMcce0hP5SVByOVCd8UWUHEA",
+     "params": "wAEB"
+    }
+   },
+   "accessibility": {
+    "label": "Mix"
+   },
+   "accessibilityData": {
+    "accessibilityData": {
+     "label": "Mix"
+    }
+   }
+  }
+ },
+ "shareEndpoint": {
+  "clickTrackingParams": "CAEQ-NwCIhMIq4a617zmlgMV4aXYBR378QSWygEEAiGl3Q==",
+  "shareEntityEndpoint": {
+   "serializedShareEntity": "GhhVQ0VSckRaOG9OMFVfbjlNcGhNS0VSY2c%3D",
+   "sharePanelType": "SHARE_PANEL_TYPE_UNIFIED_SHARE_PANEL"
+  }
+ },
+ "monthlyListenerCount": {
+  "runs": [
+   {
+    "text": "371M monthly audience"
+   }
+  ],
+  "accessibility": {
+   "accessibilityData": {
+    "label": "371 million monthly audience"
+   }
+  }
+ }
+}
