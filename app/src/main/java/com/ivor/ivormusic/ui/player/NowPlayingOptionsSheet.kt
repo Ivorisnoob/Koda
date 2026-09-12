@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.isUnknownAlbum
@@ -100,7 +101,13 @@ fun NowPlayingOptionsSheet(
     onDismiss: () -> Unit,
     /** Offered only where there is somewhere to go; null hides the row. */
     onArtistClick: ((String) -> Unit)? = null,
-    onAlbumClick: ((String) -> Unit)? = null
+    onAlbumClick: ((String) -> Unit)? = null,
+    /**
+     * Open a YouTube album (MPRE id) in the album detail. The device-library
+     * [onAlbumClick] path is separate: a file's album name is a library key,
+     * a stream's is a browse id.
+     */
+    onOpenAlbum: (PlaylistDisplayItem) -> Unit = {},
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
     val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
@@ -153,6 +160,19 @@ fun NowPlayingOptionsSheet(
         ?.takeIf { song.source == SongSource.LOCAL }
     val shareUrl = "https://music.youtube.com/watch?v=${song.id}"
         .takeIf { song.source == SongSource.YOUTUBE }
+
+    // A stream's album arrives as a link on some rows and not others. When
+    // the song itself carries none, one music /next call names it; device
+    // files never take this path.
+    var resolvedAlbumId by remember(song.id, song.albumId) { mutableStateOf(song.albumId) }
+    var resolvedAlbumTitle by remember(song.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(song.id) {
+        if (song.source == SongSource.YOUTUBE && resolvedAlbumId == null) {
+            val ref = viewModel.getSongAlbumRef(song.id)
+            resolvedAlbumId = ref?.albumId
+            resolvedAlbumTitle = ref?.albumTitle
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -253,7 +273,17 @@ fun NowPlayingOptionsSheet(
             // close the sheet ahead of the screen that replaces it.
             val goToArtist = onArtistClick?.takeIf { artist != null }
             val goToAlbum = onAlbumClick?.takeIf { album != null }
-            if (goToArtist != null || goToAlbum != null) {
+            // Streams resolve to a browse id rather than a library key, so
+            // they open through onOpenAlbum. Hidden rather than disabled when
+            // there is nothing to name: a greyed row still asks the user to
+            // work out why.
+            val streamingAlbumTitle = resolvedAlbumTitle
+                ?: song.album.takeIf { !isUnknownAlbum(it) }
+            val goToStreamingAlbum = if (song.source == SongSource.YOUTUBE) {
+                val albumId = resolvedAlbumId
+                if (albumId != null && streamingAlbumTitle != null) albumId to streamingAlbumTitle else null
+            } else null
+            if (goToArtist != null || goToAlbum != null || goToStreamingAlbum != null) {
                 OptionGroup {
                     if (goToArtist != null && artist != null) {
                         OptionRow(
@@ -275,6 +305,26 @@ fun NowPlayingOptionsSheet(
                             onClick = {
                                 onDismiss()
                                 goToAlbum(album)
+                            }
+                        )
+                    }
+                    if ((goToArtist != null || goToAlbum != null) && goToStreamingAlbum != null) OptionRowDivider()
+                    if (goToStreamingAlbum != null) {
+                        val (streamingAlbumId, streamingTitle) = goToStreamingAlbum
+                        OptionRow(
+                            icon = Icons.Rounded.Album,
+                            title = stringResource(R.string.song_options_go_to_artist, streamingTitle),
+                            trailing = OptionRowTrailing.CHEVRON,
+                            onClick = {
+                                onDismiss()
+                                onOpenAlbum(
+                                    PlaylistDisplayItem(
+                                        name = streamingTitle,
+                                        url = "https://music.youtube.com/browse/$streamingAlbumId",
+                                        uploaderName = artist ?: song.artist,
+                                        thumbnailUrl = song.highResThumbnailUrl ?: song.thumbnailUrl,
+                                    )
+                                )
                             }
                         )
                     }

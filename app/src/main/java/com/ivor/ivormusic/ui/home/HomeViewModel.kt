@@ -1979,6 +1979,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun getArtistPage(artistId: String): com.ivor.ivormusic.data.ArtistPage? {
+        return try {
+            youtubeRepository.getArtistPage(artistId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Resolve the album behind a YouTube song id (one music /next call). */
+    suspend fun getSongAlbumRef(videoId: String): com.ivor.ivormusic.data.SongAlbumRef? {
+        return try {
+            youtubeRepository.getSongAlbumRef(videoId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /** Related-songs radio seeded from a YouTube video id (works logged out). */
     suspend fun getRadioSongs(videoId: String): List<Song> {
         return try {

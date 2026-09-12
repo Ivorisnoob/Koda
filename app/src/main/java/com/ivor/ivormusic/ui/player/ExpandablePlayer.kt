@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
 import com.ivor.ivormusic.ui.components.PLAYER_CONTAINER_SPRING
 import com.ivor.ivormusic.ui.components.containerBackdropAlpha
@@ -88,6 +89,7 @@ fun ExpandablePlayer(
     collapsedFollowOffsetPx: () -> Float = { 0f },
     onArtistClick: (String) -> Unit = {},
     onAlbumClick: (String) -> Unit = {},
+    onOpenAlbum: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (currentSong == null) return
@@ -430,7 +432,8 @@ fun ExpandablePlayer(
                                         viewModel.loadMoreRecommendations()
                                     },
                                     onArtistClick = onArtistClick,
-                                    onAlbumClick = onAlbumClick
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
                                 )
                             }
                             PlayerStyle.GESTURE -> {
@@ -442,7 +445,8 @@ fun ExpandablePlayer(
                                         viewModel.loadMoreRecommendations()
                                     },
                                     onArtistClick = onArtistClick,
-                                    onAlbumClick = onAlbumClick
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
                                 )
                             }
                             PlayerStyle.EDITORIAL -> {
@@ -454,7 +458,8 @@ fun ExpandablePlayer(
                                         viewModel.loadMoreRecommendations()
                                     },
                                     onArtistClick = onArtistClick,
-                                    onAlbumClick = onAlbumClick
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
                                 )
                             }
                             PlayerStyle.POSTER -> {
@@ -466,7 +471,8 @@ fun ExpandablePlayer(
                                         viewModel.loadMoreRecommendations()
                                     },
                                     onArtistClick = onArtistClick,
-                                    onAlbumClick = onAlbumClick
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
                                 )
                             }
                             PlayerStyle.BENTO -> {
@@ -478,7 +484,8 @@ fun ExpandablePlayer(
                                         viewModel.loadMoreRecommendations()
                                     },
                                     onArtistClick = onArtistClick,
-                                    onAlbumClick = onAlbumClick
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
                                 )
                             }
                             PlayerStyle.STICKER -> {
@@ -490,7 +497,8 @@ fun ExpandablePlayer(
                                         viewModel.loadMoreRecommendations()
                                     },
                                     onArtistClick = onArtistClick,
-                                    onAlbumClick = onAlbumClick
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
                                 )
                             }
                             PlayerStyle.MORPH -> {
@@ -502,7 +510,8 @@ fun ExpandablePlayer(
                                         viewModel.loadMoreRecommendations()
                                     },
                                     onArtistClick = onArtistClick,
-                                    onAlbumClick = onAlbumClick
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
                                 )
                             }
                             PlayerStyle.DIAL -> {
@@ -514,7 +523,21 @@ fun ExpandablePlayer(
                                         viewModel.loadMoreRecommendations()
                                     },
                                     onArtistClick = onArtistClick,
-                                    onAlbumClick = onAlbumClick
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
+                                )
+                            }
+                            PlayerStyle.HERO -> {
+                                HeroPlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick,
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
                                 )
                             }
                         }

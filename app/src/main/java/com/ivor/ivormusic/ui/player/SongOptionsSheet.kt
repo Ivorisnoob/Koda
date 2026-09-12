@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -24,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +36,10 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.SongSource
+import com.ivor.ivormusic.data.isUnknownAlbum
 import com.ivor.ivormusic.data.isUnknownArtist
 
 /**
@@ -88,7 +93,12 @@ fun SongOptionsSheet(
      * first place.
      */
     onNotInterested: (() -> Unit)? = null,
-    onBlockArtist: (() -> Unit)? = null
+    onBlockArtist: (() -> Unit)? = null,
+    /**
+     * Open a YouTube album (MPRE id) in the album detail. Streams resolve to
+     * a browse id; device files have no stream album to open.
+     */
+    onOpenAlbum: (PlaylistDisplayItem) -> Unit = {},
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
     val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
@@ -222,20 +232,61 @@ fun SongOptionsSheet(
             }
 
             // The creator, where the caller has a page to send them to.
-            if (onArtistClick != null && artist != null) {
+            // A stream's album resolves the same way: its link rides some rows and
+            // one music /next call names it when the song carries none.
+            var resolvedAlbumId by remember(song.id, song.albumId) { mutableStateOf(song.albumId) }
+            var resolvedAlbumTitle by remember(song.id) { mutableStateOf<String?>(null) }
+            LaunchedEffect(song.id) {
+                if (song.source == SongSource.YOUTUBE && resolvedAlbumId == null) {
+                    val ref = viewModel.getSongAlbumRef(song.id)
+                    resolvedAlbumId = ref?.albumId
+                    resolvedAlbumTitle = ref?.albumTitle
+                }
+            }
+            val streamingAlbumTitle = resolvedAlbumTitle
+                ?: song.album.takeIf { !isUnknownAlbum(it) }
+            val goToStreamingAlbum = if (song.source == SongSource.YOUTUBE) {
+                val albumId = resolvedAlbumId
+                if (albumId != null && streamingAlbumTitle != null) albumId to streamingAlbumTitle else null
+            } else null
+            if ((onArtistClick != null && artist != null) || goToStreamingAlbum != null) {
                 OptionGroup {
-                    OptionRow(
-                        icon = Icons.Rounded.AccountCircle,
-                        title = stringResource(R.string.song_options_go_to_artist, artist),
-                        trailing = OptionRowTrailing.CHEVRON,
-                        onClick = {
-                            // Terminal: the sheet is over a screen the artist
-                            // page is about to replace, and leaving it open
-                            // would put it on top of the destination.
-                            onDismiss()
-                            onArtistClick(artist)
-                        }
-                    )
+                    if (onArtistClick != null && artist != null) {
+                        OptionRow(
+                            icon = Icons.Rounded.AccountCircle,
+                            title = stringResource(R.string.song_options_go_to_artist, artist),
+                            trailing = OptionRowTrailing.CHEVRON,
+                            onClick = {
+                                // Terminal: the sheet is over a screen the artist
+                                // page is about to replace, and leaving it open
+                                // would put it on top of the destination.
+                                onDismiss()
+                                onArtistClick(artist)
+                            }
+                        )
+                    }
+                    if (onArtistClick != null && artist != null && goToStreamingAlbum != null) {
+                        OptionRowDivider()
+                    }
+                    if (goToStreamingAlbum != null) {
+                        val (streamingAlbumId, streamingTitle) = goToStreamingAlbum
+                        OptionRow(
+                            icon = Icons.Rounded.Album,
+                            title = stringResource(R.string.song_options_go_to_artist, streamingTitle),
+                            trailing = OptionRowTrailing.CHEVRON,
+                            onClick = {
+                                onDismiss()
+                                onOpenAlbum(
+                                    PlaylistDisplayItem(
+                                        name = streamingTitle,
+                                        url = "https://music.youtube.com/browse/$streamingAlbumId",
+                                        uploaderName = artist ?: song.artist,
+                                        thumbnailUrl = song.highResThumbnailUrl ?: song.thumbnailUrl,
+                                    )
+                                )
+                            }
+                        )
+                    }
                 }
             }
 

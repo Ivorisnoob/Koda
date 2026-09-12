@@ -580,25 +580,33 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Get details for a specific artist (Songs and Albums).
+     * Full artist page for a channel browse id: identity (bio, monthly
+     * audience, banner), top songs, the Albums and Singles shelves with the
+     * discography More endpoint followed, similar artists and featured
+     * playlists.
      *
      * Uses InnerTube /browse with the WEB_REMIX client — the same call the
      * YT Music web app makes — because NewPipe's channel extractor only sees
      * the plain-YouTube uploads tab (a few videos, no albums or top songs).
+     * Verified September 2026.
      */
-    suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> = withContext(Dispatchers.IO) {
+    suspend fun getArtistPage(artistId: String): ArtistPage? = withContext(Dispatchers.IO) {
         if (!artistId.startsWith("UC")) {
             // Not a channel browse id (e.g. Library passes the artist *name*);
             // callers fall back to a name search when we return nothing.
-            return@withContext Pair(emptyList(), emptyList())
+            return@withContext null
         }
         try {
             val body = browseMusic(artistId)
-                ?: return@withContext Pair(emptyList(), emptyList())
+                ?: return@withContext null
             val root = org.json.JSONObject(body)
+
+            val header = MusicMetadata.artistHeader(root)
+            val artistName = header?.name.orEmpty()
 
             val songs = mutableListOf<Song>()
             val albums = mutableListOf<PlaylistDisplayItem>()
+            val singles = mutableListOf<PlaylistDisplayItem>()
 
             // --- Top songs shelf ("Songs") ---
             // The shelf itself only holds ~5 entries; its bottomEndpoint links
@@ -625,18 +633,19 @@ class YouTubeRepository(private val context: Context) {
 
             // Verified September 2026: release cards carry year and optional
             // type, and the shelf's More endpoint opens a paginated discography.
-            val artistName = MusicMetadata.objects(root, "musicImmersiveHeaderRenderer")
-                .firstOrNull()?.optJSONObject("title")?.let(MusicMetadata::text).orEmpty()
+            // The Albums shelf arrives complete (no More); Singles pages.
             val carousels = MusicMetadata.objects(root, "musicCarouselShelfRenderer")
             for (carousel in carousels) {
                 val header = carousel.optJSONObject("header")
                     ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
                 val title = MusicMetadata.text(header?.optJSONObject("title"))
                 if (title !in listOf("Albums", "Singles & EPs", "Singles", "EPs")) continue
-                val defaultType = if (title.equals("Albums", true)) MusicReleaseType.ALBUM else null
+                val isAlbums = title.equals("Albums", true)
+                val target = if (isAlbums) albums else singles
+                val defaultType = if (isAlbums) MusicReleaseType.ALBUM else null
                 val releases = MusicMetadata.releaseRows(carousel, defaultType, artistName)
                 if (releases.isEmpty()) continue
-                albums.addAll(releases)
+                target.addAll(releases)
                 val more = header?.optJSONObject("moreContentButton")?.optJSONObject("buttonRenderer")
                     ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
                     ?: continue
@@ -646,7 +655,7 @@ class YouTubeRepository(private val context: Context) {
                 val seen = mutableSetOf<String>()
                 while (true) {
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                    albums.addAll(MusicMetadata.releaseRows(page, defaultType, artistName))
+                    target.addAll(MusicMetadata.releaseRows(page, defaultType, artistName))
                     val token = MusicMetadata.continuation(page) ?: break
                     if (!seen.add(token)) {
                         KLog.w("YouTubeRepo", "Repeated music discography continuation for $artistId")
@@ -657,6 +666,9 @@ class YouTubeRepository(private val context: Context) {
             }
 
             // --- Full songs list via the shelf's "More" playlist ---
+            // Shelf order is captured first: the merge below only appends,
+            // so the top-songs order survives the full fetch.
+            val topSongIds = songs.map { it.id }
             songsPlaylistBrowseId?.let { browseId ->
                 val fullList = try {
                     getPlaylistInternal(browseId.removePrefix("VL"))
@@ -675,22 +687,78 @@ class YouTubeRepository(private val context: Context) {
 
             KLog.d(
                 "YouTubeRepo",
-                "Artist $artistId: ${songs.size} songs, ${albums.size} releases"
+                "Artist $artistId: ${songs.size} songs, ${albums.size} albums, ${singles.size} singles"
             )
-            val releases = albums.distinctBy { it.id }.newestReleasesFirst()
+            val releases = (albums + singles).distinctBy { it.id }.newestReleasesFirst()
             val byId = releases.associateBy { it.id }
-            Pair(songs.distinctBy { it.id }.map { song ->
+            val enrichedSongs = songs.distinctBy { it.id }.map { song ->
                 val release = byId[song.albumId]
                 if (release == null) song else song.copy(
                     releaseYear = song.releaseYear ?: release.releaseYear,
                     releaseType = song.releaseType ?: release.releaseType,
                 )
-            }, releases)
+            }
+            ArtistPage(
+                id = artistId,
+                name = header?.name?.takeIf(String::isNotBlank) ?: artistName.takeIf(String::isNotBlank) ?: artistId,
+                bio = header?.bio,
+                monthlyAudience = header?.monthlyAudience,
+                bannerUrl = header?.bannerUrl,
+                songs = enrichedSongs,
+                topSongIds = topSongIds,
+                albums = albums.distinctBy { it.id }.newestReleasesFirst(),
+                singles = singles.distinctBy { it.id }.newestReleasesFirst(),
+                similarArtists = MusicMetadata.similarArtists(root),
+                featuredOn = MusicMetadata.featuredPlaylists(root),
+                songsPlaylistBrowseId = songsPlaylistBrowseId,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e("YouTubeRepo", "Error fetching artist page", e)
+            null
+        }
+    }
+
+    /**
+     * Get details for a specific artist (songs plus the merged releases).
+     * Backed by [getArtistPage]; kept for callers that only need the pair.
+     */
+    suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> {
+        val page = try {
+            getArtistPage(artistId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error fetching artist details", e)
-            Pair(emptyList(), emptyList())
+            null
+        } ?: return Pair(emptyList(), emptyList())
+        // The page already carries the full song list and the merged,
+        // release-enriched tracks; this pair is the same shape as before.
+        val releases = (page.albums + page.singles).distinctBy { it.id }.newestReleasesFirst()
+        return Pair(page.songs, releases)
+    }
+
+    /**
+     * Resolve where a song lives from one music `/next` call: the first
+     * panel renderer is the song itself and its byline runs name the artist
+     * link, the album link and the year. Works anonymously. Verified
+     * September 2026.
+     */
+    suspend fun getSongAlbumRef(videoId: String): SongAlbumRef? = withContext(Dispatchers.IO) {
+        try {
+            val root = postMusicMetadata("next", org.json.JSONObject().put("videoId", videoId))
+                ?: return@withContext null
+            val panels = MusicMetadata.objects(root, "playlistPanelVideoRenderer")
+            val self = panels.firstOrNull {
+                it.optJSONObject("playlistItemData")?.optString("videoId") == videoId
+            } ?: panels.firstOrNull() ?: return@withContext null
+            MusicMetadata.songAlbumRef(self)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e("YouTubeRepo", "Error resolving album for song $videoId", e)
+            null
         }
     }
 

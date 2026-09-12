@@ -16,6 +16,7 @@ Markers: **[verified <month year>]** probed live, trust until YouTube changes; *
 | `docs/subscriptions.md` | Subscriptions (account + local), RSS feed, import/export, "Don't recommend" |
 | `docs/channels.md` | Channel pages, tabs, grids, artist cross-links |
 | `docs/settings.md` | Adding a setting, settings pages, app icon, updater, theming |
+| `docs/lastfm.md` | Last.fm credentials, browser authorization, scrobbling, privacy and sync |
 | `docs/identity.md` | Auth, profiles/switching, incognito, backup and restore |
 | `docs/player-ui.md` | Player styles, scrubber, waveform, motion artwork, queues, option sheets |
 | `docs/widgets.md` | Glance widgets |
@@ -94,7 +95,7 @@ Breaking one is a bug even when it compiles. Reasons: `docs/rules.md`.
 3. **Every googlevideo media fetch is a bounded ranged request** (`ChunkedStreamDataSource`). Never a plain `DefaultHttpDataSource` or unbounded GET.
 4. **Never route a live stream through the progressive path.** The HLS manifest is the only usable source.
 5. **A `MediaController` is touched only on its application thread.** From Glance, go through `withController`.
-6. **Process-wide repository state is a closed list of ten**: `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, `HiddenPlaylistsRepository`, `IncognitoMode`, the `visitorData` cache, `YouTubeRateLimit`, and the video stream-resolution cache. An eleventh needs the same justification (a write on one surface must be visible on another holding its own instance), not convenience. Shared OkHttp transport and transient buses (`VisualizerBus`, `WaveformStore`) are not repository state.
+6. **Process-wide repository state is a closed list of eleven**: `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, `HiddenPlaylistsRepository`, `IncognitoMode`, the `visitorData` cache, `YouTubeRateLimit`, the video stream-resolution cache, and `LastFmRepository` (settings/service cancellation and queue coordination). A twelfth needs the same justification (a write on one surface must be visible on another holding its own instance), not convenience. Shared OkHttp transport and transient buses (`VisualizerBus`, `WaveformStore`) are not repository state.
 7. **A ViewModel needing a setting at decision time does a fresh pref read.** `ThemePreferences` flows do not cross instances.
 8. **`SettingsScreen`'s signature is the contract with `MainActivity`.** Add parameters; never reorder or restructure.
 9. **Persisted enum constants and stored ids are frozen** (`PlayerStyle`, `SponsorCategory.apiName`, `MotionArtworkQuality`, `IconShape` ids...). Renaming resets every user's choice.
@@ -240,7 +241,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Backups copy allowlisted stores (renames silently drop out), carry profile-scoped stores structurally, restore with `commit()` and restart the process.
 
 ### Player UI -> `docs/player-ui.md`
-- Eight styles; adding one touches the `PlayerStyle` constant, a `<Name>PlayerContent.kt`, `ExpandablePlayer`'s `when`, and `playerStyleCatalog`, plus an overflow button opening `NowPlayingOptionsSheet`. **`POSTER` is the Canvas player - do not rename.**
+- Nine styles; adding one touches the `PlayerStyle` constant, a `<Name>PlayerContent.kt`, `ExpandablePlayer`'s `when`, and `playerStyleCatalog`, plus an overflow button opening `NowPlayingOptionsSheet`. **`POSTER` is the Canvas player - do not rename.**
 - Shared contracts: `SwipeToSkip`, `ExpressiveScrubber` (visual only; haptics through `KodaHaptics`), the waveform (decoded through the cache-backed source, frozen once drawn).
 - Three queue views share `QueueReorder`/`QueueRowContainer`: drag handle first, swaps per frame, occurrence-qualified keys, guarded auto-scroll.
 - Option sheets share `PlayerOptionRows` and must scroll. `SongOptionsSheet` is hosted once in `HomeScreen`.

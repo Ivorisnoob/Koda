@@ -1397,6 +1397,17 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val _pendingSongDownload = MutableStateFlow<Song?>(null)
     val pendingSongDownload: StateFlow<Song?> = _pendingSongDownload.asStateFlow()
 
+    /** Resolve the album behind a YouTube song id (one music /next call). */
+    suspend fun getSongAlbumRef(videoId: String): com.ivor.ivormusic.data.SongAlbumRef? {
+        return try {
+            youTubeRepository.getSongAlbumRef(videoId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun toggleDownload(song: Song) {
         if (downloadRepository.isDownloaded(song.id)) {
             viewModelScope.launch {
