@@ -169,6 +169,7 @@ class MainActivity : ComponentActivity() {
             val paletteStyle by themeViewModel.paletteStyle.collectAsState()
             val appIcon by themeViewModel.appIcon.collectAsState()
             val loadLocalSongs by themeViewModel.loadLocalSongs.collectAsState()
+            val hideLocalFeatures by themeViewModel.hideLocalFeatures.collectAsState()
             val ambientBackground by themeViewModel.ambientBackground.collectAsState()
             val motionArtwork by themeViewModel.motionArtwork.collectAsState()
             val motionArtworkWifiOnly by themeViewModel.motionArtworkWifiOnly.collectAsState()
@@ -272,6 +273,8 @@ class MainActivity : ComponentActivity() {
                         },
                         loadLocalSongs = loadLocalSongs,
                         onLoadLocalSongsToggle = { themeViewModel.setLoadLocalSongs(it) },
+                        hideLocalFeatures = hideLocalFeatures,
+                        onHideLocalFeaturesToggle = { themeViewModel.setHideLocalFeatures(it) },
                         ambientBackground = ambientBackground,
                         onAmbientBackgroundToggle = { themeViewModel.setAmbientBackground(it) },
                         playerArtworkColors = playerArtworkColors,
@@ -608,6 +611,8 @@ fun MusicApp(
     onThemeToggle: (Boolean) -> Unit,
     loadLocalSongs: Boolean,
     onLoadLocalSongsToggle: (Boolean) -> Unit,
+    hideLocalFeatures: Boolean = false,
+    onHideLocalFeaturesToggle: (Boolean) -> Unit = {},
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     playerArtworkColors: Boolean,
@@ -1101,6 +1106,8 @@ fun MusicApp(
                     onNavigateToTimeLimit = { navController.navigate("app_time_limit") },
                     loadLocalSongs = loadLocalSongs,
                     onLoadLocalSongsToggle = onLoadLocalSongsToggle,
+                    hideLocalFeatures = hideLocalFeatures,
+                    onHideLocalFeaturesToggle = onHideLocalFeaturesToggle,
                     ambientBackground = ambientBackground,
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     playerArtworkColors = playerArtworkColors,
