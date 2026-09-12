@@ -124,7 +124,10 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * applies the moment a Short is opened and its channel is known.
      */
     private fun withoutHidden(items: List<ShortsItem>): List<ShortsItem> =
-        items.filterNot { notInterestedRepository.isVideoHidden(it.videoId) }
+        items.filterNot { item ->
+            notInterestedRepository.isVideoHidden(item.videoId) ||
+                notInterestedRepository.isCreatorBlocked(item.channelId, item.channelName)
+        }
 
     private val _currentIndex = MutableStateFlow(0)
     val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
@@ -817,7 +820,12 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 if (_currentIndex.value != index) return@launch
                 _engagement.value = watchNext.engagement
                 if (watchNext.updatedVideoItem != null) {
-                    _currentVideo.value = watchNext.updatedVideoItem
+                    val updated = watchNext.updatedVideoItem
+                    _currentVideo.value = updated
+                    if (notInterestedRepository.isFiltered(updated)) {
+                        KLog.i("ShortsPlayerVM", "Short ${updated.videoId} from blocked channel ${updated.channelName} opened; advancing")
+                        dropCurrentAndAdvance(item.videoId)
+                    }
                 }
             } catch (e: Exception) {
                 KLog.w("ShortsPlayerVM", "watch-next failed for ${item.videoId}", e)

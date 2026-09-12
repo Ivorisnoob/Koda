@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.HighQuality
@@ -570,6 +571,10 @@ internal fun buildSettingsSearchIndex(
     }
 
     // Local library
+    entry(
+        "hide_local_features", stringResource(R.string.sp_hide_local_features), "Local library", Icons.Rounded.VisibilityOff,
+        listOf("hide", "local", "device", "files", "disable local", "yt music only", "offline")
+    ) { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
     entry(
         "local_songs", stringResource(R.string.sp_load_local_songs), "Local library", Icons.Rounded.Folder,
         listOf("device", "files", "mp3", "sd card", "my music", "scan", "offline")

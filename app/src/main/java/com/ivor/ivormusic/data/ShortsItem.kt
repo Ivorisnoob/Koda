@@ -16,7 +16,9 @@ data class ShortsItem(
      * Params seeding the endless reel_watch_sequence feed starting at this
      * Short. Present on shelf items, absent on sequence entries.
      */
-    val sequenceParams: String? = null
+    val sequenceParams: String? = null,
+    val channelId: String? = null,
+    val channelName: String = ""
 ) {
     /** Portrait first-frame thumbnail YouTube serves for every Short. */
     val portraitThumbnailUrl: String
@@ -25,7 +27,8 @@ data class ShortsItem(
     fun toVideoItem(): VideoItem = VideoItem(
         videoId = videoId,
         title = title.ifBlank { "Short" },
-        channelName = "",
+        channelName = channelName,
+        channelId = channelId,
         thumbnailUrl = portraitThumbnailUrl,
         duration = 0L,
         viewCount = viewCount

@@ -23,7 +23,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.ivor.ivormusic"
+        applicationId = "com.ytube.media"
         // Android 11. Anything below 33 only works because core library
         // desugaring is enabled below - NewPipe Extractor calls Java 10/11
         // methods (URLEncoder.encode(String, Charset) and friends) that the

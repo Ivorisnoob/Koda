@@ -788,11 +788,23 @@ class YouTubeRepository(private val context: Context) {
             if (params != null) put("params", params)
         })?.toString()
 
+    private fun systemHl(): String =
+        java.util.Locale.getDefault().language.takeIf { it.isNotBlank() } ?: "en"
+
+    private fun systemGl(): String =
+        java.util.Locale.getDefault().country.takeIf { it.isNotBlank() } ?: "US"
+
+    private fun systemAcceptLanguage(): String {
+        val hl = systemHl()
+        val gl = systemGl()
+        return "$hl-$gl,$hl;q=0.9,en-US;q=0.8,en;q=0.7"
+    }
+
     /** Metadata-only WEB_REMIX calls, public when signed out. Never playback. */
     private fun postMusicMetadata(endpoint: String, payload: org.json.JSONObject): org.json.JSONObject? {
         return try {
             val client = org.json.JSONObject().put("clientName", "WEB_REMIX")
-                .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", "US")
+                .put("clientVersion", WEB_REMIX_VERSION).put("hl", systemHl()).put("gl", systemGl())
             cachedVisitorDataOrNull()?.let { client.put("visitorData", it) }
             payload.put("context", org.json.JSONObject().put("client", client))
             val builder = okhttp3.Request.Builder()
@@ -1302,8 +1314,8 @@ class YouTubeRepository(private val context: Context) {
                     org.json.JSONObject().apply {
                         put("clientName", "WEB")
                         put("clientVersion", WEB_VERSION)
-                        put("hl", "en")
-                        put("gl", "US")
+                        put("hl", systemHl())
+                        put("gl", systemGl())
                     }
                 )
             ).toString()
@@ -1339,7 +1351,7 @@ class YouTubeRepository(private val context: Context) {
             val request = okhttp3.Request.Builder()
                 .url("https://www.youtube.com/")
                 .addHeader("User-Agent", BROWSER_USER_AGENT)
-                .addHeader("Accept-Language", "en-US,en;q=0.9")
+                .addHeader("Accept-Language", systemAcceptLanguage())
                 .build()
             // The bootstrap page is ~1.5 MB — use the general 30s client, not
             // streamResolveClient whose 8s callTimeout kills the download on
@@ -1453,8 +1465,8 @@ class YouTubeRepository(private val context: Context) {
                         "client": {
                             "clientName": "WEB_REMIX",
                             "clientVersion": "$WEB_REMIX_VERSION",
-                            "hl": "en",
-                            "gl": "US"
+                            "hl": "${systemHl()}",
+                            "gl": "${systemGl()}"
                         }
                     },
                     "videoId": "$videoId",
@@ -1648,8 +1660,8 @@ class YouTubeRepository(private val context: Context) {
                     "client": {
                         "clientName": "WEB_REMIX",
                         "clientVersion": "$WEB_REMIX_VERSION",
-                        "hl": "en",
-                        "gl": "US"
+                        "hl": "${systemHl()}",
+                        "gl": "${systemGl()}"
                     }
                 },
                 "continuation": "$continuationToken"
@@ -2280,8 +2292,8 @@ class YouTubeRepository(private val context: Context) {
             val clientObj = org.json.JSONObject().apply {
                 put("clientName", clientName)
                 put("clientVersion", clientVersion)
-                put("hl", "en")
-                put("gl", "US")
+                put("hl", systemHl())
+                put("gl", systemGl())
                 put("utcOffsetMinutes", 0)
                 if (visitorData.isNotBlank()) put("visitorData", visitorData)
                 val keys = extraClientFields.keys()
@@ -2414,8 +2426,8 @@ class YouTubeRepository(private val context: Context) {
                         "client": {
                             "clientName": "WEB_REMIX",
                             "clientVersion": "$WEB_REMIX_VERSION",
-                            "hl": "en",
-                            "gl": "US"
+                            "hl": "${systemHl()}",
+                            "gl": "${systemGl()}"
                         }
                     },
                     "browseId": "$endpoint"
@@ -2428,8 +2440,8 @@ class YouTubeRepository(private val context: Context) {
                         "client": {
                             "clientName": "WEB_REMIX",
                             "clientVersion": "$WEB_REMIX_VERSION",
-                            "hl": "en",
-                            "gl": "US"
+                            "hl": "${systemHl()}",
+                            "gl": "${systemGl()}"
                         }
                     }
                 }
@@ -2848,8 +2860,7 @@ class YouTubeRepository(private val context: Context) {
             val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
             val cpn = generateCpn()
             
-            // Visitor Data (default fallback)
-            val visitorData = "Cgt6SUNYVzB2VkJDbyjGrrSmBg%3D%3D"
+            val visitorData = getVisitorData()
 
             // Client constants - using WEB_REMIX (web player)
             val clientName = "WEB_REMIX"
@@ -2857,28 +2868,22 @@ class YouTubeRepository(private val context: Context) {
 
             // Step 1: Call player endpoint to get tracking URLs
             val playerUrl = "https://music.youtube.com/youtubei/v1/player"
-            val jsonBody = """
-                {
-                    "context": {
-                        "client": {
-                            "clientName": "$clientName",
-                            "clientVersion": "$clientVersion",
-                            "hl": "en",
-                            "gl": "US",
-                            "visitorData": "$visitorData"
-                        }
-                    },
-                    "videoId": "$videoId",
-                    "cpn": "$cpn",
-                    "playbackContext": {
-                        "contentPlaybackContext": {
-                            "signatureTimestamp": ${System.currentTimeMillis() / 1000}
-                        }
-                    }
-                }
-            """.trimIndent()
+            val clientObj = org.json.JSONObject()
+                .put("clientName", clientName)
+                .put("clientVersion", clientVersion)
+                .put("hl", systemHl())
+                .put("gl", systemGl())
+            if (visitorData.isNotBlank()) {
+                clientObj.put("visitorData", visitorData)
+            }
+            val jsonBodyObj = org.json.JSONObject()
+                .put("context", org.json.JSONObject().put("client", clientObj))
+                .put("videoId", videoId)
+                .put("cpn", cpn)
+                .put("playbackContext", org.json.JSONObject().put("contentPlaybackContext", org.json.JSONObject().put("signatureTimestamp", System.currentTimeMillis() / 1000)))
+            val jsonBody = jsonBodyObj.toString()
 
-            val playerRequest = okhttp3.Request.Builder()
+            val playerRequestBuilder = okhttp3.Request.Builder()
                 .url(playerUrl)
                 .post(jsonBody.toRequestBody("application/json".toMediaType()))
                 .addHeader("Cookie", cookies)
@@ -2890,8 +2895,10 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("X-Goog-Api-Format-Version", "1")
                 .addHeader("X-YouTube-Client-Name", "67") // WEB_REMIX numeric ID
                 .addHeader("X-YouTube-Client-Version", clientVersion)
-                .addHeader("X-Goog-Visitor-Id", visitorData)
-                .build()
+            if (visitorData.isNotBlank()) {
+                playerRequestBuilder.addHeader("X-Goog-Visitor-Id", visitorData)
+            }
+            val playerRequest = playerRequestBuilder.build()
 
             val playerResponse = okHttpClient.newCall(playerRequest).execute()
             val playerResponseBody = playerResponse.body?.string()
@@ -3309,8 +3316,8 @@ class YouTubeRepository(private val context: Context) {
                     "client": {
                         "clientName": "WEB",
                         "clientVersion": "$WEB_VERSION",
-                        "hl": "en",
-                        "gl": "US",
+                        "hl": "${systemHl()}",
+                        "gl": "${systemGl()}",
                         "originalUrl": "https://www.youtube.com/",
                         "platform": "DESKTOP"
                     },
@@ -3333,7 +3340,7 @@ class YouTubeRepository(private val context: Context) {
             .addHeader("X-Goog-AuthUser", "0")
             .addHeader("X-Origin", origin)
             .addHeader("Accept", "*/*")
-            .addHeader("Accept-Language", "en-US,en;q=0.9")
+            .addHeader("Accept-Language", systemAcceptLanguage())
             .build()
 
         try {
@@ -3706,10 +3713,14 @@ class YouTubeRepository(private val context: Context) {
             val lockupThumb = sources?.optJSONObject(sources.length() - 1)
                 ?.optString("url")?.takeIf { it.isNotBlank() }
 
+            val channelName = overlay?.optJSONObject("secondaryText")?.optString("content")
+                ?.takeIf { it.isNotBlank() && !it.contains("view", ignoreCase = true) } ?: ""
+
             base.copy(
                 title = title,
                 viewCount = viewCount,
-                thumbnailUrl = lockupThumb ?: base.thumbnailUrl
+                thumbnailUrl = lockupThumb ?: base.thumbnailUrl,
+                channelName = channelName
             )
         } catch (e: Exception) {
             KLog.w("YouTubeRepo", "parseShortsLockup failed", e)
@@ -4790,8 +4801,8 @@ class YouTubeRepository(private val context: Context) {
                     org.json.JSONObject()
                         .put("clientName", "WEB")
                         .put("clientVersion", WEB_VERSION)
-                        .put("hl", "en")
-                        .put("gl", "US")
+                        .put("hl", systemHl())
+                        .put("gl", systemGl())
                         .apply { visitorData?.let { put("visitorData", it) } }
                 )
             )
@@ -5285,8 +5296,8 @@ class YouTubeRepository(private val context: Context) {
             org.json.JSONObject()
                 .put("clientName", "WEB")
                 .put("clientVersion", WEB_VERSION)
-                .put("hl", "en")
-                .put("gl", "US")
+                .put("hl", systemHl())
+                .put("gl", systemGl())
                 .apply {
                     cachedVisitorDataOrNull()?.let { put("visitorData", it) }
                 }
@@ -6701,8 +6712,8 @@ class YouTubeRepository(private val context: Context) {
             org.json.JSONObject()
                 .put("clientName", "WEB_REMIX")
                 .put("clientVersion", WEB_REMIX_VERSION)
-                .put("hl", "en")
-                .put("gl", "US")
+                .put("hl", systemHl())
+                .put("gl", systemGl())
         )
 
     /**

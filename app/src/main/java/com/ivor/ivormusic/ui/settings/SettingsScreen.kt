@@ -258,6 +258,7 @@ internal enum class SettingsPage {
     APPEARANCE,
     PLAYER,
     PLAYBACK,
+    EQUALIZER,
     CONTENT,
     VIDEO_HOME,
     SUBSCRIPTIONS,
@@ -285,6 +286,8 @@ fun SettingsScreen(
     appIcon: String = ThemePreferences.DEFAULT_APP_ICON,
     loadLocalSongs: Boolean,
     onLoadLocalSongsToggle: (Boolean) -> Unit,
+    hideLocalFeatures: Boolean = false,
+    onHideLocalFeaturesToggle: (Boolean) -> Unit = {},
     ambientBackground: Boolean,
     onAmbientBackgroundToggle: (Boolean) -> Unit,
     playerArtworkColors: Boolean = true,
@@ -879,7 +882,13 @@ fun SettingsScreen(
                     preferHdr = preferHdr,
                     onPreferHdrToggle = onPreferHdrToggle,
                     onOpenQualityPicker = { qualityDialogTarget = it },
+                    onOpenEqualizer = { page = SettingsPage.EQUALIZER },
                     onBack = { page = SettingsPage.HUB }
+                )
+
+                SettingsPage.EQUALIZER -> EqualizerScreen(
+                    themePreferences = remember { ThemePreferences(context) },
+                    onBack = { page = SettingsPage.PLAYBACK }
                 )
 
                 SettingsPage.CONTENT -> ContentSettingsPage(
@@ -978,6 +987,8 @@ fun SettingsScreen(
                     onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
                     playlistSwipeEndAction = playlistSwipeEndAction,
                     onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
+                    hideLocalFeatures = hideLocalFeatures,
+                    onHideLocalFeaturesToggle = onHideLocalFeaturesToggle,
                     onBack = { page = SettingsPage.HUB }
                 )
 

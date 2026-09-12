@@ -160,6 +160,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     // Playlist Repository (Local Playlists)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(context)
 
+    val rawUserPlaylists: StateFlow<List<com.ivor.ivormusic.data.UserPlaylist>> =
+        playlistRepository.userPlaylists
+
     private val _localPlaylists = playlistRepository.userPlaylists
     val localPlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> =
         _localPlaylists.map { list ->
@@ -249,6 +252,21 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         _isBuffering.value = false
                     }
                 }
+            }
+        }
+    }
+
+    fun toggleSongInPlaylist(playlistId: String, song: Song) {
+        viewModelScope.launch {
+            val localPlaylist = playlistRepository.userPlaylists.value.find { it.id == playlistId }
+            if (localPlaylist != null) {
+                if (localPlaylist.songs.any { it.id == song.id }) {
+                    playlistRepository.removeSongFromPlaylist(playlistId, song.id)
+                } else {
+                    playlistRepository.addSongToPlaylist(playlistId, song)
+                }
+            } else {
+                addToPlaylist(playlistId, song)
             }
         }
     }
