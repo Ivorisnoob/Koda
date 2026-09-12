@@ -233,6 +233,23 @@ class QueueRemovalController internal constructor(
             if (result == SnackbarResult.ActionPerformed) onUndo()
         }
     }
+
+    /**
+     * Announce something the queue screen did that has no undo, such as saving
+     * the queue as a playlist. Shares the removal host so the queue needs no
+     * second snackbar stack: one host is already the only one guaranteed on
+     * top of this overlay.
+     */
+    fun announce(message: String) {
+        scope.launch {
+            hostState.currentSnackbarData?.dismiss()
+            hostState.showSnackbar(
+                message = message,
+                withDismissAction = true,
+                duration = SnackbarDuration.Short
+            )
+        }
+    }
 }
 
 @Composable

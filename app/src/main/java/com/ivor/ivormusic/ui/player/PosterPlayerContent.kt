@@ -188,6 +188,9 @@ fun PosterPlayerSheetContent(
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     field = MaterialTheme.colorScheme.surfaceContainerLowest,
                     accent = MaterialTheme.colorScheme.onSurface
                 )

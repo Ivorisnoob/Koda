@@ -1543,6 +1543,45 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    /**
+     * Save the current queue as a local playlist, in the order it is playing.
+     *
+     * Always local: the queue is a device-side construct, so saving works
+     * signed out and never touches the account or a saved reference. Order and
+     * duplicates go through [replacePlaylistSongs] rather than repeated
+     * [addSongToPlaylist] calls, because the add path drops a track whose id
+     * is already present and a queue may legitimately hold the same track
+     * twice. Reads the queue but never disturbs playback or the queue itself.
+     *
+     * @param onSaved the committed playlist name and track count, for the
+     *   caller's confirmation. Not called when there was nothing to save.
+     */
+    fun saveQueueAsPlaylist(
+        name: String,
+        description: String? = null,
+        onSaved: (savedName: String, trackCount: Int) -> Unit = { _, _ -> }
+    ) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) return
+        val tracks = com.ivor.ivormusic.data.queueTracksForPlaylist(_currentQueue.value)
+        if (tracks.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val id = playlistRepository.createPlaylist(
+                    trimmedName,
+                    description?.trim()?.takeUnless { it.isBlank() },
+                    com.ivor.ivormusic.ui.theme.playlistCoverSeeds(context)
+                )
+                playlistRepository.replacePlaylistSongs(id, tracks)
+                onSaved(trimmedName, tracks.size)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.e("PlayerViewModel", "Could not save the queue as a playlist", e)
+            }
+        }
+    }
+
     fun addToPlaylist(playlistId: String, song: Song? = _currentSong.value) {
         if (song == null) return
         viewModelScope.launch {

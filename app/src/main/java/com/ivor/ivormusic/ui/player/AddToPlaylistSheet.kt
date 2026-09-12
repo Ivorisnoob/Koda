@@ -39,10 +39,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -191,10 +196,22 @@ private fun AccessIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, ti
 @Composable
 fun CreatePlaylistDialog(
     onDismiss: () -> Unit,
-    onCreate: (String, String?) -> Unit
+    onCreate: (String, String?) -> Unit,
+    /**
+     * Pre-filled name, selected so it can be overwritten in one gesture.
+     * Empty by default, which keeps the existing create flows untouched: no
+     * pre-fill means no selection and no autofocus change.
+     */
+    initialName: String = ""
 ) {
-    var name by remember { mutableStateOf("") }
+    var nameField by remember(initialName) {
+        mutableStateOf(TextFieldValue(initialName, selection = TextRange(0, initialName.length)))
+    }
     var description by remember { mutableStateOf("") }
+    val nameFocus = remember { FocusRequester() }
+    if (initialName.isNotEmpty()) {
+        LaunchedEffect(nameFocus) { nameFocus.requestFocus() }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -202,12 +219,14 @@ fun CreatePlaylistDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
+                    value = nameField,
+                    onValueChange = { nameField = it },
                     label = { Text(stringResource(R.string.name_label)) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(nameFocus)
                 )
                 OutlinedTextField(
                     value = description,
@@ -220,8 +239,8 @@ fun CreatePlaylistDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onCreate(name, description.ifBlank { null }) },
-                enabled = name.isNotBlank()
+                onClick = { onCreate(nameField.text, description.ifBlank { null }) },
+                enabled = nameField.text.isNotBlank()
             ) {
                 Text(stringResource(R.string.action_create))
             }

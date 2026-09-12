@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +63,7 @@ import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.queuePlaylistDateText
 
 /**
  *  Material 3 Expressive Music Player
@@ -147,6 +150,9 @@ fun PlayerSheetContent(
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     // Download status pass-through
                     isDownloaded = { id -> viewModel.isDownloaded(id) },
                     isDownloading = { id -> viewModel.isDownloading(id) },
@@ -852,6 +858,7 @@ private fun ExpressiveQueueView(
     isLoadingMore: Boolean,
     onCollapse: () -> Unit,
     onBackToPlayer: () -> Unit,
+    onSaveQueue: (name: String, description: String?, onSaved: (String, Int) -> Unit) -> Unit,
     isDownloaded: (String) -> Boolean,
     isDownloading: (String) -> Boolean,
     isLocalOriginal: (Song) -> Boolean,
@@ -877,6 +884,8 @@ private fun ExpressiveQueueView(
         onSettle = onCommitOrder
     )
     val removal = rememberQueueRemoval(onUndo = onUndoRemove)
+    var showSaveDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Box(
         modifier = Modifier
@@ -931,16 +940,37 @@ private fun ExpressiveQueueView(
             }
             
             // Back to player button - static shape
-            FilledIconButton(
-                onClick = onBackToPlayer,
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                modifier = Modifier.size(48.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                FilledIconButton(
+                    onClick = { showSaveDialog = true },
+                    enabled = queue.isNotEmpty(),
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.PlaylistAdd,
+                        stringResource(R.string.queue_save_as_playlist),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                FilledIconButton(
+                    onClick = onBackToPlayer,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                }
             }
         }
         
@@ -1302,6 +1332,29 @@ private fun ExpressiveQueueView(
                 .navigationBarsPadding()
                 .padding(16.dp)
         )
+
+        if (showSaveDialog) {
+            CreatePlaylistDialog(
+                initialName = stringResource(
+                    R.string.queue_save_default_name,
+                    remember { queuePlaylistDateText() }
+                ),
+                onDismiss = { showSaveDialog = false },
+                onCreate = { name, description ->
+                    showSaveDialog = false
+                    onSaveQueue(name, description) { savedName, trackCount ->
+                        removal.announce(
+                            context.resources.getQuantityString(
+                                R.plurals.queue_saved_to_playlist,
+                                trackCount,
+                                trackCount,
+                                savedName
+                            )
+                        )
+                    }
+                }
+            )
+        }
     }
 }
 

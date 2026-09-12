@@ -168,6 +168,9 @@ fun BentoPlayerSheetContent(
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     field = boardColor,
                     accent = onTile
                 )

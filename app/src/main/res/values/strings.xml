@@ -662,6 +662,12 @@
     <string name="ps_queue">QUEUE</string>
     <string name="cd_playing">Playing</string>
     <string name="cd_remove_from_queue">Remove from queue</string>
+    <string name="queue_save_as_playlist">Save queue as playlist</string>
+    <string name="queue_save_default_name">Queue · %1$s</string>
+    <plurals name="queue_saved_to_playlist">
+        <item quantity="one">Saved %1$d song to %2$s</item>
+        <item quantity="other">Saved %1$d songs to %2$s</item>
+    </plurals>
     <string name="loading">Loading...</string>
     <string name="load_more">Load More</string>
 

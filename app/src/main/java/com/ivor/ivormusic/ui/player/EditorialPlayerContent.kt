@@ -1,6 +1,8 @@
 package com.ivor.ivormusic.ui.player
 
 import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
+import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.R
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
@@ -32,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
@@ -87,6 +90,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -105,6 +109,7 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.queuePlaylistDateText
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
@@ -199,6 +204,9 @@ fun EditorialPlayerSheetContent(
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     field = field,
                     accent = accent
                 )
@@ -770,10 +778,12 @@ internal fun EditorialCircleButton(
     accent: Color,
     field: Color,
     size: androidx.compose.ui.unit.Dp,
+    enabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
     FilledIconButton(
         onClick = onClick,
+        enabled = enabled,
         shape = CircleShape,
         colors = IconButtonDefaults.filledIconButtonColors(
             containerColor = accent,
@@ -828,6 +838,7 @@ internal fun EditorialQueueView(
     onBackToPlayer: () -> Unit,
     field: Color,
     accent: Color,
+    onSaveQueue: (name: String, description: String?, onSaved: (String, Int) -> Unit) -> Unit,
     onMoveSong: (from: Int, to: Int) -> Unit = { _, _ -> },
     onCommitOrder: () -> Unit = {},
     onUndoRemove: () -> Unit = {}
@@ -844,6 +855,8 @@ internal fun EditorialQueueView(
         onSettle = onCommitOrder
     )
     val removal = rememberQueueRemoval(onUndo = onUndoRemove)
+    var showSaveDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize()) {
     Column(
@@ -876,13 +889,31 @@ internal fun EditorialQueueView(
                 ),
                 color = accent
             )
-            EditorialCircleButton(
-                onClick = onBackToPlayer,
-                accent = accent,
-                field = field,
-                size = 44.dp
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(22.dp))
+                EditorialCircleButton(
+                    onClick = { showSaveDialog = true },
+                    accent = accent,
+                    field = field,
+                    size = 44.dp,
+                    enabled = queue.isNotEmpty()
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.PlaylistAdd,
+                        stringResource(R.string.queue_save_as_playlist),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                EditorialCircleButton(
+                    onClick = onBackToPlayer,
+                    accent = accent,
+                    field = field,
+                    size = 44.dp
+                ) {
+                    Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(22.dp))
+                }
             }
         }
 
@@ -1048,6 +1079,29 @@ internal fun EditorialQueueView(
                 .navigationBarsPadding()
                 .padding(16.dp)
         )
+
+        if (showSaveDialog) {
+            CreatePlaylistDialog(
+                initialName = stringResource(
+                    R.string.queue_save_default_name,
+                    remember { queuePlaylistDateText() }
+                ),
+                onDismiss = { showSaveDialog = false },
+                onCreate = { name, description ->
+                    showSaveDialog = false
+                    onSaveQueue(name, description) { savedName, trackCount ->
+                        removal.announce(
+                            context.resources.getQuantityString(
+                                R.plurals.queue_saved_to_playlist,
+                                trackCount,
+                                trackCount,
+                                savedName
+                            )
+                        )
+                    }
+                }
+            )
+        }
     }
 }
 

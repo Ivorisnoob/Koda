@@ -182,6 +182,9 @@ fun HeroPlayerSheetContent(
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     field = field,
                     accent = ink
                 )
