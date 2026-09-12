@@ -19,6 +19,6 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.ivor.ivormusic", appContext.packageName)
+        assertEquals("com.ytube.media", appContext.packageName)
     }
 }
