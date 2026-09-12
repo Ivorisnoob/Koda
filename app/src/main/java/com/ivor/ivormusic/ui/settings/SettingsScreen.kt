@@ -267,6 +267,7 @@ internal enum class SettingsPage {
     ADVANCED,
     DISPLAY_SIZE,
     LYRICS,
+    LASTFM,
     SPONSORBLOCK,
     APP_ICON
 }
@@ -806,6 +807,7 @@ fun SettingsScreen(
                     onBack = { page = SettingsPage.HUB }
                 )
 
+                SettingsPage.LASTFM -> LastFmSettingsPage(onBack = { page = SettingsPage.HUB })
                 SettingsPage.LYRICS -> LyricsSettingsPage(
                     configuration = lyricsConfiguration,
                     onChange = onLyricsConfigurationChange,
@@ -1414,6 +1416,8 @@ private fun SettingsHub(
                             iconShape = MaterialShapes.Cookie6Sided.toShape(),
                             explanation = stringResource(R.string.lyrics_settings_intro)
                         )
+                        SettingsDivider()
+                        LastFmHubRow(onClick = { onOpenPage(SettingsPage.LASTFM) })
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.MoneyOff,

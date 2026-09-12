@@ -2,7 +2,7 @@
 
 Reference detail moved out of `CLAUDE.md` so it loads only when needed. `CLAUDE.md` keeps the summary, the invariants and the silent-failure index; this file keeps the reasoning and the scars. Markers (`[verified]`, `[scar]`, `[judgement]`, `[drifts]`) mean what `CLAUDE.md` says they mean. If a change contradicts a sentence here, fix the sentence in the same commit.
 
-All settings live in `data/ThemePreferences.kt` (prefs `ivor_music_theme_prefs`, one `MutableStateFlow` plus KEY constant plus private getter plus public setter each). A new setting threads through **five files**:
+General app settings live in `data/ThemePreferences.kt` (prefs `ivor_music_theme_prefs`, one `MutableStateFlow` plus KEY constant plus private getter plus public setter each). A new general setting threads through **five files**; Last.fm's account/session controls use the separate encrypted store described below:
 
 1. `ThemePreferences` - StateFlow, KEY, getter/setter.
 2. `ui/theme/ThemeViewModel.kt` - the flow plus a `setX()` delegate.
@@ -31,3 +31,5 @@ Theming beyond light/dark: `color_palette` (default `dynamic`) chooses between w
 **Defaults worth knowing.** The player style defaults to `EDITORIAL`, and the device music library (`load_local_songs`) defaults to **off** - the audio permission request is triggered by that setting being on, so a default of on met anyone skipping onboarding with a system dialog for a feature they never asked for. `migrateLoadLocalSongsDefault()` keeps existing installs on the old `true`: the Settings toggle is the only writer of that key, so an upgrading user who never opened that screen has nothing stored and would otherwise find their library emptied. It needs its own one-shot marker rather than a lazy check, because `onboarding_completed` flips to true for fresh users too.
 
 **Lyrics owns a hub page** (`LyricsSettings.kt`). [judgement September 2026] `LyricsConfiguration` is one atomic settings snapshot: provider order, excluded providers, online lookup, timing preference and plain-text eligibility. A compact connected provider list uses the shared queue drag engine, commits order on release, and offers move-up/down accessibility actions. Matching uses the same connected choice buttons as Display Size and SponsorBlock. The detail scaffold accepts optional list state and item spacing for this list; existing pages keep their defaults. The hub reports the enabled count and first source; search indexes all seven names. Changes apply on the next lookup.
+
+**Last.fm owns a dedicated page** (`LastFmSettings.kt`) and a searchable hub row. Its ViewModel observes the shared Last.fm account coordinator, rather than threading credentials through the theme settings contract. The master switch belongs to the encrypted account/session store and is deliberately excluded from backups. See `lastfm.md` for authentication, sync, and verification limits. [judgement September 2026]

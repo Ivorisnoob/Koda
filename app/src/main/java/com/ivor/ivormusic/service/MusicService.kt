@@ -716,7 +716,17 @@ class MusicService : MediaLibraryService() {
         engine.setRepeatMode(playbackRepeatMode)
     }
 
+    private val lastFmTracker by lazy {
+        LastFmPlaybackTracker(com.ivor.ivormusic.data.LastFmRepository.get(this))
+    }
+
     private fun observePreferences() {
+        serviceScope.launch {
+            while (isActive) {
+                if (::engine.isInitialized) lastFmTracker.sample(player)
+                delay(250)
+            }
+        }
         // These flows update live across ThemePreferences instances (the
         // settings screen writes through its own instance) thanks to the
         // SharedPreferences change listener inside ThemePreferences.
@@ -827,6 +837,7 @@ class MusicService : MediaLibraryService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) lastFmTracker.reset()
             automaticTransitionAttempt = null
 
             // 1. Loudness correction for the new track, before anything sets a
