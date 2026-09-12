@@ -988,6 +988,10 @@
     <string name="vpc_live_chat_sub">Show the conversation beside the stream</string>
     <string name="vpc_vertical_live">Vertical live view</string>
     <string name="vpc_vertical_live_sub">Return to the full-height stream</string>
+    <string name="vpc_zoom_to_fill">Zoom to fill</string>
+    <string name="vpc_zoom_to_fill_sub">Crop the video to fill the screen</string>
+    <string name="vpc_zoomed_to_fill">Zoomed to fill</string>
+    <string name="vpc_zoom_original">Original</string>
     <string name="vpc_language">Language</string>
     <string name="vpc_no_captions">No captions available for this video</string>
     <string name="vpc_off">Off</string>
