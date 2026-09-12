@@ -222,6 +222,12 @@ fun VideoPlayerOverlay(
      */
     onOpenChannel: (String) -> Unit = {},
     /**
+     * Play the current video's audio in the music player. Handled by the host
+     * rather than here, because the music player lives at the host level and
+     * this overlay is drawn above the NavHost.
+     */
+    onListenInMusicMode: (com.ivor.ivormusic.data.VideoItem) -> Unit = {},
+    /**
      * Take the collapsed bar off screen because something owns the whole window
      * - today, the full-screen music player.
      *
@@ -568,6 +574,7 @@ fun VideoPlayerOverlay(
                 timedCommentsFeatureEnabled = timedCommentsEnabled,
                 showRelatedVideos = showRelatedVideos,
                 onOpenChannel = onOpenChannel,
+                onListenInMusicMode = onListenInMusicMode,
                 onMinimizeDragDelta = { dy ->
                     if (!isDragging) {
                         isDragging = true

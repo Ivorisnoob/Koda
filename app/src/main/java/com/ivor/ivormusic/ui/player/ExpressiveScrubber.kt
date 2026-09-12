@@ -170,6 +170,13 @@ internal fun rememberPlayerWaveform(songId: String?): PlayerWaveform? {
  * and that is the last time they move. Everything after it is the same picture with the played
  * side filled in. A bar that grew behind the playhead could only ever describe the part already
  * heard, which is the opposite of what the row is for.
+ *
+ * **While the bar is held it draws the finger, not the spring.** Every style feeds [progress] a
+ * smoothed fraction so playback glides between position polls - but that smoothing also trails
+ * behind a drag, and a playhead lagging its own thumb reads as stepping rather than scrubbing.
+ * [liveProgress] is the unsmoothed fraction the styles already hold for their gesture; when it
+ * is present the wave, the thumb and the detent ticks all read it for the length of the hold
+ * and hand back to [progress] on release, where the two already agree.
  */
 @Composable
 internal fun ExpressiveScrubber(
@@ -182,10 +189,22 @@ internal fun ExpressiveScrubber(
     amplitude: (Float) -> Float = { 1f },
     waveform: PlayerWaveform? = LocalPlayerWaveform.current,
     interactionSource: MutableInteractionSource = LocalPlayerScrubInteraction.current,
+    /**
+     * Finger-exact fraction while the bar is held, falling back to [progress]
+     * when null. See the KDoc above for why the two exist side by side.
+     */
+    liveProgress: (() -> Float)? = null,
 ) {
     val dragged by interactionSource.collectIsDraggedAsState()
     val pressed by interactionSource.collectIsPressedAsState()
     val interacting = dragged || pressed
+
+    // The drawn position: the finger for the length of a hold, the smoothed
+    // playback fraction otherwise. One lambda so the wave, the thumb and the
+    // detent ticks below can never disagree about where the playhead is.
+    val displayed: () -> Float = {
+        if (interacting && liveProgress != null) liveProgress() else progress()
+    }
 
     val bloom by animateFloatAsState(
         targetValue = if (interacting) 1f else 0f,
@@ -229,7 +248,7 @@ internal fun ExpressiveScrubber(
         active = interacting,
         trackWidthPx = trackWidthPx,
         detentPx = detentPx,
-        progress = progress,
+        progress = displayed,
         onTick = haptics::tick,
     )
 
@@ -239,11 +258,11 @@ internal fun ExpressiveScrubber(
     ) {
         if (waveform != null) {
             Canvas(modifier = Modifier.matchParentSize()) {
-                drawWaveform(waveform, progress(), bloom, reveal.value, color, trackColor)
+                drawWaveform(waveform, displayed(), bloom, reveal.value, color, trackColor)
             }
         } else {
             LinearWavyProgressIndicator(
-                progress = progress,
+                progress = displayed,
                 modifier = Modifier.matchParentSize(),
                 color = color,
                 trackColor = trackColor,
@@ -253,7 +272,7 @@ internal fun ExpressiveScrubber(
             )
         }
         Canvas(modifier = Modifier.matchParentSize()) {
-            drawThumb(progress(), bloom, color)
+            drawThumb(displayed(), bloom, color)
         }
     }
 }

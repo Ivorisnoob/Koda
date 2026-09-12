@@ -190,6 +190,7 @@
 
     <!-- Playback speed control in the now-playing overflow sheet -->
     <string name="song_options_speed">Playback speed</string>
+    <string name="song_options_volume">Volume</string>
     <string name="song_options_speed_value">%1$d%%</string>
     <string name="song_options_speed_normal">Normal speed</string>
     <string name="cd_speed_reset">Reset to normal speed</string>
@@ -993,6 +994,9 @@
     <string name="vpc_off">Off</string>
     <string name="vpc_no_embedded_subtitles">This video has no subtitle tracks</string>
     <string name="vpc_audio_track">Audio track</string>
+    <string name="vpc_volume">Volume</string>
+    <string name="vpc_listen_music">Listen in music mode</string>
+    <string name="vpc_listen_music_sub">Play the audio in the music player</string>
 
     <!-- Device videos in the video-mode Library -->
     <string name="dv_on_this_device">On this device</string>

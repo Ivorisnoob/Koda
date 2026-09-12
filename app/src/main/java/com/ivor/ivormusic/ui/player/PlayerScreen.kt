@@ -221,8 +221,14 @@ fun PlayerScreen(
 
             // Wavy Progress Bar with Enhanced Styling
             Column(modifier = Modifier.fillMaxWidth()) {
+                // Track the finger locally while scrubbing and seek once on
+                // release: seeking on every drag frame rebuffers streamed
+                // tracks, and the bar below draws the finger exactly while
+                // held instead of chasing it on a tween.
+                var scrubPosition by remember { mutableStateOf<Float?>(null) }
+                val displayedProgress = scrubPosition?.toLong() ?: progress
                 Box(contentAlignment = Alignment.Center) {
-                    val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
+                    val progressFraction = if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
                     val animatedProgress by animateFloatAsState(
                         targetValue = progressFraction,
                         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
@@ -234,6 +240,7 @@ fun PlayerScreen(
 
                     ExpressiveScrubber(
                         progress = { animatedProgress },
+                        liveProgress = { progressFraction.coerceIn(0f, 1f) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(scrubberTrackHeight(12.dp)),
@@ -246,8 +253,12 @@ fun PlayerScreen(
                     // Transparent Slider for interaction
                     Slider(
                         interactionSource = LocalPlayerScrubInteraction.current,
-                        value = progress.toFloat(),
-                        onValueChange = { viewModel.seekTo(it.toLong()) },
+                        value = scrubPosition ?: progress.toFloat(),
+                        onValueChange = { scrubPosition = it },
+                        onValueChangeFinished = {
+                            scrubPosition?.let { viewModel.seekTo(it.toLong()) }
+                            scrubPosition = null
+                        },
                         valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
                         colors = SliderDefaults.colors(
                             thumbColor = Color.Transparent,
@@ -263,7 +274,7 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = formatDuration(progress),
+                        text = formatDuration(displayedProgress),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = onSurfaceVariantColor

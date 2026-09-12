@@ -3,7 +3,12 @@ import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.media.AudioManager
 import android.os.Build
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -33,6 +38,7 @@ import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
@@ -41,6 +47,8 @@ import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.VolumeDown
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -79,6 +87,7 @@ import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.PlayerTrackOption
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.util.rememberKodaHaptics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.roundToInt
@@ -117,6 +126,13 @@ fun VideoPlayerContent(
      * the way there.
      */
     onOpenChannel: (String) -> Unit = {},
+    /**
+     * Play the current video's audio in the music player. Routed out to the
+     * host: the music player lives at the host level and this player is drawn
+     * above the NavHost, so only the host can start one and stand the other
+     * down.
+     */
+    onListenInMusicMode: (VideoItem) -> Unit = {},
     // Swipe-down-to-minimize: raw drag deltas / release velocity from the
     // portrait video surface, driving the overlay's expand progress
     onMinimizeDragDelta: (Float) -> Unit = {},
@@ -395,10 +411,12 @@ fun VideoPlayerContent(
         }
     }
     
-    // Fullscreen / Immersive. The app is portrait-locked (MainActivity), so
-    // fullscreen temporarily requests sensor landscape and every exit path
-    // restores PORTRAIT — never UNSPECIFIED, which used to leave the whole
-    // app free-rotating in broken half-landscape states.
+    // Fullscreen / Immersive. The app rotates freely, so fullscreen
+    // temporarily requests its orientation and every exit path restores
+    // UNSPECIFIED - never PORTRAIT, which would snap the whole app back to
+    // portrait on every video close. The portrait-vs-landscape fullscreen
+    // distinction itself stays: a vertical video fills the screen held
+    // upright, everything else gets sensor landscape.
     DisposableEffect(isFullscreen, fullscreenIsPortrait) {
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
@@ -420,12 +438,12 @@ fun VideoPlayerContent(
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         } else {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
         }
 
         onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
             // The app is edge-to-edge (enableEdgeToEdge in MainActivity), so
             // keep decorFits false — restoring true here used to break the
@@ -1383,6 +1401,16 @@ fun VideoPlayerContent(
             onVerticalLiveClick = {
                 showPlaybackSettings = false
                 showVideoPageForVerticalLive = false
+            },
+            // Local files and live streams have no music-pipeline equivalent:
+            // the music player resolves audio for ordinary YouTube videos.
+            showListenInMusicMode = !isLocalPlayback && !isLive && video != null,
+            onListenInMusicMode = {
+                val current = video
+                if (current != null) {
+                    showPlaybackSettings = false
+                    onListenInMusicMode(current)
+                }
             }
         )
     }
@@ -1518,12 +1546,15 @@ private fun PlayerSettingsSections(
     liveChatActive: Boolean,
     onLiveChatChanged: (Boolean) -> Unit,
     showVerticalLive: Boolean,
-    onVerticalLiveClick: () -> Unit
+    onVerticalLiveClick: () -> Unit,
+    showListenInMusicMode: Boolean = false,
+    onListenInMusicMode: () -> Unit = {}
 ) {
     val optionColors = ToggleButtonDefaults.toggleButtonColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )
+    val haptics = rememberKodaHaptics()
 
     if (showEndBehavior) {
         SettingsSectionLabel(icon = Icons.Rounded.PlayArrow, label = "When video ends")
@@ -1658,7 +1689,12 @@ private fun PlayerSettingsSections(
                     quality.url == currentQuality.url
                 ToggleButton(
                     checked = selected,
-                    onCheckedChange = { if (!selected) onQualitySelected(quality) },
+                    onCheckedChange = {
+                        if (!selected) {
+                            haptics.tick()
+                            onQualitySelected(quality)
+                        }
+                    },
                     colors = optionColors
                 ) {
                     if (selected) {
@@ -1722,7 +1758,12 @@ private fun PlayerSettingsSections(
                 else "${speed.toString().removeSuffix(".0")}x"
             ToggleButton(
                 checked = selected,
-                onCheckedChange = { if (!selected) onSpeedSelected(speed) },
+                onCheckedChange = {
+                    if (!selected) {
+                        haptics.tick()
+                        onSpeedSelected(speed)
+                    }
+                },
                 colors = optionColors
             ) {
                 Text(label)
@@ -1730,7 +1771,9 @@ private fun PlayerSettingsSections(
         }
     }
 
-    val hasSecondaryActions = showPip || showComments || showQueue ||
+    VolumeSection()
+
+    val hasSecondaryActions = showListenInMusicMode || showPip || showComments || showQueue ||
         showTimedComments || showLiveChat || showVerticalLive
     if (hasSecondaryActions) {
         Spacer(modifier = Modifier.height(24.dp))
@@ -1741,6 +1784,14 @@ private fun PlayerSettingsSections(
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Column {
+                if (showListenInMusicMode) {
+                    SettingsActionRow(
+                        icon = Icons.Rounded.Headphones,
+                        title = stringResource(R.string.vpc_listen_music),
+                        supportingText = stringResource(R.string.vpc_listen_music_sub),
+                        onClick = onListenInMusicMode
+                    )
+                }
                 if (showPip) {
                     SettingsActionRow(
                         icon = Icons.Rounded.PictureInPictureAlt,
@@ -1797,6 +1848,88 @@ private fun PlayerSettingsSections(
                 }
             }
         }
+    }
+}
+
+/**
+ * The device's music-stream volume, as a slider below the speed pills.
+ *
+ * This is the system volume, not a per-video gain: the player has no gain
+ * stage of its own, and a second volume would fight the hardware buttons.
+ * The slider follows outside changes through VOLUME_CHANGED_ACTION while it
+ * is composed, moves in whole system levels with a tick per step, and
+ * confirms on release.
+ */
+@Composable
+private fun VolumeSection() {
+    val context = LocalContext.current
+    val audioManager = remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+    val maxVolume = remember(audioManager) {
+        audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    }
+    var volume by remember { mutableFloatStateOf(videoVolumeFraction(audioManager)) }
+    DisposableEffect(audioManager) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                volume = videoVolumeFraction(audioManager)
+            }
+        }
+        context.registerReceiver(receiver, IntentFilter("android.media.VOLUME_CHANGED_ACTION"))
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    val haptics = rememberKodaHaptics()
+
+    Spacer(modifier = Modifier.height(24.dp))
+    SettingsSectionLabel(icon = Icons.Rounded.VolumeUp, label = stringResource(R.string.vpc_volume))
+    Spacer(modifier = Modifier.height(4.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Rounded.VolumeDown,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+        Slider(
+            value = volume,
+            onValueChange = { raw ->
+                setVideoVolumeFraction(audioManager, raw)
+                val actual = videoVolumeFraction(audioManager)
+                if ((actual * maxVolume).roundToInt() != (volume * maxVolume).roundToInt()) {
+                    haptics.tick()
+                }
+                volume = actual
+            },
+            onValueChangeFinished = { haptics.confirm() },
+            valueRange = 0f..1f,
+            steps = (maxVolume - 1).coerceAtLeast(0),
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 12.dp)
+        )
+        Text(
+            text = stringResource(R.string.song_options_speed_value, (volume * 100).roundToInt()),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.widthIn(min = 48.dp)
+        )
+    }
+}
+
+private fun videoVolumeFraction(audioManager: AudioManager): Float {
+    val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    if (max <= 0) return 0f
+    return audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / max
+}
+
+private fun setVideoVolumeFraction(audioManager: AudioManager, fraction: Float) {
+    val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    val target = (fraction * max).roundToInt().coerceIn(0, max)
+    if (target != audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
     }
 }
 

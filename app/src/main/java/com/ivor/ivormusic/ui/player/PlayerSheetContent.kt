@@ -509,6 +509,7 @@ private fun ExpressiveNowPlayingView(
 
                 ExpressiveScrubber(
                     progress = { animatedProgress },
+                    liveProgress = { progressFraction.coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
                     stroke = thickStroke,
                     trackStroke = thickStroke,

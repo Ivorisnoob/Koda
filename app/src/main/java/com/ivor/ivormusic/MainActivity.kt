@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
@@ -144,11 +145,11 @@ class MainActivity : ComponentActivity() {
         // Remove splash instantly when ready — the AVD entrance animation is the show
         splashScreen.setOnExitAnimationListener { it.remove() }
 
-        // The app is portrait-only, like YouTube: rotating the device must not
-        // rotate the app UI. The only exception is fullscreen video playback,
-        // which temporarily requests landscape from VideoPlayerContent and
-        // restores portrait when it exits.
-        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // The app rotates freely; window posture (bottom bar vs rail,
+        // reserves, mini-player docking) is derived from AppPosture, which is
+        // provided at the MusicApp level. The only surface that still asks for
+        // an orientation is fullscreen video playback, which temporarily
+        // requests one from VideoPlayerContent and restores UNSPECIFIED.
 
         enableEdgeToEdge()
         // Treat camera cutouts as usable edge-to-edge space everywhere. The
@@ -881,6 +882,15 @@ fun MusicApp(
     val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
     val musicPillVisible = playerViewModel.currentSong.collectAsState().value != null
 
+    // Single window-posture source of truth for landscape and tablet chrome,
+    // provided to everything below at the outer Box. Read here as well so the
+    // overlay reserves that live outside HomeScreen stay in step with it.
+    val appPosture = com.ivor.ivormusic.ui.adaptive.rememberAppPosture()
+    // In rail mode there is no bottom bar: the video mini bar docks to the
+    // bottom (above the music pill when both are alive) instead of floating
+    // above toolbar + pill reserves.
+    val useRailChrome = appPosture.useRail
+
     // The floating nav bar and the music pill both live inside HomeScreen, so
     // they exist on the "home" route and nowhere else. The video overlay is
     // drawn above the NavHost and therefore renders on every route, so it has
@@ -890,7 +900,9 @@ fun MusicApp(
     val currentRoute = navController.currentBackStackEntryAsState()
         .value?.destination?.route
     val onHomeRoute = currentRoute == "home"
-    val navBarReserve = if (nonExpressiveNavigationBar) {
+    val navBarReserve = if (useRailChrome) {
+        0.dp
+    } else if (nonExpressiveNavigationBar) {
         NON_EXPRESSIVE_NAV_BAR_RESERVE
     } else {
         EXPRESSIVE_NAV_BAR_RESERVE
@@ -912,7 +924,7 @@ fun MusicApp(
     // toolbar at all.
     val floatingToolbarState = androidx.compose.material3.rememberFloatingToolbarState()
     val videoMiniFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
-        if (!onHomeRoute || nonExpressiveNavigationBar) 0f
+        if (!onHomeRoute || nonExpressiveNavigationBar || useRailChrome) 0f
         else (videoMiniBottomChrome - VIDEO_MINI_RESTING_GAP)
             .coerceAtLeast(0.dp).toPx()
     }
@@ -986,6 +998,9 @@ fun MusicApp(
         return
     }
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.ivor.ivormusic.ui.adaptive.LocalAppPosture provides appPosture
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1461,6 +1476,19 @@ fun MusicApp(
             timedCommentsEnabled = timedCommentsEnabled,
             showRelatedVideos = showRelatedVideos,
             onOpenChannel = openChannel,
+            onListenInMusicMode = { video ->
+                playerViewModel.playSong(
+                    Song.fromYouTube(
+                        videoId = video.videoId,
+                        title = video.title.ifBlank { video.videoId },
+                        artist = video.channelName,
+                        album = "",
+                        duration = video.duration * 1000,
+                        thumbnailUrl = video.thumbnailUrl
+                    )
+                )
+                videoPlayerViewModel.closePlayer()
+            },
             hostBottomChrome = videoMiniBottomChrome,
             hostChromeFollowOffsetPx = videoMiniFollowOffsetPx,
             miniBarHidden = isMusicPlayerExpanded
@@ -1556,6 +1584,7 @@ fun MusicApp(
                 budgetMinutes = budgetMinutes
             )
         }
+    }
     }
 }
 

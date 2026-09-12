@@ -54,9 +54,12 @@ import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -73,6 +76,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Surface
@@ -162,6 +167,13 @@ private val VIDEO_SHELL_TOP_BAR_HEIGHT = 76.dp
 
 /** Gap the mini player keeps above the system navigation bar once the floating toolbar is gone. */
 private val MINI_PLAYER_RESTING_GAP = 16.dp
+
+/**
+ * Width the navigation rail occupies on the start side in rail posture
+ * (Material 3 default rail width). Content sits beside it rather than under
+ * it; any system navigation inset on that edge is added separately.
+ */
+private val RAIL_CHROME_WIDTH = 80.dp
 
 /**
  * What the Home shell is currently showing. The mode rides along with the tab
@@ -562,16 +574,31 @@ fun HomeScreen(
     // 188dp, stacked to 284dp when the music pill is also alive). Animated so
     // FABs glide instead of jumping when a mini player appears.
     val musicPillVisible = currentSong != null
+    // Window posture: the rail replaces the bottom bar when the window is
+    // wide (landscape phone, tablet, unfolded foldable). Same tabs and state,
+    // only the container moves - and the bottom reserves collapse to a resting
+    // gap because there is no bar left to clear.
+    val appPosture = com.ivor.ivormusic.ui.adaptive.LocalAppPosture.current
+    val useRail = appPosture.useRail
+    // Start-side width the rail occupies, including any system navigation
+    // inset on that edge (seascape 3-button). Zero when the bottom bar is in
+    // use, where the content spans the full width.
+    val railChromeWidth = if (useRail) {
+        RAIL_CHROME_WIDTH + WindowInsets.navigationBars.asPaddingValues()
+            .calculateLeftPadding(androidx.compose.ui.platform.LocalLayoutDirection.current)
+    } else {
+        0.dp
+    }
     // The standard non-expressive NavigationBar is 80dp tall. The expressive
     // toolbar occupies 84dp including its bottom breathing room. Keep the same
     // clearance above either variant so overlaid controls do not jump or
     // collide when this preference changes.
-    val navigationOverlayInset = if (nonExpressiveNavigationBar) 84.dp else 88.dp
-    val miniPlayerCollapsedSpacing = if (nonExpressiveNavigationBar) 96.dp else 100.dp
+    val navigationOverlayInset = if (useRail) 16.dp else if (nonExpressiveNavigationBar) 84.dp else 88.dp
+    val miniPlayerCollapsedSpacing = if (useRail) 16.dp else if (nonExpressiveNavigationBar) 96.dp else 100.dp
     // Only the floating toolbar hides on scroll; the standard NavigationBar
-    // stays pinned, so there is nothing for the pill to follow there.
+    // and the rail stay pinned, so there is nothing for the pill to follow.
     val miniPlayerFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
-        if (nonExpressiveNavigationBar) 0f
+        if (nonExpressiveNavigationBar || useRail) 0f
         else (miniPlayerCollapsedSpacing - MINI_PLAYER_RESTING_GAP).toPx()
     }
     val miniPlayerFollowOffsetPx: () -> Float = {
@@ -599,7 +626,9 @@ fun HomeScreen(
         bottom = bottomOverlayInset + navBarInset + 16.dp
     )
 
-    // Use Box overlay instead of Scaffold for truly floating navbar
+    // Use Box overlay instead of Scaffold for truly floating navbar.
+    // The rail never hides on scroll, so like the pinned standard bar it
+    // takes no nested-scroll connection.
     androidx.compose.runtime.CompositionLocalProvider(
         com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset
     ) {
@@ -608,13 +637,15 @@ fun HomeScreen(
             .fillMaxSize()
             .background(backgroundColor)
             .then(
-                if (nonExpressiveNavigationBar) Modifier
+                if (nonExpressiveNavigationBar || useRail) Modifier
                 else Modifier.nestedScroll(floatingToolbarScrollBehavior)
             )
     ) {
-        // Main content
+        // Main content. In rail mode it sits beside the rail rather than
+        // under it.
         if (!loadLocalSongs || permissionState.isGranted) {
             androidx.compose.animation.AnimatedContent(
+                modifier = if (useRail) Modifier.padding(start = railChromeWidth) else Modifier,
                 // Keyed on the mode as well as the tab so the spec below can
                 // tell a tab move from a mode switch. They deserve different
                 // motion and used to share one.
@@ -1069,6 +1100,7 @@ fun HomeScreen(
                     .fillMaxWidth()
                     .background(backgroundColor)
                     .padding(top = statusBarInset)
+                    .then(if (useRail) Modifier.padding(start = railChromeWidth) else Modifier)
             ) {
                 com.ivor.ivormusic.ui.video.VideoTopBarSection(
                     onProfileClick = onProfileClick,
@@ -1087,8 +1119,10 @@ fun HomeScreen(
             }
         }
 
-        // Both navigation variants use the same destinations and interaction
-        // contract. Only their Material container and item presentation differ.
+        // All navigation variants use the same destinations and interaction
+        // contract. Only their Material container and item presentation differ:
+        // bottom bar or floating toolbar in portrait, a start-side rail
+        // whenever the window is wide.
         val navBarHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
         val navTabs = if (videoMode) {
             videoHomeConfiguration.orderedVisibleDestinations.map { destination ->
@@ -1132,7 +1166,33 @@ fun HomeScreen(
             }
         }
 
-        if (nonExpressiveNavigationBar) {
+        if (useRail) {
+            NavigationRail(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .windowInsetsPadding(
+                        WindowInsets.navigationBars.only(WindowInsetsSides.Start)
+                    )
+            ) {
+                // Same destinations, same selection state as the bottom bar -
+                // only the container moves from the bottom to the side.
+                navTabs.forEach { (index, label, icons) ->
+                    val selected = selectedTab == index
+                    val (filledIcon, outlinedIcon) = icons
+                    NavigationRailItem(
+                        selected = selected,
+                        onClick = { selectNavTab(index) },
+                        icon = {
+                            Icon(
+                                imageVector = if (selected) filledIcon else outlinedIcon,
+                                contentDescription = label
+                            )
+                        },
+                        label = { Text(label) }
+                    )
+                }
+            }
+        } else if (nonExpressiveNavigationBar) {
             NavigationBar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1246,7 +1306,17 @@ fun HomeScreen(
             onDispose { playerViewModel.setPlayerExpanded(false) }
         }
 
-        // Expandable Player (Mini <-> Full Screen)
+        // Expandable Player (Mini <-> Full Screen). Wrapped so that in rail
+        // mode it owns the content area beside the rail: the collapsed pill
+        // docks to that area's bottom center instead of sliding under the
+        // rail, and the expanded player leaves the rail reachable until the
+        // per-style landscape compositions take over.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (useRail) Modifier.padding(start = railChromeWidth) else Modifier),
+            contentAlignment = Alignment.BottomCenter
+        ) {
         ExpandablePlayer(
             isExpanded = showPlayerSheet,
             onExpandChange = { showPlayerSheet = it },
@@ -1276,8 +1346,9 @@ fun HomeScreen(
                 viewedAlbumFromPlayer = albumName
                 selectedTab = 2 // Library tab
             },
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
         )
+        }
         
         // Update available indicator. Anchored bottom-start above the floating
         // overlays (shared bottomOverlayInset) rather than the top bar, where it
@@ -1294,7 +1365,7 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .navigationBarsPadding()
-                .padding(start = 20.dp, bottom = bottomOverlayInset + 8.dp)
+                .padding(start = railChromeWidth + 20.dp, bottom = bottomOverlayInset + 8.dp)
         ) {
             Surface(
                 modifier = Modifier

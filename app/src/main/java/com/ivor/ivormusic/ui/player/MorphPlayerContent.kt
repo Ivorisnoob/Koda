@@ -349,6 +349,7 @@ fun MorphPlayerSheetContent(
                         Box(contentAlignment = Alignment.Center) {
                             ExpressiveScrubber(
                                 progress = { animatedFraction },
+                                liveProgress = { fraction.coerceIn(0f, 1f) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(scrubberTrackHeight(12.dp)),

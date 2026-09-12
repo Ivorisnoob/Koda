@@ -123,6 +123,11 @@ fun ExpandablePlayer(
     val windowSize = LocalWindowInfo.current.containerDpSize
     val screenHeight = windowSize.height
     val screenWidth = windowSize.width
+    // In rail posture the collapsed pill caps at 640dp and centers in the
+    // content area beside the rail; a full-width pill on a 10" tablet would
+    // read as a stretched phone bar. The cap opens to the full width as the
+    // player expands, so the expanded surface is untouched.
+    val railPillCap = com.ivor.ivormusic.ui.adaptive.LocalAppPosture.current.useRail
     val density = LocalDensity.current
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
@@ -198,6 +203,11 @@ fun ExpandablePlayer(
     // Interpolated values based on progress
     val height = lerp(collapsedHeight, expandedHeight, expandProgress)
     val widthPadding = lerp(collapsedWidthPadding, expandedWidthPadding, expandProgress)
+    val pillMaxWidth = lerp(
+        if (railPillCap) 640.dp else screenWidth,
+        screenWidth,
+        expandProgress
+    )
     val bottomPadding = lerp(collapsedBottomPadding, expandedBottomPadding, expandProgress)
     val cornerRadius = lerp(collapsedCornerRadius, expandedCornerRadius, expandProgress)
         .coerceAtMost(height / 2)
@@ -265,6 +275,7 @@ fun ExpandablePlayer(
                     )
                 }
                 .graphicsLayer { alpha = dismissAlpha }
+                .widthIn(max = pillMaxWidth)
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
                 .pointerInput(isExpanded) {
