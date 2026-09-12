@@ -14,14 +14,22 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -82,6 +90,7 @@ import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
@@ -96,6 +105,8 @@ import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.WatchLater
+import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.material.icons.rounded.ZoomOut
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
@@ -111,6 +122,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
@@ -154,6 +166,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -381,6 +394,22 @@ fun FullscreenPlayerContent(
      * actions move to a row of their own underneath the title.
      */
     compactChrome: Boolean = false,
+    /**
+     * Pinch-to-zoom: fill the screen (crop) vs fit inside it.
+     *
+     * Hoisted to the caller and keyed on the video id there, so opening a new
+     * video always starts fitted rather than inheriting the last video's crop.
+     * The caller also owns [zoomToFillAvailable]; a request arriving while the
+     * crop would exceed it is ignored rather than stored.
+     */
+    isZoomedToFill: Boolean = false,
+    onZoomedToFillChange: (Boolean) -> Unit = {},
+    /**
+     * False when filling would crop past [MAX_ACCEPTABLE_CROP] - a portrait
+     * source in a landscape window - so those keep their letterbox. True for
+     * unknown shapes, where the common case is a landscape upload.
+     */
+    zoomToFillAvailable: Boolean = true,
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes to prevent "square flash"
@@ -427,8 +456,37 @@ fun FullscreenPlayerContent(
         }
     }
 
-    // Pinch-to-zoom: fill the screen (crop) vs fit inside it
-    var isZoomedToFill by remember { mutableStateOf(false) }
+    // The requested mode only takes while the crop stays acceptable. A late
+    // aspect arrival (or a docked chat column narrowing the window) can revoke
+    // availability under a live request, and the picture must follow rather
+    // than sit zoomed past the threshold.
+    val zoomedToFillActive = isZoomedToFill && zoomToFillAvailable
+
+    // Transient confirmation of the display mode ("Zoomed to fill" /
+    // "Original"). Shown only on a flip inside one video: the effect below
+    // runs on every composition source change, including entering fullscreen
+    // and opening the next video, and neither of those is a flip.
+    var zoomPillMode by remember { mutableStateOf<Boolean?>(null) }
+    var lastZoomPillSource by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    LaunchedEffect(videoId, zoomedToFillActive) {
+        val last = lastZoomPillSource
+        lastZoomPillSource = videoId to zoomedToFillActive
+        if (last?.first == videoId && last.second != zoomedToFillActive) {
+            zoomPillMode = zoomedToFillActive
+            delay(ZOOM_PILL_VISIBLE_MS)
+            zoomPillMode = null
+        } else {
+            // A new video must never inherit a pill still up for the old one.
+            zoomPillMode = null
+        }
+    }
+
+    // The gesture detector is keyed on stable flags rather than this lambda
+    // (see PlayerGestureSurface), so it must only close over state holders -
+    // never the availability boolean itself, which arrives after the first
+    // frame decodes.
+    val zoomAvailableNow by rememberUpdatedState(zoomToFillAvailable)
+    val zoomChangeNow by rememberUpdatedState(onZoomedToFillChange)
 
     // Speed captured when a hold-to-2x begins, restored when the finger lifts
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
@@ -460,11 +518,18 @@ fun FullscreenPlayerContent(
         onSeekBackward = onSeekBackward,
         onSeekForward = onSeekForward,
         fullscreenGesturesEnabled = true,
-        onZoomedToFillChange = { isZoomedToFill = it },
+        onZoomedToFillChange = { want ->
+            // Pinching closed always lands: fit is available everywhere. A
+            // pinch open past the crop threshold is ignored rather than
+            // stored, so a later rotation cannot surface a stale request.
+            if (!want || zoomAvailableNow) zoomChangeNow(want)
+        },
+        zoomPillMode = zoomPillMode,
         onSpeedBoostStart = {
             speedBeforeBoost = exoPlayer.playbackParameters.speed
             exoPlayer.setPlaybackSpeed(2f)
         },
+        onSpeedBoostChange = { exoPlayer.setPlaybackSpeed(it) },
         onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) },
         // Swipe down the middle of the video to come back to portrait, the
         // mirror of the swipe up that got here. Same callback as the toolbar's
@@ -486,7 +551,7 @@ fun FullscreenPlayerContent(
             },
             update = { playerView ->
                 playerView.player = exoPlayer
-                playerView.resizeMode = if (isZoomedToFill) {
+                playerView.resizeMode = if (zoomedToFillActive) {
                     AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                 } else {
                     AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -887,6 +952,7 @@ fun PortraitPlayerContent(
             speedBeforeBoost = exoPlayer.playbackParameters.speed
             exoPlayer.setPlaybackSpeed(2f)
         },
+        onSpeedBoostChange = { exoPlayer.setPlaybackSpeed(it) },
         onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) },
         minimizeDragEnabled = minimizeDragEnabled,
         onMinimizeDragDelta = onMinimizeDragDelta,
@@ -1706,6 +1772,37 @@ private const val LEVEL_HIDE_MS = 800L
 private const val PINCH_ZOOM_IN_THRESHOLD = 1.15f
 private const val PINCH_ZOOM_OUT_THRESHOLD = 0.87f
 
+/** How long the zoom-to-fill confirmation pill stays up after the mode flips. */
+private const val ZOOM_PILL_VISIBLE_MS = 1_400L
+
+/**
+ * Fraction of the frame zoom-to-fill would crop away to fill a container.
+ *
+ * Filling scales by the larger factor, so the loss is what the two aspects
+ * differ by - the same arithmetic the vertical live player uses to decide
+ * between zoom and letterbox, extracted so the fullscreen gesture and the
+ * playback-settings toggle share it. Both aspects are width over height and
+ * must be positive; a 16:9 video in a 19.5:9 window loses about 0.18, a 9:16
+ * one in the same window about 0.74.
+ */
+internal fun zoomFillCropFraction(videoAspect: Float, containerAspect: Float): Float {
+    require(videoAspect > 0f && containerAspect > 0f) {
+        "Aspects must be positive, got video=$videoAspect container=$containerAspect"
+    }
+    return 1f - (minOf(videoAspect, containerAspect) / maxOf(videoAspect, containerAspect))
+}
+
+/**
+ * Whether zoom-to-fill may apply to a source of [videoAspect] in a window of
+ * [containerAspect]: allowed while the crop stays within [MAX_ACCEPTABLE_CROP].
+ *
+ * A 16:9 upload on a tall phone loses a slim band top and bottom, which is the
+ * feature; a 9:16, 4:5 or 1:1 source in a landscape window would lose most of
+ * the picture, so those keep their letterbox and the zoom request is ignored.
+ */
+internal fun isZoomToFillAvailable(videoAspect: Float, containerAspect: Float): Boolean =
+    zoomFillCropFraction(videoAspect, containerAspect) <= MAX_ACCEPTABLE_CROP
+
 /**
  * Upward travel on the inline video that commits to fullscreen.
  *
@@ -1736,6 +1833,20 @@ private val EXIT_FULLSCREEN_SWIPE_TRAVEL = 72.dp
  * more than enough to grab, since their travel is vertical.
  */
 private const val FULLSCREEN_CENTRE_COLUMN_HALF_WIDTH = 0.18f
+
+/**
+ * Bounds and granularity of the hold-to-boost scrub.
+ *
+ * A press held past [SPEED_BOOST_HOLD_MS] starts at [BOOST_SPEED_MIN]; sliding
+ * the still-down finger right raises the rate by [BOOST_SPEED_STEP] per
+ * [BOOST_SPEED_STEP_TRAVEL], left lowers it again, clamped to
+ * [BOOST_SPEED_MIN]..[BOOST_SPEED_MAX]. The finger must stay down throughout -
+ * lifting ends the boost and restores the prior speed.
+ */
+private const val BOOST_SPEED_MIN = 2f
+private const val BOOST_SPEED_MAX = 4f
+private const val BOOST_SPEED_STEP = 0.1f
+private val BOOST_SPEED_STEP_TRAVEL = 20.dp
 
 /**
  * Wraps the video surface with tap gestures: single tap toggles the controls,
@@ -1770,6 +1881,17 @@ private const val FULLSCREEN_CENTRE_COLUMN_HALF_WIDTH = 0.18f
  * not something that can follow a finger - so waiting for the lift would just
  * make the gesture feel like it had not registered. Leaving either callback
  * null leaves that swipe out entirely.
+ *
+ * Press-and-hold boosts playback from [BOOST_SPEED_MIN], restoring the prior
+ * speed on release; sliding the still-down finger right/left scrubs the boost
+ * rate up/down by [BOOST_SPEED_STEP] within MIN..MAX, reported through
+ * [onSpeedBoostChange]. Vertical lanes stay parked while the boost is held so
+ * the scrub's wobble changes nothing else.
+ *
+ * [zoomPillMode] draws the zoom-to-fill confirmation pill under the speed
+ * pill: null hides it, true reads "Zoomed to fill", false "Original". Owned
+ * by the caller, which is the layer that knows the video (resetting per
+ * video) and the crop threshold; this surface only renders it.
  */
 @Composable
 internal fun PlayerGestureSurface(
@@ -1779,7 +1901,9 @@ internal fun PlayerGestureSurface(
     modifier: Modifier = Modifier,
     fullscreenGesturesEnabled: Boolean = false,
     onZoomedToFillChange: (Boolean) -> Unit = {},
+    zoomPillMode: Boolean? = null,
     onSpeedBoostStart: () -> Unit = {},
+    onSpeedBoostChange: (Float) -> Unit = {},
     onSpeedBoostEnd: () -> Unit = {},
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
@@ -1793,8 +1917,11 @@ internal fun PlayerGestureSurface(
     var seconds by remember { mutableIntStateOf(0) }
     var pulse by remember { mutableIntStateOf(0) }
 
-    // Press-and-hold anywhere temporarily boosts playback to 2x (YouTube-style).
+    // Press-and-hold anywhere temporarily boosts playback (YouTube-style).
+    // Starts at BOOST_SPEED_MIN; a horizontal slide of the still-down finger
+    // scrubs the rate up/down by BOOST_SPEED_STEP within MIN..MAX.
     var isBoosting by remember { mutableStateOf(false) }
+    var boostSpeed by remember { mutableFloatStateOf(BOOST_SPEED_MIN) }
 
     // The player recomposes on every position tick, so these arrive as fresh
     // lambda instances several times a second. Read through a state holder and
@@ -1804,6 +1931,13 @@ internal fun PlayerGestureSurface(
     val exitFullscreen by rememberUpdatedState(onExitFullscreen)
     val enterFullscreenEnabled = onEnterFullscreen != null
     val exitFullscreenEnabled = onExitFullscreen != null
+    val speedBoostStart by rememberUpdatedState(onSpeedBoostStart)
+    val speedBoostChange by rememberUpdatedState(onSpeedBoostChange)
+    val speedBoostEnd by rememberUpdatedState(onSpeedBoostEnd)
+    // Read inside pointerInput blocks keyed on Unit, so they see the boost
+    // start/end without restarting the detectors mid-gesture.
+    val boostingRef by rememberUpdatedState(isBoosting)
+    val boostSpeedRef by rememberUpdatedState(boostSpeed)
 
     // Both fullscreen swipes commit while the finger is still down and have no
     // dragged preview behind them, so a tick is the only thing that tells the
@@ -1891,7 +2025,8 @@ internal fun PlayerGestureSurface(
                         onTap = { onToggleControls() },
                         onLongPress = {
                             isBoosting = true
-                            onSpeedBoostStart()
+                            boostSpeed = BOOST_SPEED_MIN
+                            speedBoostStart()
                         },
                         onPress = {
                             // Suspends until the finger lifts (or the gesture is
@@ -1899,7 +2034,7 @@ internal fun PlayerGestureSurface(
                             tryAwaitRelease()
                             if (isBoosting) {
                                 isBoosting = false
-                                onSpeedBoostEnd()
+                                speedBoostEnd()
                             }
                         },
                         onDoubleTap = { offset ->
@@ -1910,6 +2045,81 @@ internal fun PlayerGestureSurface(
                             if (tappedSide < 0) onSeekBackward() else onSeekForward()
                         }
                     )
+                }
+                // While the boost hold is down, a horizontal slide scrubs the
+                // rate from BOOST_SPEED_MIN up to BOOST_SPEED_MAX in
+                // BOOST_SPEED_STEP increments (and back down). Runs as its own
+                // detector keyed on Unit reading boostingRef, so starting the
+                // boost mid-press does not restart it and lose the finger.
+                // Consumes only while boosting, so taps, double-tap seeks and
+                // the vertical lanes below are untouched otherwise.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val stepPx = BOOST_SPEED_STEP_TRAVEL.toPx()
+                        var lastX = down.position.x
+                        var residuePx = 0f
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
+                            // A child claimed the gesture, or a second finger
+                            // landed (pinch zoom): leave the boost rate alone
+                            // and re-baseline so it does not jump.
+                            if (pressed.size != 1 ||
+                                event.changes.any { it.isConsumed }
+                            ) {
+                                pressed.firstOrNull()?.let { lastX = it.position.x }
+                                residuePx = 0f
+                                continue
+                            }
+                            val change = pressed.first()
+                            val dx = change.position.x - lastX
+                            lastX = change.position.x
+                            if (!boostingRef) {
+                                residuePx = 0f
+                                continue
+                            }
+                            residuePx += dx
+                            var steps = 0
+                            while (residuePx >= stepPx) {
+                                steps++
+                                residuePx -= stepPx
+                            }
+                            while (residuePx <= -stepPx) {
+                                steps--
+                                residuePx += stepPx
+                            }
+                            if (steps != 0) {
+                                val current = boostSpeedRef
+                                val stepped =
+                                    ((current / BOOST_SPEED_STEP).roundToInt() + steps) *
+                                        BOOST_SPEED_STEP
+                                val next = stepped.coerceIn(BOOST_SPEED_MIN, BOOST_SPEED_MAX)
+                                // At either rail drop the leftover push outward
+                                // so reversing answers instantly instead of first
+                                // unwinding an invisible overflow.
+                                if (next <= BOOST_SPEED_MIN || next >= BOOST_SPEED_MAX) {
+                                    residuePx = 0f
+                                }
+                                if (next != current) {
+                                    boostSpeed = next
+                                    speedBoostChange(next)
+                                    haptics.performHapticFeedback(
+                                        HapticFeedbackType.SegmentFrequentTick
+                                    )
+                                }
+                                change.consume()
+                            } else if (abs(dx) > 0f) {
+                                // Hold the gesture against the vertical lanes
+                                // once the finger is clearly sliding sideways,
+                                // even between two step boundaries.
+                                if (abs(residuePx) > viewConfiguration.touchSlop) {
+                                    change.consume()
+                                }
+                            }
+                        }
+                    }
                 }
                 .then(
                     if (fullscreenGesturesEnabled ||
@@ -1930,6 +2140,14 @@ internal fun PlayerGestureSurface(
                                 minimizing = false
                             },
                             onVerticalDrag = { change, dragAmount ->
+                                // While the speed boost is held, vertical motion
+                                // is the wobble of a horizontal scrub, not a
+                                // minimize pull: swallow it so the player stays
+                                // put until the finger lifts.
+                                if (boostingRef) {
+                                    change.consume()
+                                    return@detectVerticalDragGestures
+                                }
                                 totalDy += dragAmount
 
                                 // Velocity from the accumulated delta, NOT from
@@ -2030,7 +2248,8 @@ internal fun PlayerGestureSurface(
                                     if (mode == 0) {
                                         val totalDx = change.position.x - down.position.x
                                         val totalDy = change.position.y - down.position.y
-                                        if (inDragZone &&
+                                        if (!boostingRef &&
+                                            inDragZone &&
                                             abs(totalDy) > viewConfiguration.touchSlop &&
                                             abs(totalDy) > abs(totalDx)
                                         ) {
@@ -2111,13 +2330,24 @@ internal fun PlayerGestureSurface(
         ) {
             content()
 
-            // "2x" pill shown at the top while the hold-to-speed-up is active
-            SpeedBoostBadge(
-                visible = isBoosting,
+            // Transient pills share one top-center column so a zoom flip landing
+            // mid-boost stacks under the speed pill instead of over it. Single
+            // child renders exactly where the speed pill used to sit alone.
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 24.dp)
-            )
+            ) {
+                // Speed pill shown at the top while the hold-to-speed-up is active
+                SpeedBoostBadge(
+                    visible = isBoosting,
+                    speed = boostSpeed
+                )
+
+                ZoomModePill(mode = zoomPillMode)
+            }
 
             SeekFeedbackBadge(
                 visible = side < 0,
@@ -2191,38 +2421,183 @@ private fun setVolumeFraction(audioManager: AudioManager, fraction: Float) {
     }
 }
 
-/** "2x" indicator shown at the top of the video while hold-to-speed-up is active. */
+/** Speed indicator shown at the top of the video while hold-to-speed-up is active. */
 @Composable
 private fun SpeedBoostBadge(
     visible: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    speed: Float = BOOST_SPEED_MIN
 ) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
+        enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
+            initialScale = 0.7f
+        ) + slideInVertically(
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
+            initialOffsetY = { -it / 2 }
+        ),
+        // Leaving is not a moment: the finger is already up and the user has
+        // moved on, so it goes out on a short tween rather than a spring that
+        // would still be settling.
+        exit = fadeOut(tween(durationMillis = 180)) +
+            scaleOut(animationSpec = tween(durationMillis = 180), targetScale = 0.9f),
         modifier = modifier
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.55f))
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+        // One pop per scrub step. Skipped on arrival - the enter transition
+        // above owns that - so the badge does not double-bounce into view.
+        val pop = remember { Animatable(1f) }
+        var isArrival by remember { mutableStateOf(true) }
+        LaunchedEffect(speed) {
+            if (isArrival) {
+                isArrival = false
+                return@LaunchedEffect
+            }
+            pop.snapTo(1.14f)
+            pop.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        }
+
+        // Glides between the discrete 0.1x steps so the icon and the track
+        // below sweep rather than tick.
+        val fraction by animateFloatAsState(
+            targetValue = ((speed - BOOST_SPEED_MIN) / (BOOST_SPEED_MAX - BOOST_SPEED_MIN))
+                .coerceIn(0f, 1f),
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
+            label = "boostFraction"
+        )
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.graphicsLayer {
+                scaleX = pop.value
+                scaleY = pop.value
+            }
         ) {
-            Icon(
-                Icons.Rounded.Forward10,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-            )
-            Text(
-                text = "2x",
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                // Past the midpoint the single skip glyph hands over to a real
+                // fast-forward mark: the boost is no longer near 2x.
+                AnimatedContent(
+                    targetState = speed >= (BOOST_SPEED_MIN + BOOST_SPEED_MAX) / 2f,
+                    transitionSpec = {
+                        (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = 0.6f)) togetherWith
+                            (fadeOut(tween(140)) + scaleOut(tween(180), targetScale = 0.6f))
+                    },
+                    label = "boostIcon"
+                ) { fast ->
+                    Icon(
+                        if (fast) Icons.Rounded.FastForward else Icons.Rounded.Forward10,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .graphicsLayer {
+                                val grow = 1f + fraction * 0.25f
+                                scaleX = grow
+                                scaleY = grow
+                            }
+                    )
+                }
+                // Rolls up when the rate climbs, down when it falls.
+                AnimatedContent(
+                    targetState = speed,
+                    transitionSpec = {
+                        if (targetState > initialState) {
+                            (slideInVertically(tween(160)) { it / 2 } + fadeIn(tween(160))) togetherWith
+                                (slideOutVertically(tween(160)) { -it / 2 } + fadeOut(tween(160)))
+                        } else {
+                            (slideInVertically(tween(160)) { -it / 2 } + fadeIn(tween(160))) togetherWith
+                                (slideOutVertically(tween(160)) { it / 2 } + fadeOut(tween(160)))
+                        }
+                    },
+                    label = "boostSpeed"
+                ) { current ->
+                    Text(
+                        text = String.format(Locale.US, "%.1fx", current),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier
+                    .width(72.dp)
+                    .height(3.dp),
                 color = Color.White,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold
+                trackColor = Color.White.copy(alpha = 0.25f),
+                strokeCap = StrokeCap.Round
             )
+        }
+    }
+}
+
+/**
+ * Transient confirmation of the fullscreen display mode after a pinch or a
+ * settings toggle flips it. Tonal rather than a black scrim: it confirms a
+ * viewing choice, not a level being dragged, so it reads as chrome.
+ *
+ * Null [mode] hides it; true is "Zoomed to fill", false is "Original".
+ */
+@Composable
+private fun ZoomModePill(
+    mode: Boolean?,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = mode != null,
+        enter = fadeIn() + scaleIn(initialScale = 0.85f),
+        exit = fadeOut(tween(durationMillis = 180)),
+        modifier = modifier
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            shape = CircleShape
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    if (mode == true) Icons.Rounded.ZoomIn else Icons.Rounded.ZoomOut,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = if (mode == true) {
+                        stringResource(R.string.vpc_zoomed_to_fill)
+                    } else {
+                        stringResource(R.string.vpc_zoom_original)
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

@@ -161,6 +161,9 @@ fun DialPlayerSheetContent(
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     field = field,
                     accent = ink
                 )
@@ -435,8 +438,16 @@ private fun RotaryDial(
     var scrubFraction by remember { mutableStateOf<Float?>(null) }
     val liveProgress by rememberUpdatedState(progress)
     val liveDuration by rememberUpdatedState(duration)
-    val displayedFraction = scrubFraction
-        ?: if (duration > 0) (progress.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+    // Advanced from the clock each frame rather than held at the last sample -
+    // the whole ring rotates with it, so a once-a-second value turned a spinning
+    // dial into a ratchet. Read inside the Canvas draw scope, never here: see
+    // rememberSmoothProgress.
+    val smoothProgress = rememberSmoothProgress(
+        positionMs = progress,
+        durationMs = duration,
+        isPlaying = isPlaying,
+        scrubPositionMs = scrubFraction?.let { it * duration }
+    )
 
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val density = LocalDensity.current
@@ -528,6 +539,9 @@ private fun RotaryDial(
                     )
                 }
         ) {
+            // The frame-clock read lives here, in the draw scope, so sixty
+            // updates a second redraw the ring without recomposing the dial.
+            val displayedFraction = smoothProgress.value
             val center = this.center
             val outerRadius = size.minDimension / 2f - filledTickWidthPx
             val innerRadius = outerRadius * 0.88f

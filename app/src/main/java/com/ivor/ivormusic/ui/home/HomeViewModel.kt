@@ -2609,6 +2609,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Awaited variant for the playlist studio: the chosen cover is applied
+     * before the new playlist's page opens, so it never flashes the generated
+     * artwork first.
+     */
+    suspend fun applyLocalPlaylistCover(playlistId: String, source: android.net.Uri) {
+        playlistRepository.setCustomCover(playlistId, source)
+    }
+
     /** Drop a chosen cover and go back to the generated one. */
     fun resetLocalPlaylistCover(playlistId: String) {
         viewModelScope.launch {
@@ -2657,6 +2666,67 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playlistRepository.addSongToPlaylist(playlistId, song)
         }
+    }
+
+    /**
+     * Append a selection of songs to a local playlist in one write, skipping
+     * anything already in it. Suspend rather than fire-and-forget because the
+     * import screen reports how many songs actually landed.
+     */
+    suspend fun addSongsToLocalPlaylist(playlistId: String, songs: List<Song>): Int =
+        playlistRepository.addSongsToPlaylist(playlistId, songs)
+
+    /**
+     * Create a local playlist already holding [songs] - the playlist studio's
+     * create action. Unlike [copyPlaylistToLocal] an empty selection is a
+     * valid outcome: naming a playlist first and filling it later is exactly
+     * what the flow allows.
+     *
+     * @return the new playlist's id.
+     */
+    suspend fun createLocalPlaylistWithSongs(
+        name: String,
+        description: String?,
+        songs: List<Song>
+    ): String {
+        val id = playlistRepository.createPlaylist(
+            name.trim(),
+            description?.trim()?.takeIf { it.isNotEmpty() },
+            coverSeedColors()
+        )
+        val tracks = songs.distinctBy { it.id }
+        if (tracks.isNotEmpty()) playlistRepository.replacePlaylistSongs(id, tracks)
+        return id
+    }
+
+    /**
+     * What the playlist studio seeds its suggestion chips from: recency-ranked
+     * favorites (as playable [Song]s), top artists and recent searches. Built
+     * on demand rather than held as state - it reads the whole play history
+     * and only the studio ever needs it.
+     */
+    data class PlaylistSeedProfile(
+        val favorites: List<Song>,
+        val topArtists: List<String>,
+        val recentSearches: List<String>
+    )
+
+    suspend fun buildPlaylistSeedProfile(): PlaylistSeedProfile {
+        val profile = recommendationEngine.buildTasteProfile()
+        return PlaylistSeedProfile(
+            favorites = profile.topSongs.map { entry ->
+                Song.fromYouTube(
+                    videoId = entry.songId,
+                    title = entry.title,
+                    artist = entry.artist,
+                    album = entry.album,
+                    duration = entry.duration,
+                    thumbnailUrl = entry.thumbnailUrl
+                )
+            },
+            topArtists = profile.topArtists,
+            recentSearches = profile.recentSearches
+        )
     }
 
     fun updateLocalPlaylist(playlistId: String, name: String, description: String?) {

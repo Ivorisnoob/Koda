@@ -194,6 +194,22 @@
     <string name="song_options_speed_normal">Normal speed</string>
     <string name="cd_speed_reset">Reset to normal speed</string>
 
+    <!-- Now-playing overflow sheet: tile labels, pills and the volume control.
+         Tile labels are one word on purpose - a tile is a quarter of the sheet
+         wide, and the longer phrasing lives on the list rows above. -->
+    <string name="np_tile_radio">Radio</string>
+    <string name="np_tile_playlist">Playlist</string>
+    <string name="np_tile_like">Like</string>
+    <string name="np_tile_liked">Liked</string>
+    <string name="np_tile_download">Download</string>
+    <string name="np_tile_downloading">Saving</string>
+    <string name="np_tile_downloaded">Saved</string>
+    <string name="np_pill_block">Don\'t recommend</string>
+    <string name="np_volume">Volume</string>
+    <string name="np_volume_value">%1$d%%</string>
+    <string name="cd_volume_mute">Mute</string>
+    <string name="cd_volume_unmute">Unmute</string>
+
     <!-- Add to playlist sheet -->
     <string name="add_to_playlist_title">Add to Playlist</string>
     <string name="new_playlist_label">New Playlist</string>
@@ -353,7 +369,7 @@
     <string name="sp_style_switch_hint">Long-press the artwork in any player to switch styles from the wheel without coming back here.</string>
     <string name="sp_colors">Colors</string>
     <string name="sp_album_art_colors">Album Art Colors</string>
-    <string name="sp_album_art_colors_sub">Color the expanded player\'s buttons from the current cover</string>
+    <string name="sp_album_art_colors_sub">Color the expanded player and playlist pages from the current cover</string>
     <string name="sp_playback">Playback</string>
     <string name="sp_song_transitions">Song transitions</string>
     <string name="sp_normalise_volume">Normalise volume</string>
@@ -662,6 +678,12 @@
     <string name="ps_queue">QUEUE</string>
     <string name="cd_playing">Playing</string>
     <string name="cd_remove_from_queue">Remove from queue</string>
+    <string name="queue_save_as_playlist">Save queue as playlist</string>
+    <string name="queue_save_default_name">Queue · %1$s</string>
+    <plurals name="queue_saved_to_playlist">
+        <item quantity="one">Saved %1$d song to %2$s</item>
+        <item quantity="other">Saved %1$d songs to %2$s</item>
+    </plurals>
     <string name="loading">Loading...</string>
     <string name="load_more">Load More</string>
 
@@ -988,6 +1010,10 @@
     <string name="vpc_live_chat_sub">Show the conversation beside the stream</string>
     <string name="vpc_vertical_live">Vertical live view</string>
     <string name="vpc_vertical_live_sub">Return to the full-height stream</string>
+    <string name="vpc_zoom_to_fill">Zoom to fill</string>
+    <string name="vpc_zoom_to_fill_sub">Crop the video to fill the screen</string>
+    <string name="vpc_zoomed_to_fill">Zoomed to fill</string>
+    <string name="vpc_zoom_original">Original</string>
     <string name="vpc_language">Language</string>
     <string name="vpc_no_captions">No captions available for this video</string>
     <string name="vpc_off">Off</string>
@@ -1422,7 +1448,7 @@
     <string name="si_spotlight">Two Home designs showing the same content. Classic leads with a large hero and carousels; Spotlight is a denser grid of shortcuts, quick picks and artwork shelves.</string>
     <string name="si_nav_bar">The floating toolbar hides while you scroll down and returns when you scroll up. The standard bar is a fixed Material 3 navigation bar with labels.</string>
     <string name="si_haptics">How strongly Koda vibrates in response to touch: drags, toggles, skips and taps. Rich uses the full vocabulary; Subtle keeps only the moments that matter.</string>
-    <string name="si_artwork_colors">Tints the player\'s controls and background with colors pulled from the current album cover instead of the app theme.</string>
+    <string name="si_artwork_colors">Tints the player\'s controls and background, and a playlist or album page, with colors pulled from the cover instead of the app theme.</string>
     <string name="si_crossfade">How one song hands over to the next. AutoMix analyses tempo and silence to blend compatible songs; Manual always overlaps by a fixed time; Off changes tracks cleanly.</string>
     <string name="si_normalize">Evens out loudness between songs, so a quiet acoustic track and a loudly mastered one play at a similar level.</string>
     <string name="si_auto_queue">When your queue runs out, Koda keeps the music going with similar songs instead of stopping.</string>
@@ -1595,4 +1621,62 @@
     <string name="lastfm_restart_hint">Start sign-in again</string>
     <string name="lastfm_show_secret">Show shared secret</string>
     <string name="lastfm_hide_secret">Hide shared secret</string>
+
+    <!-- Playlist studio (immersive creation flow) -->
+    <string name="studio_title">New playlist</string>
+    <string name="studio_name_hint">Name your playlist</string>
+    <string name="studio_add_description">Add a description</string>
+    <string name="studio_description_hint">Description</string>
+    <string name="studio_from_listening">From your listening</string>
+    <string name="studio_genres_moods">Genres and moods</string>
+    <string name="studio_recent_favorites">Your favorites</string>
+    <string name="studio_pick_seed_hint">Pick something below and start adding songs</string>
+    <string name="studio_because_you_added">Because you added %1$s</string>
+    <string name="studio_nothing_found">Nothing came back for this one. Try another.</string>
+    <string name="studio_seed_load_failed">Couldn\'t load songs. Check your connection.</string>
+    <string name="studio_create">Create playlist</string>
+    <string name="studio_name_first">Give it a name to create it</string>
+    <string name="studio_empty_selection">You can always add songs later</string>
+    <plurals name="studio_songs_selected">
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
+    </plurals>
+    <string name="cd_studio_add_song">Add to playlist</string>
+    <string name="cd_studio_remove_song">Remove from playlist</string>
+    <string name="cd_studio_close">Close</string>
+    <string name="genre_pop">Pop</string>
+    <string name="genre_hiphop">Hip-hop</string>
+    <string name="genre_rnb">R&amp;B</string>
+    <string name="genre_rock">Rock</string>
+    <string name="genre_electronic">Electronic</string>
+    <string name="genre_indie">Indie</string>
+    <string name="genre_kpop">K-pop</string>
+    <string name="genre_latin">Latin</string>
+    <string name="genre_afrobeats">Afrobeats</string>
+    <string name="genre_lofi">Lo-fi</string>
+    <string name="genre_jazz">Jazz</string>
+    <string name="genre_chill">Chill</string>
+
+    <!-- Add songs from another playlist -->
+    <string name="lib_add_from_playlists">Add from your playlists</string>
+    <string name="import_title">Add songs</string>
+    <string name="import_pick_source">Copy songs from any of your playlists into %1$s.</string>
+    <string name="import_select_all">Select all</string>
+    <string name="import_clear_selection">Clear</string>
+    <string name="import_sort_playlist_order">Playlist order</string>
+    <string name="import_sort_title">Title</string>
+    <string name="import_sort_artist">Artist</string>
+    <string name="import_already_added">Already in this playlist</string>
+    <plurals name="import_add_n_songs">
+        <item quantity="one">Add %1$d song</item>
+        <item quantity="other">Add %1$d songs</item>
+    </plurals>
+    <plurals name="import_added_n_songs">
+        <item quantity="one">Added %1$d song</item>
+        <item quantity="other">Added %1$d songs</item>
+    </plurals>
+    <string name="import_no_source_playlists">Nothing to copy from yet. Playlists and liked songs will show up here.</string>
+    <string name="import_source_empty">This playlist has no songs to add</string>
+    <string name="import_all_added">Everything here is already in this playlist</string>
+    <string name="cd_import_sort">Sort songs</string>
 </resources>

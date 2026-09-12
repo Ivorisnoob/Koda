@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +72,7 @@ import com.ivor.ivormusic.data.isUnknownAlbum
 import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.queuePlaylistDateText
 import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -154,6 +157,9 @@ fun GesturePlayerSheetContent(
                     isDownloaded = { id -> viewModel.isDownloaded(id) },
                     isDownloading = { id -> viewModel.isDownloading(id) },
                     isLocalOriginal = { song -> viewModel.isLocalOriginal(song) },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     primaryColor = primaryColor,
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariantColor = onSurfaceVariantColor,
@@ -525,14 +531,14 @@ private fun GestureNowPlayingView(
                             // release instead of on every drag frame (rebuffer storms).
                             var scrubPosition by remember { mutableStateOf<Float?>(null) }
                             val displayedProgress = scrubPosition?.toLong() ?: progress
-                            val progressFraction = if (duration > 0) displayedProgress.toFloat() / duration.toFloat() else 0f
-                            val animatedProgress by animateFloatAsState(
-                                targetValue = progressFraction,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessLow
-                                ),
-                                label = "WavyProgress"
+                            // Advanced from the clock each frame rather than
+                            // sprung toward a once-a-second sample - see
+                            // rememberSmoothProgress.
+                            val smoothProgress = rememberSmoothProgress(
+                                positionMs = progress,
+                                durationMs = duration,
+                                isPlaying = isPlaying,
+                                scrubPositionMs = scrubPosition
                             )
 
                             val thickStroke = Stroke(width = with(LocalDensity.current) { 6.dp.toPx() }, cap = StrokeCap.Round)
@@ -540,7 +546,7 @@ private fun GestureNowPlayingView(
                             // Wavy progress with invisible slider overlay for touch
                             Box(contentAlignment = Alignment.Center) {
                                 ExpressiveScrubber(
-                                    progress = { animatedProgress },
+                                    progress = { smoothProgress.value },
                                     modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
                                     stroke = thickStroke,
                                     trackStroke = thickStroke,
@@ -1117,7 +1123,8 @@ private fun GestureQueueView(
     onRemoveItem: (MusicQueueItem) -> Unit = {},
     onMoveSong: (from: Int, to: Int) -> Unit = { _, _ -> },
     onCommitOrder: () -> Unit = {},
-    onUndoRemove: () -> Unit = {}
+    onUndoRemove: () -> Unit = {},
+    onSaveQueue: (name: String, description: String?, onSaved: (String, Int) -> Unit) -> Unit,
 ) {
     val currentSong = queue.find { it.id == currentQueueItemId }?.song
     val currentQueueIndex = remember(queue, currentQueueItemId) {
@@ -1135,6 +1142,8 @@ private fun GestureQueueView(
         onSettle = onCommitOrder
     )
     val removal = rememberQueueRemoval(onUndo = onUndoRemove)
+    var showSaveDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     // Guard against invalid dimensions during transitions
     BoxWithConstraints(
@@ -1192,16 +1201,38 @@ private fun GestureQueueView(
                     }
                 }
                 
-                FilledIconButton(
-                    onClick = onBackToPlayer,
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.size(48.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                    FilledIconButton(
+                        onClick = { showSaveDialog = true },
+                        enabled = queue.isNotEmpty(),
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.PlaylistAdd,
+                            stringResource(R.string.queue_save_as_playlist),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    FilledIconButton(
+                        onClick = onBackToPlayer,
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(Icons.Rounded.MusicNote, "Now Playing", modifier = Modifier.size(24.dp))
+                    }
                 }
             }
             
@@ -1549,6 +1580,29 @@ private fun GestureQueueView(
                 .navigationBarsPadding()
                 .padding(16.dp)
         )
+
+        if (showSaveDialog) {
+            CreatePlaylistDialog(
+                initialName = stringResource(
+                    R.string.queue_save_default_name,
+                    remember { queuePlaylistDateText() }
+                ),
+                onDismiss = { showSaveDialog = false },
+                onCreate = { name, description ->
+                    showSaveDialog = false
+                    onSaveQueue(name, description) { savedName, trackCount ->
+                        removal.announce(
+                            context.resources.getQuantityString(
+                                R.plurals.queue_saved_to_playlist,
+                                trackCount,
+                                trackCount,
+                                savedName
+                            )
+                        )
+                    }
+                }
+            )
+        }
     }
 }
 

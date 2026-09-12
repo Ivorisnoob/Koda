@@ -168,6 +168,9 @@ fun BentoPlayerSheetContent(
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     field = boardColor,
                     accent = onTile
                 )
@@ -366,6 +369,7 @@ fun BentoPlayerSheetContent(
                     BentoProgressTile(
                         progress = progress,
                         duration = duration,
+                        isPlaying = isPlaying,
                         onSeekTo = { viewModel.seekTo(it) },
                         trackColor = tileColor,
                         fillColor = MaterialTheme.colorScheme.primaryContainer,
@@ -632,6 +636,7 @@ private fun androidx.compose.foundation.layout.RowScope.BentoToggleTile(
 private fun BentoProgressTile(
     progress: Long,
     duration: Long,
+    isPlaying: Boolean,
     onSeekTo: (Long) -> Unit,
     trackColor: Color,
     fillColor: Color,
@@ -640,17 +645,16 @@ private fun BentoProgressTile(
 ) {
     var scrubPosition by remember { mutableStateOf<Float?>(null) }
     val displayedProgress = scrubPosition?.toLong() ?: progress
-    val fraction = if (duration > 0) {
-        (displayedProgress.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-    val animatedFraction by animateFloatAsState(
-        targetValue = fraction,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "BentoProgressFill"
+    // Advanced from the clock each frame rather than sprung toward a
+    // once-a-second sample - see rememberSmoothProgress. The boundary is this
+    // tile's playhead, so a stepping fill is as visible here as a thumb.
+    val smoothProgress = rememberSmoothProgress(
+        positionMs = progress,
+        durationMs = duration,
+        isPlaying = isPlaying,
+        scrubPositionMs = scrubPosition
     )
+    val fillFraction = smoothProgress.value
 
     Box(
         modifier = Modifier
@@ -659,10 +663,10 @@ private fun BentoProgressTile(
             .clip(RoundedCornerShape(20.dp))
             .background(trackColor)
     ) {
-        if (animatedFraction > 0f) {
+        if (fillFraction > 0f) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(animatedFraction)
+                    .fillMaxWidth(fillFraction)
                     .fillMaxHeight()
                     .background(fillColor)
             )

@@ -109,6 +109,10 @@ fun ExpandablePlayer(
     // and publishes it here, which is what the visual under it reads to bloom its thumb.
     val playerWaveform = rememberPlayerWaveform(currentSong?.id)
     val scrubInteraction = remember { MutableInteractionSource() }
+    // The user's playback rate, for the same reason and by the same route: a bar
+    // that interpolates between samples has to know how fast the clock is
+    // running. It changes only when somebody moves the speed slider.
+    val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     LaunchedEffect(isExpanded) {
         if (!isExpanded) styleWheel.dismiss()
     }
@@ -421,6 +425,9 @@ fun ExpandablePlayer(
                             LocalMotionArtwork provides motionArtworkSession.takeIf { activeStyle == playerStyle },
                             LocalPlayerWaveform provides playerWaveform,
                             LocalPlayerScrubInteraction provides scrubInteraction,
+                            // The rate every style's bar extrapolates at between
+                            // the service's once-a-second samples.
+                            LocalPlaybackSpeed provides playbackSpeed,
                         ) {
                         when (activeStyle) {
                             PlayerStyle.CLASSIC -> {

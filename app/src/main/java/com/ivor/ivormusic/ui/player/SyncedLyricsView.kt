@@ -44,6 +44,8 @@ import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -53,7 +55,19 @@ import com.ivor.ivormusic.data.LrcContentSpan
 import com.ivor.ivormusic.data.LrcLine
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.data.LyricsSyncType
+import com.ivor.ivormusic.ui.theme.MontserratFamily
+import com.ivor.ivormusic.util.lyricsFitDisplayFont
 import kotlinx.coroutines.isActive
+
+/**
+ * Set a lyric in the chosen family, or leave the style exactly as it was.
+ *
+ * Written as "leave it alone" rather than `copy(fontFamily = null)` on purpose:
+ * null in a [TextStyle] is the platform default, not "inherit", so a literal
+ * copy would quietly take every non-Latin song off the theme's font too.
+ */
+private fun TextStyle.withLyricsFont(family: FontFamily?): TextStyle =
+    if (family == null) this else copy(fontFamily = family)
 
 /**
  * Synced Lyrics View - Material 3 Expressive
@@ -147,7 +161,15 @@ private fun LyricsContent(
 ) {
     val listState = rememberLazyListState()
     val isSynced = syncType != LyricsSyncType.PLAIN
-    
+
+    // Montserrat for the lyric itself, where it can draw the song's script -
+    // see lyricsFitDisplayFont for why that is a question and why it is asked
+    // once per song. Null means "leave the theme's font alone", which is what
+    // the non-Latin case wants; it is never a silent box of tofu.
+    val lyricsFont: FontFamily? = remember(lines) {
+        if (lyricsFitDisplayFont(lines.map { it.text })) MontserratFamily else null
+    }
+
     // Calculate current line index based on playback position. -1 while the
     // intro plays, so the first line isn't falsely highlighted before its
     // timestamp is reached.
@@ -229,7 +251,8 @@ private fun LyricsContent(
                     primaryColor = primaryColor,
                     onSurfaceColor = onSurfaceColor,
                     motionEnabled = motionEnabled,
-                    currentPositionMs = currentPositionMs
+                    currentPositionMs = currentPositionMs,
+                    lyricsFont = lyricsFont
                 )
             }
         }
@@ -245,7 +268,9 @@ private fun LyricLine(
     primaryColor: Color,
     onSurfaceColor: Color,
     motionEnabled: Boolean,
-    currentPositionMs: Long = 0L
+    currentPositionMs: Long = 0L,
+    /** Null leaves the theme's own font in place; see [lyricsFitDisplayFont]. */
+    lyricsFont: FontFamily? = null
 ) {
     // Animate alpha for past/future lines
     val alpha by animateFloatAsState(
@@ -281,9 +306,10 @@ private fun LyricLine(
                 primaryColor = primaryColor,
                 unsungColor = onSurfaceColor.copy(alpha = 0.5f),
                 motionEnabled = motionEnabled,
+                lyricsFont = lyricsFont,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
         } else if (isSynced && isCurrent) {
             // Standard LRC: Line-Synced Only
             // Just highlight the whole line clearly. No "fake" gradient filling.
@@ -297,7 +323,7 @@ private fun LyricLine(
                         color = primaryColor.copy(alpha = 0.5f),
                         blurRadius = 24f
                     )
-                ),
+                ).withLyricsFont(lyricsFont),
                 color = primaryColor,
                 textAlign = TextAlign.Center
             )
@@ -307,7 +333,7 @@ private fun LyricLine(
                 text = line.text,
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.Medium
-                ),
+                ).withLyricsFont(lyricsFont),
                 color = onSurfaceColor,
                 textAlign = TextAlign.Center
             )
@@ -359,6 +385,7 @@ private fun KaraokeWordFlow(
     primaryColor: Color,
     unsungColor: Color,
     motionEnabled: Boolean,
+    lyricsFont: FontFamily? = null,
     modifier: Modifier = Modifier
 ) {
     val tokens = remember(spans, lineText) { buildTimedLyricTokens(spans, lineText) }
@@ -369,14 +396,18 @@ private fun KaraokeWordFlow(
     if (tokens.isEmpty()) {
         Text(
             text = lineText,
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+            style = MaterialTheme.typography.headlineMedium
+                .copy(fontWeight = FontWeight.ExtraBold)
+                .withLyricsFont(lyricsFont),
             color = primaryColor,
             textAlign = TextAlign.Center
         )
         return
     }
 
-    val textStyle = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold)
+    val textStyle = MaterialTheme.typography.headlineMedium
+        .copy(fontWeight = FontWeight.ExtraBold)
+        .withLyricsFont(lyricsFont)
     val density = LocalDensity.current
     val wordSpacing = with(density) {
         runCatching { (textStyle.fontSize.toPx() * 0.26f).toDp() }.getOrDefault(6.dp)

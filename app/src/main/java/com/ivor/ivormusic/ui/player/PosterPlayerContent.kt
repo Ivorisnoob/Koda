@@ -188,6 +188,9 @@ fun PosterPlayerSheetContent(
                     isLoadingMore = isLoadingMore,
                     onCollapse = onCollapse,
                     onBackToPlayer = { showQueue = false },
+                    onSaveQueue = { name, description, onSaved ->
+                        viewModel.saveQueueAsPlaylist(name, description, onSaved)
+                    },
                     field = MaterialTheme.colorScheme.surfaceContainerLowest,
                     accent = MaterialTheme.colorScheme.onSurface
                 )
@@ -440,11 +443,19 @@ fun PosterPlayerSheetContent(
 
                             // Seek bar + times
                             var scrubFraction by remember { mutableStateOf<Float?>(null) }
+                            // Canvas is the one style whose thumb is a real
+                            // Material thumb rather than a drawn playhead, so it
+                            // is where a once-a-second value was most visible.
+                            // It follows the finger while scrubbing and the
+                            // clock otherwise - see rememberSmoothProgress.
+                            val smoothProgress = rememberSmoothProgress(
+                                positionMs = progress,
+                                durationMs = duration,
+                                isPlaying = isPlaying,
+                                scrubPositionMs = scrubFraction?.let { it * duration }
+                            )
                             Slider(
-                                value = scrubFraction
-                                    ?: if (duration > 0) {
-                                        (progress.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-                                    } else 0f,
+                                value = smoothProgress.value,
                                 onValueChange = { scrubFraction = it },
                                 onValueChangeFinished = {
                                     scrubFraction?.let {

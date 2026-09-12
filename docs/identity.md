@@ -9,6 +9,18 @@ Reference detail moved out of `CLAUDE.md` so it loads only when needed. `CLAUDE.
 - Authenticated calls sign with `YouTubeAuthUtils.getAuthorizationHeader()` (SAPISIDHASH, **per-origin**) plus `Cookie`, `Origin`, `X-Goog-AuthUser: 0`. `postWatchApi()` is the canonical helper for www.youtube.com.
 - Write actions require login, and `subscription/subscribe` returns 200 even signed out, so always guard with `isLoggedIn()`.
 
+## A session is a login, not a cookie string
+
+`data/YouTubeSession.kt` - a `profileId`, a `generation` and the cookies as they stood when the request went out.
+
+**Google rotates the session cookies while the app is using them.** The `__Secure-1PSIDTS` / `__Secure-3PSIDTS` pair is re-issued every few hours, and a session that keeps replaying the value captured at login eventually gets answered `logged_in: 0` with an empty subscriptions feed and a blank account name [verified August 2026]. `SessionRefreshInterceptor` folds those back into storage, which is why signing in no longer wears off.
+
+The consequence is the scar: **a rotation is not a new login, so never compare cookie strings to ask "is this still the session I started with"**. [scar] Video history reporting did exactly that - it froze the cookie string when reporting began and required equality on every later ping - so the first rotation mid-video read as a different login and reporting stopped silently for the rest of the video on a perfectly valid account. `generation` is the identity instead: `saveCookiesFor` (a deliberate sign-in) bumps it, `mergeSessionCookies` (a rotation) does not. `SessionManager.currentSession(session)` answers the real question - same profile, still active, same generation - and hands back the *refreshed* cookies to sign with. A held `YouTubeSession.cookies` is a snapshot and goes stale on its own; re-read before each use.
+
+**Every authenticated request is bound to the session it is sent for.** `YouTubeRepository.authenticate()` is the single helper: it sets `Cookie`, the per-origin SAPISIDHASH and `X-Goog-AuthUser`, and tags the request with its `YouTubeSession`. Passing null sends it signed out, which is deliberate for the browse ids that read fine anonymously - an empty `Cookie` header is worse than none. Anything that lands *after* a response - a cookie refresh, the `logged_in` verdict (`noteSessionState`), the account name/avatar/`datasyncId` from `account_menu` - is applied through the tagged session, never to whoever is active now. [scar] All three used to write to the active profile, so switching A -> B with A's calls still in flight mixed A's cookies into B, badged B as expired, or renamed B to A.
+
+**The refresh is a network interceptor, not a `CookieJar`.** [scar] A jar's callbacks cannot say which profile sent the request, and Google rotates the `*PSIDTS` pair on the 302s inside a redirect chain - an application interceptor only ever sees the final hop's headers. Nothing is ever sent from the interceptor; callers assemble their own headers, and a jar handing cookies back would have OkHttp's bridge interceptor replace them.
+
 ## Profiles
 
 An identity is a `Profile` (`data/ProfileManager.kt`): a **YouTube profile** with a stored cookie string, or a **local profile** with no Google account. "Signed out" is not a special case - it is the local profile that always exists, which is why the roster is never empty and the avatar opens the switcher either way.

@@ -170,6 +170,16 @@ private val MINI_PLAYER_RESTING_GAP = 16.dp
  */
 private data class HomeTabKey(val tab: Int, val videoMode: Boolean)
 
+/**
+ * A tab a hand-off asked for, and the mode that tab belongs to.
+ *
+ * The mode is half the destination rather than a detail: tab 2 is the music
+ * Library with the video toggle off and the Subscriptions feed with it on, so a
+ * request that named only the index would be ambiguous - and is exactly how the
+ * player's artist row ended up opening Subscriptions.
+ */
+private data class TabRequest(val tab: Int, val videoMode: Boolean)
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun HomeScreen(
@@ -395,6 +405,43 @@ fun HomeScreen(
         homePreferences.setLastHomeTab(videoMode, selectedTab)
     }
 
+    // A tab asked for by something that also had to switch modes, held until the
+    // mode it belongs to is actually the live one.
+    //
+    // [scar] This is load-bearing and the reason a hand-off across the video
+    // toggle cannot simply assign `selectedTab`. The mode switch is a
+    // preference write, so it lands a recomposition later - and `selectedTab`
+    // is keyed on `videoMode`, deliberately, so that switching modes lands on
+    // that mode's own last tab. The key therefore *re-creates* the state after
+    // the write, discarding anything assigned before it: the player's artist
+    // row set tab 2, the toggle flipped, and the fresh state read the stored
+    // music tab instead, dropping the user on Home with the artist request
+    // still pending. The request is matched against the mode it was made for,
+    // so it can never apply to the mode it was trying to leave.
+    var pendingTabRequest by remember { mutableStateOf<TabRequest?>(null) }
+    LaunchedEffect(videoMode, pendingTabRequest) {
+        val request = pendingTabRequest ?: return@LaunchedEffect
+        if (request.videoMode == videoMode) {
+            selectedTab = request.tab
+            pendingTabRequest = null
+        }
+    }
+
+    /**
+     * Land on [tab] of [wantVideoMode], switching modes first if that is where
+     * the tab lives. The only correct way to open a tab from a hand-off: a tab
+     * index names a different screen in each mode (2 is the music Library or the
+     * Subscriptions feed), so the mode is part of the destination.
+     */
+    fun goToTab(tab: Int, wantVideoMode: Boolean = false) {
+        if (videoMode == wantVideoMode) {
+            selectedTab = tab
+        } else {
+            onVideoModeToggle(wantVideoMode)
+            pendingTabRequest = TabRequest(tab, wantVideoMode)
+        }
+    }
+
     // Every tab's scroll position, remembered HERE rather than inside the tab
     // content, for two reasons.
     //
@@ -498,13 +545,11 @@ fun HomeScreen(
     LaunchedEffect(pendingArtistPage) {
         pendingArtistPage?.let { artist ->
             // The artist page is the music-mode view of this creator, and tab 2
-            // is video history while the video toggle is on. Asking for it is
-            // therefore asking to be in music mode; leaving the toggle alone
-            // would land on the wrong tab and look like the link did nothing.
+            // belongs to the Subscriptions feed while the video toggle is on.
+            // Asking for it is therefore asking to be in music mode.
             noteLibraryReturn()
-            if (videoMode) onVideoModeToggle(false)
             viewedArtistFromPlayer = artist
-            selectedTab = 2
+            goToTab(2)
             viewModel.consumeArtistPageRequest()
         }
     }
@@ -529,19 +574,17 @@ fun HomeScreen(
     LaunchedEffect(pendingPlaylistPage) {
         pendingPlaylistPage?.let { playlist ->
             noteLibraryReturn()
-            if (videoMode) onVideoModeToggle(false)
             viewedPlaylistFromHome = playlist
-            selectedTab = 2
+            goToTab(2)
             viewModel.consumePlaylistPageRequest()
         }
     }
     val pendingVideoPlaylistPage by viewModel.pendingVideoPlaylistPage.collectAsState()
     LaunchedEffect(pendingVideoPlaylistPage) {
         pendingVideoPlaylistPage?.let { playlist ->
-            if (!videoMode) onVideoModeToggle(true)
             viewedVideoPlaylistFromHome = playlist
             // Video mode's Library is tab 3; music's is tab 2.
-            selectedTab = 3
+            goToTab(3, wantVideoMode = true)
             viewModel.consumeVideoPlaylistPageRequest()
         }
     }
@@ -1325,28 +1368,35 @@ fun HomeScreen(
             collapsedBottomSpacing = miniPlayerCollapsedSpacing,
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
             onArtistClick = { artistName ->
-                // Collapse player and navigate to Library tab to show artist.
-                // The origin tab is remembered so back returns to it rather
-                // than stranding the user in the Library.
+                // Collapse the player and open the artist inside the music
+                // Library tab. The origin tab is remembered so back returns to
+                // it rather than stranding the user in the Library, and
+                // noteLibraryReturn() runs before goToTab because it reads
+                // videoMode to decide whether back has a tab to go to.
+                //
+                // goToTab rather than an assignment is load-bearing: the music
+                // player outlives a switch to video mode - its mini bar stays,
+                // and expanding it from there is an ordinary thing to do - and
+                // in that mode tab 2 is the Subscriptions feed, so this has to
+                // switch modes and then land, in that order. See goToTab.
                 noteLibraryReturn()
                 showPlayerSheet = false
                 viewedArtistFromPlayer = artistName
-                selectedTab = 2 // Library tab
+                goToTab(2) // Music Library tab
             },
             onAlbumClick = { albumName ->
                 noteLibraryReturn()
                 showPlayerSheet = false
                 viewedAlbumFromPlayer = albumName
-                selectedTab = 2 // Library tab
+                goToTab(2)
             },
             onOpenAlbum = { albumItem ->
                 // A stream's album opens the playlist detail the same way a
                 // Spotlight shelf does: hand it over and switch tab.
                 noteLibraryReturn()
-                if (videoMode) onVideoModeToggle(false)
                 showPlayerSheet = false
                 viewedPlaylistFromHome = albumItem
-                selectedTab = 2 // Library tab
+                goToTab(2)
             },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
@@ -1415,15 +1465,13 @@ fun HomeScreen(
             // unreachable from every surface in the app.
             onArtistClick = { artist ->
                 noteLibraryReturn()
-                if (videoMode) onVideoModeToggle(false)
                 viewedArtistFromPlayer = artist
-                selectedTab = 2
+                goToTab(2)
             },
             onOpenAlbum = { albumItem ->
                 noteLibraryReturn()
-                if (videoMode) onVideoModeToggle(false)
                 viewedPlaylistFromHome = albumItem
-                selectedTab = 2
+                goToTab(2)
             },
             // Only for songs a feed could have recommended. A file on this
             // device was not recommended by anything, so "stop recommending
@@ -2535,7 +2583,10 @@ fun SearchContent(
                         onPlayQueue = onPlayQueue,
                         viewModel = viewModel,
                         onSongLongPress = onSongLongPress,
-                        onEnqueueSong = onEnqueueSong
+                        onEnqueueSong = onEnqueueSong,
+                        // Search opens other people's playlists; the import
+                        // flow belongs to the Library's local ones.
+                        onAddSongsRequest = null
                     )
                 }
             }
