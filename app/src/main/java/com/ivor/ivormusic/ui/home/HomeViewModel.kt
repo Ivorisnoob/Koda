@@ -1618,6 +1618,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun removeVideoFromPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            onResult(deleteVideoFromPlaylist(playlistId, video))
+        }
+    }
+
+    private suspend fun deleteVideoFromPlaylist(playlistId: String, video: VideoItem): Boolean {
+        val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
+        return when {
+            local.isLocal(playlistId) -> {
+                localVideoPlaylistsRepository.removeVideo(playlistId, video.videoId)
+                true
+            }
+            playlistId == "WL" && !isYouTubeConnected.value -> {
+                localVideoPlaylistsRepository.removeVideo(
+                    localVideoPlaylistsRepository.ensureWatchLater(),
+                    video.videoId
+                )
+                true
+            }
+            else ->
+                youtubeRepository.removeFromYouTubePlaylist(playlistId, video.videoId, music = false)
+        }
+    }
+
     /** Create a playlist on the device, from the save sheet. */
     fun createLocalVideoPlaylist(name: String, onCreated: (String?) -> Unit) {
         viewModelScope.launch { onCreated(localVideoPlaylistsRepository.create(name)) }

@@ -160,6 +160,7 @@ fun VideoOptionsSheet(
     playlists: List<VideoPlaylist>,
     isLoading: Boolean,
     onSave: (playlistId: String, onResult: (Boolean) -> Unit) -> Unit,
+    onRemove: ((playlistId: String, onResult: (Boolean) -> Unit) -> Unit)? = null,
     onDownload: () -> Unit,
     onDismiss: () -> Unit,
     onNotInterested: (() -> Unit)? = null,
@@ -219,6 +220,7 @@ fun VideoOptionsSheet(
     var savingIds by remember { mutableStateOf(emptySet<String>()) }
     var savedIds by remember { mutableStateOf(emptySet<String>()) }
     var failedIds by remember { mutableStateOf(emptySet<String>()) }
+    var currentAlreadyIn by remember(alreadyIn) { mutableStateOf(alreadyIn) }
     var showCreateDialog by remember { mutableStateOf(false) }
 
     // Only a terminal action closes the sheet behind its check. A save made in
@@ -234,24 +236,39 @@ fun VideoOptionsSheet(
 
     fun rowState(id: String): SaveRowState = when {
         id in savingIds -> SaveRowState.SAVING
-        id in savedIds || id in alreadyIn -> SaveRowState.SAVED
+        id in savedIds || id in currentAlreadyIn -> SaveRowState.SAVED
         id in failedIds -> SaveRowState.FAILED
         else -> SaveRowState.IDLE
     }
 
     /** @param terminal whether a successful save should close the sheet. */
     fun save(id: String, terminal: Boolean) {
-        if (id in savingIds || id in savedIds || id in alreadyIn) return
+        if (id in savingIds) return
+        val isSaved = id in savedIds || id in currentAlreadyIn
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         failedIds = failedIds - id
         savingIds = savingIds + id
-        onSave(id) { ok ->
-            savingIds = savingIds - id
-            if (ok) {
-                savedIds = savedIds + id
-                if (terminal) confirmedTerminal = id
-            } else {
-                failedIds = failedIds + id
+
+        if (isSaved && onRemove != null) {
+            onRemove(id) { ok ->
+                savingIds = savingIds - id
+                if (ok) {
+                    savedIds = savedIds - id
+                    currentAlreadyIn = currentAlreadyIn - id
+                } else {
+                    failedIds = failedIds + id
+                }
+            }
+        } else {
+            onSave(id) { ok ->
+                savingIds = savingIds - id
+                if (ok) {
+                    savedIds = savedIds + id
+                    currentAlreadyIn = currentAlreadyIn + id
+                    if (terminal) confirmedTerminal = id
+                } else {
+                    failedIds = failedIds + id
+                }
             }
         }
     }
@@ -936,7 +953,7 @@ private fun PlaylistPickRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = state == SaveRowState.IDLE || state == SaveRowState.FAILED) {
+            .clickable(enabled = state != SaveRowState.SAVING) {
                 onClick()
             },
         shape = RoundedCornerShape(16.dp),
@@ -1190,6 +1207,9 @@ fun VideoOptionsSheetHost(
         isLoading = isLoading,
         onSave = { playlistId, onResult ->
             viewModel.addVideoToPlaylist(playlistId, video, onResult)
+        },
+        onRemove = { playlistId, onResult ->
+            viewModel.removeVideoFromPlaylist(playlistId, video, onResult)
         },
         onDownload = { showDownload = true },
         onDismiss = onDismiss,

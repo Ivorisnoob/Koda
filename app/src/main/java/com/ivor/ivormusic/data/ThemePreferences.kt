@@ -297,6 +297,21 @@ class ThemePreferences(context: Context) {
     private val _playlistSwipeEndAction = MutableStateFlow(getPlaylistSwipeEndActionPreference())
     val playlistSwipeEndAction: StateFlow<String> = _playlistSwipeEndAction.asStateFlow()
 
+    private val _equalizerEnabled = MutableStateFlow(getEqualizerEnabledPreference())
+    val equalizerEnabled: StateFlow<Boolean> = _equalizerEnabled.asStateFlow()
+
+    private val _equalizerPreset = MutableStateFlow(getEqualizerPresetPreference())
+    val equalizerPreset: StateFlow<String> = _equalizerPreset.asStateFlow()
+
+    private val _equalizerBassBoost = MutableStateFlow(getEqualizerBassBoostPreference())
+    val equalizerBassBoost: StateFlow<Int> = _equalizerBassBoost.asStateFlow()
+
+    private val _equalizerBandLevels = MutableStateFlow(getEqualizerBandLevelsPreference())
+    val equalizerBandLevels: StateFlow<String> = _equalizerBandLevels.asStateFlow()
+
+    private val _hideLocalFeatures = MutableStateFlow(getHideLocalFeaturesPreference())
+    val hideLocalFeatures: StateFlow<Boolean> = _hideLocalFeatures.asStateFlow()
+
     // Every screen/service news up its own ThemePreferences (no DI), so a setter
     // called on one instance must still reach the flows of every other instance.
     // All instances share the same process-wide SharedPreferences object, so a
@@ -373,6 +388,11 @@ class ThemePreferences(context: Context) {
                 _uploadNotificationsEnabled.value = getUploadNotificationsEnabledPreference()
             KEY_OEM_FIX_ENABLED -> _oemFixEnabled.value = getOemFixEnabledPreference()
             KEY_MANUAL_SCAN_ENABLED -> _manualScanEnabled.value = getManualScanEnabledPreference()
+            KEY_EQUALIZER_ENABLED -> _equalizerEnabled.value = getEqualizerEnabledPreference()
+            KEY_EQUALIZER_PRESET -> _equalizerPreset.value = getEqualizerPresetPreference()
+            KEY_EQUALIZER_BASS_BOOST -> _equalizerBassBoost.value = getEqualizerBassBoostPreference()
+            KEY_EQUALIZER_BAND_LEVELS -> _equalizerBandLevels.value = getEqualizerBandLevelsPreference()
+            KEY_HIDE_LOCAL_FEATURES -> _hideLocalFeatures.value = getHideLocalFeaturesPreference()
             KEY_PRIVATE_DOWNLOADS ->
                 _privateDownloadsEnabled.value = getPrivateDownloadsEnabledPreference()
             KEY_ONBOARDING_COMPLETED -> _onboardingCompleted.value = getOnboardingCompletedPreference()
@@ -460,6 +480,31 @@ class ThemePreferences(context: Context) {
         private const val KEY_SAVE_VIDEO_HISTORY = "save_video_history"
         private const val KEY_SAVE_MUSIC_HISTORY = "save_music_history"
         private const val KEY_LIVE_DOWNLOAD_UPDATES = "live_download_updates"
+        private const val KEY_EQUALIZER_ENABLED = "equalizer_enabled"
+        private const val KEY_EQUALIZER_PRESET = "equalizer_preset"
+        private const val KEY_EQUALIZER_BASS_BOOST = "equalizer_bass_boost"
+        private const val KEY_EQUALIZER_BAND_LEVELS = "equalizer_band_levels"
+        private const val KEY_HIDE_LOCAL_FEATURES = "hide_local_features"
+
+        fun isHideLocalFeaturesEnabled(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_HIDE_LOCAL_FEATURES, false)
+
+        fun isEqualizerEnabled(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_EQUALIZER_ENABLED, false)
+
+        fun getEqualizerPreset(context: Context): String =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_EQUALIZER_PRESET, "Flat") ?: "Flat"
+
+        fun getEqualizerBassBoost(context: Context): Int =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_EQUALIZER_BASS_BOOST, 0)
+
+        fun getEqualizerBandLevels(context: Context): String =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_EQUALIZER_BAND_LEVELS, "") ?: ""
 
         /**
          * Live Updates (promoted ongoing notifications) are an Android 16 / API 36
@@ -2125,6 +2170,41 @@ class ThemePreferences(context: Context) {
     fun setPlaylistSwipeEndAction(action: String) {
         prefs.edit().putString(KEY_PLAYLIST_SWIPE_END_ACTION, action).apply()
         _playlistSwipeEndAction.value = action
+    }
+
+    private fun getEqualizerEnabledPreference(): Boolean = prefs.getBoolean(KEY_EQUALIZER_ENABLED, false)
+    fun isEqualizerEnabled(): Boolean = getEqualizerEnabledPreference()
+    fun setEqualizerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_EQUALIZER_ENABLED, enabled).apply()
+        _equalizerEnabled.value = enabled
+    }
+
+    private fun getEqualizerPresetPreference(): String = prefs.getString(KEY_EQUALIZER_PRESET, "Flat") ?: "Flat"
+    fun getEqualizerPreset(): String = getEqualizerPresetPreference()
+    fun setEqualizerPreset(preset: String) {
+        prefs.edit().putString(KEY_EQUALIZER_PRESET, preset).apply()
+        _equalizerPreset.value = preset
+    }
+
+    private fun getEqualizerBassBoostPreference(): Int = prefs.getInt(KEY_EQUALIZER_BASS_BOOST, 0)
+    fun getEqualizerBassBoost(): Int = getEqualizerBassBoostPreference()
+    fun setEqualizerBassBoost(strength: Int) {
+        prefs.edit().putInt(KEY_EQUALIZER_BASS_BOOST, strength).apply()
+        _equalizerBassBoost.value = strength
+    }
+
+    private fun getEqualizerBandLevelsPreference(): String = prefs.getString(KEY_EQUALIZER_BAND_LEVELS, "") ?: ""
+    fun getEqualizerBandLevels(): String = getEqualizerBandLevelsPreference()
+    fun setEqualizerBandLevels(levels: String) {
+        prefs.edit().putString(KEY_EQUALIZER_BAND_LEVELS, levels).apply()
+        _equalizerBandLevels.value = levels
+    }
+
+    private fun getHideLocalFeaturesPreference(): Boolean = prefs.getBoolean(KEY_HIDE_LOCAL_FEATURES, false)
+    fun isHideLocalFeaturesEnabled(): Boolean = getHideLocalFeaturesPreference()
+    fun setHideLocalFeaturesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HIDE_LOCAL_FEATURES, enabled).apply()
+        _hideLocalFeatures.value = enabled
     }
 
     private fun getOnboardingCompletedPreference(): Boolean {

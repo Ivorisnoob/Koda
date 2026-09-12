@@ -42,6 +42,7 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Dashboard
@@ -988,6 +989,7 @@ internal fun PlaybackSettingsPage(
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
+    onOpenEqualizer: () -> Unit,
     onBack: () -> Unit
 ) {
     // Which network the quality rows below are talking about. Reframing the
@@ -1116,6 +1118,16 @@ internal fun PlaybackSettingsPage(
                         enabled = normalizeVolume,
                         onToggle = onNormalizeVolumeToggle,
                         explanation = stringResource(R.string.si_normalize)
+                    )
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        icon = Icons.Rounded.GraphicEq,
+                        title = stringResource(R.string.equalizer_title),
+                        subtitle = stringResource(R.string.equalizer_subtitle),
+                        onClick = onOpenEqualizer,
+                        showChevron = true
                     )
 
                     SettingsDivider()
@@ -2224,12 +2236,25 @@ internal fun LocalLibrarySettingsPage(
     onPlaylistSwipeStartActionChange: (String) -> Unit,
     playlistSwipeEndAction: String,
     onPlaylistSwipeEndActionChange: (String) -> Unit,
+    hideLocalFeatures: Boolean = false,
+    onHideLocalFeaturesToggle: (Boolean) -> Unit = {},
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_local_library), onBack = onBack) {
         item {
             SettingsSection(title = stringResource(R.string.sp_device_music)) {
                 SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.VisibilityOff,
+                        title = stringResource(R.string.sp_hide_local_features),
+                        subtitle = stringResource(R.string.sp_hide_local_features_sub),
+                        enabled = hideLocalFeatures,
+                        onToggle = onHideLocalFeaturesToggle,
+                        explanation = stringResource(R.string.si_hide_local_features)
+                    )
+
+                    SettingsDivider()
+
                     SettingsToggleRow(
                         icon = Icons.Rounded.Folder,
                         title = stringResource(R.string.sp_load_local_songs),
