@@ -353,7 +353,7 @@
     <string name="sp_style_switch_hint">Long-press the artwork in any player to switch styles from the wheel without coming back here.</string>
     <string name="sp_colors">Colors</string>
     <string name="sp_album_art_colors">Album Art Colors</string>
-    <string name="sp_album_art_colors_sub">Color the expanded player\'s buttons from the current cover</string>
+    <string name="sp_album_art_colors_sub">Color the expanded player and playlist pages from the current cover</string>
     <string name="sp_playback">Playback</string>
     <string name="sp_song_transitions">Song transitions</string>
     <string name="sp_normalise_volume">Normalise volume</string>
@@ -1432,7 +1432,7 @@
     <string name="si_spotlight">Two Home designs showing the same content. Classic leads with a large hero and carousels; Spotlight is a denser grid of shortcuts, quick picks and artwork shelves.</string>
     <string name="si_nav_bar">The floating toolbar hides while you scroll down and returns when you scroll up. The standard bar is a fixed Material 3 navigation bar with labels.</string>
     <string name="si_haptics">How strongly Koda vibrates in response to touch: drags, toggles, skips and taps. Rich uses the full vocabulary; Subtle keeps only the moments that matter.</string>
-    <string name="si_artwork_colors">Tints the player\'s controls and background with colors pulled from the current album cover instead of the app theme.</string>
+    <string name="si_artwork_colors">Tints the player\'s controls and background, and a playlist or album page, with colors pulled from the cover instead of the app theme.</string>
     <string name="si_crossfade">How one song hands over to the next. AutoMix analyses tempo and silence to blend compatible songs; Manual always overlaps by a fixed time; Off changes tracks cleanly.</string>
     <string name="si_normalize">Evens out loudness between songs, so a quiet acoustic track and a loudly mastered one play at a similar level.</string>
     <string name="si_auto_queue">When your queue runs out, Koda keeps the music going with similar songs instead of stopping.</string>

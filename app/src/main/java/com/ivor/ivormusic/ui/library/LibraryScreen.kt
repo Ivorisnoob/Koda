@@ -57,6 +57,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -64,6 +65,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -71,12 +73,16 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
@@ -86,6 +92,7 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.albumArtistLabel
+import com.ivor.ivormusic.data.googleImageAtSize
 import com.ivor.ivormusic.data.groupSongsByAlbum
 import com.ivor.ivormusic.data.groupSongsByArtist
 import com.ivor.ivormusic.data.isUnknownAlbum
@@ -93,7 +100,10 @@ import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.sortedInAlbumOrder
 import com.ivor.ivormusic.ui.artist.ArtistScreen
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
+import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.ui.downloads.MusicPlaylistDownloadAction
+import com.ivor.ivormusic.ui.player.rememberArtworkColorScheme
+import com.ivor.ivormusic.ui.theme.MontserratFamily
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.mutableFloatStateOf
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -276,9 +286,14 @@ fun LibraryContent(
 
     // Back from any Library route: out to the tab an excursion began on, or
     // to the root. One function, so every screen's back control and the
-    // system gesture agree with each other.
+    // system gesture agree with each other. ImportSongs is the one two-level
+    // route: it is only ever reached from an open playlist, so back returns
+    // there - and deliberately before the excursion check, which must keep
+    // waiting for the back that leaves the playlist itself.
     fun back() {
-        if (returnsToCaller) {
+        if (currentRoute == LibraryRoute.ImportSongs) {
+            currentRoute = LibraryRoute.Playlist
+        } else if (returnsToCaller) {
             returnsToCaller = false
             onReturnToCaller()
         } else {
@@ -291,7 +306,10 @@ fun LibraryContent(
         onBack = { back() },
         // An excursion's back lands on another tab, not on the root the peel
         // would reveal, so it is not previewed; the tab slide carries it.
-        previewable = currentRoute != LibraryRoute.Main && !returnsToCaller,
+        // ImportSongs backs onto the playlist, not the root the peel shows,
+        // so it is not previewed either.
+        previewable = currentRoute != LibraryRoute.Main && !returnsToCaller &&
+            currentRoute != LibraryRoute.ImportSongs,
         background = {
             LibraryMainScreen(
                 songs = songs,
@@ -328,6 +346,9 @@ fun LibraryContent(
                 readyOfflineHistoryDisabled = readyOffline.historyDisabled,
                 onReadyOfflineClick = {
                     currentRoute = LibraryRoute.ReadyOffline
+                },
+                onCreatePlaylist = {
+                    currentRoute = LibraryRoute.CreatePlaylist
                 },
                 onSongLongPress = onSongLongPress,
                 allSongsListState = allSongsListState
@@ -370,7 +391,8 @@ fun LibraryContent(
                         viewModel = viewModel,
                         isAlbum = false,
                         onSongLongPress = onSongLongPress,
-                        onEnqueueSong = onEnqueueSong
+                        onEnqueueSong = onEnqueueSong,
+                        onAddSongsRequest = { currentRoute = LibraryRoute.ImportSongs }
                     )
                 }
             }
@@ -397,7 +419,9 @@ fun LibraryContent(
                         preloadedSongs = selectedAlbumSongs,
                         isAlbum = true,
                         onSongLongPress = onSongLongPress,
-                        onEnqueueSong = onEnqueueSong
+                        onEnqueueSong = onEnqueueSong,
+                        // An album is not an editable local playlist.
+                        onAddSongsRequest = null
                     )
                 }
             }
@@ -470,8 +494,33 @@ fun LibraryContent(
                     preloadedSongs = readyOffline.songs,
                     isAlbum = false,
                     onSongLongPress = onSongLongPress,
-                    onEnqueueSong = onEnqueueSong
+                    onEnqueueSong = onEnqueueSong,
+                    // A cache view, not an editable local playlist.
+                    onAddSongsRequest = null
                 )
+            }
+            LibraryRoute.CreatePlaylist -> {
+                PlaylistStudioScreen(
+                    viewModel = viewModel,
+                    onBack = { back() },
+                    onCreated = { created ->
+                        // Straight onto the new playlist; back from there goes
+                        // to the root, the same as any playlist opened from it.
+                        selectedPlaylist = created
+                        returnsToCaller = false
+                        currentRoute = LibraryRoute.Playlist
+                    }
+                )
+            }
+            LibraryRoute.ImportSongs -> {
+                selectedPlaylist?.let { target ->
+                    PlaylistImportScreen(
+                        targetPlaylist = target,
+                        viewModel = viewModel,
+                        onBack = { back() },
+                        onDone = { back() }
+                    )
+                }
             }
         }
     }
@@ -479,7 +528,11 @@ fun LibraryContent(
 }
 
 enum class LibraryRoute {
-    Main, Playlist, Album, Artist, Stats, History, ReadyOffline
+    Main, Playlist, Album, Artist, Stats, History, ReadyOffline,
+    /** The immersive local-playlist creation flow (PlaylistStudioScreen). */
+    CreatePlaylist,
+    /** "Add from your playlists" into the open local playlist (PlaylistImportScreen). */
+    ImportSongs
 }
 
 enum class LibraryTab(val label: String) {
@@ -522,6 +575,9 @@ fun LibraryMainScreen(
     readyOfflineUnnamed: Int = 0,
     readyOfflineHistoryDisabled: Boolean = false,
     onReadyOfflineClick: () -> Unit = {},
+    /** Opens the immersive creation flow. Required: a silent default here is
+     * a New playlist button that does nothing. */
+    onCreatePlaylist: () -> Unit,
     onSongLongPress: ((Song) -> Unit)? = null,
     allSongsListState: LazyListState = rememberLazyListState()
 ) {
@@ -586,7 +642,6 @@ fun LibraryMainScreen(
     }
 
     var fabMenuExpanded by rememberSaveable { mutableStateOf(false) }
-    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -820,7 +875,7 @@ fun LibraryMainScreen(
         FloatingActionButtonMenuItem(
             onClick = {
                 fabMenuExpanded = false
-                showCreatePlaylistDialog = true
+                onCreatePlaylist()
             },
             icon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
             text = { Text(stringResource(R.string.action_new_playlist)) },
@@ -859,18 +914,6 @@ fun LibraryMainScreen(
         )
     }
 
-    if (showCreatePlaylistDialog) {
-        EditPlaylistDialog(
-            title = stringResource(R.string.action_new_playlist),
-            initialName = "",
-            initialDescription = null,
-            onDismiss = { showCreatePlaylistDialog = false },
-            onConfirm = { name, description ->
-                viewModel.createLocalPlaylist(name, description)
-                showCreatePlaylistDialog = false
-            }
-        )
-    }
     }
 }
 
@@ -2319,6 +2362,123 @@ fun EmptyLibraryState(
 /** Row height used only to size the loading skeleton; real rows measure themselves. */
 private val TrackRowHeight = 68.dp
 
+/** The playlist page's text rail: title, facts, controls and description share it. */
+private val PLAYLIST_GUTTER = 24.dp
+
+/**
+ * Pixels asked for the hero cover. A playlist thumbnail arrives from a feed at
+ * around 120px, which is a blurred smear across a full-width banner; Google
+ * serves a real crop at whatever size the `=w-h` directive asks for, and past
+ * this it only upscales.
+ */
+private const val HERO_COVER_PX = 1080
+
+/**
+ * How far the page's ground is carried from `primaryContainer` toward
+ * `primary` - that is, how saturated the cover's color reads on the page.
+ *
+ * **The ground is not mixed with the background at all, and that is the whole
+ * point.** [scar] Two attempts did mix it, at 0.45 and then 0.8 of the way
+ * from the background toward `primaryContainer`, and both read as white on
+ * screen. `primaryContainer` is a *pale* tone by construction - tone 90 in a
+ * light theme - so anything blended between it and a tone-98 background is at
+ * best a few percent off the background however hard the blend is pushed.
+ * There is no value of that formula that produces a visibly colored page.
+ *
+ * Blending toward `primary` fixes that, but **only a light theme needs it**,
+ * and applying it to both was the next bug. [scar] In a dark scheme
+ * `primaryContainer` is tone 30 against a tone-6 background - already strongly
+ * colored, with nothing to rescue - so carrying it toward `primary`'s tone 80
+ * dragged the ground to a mid tone where `onPrimaryContainer`, its own
+ * contrast pair, stopped reading. The pale-role problem is asymmetric, so the
+ * correction is too.
+ *
+ * Left alone in the dark and deepened in the light, the ground stays a
+ * `primaryContainer` in both, which is what keeps `onPrimaryContainer` a
+ * guaranteed-readable ink on it by M3 construction rather than by luck. It
+ * also buys the controls their contrast - the filled Play button sits on
+ * `primary` and the tonal ones on `secondaryContainer`, which land on opposite
+ * sides of the ground instead of vanishing into a pastel one.
+ */
+private const val PLAYLIST_GROUND_DEPTH = 0.3f
+
+/**
+ * The playlist page's ground: the theme background carried most of the way to
+ * the container color pulled from the cover.
+ *
+ * **Flat, not a gradient.** [judgement] A wash that decays down the page ends
+ * with the bottom of a long track list back on the plain theme, which reads as
+ * the color having run out rather than as a gradient - and it gives the cover's
+ * dissolve a moving target, so the hand-off can only line up at one depth. One
+ * color that the cover blends into and the page then holds has neither problem.
+ *
+ * Every surface that has to agree with it - the app bar, the status-bar scrim
+ * over the cover, the page behind the list - resolves it through here, so they
+ * are the same color by construction rather than by three matching constants.
+ * Call it inside the page's artwork [MaterialTheme]; with artwork colors off it
+ * resolves to the app's own primaryContainer and the page is theme-tinted.
+ */
+@Composable
+private fun playlistPageGround(): Color {
+    val scheme = MaterialTheme.colorScheme
+    // A dark scheme's container is already a strong color against a near-black
+    // page and is left exactly as it is; only the light scheme's pastel needs
+    // deepening. See [PLAYLIST_GROUND_DEPTH].
+    if (scheme.background.luminance() < 0.5f) return scheme.primaryContainer
+    return lerp(scheme.primaryContainer, scheme.primary, PLAYLIST_GROUND_DEPTH)
+}
+
+/**
+ * Ink for text standing on [playlistPageGround] or [playlistRaisedSurface].
+ *
+ * `onPrimaryContainer`, and deliberately not `onSurface` or `onBackground`.
+ * Those are the contrast pairs for surfaces that follow the *theme*, and this
+ * page's ground follows the **cover** instead - so on a colored page they are
+ * paired with something that is no longer behind them, which is how a dark
+ * theme ended up drawing near-white text on a mid-tone ground. Because the
+ * ground stays a `primaryContainer` in both themes, its own `on` role is
+ * readable on it by construction, in either.
+ *
+ * It does still flip with the theme - dark ink in a light scheme, light ink in
+ * a dark one - because the ground flips with it. What it never does is flip
+ * *independently* of the ground, which is the failure that matters.
+ */
+@Composable
+private fun playlistOnGround(): Color = MaterialTheme.colorScheme.onPrimaryContainer
+
+/**
+ * A card or field standing on [playlistPageGround].
+ *
+ * Once the ground is a mid tone rather than a near-white or near-black, the
+ * M3 elevation rule inverts: a container is normally a step *toward* the
+ * middle from an extreme background, but there is nowhere to step to from the
+ * middle, and a card that darkens on a colored page reads as a hole punched in
+ * it rather than as something lying on top. So a raised surface here always
+ * lifts toward the light, which is the reading that survives on any ground.
+ *
+ * Getting there needs the theme, because the light end of the cover's palette
+ * is a different role in each: `primaryContainer` is the pale tone in a light
+ * scheme and `primary` is the bright one in a dark scheme. Probed off the
+ * background's luminance, the same test `rememberArtworkColorScheme` uses to
+ * decide which tones to map onto the accents in the first place.
+ *
+ * The two fractions differ because the distances do. A light ground sits only
+ * a handful of tones below `primaryContainer`, so a small step is invisible; a
+ * dark ground is most of the ramp away from `primary`, so the same step would
+ * overshoot into a mid tone and take [playlistOnGround] out of contrast with
+ * the card - which is the whole failure this page has already had once.
+ */
+@Composable
+private fun playlistRaisedSurface(): Color {
+    val scheme = MaterialTheme.colorScheme
+    val ground = playlistPageGround()
+    return if (scheme.background.luminance() < 0.5f) {
+        lerp(ground, scheme.primary, 0.16f)
+    } else {
+        lerp(ground, scheme.primaryContainer, 0.45f)
+    }
+}
+
 /**
  * Section header above the track list. Carries the count and, for editable
  * playlists, the Edit/Done toggle - the mode switch sits with the content it
@@ -2341,12 +2501,14 @@ private fun TrackSectionHeader(
             Text(
                 text = "Tracks",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                // Stands on the page's ground, not on a theme surface.
+                color = playlistOnGround()
             )
             Text(
                 text = countLabel,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = playlistOnGround().copy(alpha = 0.78f)
             )
         }
         if (canEdit) {
@@ -2467,11 +2629,14 @@ private fun PlaylistTrackRow(
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessMediumLow
     )
+    // Rows stand on the page's own ground rather than on a neutral surface
+    // role - see [playlistRaisedSurface] for why a `surfaceContainerLow` card
+    // lands on the wrong side of a colored ground in a dark theme.
     val containerColor by animateColorAsState(
         targetValue = if (isDragging) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
+            playlistRaisedSurface()
         },
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "trackContainer"
@@ -2584,7 +2749,7 @@ private fun PlaylistTrackRow(
                     Text(
                         formatSongDuration(song.duration),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = playlistOnGround().copy(alpha = 0.7f)
                     )
                 }
             },
@@ -2595,7 +2760,15 @@ private fun PlaylistTrackRow(
             } else {
                 Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick)
             },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            // The row's own card is built from the cover, so its text is too.
+            // Left on the defaults it resolves to `onSurface`, the pair for a
+            // theme surface that is not what the row is drawn on.
+            colors = ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+                headlineColor = playlistOnGround(),
+                supportingColor = playlistOnGround().copy(alpha = 0.78f),
+                trailingIconColor = playlistOnGround().copy(alpha = 0.78f)
+            )
         )
     }
 }
@@ -2808,7 +2981,14 @@ fun PlaylistDetailScreen(
      * queue swipe action disarmed. The boolean is play-next: true inserts after
      * the current song, false appends at the end.
      */
-    onEnqueueSong: ((Song, Boolean) -> Unit)? = null
+    onEnqueueSong: ((Song, Boolean) -> Unit)? = null,
+    /**
+     * Open the "add from your playlists" flow for this playlist. Only offered
+     * on local playlists, which are the ones whose track list this app owns.
+     * Deliberately no default: a null default is the half-wired-feature trap,
+     * so every caller states whether its surface can host the flow.
+     */
+    onAddSongsRequest: (() -> Unit)?
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
@@ -3179,9 +3359,30 @@ fun PlaylistDetailScreen(
         }
     }
 
+    // The page dresses in the cover. Palette accents extracted from the
+    // artwork replace the theme's accent roles while surfaces stay on the app
+    // theme (the player's own rememberArtworkColorScheme, reused), so Play,
+    // Save, the FAB and the wash behind the list all match the art. The base
+    // theme holds while extraction runs, when the art has no usable swatches,
+    // and when the user has turned artwork colors off - someone who switched
+    // that off did so because they want the app's own palette, and a page
+    // that tints itself from the cover anyway is the switch not working.
+    val heroArt = resolvedPlaylist.thumbnailUrl?.takeIf { it.isNotBlank() && it != "null" }
+    val artworkColorsEnabled by swipePrefs.playerArtworkColors.collectAsState()
+    val artworkScheme = rememberArtworkColorScheme(
+        enabled = artworkColorsEnabled,
+        albumArtUri = heroArt,
+        base = MaterialTheme.colorScheme
+    )
+    MaterialTheme(colorScheme = artworkScheme) {
     Scaffold(
         topBar = {
-            val barColor = MaterialTheme.colorScheme.surface
+            // The bar settles into the page's ground rather than onto it: an
+            // untinted `surface` slab fading in over a cover-colored page
+            // reads as a grey card sliding over it. It is the ground exactly,
+            // so what the bar separates is the scrolling rows passing under
+            // it, not itself from the page.
+            val barColor = playlistPageGround()
             Box(modifier = Modifier.drawBehind { drawRect(barColor, alpha = barAlpha.value) }) {
                 Column {
                     TopAppBar(
@@ -3263,6 +3464,16 @@ fun PlaylistDetailScreen(
                                                 onClick = {
                                                     showOverflow = false
                                                     showEditDialog = true
+                                                }
+                                            )
+                                        }
+                                        if (isLocalPlaylist && onAddSongsRequest != null) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.lib_add_from_playlists)) },
+                                                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    onAddSongsRequest()
                                                 }
                                             )
                                         }
@@ -3398,8 +3609,10 @@ fun PlaylistDetailScreen(
                                 .focusRequester(searchFocus),
                             shape = RoundedCornerShape(28.dp),
                             colors = TextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                // Stands on the ground the same way the rows
+                                // it filters do.
+                                focusedContainerColor = playlistRaisedSurface(),
+                                unfocusedContainerColor = playlistRaisedSurface(),
                                 focusedIndicatorColor = Color.Transparent,
                                 unfocusedIndicatorColor = Color.Transparent,
                                 disabledIndicatorColor = Color.Transparent
@@ -3464,7 +3677,20 @@ fun PlaylistDetailScreen(
                 }
             }
         }
-    ) { padding ->
+    ) { _ ->
+        // The scaffold's inset is deliberately dropped: the cover draws under
+        // the transparent top bar and the status bar, which is the whole point
+        // of the hero, and the list carries its own bottom padding for the
+        // navigation bar and the floating overlays.
+        // The cover's color is the page, not a flourish at the top of it: one
+        // flat ground the artwork blends into and the page then carries to the
+        // bottom, however long the track list is. See [playlistPageGround] for
+        // why this is not a gradient.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(playlistPageGround())
+        ) {
         LazyColumn(
             state = listState,
             // Enough scroll clearance for the floating overlays plus the FAB
@@ -3472,81 +3698,107 @@ fun PlaylistDetailScreen(
                 bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current +
                     WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
             ),
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+            modifier = Modifier.fillMaxSize()
         ) {
-            // Hero header
+            // Hero: the cover fills the top of the page edge to edge under
+            // the status bar, then dissolves into the page's own tint, with
+            // the title, the facts and the controls stacked on that tint
+            // below it - the artist page's immersive top, for collections.
+            //
+            // The title sits *below* the cover rather than on it. On the
+            // artist page a name can be set over a photo because a portrait
+            // has a predictable shape; a playlist cover is any image at all,
+            // including a white one, and no scrim tuning makes type over it
+            // reliable across every cover. Below it, the title is drawn on
+            // the page's own tint, so it reads in both themes on all of the
+            // app's palettes.
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    MaterialTheme.colorScheme.background
-                                )
-                            )
-                        )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = padding.calculateTopPadding(), bottom = 20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(modifier = Modifier.padding(top = 16.dp)) {
-                            Surface(
-                                shape = RoundedCornerShape(28.dp),
+                // The status-bar scrim is drawn in the page's ground rather
+                // than in the bare background, so the band the app bar fades
+                // in over is already the page's own color.
+                val ground = playlistPageGround()
+                val windowHeight = LocalWindowInfo.current.containerDpSize.height
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        // Near-square on a phone, but never more than a
+                        // comfortable share of the window: the title, the
+                        // controls and the first track all have to fit under
+                        // it, in landscape as much as in portrait.
+                        val heroHeight = (maxWidth * 0.94f)
+                            .coerceAtMost(windowHeight * 0.44f)
+                            .coerceAtLeast(220.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(heroHeight)
+                                // The cover drifts under the scroll; clipped
+                                // here so it never draws over the list.
+                                .clipToBounds()
+                        ) {
+                            Box(
                                 modifier = Modifier
-                                    .size(220.dp)
+                                    .matchParentSize()
+                                    .graphicsLayer {
+                                        // Scroll-driven, not time-driven: the
+                                        // cover trails the list rather than
+                                        // animating on its own, so there is
+                                        // nothing here to reduce.
+                                        val collapse = headerCollapse.value
+                                        translationY = collapse * size.height * 0.24f
+                                        alpha = 1f - collapse * 0.55f
+                                    }
                                     .then(
-                                        // The artwork is the affordance: 220dp of
-                                        // obvious target, exactly where someone
-                                        // looking to change the picture looks.
+                                        // The cover is the affordance: a whole
+                                        // banner of target, exactly where
+                                        // someone looking to change the
+                                        // picture looks.
                                         if (isLocalPlaylist) {
                                             Modifier.clickable(onClick = pickCover)
                                         } else Modifier
                                     )
-                                    .graphicsLayer {
-                                        // Scroll-driven, not time-driven: the art
-                                        // trails the list instead of animating on
-                                        // its own, so there is nothing to reduce.
-                                        val collapse = headerCollapse.value
-                                        translationY = collapse * 220.dp.toPx() * 0.28f
-                                        val shrink = 1f - collapse * 0.12f
-                                        scaleX = shrink
-                                        scaleY = shrink
-                                        alpha = 1f - collapse * 0.75f
-                                    },
-                                // No shadow: the art rides a scroll-driven
-                                // parallax, scale and fade, and a shadow drawn
-                                // under a layer that is moving every frame
-                                // shimmers instead of grounding it.
-                                shadowElevation = 0.dp,
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
-                                if (resolvedPlaylist.thumbnailUrl != null && resolvedPlaylist.thumbnailUrl != "null") {
-                                    AsyncImage(
-                                        model = resolvedPlaylist.thumbnailUrl,
+                                if (heroArt != null) {
+                                    // Asked for at the size it is drawn and
+                                    // layered over the feed-size original, so
+                                    // the banner is sharp rather than a 120px
+                                    // playlist thumbnail stretched over it.
+                                    VideoThumbnail(
+                                        thumbnailUrl = heroArt,
+                                        highResThumbnailUrl = googleImageAtSize(heroArt, HERO_COVER_PX)
+                                            ?.takeIf { it != heroArt },
                                         contentDescription = null,
-                                        contentScale = ContentScale.Crop
+                                        modifier = Modifier.fillMaxSize(),
+                                        showProgress = false,
+                                        placeholderColor = MaterialTheme.colorScheme.surfaceContainerHigh
                                     )
                                 } else {
-                                    // Expressive placeholder: icon seated in a material
-                                    // shape, matching the liked-songs hero treatment
-                                    Box(contentAlignment = Alignment.Center) {
+                                    // No cover anywhere: the theme's own
+                                    // containers with the collection's glyph
+                                    // cut into an Expressive shape, so the
+                                    // page still has a top.
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(
+                                                        MaterialTheme.colorScheme.primaryContainer,
+                                                        MaterialTheme.colorScheme.tertiaryContainer
+                                                    )
+                                                )
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
                                         Surface(
                                             shape = MaterialShapes.Cookie9Sided.toShape(),
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            modifier = Modifier.size(120.dp)
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f),
+                                            modifier = Modifier.size(150.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Icon(
                                                     imageVector = if (isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay,
                                                     contentDescription = null,
-                                                    modifier = Modifier.size(56.dp),
+                                                    modifier = Modifier.size(64.dp),
                                                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                                                 )
                                             }
@@ -3555,27 +3807,66 @@ fun PlaylistDetailScreen(
                                 }
                             }
 
-                            // Badge on the corner, so the artwork reads as
-                            // editable without a caption telling people to tap it.
-                            // Rides the same collapse as the art it sits on.
+                            // Where the cover hands the page over: a plain
+                            // fade, in the page's exact ground color.
+                            //
+                            // This was a `DstIn` mask that erased the cover's
+                            // foot instead. [scar] On screen it composited to
+                            // *black* rather than to transparency and ended
+                            // the cover on a hard dark edge - the layer was
+                            // not isolating the way `CompositingStrategy`
+                            // promises. Painting the fade is only correct
+                            // because the ground is one flat color: there is
+                            // exactly one value to match, so a plain SrcOver
+                            // gradient lands on it precisely, with no blend
+                            // mode and no offscreen buffer to go wrong.
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            0f to ground.copy(alpha = 0f),
+                                            0.58f to ground.copy(alpha = 0f),
+                                            0.86f to ground.copy(alpha = 0.85f),
+                                            1f to ground
+                                        )
+                                    )
+                            )
+
+                            // Top fade: back, search and the overflow need
+                            // ground to sit on whatever the cover is. Faded to
+                            // the same color at zero alpha rather than to
+                            // Transparent, which is transparent *black* and
+                            // greys the band in a light theme.
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(132.dp)
+                                    .align(Alignment.TopCenter)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                ground.copy(alpha = 0.55f),
+                                                ground.copy(alpha = 0f)
+                                            )
+                                        )
+                                    )
+                            )
+
+                            // Badge on the cover's corner, so the artwork
+                            // reads as editable without a caption telling
+                            // people to tap it.
                             if (isLocalPlaylist) {
                                 Surface(
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.primaryContainer,
-                                    // Same scrolling layer as the art it sits
-                                    // on - same reason for no shadow.
+                                    // It sits on a layer that moves with every
+                                    // scroll frame, and a shadow under one of
+                                    // those shimmers instead of grounding it.
                                     shadowElevation = 0.dp,
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(6.dp)
-                                        .graphicsLayer {
-                                            val collapse = headerCollapse.value
-                                            translationY = collapse * 220.dp.toPx() * 0.28f
-                                            val shrink = 1f - collapse * 0.12f
-                                            scaleX = shrink
-                                            scaleY = shrink
-                                            alpha = 1f - collapse * 0.75f
-                                        }
+                                        .padding(end = 20.dp, bottom = 12.dp)
                                         .clickable(onClick = pickCover)
                                 ) {
                                     Icon(
@@ -3589,17 +3880,35 @@ fun PlaylistDetailScreen(
                                 }
                             }
                         }
+                    }
 
-                        Spacer(Modifier.height(24.dp))
-
+                    // Title and facts, set the way the artist page sets a
+                    // name: poster face, start-aligned, sized down rather
+                    // than cut when the name is a long one.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = PLAYLIST_GUTTER)
+                            .padding(top = 14.dp)
+                    ) {
                         Text(
                             text = resolvedPlaylist.name,
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.displaySmall.copy(
+                                fontFamily = MontserratFamily,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-0.02).em,
+                                lineHeight = 1.08.em
+                            ),
+                            color = playlistOnGround(),
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 24.dp)
+                            // Big for "Focus", smaller rather than cut for
+                            // "Songs to sing in the shower at 3am".
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 24.sp,
+                                maxFontSize = 38.sp,
+                                stepSize = 2.sp
+                            )
                         )
 
                         val totalDurationLabel = remember(songs) {
@@ -3617,99 +3926,121 @@ fun PlaylistDetailScreen(
                                 totalDurationLabel
                             ).joinToString("  ·  "),
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .padding(horizontal = 24.dp)
-                                .padding(top = 10.dp),
-                            textAlign = TextAlign.Center
+                            fontWeight = FontWeight.Medium,
+                            color = playlistOnGround().copy(alpha = 0.8f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 8.dp)
                         )
+                    }
 
-                        if (!resolvedPlaylist.description.isNullOrBlank()) {
-                            Text(
-                                text = resolvedPlaylist.description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                maxLines = if (descriptionExpanded) Int.MAX_VALUE else 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .padding(horizontal = 32.dp)
-                                    .padding(top = 12.dp)
-                                    .animateContentSize()
-                                    .clickable { descriptionExpanded = !descriptionExpanded }
-                            )
-                        }
+                    // Playback is the page's one primary action, directly
+                    // under the facts it acts on. Everything else is a
+                    // quieter row beneath it.
+                    if (songs.isNotEmpty() && !isReorderMode && !isSearchActive) {
+                        CollectionPlaybackActions(
+                            onPlay = { onPlayQueue(songs, songs.first()) },
+                            onShuffle = { onPlayQueue(songs.shuffled(), null) },
+                            modifier = Modifier
+                                .padding(horizontal = PLAYLIST_GUTTER)
+                                .padding(top = 18.dp),
+                        )
+                    }
 
-                        if (songs.isNotEmpty() && !isReorderMode && !isSearchActive) {
-                            CollectionPlaybackActions(
-                                onPlay = { onPlayQueue(songs, songs.first()) },
-                                onShuffle = { onPlayQueue(songs.shuffled(), null) },
-                                modifier = Modifier.padding(horizontal = 24.dp).padding(top = 20.dp),
-                            )
-                        }
-
-                        androidx.compose.foundation.layout.FlowRow(
-                            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            // Keeping a playlist is the whole point of arriving
-                            // here from search, so it sits in the header rather
-                            // than behind the overflow. Play is still the one
-                            // primary action, above this secondary action group.
-                            if (canSavePlaylist) {
-                                FilledTonalButton(
-                                    onClick = {
-                                        val nowSaved = viewModel.toggleSavedPlaylist(
-                                            resolvedPlaylist,
-                                            isAlbum = isAlbum
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = PLAYLIST_GUTTER)
+                            .padding(top = 10.dp),
+                        // Centred rather than on the title's rail: these wrap
+                        // to their own line under two full-width controls, and
+                        // a lone pill hanging off the left edge under them
+                        // reads as a stray rather than as the row's second
+                        // rank. Centring also keeps it looking deliberate
+                        // whether there are one, two or three of them.
+                        horizontalArrangement = Arrangement.spacedBy(
+                            8.dp,
+                            Alignment.CenterHorizontally
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        // Keeping a playlist is the whole point of arriving
+                        // here from search, so it sits in the header rather
+                        // than behind the overflow. Play is still the one
+                        // primary action, above this secondary group.
+                        if (canSavePlaylist) {
+                            FilledTonalButton(
+                                onClick = {
+                                    val nowSaved = viewModel.toggleSavedPlaylist(
+                                        resolvedPlaylist,
+                                        isAlbum = isAlbum
+                                    )
+                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    scope.launch {
+                                        val snackbarMsg =
+                                            if (nowSaved) shareContext.getString(R.string.lib_saved_to_library)
+                                            else shareContext.getString(R.string.lib_removed_from_library)
+                                        snackbarHostState.showSnackbar(snackbarMsg)
+                                    }
+                                },
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                // Crossfade rather than a spatial spec: the
+                                // button must not resize under the finger that
+                                // is still on it.
+                                AnimatedContent(
+                                    targetState = isSavedPlaylist,
+                                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                    label = "savePlaylist"
+                                ) { saved ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (saved) Icons.Rounded.BookmarkAdded
+                                                else Icons.Rounded.BookmarkAdd,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
                                         )
-                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                                        scope.launch {
-                                            val snackbarMsg =
-                                                if (nowSaved) shareContext.getString(R.string.lib_saved_to_library)
-                                                else shareContext.getString(R.string.lib_removed_from_library)
-                                            snackbarHostState.showSnackbar(snackbarMsg)
-                                        }
-                                    },
-                                    modifier = Modifier.heightIn(min = 48.dp)
-                                ) {
-                                    // Crossfade rather than a spatial spec: the
-                                    // button must not resize under the finger that
-                                    // is still on it.
-                                    AnimatedContent(
-                                        targetState = isSavedPlaylist,
-                                        transitionSpec = { fadeIn() togetherWith fadeOut() },
-                                        label = "savePlaylist"
-                                    ) { saved ->
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = if (saved) Icons.Rounded.BookmarkAdded
-                                                    else Icons.Rounded.BookmarkAdd,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(if (saved) stringResource(R.string.cd_saved) else stringResource(R.string.action_save))
-                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (saved) stringResource(R.string.cd_saved) else stringResource(R.string.action_save))
                                     }
                                 }
                             }
+                        }
 
-                            // Saving keeps a live reference; downloading makes the
-                            // loaded snapshot available offline. They stay separate
-                            // actions because either can be useful without the other.
-                            if (songs.isNotEmpty()) {
-                                MusicPlaylistDownloadAction(
-                                    playlistId = resolvedPlaylist.id,
-                                    playlistTitle = resolvedPlaylist.name,
-                                    artworkUrl = resolvedPlaylist.thumbnailUrl,
-                                    songs = songs,
-                                    modifier = Modifier.heightIn(min = 48.dp)
-                                )
-                            }
+                        // Saving keeps a live reference; downloading makes the
+                        // loaded snapshot available offline. They stay separate
+                        // actions because either can be useful without the other.
+                        if (songs.isNotEmpty()) {
+                            MusicPlaylistDownloadAction(
+                                playlistId = resolvedPlaylist.id,
+                                playlistTitle = resolvedPlaylist.name,
+                                artworkUrl = resolvedPlaylist.thumbnailUrl,
+                                songs = songs,
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            )
                         }
                     }
+
+                    // Tap to expand: a published playlist's description can
+                    // run to paragraphs, and two lines is all the page owes
+                    // it before the tracks.
+                    if (!resolvedPlaylist.description.isNullOrBlank()) {
+                        Text(
+                            text = resolvedPlaylist.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = playlistOnGround().copy(alpha = 0.78f),
+                            maxLines = if (descriptionExpanded) Int.MAX_VALUE else 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = PLAYLIST_GUTTER)
+                                .padding(top = 14.dp)
+                                .animateContentSize()
+                                .clickable { descriptionExpanded = !descriptionExpanded }
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
                 }
             }
 
@@ -3785,10 +4116,21 @@ fun PlaylistDetailScreen(
                 }
 
                 songs.isEmpty() -> item {
+                    // A fresh local playlist's empty state offers the way to
+                    // fill it rather than only reporting that it is empty.
                     EmptyLibraryState(
                         icon = Icons.Rounded.MusicNote,
                         title = stringResource(R.string.vl_no_videos),
-                        subtitle = "Songs you add to this ${if (isAlbum) "album" else "playlist"} will show up here"
+                        subtitle = "Songs you add to this ${if (isAlbum) "album" else "playlist"} will show up here",
+                        action = if (isLocalPlaylist && onAddSongsRequest != null) {
+                            {
+                                Button(onClick = onAddSongsRequest) {
+                                    Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(stringResource(R.string.lib_add_from_playlists))
+                                }
+                            }
+                        } else null
                     )
                 }
 
@@ -3925,7 +4267,9 @@ fun PlaylistDetailScreen(
                 }
             }
         }
+        }
     }
+    } // MaterialTheme(artworkScheme)
 
     if (showEditDialog && (isLocalPlaylist || canRenameDeleteYouTube)) {
         EditPlaylistDialog(
