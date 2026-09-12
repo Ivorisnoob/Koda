@@ -354,8 +354,10 @@ class YouTubeRepository(private val context: Context) {
         }
         // Folds Google's rotated session cookies back into storage. Without it
         // the login snapshot goes stale on its own and every authenticated
-        // endpoint quietly answers as signed out. See SessionCookieJar.
-        .cookieJar(SessionCookieJar(sessionManager))
+        // endpoint quietly answers as signed out. A *network* interceptor
+        // because the rotation often rides on a 302 inside the chain, which an
+        // application interceptor never sees. See SessionRefreshInterceptor.
+        .addNetworkInterceptor(SessionRefreshInterceptor(sessionManager))
         .apply { httpCache(context)?.let { cache(it) } }
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -788,9 +790,36 @@ class YouTubeRepository(private val context: Context) {
             if (params != null) put("params", params)
         })?.toString()
 
+    /**
+     * Bind a request to the login it is being sent for.
+     *
+     * The `Cookie` header and the per-origin SAPISIDHASH both come from the
+     * same [YouTubeSession], and the session rides along as a request tag so
+     * [SessionRefreshInterceptor] folds Google's rotated cookies back into the
+     * profile that made the call rather than into whichever profile happens to
+     * be active when the response lands.
+     *
+     * A null session sends the request signed out, which is deliberate for the
+     * browse ids that read fine anonymously - an empty Cookie or Authorization
+     * header is worse than no header at all.
+     */
+    private fun okhttp3.Request.Builder.authenticate(
+        session: YouTubeSession?,
+        origin: String = "https://music.youtube.com",
+    ): okhttp3.Request.Builder {
+        if (session == null) return this
+        addHeader("Cookie", session.cookies)
+        YouTubeAuthUtils.getAuthorizationHeader(session.cookies, origin)?.let {
+            addHeader("Authorization", it)
+            addHeader("X-Goog-AuthUser", "0")
+        }
+        return tag(YouTubeSession::class.java, session)
+    }
+
     /** Metadata-only WEB_REMIX calls, public when signed out. Never playback. */
     private fun postMusicMetadata(endpoint: String, payload: org.json.JSONObject): org.json.JSONObject? {
         return try {
+            val session = sessionManager.captureSession()
             val client = org.json.JSONObject().put("clientName", "WEB_REMIX")
                 .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", "US")
             cachedVisitorDataOrNull()?.let { client.put("visitorData", it) }
@@ -803,19 +832,14 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("X-YouTube-Client-Name", "67")
                 .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
             cachedVisitorDataOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
-            sessionManager.getCookies()?.let { cookies ->
-                builder.addHeader("Cookie", cookies)
-                YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
-                    builder.addHeader("Authorization", auth).addHeader("X-Goog-AuthUser", "0")
-                }
-            }
+            builder.authenticate(session)
             okHttpClient.newCall(builder.build()).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful || body.isBlank()) {
                     KLog.w("YouTubeRepo", "Music $endpoint HTTP ${response.code}: ${body.take(200)}")
                     null
                 } else {
-                    noteSessionState(body)
+                    noteSessionState(body, session)
                     org.json.JSONObject(body).takeUnless { it.has("error") }
                 }
             }
@@ -1471,14 +1495,7 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("Origin", "https://music.youtube.com")
 
             // Personalize the radio when logged in; anonymous works fine too.
-            val cookies = sessionManager.getCookies()
-            if (cookies != null) {
-                requestBuilder.addHeader("Cookie", cookies)
-                YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
-                    requestBuilder.addHeader("Authorization", auth)
-                    requestBuilder.addHeader("X-Goog-AuthUser", "0")
-                }
-            }
+            requestBuilder.authenticate(sessionManager.captureSession())
 
             val response = okHttpClient.newCall(requestBuilder.build()).execute()
             val body = response.body?.string()
@@ -1640,7 +1657,7 @@ class YouTubeRepository(private val context: Context) {
         // session made every signed-out continuation look like a failed fetch,
         // which capped public playlists at their first page just as the parser
         // gap did for signed-in ones - the same symptom from a second cause.
-        val cookies = sessionManager.getCookies()
+        val session = sessionManager.captureSession()
 
         val jsonBody = """
             {
@@ -1655,26 +1672,18 @@ class YouTubeRepository(private val context: Context) {
                 "continuation": "$continuationToken"
             }
         """.trimIndent()
-        
-        val requestBuilder = okhttp3.Request.Builder()
+
+        val request = okhttp3.Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/browse")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
-
-        if (cookies != null) {
-            requestBuilder.addHeader("Cookie", cookies)
-            YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
-                requestBuilder.addHeader("Authorization", auth)
-                requestBuilder.addHeader("X-Goog-AuthUser", "0")
-            }
-        }
-
-        val request = requestBuilder.build()
+            .authenticate(session)
+            .build()
 
         return try {
             val response = okHttpClient.newCall(request).execute()
-            (response.body?.string() ?: "").also { noteSessionState(it) }
+            (response.body?.string() ?: "").also { noteSessionState(it, session) }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Music continuation request failed", e)
             ""
@@ -1903,7 +1912,10 @@ class YouTubeRepository(private val context: Context) {
     }
 
     suspend fun fetchAccountInfo() = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext
+        // Captured before the call so the name, avatar and datasyncId it parses
+        // land on the account that was asked, even if the user switches away
+        // while the request is out.
+        val session = sessionManager.captureSession() ?: return@withContext
 
         try {
             val jsonResponse = fetchInternalApi("account/account_menu")
@@ -1985,12 +1997,12 @@ class YouTubeRepository(private val context: Context) {
                     .replace("=s88", "=s512")
                     .replace("=s48", "=s512")
                     .replace("=s96", "=s512")
-                sessionManager.saveUserAvatar(highResUrl)
+                sessionManager.updateSessionIdentity(session, avatarUrl = highResUrl)
             }
-            
+
             // Save user name if found
             if (!userName.isNullOrEmpty()) {
-                sessionManager.saveUserName(userName)
+                sessionManager.updateSessionIdentity(session, name = userName)
             }
 
             // YouTube's own account identifier, which every authenticated
@@ -2010,7 +2022,7 @@ class YouTubeRepository(private val context: Context) {
                     ?.optJSONObject("mainAppWebResponseContext")
                     ?.optString("datasyncId")
                     ?.takeIf { it.isNotBlank() }
-                    ?.let { sessionManager.saveDatasyncId(it) }
+                    ?.let { sessionManager.updateSessionIdentity(session, datasyncId = it) }
             }
             
         } catch (e: Exception) {
@@ -2394,7 +2406,7 @@ class YouTubeRepository(private val context: Context) {
     // --- Internal API Helper ---
 
     private fun fetchInternalApi(endpoint: String): String {
-        val cookies = sessionManager.getCookies() ?: return ""
+        val session = sessionManager.captureSession() ?: return ""
         val isBrowse = !endpoint.contains("/") // simple check: browseId vs endpoint path
         
         val url = if (isBrowse) {
@@ -2403,9 +2415,6 @@ class YouTubeRepository(private val context: Context) {
             "https://music.youtube.com/youtubei/v1/$endpoint"
         }
         
-        // Generate the required Authorization header (SAPISIDHASH)
-        val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
-
         // Construct complete JSON body for WEB_REMIX client
         val jsonBody = if (isBrowse) {
             """
@@ -2439,11 +2448,9 @@ class YouTubeRepository(private val context: Context) {
         val request = okhttp3.Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", authHeader)
+            .authenticate(session)
             .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
-            .addHeader("X-Goog-AuthUser", "0")
             // Client name 67 is WEB_REMIX. Sent for the same reason the WEB
             // calls now send theirs: a client that never identifies itself is
             // the shape anti-abuse looks for. The visitor id rides as a header
@@ -2468,7 +2475,7 @@ class YouTubeRepository(private val context: Context) {
                     KLog.w("YouTubeRepo", "music browse $endpoint HTTP ${response.code}")
                     return ""
                 }
-                (response.body?.string() ?: "").also { noteSessionState(it) }
+                (response.body?.string() ?: "").also { noteSessionState(it, session) }
             }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Music browse request failed", e)
@@ -2844,12 +2851,14 @@ class YouTubeRepository(private val context: Context) {
         if (IncognitoMode.isEnabled(context)) return@withContext
 
         try {
-            val cookies = sessionManager.getCookies() ?: return@withContext
-            val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
+            val session = sessionManager.captureSession() ?: return@withContext
             val cpn = generateCpn()
-            
-            // Visitor Data (default fallback)
-            val visitorData = "Cgt6SUNYVzB2VkJDbyjGrrSmBg%3D%3D"
+
+            // This install's own minted token, which every other InnerTube call
+            // already rides on. The literal is the last resort it was always
+            // documented to be: a hardcoded visitor id identifies a stranger's
+            // session, and a missing one now answers LOGIN_REQUIRED.
+            val visitorData = cachedVisitorDataOrNull() ?: "Cgt6SUNYVzB2VkJDbyjGrrSmBg%3D%3D"
 
             // Client constants - using WEB_REMIX (web player)
             val clientName = "WEB_REMIX"
@@ -2881,12 +2890,10 @@ class YouTubeRepository(private val context: Context) {
             val playerRequest = okhttp3.Request.Builder()
                 .url(playerUrl)
                 .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .addHeader("Cookie", cookies)
-                .addHeader("Authorization", authHeader)
+                .authenticate(session)
                 .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/")
-                .addHeader("X-Goog-AuthUser", "0")
                 .addHeader("X-Goog-Api-Format-Version", "1")
                 .addHeader("X-YouTube-Client-Name", "67") // WEB_REMIX numeric ID
                 .addHeader("X-YouTube-Client-Version", clientVersion)
@@ -2936,11 +2943,19 @@ class YouTubeRepository(private val context: Context) {
                 append("&c=$clientName")
             }
 
+            // The /player call above blocks, and the switch can be flipped or
+            // the account changed while it does. This ping is the write that
+            // reaches the account, so both are rechecked against live state
+            // here rather than only at the top. currentSession also hands back
+            // the cookies as they are now, which /player itself may have
+            // rotated on the way through.
+            if (IncognitoMode.isEnabled(context)) return@withContext
+            val live = sessionManager.currentSession(session) ?: return@withContext
+
             val trackingRequest = okhttp3.Request.Builder()
                 .url(trackingUrl)
                 .get()
-                .addHeader("Cookie", cookies)
-                .addHeader("Authorization", authHeader)
+                .authenticate(live)
                 .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/watch?v=$videoId")
@@ -3279,27 +3294,9 @@ class YouTubeRepository(private val context: Context) {
      */
     private suspend fun getPersonalizedVideoRecommendations(): VideoFeedPage = withContext(Dispatchers.IO) {
         val empty = VideoFeedPage(emptyList())
-        val cookies = sessionManager.getCookies() ?: return@withContext empty
-        
-        // Extract SAPISID for authentication hash
-        val sapisid = cookies.split(";")
-            .map { it.trim() }
-            .find { it.startsWith("SAPISID=") || it.startsWith("__Secure-3PAPISID=") }
-            ?.split("=")?.getOrNull(1)
-        
-        // Generate SAPISID hash for authorization
+        val session = sessionManager.captureSession() ?: return@withContext empty
         val origin = "https://www.youtube.com"
-        val authHeader = if (sapisid != null) {
-            val timestamp = System.currentTimeMillis() / 1000
-            val hashInput = "$timestamp $sapisid $origin"
-            val hash = java.security.MessageDigest.getInstance("SHA-1")
-                .digest(hashInput.toByteArray())
-                .joinToString("") { "%02x".format(it) }
-            "SAPISIDHASH ${timestamp}_${hash}"
-        } else {
-            YouTubeAuthUtils.getAuthorizationHeader(cookies, origin) ?: ""
-        }
-        
+
         // Use YouTube browse endpoint for "What to Watch" (home page recommendations)
         val url = "https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false"
         
@@ -3325,12 +3322,10 @@ class YouTubeRepository(private val context: Context) {
         val request = okhttp3.Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", authHeader)
+            .authenticate(session, origin)
             .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .addHeader("Origin", origin)
             .addHeader("Referer", "$origin/")
-            .addHeader("X-Goog-AuthUser", "0")
             .addHeader("X-Origin", origin)
             .addHeader("Accept", "*/*")
             .addHeader("Accept-Language", "en-US,en;q=0.9")
@@ -4770,13 +4765,8 @@ class YouTubeRepository(private val context: Context) {
      * it rather than an error.
      */
     private fun fetchYouTubeBrowse(browseId: String): String {
-        val cookies = sessionManager.getCookies()
+        val session = sessionManager.captureSession()
         val url = "https://www.youtube.com/youtubei/v1/browse?key=$INNER_TUBE_API_KEY"
-
-        // Generate SAPISIDHASH for www.youtube.com origin
-        val authHeader = cookies?.let {
-            YouTubeAuthUtils.getAuthorizationHeader(it, "https://www.youtube.com")
-        }
 
         val visitorData = cachedVisitorDataOrNull()
 
@@ -4808,16 +4798,10 @@ class YouTubeRepository(private val context: Context) {
             .apply {
                 visitorData?.let { addHeader("X-Goog-Visitor-Id", it) }
             }
-            .apply {
-                // Signed out these are the difference between a public read and
-                // a malformed one: an empty Cookie or Authorization header is
-                // worse than no header at all.
-                if (!cookies.isNullOrBlank()) {
-                    addHeader("Cookie", cookies)
-                    if (!authHeader.isNullOrBlank()) addHeader("Authorization", authHeader)
-                    addHeader("X-Goog-AuthUser", "0")
-                }
-            }
+            // Signed out this attaches nothing, which is the difference between
+            // a public read and a malformed one: an empty Cookie or
+            // Authorization header is worse than no header at all.
+            .authenticate(session, "https://www.youtube.com")
             .build()
 
         return try {
@@ -5311,19 +5295,13 @@ class YouTubeRepository(private val context: Context) {
 
         cachedVisitorDataOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
 
-        val cookies = sessionManager.getCookies()
-        if (!cookies.isNullOrBlank()) {
-            builder.addHeader("Cookie", cookies)
-            YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://www.youtube.com")?.let { auth ->
-                builder.addHeader("Authorization", auth)
-                builder.addHeader("X-Goog-AuthUser", "0")
-            }
-        }
+        val session = sessionManager.captureSession()
+        builder.authenticate(session, "https://www.youtube.com")
 
         return try {
             okHttpClient.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) {
-                    response.body?.string()?.also { noteSessionState(it) }
+                    response.body?.string()?.also { noteSessionState(it, session) }
                 } else {
                     YouTubeRateLimit.note(
                         response.code,
@@ -5351,10 +5329,13 @@ class YouTubeRepository(private val context: Context) {
      * revived by a cookie rotation heals itself without a round trip through
      * the login screen.
      */
-    private fun noteSessionState(body: String) {
-        if (!sessionManager.isLoggedIn()) return
+    private fun noteSessionState(body: String, session: YouTubeSession?) {
+        if (session == null) return
         val match = LOGGED_IN_TRACKING_PARAM.find(body) ?: return
-        sessionManager.setSessionExpired(match.groupValues[1] == "0")
+        // Against the session the request went out with, not whoever is active
+        // now: a response that outlives an account switch used to badge the
+        // profile the user had just switched to as expired.
+        sessionManager.noteSessionExpired(session, match.groupValues[1] == "0")
     }
 
     /**
@@ -6711,18 +6692,17 @@ class YouTubeRepository(private val context: Context) {
      * hash is rejected here). Returns the raw body or null on failure.
      */
     private fun postMusicApi(endpoint: String, body: org.json.JSONObject): String? {
-        val cookies = sessionManager.getCookies() ?: return null
-        val auth = YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://music.youtube.com")
-            ?: return null
+        val session = sessionManager.captureSession() ?: return null
+        // Signing is not optional here: these are account writes, and an
+        // unsigned one answers 200 having done nothing.
+        if (YouTubeAuthUtils.getSapisid(session.cookies) == null) return null
         val request = okhttp3.Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", auth)
+            .authenticate(session)
             .addHeader("User-Agent", BROWSER_USER_AGENT)
             .addHeader("Origin", "https://music.youtube.com")
             .addHeader("X-Origin", "https://music.youtube.com")
-            .addHeader("X-Goog-AuthUser", "0")
             .build()
         return try {
             okHttpClient.newCall(request).execute().use { response ->
@@ -7062,9 +7042,8 @@ class YouTubeRepository(private val context: Context) {
         videoId: String,
         positionMs: Long,
     ): VideoHistorySession? = withContext(Dispatchers.IO) {
-        val profile = ProfileManager.activeProfileId(context)
-        val cookies = sessionManager.getCookies() ?: return@withContext null
-        if (!canReportVideoHistory(profile, cookies)) return@withContext null
+        val session = sessionManager.captureSession() ?: return@withContext null
+        if (!mayWriteVideoHistory()) return@withContext null
         try {
             val cpn = generateCpn()
             val raw = postWatchApi("player", org.json.JSONObject()
@@ -7075,8 +7054,10 @@ class YouTubeRepository(private val context: Context) {
             val playback = tracking.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
             val watchtime = tracking.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")
             if (playback.isNullOrBlank() || watchtime.isNullOrBlank()) return@withContext null
-            val session = VideoHistorySession(videoId, profile, cookies, cpn, playback, watchtime)
-            if (sendVideoHistoryPing(session, playback, positionMs, positionMs, false)) session else null
+            val history = VideoHistorySession(videoId, session, cpn, playback, watchtime)
+            history.takeIf {
+                sendVideoHistoryPing(it, playback, positionMs, positionMs, false) == HistoryPingResult.SENT
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -7091,21 +7072,20 @@ class YouTubeRepository(private val context: Context) {
         startMs: Long,
         positionMs: Long,
         final: Boolean,
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): HistoryPingResult = withContext(Dispatchers.IO) {
         try {
             sendVideoHistoryPing(session, session.watchtimeUrl, startMs, positionMs, final)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             KLog.w("YouTubeRepo", "Could not report video watch progress", e)
-            false
+            HistoryPingResult.FAILED
         }
     }
 
-    private fun canReportVideoHistory(profileId: String, cookies: String): Boolean =
-        ProfileManager.activeProfileId(context) == profileId &&
-            sessionManager.isLoggedIn() && sessionManager.getCookies() == cookies &&
-            !IncognitoMode.isEnabled(context) && videoHistoryPreferences.isSaveVideoHistoryEnabled()
+    /** The switches, as opposed to the session. Both have to hold at ping time. */
+    private fun mayWriteVideoHistory(): Boolean =
+        !IncognitoMode.isEnabled(context) && videoHistoryPreferences.isSaveVideoHistoryEnabled()
 
     private fun sendVideoHistoryPing(
         session: VideoHistorySession,
@@ -7113,11 +7093,20 @@ class YouTubeRepository(private val context: Context) {
         startMs: Long,
         positionMs: Long,
         final: Boolean,
-    ): Boolean {
-        if (!canReportVideoHistory(session.profileId, session.cookies)) return false
-        val url = baseUrl.toHttpUrlOrNull() ?: return false
+    ): HistoryPingResult {
+        if (!mayWriteVideoHistory()) return HistoryPingResult.FAILED
+        // Deliberately not a comparison of cookie strings. Google rotates the
+        // session cookies mid-video, and a string compare read every rotation
+        // as a different login and silently stopped reporting for the rest of
+        // the video on a perfectly valid account. This asks the question that
+        // was meant - same profile, still active, still the same login - and
+        // hands back the refreshed cookies to sign this ping with.
+        val live = sessionManager.currentSession(session.login) ?: return HistoryPingResult.SESSION_ENDED
+        val url = baseUrl.toHttpUrlOrNull() ?: return HistoryPingResult.FAILED
         // Credentials only go to the YouTube tracking hosts returned by /player.
-        if (url.scheme != "https" || url.host !in setOf("s.youtube.com", "www.youtube.com")) return false
+        if (url.scheme != "https" || url.host !in setOf("s.youtube.com", "www.youtube.com")) {
+            return HistoryPingResult.FAILED
+        }
         val position = (positionMs.coerceAtLeast(0L) / 1000.0).toString()
         val trackingUrl = url.newBuilder()
             .setQueryParameter("cpn", session.cpn)
@@ -7129,17 +7118,15 @@ class YouTubeRepository(private val context: Context) {
             .setQueryParameter("state", if (final) "paused" else "playing")
             .setQueryParameter("final", if (final) "1" else "0")
             .build()
-        val builder = okhttp3.Request.Builder().url(trackingUrl)
+        val request = okhttp3.Request.Builder().url(trackingUrl)
             .header("User-Agent", BROWSER_USER_AGENT)
             .header("Origin", "https://www.youtube.com")
             .header("Referer", "https://www.youtube.com/watch?v=${session.videoId}")
-            .header("Cookie", session.cookies)
-        YouTubeAuthUtils.getAuthorizationHeader(session.cookies, "https://www.youtube.com")?.let {
-            builder.header("Authorization", it).header("X-Goog-AuthUser", "0")
-        }
-        return okHttpClient.newCall(builder.build()).execute().use { response ->
+            .authenticate(live, "https://www.youtube.com")
+            .build()
+        return okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) KLog.w("YouTubeRepo", "Video history ping failed: ${response.code}")
-            response.isSuccessful
+            if (response.isSuccessful) HistoryPingResult.SENT else HistoryPingResult.FAILED
         }
     }
 

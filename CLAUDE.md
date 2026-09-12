@@ -124,6 +124,8 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | A new history/search/stats write not gated on `IncognitoMode` | Records silently while the switch says it is paused | `identity.md` |
 | A profile-scoped store left in `BackupRepository`'s raw preference copy | Restores onto whichever profile is that device's legacy one | `identity.md` |
 | Cookies captured from the page URL rather than the `music.youtube.com` jar | "Logged in but anonymous" | `identity.md` |
+| A login identified by its cookie string | Google rotates cookies hourly, so the first rotation reads as a different account and the write stops | `identity.md` |
+| A response applied to the active profile rather than the session it was sent for | A switch mid-flight files one account's cookies, expiry verdict or name onto another | `identity.md` |
 | An adaptive manifest or playlist served from the playback cache | Live stalls at the live edge; seeking behind it still works | `playback-streams.md` |
 | Behind-live measured from the window end rather than the target live offset | A live stream reads a permanent -0:15 and never says LIVE | `playback-video.md` |
 | Removing core library desugaring | Every search throws `NoSuchMethodError` on API 30-32, compiles fine | section 6 below |
@@ -237,6 +239,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Identity -> `docs/identity.md`
 - Cookies are captured from the **`music.youtube.com` jar**; writes guard on `isLoggedIn()`.
+- **A session is a login, not a cookie string** (`YouTubeSession`): Google rotates cookies mid-session, so identity is profile + generation. Authenticated requests go out through `authenticate()`, tagged with their session; anything applied on the way back (cookie refresh, `logged_in` verdict, account identity) goes through that tag, never the active profile. Re-read cookies via `currentSession` rather than replaying a held copy.
 - Switching a profile is one preference write; `SessionManager`'s API stays as it is. `AccountSwitcher` does invalidation (drops `visitorData`); consumers observe `activeProfileId` with `drop(1)`.
 - Local subscriptions, blocklist and watch history are profile-scoped; everything else is device-wide.
 - Incognito is enforced inside each write store, suppresses recording only, and is persisted before the flag flips.

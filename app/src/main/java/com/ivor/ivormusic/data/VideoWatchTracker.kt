@@ -106,7 +106,16 @@ internal class VideoWatchTracker(
                 val tracking = session ?: youtube.beginVideoHistorySession(videoId, start)
                     ?.also { session = it } ?: return@launch
                 if (!live && enabled() && epoch == reportEpoch) {
-                    youtube.reportVideoWatchProgress(tracking, start, position, final)
+                    // A dead session is dropped rather than retried for the rest
+                    // of the video: the login it was started under is over
+                    // (signed out, switched, or signed in again), so the next
+                    // report opens one under whoever is signed in now. A failed
+                    // ping is not that - the session survives a flaky network.
+                    if (youtube.reportVideoWatchProgress(tracking, start, position, final) ==
+                        HistoryPingResult.SESSION_ENDED
+                    ) {
+                        session = null
+                    }
                 }
             }
         }
