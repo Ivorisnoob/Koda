@@ -2535,7 +2535,10 @@ fun SearchContent(
                         onPlayQueue = onPlayQueue,
                         viewModel = viewModel,
                         onSongLongPress = onSongLongPress,
-                        onEnqueueSong = onEnqueueSong
+                        onEnqueueSong = onEnqueueSong,
+                        // Search opens other people's playlists; the import
+                        // flow belongs to the Library's local ones.
+                        onAddSongsRequest = null
                     )
                 }
             }

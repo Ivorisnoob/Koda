@@ -1605,4 +1605,62 @@
     <string name="lastfm_restart_hint">Start sign-in again</string>
     <string name="lastfm_show_secret">Show shared secret</string>
     <string name="lastfm_hide_secret">Hide shared secret</string>
+
+    <!-- Playlist studio (immersive creation flow) -->
+    <string name="studio_title">New playlist</string>
+    <string name="studio_name_hint">Name your playlist</string>
+    <string name="studio_add_description">Add a description</string>
+    <string name="studio_description_hint">Description</string>
+    <string name="studio_from_listening">From your listening</string>
+    <string name="studio_genres_moods">Genres and moods</string>
+    <string name="studio_recent_favorites">Your favorites</string>
+    <string name="studio_pick_seed_hint">Pick something below and start adding songs</string>
+    <string name="studio_because_you_added">Because you added %1$s</string>
+    <string name="studio_nothing_found">Nothing came back for this one. Try another.</string>
+    <string name="studio_seed_load_failed">Couldn\'t load songs. Check your connection.</string>
+    <string name="studio_create">Create playlist</string>
+    <string name="studio_name_first">Give it a name to create it</string>
+    <string name="studio_empty_selection">You can always add songs later</string>
+    <plurals name="studio_songs_selected">
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
+    </plurals>
+    <string name="cd_studio_add_song">Add to playlist</string>
+    <string name="cd_studio_remove_song">Remove from playlist</string>
+    <string name="cd_studio_close">Close</string>
+    <string name="genre_pop">Pop</string>
+    <string name="genre_hiphop">Hip-hop</string>
+    <string name="genre_rnb">R&amp;B</string>
+    <string name="genre_rock">Rock</string>
+    <string name="genre_electronic">Electronic</string>
+    <string name="genre_indie">Indie</string>
+    <string name="genre_kpop">K-pop</string>
+    <string name="genre_latin">Latin</string>
+    <string name="genre_afrobeats">Afrobeats</string>
+    <string name="genre_lofi">Lo-fi</string>
+    <string name="genre_jazz">Jazz</string>
+    <string name="genre_chill">Chill</string>
+
+    <!-- Add songs from another playlist -->
+    <string name="lib_add_from_playlists">Add from your playlists</string>
+    <string name="import_title">Add songs</string>
+    <string name="import_pick_source">Copy songs from any of your playlists into %1$s.</string>
+    <string name="import_select_all">Select all</string>
+    <string name="import_clear_selection">Clear</string>
+    <string name="import_sort_playlist_order">Playlist order</string>
+    <string name="import_sort_title">Title</string>
+    <string name="import_sort_artist">Artist</string>
+    <string name="import_already_added">Already in this playlist</string>
+    <plurals name="import_add_n_songs">
+        <item quantity="one">Add %1$d song</item>
+        <item quantity="other">Add %1$d songs</item>
+    </plurals>
+    <plurals name="import_added_n_songs">
+        <item quantity="one">Added %1$d song</item>
+        <item quantity="other">Added %1$d songs</item>
+    </plurals>
+    <string name="import_no_source_playlists">Nothing to copy from yet. Playlists and liked songs will show up here.</string>
+    <string name="import_source_empty">This playlist has no songs to add</string>
+    <string name="import_all_added">Everything here is already in this playlist</string>
+    <string name="cd_import_sort">Sort songs</string>
 </resources>
