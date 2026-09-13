@@ -1682,4 +1682,5 @@
     <string name="shorts_refresh">Refresh Shorts</string>
     <string name="shorts_refresh_failed">Couldn’t refresh Shorts. Check your connection or account and try again.</string>
     <string name="shorts_feed_empty">No Shorts available. Try refreshing.</string>
+    <string name="video_page_load_failed">Couldn’t load this page. Try again.</string>
 </resources>

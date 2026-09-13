@@ -393,7 +393,9 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
-- Pagination correctness: rejected music continuation responses trigger incomplete-load fallback; video playlist screens load the full chain, including Watch Later and Liked Videos; account watch history follows all continuation pages; sorted video search retains its own cursor and cache across scrolling and sort switches; playlist reordering resolves row ids beyond page one while preserving duplicate occurrences. Removed the synthetic My Supermix entry whose `RTM` id could not load.
+- Video Library no longer eagerly fetches an account's entire watch history or video playlists. The eager history walk caused an out-of-memory crash on a 192 MB emulator heap; Library now loads one preview page, detail screens request later pages at the end of the list, and failures preserve their cursor for retry. Removed Library item counts that could misrepresent partial results. Explicit full-playlist downloads keep their complete loader.
+
+- Pagination correctness: rejected music continuation responses trigger incomplete-load fallback; video playlist screens and account watch history follow continuations on demand when scrolled to the end, including Watch Later and Liked Videos; sorted video search retains its own cursor and cache across scrolling and sort switches; playlist reordering resolves row ids beyond page one while preserving duplicate occurrences. Removed the synthetic My Supermix entry whose `RTM` id could not load.
 
 - Shorts buffer playable audio/video ahead of the swipe: three upcoming clips on unmetered connections, two on metered connections, with earlier sequence loading and shorter startup waits. Already-resolved URLs no longer skip media warming, and obsolete preload jobs are cancelled when moving away or closing the player.
 
@@ -585,7 +587,7 @@ The milestones behind us, kept here so the direction of travel is visible.
 - "Ready offline" in the Library: the songs already cached in full, listed and playable with no network
 - Real channel pages: banner, about, and every tab a creator actually has, reachable from anywhere a channel name appears - including shared channel links, which the manifest had been claiming and dropping
 - One Home-focused Shorts switch: disabling it removes the Home shelf only, keeps channel shelves and Shorts tabs intact, and opens Shorts found elsewhere as ordinary videos in the standard aspect-aware player instead of the endless swipe UI; enabling it restores both the Home shelf and dedicated Shorts player
-- Video watch history freshness: player and Shorts writes now reach Library immediately across ViewModels without lost SharedPreferences updates, signed-in reads use the shared session-aware WEB path and follow the full history continuation chain, and the Library carousel no longer clips titles or channel names through an invisible outer corner mask
+- Video watch history freshness: player and Shorts writes now reach Library immediately across ViewModels without lost SharedPreferences updates, signed-in reads use the shared session-aware WEB path and retain history continuation cursors for loading more on scroll, and the Library carousel no longer clips titles or channel names through an invisible outer corner mask
 - Playlist links, shared in or pasted into search, opening the playlist's page rather than playing it or previewing it, so one can be kept the same way a searched one can
 - The video mini bar rebuilt: swipe up to expand and down to dismiss instead of a close button, a progress line that moves with playback rather than once a second, and a resting position that follows what is actually on screen under it
 - A persistent Appearance choice between the expressive floating navigation pill and a standard short bottom navigation bar, shared by music and video mode

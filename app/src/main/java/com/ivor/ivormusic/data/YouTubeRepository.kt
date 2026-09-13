@@ -3456,51 +3456,28 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Get user's watch history from YouTube.
-     * Uses the YouTube browse endpoint with "FEhistory".
-     */
-    suspend fun getWatchHistory(): List<VideoItem> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
+    /** One history page; Library must never walk an account's entire history. */
+    internal suspend fun getWatchHistoryPage(
+        continuation: String? = null,
+        session: YouTubeSession? = sessionManager.captureSession()
+    ): VideoFeedPage? = withContext(Dispatchers.IO) {
+        if (session == null) return@withContext null
         try {
-            // Use the shared signed WEB request path so HTTP failures and an
-            // expired session cannot masquerade as a valid empty history.
-            val session = sessionManager.captureSession() ?: return@withContext emptyList()
-            var raw = postWatchApi(
-                "browse",
-                org.json.JSONObject()
-                    .put("context", webContext())
-                    .put("browseId", "FEhistory"),
-                session
-            ) ?: return@withContext emptyList()
-            val videos = linkedMapOf<String, VideoItem>()
-            val seenTokens = mutableSetOf<String>()
-            // Verified September 2026: date-grouped continuation sections use
-            // appendContinuationItemsAction and retain their history order.
-            while (true) {
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                for (video in parseVideosFromYouTubeJson(raw, limit = Int.MAX_VALUE)) {
-                    videos.putIfAbsent(video.videoId, video)
-                }
-                val token = videoListContinuationToken(org.json.JSONObject(raw)) ?: break
-                if (!seenTokens.add(token)) {
-                    KLog.w("YouTubeRepo", "Repeated watch history continuation")
-                    break
-                }
-                val next = postWatchApi("browse", org.json.JSONObject()
-                    .put("context", webContext()).put("continuation", token), session)
-                if (next.isNullOrBlank()) {
-                    KLog.w("YouTubeRepo", "Watch history continuation failed after ${videos.size} videos")
-                    break
-                }
-                raw = next
-            }
-            videos.values.toList()
+            val body = org.json.JSONObject().put("context", webContext())
+            if (continuation == null) body.put("browseId", "FEhistory")
+            else body.put("continuation", continuation)
+            val raw = postWatchApi("browse", body, session)
+                ?.takeIf { it.isNotBlank() } ?: return@withContext null
+            val root = org.json.JSONObject(raw)
+            if (root.has("error")) return@withContext null
+            val videos = parseVideosFromYouTubeJson(raw, limit = Int.MAX_VALUE)
+            KLog.d("YouTubeRepo", "History ${if (continuation == null) "first" else "next"} page: ${videos.size} videos")
+            VideoFeedPage(videos, videoListContinuationToken(root))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching watch history", e)
-            emptyList()
+            KLog.e("YouTubeRepo", "Error fetching watch history page", e)
+            null
         }
     }
 
@@ -3786,9 +3763,68 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    /** Load every page for playlist screens and playback, just as downloads do. */
+    /** Bounded preview for link resolution. Detail screens retain the page cursor. */
     suspend fun getPlaylistVideos(playlistId: String): List<VideoItem> =
-        getCompletePlaylistVideos(playlistId).orEmpty()
+        getPlaylistVideosPage(playlistId)?.videos.orEmpty()
+
+    /**
+     * Fetch exactly one playlist page. WEB and NewPipe keep separate cursors;
+     * a failed continuation stays retryable and never switches source mid-list.
+     * Renderer and continuation scopes verified August/September 2026.
+     */
+    internal suspend fun getPlaylistVideosPage(
+        playlistId: String,
+        continuation: VideoPlaylistCursor? = null,
+        session: YouTubeSession? = sessionManager.captureSession()
+    ): VideoPlaylistPage? = withContext(Dispatchers.IO) {
+        try {
+            if (continuation is VideoPlaylistCursor.NewPipe) {
+                val page = continuation.extractor.getPage(continuation.page)
+                return@withContext VideoPlaylistPage(page.items.toVideoItems(),
+                    page.nextPage?.takeIf { page.hasNextPage() }
+                        ?.let { VideoPlaylistCursor.NewPipe(continuation.extractor, it) })
+            }
+            val body = org.json.JSONObject().put("context", webContext())
+            if (continuation is VideoPlaylistCursor.Browse) body.put("continuation", continuation.token)
+            else body.put("browseId", if (playlistId.startsWith("VL")) playlistId else "VL$playlistId")
+            val raw = postWatchApi("browse", body, session)
+            val root = raw?.takeIf { it.isNotBlank() }?.let { org.json.JSONObject(it) }
+                ?.takeUnless { it.has("error") }
+            if (root != null) {
+                val videos = parseVideoPlaylistRows(root)
+                val token = extractVideoPlaylistContinuationToken(root)
+                if (videos.isNotEmpty() || token != null || continuation != null ||
+                    playlistId.removePrefix("VL") in setOf("WL", "LL", "LM")) {
+                    KLog.d("YouTubeRepo", "Playlist ${if (continuation == null) "first" else "next"} page: ${videos.size} videos")
+                    return@withContext VideoPlaylistPage(videos, token?.let { VideoPlaylistCursor.Browse(it) })
+                }
+            }
+            if (continuation != null || playlistId.removePrefix("VL") in setOf("WL", "LL", "LM")) {
+                return@withContext null
+            }
+            val extractor = youtubeService.getPlaylistExtractor(
+                "https://www.youtube.com/playlist?list=${playlistId.removePrefix("VL")}")
+            extractor.fetchPage()
+            val page = extractor.initialPage
+            VideoPlaylistPage(page.items.toVideoItems(),
+                page.nextPage?.takeIf { page.hasNextPage() }
+                    ?.let { VideoPlaylistCursor.NewPipe(extractor, it) })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e("YouTubeRepo", "Error fetching video playlist page", e)
+            null
+        }
+    }
+
+    private fun parseVideoPlaylistRows(root: org.json.JSONObject): List<VideoItem> {
+        val renderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "playlistVideoRenderer", renderers)
+        if (renderers.isNotEmpty()) return renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
+        val lockups = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "lockupViewModel", lockups)
+        return lockups.mapNotNull { parseLockupViewModel(it) }
+    }
 
     /**
      * Resolve a playlist only if one of the two independent paths reaches its
@@ -3839,15 +3875,7 @@ class YouTubeRepository(private val context: Context) {
         return try {
             while (true) {
                 val root = org.json.JSONObject(json)
-                val renderers = mutableListOf<org.json.JSONObject>()
-                findObjectsByKey(root, "playlistVideoRenderer", renderers)
-                if (renderers.isNotEmpty()) {
-                    videos += renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
-                } else {
-                    val lockups = mutableListOf<org.json.JSONObject>()
-                    findObjectsByKey(root, "lockupViewModel", lockups)
-                    videos += lockups.mapNotNull { parseLockupViewModel(it) }
-                }
+                videos += parseVideoPlaylistRows(root)
 
                 val token = extractVideoPlaylistContinuationToken(root) ?: break
                 if (!seenTokens.add(token)) {

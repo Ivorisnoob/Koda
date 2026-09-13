@@ -74,6 +74,12 @@ fun VideoHistoryContent(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val historyVideos by viewModel.historyVideos.collectAsState()
+    val pageState by viewModel.historyPageState.collectAsState()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LoadVideoPageAtEnd(listState, historyVideos.size, pageState, viewModel::loadMoreYouTubeHistory)
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose { viewModel.stopHistoryPagination() }
+    }
     val isHistoryLoading by viewModel.isHistoryLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -191,6 +197,7 @@ fun VideoHistoryContent(
         modifier = Modifier.fillMaxSize()
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundColor),
@@ -227,14 +234,14 @@ fun VideoHistoryContent(
                         modifier = Modifier.padding(horizontal = 16.dp)
                     ) { alpha -> VideoCardSkeleton(alpha = alpha) }
                 }
-            } else if (historyVideos.isEmpty()) {
+            } else if (historyVideos.isEmpty() && !pageState.failed) {
                  item {
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text(stringResource(R.string.vhs_none_found), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
-                items(historyVideos) { video ->
+                items(historyVideos, key = { it.videoId }) { video ->
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },
@@ -245,7 +252,15 @@ fun VideoHistoryContent(
                 }
             }
             
-             item { Spacer(modifier = Modifier.height(32.dp)) }
+            if (!isHistoryLoading) {
+                item(key = "history_next_page") {
+                    VideoPageFooter(pageState) {
+                        if (pageState.hasMore) viewModel.loadMoreYouTubeHistory()
+                        else viewModel.loadYouTubeHistory()
+                    }
+                }
+            }
+            item { Spacer(modifier = Modifier.height(32.dp)) }
         }
     }
 

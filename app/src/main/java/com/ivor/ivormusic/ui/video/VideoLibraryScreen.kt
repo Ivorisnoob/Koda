@@ -271,9 +271,6 @@ fun VideoLibraryContent(
                 onVideoLongPress = { rootOptionsTarget = it },
                 onLoginClick = onLoginClick,
                 onOpenHistory = { page = LibraryPage.History },
-                deviceVideoCount = if (videoAccess.isReadable && hasScannedDeviceVideos) {
-                    deviceVideos.size
-                } else null,
                 onOpenDeviceVideos = { page = LibraryPage.DeviceVideos },
                 onOpenDownloads = onOpenDownloads,
                 onOpenPlaylist = { playlist ->
@@ -464,12 +461,6 @@ private fun LibraryRoot(
     onVideoLongPress: (VideoItem) -> Unit,
     onLoginClick: () -> Unit,
     onOpenHistory: () -> Unit,
-    /**
-     * How many videos the device holds, or null until a scan has run - which
-     * is also the signed-off state, since nothing is scanned before the
-     * section is opened for the first time.
-     */
-    deviceVideoCount: Int?,
     onOpenDeviceVideos: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenPlaylist: (VideoPlaylist) -> Unit,
@@ -524,22 +515,8 @@ private fun LibraryRoot(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    val totalLists = playlists.size + savedPlaylists.size
-                    val historyLine = when {
-                        historyVideos.isEmpty() -> null
-                        historyVideos.size == 1 -> stringResource(R.string.dv_one_video)
-                        else -> stringResource(R.string.dv_many_videos, historyVideos.size)
-                    }
                     Text(
-                        text = listOfNotNull(
-                            pluralStringResource(
-                                R.plurals.n_playlists,
-                                totalLists,
-                                totalLists
-                            ).takeIf { totalLists > 0 },
-                            historyLine
-                        ).joinToString(" • ")
-                            .ifEmpty { stringResource(R.string.vl_library_sub) },
+                        text = stringResource(R.string.vl_library_sub),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -592,11 +569,7 @@ private fun LibraryRoot(
                 ) {
                     BigNavButton(
                         title = stringResource(R.string.history),
-                        subtitle = when {
-                            historyVideos.isEmpty() -> null
-                            historyVideos.size == 1 -> stringResource(R.string.dv_one_video)
-                            else -> stringResource(R.string.dv_many_videos, historyVideos.size)
-                        },
+                        subtitle = null,
                         icon = Icons.Rounded.History,
                         tileColor = MaterialTheme.colorScheme.secondaryContainer,
                         onTileColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -605,11 +578,7 @@ private fun LibraryRoot(
                     )
                     BigNavButton(
                         title = stringResource(R.string.dv_on_this_device),
-                        subtitle = when {
-                            deviceVideoCount == null -> stringResource(R.string.dv_card_subtitle)
-                            deviceVideoCount == 1 -> stringResource(R.string.dv_one_video)
-                            else -> stringResource(R.string.dv_many_videos, deviceVideoCount)
-                        },
+                        subtitle = null,
                         icon = Icons.Rounded.PhoneAndroid,
                         tileColor = MaterialTheme.colorScheme.tertiaryContainer,
                         onTileColor = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -1271,27 +1240,6 @@ private fun PlaylistRow(
                         modifier = Modifier.size(32.dp)
                     )
                 }
-                if (playlist.videoCountText != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .align(Alignment.BottomCenter)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
-                                )
-                            )
-                    ) {
-                        Text(
-                            text = playlist.videoCountText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                    }
-                }
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -1520,6 +1468,15 @@ fun VideoPlaylistDetail(
 ) {
     val videos by viewModel.playlistVideos.collectAsState()
     val isLoading by viewModel.isPlaylistVideosLoading.collectAsState()
+    val pageState by viewModel.playlistPageState.collectAsState()
+    val listState = rememberLazyListState()
+    LaunchedEffect(playlist.playlistId) { listState.scrollToItem(0) }
+    LoadVideoPageAtEnd(listState, videos.size, pageState) {
+        viewModel.loadMorePlaylistVideos(playlist.playlistId)
+    }
+    androidx.compose.runtime.DisposableEffect(playlist.playlistId) {
+        onDispose { viewModel.stopPlaylistVideoPagination(playlist.playlistId) }
+    }
 
     // Long-press options, same as any other video card. This is the page where
     // "play this next" has the most to say - the whole list is right there -
@@ -1668,7 +1625,7 @@ fun VideoPlaylistDetail(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-        } else if (videos.isEmpty()) {
+        } else if (videos.isEmpty() && !pageState.failed && !pageState.hasMore) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = stringResource(R.string.vl_no_videos),
@@ -1677,6 +1634,7 @@ fun VideoPlaylistDetail(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     top = 8.dp,
@@ -1693,6 +1651,7 @@ fun VideoPlaylistDetail(
                         playlistTitle = playlist.title,
                         videos = videos,
                         playlistCountText = playlist.videoCountText,
+                        allPagesLoaded = !pageState.hasMore && !pageState.failed && !pageState.isLoading,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -1736,6 +1695,12 @@ fun VideoPlaylistDetail(
                         },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
+                }
+                item(key = "playlist_next_page") {
+                    VideoPageFooter(pageState) {
+                        if (pageState.hasMore) viewModel.loadMorePlaylistVideos(playlist.playlistId)
+                        else viewModel.loadPlaylistVideos(playlist.playlistId)
+                    }
                 }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
