@@ -362,8 +362,8 @@ fun SearchScreen(
                 sort = selectedSort
             )
             if (!cached) {
-                delay(500) // Debounce
                 isLoading = true
+                delay(500) // Debounce
             }
 
             // Clear previous results of other types
@@ -395,6 +395,7 @@ fun SearchScreen(
             }
             isLoading = false
         } else {
+            isLoading = false
             youtubeResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
@@ -410,42 +411,44 @@ fun SearchScreen(
     // immediately pulls the next one, instead of stalling until the user
     // nudges the list.
     LaunchedEffect(
-        isNearListEnd, youtubeResults.size, videoResults.size,
-        query, videoMode, selectedCategory, selectedVideoCategory, selectedDateFilter
+        isNearListEnd, isLoading, youtubeResults.size, videoResults.size,
+        query, videoMode, selectedCategory, selectedVideoCategory, selectedDateFilter, selectedSort
     ) {
         if (!isNearListEnd || isLoading || isLoadingMore) return@LaunchedEffect
         if (localOnly || parsedLink != null || query.length < 2) return@LaunchedEffect
 
         val loadingVideos = videoMode && selectedVideoCategory == VideoSearchCategory.VIDEOS
         val loadingSongs = !videoMode && selectedCategory == SearchCategory.SONGS
-        when {
-            loadingVideos && videoResults.isNotEmpty() && !videoResultsExhausted -> {
-                isLoadingMore = true
-                val more = viewModel.loadMoreVideoResults(query, selectedDateFilter)
-                if (more.isEmpty()) {
-                    videoResultsExhausted = true
-                } else {
-                    // Adjacent pages can overlap; never show a video twice
-                    val merged = (videoResults + more).distinctBy { it.videoId }
-                    // Nothing new survived de-duplication, so the feed is
-                    // repeating itself - treat that as the end.
-                    if (merged.size == videoResults.size) videoResultsExhausted = true
-                    videoResults = merged
+        try {
+            when {
+                loadingVideos && videoResults.isNotEmpty() && !videoResultsExhausted -> {
+                    isLoadingMore = true
+                    val more = viewModel.loadMoreVideoResults(query, selectedDateFilter, selectedSort)
+                    if (more.isEmpty()) {
+                        videoResultsExhausted = true
+                    } else {
+                        // Adjacent pages can overlap; never show a video twice
+                        val merged = (videoResults + more).distinctBy { it.videoId }
+                        // Nothing new survived de-duplication, so the feed is
+                        // repeating itself - treat that as the end.
+                        if (merged.size == videoResults.size) videoResultsExhausted = true
+                        videoResults = merged
+                    }
                 }
-                isLoadingMore = false
-            }
-            loadingSongs && youtubeResults.isNotEmpty() && !songResultsExhausted -> {
-                isLoadingMore = true
-                val more = viewModel.loadMoreResults(query)
-                if (more.isEmpty()) {
-                    songResultsExhausted = true
-                } else {
-                    val merged = (youtubeResults + more).distinctBy { it.id }
-                    if (merged.size == youtubeResults.size) songResultsExhausted = true
-                    youtubeResults = merged
+                loadingSongs && youtubeResults.isNotEmpty() && !songResultsExhausted -> {
+                    isLoadingMore = true
+                    val more = viewModel.loadMoreResults(query)
+                    if (more.isEmpty()) {
+                        songResultsExhausted = true
+                    } else {
+                        val merged = (youtubeResults + more).distinctBy { it.id }
+                        if (merged.size == youtubeResults.size) songResultsExhausted = true
+                        youtubeResults = merged
+                    }
                 }
-                isLoadingMore = false
             }
+        } finally {
+            isLoadingMore = false
         }
     }
 

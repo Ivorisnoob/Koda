@@ -1,0 +1,91 @@
+{
+  "header": {
+    "searchHeaderRenderer": {
+      "chipBar": {
+        "chipCloudRenderer": {
+          "chips": [
+            {
+              "chipCloudChipRenderer": {}
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "onResponseReceivedCommands": [
+    {
+      "appendContinuationItemsAction": {
+        "continuationItems": [
+          {
+            "itemSectionRenderer": {
+              "contents": []
+            }
+          },
+          {
+            "continuationItemRenderer": {
+              "continuationEndpoint": {
+                "continuationCommand": {
+                  "token": "next-page"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

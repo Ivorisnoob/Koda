@@ -1,0 +1,93 @@
+{
+  "contents": {
+    "twoColumnSearchResultsRenderer": {
+      "primaryContents": {
+        "sectionListRenderer": {
+          "contents": [
+            {
+              "itemSectionRenderer": {
+                "contents": []
+              }
+            },
+            {
+              "continuationItemRenderer": {
+                "continuationEndpoint": {
+                  "continuationCommand": {
+                    "token": "next-page"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "header": {
+    "searchHeaderRenderer": {
+      "chipBar": {
+        "chipCloudRenderer": {
+          "chips": [
+            {
+              "chipCloudChipRenderer": {}
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            },
+            {
+              "chipCloudChipRenderer": {
+                "navigationEndpoint": {
+                  "continuationCommand": {
+                    "token": "chip-token"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -416,7 +416,9 @@ class YouTubeRepository(private val context: Context) {
         searchExtractorCache.clear()
         searchNextPageCache.clear()
         musicSearchContinuations.clear()
+        videoSearchExtractorCache.clear()
         videoSearchNextPageCache.clear()
+        videoSearchContinuations.clear()
     }
 
     private fun initializeNewPipe() {
@@ -449,13 +451,12 @@ class YouTubeRepository(private val context: Context) {
         }
     )
 
-    // Same pair again for video-mode search, keyed by the date-filtered query
-    // so switching filters starts its own pagination rather than continuing
-    // the previous one. Only the relevance-ordered (NewPipe) path populates
-    // these; sorted searches go through InnerTube and do not paginate.
+    private data class VideoSearchKey(val query: String, val sort: VideoSearchSort)
     private val videoSearchExtractorCache =
-        mutableMapOf<String, org.schabi.newpipe.extractor.search.SearchExtractor>()
-    private val videoSearchNextPageCache = mutableMapOf<String, Page?>()
+        mutableMapOf<VideoSearchKey, org.schabi.newpipe.extractor.search.SearchExtractor>()
+    private val videoSearchNextPageCache = mutableMapOf<VideoSearchKey, Page?>()
+    // Present null means InnerTube exhausted; it must never resume NewPipe.
+    private val videoSearchContinuations = mutableMapOf<VideoSearchKey, String?>()
 
     /**
      * Search for songs on YouTube Music.
@@ -1564,13 +1565,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             val playlists = mutableListOf<PlaylistDisplayItem>()
 
-            // Synthesized "Supermix" and "Likes" always useful to have
-            playlists.add(PlaylistDisplayItem(
-                name = "My Supermix",
-                url = "https://music.youtube.com/playlist?list=RTM",
-                uploaderName = "YouTube Music",
-                thumbnailUrl = "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked_music_@576.png"
-            ))
+            // Likes has a real account browse id; mixes must come from the API.
             playlists.add(PlaylistDisplayItem(
                 name = "Your Likes",
                 url = "https://music.youtube.com/playlist?list=LM",
@@ -1682,8 +1677,16 @@ class YouTubeRepository(private val context: Context) {
             .build()
 
         return try {
-            val response = okHttpClient.newCall(request).execute()
-            (response.body?.string() ?: "").also { noteSessionState(it, session) }
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    YouTubeRateLimit.note(response.code, request.url.toString(), response.header("Retry-After"))
+                    KLog.w("YouTubeRepo", "Music continuation failed: HTTP ${response.code}")
+                    return ""
+                }
+                val body = response.body?.string().orEmpty()
+                if (body.isBlank() || org.json.JSONObject(body).has("error")) return ""
+                body.also { noteSessionState(it, session) }
+            }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Music continuation request failed", e)
             ""
@@ -1860,6 +1863,7 @@ class YouTubeRepository(private val context: Context) {
             ?: return PlaylistLoadResult(emptyList(), complete = false)
 
         while (true) {
+            if (json.isBlank()) return PlaylistLoadResult(allSongs, complete = false)
             allSongs += parseSongsFromInternalJson(json, preserveDuplicates = true)
             val token = extractPlaylistContinuationToken(json)
                 ?: return PlaylistLoadResult(allSongs, complete = true)
@@ -2990,11 +2994,19 @@ class YouTubeRepository(private val context: Context) {
         sort: VideoSearchSort = VideoSearchSort.RELEVANCE
     ): List<VideoItem> = withContext(Dispatchers.IO) {
         val effectiveQuery = dateFilter.applyTo(query)
+        val key = VideoSearchKey(effectiveQuery, sort)
+        videoSearchExtractorCache.remove(key)
+        videoSearchNextPageCache.remove(key)
+        videoSearchContinuations.remove(key)
 
         if (sort != VideoSearchSort.RELEVANCE) {
             val sorted = searchVideosInnerTube(effectiveQuery, sort)
-            if (sorted.isNotEmpty()) return@withContext sorted
-            KLog.w("YouTubeRepo", "Sorted video search empty, falling back to relevance order")
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (sorted != null) {
+                videoSearchContinuations[key] = sorted.continuation
+                return@withContext sorted.videos
+            }
+            KLog.w("YouTubeRepo", "Sorted video search failed, falling back to relevance order")
         }
 
         try {
@@ -3003,39 +3015,47 @@ class YouTubeRepository(private val context: Context) {
             searchExtractor.fetchPage()
 
             // Cache for pagination (see searchVideosNext)
-            videoSearchExtractorCache[effectiveQuery] = searchExtractor
-            videoSearchNextPageCache[effectiveQuery] =
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            videoSearchExtractorCache[key] = searchExtractor
+            videoSearchNextPageCache[key] =
                 if (searchExtractor.initialPage.hasNextPage()) searchExtractor.initialPage.nextPage else null
 
             searchExtractor.initialPage.items.toVideoItems()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error searching videos", e)
             emptyList()
         }
     }
 
-    /**
-     * Next page of video search results for a query already fetched by
-     * [searchVideos]. Empty means exhausted, which is also what a sorted
-     * (non-relevance) search returns, since that path resolves through
-     * InnerTube and never caches an extractor.
-     *
-     * [dateFilter] must match the original call - it is part of the cache key.
-     */
+    /** Continue exactly the query, date window and sort used for page one. */
     suspend fun searchVideosNext(
         query: String,
-        dateFilter: VideoSearchDateFilter = VideoSearchDateFilter.ANY
+        dateFilter: VideoSearchDateFilter = VideoSearchDateFilter.ANY,
+        sort: VideoSearchSort = VideoSearchSort.RELEVANCE
     ): List<VideoItem> = withContext(Dispatchers.IO) {
         try {
-            val effectiveQuery = dateFilter.applyTo(query)
-            val extractor = videoSearchExtractorCache[effectiveQuery] ?: return@withContext emptyList()
-            val pageInfo = videoSearchNextPageCache[effectiveQuery] ?: return@withContext emptyList()
-
+            val key = VideoSearchKey(dateFilter.applyTo(query), sort)
+            if (videoSearchContinuations.containsKey(key)) {
+                val token = videoSearchContinuations[key] ?: return@withContext emptyList()
+                val response = postWatchApi("search", org.json.JSONObject()
+                    .put("context", webContext()).put("continuation", token))
+                    ?: return@withContext emptyList()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val page = parseVideoSearchPage(response)
+                videoSearchContinuations[key] = page.continuation?.takeUnless { it == token }
+                return@withContext page.videos
+            }
+            val extractor = videoSearchExtractorCache[key] ?: return@withContext emptyList()
+            val pageInfo = videoSearchNextPageCache[key] ?: return@withContext emptyList()
             val nextPage = extractor.getPage(pageInfo)
-            videoSearchNextPageCache[effectiveQuery] =
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            videoSearchNextPageCache[key] =
                 if (nextPage.hasNextPage()) nextPage.nextPage else null
-
             nextPage.items.toVideoItems()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error loading more video results", e)
             emptyList()
@@ -3158,26 +3178,32 @@ class YouTubeRepository(private val context: Context) {
      * (legacy shape, still what /search returns signed out) or lockupViewModels;
      * both parsers already exist for the feed. Verified July 2026.
      */
-    private fun searchVideosInnerTube(query: String, sort: VideoSearchSort): List<VideoItem> {
+    private fun searchVideosInnerTube(query: String, sort: VideoSearchSort): VideoFeedPage? {
         return try {
             val body = org.json.JSONObject()
                 .put("context", webContext())
                 .put("query", query)
                 .put("params", buildVideoSearchParams(sort))
-            val response = postWatchApi("search", body) ?: return emptyList()
-
-            val renderers = mutableListOf<org.json.JSONObject>()
-            val root = org.json.JSONObject(response)
-            findObjectsByKey(root, "videoRenderer", renderers)
-            findObjectsByKey(root, "lockupViewModel", renderers)
-            renderers.mapNotNull { renderer ->
-                if (renderer.has("videoId")) parseVideoRenderer(renderer)
-                else parseLockupViewModel(renderer)
-            }.distinctBy { it.videoId }
+            val response = postWatchApi("search", body) ?: return null
+            parseVideoSearchPage(response)
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "InnerTube video search failed", e)
-            emptyList()
+            null
         }
+    }
+
+    /** Verified September 2026: sorted pages retain a list-scoped search token. */
+    private fun parseVideoSearchPage(response: String): VideoFeedPage {
+        val root = org.json.JSONObject(response)
+        check(!root.has("error")) { "Search returned an error body" }
+        val renderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "videoRenderer", renderers)
+        findObjectsByKey(root, "lockupViewModel", renderers)
+        val videos = renderers.mapNotNull { renderer ->
+            if (renderer.has("videoId")) parseVideoRenderer(renderer)
+            else parseLockupViewModel(renderer)
+        }.distinctBy { it.videoId }
+        return VideoFeedPage(videos, videoListContinuationToken(root, search = true))
     }
 
     /**
@@ -3439,17 +3465,39 @@ class YouTubeRepository(private val context: Context) {
         try {
             // Use the shared signed WEB request path so HTTP failures and an
             // expired session cannot masquerade as a valid empty history.
-            val raw = postWatchApi(
+            val session = sessionManager.captureSession() ?: return@withContext emptyList()
+            var raw = postWatchApi(
                 "browse",
                 org.json.JSONObject()
                     .put("context", webContext())
-                    .put("browseId", "FEhistory")
+                    .put("browseId", "FEhistory"),
+                session
             ) ?: return@withContext emptyList()
-
-            // The live August 2026 shape carries roughly 200 lockups in the
-            // initial date-grouped page. The generic feed parser used to throw
-            // away everything after 30, making View all look out of sync.
-            parseVideosFromYouTubeJson(raw, limit = 200)
+            val videos = linkedMapOf<String, VideoItem>()
+            val seenTokens = mutableSetOf<String>()
+            // Verified September 2026: date-grouped continuation sections use
+            // appendContinuationItemsAction and retain their history order.
+            while (true) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                for (video in parseVideosFromYouTubeJson(raw, limit = Int.MAX_VALUE)) {
+                    videos.putIfAbsent(video.videoId, video)
+                }
+                val token = videoListContinuationToken(org.json.JSONObject(raw)) ?: break
+                if (!seenTokens.add(token)) {
+                    KLog.w("YouTubeRepo", "Repeated watch history continuation")
+                    break
+                }
+                val next = postWatchApi("browse", org.json.JSONObject()
+                    .put("context", webContext()).put("continuation", token), session)
+                if (next.isNullOrBlank()) {
+                    KLog.w("YouTubeRepo", "Watch history continuation failed after ${videos.size} videos")
+                    break
+                }
+                raw = next
+            }
+            videos.values.toList()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error fetching watch history", e)
             emptyList()
@@ -3525,6 +3573,9 @@ class YouTubeRepository(private val context: Context) {
                  }
             }
             
+            // History continuation pages retain the same date-grouped rows.
+            if (contents == null) contents = continuationItemsOrNull(root)
+
             // If we found contents, iterate them
             if (contents != null) {
                 for (i in 0 until contents.length()) {
@@ -3735,31 +3786,9 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    /**
-     * The first page of one video playlist for browsing and playback. A normal
-     * open stays one network call; [getCompletePlaylistVideos] pays for every
-     * continuation only when an operation really needs the whole list.
-     */
-    suspend fun getPlaylistVideos(playlistId: String): List<VideoItem> = withContext(Dispatchers.IO) {
-        try {
-            val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
-            val json = fetchYouTubeBrowse(browseId)
-                .takeIf { it.isNotEmpty() } ?: return@withContext getPlaylistVideosAnonymous(playlistId)
-            val root = org.json.JSONObject(json)
-            val renderers = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(root, "playlistVideoRenderer", renderers)
-            if (renderers.isNotEmpty()) {
-                return@withContext renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
-            }
-            val lockups = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(root, "lockupViewModel", lockups)
-            lockups.mapNotNull { parseLockupViewModel(it) }
-                .ifEmpty { getPlaylistVideosAnonymous(playlistId) }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getPlaylistVideos failed for $playlistId", e)
-            getPlaylistVideosAnonymous(playlistId)
-        }
-    }
+    /** Load every page for playlist screens and playback, just as downloads do. */
+    suspend fun getPlaylistVideos(playlistId: String): List<VideoItem> =
+        getCompletePlaylistVideos(playlistId).orEmpty()
 
     /**
      * Resolve a playlist only if one of the two independent paths reaches its
@@ -3912,23 +3941,6 @@ class YouTubeRepository(private val context: Context) {
             } catch (e: Exception) {
                 KLog.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
                 VideoPlaylistLoadResult(emptyList(), complete = false)
-            }
-        }
-
-    /** First NewPipe page only, matching [getPlaylistVideos]'s browse cost. */
-    private suspend fun getPlaylistVideosAnonymous(playlistId: String): List<VideoItem> =
-        withContext(Dispatchers.IO) {
-            val listId = playlistId.removePrefix("VL")
-            if (listId == "WL" || listId == "LL" || listId == "LM") return@withContext emptyList()
-            try {
-                val extractor = youtubeService.getPlaylistExtractor(
-                    "https://www.youtube.com/playlist?list=$listId"
-                )
-                extractor.fetchPage()
-                extractor.initialPage.items.toVideoItems()
-            } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
-                emptyList()
             }
         }
 
@@ -6855,26 +6867,42 @@ class YouTubeRepository(private val context: Context) {
      * user can edit. Reordering via edit_playlist identifies rows by these,
      * not by videoId. Values stay occurrence-ordered because duplicate videos
      * are separate rows with separate setVideoIds. Browses VL<id> on music.youtube.com and reads
-     * musicResponsiveListItemRenderer.playlistItemData. First page only
-     * (~100 rows); rows past that simply stay un-movable. Verified July 2026.
+     * musicResponsiveListItemRenderer.playlistItemData across every playlist
+     * continuation. An incomplete map cannot safely address duplicate rows,
+     * so a failed/repeated continuation returns no map. Verified September 2026.
      */
     suspend fun getPlaylistSetVideoIds(playlistId: String): Map<String, List<String>> =
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext emptyMap()
             val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
-            val raw = browseMusic(browseId) ?: return@withContext emptyMap()
+            var raw = browseMusic(browseId) ?: return@withContext emptyMap()
             try {
-                val rows = mutableListOf<org.json.JSONObject>()
-                findObjectsByKey(org.json.JSONObject(raw), "musicResponsiveListItemRenderer", rows)
                 val idsByVideo = linkedMapOf<String, MutableList<String>>()
-                for (row in rows) {
-                    val itemData = row.optJSONObject("playlistItemData") ?: continue
-                    val videoId = itemData.optString("videoId").takeIf { it.isNotBlank() } ?: continue
-                    val setVideoId = itemData.optString("playlistSetVideoId")
-                        .takeIf { it.isNotBlank() } ?: continue
-                    idsByVideo.getOrPut(videoId) { mutableListOf() }.add(setVideoId)
+                val seenTokens = mutableSetOf<String>()
+                while (true) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (raw.isBlank()) return@withContext emptyMap()
+                    val root = org.json.JSONObject(raw)
+                    if (root.has("error")) return@withContext emptyMap()
+                    val rows = mutableListOf<org.json.JSONObject>()
+                    findObjectsByKey(root, "musicResponsiveListItemRenderer", rows)
+                    for (row in rows) {
+                        val itemData = row.optJSONObject("playlistItemData") ?: continue
+                        val videoId = itemData.optString("videoId").takeIf { it.isNotBlank() } ?: continue
+                        val setVideoId = itemData.optString("playlistSetVideoId")
+                            .takeIf { it.isNotBlank() } ?: continue
+                        idsByVideo.getOrPut(videoId) { mutableListOf() }.add(setVideoId)
+                    }
+                    val token = extractPlaylistContinuationToken(raw) ?: break
+                    if (!seenTokens.add(token)) {
+                        KLog.w("YouTubeRepo", "Repeated playlist row-id continuation for $playlistId")
+                        return@withContext emptyMap()
+                    }
+                    raw = fetchContinuation(token)
                 }
                 idsByVideo.mapValues { (_, ids) -> ids.toList() }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e("YouTubeRepo", "getPlaylistSetVideoIds failed", e)
                 emptyMap()

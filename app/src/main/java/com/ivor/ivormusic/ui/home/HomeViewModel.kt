@@ -2407,30 +2407,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return try {
             youtubeRepository.searchVideos(query, dateFilter, sort)
                 .also { videoSearchCache.put(key, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    /**
-     * Next page of video search results. [dateFilter] must match the call that
-     * produced the current results. Empty means there is nothing more to load.
-     */
+    /** Next page for the same query, date window and sort as the displayed list. */
     suspend fun loadMoreVideoResults(
         query: String,
-        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY
+        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY,
+        sort: com.ivor.ivormusic.data.VideoSearchSort = com.ivor.ivormusic.data.VideoSearchSort.RELEVANCE
     ): List<VideoItem> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.searchVideosNext(query, dateFilter).also { more ->
-                // The sort is not a parameter here, so every cached sort of this
-                // query and window is appended to - which is correct, because
-                // the repository keeps one cursor for them and they are all
-                // showing pages from it.
-                com.ivor.ivormusic.data.VideoSearchSort.entries.forEach { sort ->
-                    videoSearchCache.append(videoSearchKey(query, dateFilter, sort), more)
+            youtubeRepository.searchVideosNext(query, dateFilter, sort).also { more ->
+                val key = videoSearchKey(query, dateFilter, sort)
+                videoSearchCache.get(key)?.let { existing ->
+                    videoSearchCache.put(key, (existing + more).distinctBy { it.videoId })
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
