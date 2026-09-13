@@ -3,9 +3,9 @@ package com.ivor.ivormusic.data
 /**
  * One YouTube Short in a feed or swipe sequence.
  *
- * Shelf items (shortsLockupViewModel) carry title/view count; entries from
- * reel_watch_sequence carry only the id and thumbnail — the player enriches
- * them from the watch-next response once the Short is actually opened.
+ * Search/channel shelf items carry title/view count. The signed-in Home shelf
+ * uses a seedless Shorts sequence; most entries carry only id and thumbnail,
+ * with metadata on prefetched entries. Watch-next enriches them on playback.
  */
 data class ShortsItem(
     val videoId: String,
@@ -13,8 +13,8 @@ data class ShortsItem(
     val viewCount: String = "",
     val thumbnailUrl: String? = null,
     /**
-     * Params seeding the endless reel_watch_sequence feed starting at this
-     * Short. Present on shelf items, absent on sequence entries.
+     * Search/channel seed params, or the continuation after the loaded Home
+     * shelf. Raw sequence entries have none until added to a Home shelf.
      */
     val sequenceParams: String? = null
 ) {

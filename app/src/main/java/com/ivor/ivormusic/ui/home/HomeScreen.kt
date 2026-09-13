@@ -761,6 +761,7 @@ fun HomeScreen(
                                     onDownloadedVideoClick = { video ->
                                         onPlayDownloadedVideos(downloadedVideos, video)
                                     },
+                                    shortsEnabled = shortsEnabled,
                                     shorts = if (shortsEnabled) shortsFeed else emptyList(),
                                     onShortClick = { index -> onOpenShorts(shortsFeed, index) },
                                     // Without this the long-press sheet loses

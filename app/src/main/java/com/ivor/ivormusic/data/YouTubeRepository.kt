@@ -3591,79 +3591,68 @@ class YouTubeRepository(private val context: Context) {
     // ============================================================
 
     /**
-     * Shorts for the video home shelf. Logged in: the personalized Shorts
-     * shelf inside the FEwhat_to_watch home response (postWatchApi signs the
-     * call, so the shelf matches the account's recommendations). Logged out
-     * or shelf missing: an InnerTube search seeded from local watch history,
-     * which surfaces the same shortsLockupViewModel items.
+     * Signed-in Shorts use YouTube's seedless Shorts navigation, not a search
+     * query. FEwhat_to_watch can contain no Shorts even with logged_in=1.
+     * Seed and continuation shapes verified live September 2026.
+     * Signed-out profiles retain the local-history search fallback.
      */
     suspend fun getShortsFeed(): List<ShortsItem> = withContext(Dispatchers.IO) {
-        if (sessionManager.isLoggedIn()) {
-            try {
-                val body = org.json.JSONObject()
-                    .put("context", webContext())
-                    .put("browseId", "FEwhat_to_watch")
-                val raw = postWatchApi("browse", body)
-                if (raw != null) {
-                    val shorts = parseShortsLockups(org.json.JSONObject(raw))
-                    if (shorts.isNotEmpty()) return@withContext shorts
-                }
-                KLog.w("YouTubeRepo", "No Shorts shelf on home, using search fallback")
-            } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "Shorts home shelf failed", e)
-            }
-        }
-        try {
-            val seedChannel = videoHistoryRepository.getHistory()
-                .firstOrNull { it.channelName.isNotBlank() && it.channelName != "Unknown Channel" }
-                ?.channelName
-            val query = seedChannel?.let { "$it shorts" } ?: "trending shorts"
+        val session = sessionManager.captureSession()
+        if (session != null) {
             val body = org.json.JSONObject()
                 .put("context", webContext())
-                .put("query", query)
-            val raw = postWatchApi("search", body) ?: return@withContext emptyList()
-            parseShortsLockups(org.json.JSONObject(raw))
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Shorts search fallback failed", e)
-            emptyList()
+                .put("params", "CA8%3D")
+                .put("inputType", "REEL_WATCH_INPUT_TYPE_SEEDLESS")
+                .put("disablePlayerResponse", true)
+            val raw = postWatchApi("reel/reel_item_watch", body, session)
+                ?: throw java.io.IOException("Shorts recommendations request failed")
+            val root = org.json.JSONObject(raw)
+            if (LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) == "0") {
+                throw java.io.IOException("YouTube rejected the Shorts session")
+            }
+            val seed = parseShortsSeed(root)
+            if (sessionManager.currentSession(session) == null) {
+                throw kotlinx.coroutines.CancellationException("Shorts account changed")
+            }
+            val page = seed.continuation?.let { requestShortsSequence(it, session) }
+            val continuation = if (page != null) page.continuation else seed.continuation
+            // Every shelf tap continues after the loaded shelf, without replaying
+            // a search candidate list or dropping the account's sequence token.
+            return@withContext (seed.items + page?.items.orEmpty())
+                .distinctBy { it.videoId }
+                .map { it.copy(sequenceParams = continuation) }
         }
+        val seedChannel = videoHistoryRepository.getHistory()
+            .firstOrNull { it.channelName.isNotBlank() && it.channelName != "Unknown Channel" }
+            ?.channelName
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("query", seedChannel?.let { "$it shorts" } ?: "trending shorts")
+        val raw = postWatchApi("search", body)
+            ?: throw java.io.IOException("Shorts search request failed")
+        parseShortsLockups(org.json.JSONObject(raw))
     }
 
     /**
-     * One page of the endless swipe feed from reel/reel_watch_sequence.
-     * [sequenceParams] is either a shelf item's seed params or the
-     * continuation token of a previous page (the endpoint accepts both in
-     * the same field). Signed calls return the personalized sequence.
-     * Entries carry no title/views — the player enriches the current Short
-     * from its watch-next call.
+     * One account-aware reel_watch_sequence page. Errors must propagate so the
+     * pager keeps its token for retry instead of treating a failure as exhaustion.
+     * Seed params and continuation tokens use the same field (verified September 2026).
      */
     suspend fun getShortsSequence(sequenceParams: String): ShortsFeedPage = withContext(Dispatchers.IO) {
-        try {
-            val body = org.json.JSONObject()
-                .put("context", webContext())
-                .put("sequenceParams", sequenceParams)
-            val raw = postWatchApi("reel/reel_watch_sequence", body)
-                ?: return@withContext ShortsFeedPage(emptyList(), null)
-            val root = org.json.JSONObject(raw)
+        requestShortsSequence(sequenceParams, sessionManager.captureSession())
+    }
 
-            val items = mutableListOf<ShortsItem>()
-            val entries = root.optJSONArray("entries")
-            if (entries != null) {
-                for (i in 0 until entries.length()) {
-                    val reel = entries.optJSONObject(i)
-                        ?.optJSONObject("command")
-                        ?.optJSONObject("reelWatchEndpoint") ?: continue
-                    parseReelWatchEndpoint(reel)?.let { items.add(it) }
-                }
-            }
-            val continuation = root.optJSONObject("continuationEndpoint")
-                ?.optJSONObject("continuationCommand")
-                ?.optString("token")?.takeIf { it.isNotBlank() }
-            ShortsFeedPage(items, continuation)
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getShortsSequence failed", e)
-            ShortsFeedPage(emptyList(), null)
+    private fun requestShortsSequence(sequenceParams: String, session: YouTubeSession?): ShortsFeedPage {
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("sequenceParams", sequenceParams)
+        val raw = postWatchApi("reel/reel_watch_sequence", body, session)
+            ?: throw java.io.IOException("Shorts sequence request failed")
+        if (session != null &&
+            LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) == "0") {
+            throw java.io.IOException("YouTube rejected the Shorts session")
         }
+        return parseShortsSequence(org.json.JSONObject(raw))
     }
 
     /** All shortsLockupViewModels of a response, deduped, in shelf order. */
@@ -3713,17 +3702,8 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /** reelWatchEndpoint: videoId, portrait thumbnail and sequence seed. */
-    private fun parseReelWatchEndpoint(reel: org.json.JSONObject): ShortsItem? {
-        val videoId = reel.optString("videoId").takeIf { it.length == 11 } ?: return null
-        val thumbs = reel.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-        val thumbnailUrl = thumbs?.optJSONObject(0)?.optString("url")
-            ?.takeIf { it.isNotBlank() }
-        return ShortsItem(
-            videoId = videoId,
-            thumbnailUrl = thumbnailUrl,
-            sequenceParams = reel.optString("sequenceParams").takeIf { it.isNotBlank() }
-        )
-    }
+    private fun parseReelWatchEndpoint(reel: org.json.JSONObject): ShortsItem? =
+        parseShortsEndpoint(reel)
 
     // ============================================================
     // Video library (www.youtube.com): user playlists, Watch Later,
@@ -5280,7 +5260,12 @@ class YouTubeRepository(private val context: Context) {
      * POST to an InnerTube endpoint on www.youtube.com, attaching cookies and
      * SAPISIDHASH when logged in. Returns the raw response body or null on failure.
      */
-    private fun postWatchApi(endpoint: String, body: org.json.JSONObject): String? {
+    private fun postWatchApi(
+        endpoint: String,
+        body: org.json.JSONObject,
+        session: YouTubeSession? = sessionManager.captureSession()
+    ): String? {
+        val currentSession = session?.let { sessionManager.currentSession(it) ?: return null }
         val builder = okhttp3.Request.Builder()
             .url("https://www.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
@@ -5295,13 +5280,12 @@ class YouTubeRepository(private val context: Context) {
 
         cachedVisitorDataOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
 
-        val session = sessionManager.captureSession()
-        builder.authenticate(session, "https://www.youtube.com")
+        builder.authenticate(currentSession, "https://www.youtube.com")
 
         return try {
             okHttpClient.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) {
-                    response.body?.string()?.also { noteSessionState(it, session) }
+                    response.body?.string()?.also { noteSessionState(it, currentSession) }
                 } else {
                     YouTubeRateLimit.note(
                         response.code,

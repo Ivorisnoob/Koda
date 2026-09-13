@@ -1679,4 +1679,7 @@
     <string name="import_source_empty">This playlist has no songs to add</string>
     <string name="import_all_added">Everything here is already in this playlist</string>
     <string name="cd_import_sort">Sort songs</string>
+    <string name="shorts_refresh">Refresh Shorts</string>
+    <string name="shorts_refresh_failed">Couldn’t refresh Shorts. Check your connection or account and try again.</string>
+    <string name="shorts_feed_empty">No Shorts available. Try refreshing.</string>
 </resources>

@@ -617,6 +617,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val _shortsFeed = MutableStateFlow<List<com.ivor.ivormusic.data.ShortsItem>>(emptyList())
+    private var shortsFeedLoadJob: Job? = null
+    private var shortsFeedGeneration = 0L
+    private val _isShortsLoading = MutableStateFlow(false)
+    val isShortsLoading = _isShortsLoading.asStateFlow()
+    private val _shortsFeedFailed = MutableStateFlow(false)
+    val shortsFeedFailed = _shortsFeedFailed.asStateFlow()
+
+    private fun clearShortsFeed() {
+        shortsFeedGeneration++
+        shortsFeedLoadJob?.cancel()
+        shortsFeedLoadJob = null
+        _shortsFeed.value = emptyList()
+        _isShortsLoading.value = false
+        _shortsFeedFailed.value = false
+    }
 
     /**
      * Shorts shelf minus individually hidden Shorts.
@@ -981,7 +996,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // when the result is non-empty, so clearing is what guarantees a failed
         // refetch leaves nothing rather than the wrong account's videos.
         _trendingVideos.value = emptyList()
-        _shortsFeed.value = emptyList()
+        clearShortsFeed()
         _historyVideos.value = emptyList()
 
         checkYouTubeConnection()
@@ -1987,6 +2002,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun logout() {
+        clearShortsFeed()
         sessionManager.clearSession()
         _isYouTubeConnected.value = false
         _userAvatar.value = null
@@ -2254,15 +2270,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * instance. Failures leave the previous shelf in place.
      */
     fun loadShortsFeed() {
-        if (!themePreferences.isShortsEnabled()) return
-        viewModelScope.launch {
+        if (!themePreferences.isShortsEnabled() || shortsFeedLoadJob?.isActive == true) return
+        if (themePreferences.isLocalOnlyModeEnabled()) return
+        if (!hasNetworkConnection()) {
+            _shortsFeedFailed.value = true
+            return
+        }
+        val generation = ++shortsFeedGeneration
+        val profileId = com.ivor.ivormusic.data.ProfileManager(app).activeProfileId.value
+        val session = sessionManager.captureSession()
+        fun isCurrent(): Boolean = generation == shortsFeedGeneration &&
+            com.ivor.ivormusic.data.ProfileManager(app).activeProfileId.value == profileId &&
+            (if (session != null) sessionManager.currentSession(session) != null
+             else sessionManager.captureSession() == null)
+        _isShortsLoading.value = true
+        _shortsFeedFailed.value = false
+        shortsFeedLoadJob = viewModelScope.launch {
             try {
                 val shorts = youtubeRepository.getShortsFeed()
-                if (shorts.isNotEmpty()) {
+                if (isCurrent() && themePreferences.isShortsEnabled()) {
                     _shortsFeed.value = shorts
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                // Keep whatever shelf we already have
+                if (isCurrent()) _shortsFeedFailed.value = true
+                KLog.w("HomeViewModel", "Shorts refresh failed", e)
+            } finally {
+                if (generation == shortsFeedGeneration) _isShortsLoading.value = false
             }
         }
     }

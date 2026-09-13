@@ -1,0 +1,45 @@
+{
+  "status": "REEL_ITEM_WATCH_STATUS_SUCCEEDED",
+  "replacementEndpoint": {
+    "reelWatchEndpoint": {
+      "videoId": "XKnmhvNpIvw",
+      "thumbnail": {
+        "thumbnails": [
+          {
+            "url": "https://i.ytimg.com/vi/XKnmhvNpIvw/frame0.jpg",
+            "width": 1080,
+            "height": 1920
+          }
+        ],
+        "isOriginalAspectRatio": true
+      }
+    }
+  },
+  "sequenceContinuation": "seed-continuation",
+  "engagementPanels": [
+    {
+      "engagementPanelSectionListRenderer": {
+        "content": {
+          "structuredDescriptionContentRenderer": {
+            "items": [
+              {
+                "videoDescriptionHeaderRenderer": {
+                  "title": {
+                    "runs": [
+                      {
+                        "text": "How To Extract Your DNA At Home \ud83d\ude2e"
+                      }
+                    ]
+                  },
+                  "views": {
+                    "simpleText": "21,003,010 views"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
