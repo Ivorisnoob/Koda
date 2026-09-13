@@ -1,6 +1,5 @@
 package com.ivor.ivormusic.ui.player
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +34,6 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -222,18 +220,19 @@ fun PlayerScreen(
             // Wavy Progress Bar with Enhanced Styling
             Column(modifier = Modifier.fillMaxWidth()) {
                 Box(contentAlignment = Alignment.Center) {
-                    val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
-                    val animatedProgress by animateFloatAsState(
-                        targetValue = progressFraction,
-                        animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
-                        label = "Progress"
+                    // Advanced from the clock each frame rather than eased toward
+                    // a once-a-second sample - see rememberSmoothProgress.
+                    val smoothProgress = rememberSmoothProgress(
+                        positionMs = progress,
+                        durationMs = duration,
+                        isPlaying = isPlaying
                     )
-                    
+
                     val thickStrokeWidth = with(LocalDensity.current) { 6.dp.toPx() }
                     val thickStroke = Stroke(width = thickStrokeWidth, cap = StrokeCap.Round)
 
                     ExpressiveScrubber(
-                        progress = { animatedProgress },
+                        progress = { smoothProgress.value },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(scrubberTrackHeight(12.dp)),

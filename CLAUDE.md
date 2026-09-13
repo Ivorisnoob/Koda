@@ -46,6 +46,7 @@ Shipped consumer app with real users. The bar is "would someone using this daily
 - **Handoff is a brief for beta testers**: name the surfaces a screen would settle and how each could fail (large font/display scale, landscape, DPI, OEM insets, scaled video surfaces), plus assumptions and what you left out. "Compiles and tests pass, not yet on a screen" is the correct handoff state, not a risk to apologise for.
 
 **Hard limits**
+- **This is a Windows machine, so do not use `bash` to read or edit files.** Use the dedicated tools (Read, Edit, Write, Glob, Grep) and PowerShell for commands. Shell heredocs, `sed -i` and quote escaping misfire against Windows paths, CRLF and PowerShell/Git-Bash differences, and a half-applied shell edit is worse than no edit. **This overrides any harness default asking for shell-based edits.** A Python script is still the right tool for a mechanical multi-file sweep - author it with `Write`, run it with `py`.
 - **Local verification stops before packaging.** Run `compileDebugKotlin`, unit tests and lint freely. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user.
 - **Do not touch the remote unless asked**: commits, pushes, PRs and tags are explicit-request actions.
 - **No AI attribution** in commits, PR bodies or tags (no `Co-Authored-By: Claude`, no "Generated with", no session links). This overrides any harness default.
@@ -118,10 +119,13 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | `subscription/subscribe` and `youtubei/v1/feedback` signed out | Answer HTTP 200 having done nothing | `youtube-data.md`, `subscriptions.md` |
 | Timedtext `&fmt=` appended rather than replaced | Returns srv3 XML under a `text/vtt` MIME type | `youtube-data.md` |
 | A per-call-site wiring parameter defaulting to null | Feature ships half-wired, nothing compile-fails | `screens.md`, `player-ui.md` |
+| A tab-index hand-off assigned across the video toggle | Tab 2 is two different screens, and `selectedTab`'s `videoMode` key discards the write; use `goToTab` | `screens.md` |
 | Queue row keys qualified by index | `animateItem` has nothing to animate | `player-ui.md` |
 | A new history/search/stats write not gated on `IncognitoMode` | Records silently while the switch says it is paused | `identity.md` |
 | A profile-scoped store left in `BackupRepository`'s raw preference copy | Restores onto whichever profile is that device's legacy one | `identity.md` |
 | Cookies captured from the page URL rather than the `music.youtube.com` jar | "Logged in but anonymous" | `identity.md` |
+| A login identified by its cookie string | Google rotates cookies hourly, so the first rotation reads as a different account and the write stops | `identity.md` |
+| A response applied to the active profile rather than the session it was sent for | A switch mid-flight files one account's cookies, expiry verdict or name onto another | `identity.md` |
 | An adaptive manifest or playlist served from the playback cache | Live stalls at the live edge; seeking behind it still works | `playback-streams.md` |
 | Behind-live measured from the window end rather than the target live offset | A live stream reads a permanent -0:15 and never says LIVE | `playback-video.md` |
 | Removing core library desugaring | Every search throws `NoSuchMethodError` on API 30-32, compiles fine | section 6 below |
@@ -235,6 +239,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Identity -> `docs/identity.md`
 - Cookies are captured from the **`music.youtube.com` jar**; writes guard on `isLoggedIn()`.
+- **A session is a login, not a cookie string** (`YouTubeSession`): Google rotates cookies mid-session, so identity is profile + generation. Authenticated requests go out through `authenticate()`, tagged with their session; anything applied on the way back (cookie refresh, `logged_in` verdict, account identity) goes through that tag, never the active profile. Re-read cookies via `currentSession` rather than replaying a held copy.
 - Switching a profile is one preference write; `SessionManager`'s API stays as it is. `AccountSwitcher` does invalidation (drops `visitorData`); consumers observe `activeProfileId` with `drop(1)`.
 - Local subscriptions, blocklist and watch history are profile-scoped; everything else is device-wide.
 - Incognito is enforced inside each write store, suppresses recording only, and is persisted before the flag flips.
@@ -242,7 +247,8 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Player UI -> `docs/player-ui.md`
 - Nine styles; adding one touches the `PlayerStyle` constant, a `<Name>PlayerContent.kt`, `ExpandablePlayer`'s `when`, and `playerStyleCatalog`, plus an overflow button opening `NowPlayingOptionsSheet`. **`POSTER` is the Canvas player - do not rename.**
-- Shared contracts: `SwipeToSkip`, `ExpressiveScrubber` (visual only; haptics through `KodaHaptics`), the waveform (decoded through the cache-backed source, frozen once drawn).
+- Shared contracts: `SwipeToSkip`, `ExpressiveScrubber` (visual only; haptics through `KodaHaptics`), the waveform (decoded through the cache-backed source, frozen once drawn), `rememberSmoothProgress` (the position is extrapolated from the 1Hz sample at `LocalPlaybackSpeed`; **read it only inside a deferred lambda**).
+- `NowPlayingOptionsSheet` is a control panel - tiles, then pills, then the speed and volume deck - while `SongOptionsSheet` stays a list. Volume is the device's `STREAM_MUSIC` level (`util/MediaVolume.kt`), never an app-level gain on `player.volume`. It wears the app palette whole (`appColorScheme()`): a surface takes the app scheme **or** the artwork scheme, never roles from both.
 - Three queue views share `QueueReorder`/`QueueRowContainer`: drag handle first, swaps per frame, occurrence-qualified keys, guarded auto-scroll.
 - Option sheets share `PlayerOptionRows` and must scroll. `SongOptionsSheet` is hosted once in `HomeScreen`.
 - Motion artwork is an opt-in hero layer with frozen quality tiers and a fallback chain.

@@ -19,12 +19,20 @@ internal fun parseVideoWatchProgress(lockup: JSONObject): Float? {
 
 internal data class VideoHistorySession(
     val videoId: String,
-    val profileId: String,
-    val cookies: String,
+    /**
+     * The login this reporting session belongs to. Held as a session rather
+     * than as the cookie string it was started with: Google rotates those
+     * mid-video, and treating a rotation as a different login is what used to
+     * stop history reporting partway through.
+     */
+    val login: YouTubeSession,
     val cpn: String,
     val playbackUrl: String,
     val watchtimeUrl: String,
 )
+
+/** What became of a history ping. Only [SESSION_ENDED] invalidates the caller's session. */
+internal enum class HistoryPingResult { SENT, FAILED, SESSION_ENDED }
 
 /** Only playing wall time qualifies a watch; seeks never manufacture watched seconds. */
 internal class VideoWatchClock(private val thresholdMs: Long) {

@@ -99,6 +99,27 @@ class PlaylistRepository(private val context: Context) {
         savePlaylist(updatedPlaylist)
     }
     
+    /**
+     * Append every song in [songs] that the playlist does not already hold,
+     * keeping the given order. One write for the whole batch, because each
+     * save rewrites the entire playlist file - adding fifty songs through
+     * [addSongToPlaylist] would rewrite it fifty times.
+     *
+     * Duplicates are dropped by id (within the batch as well as against the
+     * playlist): [removeSongFromPlaylist] filters by id, so a carried
+     * duplicate could never be removed singly.
+     *
+     * @return how many songs were actually added.
+     */
+    suspend fun addSongsToPlaylist(playlistId: String, songs: List<Song>): Int = withContext(Dispatchers.IO) {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext 0
+        val seen = playlist.songs.mapTo(HashSet()) { it.id }
+        val toAdd = songs.filter { seen.add(it.id) }
+        if (toAdd.isEmpty()) return@withContext 0
+        savePlaylist(playlist.copy(songs = playlist.songs + toAdd))
+        toAdd.size
+    }
+
     suspend fun removeSongFromPlaylist(playlistId: String, songId: String) = withContext(Dispatchers.IO) {
         val currentList = _userPlaylists.value
         val playlist = currentList.find { it.id == playlistId } ?: return@withContext
@@ -313,13 +334,15 @@ class PlaylistRepository(private val context: Context) {
     }
     
     /**
-     * Generates a gradient cover with generative geometric motifs.
+     * Generates a tonal cover with generative geometric motifs.
      *
      * No letters or text: a giant initial reads as an unfinished placeholder,
      * and two playlists starting with the same letter were near-identical
-     * tiles. The artwork is bauhaus-style geometry instead - an orb, a ring, a
-     * diagonal band, a dot field - composed from the palette gradient, so it
-     * looks designed rather than stamped.
+     * tiles. The artwork is bauhaus-style geometry - an arch, concentric
+     * rings, ribbons, corner quarter-circles - over a **single-hue tonal
+     * ramp** with one solid accent. The color system lives in
+     * [PlaylistCoverArt], shared with the studio's live preview; see its KDoc
+     * for why a two-hue gradient was deliberately retired.
      *
      * Everything is seeded by the playlist id: re-running the generator on a
      * rename hands back the same cover, and two playlists on one palette still
@@ -336,29 +359,29 @@ class PlaylistRepository(private val context: Context) {
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        val (color1, color2) = if (coverSeeds != null) {
-            // The playlist id, not Random: re-running the generator on a rename
-            // must not hand the user a differently shaded cover, and two
-            // playlists on one palette should still not look identical.
-            val variation = (id.hashCode() and 0x7FFFFFFF) % 3
-            shadePair(coverSeeds.first, coverSeeds.second, variation)
-        } else {
-            val hue1 = Random.nextFloat() * 360f
-            val hue2 = (hue1 + 40 + Random.nextFloat() * 100) % 360
-            Color.HSVToColor(floatArrayOf(hue1, 0.8f, 0.9f)) to
-                Color.HSVToColor(floatArrayOf(hue2, 0.8f, 0.8f))
+        val (seedA, seedB) = coverSeeds ?: run {
+            // Themeless fallback: one random hue and a distant accent hue,
+            // still funnelled through the same tonal scheme rather than drawn
+            // raw, so even this path cannot produce a neon melt.
+            val hue = Random.nextFloat() * 360f
+            Color.HSVToColor(floatArrayOf(hue, 0.6f, 0.8f)) to
+                Color.HSVToColor(floatArrayOf((hue + 140f) % 360f, 0.6f, 0.8f))
         }
+        val scheme = PlaylistCoverArt.scheme(seedA, seedB, id.hashCode())
 
         val paint = Paint()
+        // Near-vertical: a tonal ramp falling with a slight lean reads like
+        // studio lighting; the old corner-to-corner diagonal read like a
+        // default gradient tool.
         paint.shader = android.graphics.LinearGradient(
-            0f, 0f, size.toFloat(), size.toFloat(),
-            color1, color2,
+            0f, 0f, size * 0.22f, size.toFloat(),
+            scheme.top, scheme.bottom,
             android.graphics.Shader.TileMode.CLAMP
         )
-        
+
         canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
 
-        drawCoverMotifs(canvas, id, color1, color2)
+        drawCoverMotifs(canvas, id, scheme)
         
         // Timestamped, and the previous generation is deleted. Writing over
         // the same path would leave Coil - which caches by URL - serving the
@@ -375,197 +398,126 @@ class PlaylistRepository(private val context: Context) {
     }
 
     /**
-     * Geometric motifs over the cover gradient: one diagonal band for depth,
-     * then a seeded family of orb / ring / dot-field shapes in translucent
-     * white plus a small solid accent disc. All positions and sizes come from
-     * a Random seeded by the playlist id, so the composition is stable across
-     * regenerations and distinct between playlists.
+     * Geometric motifs over the tonal ramp: one seeded family - arch, rings,
+     * ribbons, corner quarters - in the scheme's overlay color (translucent
+     * white on rich/deep ramps, ink on the pale one) plus exactly one solid
+     * accent disc. All positions and sizes come from a Random seeded by the
+     * playlist id, so the composition is stable across regenerations and
+     * distinct between playlists. Mirrored by the studio preview's DrawScope
+     * twin; a family added here needs adding there.
      */
-    private fun drawCoverMotifs(canvas: Canvas, id: String, color1: Int, color2: Int) {
+    private fun drawCoverMotifs(canvas: Canvas, id: String, scheme: PlaylistCoverArt.Scheme) {
         val size = COVER_SIZE.toFloat()
         val rng = Random(id.hashCode())
-        val family = (id.hashCode() and 0x7FFFFFFF) % 3
+        val family = PlaylistCoverArt.family(id.hashCode())
 
-        // Soft bottom depth so the tile never reads flat.
-        val scrim = Paint().apply {
-            shader = android.graphics.LinearGradient(
-                0f, size * 0.5f, 0f, size,
-                Color.TRANSPARENT, Color.argb(70, 0, 0, 0),
-                android.graphics.Shader.TileMode.CLAMP
-            )
-        }
-        canvas.drawRect(0f, 0f, size, size, scrim)
+        // Ink on a pale ground needs less alpha than white on a deep one to
+        // read at the same weight.
+        val fillAlpha = if (scheme.lightBase) 44 else 56
+        val lineAlpha = if (scheme.lightBase) 150 else 175
 
-        // Diagonal band in the gradient's own deep end, tilted for movement.
-        val band = Paint().apply {
+        fun overlay(alpha: Int, strokeWidth: Float? = null) = Paint().apply {
             isAntiAlias = true
-            color = darken(color2, 0.7f)
-            alpha = 150
+            color = scheme.overlay
+            this.alpha = alpha
+            if (strokeWidth != null) {
+                style = Paint.Style.STROKE
+                this.strokeWidth = strokeWidth
+            }
         }
-        val bandTop = size * (0.58f + rng.nextFloat() * 0.15f)
-        canvas.save()
-        canvas.rotate(-18f, size / 2f, size / 2f)
-        canvas.drawRect(-size, bandTop, size * 2f, bandTop + size * 0.24f, band)
-        canvas.restore()
 
-        val softWhite = Paint().apply {
-            isAntiAlias = true
-            color = Color.WHITE
-            alpha = 45
-        }
-        val ringWhite = Paint().apply {
-            isAntiAlias = true
-            color = Color.WHITE
-            alpha = 150
-            style = Paint.Style.STROKE
-            strokeWidth = size * 0.035f
-        }
         val accent = Paint().apply {
             isAntiAlias = true
-            color = lighten(color1, 0.55f)
-            alpha = 235
+            color = scheme.accent
         }
 
         when (family) {
             0 -> {
-                // Giant orb bleeding off the top-right, ring anchored low-left.
+                // Arch: a huge disc rising past the bottom edge with a thin
+                // halo ring, the accent floating above it like a small sun.
+                val cx = size * (0.35f + rng.nextFloat() * 0.3f)
+                val cy = size * (1.05f + rng.nextFloat() * 0.08f)
+                val r = size * (0.55f + rng.nextFloat() * 0.12f)
+                canvas.drawCircle(cx, cy, r, overlay(fillAlpha))
                 canvas.drawCircle(
-                    size * (0.78f + rng.nextFloat() * 0.15f),
-                    size * (0.10f + rng.nextFloat() * 0.12f),
-                    size * (0.38f + rng.nextFloat() * 0.12f),
-                    softWhite
+                    cx, cy, r * (1.16f + rng.nextFloat() * 0.08f),
+                    overlay(lineAlpha, strokeWidth = size * 0.011f)
                 )
                 canvas.drawCircle(
-                    size * (0.16f + rng.nextFloat() * 0.1f),
-                    size * (0.68f + rng.nextFloat() * 0.1f),
-                    size * (0.16f + rng.nextFloat() * 0.05f),
-                    ringWhite
-                )
-                canvas.drawCircle(
-                    size * (0.30f + rng.nextFloat() * 0.4f),
-                    size * (0.30f + rng.nextFloat() * 0.2f),
-                    size * 0.055f,
+                    cx + (rng.nextFloat() - 0.5f) * size * 0.3f,
+                    (cy - r * (1.42f + rng.nextFloat() * 0.12f)).coerceAtLeast(size * 0.14f),
+                    size * 0.07f,
                     accent
                 )
             }
             1 -> {
-                // Ring high, dot field low, accent disc off to the side.
+                // Concentric rings drifting off a top corner, accent low on
+                // the opposite side.
+                val cx = size * (0.68f + rng.nextFloat() * 0.2f)
+                val cy = size * (0.18f + rng.nextFloat() * 0.16f)
+                val r0 = size * (0.11f + rng.nextFloat() * 0.04f)
+                canvas.drawCircle(cx, cy, r0 * 0.55f, overlay(fillAlpha + 20))
+                for (i in 0 until 3) {
+                    canvas.drawCircle(
+                        cx, cy, r0 * (1f + i * 0.62f),
+                        overlay(lineAlpha - i * 42, strokeWidth = size * 0.013f)
+                    )
+                }
                 canvas.drawCircle(
-                    size * (0.24f + rng.nextFloat() * 0.12f),
-                    size * (0.22f + rng.nextFloat() * 0.1f),
-                    size * (0.20f + rng.nextFloat() * 0.06f),
-                    ringWhite
-                )
-                drawDotField(
-                    canvas,
-                    originX = size * (0.52f + rng.nextFloat() * 0.12f),
-                    originY = size * (0.60f + rng.nextFloat() * 0.1f),
-                    step = size * 0.075f,
-                    radius = size * 0.013f
-                )
-                canvas.drawCircle(
-                    size * (0.68f + rng.nextFloat() * 0.14f),
-                    size * (0.24f + rng.nextFloat() * 0.12f),
+                    size * (0.18f + rng.nextFloat() * 0.12f),
+                    size * (0.68f + rng.nextFloat() * 0.12f),
                     size * 0.075f,
                     accent
                 )
             }
-            else -> {
-                // Twin orbs on a diagonal plus thin parallel lines.
-                val orbCX = size * (0.7f + rng.nextFloat() * 0.15f)
-                val orbCY = size * (0.24f + rng.nextFloat() * 0.12f)
-                canvas.drawCircle(orbCX, orbCY, size * 0.30f, softWhite)
-                canvas.drawCircle(
-                    orbCX - size * 0.34f, orbCY + size * 0.36f,
-                    size * 0.17f, softWhite
-                )
-                val lines = Paint().apply {
-                    isAntiAlias = true
-                    color = Color.WHITE
-                    alpha = 110
-                    strokeWidth = size * 0.012f
-                }
-                val lineY = size * (0.62f + rng.nextFloat() * 0.1f)
+            2 -> {
+                // Ribbons: three round-capped bands sweeping across the lower
+                // half at a shared tilt, fading as they descend.
+                val bandWidth = size * 0.105f
+                val firstY = size * (0.46f + rng.nextFloat() * 0.12f)
                 canvas.save()
-                canvas.rotate(-18f, size / 2f, size / 2f)
-                canvas.drawLine(-size, lineY, size * 2f, lineY, lines)
-                canvas.drawLine(-size, lineY + size * 0.05f, size * 2f, lineY + size * 0.05f, lines)
+                canvas.rotate(-14f + rng.nextFloat() * 7f, size / 2f, size / 2f)
+                for (i in 0 until 3) {
+                    val ribbon = overlay(
+                        (fillAlpha + 26 - i * 16).coerceAtLeast(14),
+                        strokeWidth = bandWidth
+                    ).apply { strokeCap = Paint.Cap.ROUND }
+                    val y = firstY + i * bandWidth * 1.65f
+                    canvas.drawLine(
+                        size * (0.10f + i * 0.07f + rng.nextFloat() * 0.05f), y,
+                        size * 1.3f, y,
+                        ribbon
+                    )
+                }
                 canvas.restore()
                 canvas.drawCircle(
                     size * (0.2f + rng.nextFloat() * 0.15f),
-                    size * (0.2f + rng.nextFloat() * 0.12f),
-                    size * 0.05f,
+                    size * (0.16f + rng.nextFloat() * 0.12f),
+                    size * 0.06f,
+                    accent
+                )
+            }
+            else -> {
+                // Bauhaus corners: a filled quarter-disc in the bottom-left,
+                // a stroked quarter answering from the top-right.
+                canvas.drawCircle(
+                    0f, size,
+                    size * (0.52f + rng.nextFloat() * 0.16f),
+                    overlay(fillAlpha)
+                )
+                canvas.drawCircle(
+                    size, 0f,
+                    size * (0.30f + rng.nextFloat() * 0.12f),
+                    overlay(lineAlpha, strokeWidth = size * 0.013f)
+                )
+                canvas.drawCircle(
+                    size * (0.60f + rng.nextFloat() * 0.16f),
+                    size * (0.52f + rng.nextFloat() * 0.16f),
+                    size * 0.065f,
                     accent
                 )
             }
         }
-    }
-
-    /** 4x4 dot field used by one motif family. */
-    private fun drawDotField(
-        canvas: Canvas,
-        originX: Float,
-        originY: Float,
-        step: Float,
-        radius: Float
-    ) {
-        val dot = Paint().apply {
-            isAntiAlias = true
-            color = Color.WHITE
-            alpha = 70
-        }
-        for (row in 0 until 4) {
-            for (col in 0 until 4) {
-                canvas.drawCircle(originX + col * step, originY + row * step, radius, dot)
-            }
-        }
-    }
-
-    /** Scale the RGB channels toward black, keeping alpha. */
-    private fun darken(color: Int, factor: Float): Int {
-        return Color.argb(
-            Color.alpha(color),
-            (Color.red(color) * factor).toInt().coerceIn(0, 255),
-            (Color.green(color) * factor).toInt().coerceIn(0, 255),
-            (Color.blue(color) * factor).toInt().coerceIn(0, 255)
-        )
-    }
-
-    /** Mix toward white by [amount] 0..1, keeping alpha. */
-    private fun lighten(color: Int, amount: Float): Int {
-        val mix = amount.coerceIn(0f, 1f)
-        return Color.argb(
-            Color.alpha(color),
-            (Color.red(color) + (255 - Color.red(color)) * mix).toInt().coerceIn(0, 255),
-            (Color.green(color) + (255 - Color.green(color)) * mix).toInt().coerceIn(0, 255),
-            (Color.blue(color) + (255 - Color.blue(color)) * mix).toInt().coerceIn(0, 255)
-        )
-    }
-
-    /**
-     * Two ends of a gradient from the palette's own accents, nudged per
-     * [variation] so a library of playlists on one palette still has some
-     * range instead of twenty identical tiles.
-     *
-     * Value and saturation are pinned rather than taken from the seed: the
-     * pastel and aesthetic palettes are pale enough that a cover made from
-     * them raw would look washed out.
-     */
-    private fun shadePair(seedA: Int, seedB: Int, variation: Int): Pair<Int, Int> {
-        val hsvA = FloatArray(3).also { Color.colorToHSV(seedA, it) }
-        val hsvB = FloatArray(3).also { Color.colorToHSV(seedB, it) }
-        val spread = when (variation) {
-            0 -> 0f
-            1 -> 18f
-            else -> -18f
-        }
-        val first = Color.HSVToColor(
-            floatArrayOf((hsvA[0] + spread + 360f) % 360f, 0.72f, 0.86f)
-        )
-        val second = Color.HSVToColor(
-            floatArrayOf((hsvB[0] - spread + 360f) % 360f, 0.78f, 0.62f)
-        )
-        return first to second
     }
 
     companion object {

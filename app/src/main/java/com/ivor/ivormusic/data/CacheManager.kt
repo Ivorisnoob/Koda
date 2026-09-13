@@ -1,6 +1,8 @@
 package com.ivor.ivormusic.data
 
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 import android.content.Context
 import androidx.media3.common.C
@@ -388,15 +390,25 @@ object CacheManager {
         }
     }
 
-    /** Blocking range warm for the immediate-next Shorts item. Call on IO. */
-    fun cacheVideoRange(context: Context, dataSpec: DataSpec) {
+    /** Blocking, bounded Shorts warm. Call on IO; cancellation stops further reads. */
+    suspend fun cacheVideoRange(context: Context, dataSpec: DataSpec) {
         if (!ThemePreferences.isShortsCacheEnabled(context) ||
             !ThemePreferences.isPlaybackPreloadEnabled(context)) return
         val factory = synchronized(this) {
             initializeVideoCache(context.applicationContext)
             createVideoCacheDataSourceFactory(context, shorts = true)
         } ?: return
-        CacheWriter(factory.createDataSource(), dataSpec, null, null).cache()
+        val taskContext = currentCoroutineContext()
+        taskContext.ensureActive()
+        // CacheWriter checks progress after each read (128 KiB maximum). Its
+        // exception path closes the source and releases the cache span lock.
+        CacheWriter(factory.createDataSource(), dataSpec, null) { _, _, _ ->
+            taskContext.ensureActive()
+            if (!ThemePreferences.isShortsCacheEnabled(context) ||
+                !ThemePreferences.isPlaybackPreloadEnabled(context)) {
+                throw kotlinx.coroutines.CancellationException("Shorts preload disabled")
+            }
+        }.cache()
     }
 
     private fun createVideoCacheDataSourceFactory(

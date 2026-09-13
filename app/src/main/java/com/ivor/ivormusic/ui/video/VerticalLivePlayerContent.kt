@@ -93,8 +93,12 @@ import com.ivor.ivormusic.data.VttCue
  * layout gives up and letterboxes instead. A 9:16 stream on a 9:20 phone loses
  * about a fifth of its width, which is the bargain Shorts already makes; a 4:5
  * stream would lose closer to half, which is not.
+ *
+ * Shared with fullscreen pinch-to-zoom ([zoomFillCropFraction]): a portrait
+ * video zoomed to fill a landscape window is the same bargain at a much worse
+ * price, so the same threshold guards it.
  */
-private const val MAX_ACCEPTABLE_CROP = 0.25f
+internal const val MAX_ACCEPTABLE_CROP = 0.25f
 
 /**
  * The full-bleed player for a vertical live stream.
@@ -236,6 +240,7 @@ fun VerticalLivePlayerContent(
                 speedBeforeBoost = exoPlayer.playbackParameters.speed
                 exoPlayer.setPlaybackSpeed(2f)
             },
+            onSpeedBoostChange = { exoPlayer.setPlaybackSpeed(it) },
             onSpeedBoostEnd = { exoPlayer.setPlaybackSpeed(speedBeforeBoost) },
             // Swipe down still drops the whole thing into the mini player, the
             // same as the standard portrait layout.

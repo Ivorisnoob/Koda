@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
@@ -20,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -153,9 +155,34 @@ fun IvorMusicTheme(
         shapes = ExpressiveShapes,
         typography = Typography,
     ) {
-        ScaledDensity(uiScale, content)
+        // The app's own scheme, kept reachable from inside a local re-theme.
+        CompositionLocalProvider(LocalAppColorScheme provides colorScheme) {
+            ScaledDensity(uiScale, content)
+        }
     }
 }
+
+/**
+ * The palette the app chose, regardless of what the nearest `MaterialTheme` says.
+ *
+ * **This exists for getting *out* of a re-theme, not into one.** The expanded
+ * player optionally derives its accents from the album cover, so everything
+ * composed inside it - including the bottom sheets it hosts, which are
+ * subcompositions and inherit the local - reads artwork colours from
+ * `MaterialTheme.colorScheme`. A surface that belongs to the app rather than to
+ * the playing song asks for this instead and re-themes itself back, which is
+ * also the only way to do it: the artwork scheme replaces accent roles and keeps
+ * the app's surfaces, so picking roles out of it one at a time produces a
+ * half-and-half palette rather than either one.
+ *
+ * It falls back to [MaterialTheme]'s own scheme, so a composable used outside
+ * `KodaTheme` (a preview, a test) still draws.
+ */
+val LocalAppColorScheme = staticCompositionLocalOf<ColorScheme?> { null }
+
+/** The app's palette, or the ambient one when this is composed outside [KodaTheme]. */
+@Composable
+fun appColorScheme(): ColorScheme = LocalAppColorScheme.current ?: MaterialTheme.colorScheme
 
 /**
  * Rescales the whole interface by lying about the display's density.

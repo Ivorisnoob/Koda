@@ -617,6 +617,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val _shortsFeed = MutableStateFlow<List<com.ivor.ivormusic.data.ShortsItem>>(emptyList())
+    private var shortsFeedLoadJob: Job? = null
+    private var shortsFeedGeneration = 0L
+    private val _isShortsLoading = MutableStateFlow(false)
+    val isShortsLoading = _isShortsLoading.asStateFlow()
+    private val _shortsFeedFailed = MutableStateFlow(false)
+    val shortsFeedFailed = _shortsFeedFailed.asStateFlow()
+
+    private fun clearShortsFeed() {
+        shortsFeedGeneration++
+        shortsFeedLoadJob?.cancel()
+        shortsFeedLoadJob = null
+        _shortsFeed.value = emptyList()
+        _isShortsLoading.value = false
+        _shortsFeedFailed.value = false
+    }
 
     /**
      * Shorts shelf minus individually hidden Shorts.
@@ -981,7 +996,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // when the result is non-empty, so clearing is what guarantees a failed
         // refetch leaves nothing rather than the wrong account's videos.
         _trendingVideos.value = emptyList()
-        _shortsFeed.value = emptyList()
+        clearShortsFeed()
         _historyVideos.value = emptyList()
 
         checkYouTubeConnection()
@@ -1987,6 +2002,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun logout() {
+        clearShortsFeed()
         sessionManager.clearSession()
         _isYouTubeConnected.value = false
         _userAvatar.value = null
@@ -2254,15 +2270,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * instance. Failures leave the previous shelf in place.
      */
     fun loadShortsFeed() {
-        if (!themePreferences.isShortsEnabled()) return
-        viewModelScope.launch {
+        if (!themePreferences.isShortsEnabled() || shortsFeedLoadJob?.isActive == true) return
+        if (themePreferences.isLocalOnlyModeEnabled()) return
+        if (!hasNetworkConnection()) {
+            _shortsFeedFailed.value = true
+            return
+        }
+        val generation = ++shortsFeedGeneration
+        val profileId = com.ivor.ivormusic.data.ProfileManager(app).activeProfileId.value
+        val session = sessionManager.captureSession()
+        fun isCurrent(): Boolean = generation == shortsFeedGeneration &&
+            com.ivor.ivormusic.data.ProfileManager(app).activeProfileId.value == profileId &&
+            (if (session != null) sessionManager.currentSession(session) != null
+             else sessionManager.captureSession() == null)
+        _isShortsLoading.value = true
+        _shortsFeedFailed.value = false
+        shortsFeedLoadJob = viewModelScope.launch {
             try {
                 val shorts = youtubeRepository.getShortsFeed()
-                if (shorts.isNotEmpty()) {
+                if (isCurrent() && themePreferences.isShortsEnabled()) {
                     _shortsFeed.value = shorts
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                // Keep whatever shelf we already have
+                if (isCurrent()) _shortsFeedFailed.value = true
+                KLog.w("HomeViewModel", "Shorts refresh failed", e)
+            } finally {
+                if (generation == shortsFeedGeneration) _isShortsLoading.value = false
             }
         }
     }
@@ -2609,6 +2644,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Awaited variant for the playlist studio: the chosen cover is applied
+     * before the new playlist's page opens, so it never flashes the generated
+     * artwork first.
+     */
+    suspend fun applyLocalPlaylistCover(playlistId: String, source: android.net.Uri) {
+        playlistRepository.setCustomCover(playlistId, source)
+    }
+
     /** Drop a chosen cover and go back to the generated one. */
     fun resetLocalPlaylistCover(playlistId: String) {
         viewModelScope.launch {
@@ -2657,6 +2701,67 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playlistRepository.addSongToPlaylist(playlistId, song)
         }
+    }
+
+    /**
+     * Append a selection of songs to a local playlist in one write, skipping
+     * anything already in it. Suspend rather than fire-and-forget because the
+     * import screen reports how many songs actually landed.
+     */
+    suspend fun addSongsToLocalPlaylist(playlistId: String, songs: List<Song>): Int =
+        playlistRepository.addSongsToPlaylist(playlistId, songs)
+
+    /**
+     * Create a local playlist already holding [songs] - the playlist studio's
+     * create action. Unlike [copyPlaylistToLocal] an empty selection is a
+     * valid outcome: naming a playlist first and filling it later is exactly
+     * what the flow allows.
+     *
+     * @return the new playlist's id.
+     */
+    suspend fun createLocalPlaylistWithSongs(
+        name: String,
+        description: String?,
+        songs: List<Song>
+    ): String {
+        val id = playlistRepository.createPlaylist(
+            name.trim(),
+            description?.trim()?.takeIf { it.isNotEmpty() },
+            coverSeedColors()
+        )
+        val tracks = songs.distinctBy { it.id }
+        if (tracks.isNotEmpty()) playlistRepository.replacePlaylistSongs(id, tracks)
+        return id
+    }
+
+    /**
+     * What the playlist studio seeds its suggestion chips from: recency-ranked
+     * favorites (as playable [Song]s), top artists and recent searches. Built
+     * on demand rather than held as state - it reads the whole play history
+     * and only the studio ever needs it.
+     */
+    data class PlaylistSeedProfile(
+        val favorites: List<Song>,
+        val topArtists: List<String>,
+        val recentSearches: List<String>
+    )
+
+    suspend fun buildPlaylistSeedProfile(): PlaylistSeedProfile {
+        val profile = recommendationEngine.buildTasteProfile()
+        return PlaylistSeedProfile(
+            favorites = profile.topSongs.map { entry ->
+                Song.fromYouTube(
+                    videoId = entry.songId,
+                    title = entry.title,
+                    artist = entry.artist,
+                    album = entry.album,
+                    duration = entry.duration,
+                    thumbnailUrl = entry.thumbnailUrl
+                )
+            },
+            topArtists = profile.topArtists,
+            recentSearches = profile.recentSearches
+        )
     }
 
     fun updateLocalPlaylist(playlistId: String, name: String, description: String?) {

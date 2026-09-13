@@ -29,6 +29,8 @@ import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.bestSdrFallback
 import com.ivor.ivormusic.ui.video.hasHdrDisplay
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -41,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 /**
  * Player for the vertical Shorts feed. Owns its own ExoPlayer (like
@@ -81,9 +84,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * The Shorts sequence itself is deliberately left in place. It is filtered
      * on ingestion and addressed positionally by both the pager and playIndex,
      * so swapping the list underneath someone mid-watch would move them to a
-     * different Short than the one on screen. The feed is personalised and does
-     * go stale, but it is refreshed the next time Shorts is opened rather than
-     * yanked away from someone actively watching.
+     * different Short than the one on screen. Keep the loaded pages, but discard
+     * their continuation and seed the next extension from the new profile.
      */
     private fun observeProfileSwitches() {
         viewModelScope.launch {
@@ -92,9 +94,16 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 .drop(1)
                 .distinctUntilChanged()
                 .collect {
+                    resetSequenceLoading()
+                    nextSequenceParams = null
+                    refreshSequenceForProfile = true
+                    _isLoggedIn.value = youtubeRepository.isLoggedIn()
                     youtubeRepository.clearSessionScopedInstanceCaches()
+                    invalidatePrefetchedQualities()
                     synchronized(watchNextCache) { watchNextCache.clear() }
                     _engagement.value = null
+                    maybeLoadMore(_currentIndex.value)
+                    prefetchAround(_currentIndex.value)
                     val playing = _currentVideo.value ?: return@collect
                     val refreshed = runCatching {
                         youtubeRepository.getVideoEngagement(playing.videoId)
@@ -169,7 +178,15 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     // Sequence continuation for the endless feed; null until known/exhausted
     private var nextSequenceParams: String? = null
-    private var isLoadingMore = false
+    private var sequenceLoadJob: Job? = null
+    private var sequenceGeneration = 0L
+    private var refreshSequenceForProfile = false
+
+    private fun resetSequenceLoading() {
+        sequenceGeneration++
+        sequenceLoadJob?.cancel()
+        sequenceLoadJob = null
+    }
     private var playJob: Job? = null
     private val watchTracker = com.ivor.ivormusic.data.VideoWatchTracker(context, viewModelScope, youtubeRepository)
     private var recoveryJob: Job? = null
@@ -196,15 +213,53 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, com.ivor.ivormusic.data.WatchNextData>) =
             size > 20
     }
-    private val prefetchingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    // Main-thread owned. Obsolete requests must not sit ahead of the next swipe.
+    private val prefetchJobs = mutableMapOf<String, Job>()
     private val prefetchSemaphore = kotlinx.coroutines.sync.Semaphore(2)
+    private val metadataPrefetchSemaphore = kotlinx.coroutines.sync.Semaphore(1)
+
+    private fun cancelPrefetch() {
+        val jobs = prefetchJobs.values.toList()
+        prefetchJobs.clear()
+        jobs.forEach { it.cancel() }
+    }
+
+    private fun invalidatePrefetchedQualities() {
+        cancelPrefetch()
+        synchronized(qualitiesCache) {
+            qualitiesEpoch++
+            qualitiesCache.clear()
+        }
+    }
+
+    private fun launchPrefetch(
+        key: String,
+        semaphore: kotlinx.coroutines.sync.Semaphore,
+        work: suspend kotlinx.coroutines.CoroutineScope.() -> Unit
+    ) {
+        if (prefetchJobs[key]?.isActive == true) return
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                semaphore.withPermit { work() }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                KLog.w("ShortsPlayerVM", "Prefetch failed for $key", e)
+            } finally {
+                prefetchJobs.remove(key, coroutineContext[Job])
+            }
+        }
+        // Publish before starting: a fully cached warm can finish synchronously.
+        prefetchJobs[key] = job
+        job.start()
+    }
 
     /**
      * Bumped whenever the cache is purged because the token that minted its
      * URLs was refused. A prefetch that was already in flight at that moment
      * resolved under the dead token, so its result must be dropped rather than
      * written back over the purge - otherwise recovery fixes the Short on
-     * screen and the next five swipes fail exactly as before.
+     * screen and the upcoming swipes fail exactly as before.
      */
     private var qualitiesEpoch = 0
 
@@ -227,74 +282,63 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     /**
-     * Warm the caches around [index]: stream URLs for the next
-     * [STREAM_PREFETCH_AHEAD] Shorts plus the previous one, watch-next for
-     * the next [WATCH_NEXT_PREFETCH_AHEAD]. Bounded to two concurrent
-     * fetches so prefetch never starves the playing Short's buffer.
+     * Resolve four upcoming Shorts and buffer the first seconds of the next
+     * three (two on metered networks). A cached ladder still needs its media
+     * warmed: URL resolution is not playable data. Metadata has its own slot.
      */
     private fun prefetchAround(index: Int) {
-        if (!ThemePreferences.isPlaybackPreloadEnabled(context)) return
+        if (!_isActive.value || !ThemePreferences.isPlaybackPreloadEnabled(context)) {
+            cancelPrefetch()
+            return
+        }
         val list = _shorts.value
-        val nextId = list.getOrNull(index + 1)?.videoId
         val streamTargets =
             ((index + 1)..(index + STREAM_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) } +
                 listOfNotNull(list.getOrNull(index - 1))
+        val watchNextTargets =
+            ((index + 1)..(index + WATCH_NEXT_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) }
+        val wanted = streamTargets.mapTo(mutableSetOf()) { "s:${it.videoId}" } +
+            watchNextTargets.map { "w:${it.videoId}" } +
+            listOfNotNull(list.getOrNull(index)).flatMap { listOf("s:${it.videoId}", "w:${it.videoId}") }
+        prefetchJobs.keys.filterNot { it in wanted }.forEach { key ->
+            prefetchJobs.remove(key)?.cancel()
+        }
         for (item in streamTargets) {
             val id = item.videoId
-            if (cachedQualities(id) != null || !prefetchingIds.add("s:$id")) continue
             val epoch = qualitiesEpoch
-            viewModelScope.launch {
-                try {
-                    prefetchSemaphore.acquire()
-                    try {
-                        // Skip if a later prefetch/playback already filled it
-                        if (cachedQualities(id) == null) {
-                            val qualities = resolvePlayableQualities(id)
-                            cacheQualities(id, qualities, epoch)
-                            if (id == nextId) warmPlayableHead(qualities)
-                        }
-                    } finally {
-                        prefetchSemaphore.release()
-                    }
-                } catch (e: Exception) {
-                    KLog.w("ShortsPlayerVM", "stream prefetch failed for $id", e)
-                } finally {
-                    prefetchingIds.remove("s:$id")
+            launchPrefetch("s:$id", prefetchSemaphore) {
+                val qualities = cachedQualities(id) ?: resolvePlayableQualities(id).also {
+                    ensureActive()
+                    cacheQualities(id, it, epoch)
+                }
+                // Re-evaluate after resolution: a farther item may have become
+                // the immediate next Short while its extraction was in flight.
+                if (epoch == qualitiesEpoch && shouldWarmShort(id)) {
+                    warmPlayableHead(qualities)
                 }
             }
         }
-
-        val watchNextTargets =
-            ((index + 1)..(index + WATCH_NEXT_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) }
         for (item in watchNextTargets) {
             val id = item.videoId
-            if (cachedWatchNext(id) != null || !prefetchingIds.add("w:$id")) continue
-            viewModelScope.launch {
-                try {
-                    prefetchSemaphore.acquire()
-                    try {
-                        if (cachedWatchNext(id) == null) {
-                            cacheWatchNext(id, youtubeRepository.getWatchNextData(id, item.toVideoItem()))
-                        }
-                    } finally {
-                        prefetchSemaphore.release()
-                    }
-                } catch (e: Exception) {
-                    KLog.w("ShortsPlayerVM", "watch-next prefetch failed for $id", e)
-                } finally {
-                    prefetchingIds.remove("w:$id")
+            if (cachedWatchNext(id) != null) continue
+            launchPrefetch("w:$id", metadataPrefetchSemaphore) {
+                if (cachedWatchNext(id) == null) {
+                    val data = youtubeRepository.getWatchNextData(id, item.toVideoItem())
+                    ensureActive()
+                    cacheWatchNext(id, data)
                 }
             }
         }
     }
 
-    /**
-     * Put actual playable bytes behind the next swipe, not just an expiring
-     * URL. Only the immediate next Short is warmed; farther speculative media
-     * costs battery and data without improving the next gesture. Adaptive and
-     * live manifests are left to Media3 because their segments are not
-     * byte-addressable progressive files.
-     */
+    private fun shouldWarmShort(videoId: String): Boolean {
+        if (!_isActive.value || !ThemePreferences.isPlaybackPreloadEnabled(context)) return false
+        val ahead = if (ThemePreferences.isNetworkMetered(context)) 2 else 3
+        val current = _currentIndex.value
+        return ((current + 1)..(current + ahead)).any { _shorts.value.getOrNull(it)?.videoId == videoId }
+    }
+
+    /** Bounded audio/video heads only; live and adaptive manifests stay out of the cache. */
     private suspend fun warmPlayableHead(qualities: List<VideoQuality>) {
         if (!ThemePreferences.isPlaybackPreloadEnabled(context)) return
         if (qualities.isEmpty()) return
@@ -306,7 +350,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             SHORTS_UNMETERED_WARM_BYTES
         }
         withContext(Dispatchers.IO) {
-            fun warm(uri: String, bytes: Long) {
+            suspend fun warm(uri: String, bytes: Long) {
                 val spec = DataSpec.Builder()
                     .setUri(uri)
                     .setPosition(0)
@@ -314,8 +358,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     .build()
                 com.ivor.ivormusic.data.CacheManager.cacheVideoRange(context, spec)
             }
-            warm(quality.url, videoBytes)
+            // Both tracks must be ready for a split rendition to start.
             quality.audioUrl?.let { warm(it, SHORTS_AUDIO_WARM_BYTES) }
+            warm(quality.url, videoBytes)
         }
     }
 
@@ -391,10 +436,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         observeProfileSwitches()
         viewModelScope.launch {
             themePreferences.preferHdr.drop(1).distinctUntilChanged().collect {
-                synchronized(qualitiesCache) {
-                    qualitiesEpoch++
-                    qualitiesCache.clear()
-                }
+                invalidatePrefetchedQualities()
+                prefetchAround(_currentIndex.value)
             }
         }
     }
@@ -402,14 +445,14 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private fun ensurePlayer(): ExoPlayer {
         _exoPlayer?.let { return it }
 
-        // First frame after ~1s buffered, like the video player. Shorts are
-        // under a minute, so the 60s max buffer already covers the whole clip
-        // — no need for the long-form 5-minute read-ahead. Audio focus +
-        // becoming-noisy pause music/video playback instead of playing over
-        // them (and vice versa).
+        // Read-ahead keeps the next Short's start on disk. Start after 250ms
+        // of samples and recover after 500ms instead of waiting 1s/2.5s on
+        // every swipe; cap RAM so prefetching does not compete with an
+        // effectively unbounded current-video buffer.
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(30_000, 60_000, 1_000, 2_500)
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBufferDurationsMs(10_000, 30_000, 250, 500)
+            .setTargetBufferBytes(32 * 1024 * 1024)
+            .setPrioritizeTimeOverSizeThresholds(false)
             .build()
 
         // Every media source this player builds must fetch through
@@ -450,6 +493,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     fun open(items: List<ShortsItem>, startIndex: Int) {
         if (items.isEmpty()) return
+        cancelPrefetch()
+        resetSequenceLoading()
+        refreshSequenceForProfile = false
         com.ivor.ivormusic.data.CacheManager.setVideoPlaybackActive(SHORTS_CACHE_OWNER, true)
         ensurePlayer()
         // Keep the tapped Short even if it is hidden - the user asked for this
@@ -467,6 +513,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
         playIndex(index)
         prefetchAround(index)
+        maybeLoadMore(index)
     }
 
     /** Called by the pager when the user settles on a page. */
@@ -515,6 +562,10 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     fun close() {
+        cancelPrefetch()
+        resetSequenceLoading()
+        nextSequenceParams = null
+        refreshSequenceForProfile = false
         _isActive.value = false
         playJob?.cancel()
         watchTracker.close()
@@ -627,10 +678,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             error,
         )
         if (httpResponseCode(error) == 403) {
-            synchronized(qualitiesCache) {
-                qualitiesEpoch++
-                qualitiesCache.clear()
-            }
+            invalidatePrefetchedQualities()
             viewModelScope.launch {
                 youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
             }
@@ -645,9 +693,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      * re-resolve the Short on screen and reload at the position it died on.
      *
      * The cache purge is the part that is specific to this surface. Stream URLs
-     * for the next five Shorts are already resolved and sitting in
+     * for the upcoming Shorts are already resolved and sitting in
      * [qualitiesCache], every one of them minted under the token that just got
-     * refused, so keeping them would hand the same dead URLs to the next five
+     * refused, so keeping them would hand the same dead URLs to the next
      * swipes and make the re-mint look like it did nothing.
      */
     private fun recoverFromSourceError(original: PlaybackException) {
@@ -665,10 +713,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             try {
                 if (httpResponseCode(original) == 403) {
                     youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
-                    synchronized(qualitiesCache) {
-                        qualitiesEpoch++
-                        qualitiesCache.clear()
-                    }
+                    invalidatePrefetchedQualities()
                 } else {
                     synchronized(qualitiesCache) { qualitiesCache.remove(item.videoId) }
                 }
@@ -758,7 +803,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
         // Phase 1: streams only, playback ASAP (same two-phase pattern and
         // 15s stuck-buffering guard as VideoPlayerViewModel.playVideo).
-        // Prefetched Shorts skip the network entirely and start immediately.
+        // Prefetched ladders skip extraction; warmed media heads let source
+        // preparation read the first audio/video samples from disk.
         playJob = viewModelScope.launch {
             try {
                 _exoPlayer?.stop()
@@ -831,25 +877,50 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     /** Extend the feed when the pager nears its end. Dedupes repeated ids. */
     private fun maybeLoadMore(index: Int) {
-        val params = nextSequenceParams ?: return
-        if (isLoadingMore || index < _shorts.value.size - 4) return
-        isLoadingMore = true
-        viewModelScope.launch {
+        if (!_isActive.value || sequenceLoadJob?.isActive == true ||
+            index < _shorts.value.size - STREAM_PREFETCH_AHEAD - 2) return
+        if (nextSequenceParams == null && !refreshSequenceForProfile) return
+        val generation = sequenceGeneration
+        val profiles = com.ivor.ivormusic.data.ProfileManager(context)
+        val profileId = profiles.activeProfileId.value
+        val sessions = com.ivor.ivormusic.data.SessionManager(context)
+        val session = sessions.captureSession()
+        sequenceLoadJob = viewModelScope.launch {
             try {
-                val page = youtubeRepository.getShortsSequence(params)
-                val known = _shorts.value.mapTo(HashSet()) { it.videoId }
-                val fresh = page.items.filter { it.videoId !in known }
-                if (fresh.isNotEmpty()) {
-                    _shorts.value = _shorts.value + withoutHidden(fresh)
-                    // Newly appended entries may fall inside the prefetch
-                    // window of the Short being watched right now
-                    prefetchAround(_currentIndex.value)
+                // Duplicate/hidden-only pages must not strand the pager at its
+                // end waiting for a page selection that cannot happen. Bound
+                // this catch-up so an unhelpful server cannot cause a busy loop.
+                repeat(3) {
+                    val previous = nextSequenceParams
+                    val page = if (refreshSequenceForProfile) {
+                        val items = youtubeRepository.getShortsFeed()
+                        com.ivor.ivormusic.data.ShortsFeedPage(
+                            items, items.firstNotNullOfOrNull { it.sequenceParams }
+                        )
+                    } else {
+                        youtubeRepository.getShortsSequence(nextSequenceParams ?: return@launch)
+                    }
+                    ensureActive()
+                    if (generation != sequenceGeneration || !_isActive.value ||
+                        profiles.activeProfileId.value != profileId ||
+                        (if (session != null) sessions.currentSession(session) == null
+                         else sessions.captureSession() != null)) return@launch
+                    val known = _shorts.value.mapTo(HashSet()) { it.videoId }
+                    val fresh = withoutHidden(page.items.distinctBy { it.videoId }.filter { it.videoId !in known })
+                    refreshSequenceForProfile = false
+                    nextSequenceParams = page.continuation?.takeUnless { it == previous }
+                    if (fresh.isNotEmpty()) {
+                        _shorts.value = _shorts.value + fresh
+                        prefetchAround(_currentIndex.value)
+                        return@launch
+                    }
+                    if (nextSequenceParams == null) return@launch
                 }
-                // A page of only duplicates still advances the continuation,
-                // so the next trigger asks for genuinely new entries
-                nextSequenceParams = page.continuation
-            } finally {
-                isLoadingMore = false
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                // Retain the last successful continuation for the next swipe.
+                KLog.w("ShortsPlayerVM", "Shorts sequence failed; keeping continuation", e)
             }
         }
     }
@@ -1143,10 +1214,10 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     companion object {
         private const val SHORTS_CACHE_OWNER = "shorts"
         /** Stream URLs resolved ahead of the current Short (plus one behind). */
-        private const val STREAM_PREFETCH_AHEAD = 2
+        private const val STREAM_PREFETCH_AHEAD = 4
 
         /** Watch-next payloads (metadata + engagement) warmed ahead. */
-        private const val WATCH_NEXT_PREFETCH_AHEAD = 1
+        private const val WATCH_NEXT_PREFETCH_AHEAD = 2
 
         private const val SHORTS_METERED_WARM_BYTES = 512L * 1024
         private const val SHORTS_UNMETERED_WARM_BYTES = 2L * 1024 * 1024
@@ -1165,6 +1236,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     override fun onCleared() {
+        cancelPrefetch()
         watchTracker.close()
         super.onCleared()
         _exoPlayer?.release()

@@ -106,8 +106,64 @@ class ProfileManager(context: Context) {
     fun cookiesFor(id: String): String? =
         prefs.getString(keyCookies(id), null)?.takeIf { it.isNotBlank() }
 
+    /**
+     * Store a cookie string the user signed in with.
+     *
+     * Bumps the profile's session generation, which is what makes a re-login a
+     * *different* login: anything still in flight for the previous one stops
+     * matching. A rotation goes through [mergeSessionCookies] instead and keeps
+     * the generation, because a refreshed cookie is the same login.
+     */
     fun saveCookiesFor(id: String, cookies: String) {
-        prefs.edit().putString(keyCookies(id), cookies).apply()
+        synchronized(LOCK) {
+            prefs.edit().putString(keyCookies(id), cookies)
+                .putLong(keyGeneration(id), prefs.getLong(keyGeneration(id), 0L) + 1L)
+                .apply()
+        }
+    }
+
+    internal fun captureSession(): YouTubeSession? = synchronized(LOCK) {
+        val profile = active()
+        if (profile.isLocal) return@synchronized null
+        cookiesFor(profile.id)?.let { YouTubeSession(profile.id, prefs.getLong(keyGeneration(profile.id), 0L), it) }
+    }
+
+    /**
+     * [session] with the cookies stored now, or null if that login is over.
+     * [requireActive] is what separates "may I write to the account" - which
+     * must not touch a profile the user has switched away from - from "whose
+     * row does this response belong to", which still has an answer afterwards.
+     */
+    internal fun currentSession(session: YouTubeSession, requireActive: Boolean = true): YouTubeSession? =
+        synchronized(LOCK) {
+            val profile = get(session.profileId) ?: return@synchronized null
+            if (profile.isLocal || (requireActive && active().id != profile.id)) return@synchronized null
+            if (prefs.getLong(keyGeneration(profile.id), 0L) != session.generation) return@synchronized null
+            cookiesFor(profile.id)?.let { session.copy(cookies = it) }
+        }
+
+    /** Fold rotated cookies into the profile that sent the request. */
+    internal fun mergeSessionCookies(session: YouTubeSession, updates: Map<String, String>) {
+        synchronized(LOCK) {
+            val current = currentSession(session, requireActive = false) ?: return
+            val merged = mergeSessionCookieUpdates(session.cookies, current.cookies, updates)
+            if (merged != current.cookies) prefs.edit().putString(keyCookies(session.profileId), merged).apply()
+        }
+    }
+
+    internal fun noteSessionExpired(session: YouTubeSession, expired: Boolean): Boolean = synchronized(LOCK) {
+        if (currentSession(session, requireActive = false) == null) return@synchronized false
+        setExpired(session.profileId, expired)
+        active().id == session.profileId
+    }
+
+    internal fun updateSessionIdentity(
+        session: YouTubeSession, name: String? = null, avatarUrl: String? = null, datasyncId: String? = null,
+    ) {
+        synchronized(LOCK) {
+            if (currentSession(session, requireActive = false) == null) return
+            updateIdentity(session.profileId, name = name, avatarUrl = avatarUrl, datasyncId = datasyncId)
+        }
     }
 
     // ---------------- Roster writes ----------------
@@ -423,6 +479,11 @@ class ProfileManager(context: Context) {
         const val DEFAULT_LOCAL_NAME = "No account"
 
         private fun keyCookies(id: String) = "cookies_$id"
+
+        // Never cleared with the cookies: a removed profile's id is never
+        // reissued, and a counter that restarted at zero would make an old
+        // in-flight session match a new login.
+        private fun keyGeneration(id: String) = "cookie_generation_$id"
 
         private fun buildPrefs(context: Context) = EncryptedSharedPreferences.create(
             context,

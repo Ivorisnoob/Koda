@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -216,6 +217,9 @@ fun VideoPlayerContent(
     // Keyed to the video so a source switch can never inherit a drag that
     // belonged to the old timeline.
     var isSeekScrubbing by remember(video?.videoId) { mutableStateOf(false) }
+    // The zoom-to-fill request, keyed the same way: opening a new video
+    // always starts fitted rather than inheriting the last video's crop.
+    var isZoomedToFill by remember(video?.videoId) { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showChaptersSheet by remember { mutableStateOf(false) }
     var showCaptionsSheet by remember { mutableStateOf(false) }
@@ -353,6 +357,29 @@ fun VideoPlayerContent(
     // notification skip through the same ViewModel call, and a gesture that
     // clamped differently from the buttons would be a bug waiting to happen.
     fun seekBy(deltaMs: Long) = viewModel.seekBy(deltaMs)
+
+    /**
+     * Whether pinch-to-zoom may fill the screen for this video in this window.
+     *
+     * A 16:9 upload on a tall phone loses a slim band top and bottom, which is
+     * the feature; a 9:16, 4:5 or 1:1 source in a landscape window would lose
+     * most of the picture, so those keep their letterbox under the same
+     * MAX_ACCEPTABLE_CROP bargain the vertical live player makes. Unknown
+     * shapes fall back on the parse-time orientation, which lands before the
+     * first frame decodes, so a portrait upload cannot sneak a zoom in while
+     * its dimensions are still missing. Only read while fullscreen: the window
+     * there is what the crop is measured against.
+     */
+    val zoomToFillAvailable = run {
+        val source = videoAspectRatio?.takeIf { it.isFinite() && it > 0f }
+        if (source != null) {
+            val windowAspect = configuration.screenWidthDp.toFloat() /
+                configuration.screenHeightDp.toFloat().coerceAtLeast(1f)
+            isZoomToFillAvailable(source, windowAspect)
+        } else {
+            !isPortraitVideo
+        }
+    }
 
     // Autoplay can hand a landscape video to a fullscreen still locked upright
     // for the portrait one before it, which plays the next video in a
@@ -667,6 +694,9 @@ fun VideoPlayerContent(
                     0.dp
                 },
                 compactChrome = fullscreenIsPortrait,
+                isZoomedToFill = isZoomedToFill,
+                onZoomedToFillChange = { isZoomedToFill = it },
+                zoomToFillAvailable = zoomToFillAvailable,
                 onRetry = { viewModel.retryPlayback() }
             )
 
@@ -1368,7 +1398,15 @@ fun VideoPlayerContent(
             onVerticalLiveClick = {
                 showPlaybackSettings = false
                 showVideoPageForVerticalLive = false
-            }
+            },
+            // Fullscreen only: the portrait box fits by design and has no zoom
+            // to toggle, and a crop past MAX_ACCEPTABLE_CROP hides the row
+            // rather than offering a switch that does nothing.
+            showZoomToFill = isFullscreen && zoomToFillAvailable,
+            zoomToFillActive = isZoomedToFill,
+            // Kept open like the timed-comments switch: the video stays
+            // visible beside the panel, so the crop change answers instantly.
+            onZoomToFillChanged = { isZoomedToFill = it }
         )
     }
 
@@ -1503,7 +1541,10 @@ private fun PlayerSettingsSections(
     liveChatActive: Boolean,
     onLiveChatChanged: (Boolean) -> Unit,
     showVerticalLive: Boolean,
-    onVerticalLiveClick: () -> Unit
+    onVerticalLiveClick: () -> Unit,
+    showZoomToFill: Boolean,
+    zoomToFillActive: Boolean,
+    onZoomToFillChanged: (Boolean) -> Unit
 ) {
     val optionColors = ToggleButtonDefaults.toggleButtonColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -1716,7 +1757,7 @@ private fun PlayerSettingsSections(
     }
 
     val hasSecondaryActions = showPip || showComments || showQueue ||
-        showTimedComments || showLiveChat || showVerticalLive
+        showTimedComments || showLiveChat || showVerticalLive || showZoomToFill
     if (hasSecondaryActions) {
         Spacer(modifier = Modifier.height(24.dp))
         SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "More controls")
@@ -1726,6 +1767,15 @@ private fun PlayerSettingsSections(
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Column {
+                if (showZoomToFill) {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.ZoomIn,
+                        title = stringResource(R.string.vpc_zoom_to_fill),
+                        supportingText = stringResource(R.string.vpc_zoom_to_fill_sub),
+                        checked = zoomToFillActive,
+                        onCheckedChange = onZoomToFillChanged
+                    )
+                }
                 if (showPip) {
                     SettingsActionRow(
                         icon = Icons.Rounded.PictureInPictureAlt,

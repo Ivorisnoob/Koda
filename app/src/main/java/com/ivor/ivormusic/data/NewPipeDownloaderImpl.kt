@@ -40,11 +40,13 @@ class NewPipeDownloaderImpl(
             }
         }
 
-        // Add cookies from SessionManager if available for authenticated requests
-        sessionManager?.getCookies()?.let { cookies ->
-            if (cookies.isNotEmpty()) {
-                requestBuilder.addHeader("Cookie", cookies)
-            }
+        // Add cookies from SessionManager if available for authenticated
+        // requests. Tagged with the session they came from so a cookie Google
+        // rotates on the way back is folded into that profile rather than into
+        // whichever one is active when the response lands.
+        sessionManager?.captureSession()?.let { session ->
+            requestBuilder.addHeader("Cookie", session.cookies)
+            requestBuilder.tag(YouTubeSession::class.java, session)
         }
 
         // Add default user agent if not present
