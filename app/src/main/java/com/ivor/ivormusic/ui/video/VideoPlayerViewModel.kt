@@ -1897,6 +1897,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * be a race with however fast the user was.
      */
     private fun publishSelectableTracks(tracks: Tracks) {
+        if (_isLive.value) publishLiveQualityLadder(tracks)
         val local = localSourcesById[_currentVideo.value?.videoId]
         if (local?.allowsTrackSelection != true) {
             // Nothing else in the app has tracks worth choosing between, and
@@ -1959,6 +1960,42 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _audioTracks.value = if (audio.size > 1) audio else emptyList()
         _embeddedTextTracks.value = text
         if (text.none { it.isSelected }) _embeddedCueText.value = null
+    }
+
+    /**
+     * Replace a live stream's quality menu with the rungs its master playlist
+     * actually declares. See [liveVideoQualityLadder] for why the resolver's
+     * list cannot be trusted to carry them.
+     *
+     * The first time a real ladder appears over a bare "Auto" entry, the
+     * default-quality setting gets the say it could not have at load time;
+     * after that the viewer's pick is carried across by label, because a
+     * playlist reload can republish tracks mid-broadcast.
+     */
+    private fun publishLiveQualityLadder(tracks: Tracks) {
+        val current = _currentQuality.value?.takeIf { it.isLive } ?: return
+        val renditions = tracks.groups
+            .filter { it.type == C.TRACK_TYPE_VIDEO }
+            .flatMap { group ->
+                (0 until group.length)
+                    .filter(group::isTrackSupported)
+                    .map { group.getTrackFormat(it) }
+                    .map { LiveRendition(it.width, it.height, it.frameRate) }
+            }
+        val ladder = liveVideoQualityLadder(current, renditions)
+        if (ladder.size < 2) return
+        val previous = _availableQualities.value
+        if (previous.map { it.resolution to it.width } == ladder.map { it.resolution to it.width }) return
+
+        val hadLadder = previous.count { it.isLive } > 1
+        _availableQualities.value = ladder
+        val next = if (!hadLadder && current.resolution.firstOrNull()?.isDigit() != true) {
+            pickDefaultQuality(ladder)
+        } else {
+            ladder.firstOrNull { it.resolution == current.resolution } ?: ladder.first()
+        }
+        _currentQuality.value = next
+        applyLiveQualityCap(next)
     }
 
     private fun clearSelectableTracks() {
@@ -2310,6 +2347,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _exoPlayer?.let { player ->
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .clearVideoSizeConstraints()
+                .setMaxVideoFrameRate(Int.MAX_VALUE)
                 .setForceHighestSupportedBitrate(false)
                 .build()
         }
@@ -2856,8 +2894,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val height = quality.resolution.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .apply {
-                if (height > 0) setMaxVideoSize(Int.MAX_VALUE, height)
-                else clearVideoSizeConstraints()
+                when {
+                    // A rung read off the manifest knows its real frame, so a
+                    // vertical 720x1280 "720p" caps at that frame rather than at
+                    // a 720px height that would drop it two rungs.
+                    quality.width > 0 && quality.height > 0 ->
+                        setMaxVideoSize(quality.width, quality.height)
+                    height > 0 -> setMaxVideoSize(Int.MAX_VALUE, height)
+                    else -> clearVideoSizeConstraints()
+                }
+                // Without this, pinning "1080p" beside a 1080p60 rung would
+                // let forceHighestSupportedBitrate pick the 60fps one.
+                setMaxVideoFrameRate(
+                    if (height > 0 && quality.frameRate > 0) quality.frameRate.coerceAtLeast(30)
+                    else Int.MAX_VALUE
+                )
                 setForceHighestSupportedBitrate(height > 0)
             }
             .build()
