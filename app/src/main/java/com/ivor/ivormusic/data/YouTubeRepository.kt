@@ -354,8 +354,10 @@ class YouTubeRepository(private val context: Context) {
         }
         // Folds Google's rotated session cookies back into storage. Without it
         // the login snapshot goes stale on its own and every authenticated
-        // endpoint quietly answers as signed out. See SessionCookieJar.
-        .cookieJar(SessionCookieJar(sessionManager))
+        // endpoint quietly answers as signed out. A *network* interceptor
+        // because the rotation often rides on a 302 inside the chain, which an
+        // application interceptor never sees. See SessionRefreshInterceptor.
+        .addNetworkInterceptor(SessionRefreshInterceptor(sessionManager))
         .apply { httpCache(context)?.let { cache(it) } }
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -414,7 +416,9 @@ class YouTubeRepository(private val context: Context) {
         searchExtractorCache.clear()
         searchNextPageCache.clear()
         musicSearchContinuations.clear()
+        videoSearchExtractorCache.clear()
         videoSearchNextPageCache.clear()
+        videoSearchContinuations.clear()
     }
 
     private fun initializeNewPipe() {
@@ -447,13 +451,12 @@ class YouTubeRepository(private val context: Context) {
         }
     )
 
-    // Same pair again for video-mode search, keyed by the date-filtered query
-    // so switching filters starts its own pagination rather than continuing
-    // the previous one. Only the relevance-ordered (NewPipe) path populates
-    // these; sorted searches go through InnerTube and do not paginate.
+    private data class VideoSearchKey(val query: String, val sort: VideoSearchSort)
     private val videoSearchExtractorCache =
-        mutableMapOf<String, org.schabi.newpipe.extractor.search.SearchExtractor>()
-    private val videoSearchNextPageCache = mutableMapOf<String, Page?>()
+        mutableMapOf<VideoSearchKey, org.schabi.newpipe.extractor.search.SearchExtractor>()
+    private val videoSearchNextPageCache = mutableMapOf<VideoSearchKey, Page?>()
+    // Present null means InnerTube exhausted; it must never resume NewPipe.
+    private val videoSearchContinuations = mutableMapOf<VideoSearchKey, String?>()
 
     /**
      * Search for songs on YouTube Music.
@@ -788,9 +791,36 @@ class YouTubeRepository(private val context: Context) {
             if (params != null) put("params", params)
         })?.toString()
 
+    /**
+     * Bind a request to the login it is being sent for.
+     *
+     * The `Cookie` header and the per-origin SAPISIDHASH both come from the
+     * same [YouTubeSession], and the session rides along as a request tag so
+     * [SessionRefreshInterceptor] folds Google's rotated cookies back into the
+     * profile that made the call rather than into whichever profile happens to
+     * be active when the response lands.
+     *
+     * A null session sends the request signed out, which is deliberate for the
+     * browse ids that read fine anonymously - an empty Cookie or Authorization
+     * header is worse than no header at all.
+     */
+    private fun okhttp3.Request.Builder.authenticate(
+        session: YouTubeSession?,
+        origin: String = "https://music.youtube.com",
+    ): okhttp3.Request.Builder {
+        if (session == null) return this
+        addHeader("Cookie", session.cookies)
+        YouTubeAuthUtils.getAuthorizationHeader(session.cookies, origin)?.let {
+            addHeader("Authorization", it)
+            addHeader("X-Goog-AuthUser", "0")
+        }
+        return tag(YouTubeSession::class.java, session)
+    }
+
     /** Metadata-only WEB_REMIX calls, public when signed out. Never playback. */
     private fun postMusicMetadata(endpoint: String, payload: org.json.JSONObject): org.json.JSONObject? {
         return try {
+            val session = sessionManager.captureSession()
             val client = org.json.JSONObject().put("clientName", "WEB_REMIX")
                 .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", "US")
             cachedVisitorDataOrNull()?.let { client.put("visitorData", it) }
@@ -803,19 +833,14 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("X-YouTube-Client-Name", "67")
                 .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
             cachedVisitorDataOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
-            sessionManager.getCookies()?.let { cookies ->
-                builder.addHeader("Cookie", cookies)
-                YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
-                    builder.addHeader("Authorization", auth).addHeader("X-Goog-AuthUser", "0")
-                }
-            }
+            builder.authenticate(session)
             okHttpClient.newCall(builder.build()).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful || body.isBlank()) {
                     KLog.w("YouTubeRepo", "Music $endpoint HTTP ${response.code}: ${body.take(200)}")
                     null
                 } else {
-                    noteSessionState(body)
+                    noteSessionState(body, session)
                     org.json.JSONObject(body).takeUnless { it.has("error") }
                 }
             }
@@ -1471,14 +1496,7 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("Origin", "https://music.youtube.com")
 
             // Personalize the radio when logged in; anonymous works fine too.
-            val cookies = sessionManager.getCookies()
-            if (cookies != null) {
-                requestBuilder.addHeader("Cookie", cookies)
-                YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
-                    requestBuilder.addHeader("Authorization", auth)
-                    requestBuilder.addHeader("X-Goog-AuthUser", "0")
-                }
-            }
+            requestBuilder.authenticate(sessionManager.captureSession())
 
             val response = okHttpClient.newCall(requestBuilder.build()).execute()
             val body = response.body?.string()
@@ -1547,13 +1565,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             val playlists = mutableListOf<PlaylistDisplayItem>()
 
-            // Synthesized "Supermix" and "Likes" always useful to have
-            playlists.add(PlaylistDisplayItem(
-                name = "My Supermix",
-                url = "https://music.youtube.com/playlist?list=RTM",
-                uploaderName = "YouTube Music",
-                thumbnailUrl = "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked_music_@576.png"
-            ))
+            // Likes has a real account browse id; mixes must come from the API.
             playlists.add(PlaylistDisplayItem(
                 name = "Your Likes",
                 url = "https://music.youtube.com/playlist?list=LM",
@@ -1640,7 +1652,7 @@ class YouTubeRepository(private val context: Context) {
         // session made every signed-out continuation look like a failed fetch,
         // which capped public playlists at their first page just as the parser
         // gap did for signed-in ones - the same symptom from a second cause.
-        val cookies = sessionManager.getCookies()
+        val session = sessionManager.captureSession()
 
         val jsonBody = """
             {
@@ -1655,26 +1667,26 @@ class YouTubeRepository(private val context: Context) {
                 "continuation": "$continuationToken"
             }
         """.trimIndent()
-        
-        val requestBuilder = okhttp3.Request.Builder()
+
+        val request = okhttp3.Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/browse")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
-
-        if (cookies != null) {
-            requestBuilder.addHeader("Cookie", cookies)
-            YouTubeAuthUtils.getAuthorizationHeader(cookies)?.let { auth ->
-                requestBuilder.addHeader("Authorization", auth)
-                requestBuilder.addHeader("X-Goog-AuthUser", "0")
-            }
-        }
-
-        val request = requestBuilder.build()
+            .authenticate(session)
+            .build()
 
         return try {
-            val response = okHttpClient.newCall(request).execute()
-            (response.body?.string() ?: "").also { noteSessionState(it) }
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    YouTubeRateLimit.note(response.code, request.url.toString(), response.header("Retry-After"))
+                    KLog.w("YouTubeRepo", "Music continuation failed: HTTP ${response.code}")
+                    return ""
+                }
+                val body = response.body?.string().orEmpty()
+                if (body.isBlank() || org.json.JSONObject(body).has("error")) return ""
+                body.also { noteSessionState(it, session) }
+            }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Music continuation request failed", e)
             ""
@@ -1851,6 +1863,7 @@ class YouTubeRepository(private val context: Context) {
             ?: return PlaylistLoadResult(emptyList(), complete = false)
 
         while (true) {
+            if (json.isBlank()) return PlaylistLoadResult(allSongs, complete = false)
             allSongs += parseSongsFromInternalJson(json, preserveDuplicates = true)
             val token = extractPlaylistContinuationToken(json)
                 ?: return PlaylistLoadResult(allSongs, complete = true)
@@ -1903,7 +1916,10 @@ class YouTubeRepository(private val context: Context) {
     }
 
     suspend fun fetchAccountInfo() = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext
+        // Captured before the call so the name, avatar and datasyncId it parses
+        // land on the account that was asked, even if the user switches away
+        // while the request is out.
+        val session = sessionManager.captureSession() ?: return@withContext
 
         try {
             val jsonResponse = fetchInternalApi("account/account_menu")
@@ -1985,12 +2001,12 @@ class YouTubeRepository(private val context: Context) {
                     .replace("=s88", "=s512")
                     .replace("=s48", "=s512")
                     .replace("=s96", "=s512")
-                sessionManager.saveUserAvatar(highResUrl)
+                sessionManager.updateSessionIdentity(session, avatarUrl = highResUrl)
             }
-            
+
             // Save user name if found
             if (!userName.isNullOrEmpty()) {
-                sessionManager.saveUserName(userName)
+                sessionManager.updateSessionIdentity(session, name = userName)
             }
 
             // YouTube's own account identifier, which every authenticated
@@ -2010,7 +2026,7 @@ class YouTubeRepository(private val context: Context) {
                     ?.optJSONObject("mainAppWebResponseContext")
                     ?.optString("datasyncId")
                     ?.takeIf { it.isNotBlank() }
-                    ?.let { sessionManager.saveDatasyncId(it) }
+                    ?.let { sessionManager.updateSessionIdentity(session, datasyncId = it) }
             }
             
         } catch (e: Exception) {
@@ -2394,7 +2410,7 @@ class YouTubeRepository(private val context: Context) {
     // --- Internal API Helper ---
 
     private fun fetchInternalApi(endpoint: String): String {
-        val cookies = sessionManager.getCookies() ?: return ""
+        val session = sessionManager.captureSession() ?: return ""
         val isBrowse = !endpoint.contains("/") // simple check: browseId vs endpoint path
         
         val url = if (isBrowse) {
@@ -2403,9 +2419,6 @@ class YouTubeRepository(private val context: Context) {
             "https://music.youtube.com/youtubei/v1/$endpoint"
         }
         
-        // Generate the required Authorization header (SAPISIDHASH)
-        val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
-
         // Construct complete JSON body for WEB_REMIX client
         val jsonBody = if (isBrowse) {
             """
@@ -2439,11 +2452,9 @@ class YouTubeRepository(private val context: Context) {
         val request = okhttp3.Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", authHeader)
+            .authenticate(session)
             .addHeader("User-Agent", getRandomUserAgent())
             .addHeader("Origin", "https://music.youtube.com")
-            .addHeader("X-Goog-AuthUser", "0")
             // Client name 67 is WEB_REMIX. Sent for the same reason the WEB
             // calls now send theirs: a client that never identifies itself is
             // the shape anti-abuse looks for. The visitor id rides as a header
@@ -2468,7 +2479,7 @@ class YouTubeRepository(private val context: Context) {
                     KLog.w("YouTubeRepo", "music browse $endpoint HTTP ${response.code}")
                     return ""
                 }
-                (response.body?.string() ?: "").also { noteSessionState(it) }
+                (response.body?.string() ?: "").also { noteSessionState(it, session) }
             }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Music browse request failed", e)
@@ -2844,12 +2855,14 @@ class YouTubeRepository(private val context: Context) {
         if (IncognitoMode.isEnabled(context)) return@withContext
 
         try {
-            val cookies = sessionManager.getCookies() ?: return@withContext
-            val authHeader = YouTubeAuthUtils.getAuthorizationHeader(cookies) ?: ""
+            val session = sessionManager.captureSession() ?: return@withContext
             val cpn = generateCpn()
-            
-            // Visitor Data (default fallback)
-            val visitorData = "Cgt6SUNYVzB2VkJDbyjGrrSmBg%3D%3D"
+
+            // This install's own minted token, which every other InnerTube call
+            // already rides on. The literal is the last resort it was always
+            // documented to be: a hardcoded visitor id identifies a stranger's
+            // session, and a missing one now answers LOGIN_REQUIRED.
+            val visitorData = cachedVisitorDataOrNull() ?: "Cgt6SUNYVzB2VkJDbyjGrrSmBg%3D%3D"
 
             // Client constants - using WEB_REMIX (web player)
             val clientName = "WEB_REMIX"
@@ -2881,12 +2894,10 @@ class YouTubeRepository(private val context: Context) {
             val playerRequest = okhttp3.Request.Builder()
                 .url(playerUrl)
                 .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .addHeader("Cookie", cookies)
-                .addHeader("Authorization", authHeader)
+                .authenticate(session)
                 .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/")
-                .addHeader("X-Goog-AuthUser", "0")
                 .addHeader("X-Goog-Api-Format-Version", "1")
                 .addHeader("X-YouTube-Client-Name", "67") // WEB_REMIX numeric ID
                 .addHeader("X-YouTube-Client-Version", clientVersion)
@@ -2936,11 +2947,19 @@ class YouTubeRepository(private val context: Context) {
                 append("&c=$clientName")
             }
 
+            // The /player call above blocks, and the switch can be flipped or
+            // the account changed while it does. This ping is the write that
+            // reaches the account, so both are rechecked against live state
+            // here rather than only at the top. currentSession also hands back
+            // the cookies as they are now, which /player itself may have
+            // rotated on the way through.
+            if (IncognitoMode.isEnabled(context)) return@withContext
+            val live = sessionManager.currentSession(session) ?: return@withContext
+
             val trackingRequest = okhttp3.Request.Builder()
                 .url(trackingUrl)
                 .get()
-                .addHeader("Cookie", cookies)
-                .addHeader("Authorization", authHeader)
+                .authenticate(live)
                 .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/watch?v=$videoId")
@@ -2975,11 +2994,19 @@ class YouTubeRepository(private val context: Context) {
         sort: VideoSearchSort = VideoSearchSort.RELEVANCE
     ): List<VideoItem> = withContext(Dispatchers.IO) {
         val effectiveQuery = dateFilter.applyTo(query)
+        val key = VideoSearchKey(effectiveQuery, sort)
+        videoSearchExtractorCache.remove(key)
+        videoSearchNextPageCache.remove(key)
+        videoSearchContinuations.remove(key)
 
         if (sort != VideoSearchSort.RELEVANCE) {
             val sorted = searchVideosInnerTube(effectiveQuery, sort)
-            if (sorted.isNotEmpty()) return@withContext sorted
-            KLog.w("YouTubeRepo", "Sorted video search empty, falling back to relevance order")
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (sorted != null) {
+                videoSearchContinuations[key] = sorted.continuation
+                return@withContext sorted.videos
+            }
+            KLog.w("YouTubeRepo", "Sorted video search failed, falling back to relevance order")
         }
 
         try {
@@ -2988,39 +3015,47 @@ class YouTubeRepository(private val context: Context) {
             searchExtractor.fetchPage()
 
             // Cache for pagination (see searchVideosNext)
-            videoSearchExtractorCache[effectiveQuery] = searchExtractor
-            videoSearchNextPageCache[effectiveQuery] =
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            videoSearchExtractorCache[key] = searchExtractor
+            videoSearchNextPageCache[key] =
                 if (searchExtractor.initialPage.hasNextPage()) searchExtractor.initialPage.nextPage else null
 
             searchExtractor.initialPage.items.toVideoItems()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error searching videos", e)
             emptyList()
         }
     }
 
-    /**
-     * Next page of video search results for a query already fetched by
-     * [searchVideos]. Empty means exhausted, which is also what a sorted
-     * (non-relevance) search returns, since that path resolves through
-     * InnerTube and never caches an extractor.
-     *
-     * [dateFilter] must match the original call - it is part of the cache key.
-     */
+    /** Continue exactly the query, date window and sort used for page one. */
     suspend fun searchVideosNext(
         query: String,
-        dateFilter: VideoSearchDateFilter = VideoSearchDateFilter.ANY
+        dateFilter: VideoSearchDateFilter = VideoSearchDateFilter.ANY,
+        sort: VideoSearchSort = VideoSearchSort.RELEVANCE
     ): List<VideoItem> = withContext(Dispatchers.IO) {
         try {
-            val effectiveQuery = dateFilter.applyTo(query)
-            val extractor = videoSearchExtractorCache[effectiveQuery] ?: return@withContext emptyList()
-            val pageInfo = videoSearchNextPageCache[effectiveQuery] ?: return@withContext emptyList()
-
+            val key = VideoSearchKey(dateFilter.applyTo(query), sort)
+            if (videoSearchContinuations.containsKey(key)) {
+                val token = videoSearchContinuations[key] ?: return@withContext emptyList()
+                val response = postWatchApi("search", org.json.JSONObject()
+                    .put("context", webContext()).put("continuation", token))
+                    ?: return@withContext emptyList()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val page = parseVideoSearchPage(response)
+                videoSearchContinuations[key] = page.continuation?.takeUnless { it == token }
+                return@withContext page.videos
+            }
+            val extractor = videoSearchExtractorCache[key] ?: return@withContext emptyList()
+            val pageInfo = videoSearchNextPageCache[key] ?: return@withContext emptyList()
             val nextPage = extractor.getPage(pageInfo)
-            videoSearchNextPageCache[effectiveQuery] =
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            videoSearchNextPageCache[key] =
                 if (nextPage.hasNextPage()) nextPage.nextPage else null
-
             nextPage.items.toVideoItems()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error loading more video results", e)
             emptyList()
@@ -3143,26 +3178,32 @@ class YouTubeRepository(private val context: Context) {
      * (legacy shape, still what /search returns signed out) or lockupViewModels;
      * both parsers already exist for the feed. Verified July 2026.
      */
-    private fun searchVideosInnerTube(query: String, sort: VideoSearchSort): List<VideoItem> {
+    private fun searchVideosInnerTube(query: String, sort: VideoSearchSort): VideoFeedPage? {
         return try {
             val body = org.json.JSONObject()
                 .put("context", webContext())
                 .put("query", query)
                 .put("params", buildVideoSearchParams(sort))
-            val response = postWatchApi("search", body) ?: return emptyList()
-
-            val renderers = mutableListOf<org.json.JSONObject>()
-            val root = org.json.JSONObject(response)
-            findObjectsByKey(root, "videoRenderer", renderers)
-            findObjectsByKey(root, "lockupViewModel", renderers)
-            renderers.mapNotNull { renderer ->
-                if (renderer.has("videoId")) parseVideoRenderer(renderer)
-                else parseLockupViewModel(renderer)
-            }.distinctBy { it.videoId }
+            val response = postWatchApi("search", body) ?: return null
+            parseVideoSearchPage(response)
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "InnerTube video search failed", e)
-            emptyList()
+            null
         }
+    }
+
+    /** Verified September 2026: sorted pages retain a list-scoped search token. */
+    private fun parseVideoSearchPage(response: String): VideoFeedPage {
+        val root = org.json.JSONObject(response)
+        check(!root.has("error")) { "Search returned an error body" }
+        val renderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "videoRenderer", renderers)
+        findObjectsByKey(root, "lockupViewModel", renderers)
+        val videos = renderers.mapNotNull { renderer ->
+            if (renderer.has("videoId")) parseVideoRenderer(renderer)
+            else parseLockupViewModel(renderer)
+        }.distinctBy { it.videoId }
+        return VideoFeedPage(videos, videoListContinuationToken(root, search = true))
     }
 
     /**
@@ -3279,27 +3320,9 @@ class YouTubeRepository(private val context: Context) {
      */
     private suspend fun getPersonalizedVideoRecommendations(): VideoFeedPage = withContext(Dispatchers.IO) {
         val empty = VideoFeedPage(emptyList())
-        val cookies = sessionManager.getCookies() ?: return@withContext empty
-        
-        // Extract SAPISID for authentication hash
-        val sapisid = cookies.split(";")
-            .map { it.trim() }
-            .find { it.startsWith("SAPISID=") || it.startsWith("__Secure-3PAPISID=") }
-            ?.split("=")?.getOrNull(1)
-        
-        // Generate SAPISID hash for authorization
+        val session = sessionManager.captureSession() ?: return@withContext empty
         val origin = "https://www.youtube.com"
-        val authHeader = if (sapisid != null) {
-            val timestamp = System.currentTimeMillis() / 1000
-            val hashInput = "$timestamp $sapisid $origin"
-            val hash = java.security.MessageDigest.getInstance("SHA-1")
-                .digest(hashInput.toByteArray())
-                .joinToString("") { "%02x".format(it) }
-            "SAPISIDHASH ${timestamp}_${hash}"
-        } else {
-            YouTubeAuthUtils.getAuthorizationHeader(cookies, origin) ?: ""
-        }
-        
+
         // Use YouTube browse endpoint for "What to Watch" (home page recommendations)
         val url = "https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false"
         
@@ -3325,12 +3348,10 @@ class YouTubeRepository(private val context: Context) {
         val request = okhttp3.Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", authHeader)
+            .authenticate(session, origin)
             .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .addHeader("Origin", origin)
             .addHeader("Referer", "$origin/")
-            .addHeader("X-Goog-AuthUser", "0")
             .addHeader("X-Origin", origin)
             .addHeader("Accept", "*/*")
             .addHeader("Accept-Language", "en-US,en;q=0.9")
@@ -3435,29 +3456,28 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Get user's watch history from YouTube.
-     * Uses the YouTube browse endpoint with "FEhistory".
-     */
-    suspend fun getWatchHistory(): List<VideoItem> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
+    /** One history page; Library must never walk an account's entire history. */
+    internal suspend fun getWatchHistoryPage(
+        continuation: String? = null,
+        session: YouTubeSession? = sessionManager.captureSession()
+    ): VideoFeedPage? = withContext(Dispatchers.IO) {
+        if (session == null) return@withContext null
         try {
-            // Use the shared signed WEB request path so HTTP failures and an
-            // expired session cannot masquerade as a valid empty history.
-            val raw = postWatchApi(
-                "browse",
-                org.json.JSONObject()
-                    .put("context", webContext())
-                    .put("browseId", "FEhistory")
-            ) ?: return@withContext emptyList()
-
-            // The live August 2026 shape carries roughly 200 lockups in the
-            // initial date-grouped page. The generic feed parser used to throw
-            // away everything after 30, making View all look out of sync.
-            parseVideosFromYouTubeJson(raw, limit = 200)
+            val body = org.json.JSONObject().put("context", webContext())
+            if (continuation == null) body.put("browseId", "FEhistory")
+            else body.put("continuation", continuation)
+            val raw = postWatchApi("browse", body, session)
+                ?.takeIf { it.isNotBlank() } ?: return@withContext null
+            val root = org.json.JSONObject(raw)
+            if (root.has("error")) return@withContext null
+            val videos = parseVideosFromYouTubeJson(raw, limit = Int.MAX_VALUE)
+            KLog.d("YouTubeRepo", "History ${if (continuation == null) "first" else "next"} page: ${videos.size} videos")
+            VideoFeedPage(videos, videoListContinuationToken(root))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching watch history", e)
-            emptyList()
+            KLog.e("YouTubeRepo", "Error fetching watch history page", e)
+            null
         }
     }
 
@@ -3530,6 +3550,9 @@ class YouTubeRepository(private val context: Context) {
                  }
             }
             
+            // History continuation pages retain the same date-grouped rows.
+            if (contents == null) contents = continuationItemsOrNull(root)
+
             // If we found contents, iterate them
             if (contents != null) {
                 for (i in 0 until contents.length()) {
@@ -3596,79 +3619,68 @@ class YouTubeRepository(private val context: Context) {
     // ============================================================
 
     /**
-     * Shorts for the video home shelf. Logged in: the personalized Shorts
-     * shelf inside the FEwhat_to_watch home response (postWatchApi signs the
-     * call, so the shelf matches the account's recommendations). Logged out
-     * or shelf missing: an InnerTube search seeded from local watch history,
-     * which surfaces the same shortsLockupViewModel items.
+     * Signed-in Shorts use YouTube's seedless Shorts navigation, not a search
+     * query. FEwhat_to_watch can contain no Shorts even with logged_in=1.
+     * Seed and continuation shapes verified live September 2026.
+     * Signed-out profiles retain the local-history search fallback.
      */
     suspend fun getShortsFeed(): List<ShortsItem> = withContext(Dispatchers.IO) {
-        if (sessionManager.isLoggedIn()) {
-            try {
-                val body = org.json.JSONObject()
-                    .put("context", webContext())
-                    .put("browseId", "FEwhat_to_watch")
-                val raw = postWatchApi("browse", body)
-                if (raw != null) {
-                    val shorts = parseShortsLockups(org.json.JSONObject(raw))
-                    if (shorts.isNotEmpty()) return@withContext shorts
-                }
-                KLog.w("YouTubeRepo", "No Shorts shelf on home, using search fallback")
-            } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "Shorts home shelf failed", e)
-            }
-        }
-        try {
-            val seedChannel = videoHistoryRepository.getHistory()
-                .firstOrNull { it.channelName.isNotBlank() && it.channelName != "Unknown Channel" }
-                ?.channelName
-            val query = seedChannel?.let { "$it shorts" } ?: "trending shorts"
+        val session = sessionManager.captureSession()
+        if (session != null) {
             val body = org.json.JSONObject()
                 .put("context", webContext())
-                .put("query", query)
-            val raw = postWatchApi("search", body) ?: return@withContext emptyList()
-            parseShortsLockups(org.json.JSONObject(raw))
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Shorts search fallback failed", e)
-            emptyList()
+                .put("params", "CA8%3D")
+                .put("inputType", "REEL_WATCH_INPUT_TYPE_SEEDLESS")
+                .put("disablePlayerResponse", true)
+            val raw = postWatchApi("reel/reel_item_watch", body, session)
+                ?: throw java.io.IOException("Shorts recommendations request failed")
+            val root = org.json.JSONObject(raw)
+            if (LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) == "0") {
+                throw java.io.IOException("YouTube rejected the Shorts session")
+            }
+            val seed = parseShortsSeed(root)
+            if (sessionManager.currentSession(session) == null) {
+                throw kotlinx.coroutines.CancellationException("Shorts account changed")
+            }
+            val page = seed.continuation?.let { requestShortsSequence(it, session) }
+            val continuation = if (page != null) page.continuation else seed.continuation
+            // Every shelf tap continues after the loaded shelf, without replaying
+            // a search candidate list or dropping the account's sequence token.
+            return@withContext (seed.items + page?.items.orEmpty())
+                .distinctBy { it.videoId }
+                .map { it.copy(sequenceParams = continuation) }
         }
+        val seedChannel = videoHistoryRepository.getHistory()
+            .firstOrNull { it.channelName.isNotBlank() && it.channelName != "Unknown Channel" }
+            ?.channelName
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("query", seedChannel?.let { "$it shorts" } ?: "trending shorts")
+        val raw = postWatchApi("search", body)
+            ?: throw java.io.IOException("Shorts search request failed")
+        parseShortsLockups(org.json.JSONObject(raw))
     }
 
     /**
-     * One page of the endless swipe feed from reel/reel_watch_sequence.
-     * [sequenceParams] is either a shelf item's seed params or the
-     * continuation token of a previous page (the endpoint accepts both in
-     * the same field). Signed calls return the personalized sequence.
-     * Entries carry no title/views — the player enriches the current Short
-     * from its watch-next call.
+     * One account-aware reel_watch_sequence page. Errors must propagate so the
+     * pager keeps its token for retry instead of treating a failure as exhaustion.
+     * Seed params and continuation tokens use the same field (verified September 2026).
      */
     suspend fun getShortsSequence(sequenceParams: String): ShortsFeedPage = withContext(Dispatchers.IO) {
-        try {
-            val body = org.json.JSONObject()
-                .put("context", webContext())
-                .put("sequenceParams", sequenceParams)
-            val raw = postWatchApi("reel/reel_watch_sequence", body)
-                ?: return@withContext ShortsFeedPage(emptyList(), null)
-            val root = org.json.JSONObject(raw)
+        requestShortsSequence(sequenceParams, sessionManager.captureSession())
+    }
 
-            val items = mutableListOf<ShortsItem>()
-            val entries = root.optJSONArray("entries")
-            if (entries != null) {
-                for (i in 0 until entries.length()) {
-                    val reel = entries.optJSONObject(i)
-                        ?.optJSONObject("command")
-                        ?.optJSONObject("reelWatchEndpoint") ?: continue
-                    parseReelWatchEndpoint(reel)?.let { items.add(it) }
-                }
-            }
-            val continuation = root.optJSONObject("continuationEndpoint")
-                ?.optJSONObject("continuationCommand")
-                ?.optString("token")?.takeIf { it.isNotBlank() }
-            ShortsFeedPage(items, continuation)
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getShortsSequence failed", e)
-            ShortsFeedPage(emptyList(), null)
+    private fun requestShortsSequence(sequenceParams: String, session: YouTubeSession?): ShortsFeedPage {
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("sequenceParams", sequenceParams)
+        val raw = postWatchApi("reel/reel_watch_sequence", body, session)
+            ?: throw java.io.IOException("Shorts sequence request failed")
+        if (session != null &&
+            LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) == "0") {
+            throw java.io.IOException("YouTube rejected the Shorts session")
         }
+        return parseShortsSequence(org.json.JSONObject(raw))
     }
 
     /** All shortsLockupViewModels of a response, deduped, in shelf order. */
@@ -3718,17 +3730,8 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /** reelWatchEndpoint: videoId, portrait thumbnail and sequence seed. */
-    private fun parseReelWatchEndpoint(reel: org.json.JSONObject): ShortsItem? {
-        val videoId = reel.optString("videoId").takeIf { it.length == 11 } ?: return null
-        val thumbs = reel.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-        val thumbnailUrl = thumbs?.optJSONObject(0)?.optString("url")
-            ?.takeIf { it.isNotBlank() }
-        return ShortsItem(
-            videoId = videoId,
-            thumbnailUrl = thumbnailUrl,
-            sequenceParams = reel.optString("sequenceParams").takeIf { it.isNotBlank() }
-        )
-    }
+    private fun parseReelWatchEndpoint(reel: org.json.JSONObject): ShortsItem? =
+        parseShortsEndpoint(reel)
 
     // ============================================================
     // Video library (www.youtube.com): user playlists, Watch Later,
@@ -3760,30 +3763,67 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
+    /** Bounded preview for link resolution. Detail screens retain the page cursor. */
+    suspend fun getPlaylistVideos(playlistId: String): List<VideoItem> =
+        getPlaylistVideosPage(playlistId)?.videos.orEmpty()
+
     /**
-     * The first page of one video playlist for browsing and playback. A normal
-     * open stays one network call; [getCompletePlaylistVideos] pays for every
-     * continuation only when an operation really needs the whole list.
+     * Fetch exactly one playlist page. WEB and NewPipe keep separate cursors;
+     * a failed continuation stays retryable and never switches source mid-list.
+     * Renderer and continuation scopes verified August/September 2026.
      */
-    suspend fun getPlaylistVideos(playlistId: String): List<VideoItem> = withContext(Dispatchers.IO) {
+    internal suspend fun getPlaylistVideosPage(
+        playlistId: String,
+        continuation: VideoPlaylistCursor? = null,
+        session: YouTubeSession? = sessionManager.captureSession()
+    ): VideoPlaylistPage? = withContext(Dispatchers.IO) {
         try {
-            val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
-            val json = fetchYouTubeBrowse(browseId)
-                .takeIf { it.isNotEmpty() } ?: return@withContext getPlaylistVideosAnonymous(playlistId)
-            val root = org.json.JSONObject(json)
-            val renderers = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(root, "playlistVideoRenderer", renderers)
-            if (renderers.isNotEmpty()) {
-                return@withContext renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
+            if (continuation is VideoPlaylistCursor.NewPipe) {
+                val page = continuation.extractor.getPage(continuation.page)
+                return@withContext VideoPlaylistPage(page.items.toVideoItems(),
+                    page.nextPage?.takeIf { page.hasNextPage() }
+                        ?.let { VideoPlaylistCursor.NewPipe(continuation.extractor, it) })
             }
-            val lockups = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(root, "lockupViewModel", lockups)
-            lockups.mapNotNull { parseLockupViewModel(it) }
-                .ifEmpty { getPlaylistVideosAnonymous(playlistId) }
+            val body = org.json.JSONObject().put("context", webContext())
+            if (continuation is VideoPlaylistCursor.Browse) body.put("continuation", continuation.token)
+            else body.put("browseId", if (playlistId.startsWith("VL")) playlistId else "VL$playlistId")
+            val raw = postWatchApi("browse", body, session)
+            val root = raw?.takeIf { it.isNotBlank() }?.let { org.json.JSONObject(it) }
+                ?.takeUnless { it.has("error") }
+            if (root != null) {
+                val videos = parseVideoPlaylistRows(root)
+                val token = extractVideoPlaylistContinuationToken(root)
+                if (videos.isNotEmpty() || token != null || continuation != null ||
+                    playlistId.removePrefix("VL") in setOf("WL", "LL", "LM")) {
+                    KLog.d("YouTubeRepo", "Playlist ${if (continuation == null) "first" else "next"} page: ${videos.size} videos")
+                    return@withContext VideoPlaylistPage(videos, token?.let { VideoPlaylistCursor.Browse(it) })
+                }
+            }
+            if (continuation != null || playlistId.removePrefix("VL") in setOf("WL", "LL", "LM")) {
+                return@withContext null
+            }
+            val extractor = youtubeService.getPlaylistExtractor(
+                "https://www.youtube.com/playlist?list=${playlistId.removePrefix("VL")}")
+            extractor.fetchPage()
+            val page = extractor.initialPage
+            VideoPlaylistPage(page.items.toVideoItems(),
+                page.nextPage?.takeIf { page.hasNextPage() }
+                    ?.let { VideoPlaylistCursor.NewPipe(extractor, it) })
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getPlaylistVideos failed for $playlistId", e)
-            getPlaylistVideosAnonymous(playlistId)
+            KLog.e("YouTubeRepo", "Error fetching video playlist page", e)
+            null
         }
+    }
+
+    private fun parseVideoPlaylistRows(root: org.json.JSONObject): List<VideoItem> {
+        val renderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "playlistVideoRenderer", renderers)
+        if (renderers.isNotEmpty()) return renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
+        val lockups = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(root, "lockupViewModel", lockups)
+        return lockups.mapNotNull { parseLockupViewModel(it) }
     }
 
     /**
@@ -3835,15 +3875,7 @@ class YouTubeRepository(private val context: Context) {
         return try {
             while (true) {
                 val root = org.json.JSONObject(json)
-                val renderers = mutableListOf<org.json.JSONObject>()
-                findObjectsByKey(root, "playlistVideoRenderer", renderers)
-                if (renderers.isNotEmpty()) {
-                    videos += renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
-                } else {
-                    val lockups = mutableListOf<org.json.JSONObject>()
-                    findObjectsByKey(root, "lockupViewModel", lockups)
-                    videos += lockups.mapNotNull { parseLockupViewModel(it) }
-                }
+                videos += parseVideoPlaylistRows(root)
 
                 val token = extractVideoPlaylistContinuationToken(root) ?: break
                 if (!seenTokens.add(token)) {
@@ -3937,23 +3969,6 @@ class YouTubeRepository(private val context: Context) {
             } catch (e: Exception) {
                 KLog.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
                 VideoPlaylistLoadResult(emptyList(), complete = false)
-            }
-        }
-
-    /** First NewPipe page only, matching [getPlaylistVideos]'s browse cost. */
-    private suspend fun getPlaylistVideosAnonymous(playlistId: String): List<VideoItem> =
-        withContext(Dispatchers.IO) {
-            val listId = playlistId.removePrefix("VL")
-            if (listId == "WL" || listId == "LL" || listId == "LM") return@withContext emptyList()
-            try {
-                val extractor = youtubeService.getPlaylistExtractor(
-                    "https://www.youtube.com/playlist?list=$listId"
-                )
-                extractor.fetchPage()
-                extractor.initialPage.items.toVideoItems()
-            } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
-                emptyList()
             }
         }
 
@@ -4770,13 +4785,8 @@ class YouTubeRepository(private val context: Context) {
      * it rather than an error.
      */
     private fun fetchYouTubeBrowse(browseId: String): String {
-        val cookies = sessionManager.getCookies()
+        val session = sessionManager.captureSession()
         val url = "https://www.youtube.com/youtubei/v1/browse?key=$INNER_TUBE_API_KEY"
-
-        // Generate SAPISIDHASH for www.youtube.com origin
-        val authHeader = cookies?.let {
-            YouTubeAuthUtils.getAuthorizationHeader(it, "https://www.youtube.com")
-        }
 
         val visitorData = cachedVisitorDataOrNull()
 
@@ -4808,16 +4818,10 @@ class YouTubeRepository(private val context: Context) {
             .apply {
                 visitorData?.let { addHeader("X-Goog-Visitor-Id", it) }
             }
-            .apply {
-                // Signed out these are the difference between a public read and
-                // a malformed one: an empty Cookie or Authorization header is
-                // worse than no header at all.
-                if (!cookies.isNullOrBlank()) {
-                    addHeader("Cookie", cookies)
-                    if (!authHeader.isNullOrBlank()) addHeader("Authorization", authHeader)
-                    addHeader("X-Goog-AuthUser", "0")
-                }
-            }
+            // Signed out this attaches nothing, which is the difference between
+            // a public read and a malformed one: an empty Cookie or
+            // Authorization header is worse than no header at all.
+            .authenticate(session, "https://www.youtube.com")
             .build()
 
         return try {
@@ -5296,7 +5300,12 @@ class YouTubeRepository(private val context: Context) {
      * POST to an InnerTube endpoint on www.youtube.com, attaching cookies and
      * SAPISIDHASH when logged in. Returns the raw response body or null on failure.
      */
-    private fun postWatchApi(endpoint: String, body: org.json.JSONObject): String? {
+    private fun postWatchApi(
+        endpoint: String,
+        body: org.json.JSONObject,
+        session: YouTubeSession? = sessionManager.captureSession()
+    ): String? {
+        val currentSession = session?.let { sessionManager.currentSession(it) ?: return null }
         val builder = okhttp3.Request.Builder()
             .url("https://www.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
@@ -5311,19 +5320,12 @@ class YouTubeRepository(private val context: Context) {
 
         cachedVisitorDataOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
 
-        val cookies = sessionManager.getCookies()
-        if (!cookies.isNullOrBlank()) {
-            builder.addHeader("Cookie", cookies)
-            YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://www.youtube.com")?.let { auth ->
-                builder.addHeader("Authorization", auth)
-                builder.addHeader("X-Goog-AuthUser", "0")
-            }
-        }
+        builder.authenticate(currentSession, "https://www.youtube.com")
 
         return try {
             okHttpClient.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) {
-                    response.body?.string()?.also { noteSessionState(it) }
+                    response.body?.string()?.also { noteSessionState(it, currentSession) }
                 } else {
                     YouTubeRateLimit.note(
                         response.code,
@@ -5351,10 +5353,13 @@ class YouTubeRepository(private val context: Context) {
      * revived by a cookie rotation heals itself without a round trip through
      * the login screen.
      */
-    private fun noteSessionState(body: String) {
-        if (!sessionManager.isLoggedIn()) return
+    private fun noteSessionState(body: String, session: YouTubeSession?) {
+        if (session == null) return
         val match = LOGGED_IN_TRACKING_PARAM.find(body) ?: return
-        sessionManager.setSessionExpired(match.groupValues[1] == "0")
+        // Against the session the request went out with, not whoever is active
+        // now: a response that outlives an account switch used to badge the
+        // profile the user had just switched to as expired.
+        sessionManager.noteSessionExpired(session, match.groupValues[1] == "0")
     }
 
     /**
@@ -6711,18 +6716,17 @@ class YouTubeRepository(private val context: Context) {
      * hash is rejected here). Returns the raw body or null on failure.
      */
     private fun postMusicApi(endpoint: String, body: org.json.JSONObject): String? {
-        val cookies = sessionManager.getCookies() ?: return null
-        val auth = YouTubeAuthUtils.getAuthorizationHeader(cookies, "https://music.youtube.com")
-            ?: return null
+        val session = sessionManager.captureSession() ?: return null
+        // Signing is not optional here: these are account writes, and an
+        // unsigned one answers 200 having done nothing.
+        if (YouTubeAuthUtils.getSapisid(session.cookies) == null) return null
         val request = okhttp3.Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .addHeader("Cookie", cookies)
-            .addHeader("Authorization", auth)
+            .authenticate(session)
             .addHeader("User-Agent", BROWSER_USER_AGENT)
             .addHeader("Origin", "https://music.youtube.com")
             .addHeader("X-Origin", "https://music.youtube.com")
-            .addHeader("X-Goog-AuthUser", "0")
             .build()
         return try {
             okHttpClient.newCall(request).execute().use { response ->
@@ -6891,26 +6895,42 @@ class YouTubeRepository(private val context: Context) {
      * user can edit. Reordering via edit_playlist identifies rows by these,
      * not by videoId. Values stay occurrence-ordered because duplicate videos
      * are separate rows with separate setVideoIds. Browses VL<id> on music.youtube.com and reads
-     * musicResponsiveListItemRenderer.playlistItemData. First page only
-     * (~100 rows); rows past that simply stay un-movable. Verified July 2026.
+     * musicResponsiveListItemRenderer.playlistItemData across every playlist
+     * continuation. An incomplete map cannot safely address duplicate rows,
+     * so a failed/repeated continuation returns no map. Verified September 2026.
      */
     suspend fun getPlaylistSetVideoIds(playlistId: String): Map<String, List<String>> =
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext emptyMap()
             val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
-            val raw = browseMusic(browseId) ?: return@withContext emptyMap()
+            var raw = browseMusic(browseId) ?: return@withContext emptyMap()
             try {
-                val rows = mutableListOf<org.json.JSONObject>()
-                findObjectsByKey(org.json.JSONObject(raw), "musicResponsiveListItemRenderer", rows)
                 val idsByVideo = linkedMapOf<String, MutableList<String>>()
-                for (row in rows) {
-                    val itemData = row.optJSONObject("playlistItemData") ?: continue
-                    val videoId = itemData.optString("videoId").takeIf { it.isNotBlank() } ?: continue
-                    val setVideoId = itemData.optString("playlistSetVideoId")
-                        .takeIf { it.isNotBlank() } ?: continue
-                    idsByVideo.getOrPut(videoId) { mutableListOf() }.add(setVideoId)
+                val seenTokens = mutableSetOf<String>()
+                while (true) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (raw.isBlank()) return@withContext emptyMap()
+                    val root = org.json.JSONObject(raw)
+                    if (root.has("error")) return@withContext emptyMap()
+                    val rows = mutableListOf<org.json.JSONObject>()
+                    findObjectsByKey(root, "musicResponsiveListItemRenderer", rows)
+                    for (row in rows) {
+                        val itemData = row.optJSONObject("playlistItemData") ?: continue
+                        val videoId = itemData.optString("videoId").takeIf { it.isNotBlank() } ?: continue
+                        val setVideoId = itemData.optString("playlistSetVideoId")
+                            .takeIf { it.isNotBlank() } ?: continue
+                        idsByVideo.getOrPut(videoId) { mutableListOf() }.add(setVideoId)
+                    }
+                    val token = extractPlaylistContinuationToken(raw) ?: break
+                    if (!seenTokens.add(token)) {
+                        KLog.w("YouTubeRepo", "Repeated playlist row-id continuation for $playlistId")
+                        return@withContext emptyMap()
+                    }
+                    raw = fetchContinuation(token)
                 }
                 idsByVideo.mapValues { (_, ids) -> ids.toList() }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e("YouTubeRepo", "getPlaylistSetVideoIds failed", e)
                 emptyMap()
@@ -7062,9 +7082,8 @@ class YouTubeRepository(private val context: Context) {
         videoId: String,
         positionMs: Long,
     ): VideoHistorySession? = withContext(Dispatchers.IO) {
-        val profile = ProfileManager.activeProfileId(context)
-        val cookies = sessionManager.getCookies() ?: return@withContext null
-        if (!canReportVideoHistory(profile, cookies)) return@withContext null
+        val session = sessionManager.captureSession() ?: return@withContext null
+        if (!mayWriteVideoHistory()) return@withContext null
         try {
             val cpn = generateCpn()
             val raw = postWatchApi("player", org.json.JSONObject()
@@ -7075,8 +7094,10 @@ class YouTubeRepository(private val context: Context) {
             val playback = tracking.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
             val watchtime = tracking.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")
             if (playback.isNullOrBlank() || watchtime.isNullOrBlank()) return@withContext null
-            val session = VideoHistorySession(videoId, profile, cookies, cpn, playback, watchtime)
-            if (sendVideoHistoryPing(session, playback, positionMs, positionMs, false)) session else null
+            val history = VideoHistorySession(videoId, session, cpn, playback, watchtime)
+            history.takeIf {
+                sendVideoHistoryPing(it, playback, positionMs, positionMs, false) == HistoryPingResult.SENT
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -7091,21 +7112,20 @@ class YouTubeRepository(private val context: Context) {
         startMs: Long,
         positionMs: Long,
         final: Boolean,
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): HistoryPingResult = withContext(Dispatchers.IO) {
         try {
             sendVideoHistoryPing(session, session.watchtimeUrl, startMs, positionMs, final)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             KLog.w("YouTubeRepo", "Could not report video watch progress", e)
-            false
+            HistoryPingResult.FAILED
         }
     }
 
-    private fun canReportVideoHistory(profileId: String, cookies: String): Boolean =
-        ProfileManager.activeProfileId(context) == profileId &&
-            sessionManager.isLoggedIn() && sessionManager.getCookies() == cookies &&
-            !IncognitoMode.isEnabled(context) && videoHistoryPreferences.isSaveVideoHistoryEnabled()
+    /** The switches, as opposed to the session. Both have to hold at ping time. */
+    private fun mayWriteVideoHistory(): Boolean =
+        !IncognitoMode.isEnabled(context) && videoHistoryPreferences.isSaveVideoHistoryEnabled()
 
     private fun sendVideoHistoryPing(
         session: VideoHistorySession,
@@ -7113,11 +7133,20 @@ class YouTubeRepository(private val context: Context) {
         startMs: Long,
         positionMs: Long,
         final: Boolean,
-    ): Boolean {
-        if (!canReportVideoHistory(session.profileId, session.cookies)) return false
-        val url = baseUrl.toHttpUrlOrNull() ?: return false
+    ): HistoryPingResult {
+        if (!mayWriteVideoHistory()) return HistoryPingResult.FAILED
+        // Deliberately not a comparison of cookie strings. Google rotates the
+        // session cookies mid-video, and a string compare read every rotation
+        // as a different login and silently stopped reporting for the rest of
+        // the video on a perfectly valid account. This asks the question that
+        // was meant - same profile, still active, still the same login - and
+        // hands back the refreshed cookies to sign this ping with.
+        val live = sessionManager.currentSession(session.login) ?: return HistoryPingResult.SESSION_ENDED
+        val url = baseUrl.toHttpUrlOrNull() ?: return HistoryPingResult.FAILED
         // Credentials only go to the YouTube tracking hosts returned by /player.
-        if (url.scheme != "https" || url.host !in setOf("s.youtube.com", "www.youtube.com")) return false
+        if (url.scheme != "https" || url.host !in setOf("s.youtube.com", "www.youtube.com")) {
+            return HistoryPingResult.FAILED
+        }
         val position = (positionMs.coerceAtLeast(0L) / 1000.0).toString()
         val trackingUrl = url.newBuilder()
             .setQueryParameter("cpn", session.cpn)
@@ -7129,17 +7158,15 @@ class YouTubeRepository(private val context: Context) {
             .setQueryParameter("state", if (final) "paused" else "playing")
             .setQueryParameter("final", if (final) "1" else "0")
             .build()
-        val builder = okhttp3.Request.Builder().url(trackingUrl)
+        val request = okhttp3.Request.Builder().url(trackingUrl)
             .header("User-Agent", BROWSER_USER_AGENT)
             .header("Origin", "https://www.youtube.com")
             .header("Referer", "https://www.youtube.com/watch?v=${session.videoId}")
-            .header("Cookie", session.cookies)
-        YouTubeAuthUtils.getAuthorizationHeader(session.cookies, "https://www.youtube.com")?.let {
-            builder.header("Authorization", it).header("X-Goog-AuthUser", "0")
-        }
-        return okHttpClient.newCall(builder.build()).execute().use { response ->
+            .authenticate(live, "https://www.youtube.com")
+            .build()
+        return okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) KLog.w("YouTubeRepo", "Video history ping failed: ${response.code}")
-            response.isSuccessful
+            if (response.isSuccessful) HistoryPingResult.SENT else HistoryPingResult.FAILED
         }
     }
 

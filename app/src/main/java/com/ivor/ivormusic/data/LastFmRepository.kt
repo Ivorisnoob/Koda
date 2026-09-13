@@ -1,19 +1,24 @@
 package com.ivor.ivormusic.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -36,11 +41,7 @@ data class LastFmState(
 
 /** One coordinator for Settings and the background service: disabling cancels both surfaces' calls. */
 class LastFmRepository private constructor(private val context: Context) {
-    @Suppress("DEPRECATION")
-    private val prefs = EncryptedSharedPreferences.create(context, "lastfm_private",
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+    private val prefs = openPrivatePrefs(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutex = Mutex()
     private var generation = 0
@@ -53,6 +54,13 @@ class LastFmRepository private constructor(private val context: Context) {
     private val privacyPreferences = ThemePreferences(context)
 
     init {
+        // Covers every path that changes enabled - the toggle, disconnect, a
+        // reset store - so the hint the service reads cannot drift from it.
+        scope.launch {
+            state.map { it.enabled }.distinctUntilChanged().collect { enabled ->
+                hintPrefs(context).edit().putBoolean(KEY_HINT_ENABLED, enabled).apply()
+            }
+        }
         scope.launch {
             combine(IncognitoMode.enabled(context), privacyPreferences.localOnlyMode) { incognito, local -> incognito || local }
                 .collect { paused ->
@@ -275,9 +283,72 @@ class LastFmRepository private constructor(private val context: Context) {
     }
 
     companion object {
+        private const val TAG = "LastFmRepository"
+        private const val PRIVATE_PREFS = "lastfm_private"
+
+        // Plain, non-sensitive mirror of the enabled flag, so the music service
+        // can tell whether Last.fm might be on without a keystore round trip.
+        // It is only a hint: the encrypted store stays authoritative.
+        private const val HINT_PREFS = "lastfm_hint"
+        private const val KEY_HINT_ENABLED = "enabled"
+
         @Volatile private var instance: LastFmRepository? = null
         fun get(context: Context): LastFmRepository = instance ?: synchronized(this) {
             instance ?: LastFmRepository(context.applicationContext).also { instance = it }
+        }
+
+        /**
+         * Whether Last.fm could be enabled, answered without opening the
+         * encrypted store. False means it certainly is not: either the
+         * repository recorded it off, or it was never set up on this device.
+         * With no hint recorded yet - a build from before the hint existed -
+         * an existing store is treated as possibly enabled, so the caller
+         * builds the repository once and the hint is written from its state.
+         * No store at all is recorded as off straight away, so the service's
+         * polling loop does not stat the file on every tick; building the
+         * repository later, from Settings, overwrites it with the real state.
+         */
+        fun mayBeEnabled(context: Context): Boolean {
+            val hints = hintPrefs(context)
+            if (hints.contains(KEY_HINT_ENABLED)) return hints.getBoolean(KEY_HINT_ENABLED, false)
+            // getSharedPreferences keeps its files under dataDir/shared_prefs.
+            val storeExists =
+                File(context.applicationContext.dataDir, "shared_prefs/$PRIVATE_PREFS.xml").exists()
+            if (!storeExists) hints.edit().putBoolean(KEY_HINT_ENABLED, false).apply()
+            return storeExists
+        }
+
+        private fun hintPrefs(context: Context): SharedPreferences =
+            context.applicationContext.getSharedPreferences(HINT_PREFS, Context.MODE_PRIVATE)
+
+        @Suppress("DEPRECATION")
+        private fun buildPrivatePrefs(context: Context): SharedPreferences =
+            EncryptedSharedPreferences.create(context, PRIVATE_PREFS,
+                MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+
+        /**
+         * The same recovery ProfileManager has, with one difference: only this
+         * file is deleted, never the master key. That key is shared with the
+         * YouTube session store, and deleting it here would make that store
+         * unreadable in turn. A store that cannot be read - its keyset sealed
+         * under a key that is gone, or a keystore that refuses - is
+         * unrecoverable anyway, so it is dropped and rebuilt; if the rebuild
+         * also fails, Last.fm runs off a volatile store for this process
+         * rather than taking the app down with it.
+         */
+        private fun openPrivatePrefs(context: Context): SharedPreferences = try {
+            buildPrivatePrefs(context)
+        } catch (e: Exception) {
+            KLog.e(TAG, "Encrypted Last.fm store unreadable, resetting", e)
+            try {
+                context.deleteSharedPreferences(PRIVATE_PREFS)
+                buildPrivatePrefs(context)
+            } catch (retry: Exception) {
+                KLog.e(TAG, "Encrypted Last.fm store unavailable; using volatile store", retry)
+                VolatileSharedPreferences()
+            }
         }
     }
 }

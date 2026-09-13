@@ -34,9 +34,10 @@ class SessionManager(context: Context) {
     /**
      * Save session cookies obtained from WebView.
      *
-     * Also the refresh path for [SessionCookieJar], so it does not touch the
-     * expired flag - only a deliberate sign-in clears that. Use [startSession]
-     * when the user has just logged in.
+     * A deliberate sign-in, so it bumps the session generation: anything still
+     * in flight for the previous login stops counting as the current one. The
+     * rotation path is [mergeResponseCookies], which keeps the generation. Use
+     * [startSession] when the user has just logged in.
      *
      * A rotation arriving while a local profile is active is dropped: there is
      * no account to refresh, and writing it would quietly turn a device-only
@@ -117,6 +118,41 @@ class SessionManager(context: Context) {
      * what the UI should read before showing account-only content.
      */
     fun isLoggedIn(): Boolean = !getCookies().isNullOrBlank()
+
+    /**
+     * The login to send the next request for, or null when there is none.
+     *
+     * Everything account-scoped goes out bound to one of these rather than to
+     * "whatever cookies are stored now", so a rotation or an account switch
+     * that lands while the call is in flight is attributed to the profile that
+     * made it. See [YouTubeSession].
+     */
+    internal fun captureSession(): YouTubeSession? = profileManager.captureSession()
+
+    /**
+     * [session] refreshed to the cookies stored now, or null if that login is
+     * over: the profile was removed, another one is active, or the user signed
+     * in again. A cookie rotation is not the login ending.
+     */
+    internal fun currentSession(session: YouTubeSession): YouTubeSession? = profileManager.currentSession(session)
+
+    internal fun mergeResponseCookies(session: YouTubeSession, updates: Map<String, String>) =
+        profileManager.mergeSessionCookies(session, updates)
+
+    /** [setSessionExpired], attributed to the login the response came back for. */
+    internal fun noteSessionExpired(session: YouTubeSession, expired: Boolean) {
+        // False when the verdict belongs to a login that is no longer the
+        // active one: applying it then would badge the wrong account.
+        if (!profileManager.noteSessionExpired(session, expired)) return
+        if (_sessionExpired.value != expired) {
+            if (expired) KLog.w(TAG, "YouTube rejected the session as signed out")
+            _sessionExpired.value = expired
+        }
+    }
+
+    internal fun updateSessionIdentity(
+        session: YouTubeSession, name: String? = null, avatarUrl: String? = null, datasyncId: String? = null,
+    ) = profileManager.updateSessionIdentity(session, name, avatarUrl, datasyncId)
 
     fun saveUserName(name: String) {
         profileManager.updateIdentity(activeId(), name = name)

@@ -71,10 +71,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
@@ -106,6 +109,7 @@ fun VideoHomeContent(
     onEnqueueVideo: ((VideoItem, Boolean) -> Unit)? = null,
     /** Open a video's creator, from the long-press sheet. */
     onOpenChannel: ((String) -> Unit)? = null,
+    shortsEnabled: Boolean = false,
     shorts: List<ShortsItem> = emptyList(),
     onShortClick: (Int) -> Unit = {},
     onProfileClick: () -> Unit,
@@ -132,6 +136,8 @@ fun VideoHomeContent(
     val localSubscriptions by viewModel.localSubscriptions.collectAsState()
     val subscribedChannels by viewModel.subscribedChannels.collectAsState()
     val showOfflineDownloads = isOffline && downloadedVideos.isNotEmpty()
+    val isShortsLoading by viewModel.isShortsLoading.collectAsState()
+    val shortsFeedFailed by viewModel.shortsFeedFailed.collectAsState()
 
     // Notifications sheet state
     var showNotificationsSheet by remember { mutableStateOf(false) }
@@ -289,12 +295,12 @@ fun VideoHomeContent(
                     // Video cards, with the Shorts shelf slotted in after the
                     // first two like the YouTube home feed.
                     val feedVideos = videos
-                    val leadingVideos = if (shorts.isEmpty()) {
+                    val leadingVideos = if (!shortsEnabled) {
                         feedVideos
                     } else {
                         feedVideos.take(2)
                     }
-                    val trailingVideos = if (shorts.isEmpty()) {
+                    val trailingVideos = if (!shortsEnabled) {
                         emptyList()
                     } else {
                         feedVideos.drop(2)
@@ -311,11 +317,14 @@ fun VideoHomeContent(
                         )
                     }
 
-                    if (shorts.isNotEmpty()) {
-                        item {
+                    if (shortsEnabled) {
+                        item(key = "shorts_shelf") {
                             ShortsShelf(
                                 shorts = shorts,
-                                onShortClick = onShortClick
+                                onShortClick = onShortClick,
+                                isLoading = isShortsLoading,
+                                failed = shortsFeedFailed,
+                                onRefresh = viewModel::loadShortsFeed
                             )
                         }
                     }
@@ -612,11 +621,15 @@ internal fun VideoTopBarSection(
 fun ShortsShelf(
     shorts: List<ShortsItem>,
     onShortClick: (Int) -> Unit,
+    isLoading: Boolean,
+    failed: Boolean,
+    onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val refreshLabel = stringResource(R.string.shorts_refresh)
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -636,13 +649,35 @@ fun ShortsShelf(
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = stringResource(R.string.sp_shorts),
+                modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
+            IconButton(
+                onClick = onRefresh,
+                enabled = !isLoading,
+                modifier = Modifier.semantics { contentDescription = refreshLabel }
+            ) {
+                if (isLoading) {
+                    LoadingIndicator(modifier = Modifier.size(24.dp))
+                } else {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null)
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        if (failed || (shorts.isEmpty() && !isLoading)) {
+            Text(
+                text = stringResource(if (failed) R.string.shorts_refresh_failed else R.string.shorts_feed_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+        }
+        if (shorts.isEmpty()) return@Column
 
         val carouselState = rememberCarouselState { shorts.size }
         HorizontalMultiBrowseCarousel(
@@ -663,7 +698,7 @@ fun ShortsShelf(
             ) {
                 AsyncImage(
                     model = item.portraitThumbnailUrl,
-                    contentDescription = item.title,
+                    contentDescription = item.title.ifBlank { stringResource(R.string.sp_shorts) },
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )

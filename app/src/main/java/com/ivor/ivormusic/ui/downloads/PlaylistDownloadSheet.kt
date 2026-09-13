@@ -98,7 +98,8 @@ private data class PlaylistDownloadSnapshot(
     val failedIds: Set<String>,
     val localOfflineCount: Int,
     val skippedCount: Int,
-    val repeatedEntryCount: Int
+    val repeatedEntryCount: Int,
+    val allPagesLoaded: Boolean = true
 ) {
     val completedCount: Int get() = completedIds.size + localOfflineCount
     val activeCount: Int get() = active.size
@@ -106,7 +107,7 @@ private data class PlaylistDownloadSnapshot(
         get() = eligibleIds - completedIds - active.keys
     val remainingCount: Int get() = remainingIds.size
     val isComplete: Boolean
-        get() = (eligibleIds.isNotEmpty() || localOfflineCount > 0) &&
+        get() = allPagesLoaded && (eligibleIds.isNotEmpty() || localOfflineCount > 0) &&
             completedIds.containsAll(eligibleIds) && skippedCount == 0
 
     val overallProgress: Float
@@ -220,7 +221,8 @@ fun VideoPlaylistDownloadAction(
     playlistTitle: String,
     videos: List<VideoItem>,
     playlistCountText: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    allPagesLoaded: Boolean = true
 ) {
     val context = LocalContext.current
     val repository = remember(context) { DownloadRepository.getInstance(context) }
@@ -240,7 +242,7 @@ fun VideoPlaylistDownloadAction(
             it.request.type == DownloadMediaType.VIDEO && it.request.id in eligibleIds
         }.associateBy { it.request.id }
     }
-    val snapshot = remember(eligibleIds, downloadedIds, relevantProgress, videos) {
+    val snapshot = remember(eligibleIds, downloadedIds, relevantProgress, videos, allPagesLoaded) {
         PlaylistDownloadSnapshot(
             eligibleIds = eligibleIds,
             completedIds = downloadedIds,
@@ -250,6 +252,7 @@ fun VideoPlaylistDownloadAction(
             failedIds = relevantProgress.filterValues { it.status == DownloadStatus.FAILED }.keys,
             localOfflineCount = 0,
             skippedCount = videos.count { it.isLive || it.videoId.isBlank() },
+            allPagesLoaded = allPagesLoaded,
             repeatedEntryCount = (
                 videos.count { !it.isLive && it.videoId.isNotBlank() } - eligibleVideos.size
             ).coerceAtLeast(0)
@@ -292,12 +295,13 @@ private fun PlaylistDownloadButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val canOpen = enabled && (snapshot.eligibleIds.isNotEmpty() || snapshot.localOfflineCount > 0) &&
+    val canOpen = enabled && (!snapshot.allPagesLoaded || snapshot.eligibleIds.isNotEmpty() || snapshot.localOfflineCount > 0) &&
         (kind == PlaylistDownloadKind.MUSIC || !snapshot.isComplete)
     val label = when {
         snapshot.isComplete -> stringResource(R.string.vh_available_offline)
         snapshot.activeCount > 0 && kind == PlaylistDownloadKind.VIDEO -> stringResource(R.string.pd_downloading_playlist)
         snapshot.activeCount > 0 -> "Downloading ${snapshot.activeCount}"
+        !snapshot.allPagesLoaded -> stringResource(R.string.pd_download_playlist)
         snapshot.remainingCount > 0 && snapshot.remainingIds.all { it in snapshot.failedIds } ->
             "Retry ${snapshot.remainingCount}"
         snapshot.remainingCount > 0 && kind == PlaylistDownloadKind.VIDEO -> stringResource(R.string.pd_download_playlist)
@@ -317,7 +321,7 @@ private fun PlaylistDownloadButton(
             targetState = when {
                 snapshot.isComplete -> "complete"
                 snapshot.activeCount > 0 -> "active"
-                snapshot.eligibleIds.isEmpty() -> "unavailable"
+                snapshot.eligibleIds.isEmpty() && snapshot.allPagesLoaded -> "unavailable"
                 else -> "ready"
             },
             transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -695,7 +699,7 @@ private fun PlaylistDownloadSheet(
                             }
                         }
                     },
-                    enabled = snapshot.remainingCount > 0 && !queued && !queueing && !localOnly,
+                    enabled = (snapshot.remainingCount > 0 || !snapshot.allPagesLoaded) && !queued && !queueing && !localOnly,
                     shapes = ButtonDefaults.shapes(),
                     modifier = Modifier
                         .padding(horizontal = 20.dp, vertical = 16.dp)
@@ -709,6 +713,7 @@ private fun PlaylistDownloadSheet(
                         } else stringResource(R.string.pd_adding)
                         localOnly -> stringResource(R.string.local_only_title)
                         snapshot.isComplete -> stringResource(R.string.pd_already_complete)
+                        !snapshot.allPagesLoaded -> stringResource(R.string.pd_download_full)
                         snapshot.remainingCount == 0 && snapshot.activeCount > 0 -> stringResource(R.string.dl_preparing)
                         snapshot.remainingIds.all { it in snapshot.failedIds } ->
                             "Retry ${itemCountLabel(snapshot.remainingCount, kind)}"

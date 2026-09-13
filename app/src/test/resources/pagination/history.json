@@ -1,0 +1,241 @@
+{
+  "contents": {
+    "twoColumnBrowseResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "content": {
+              "sectionListRenderer": {
+                "contents": [
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "contents": [],
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "itemSectionRenderer": {
+                      "header": {}
+                    }
+                  },
+                  {
+                    "continuationItemRenderer": {
+                      "continuationEndpoint": {
+                        "continuationCommand": {
+                          "token": "next-page"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "header": {}
+}

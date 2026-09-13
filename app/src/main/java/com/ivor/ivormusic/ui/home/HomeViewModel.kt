@@ -567,6 +567,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     
     private val _historyVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val historyVideos: StateFlow<List<VideoItem>> = _historyVideos.asStateFlow()
+    private val historyPagination = com.ivor.ivormusic.data.DemandPagination<String>()
+    val historyPageState = historyPagination.state
+    private var historyLoadJob: Job? = null
+    private var historySession: com.ivor.ivormusic.data.YouTubeSession? = null
 
     /**
      * Video files on the device, newest first.
@@ -617,6 +621,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val _shortsFeed = MutableStateFlow<List<com.ivor.ivormusic.data.ShortsItem>>(emptyList())
+    private var shortsFeedLoadJob: Job? = null
+    private var shortsFeedGeneration = 0L
+    private val _isShortsLoading = MutableStateFlow(false)
+    val isShortsLoading = _isShortsLoading.asStateFlow()
+    private val _shortsFeedFailed = MutableStateFlow(false)
+    val shortsFeedFailed = _shortsFeedFailed.asStateFlow()
+
+    private fun clearShortsFeed() {
+        shortsFeedGeneration++
+        shortsFeedLoadJob?.cancel()
+        shortsFeedLoadJob = null
+        _shortsFeed.value = emptyList()
+        _isShortsLoading.value = false
+        _shortsFeedFailed.value = false
+    }
 
     /**
      * Shorts shelf minus individually hidden Shorts.
@@ -856,6 +875,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _playlistVideos = MutableStateFlow<List<VideoItem>>(emptyList())
     val playlistVideos: StateFlow<List<VideoItem>> = _playlistVideos.asStateFlow()
+    private val playlistPagination = com.ivor.ivormusic.data.DemandPagination<com.ivor.ivormusic.data.VideoPlaylistCursor>()
+    val playlistPageState = playlistPagination.state
+    private var playlistLoadJob: Job? = null
+    private var activeVideoPlaylistId: String? = null
+    private var playlistSession: com.ivor.ivormusic.data.YouTubeSession? = null
 
     private val _isPlaylistVideosLoading = MutableStateFlow(false)
     val isPlaylistVideosLoading: StateFlow<Boolean> = _isPlaylistVideosLoading.asStateFlow()
@@ -956,6 +980,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * reason - but follows it with a reload rather than leaving the app empty.
      */
     private fun resetForProfileChange() {
+        resetVideoLibraryPagination()
         youtubeRepository.clearSessionScopedInstanceCaches()
         // Signed-in search is personalised, so serving one account's results
         // under another is the same mistake as replaying its visitorData.
@@ -981,7 +1006,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // when the result is non-empty, so clearing is what guarantees a failed
         // refetch leaves nothing rather than the wrong account's videos.
         _trendingVideos.value = emptyList()
-        _shortsFeed.value = emptyList()
+        clearShortsFeed()
         _historyVideos.value = emptyList()
 
         checkYouTubeConnection()
@@ -1506,38 +1531,82 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * without knowing which kind it opened.
      */
     fun loadPlaylistVideos(playlistId: String) {
+        playlistLoadJob?.cancel()
+        playlistPagination.reset()
+        activeVideoPlaylistId = playlistId
+        playlistSession = sessionManager.captureSession()
+        _playlistVideos.value = emptyList()
+        _isPlaylistVideosLoading.value = false
         if (com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlistId)) {
-            _isPlaylistVideosLoading.value = false
             _playlistVideos.value = localVideoPlaylistsRepository.videosOf(playlistId)
             return
         }
-        viewModelScope.launch {
-            _playlistVideos.value = emptyList()
-            _isPlaylistVideosLoading.value = true
+        val request = playlistPagination.first()
+        _isPlaylistVideosLoading.value = true
+        fetchVideoPlaylistPage(playlistId, request)
+    }
+
+    fun loadMorePlaylistVideos(playlistId: String) {
+        if (activeVideoPlaylistId != playlistId) return
+        val request = playlistPagination.more() ?: return
+        fetchVideoPlaylistPage(playlistId, request)
+    }
+
+    private fun fetchVideoPlaylistPage(
+        playlistId: String,
+        request: com.ivor.ivormusic.data.DemandPagination.Request<com.ivor.ivormusic.data.VideoPlaylistCursor>
+    ) {
+        val session = playlistSession
+        playlistLoadJob = viewModelScope.launch {
             try {
-                _playlistVideos.value =
-                    if (playlistId.startsWith("MPRE")) {
-                        // A saved album. Its browse id is not a playlist id, so
-                        // the playlist call would answer garbage; the album
-                        // tracks themselves are ordinary YouTube video ids and
-                        // play fine as videos.
+                val page = if (playlistId.startsWith("MPRE")) {
+                    com.ivor.ivormusic.data.VideoPlaylistPage(
                         youtubeRepository.getAlbumSongs(playlistId).map { song ->
-                            VideoItem(
-                                videoId = song.id,
-                                title = song.title,
-                                channelName = song.artist,
+                            VideoItem(videoId = song.id, title = song.title, channelName = song.artist,
                                 thumbnailUrl = song.thumbnailUrl ?: song.highResThumbnailUrl,
-                                duration = song.duration / 1000,
-                                viewCount = ""
-                            )
-                        }
-                    } else {
-                        youtubeRepository.getPlaylistVideos(playlistId)
-                    }
-            } finally {
+                                duration = song.duration / 1000, viewCount = "")
+                        })
+                } else youtubeRepository.getPlaylistVideosPage(playlistId, request.continuation, session)
+                if (!playlistPagination.isCurrent(request)) return@launch
+                if (page == null) {
+                    playlistPagination.fail(request)
+                } else if (playlistPagination.complete(request, page.continuation)) {
+                    // Playlist duplicates are distinct occurrences; never deduplicate by video id.
+                    _playlistVideos.value = if (request.continuation == null) page.videos
+                        else _playlistVideos.value + page.videos
+                }
                 _isPlaylistVideosLoading.value = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (playlistPagination.isCurrent(request)) {
+                    playlistPagination.fail(request)
+                    _isPlaylistVideosLoading.value = false
+                }
+            } finally {
+                if (playlistPagination.isCurrent(request)) {
+                    playlistPagination.cancel(request)
+                    _isPlaylistVideosLoading.value = false
+                }
             }
         }
+    }
+
+    fun stopPlaylistVideoPagination(playlistId: String) {
+        if (activeVideoPlaylistId == playlistId) playlistLoadJob?.cancel()
+    }
+
+    private fun resetVideoLibraryPagination() {
+        historyLoadJob?.cancel()
+        playlistLoadJob?.cancel()
+        historyPagination.reset()
+        playlistPagination.reset()
+        historySession = null
+        playlistSession = null
+        activeVideoPlaylistId = null
+        _isHistoryLoading.value = false
+        _isPlaylistVideosLoading.value = false
+        _playlistVideos.value = emptyList()
     }
 
     /**
@@ -1987,6 +2056,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun logout() {
+        resetVideoLibraryPagination()
+        clearShortsFeed()
         sessionManager.clearSession()
         _isYouTubeConnected.value = false
         _userAvatar.value = null
@@ -2254,15 +2325,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * instance. Failures leave the previous shelf in place.
      */
     fun loadShortsFeed() {
-        if (!themePreferences.isShortsEnabled()) return
-        viewModelScope.launch {
+        if (!themePreferences.isShortsEnabled() || shortsFeedLoadJob?.isActive == true) return
+        if (themePreferences.isLocalOnlyModeEnabled()) return
+        if (!hasNetworkConnection()) {
+            _shortsFeedFailed.value = true
+            return
+        }
+        val generation = ++shortsFeedGeneration
+        val profileId = com.ivor.ivormusic.data.ProfileManager(app).activeProfileId.value
+        val session = sessionManager.captureSession()
+        fun isCurrent(): Boolean = generation == shortsFeedGeneration &&
+            com.ivor.ivormusic.data.ProfileManager(app).activeProfileId.value == profileId &&
+            (if (session != null) sessionManager.currentSession(session) != null
+             else sessionManager.captureSession() == null)
+        _isShortsLoading.value = true
+        _shortsFeedFailed.value = false
+        shortsFeedLoadJob = viewModelScope.launch {
             try {
                 val shorts = youtubeRepository.getShortsFeed()
-                if (shorts.isNotEmpty()) {
+                if (isCurrent() && themePreferences.isShortsEnabled()) {
                     _shortsFeed.value = shorts
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                // Keep whatever shelf we already have
+                if (isCurrent()) _shortsFeedFailed.value = true
+                KLog.w("HomeViewModel", "Shorts refresh failed", e)
+            } finally {
+                if (generation == shortsFeedGeneration) _isShortsLoading.value = false
             }
         }
     }
@@ -2319,6 +2409,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * it could not keep.
      */
     fun clearVideoHistory() {
+        historyLoadJob?.cancel()
+        historyPagination.reset()
+        _isHistoryLoading.value = false
         videoHistoryRepository.clearHistory()
         _historyVideos.value = emptyList()
         _lastHistoryRemoval.value = null
@@ -2328,31 +2421,66 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun isRemovedFromHistory(videoId: String): Boolean =
         videoHistoryRepository.isRemoved(videoId)
 
+    /** Library and refresh request one page only, irrespective of account age. */
     fun loadYouTubeHistory() {
-        if (!sessionManager.isLoggedIn()) {
-             _historyVideos.value = videoHistoryRepository.getHistory()
-             return
+        if (historyLoadJob?.isActive == true) return
+        historySession = sessionManager.captureSession()
+        if (historySession == null) {
+            historyPagination.reset()
+            _isHistoryLoading.value = false
+            _historyVideos.value = videoHistoryRepository.getHistory()
+            return
         }
+        val request = historyPagination.first()
+        _isHistoryLoading.value = true
+        fetchHistoryPage(request)
+    }
 
-        viewModelScope.launch {
-            _isHistoryLoading.value = true
+    fun loadMoreYouTubeHistory() {
+        val request = historyPagination.more() ?: return
+        fetchHistoryPage(request)
+    }
+
+    private fun fetchHistoryPage(request: com.ivor.ivormusic.data.DemandPagination.Request<String>) {
+        val session = historySession
+        historyLoadJob = viewModelScope.launch {
             try {
-                val videos = youtubeRepository.getWatchHistory()
-                // The account's list is filtered through the locally removed
-                // ids: a row the user took out here must not come back on the
-                // next FEhistory fetch, which is the only thing that would make
-                // the removal look like it had not worked.
-                _historyVideos.value = videoHistoryRepository
-                    .withoutRemoved(videos)
-                    .ifEmpty { videoHistoryRepository.getHistory() }
-            } catch (e: Exception) {
-                _historyVideos.value = videoHistoryRepository.getHistory()
-            } finally {
+                val page = youtubeRepository.getWatchHistoryPage(request.continuation, session)
+                if (!historyPagination.isCurrent(request)) return@launch
+                if (page == null) {
+                    historyPagination.fail(request)
+                    if (_historyVideos.value.isEmpty()) _historyVideos.value = videoHistoryRepository.getHistory()
+                } else if (historyPagination.complete(request, page.continuation)) {
+                    // The history screen keys rows by video id, so every page is
+                    // deduplicated, including the first.
+                    val visible = videoHistoryRepository.withoutRemoved(page.videos)
+                    _historyVideos.value = if (request.continuation == null) {
+                        visible.ifEmpty { videoHistoryRepository.getHistory() }
+                            .distinctBy { it.videoId }
+                    } else (_historyVideos.value + visible).distinctBy { it.videoId }
+                }
                 _isHistoryLoading.value = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (historyPagination.isCurrent(request)) {
+                    historyPagination.fail(request)
+                    _isHistoryLoading.value = false
+                }
+            } finally {
+                if (historyPagination.isCurrent(request)) {
+                    historyPagination.cancel(request)
+                    _isHistoryLoading.value = false
+                }
             }
         }
     }
-    
+
+    fun stopHistoryPagination() {
+        // The initial page is also the root's preview; only cancel detail-page appends.
+        if (!_isHistoryLoading.value) historyLoadJob?.cancel()
+    }
+
     /**
      * Search for videos (for video mode search).
      * [dateFilter] restricts results to the chosen upload-date window,
@@ -2372,30 +2500,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return try {
             youtubeRepository.searchVideos(query, dateFilter, sort)
                 .also { videoSearchCache.put(key, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    /**
-     * Next page of video search results. [dateFilter] must match the call that
-     * produced the current results. Empty means there is nothing more to load.
-     */
+    /** Next page for the same query, date window and sort as the displayed list. */
     suspend fun loadMoreVideoResults(
         query: String,
-        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY
+        dateFilter: com.ivor.ivormusic.data.VideoSearchDateFilter = com.ivor.ivormusic.data.VideoSearchDateFilter.ANY,
+        sort: com.ivor.ivormusic.data.VideoSearchSort = com.ivor.ivormusic.data.VideoSearchSort.RELEVANCE
     ): List<VideoItem> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.searchVideosNext(query, dateFilter).also { more ->
-                // The sort is not a parameter here, so every cached sort of this
-                // query and window is appended to - which is correct, because
-                // the repository keeps one cursor for them and they are all
-                // showing pages from it.
-                com.ivor.ivormusic.data.VideoSearchSort.entries.forEach { sort ->
-                    videoSearchCache.append(videoSearchKey(query, dateFilter, sort), more)
+            youtubeRepository.searchVideosNext(query, dateFilter, sort).also { more ->
+                val key = videoSearchKey(query, dateFilter, sort)
+                videoSearchCache.get(key)?.let { existing ->
+                    videoSearchCache.put(key, (existing + more).distinctBy { it.videoId })
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -2609,6 +2736,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Awaited variant for the playlist studio: the chosen cover is applied
+     * before the new playlist's page opens, so it never flashes the generated
+     * artwork first.
+     */
+    suspend fun applyLocalPlaylistCover(playlistId: String, source: android.net.Uri) {
+        playlistRepository.setCustomCover(playlistId, source)
+    }
+
     /** Drop a chosen cover and go back to the generated one. */
     fun resetLocalPlaylistCover(playlistId: String) {
         viewModelScope.launch {
@@ -2657,6 +2793,67 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playlistRepository.addSongToPlaylist(playlistId, song)
         }
+    }
+
+    /**
+     * Append a selection of songs to a local playlist in one write, skipping
+     * anything already in it. Suspend rather than fire-and-forget because the
+     * import screen reports how many songs actually landed.
+     */
+    suspend fun addSongsToLocalPlaylist(playlistId: String, songs: List<Song>): Int =
+        playlistRepository.addSongsToPlaylist(playlistId, songs)
+
+    /**
+     * Create a local playlist already holding [songs] - the playlist studio's
+     * create action. Unlike [copyPlaylistToLocal] an empty selection is a
+     * valid outcome: naming a playlist first and filling it later is exactly
+     * what the flow allows.
+     *
+     * @return the new playlist's id.
+     */
+    suspend fun createLocalPlaylistWithSongs(
+        name: String,
+        description: String?,
+        songs: List<Song>
+    ): String {
+        val id = playlistRepository.createPlaylist(
+            name.trim(),
+            description?.trim()?.takeIf { it.isNotEmpty() },
+            coverSeedColors()
+        )
+        val tracks = songs.distinctBy { it.id }
+        if (tracks.isNotEmpty()) playlistRepository.replacePlaylistSongs(id, tracks)
+        return id
+    }
+
+    /**
+     * What the playlist studio seeds its suggestion chips from: recency-ranked
+     * favorites (as playable [Song]s), top artists and recent searches. Built
+     * on demand rather than held as state - it reads the whole play history
+     * and only the studio ever needs it.
+     */
+    data class PlaylistSeedProfile(
+        val favorites: List<Song>,
+        val topArtists: List<String>,
+        val recentSearches: List<String>
+    )
+
+    suspend fun buildPlaylistSeedProfile(): PlaylistSeedProfile {
+        val profile = recommendationEngine.buildTasteProfile()
+        return PlaylistSeedProfile(
+            favorites = profile.topSongs.map { entry ->
+                Song.fromYouTube(
+                    videoId = entry.songId,
+                    title = entry.title,
+                    artist = entry.artist,
+                    album = entry.album,
+                    duration = entry.duration,
+                    thumbnailUrl = entry.thumbnailUrl
+                )
+            },
+            topArtists = profile.topArtists,
+            recentSearches = profile.recentSearches
+        )
     }
 
     fun updateLocalPlaylist(playlistId: String, name: String, description: String?) {
