@@ -7,6 +7,7 @@
     <cloud-backup>
         <exclude domain="sharedpref" path="yt_music_session.xml"/>
         <exclude domain="sharedpref" path="lastfm_private.xml"/>
+        <exclude domain="sharedpref" path="lastfm_hint.xml"/>
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
@@ -15,5 +16,6 @@
     <device-transfer>
         <exclude domain="sharedpref" path="yt_music_session.xml"/>
         <exclude domain="sharedpref" path="lastfm_private.xml"/>
+        <exclude domain="sharedpref" path="lastfm_hint.xml"/>
     </device-transfer>
 </data-extraction-rules>

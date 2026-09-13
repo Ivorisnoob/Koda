@@ -716,14 +716,44 @@ class MusicService : MediaLibraryService() {
         engine.setRepeatMode(playbackRepeatMode)
     }
 
-    private val lastFmTracker by lazy {
-        LastFmPlaybackTracker(com.ivor.ivormusic.data.LastFmRepository.get(this))
+    // Null until Last.fm might be enabled. Building the repository opens an
+    // encrypted store - a keystore round trip - which nobody with Last.fm off
+    // should pay at service start, and which never belongs on the main thread.
+    private var lastFmTracker: LastFmPlaybackTracker? = null
+    private var lastFmTrackerLoad: Job? = null
+
+    /**
+     * Builds the repository off the main thread, then hands the tracker back
+     * on it, since sampling reads the player. A failure is logged and not
+     * retried for this service's lifetime: the job stays set, so the loop does
+     * not rebuild every 250ms.
+     */
+    private suspend fun loadLastFmTracker() {
+        try {
+            val repository = withContext(Dispatchers.IO) {
+                com.ivor.ivormusic.data.LastFmRepository.get(applicationContext)
+            }
+            lastFmTracker = LastFmPlaybackTracker(repository)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            KLog.e(TAG, "Last.fm tracker unavailable", e)
+        }
     }
 
     private fun observePreferences() {
         serviceScope.launch {
             while (isActive) {
-                if (::engine.isInitialized) lastFmTracker.sample(player)
+                if (::engine.isInitialized) {
+                    val tracker = lastFmTracker
+                    if (tracker != null) {
+                        tracker.sample(player)
+                    } else if (lastFmTrackerLoad == null &&
+                        com.ivor.ivormusic.data.LastFmRepository.mayBeEnabled(this@MusicService)
+                    ) {
+                        lastFmTrackerLoad = launch { loadLastFmTracker() }
+                    }
+                }
                 delay(250)
             }
         }
@@ -837,7 +867,7 @@ class MusicService : MediaLibraryService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) lastFmTracker.reset()
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) lastFmTracker?.reset()
             automaticTransitionAttempt = null
 
             // 1. Loudness correction for the new track, before anything sets a
