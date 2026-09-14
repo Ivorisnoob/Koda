@@ -133,6 +133,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | A start song absent from the list it is played from | Clamped to index 0, so a tap on one song plays another | `playback-music.md` |
 | Catching `Exception` around a suspend body | Swallows `CancellationException`, breaks cooperative cancellation | `playback-streams.md` |
 | A coroutine timeout around a blocking `fetchPage()` | Never fires early; the caller waits for the work it is abandoning | `playback-streams.md` |
+| Media library session grants only session commands, or search omits its completion notification | Auto cannot browse, or search stays loading | `playback-music.md` |
 | The plain `ANDROID` client used as a resolver | `OK` with a full `adaptiveFormats` and no `url` on any entry | `youtube-data.md` |
 | An `<activity-alias>` addressed with `context.packageName` as its class package | Apply is a no-op on any build with an `applicationIdSuffix`, works on release | `settings.md` |
 | A preview drawable using a platform-styled widget | Draws in the device's accent, differs on every phone | `widgets.md` |
@@ -184,7 +185,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - **`visitorData` rides on every InnerTube call**; a missing one now gets `LOGIN_REQUIRED`, and a googlevideo 403 means remint (`refreshVisitorDataAfterPlaybackFailure`), not a UA problem.
 - Music metadata comes from **links and page types** (`MUSIC_PAGE_TYPE_ARTIST/ALBUM`), never subtitle positions; release type/year are data (`Song.albumId`, `releaseType`, `releaseYear`).
 - Signed out: public browse ids work anonymously, **account browse ids return a valid empty shell** (gate on `isLoggedIn()`), playlists come back as `lockupViewModel`s. Continuations answer under `appendContinuationItemsAction` (`continuationItemsOrNull`), and token scoping matters.
-- **Only HTTP 429 arms `YouTubeRateLimit`**, which gates discretionary fan-out only. One `/next` feeds many features - be frugal per user action.
+- **Only HTTP 429 arms `YouTubeRateLimit`**, which gates discretionary fan-out and Shorts prefetch only. One `/next` feeds many features - be frugal per user action.
 
 ### Music playback -> `docs/playback-music.md`
 - `MusicService` (Media3 `MediaLibraryService`) + `PlayerViewModel` over a `MediaController`. Video is a separate pipeline: the ViewModel owns the player and `VideoPlaybackService` only wraps it in a media session.

@@ -26,7 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * **What the hold gates is also narrow, and this is the important half.** It
  * gates *fan-out* work only: the subscriptions feed refresh (one request per
- * followed channel), the avatar backfill, and the background upload check.
+ * followed channel), the avatar backfill, the background upload check, and
+ * speculative Shorts stream/metadata/range prefetch.
  * It must never gate playback resolution or anything else a user is actively
  * waiting on. Someone who presses play during a hold should still get a
  * request and, if it works, their music - refusing locally would turn a

@@ -26,9 +26,11 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.bestSdrFallback
 import com.ivor.ivormusic.ui.video.hasHdrDisplay
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Job
@@ -198,12 +200,10 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private var hdrFallbackUsed = false
 
     // ---------------- Background prefetch ----------------
-    // Swiping must not show a loading spinner, so stream URLs for the next
-    // few Shorts (and one behind, for swipe-back) resolve in the background
-    // the moment a Short is opened or settled on. Watch-next payloads for
-    // the immediate next Shorts are warmed too, so the title/channel/like
-    // rail appears instantly. Both caches are LRU-capped; googlevideo URLs
-    // stay valid for hours, far beyond a browsing session's needs.
+    // Resolve and warm the next Short after a brief settling delay to reduce
+    // loading on ordinary swipes without extracting several unseen videos.
+    // Swipe-back reuses cached ladders. Watch-next metadata is warmed for the
+    // next Short too. Both caches are LRU-capped.
 
     private val qualitiesCache = object : LinkedHashMap<String, List<VideoQuality>>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<VideoQuality>>) =
@@ -215,7 +215,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
     // Main-thread owned. Obsolete requests must not sit ahead of the next swipe.
     private val prefetchJobs = mutableMapOf<String, Job>()
-    private val prefetchSemaphore = kotlinx.coroutines.sync.Semaphore(2)
+    private val prefetchSemaphore = kotlinx.coroutines.sync.Semaphore(1)
     private val metadataPrefetchSemaphore = kotlinx.coroutines.sync.Semaphore(1)
 
     private fun cancelPrefetch() {
@@ -240,7 +240,16 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         if (prefetchJobs[key]?.isActive == true) return
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
-                semaphore.withPermit { work() }
+                // A cancelled waiter cannot stop the shared blocking extraction.
+                // Avoid starting it at all for items passed during fast swipes.
+                delay(PREFETCH_SETTLE_MS)
+                semaphore.withPermit {
+                    // If the user already swiped here, foreground loading owns
+                    // this item. In particular, do not duplicate its /next call.
+                    if (canPrefetch() && key.substringAfter(':') != _currentVideo.value?.videoId) {
+                        work()
+                    }
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
@@ -281,20 +290,19 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         synchronized(watchNextCache) { watchNextCache[videoId] = data }
     }
 
-    /**
-     * Resolve four upcoming Shorts and buffer the first seconds of the next
-     * three (two on metered networks). A cached ladder still needs its media
-     * warmed: URL resolution is not playable data. Metadata has its own slot.
-     */
+    private fun canPrefetch(): Boolean =
+        _isActive.value && ThemePreferences.isPlaybackPreloadEnabled(context) &&
+            !YouTubeRateLimit.isHeld()
+
+    /** Resolve and warm only the next Short; cached ladders still need media bytes. */
     private fun prefetchAround(index: Int) {
-        if (!_isActive.value || !ThemePreferences.isPlaybackPreloadEnabled(context)) {
+        if (!canPrefetch()) {
             cancelPrefetch()
             return
         }
         val list = _shorts.value
         val streamTargets =
-            ((index + 1)..(index + STREAM_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) } +
-                listOfNotNull(list.getOrNull(index - 1))
+            ((index + 1)..(index + STREAM_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) }
         val watchNextTargets =
             ((index + 1)..(index + WATCH_NEXT_PREFETCH_AHEAD)).mapNotNull { list.getOrNull(it) }
         val wanted = streamTargets.mapTo(mutableSetOf()) { "s:${it.videoId}" } +
@@ -332,15 +340,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     private fun shouldWarmShort(videoId: String): Boolean {
-        if (!_isActive.value || !ThemePreferences.isPlaybackPreloadEnabled(context)) return false
-        val ahead = if (ThemePreferences.isNetworkMetered(context)) 2 else 3
-        val current = _currentIndex.value
-        return ((current + 1)..(current + ahead)).any { _shorts.value.getOrNull(it)?.videoId == videoId }
+        if (!canPrefetch()) return false
+        return _shorts.value.getOrNull(_currentIndex.value + 1)?.videoId == videoId
     }
 
     /** Bounded audio/video heads only; live and adaptive manifests stay out of the cache. */
     private suspend fun warmPlayableHead(qualities: List<VideoQuality>) {
-        if (!ThemePreferences.isPlaybackPreloadEnabled(context)) return
+        if (!canPrefetch()) return
         if (qualities.isEmpty()) return
         val quality = pickDefaultQuality(qualities)
         if (quality.isDASH || quality.isLive) return
@@ -351,6 +357,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
         withContext(Dispatchers.IO) {
             suspend fun warm(uri: String, bytes: Long) {
+                ensureActive()
+                if (!canPrefetch()) return
                 val spec = DataSpec.Builder()
                     .setUri(uri)
                     .setPosition(0)
@@ -434,6 +442,11 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     init {
         observeProfileSwitches()
+        viewModelScope.launch {
+            YouTubeRateLimit.heldUntil.collect {
+                if (YouTubeRateLimit.isHeld()) cancelPrefetch()
+            }
+        }
         viewModelScope.launch {
             themePreferences.preferHdr.drop(1).distinctUntilChanged().collect {
                 invalidatePrefetchedQualities()
@@ -1213,11 +1226,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     companion object {
         private const val SHORTS_CACHE_OWNER = "shorts"
-        /** Stream URLs resolved ahead of the current Short (plus one behind). */
-        private const val STREAM_PREFETCH_AHEAD = 4
+        private const val PREFETCH_SETTLE_MS = 750L
+
+        /** Speculative work is limited to the immediate next Short. */
+        private const val STREAM_PREFETCH_AHEAD = 1
 
         /** Watch-next payloads (metadata + engagement) warmed ahead. */
-        private const val WATCH_NEXT_PREFETCH_AHEAD = 2
+        private const val WATCH_NEXT_PREFETCH_AHEAD = 1
 
         private const val SHORTS_METERED_WARM_BYTES = 512L * 1024
         private const val SHORTS_UNMETERED_WARM_BYTES = 2L * 1024 * 1024
