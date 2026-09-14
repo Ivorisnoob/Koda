@@ -77,6 +77,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
@@ -203,24 +204,37 @@ class MusicService : MediaLibraryService() {
      *  progress loop does not kick off the same load repeatedly. */
     private val liveUpdateArtworkRequested = mutableSetOf<String>()
 
-    // Android Auto Cache
-    @Volatile private var cachedRecommendations: List<Song>? = null
-    @Volatile private var cachedPlaylists: List<PlaylistDisplayItem>? = null
-    @Volatile private var cachedPlaylistSongs: MutableMap<String, List<Song>> = mutableMapOf()
-    @Volatile private var lastBrowseCacheTime: Long = 0L
-    private val browseCacheValidityMs = 5 * 60 * 1000L // 5 minutes
-
-    // One background refresh per browse category at a time, so a client that
-    // browses twice while the cache is stale does not stack two identical
-    // network fetches.
-    private val recommendationsRefreshing = AtomicBoolean(false)
-    private val playlistsRefreshing = AtomicBoolean(false)
-
-    // Browse search. Auto calls onSearch, then onGetSearchResult for pages of
-    // the same query; both serve this one cached result set so the two cannot
-    // disagree.
-    @Volatile private var lastSearchQuery: String? = null
-    @Volatile private var lastSearchResults: List<Song> = emptyList()
+    // Service-owned, bounded browse caches. Blocking repository work outlives
+    // a timed-out waiter, so another Auto request joins it instead of duplicating it.
+    private val browseSongs: MediaBrowseCache<String, List<Song>> = MediaBrowseCache<String, List<Song>>(resolveScope,
+        ttlForValue = { if (it.isEmpty()) 15_000L else 5 * 60 * 1000L },
+        onUpdated = { id, songs ->
+            if (!id.startsWith("SEARCH:")) serviceScope.launch {
+                if (browseSongs.peek(id) === songs) {
+                    mediaLibrarySession?.notifyChildrenChanged(id, songs.size, null)
+                }
+            }
+        })
+    private val browsePlaylists: MediaBrowseCache<String, List<PlaylistDisplayItem>> = MediaBrowseCache<String, List<PlaylistDisplayItem>>(resolveScope,
+        ttlForValue = { if (it.isEmpty()) 15_000L else 5 * 60 * 1000L },
+        onUpdated = { id, playlists -> serviceScope.launch {
+            if (browsePlaylists.peek(id) === playlists) {
+                mediaLibrarySession?.notifyChildrenChanged(id, playlists.size, null)
+            }
+        } })
+    // A stalled online load must not occupy the slots needed to read local music.
+    private val localBrowseSongs: MediaBrowseCache<String, List<Song>> = MediaBrowseCache(resolveScope,
+        ttlForValue = { if (it.isEmpty()) 15_000L else 5 * 60 * 1000L },
+        onUpdated = { id, songs -> serviceScope.launch {
+            if (localBrowseSongs.peek(id) === songs) {
+                mediaLibrarySession?.notifyChildrenChanged(id, songs.size, null)
+            }
+        } })
+    private data class BrowseSearchKey(val browser: MediaSession.ControllerInfo, val query: String)
+    // Main-thread owned; retain terminal errors too so the legacy completion
+    // notification does not trigger another network attempt on failure.
+    private val browseSearchResults = BoundedLruMap<BrowseSearchKey, LibraryResult<ImmutableList<MediaItem>>>(32)
+    private var browseGeneration = 0L
 
     companion object {
         private const val TAG = "MusicService"
@@ -445,13 +459,11 @@ class MusicService : MediaLibraryService() {
                 .drop(1)
                 .distinctUntilChanged()
                 .collect {
-                    cachedRecommendations = null
-                    cachedPlaylists = null
-                    cachedPlaylistSongs = mutableMapOf()
-                    // Not just "expired": the timestamp gates all three caches
-                    // above, and a switch has to invalidate them regardless of
-                    // how recently they were filled.
-                    lastBrowseCacheTime = 0L
+                    browseGeneration++
+                    browseSongs.clear()
+                    localBrowseSongs.clear()
+                    browsePlaylists.clear()
+                    browseSearchResults.clear()
                     youtubeRepository.clearSessionScopedInstanceCaches()
 
                     // Playback deliberately continues - the queue's streams are
@@ -1272,8 +1284,7 @@ class MusicService : MediaLibraryService() {
         val metaBuilder = original.mediaMetadata.buildUpon()
         duration?.takeIf { it > 0L }?.let(metaBuilder::setDurationMs)
         if (original.mediaMetadata.title == null) {
-             val cachedInfo = cachedRecommendations?.find { it.id == original.mediaId }
-                 ?: cachedPlaylistSongs.values.flatten().find { it.id == original.mediaId }
+             val cachedInfo = findSongInCache(original.mediaId)
              
              if (cachedInfo != null) {
                  metaBuilder.setTitle(cachedInfo.title)
@@ -1568,7 +1579,7 @@ class MusicService : MediaLibraryService() {
                 .build()
 
             val availableSessionCommands =
-                MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                     .add(SessionCommand(CMD_SLEEP_TIMER_SET, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SLEEP_TIMER_CANCEL, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SKIP_NEXT, Bundle.EMPTY))
@@ -1716,46 +1727,59 @@ class MusicService : MediaLibraryService() {
         ): ListenableFuture<MutableList<MediaItem>> {
             // A voice request ("Hey Google, play X on Koda") arrives as an
             // item carrying only a search query - no media id, no uri. Those
-            // need one network round trip to become playable, so the whole
-            // batch resolves asynchronously in that case and stays synchronous
-            // otherwise.
+            // need a bounded search before becoming playable. Legacy browsers
+            // can also hand back only an ID, losing a device song's local URI.
             val needsSearchResolution = mediaItems.any {
                 it.mediaId.isBlank() && !it.requestMetadata.searchQuery.isNullOrBlank()
             }
-            if (!needsSearchResolution) {
+            val needsBrowseLookup = mediaItems.any { it.localConfiguration == null }
+            if (!needsSearchResolution && !needsBrowseLookup) {
                 val prepared = mediaItems.mapTo(mutableListOf()) { item ->
                     preparePlaybackItem(item)
                 }
                 return Futures.immediateFuture(prepared)
             }
 
-            return serviceScope.future(Dispatchers.IO) {
-                val resolved = mutableListOf<MediaItem>()
-                for (item in mediaItems) {
-                    val query = item.requestMetadata.searchQuery?.trim()?.takeIf { it.isNotEmpty() }
-                    if (item.mediaId.isNotBlank() || query == null) {
-                        resolved.add(preparePlaybackItem(item))
-                        continue
+            return serviceScope.future {
+                withTimeout(10_000L) {
+                    val generation = browseGeneration
+                    val resolved = mutableListOf<MediaItem>()
+                    for (item in mediaItems) {
+                        val query = item.requestMetadata.searchQuery?.trim()?.takeIf { it.isNotEmpty() }
+                        if (item.mediaId.isNotBlank() || query == null) {
+                            val song = if (item.localConfiguration == null) {
+                                findSongForBrowseId(item.mediaId)
+                            } else null
+                            val enriched = song?.let(::mapSongToMediaItem) ?: item
+                            resolved.add(preparePlaybackItem(enriched))
+                            continue
+                        }
+                        // Take the best song result for the query. A miss is
+                        // dropped rather than invented: handing the player an
+                        // empty id would surface as an unexplained playback error.
+                        val match = try {
+                            searchSongsForBrowse(query).firstOrNull()
+                        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                            KLog.w(TAG, "Voice search timed out", e)
+                            null
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            KLog.e(TAG, "Voice resolution failed for '$query'", e)
+                            null
+                        }
+                        if (match == null) {
+                            KLog.w(TAG, "Voice request '$query' matched nothing")
+                            continue
+                        }
+                        resolved.add(preparePlaybackItem(match.toPlaceholderMediaItem()))
                     }
-                    // Take the best song result for the query. A miss is
-                    // dropped rather than invented: handing the player an
-                    // empty id would surface as an unexplained playback error.
-                    val match = try {
-                        youtubeRepository.search(query).firstOrNull()
-                    } catch (e: Exception) {
-                        KLog.e(TAG, "Voice resolution failed for '$query'", e)
-                        null
+                    check(generation == browseGeneration) { "Profile changed during voice or browse playback request" }
+                    if (resolved.isEmpty()) {
+                        throw IllegalStateException("No results for any requested media item")
                     }
-                    if (match == null) {
-                        KLog.w(TAG, "Voice request '$query' matched nothing")
-                        continue
-                    }
-                    resolved.add(preparePlaybackItem(match.toPlaceholderMediaItem()))
+                    resolved
                 }
-                if (resolved.isEmpty()) {
-                    throw IllegalStateException("No results for any requested media item")
-                }
-                resolved
             }
         }
 
@@ -1840,23 +1864,22 @@ class MusicService : MediaLibraryService() {
             if (mediaId == "root") {
                 return Futures.immediateFuture(LibraryResult.ofItem(buildRootItem(), null))
             }
-            return serviceScope.future(Dispatchers.IO) {
-                getRootItems().firstOrNull { it.mediaId == mediaId }?.let {
-                    return@future LibraryResult.ofItem(it, null)
+            return browseResult {
+                (getRootItems() + getLibraryItems()).firstOrNull { it.mediaId == mediaId }?.let {
+                    return@browseResult LibraryResult.ofItem(it, null)
                 }
                 if (mediaId.startsWith("PLAYLIST_")) {
                     val playlistId = mediaId.removePrefix("PLAYLIST_")
-                    val playlist = (cachedPlaylists ?: youtubeRepository.getUserPlaylists()
-                        .also { if (it.isNotEmpty()) cachedPlaylists = it })
+                    val playlist = playlistsForBrowse()
                         .firstOrNull { it.url.substringAfter("list=") == playlistId }
                     if (playlist != null) {
-                        return@future LibraryResult.ofItem(
+                        return@browseResult LibraryResult.ofItem(
                             playlistEntry(playlist), null
                         )
                     }
                 }
                 findSongForBrowseId(mediaId)?.let { song ->
-                    return@future LibraryResult.ofItem(mapSongToMediaItem(song), null)
+                    return@browseResult LibraryResult.ofItem(mapSongToMediaItem(song), null)
                 }
                 LibraryResult.ofError(SessionResult.RESULT_ERROR_BAD_VALUE)
             }
@@ -1870,54 +1893,39 @@ class MusicService : MediaLibraryService() {
             pageSize: Int,
             params: MediaLibraryService.LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            if (parentId == "root") {
-                return Futures.immediateFuture(LibraryResult.ofItemList(getRootItems(), null))
+            if (page < 0 || pageSize <= 0) {
+                return Futures.immediateFuture(LibraryResult.ofError(SessionResult.RESULT_ERROR_BAD_VALUE))
             }
-
-            // Async fetch for content
-            return serviceScope.future(Dispatchers.IO) {
+            if (parentId == "root") {
+                return Futures.immediateFuture(LibraryResult.ofItemList(mediaBrowsePage(getRootItems(), page, pageSize), params))
+            }
+            return browseResult {
                 val items = fetchChildrenForId(parentId)
-                LibraryResult.ofItemList(ImmutableList.copyOf(items), null)
+                LibraryResult.ofItemList(mediaBrowsePage(items, page, pageSize), params)
             }
         }
 
-        /**
-         * Search from a media browser's search box (Android Auto) and any
-         * voice query routed through the library. Serves songs only: the
-         * browse tree is playable content, and Auto renders results as a
-         * flat list to play.
-         */
         override fun onSearch(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             query: String,
             params: MediaLibraryService.LibraryParams?
-        ): ListenableFuture<LibraryResult<Void>> {
-            val trimmed = query.trim()
-            if (trimmed.isEmpty()) {
-                return Futures.immediateFuture(LibraryResult.ofVoid())
+        ): ListenableFuture<LibraryResult<Void>> = serviceScope.future {
+            val generation = browseGeneration
+            val result = loadBrowseSearch(query, params)
+            if (generation != browseGeneration) {
+                // Complete the legacy request, but never expose the old profile.
+                session.notifySearchResultChanged(browser, query, 0, params)
+                return@future LibraryResult.ofError(SessionResult.RESULT_ERROR_INVALID_STATE)
             }
-            return serviceScope.future(Dispatchers.IO) {
-                try {
-                    val songs = youtubeRepository.search(trimmed)
-                    lastSearchQuery = trimmed
-                    lastSearchResults = songs
-                    // Media3's search contract: onSearch only reports success;
-                    // the results themselves are served by onGetSearchResult.
-                    LibraryResult.ofVoid()
-                } catch (e: Exception) {
-                    KLog.e(TAG, "Browse search failed for '$trimmed'", e)
-                    LibraryResult.ofError(SessionResult.RESULT_ERROR_IO)
-                }
-            }
+            browseSearchResults[BrowseSearchKey(browser, query.trim())] = result
+            // Required even for zero results/errors. Media3's legacy bridge
+            // ignores the returned future and waits for this notification.
+            session.notifySearchResultChanged(browser, query, result.value?.size ?: 0, params)
+            if (result.resultCode == LibraryResult.RESULT_SUCCESS) LibraryResult.ofVoid()
+            else LibraryResult.ofError(result.resultCode)
         }
 
-        /**
-         * Pages of a previous search result. Normally [onSearch] has just
-         * run for this exact query, so this only slices the cached list; a
-         * client that asks for pages without searching first gets one fetch
-         * rather than an error.
-         */
         override fun onGetSearchResult(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -1925,55 +1933,87 @@ class MusicService : MediaLibraryService() {
             page: Int,
             pageSize: Int,
             params: MediaLibraryService.LibraryParams?
-        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            val trimmed = query.trim()
-            return serviceScope.future(Dispatchers.IO) {
-                if (trimmed.isNotEmpty() && trimmed != lastSearchQuery) {
-                    try {
-                        lastSearchResults = youtubeRepository.search(trimmed)
-                        lastSearchQuery = trimmed
-                    } catch (e: Exception) {
-                        KLog.e(TAG, "Browse search-result fetch failed for '$trimmed'", e)
-                        return@future LibraryResult.ofError(SessionResult.RESULT_ERROR_IO)
-                    }
-                }
-                val safePageSize = pageSize.coerceAtLeast(1)
-                val from = page.coerceAtLeast(0) * safePageSize
-                if (from >= lastSearchResults.size) {
-                    return@future LibraryResult.ofItemList(ImmutableList.of(), null)
-                }
-                val to = (from + safePageSize).coerceAtMost(lastSearchResults.size)
-                LibraryResult.ofItemList(
-                    ImmutableList.copyOf(lastSearchResults.subList(from, to).map(::mapSongToMediaItem)),
-                    null
-                )
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = browseResult {
+            if (page < 0 || pageSize <= 0) {
+                return@browseResult LibraryResult.ofError(SessionResult.RESULT_ERROR_BAD_VALUE)
+            }
+            val result = browseSearchResults[BrowseSearchKey(browser, query.trim())]
+                ?: loadBrowseSearch(query, params)
+            val items = result.value
+            if (result.resultCode != LibraryResult.RESULT_SUCCESS || items == null) {
+                LibraryResult.ofError(result.resultCode)
+            } else {
+                LibraryResult.ofItemList(mediaBrowsePage(items, page, pageSize), params)
             }
         }
+
+        override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            browseSearchResults.keys.removeAll { it.browser == controller }
+            super.onDisconnected(session, controller)
+        }
     }
-    
+
+    /** Return a terminal library error instead of an exceptional/hanging callback. */
+    private fun <T : Any> browseResult(block: suspend () -> LibraryResult<T>): ListenableFuture<LibraryResult<T>> =
+        serviceScope.future {
+            val generation = browseGeneration
+            try {
+                val result = withTimeout(10_000L) { block() }
+                if (generation == browseGeneration) result
+                else LibraryResult.ofError(SessionResult.RESULT_ERROR_INVALID_STATE)
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                KLog.w(TAG, "Media browse request timed out", e)
+                LibraryResult.ofError(SessionResult.RESULT_ERROR_IO)
+            } catch (e: CancellationException) {
+                currentCoroutineContext().ensureActive()
+                LibraryResult.ofError(SessionResult.RESULT_ERROR_INVALID_STATE)
+            } catch (e: Exception) {
+                KLog.e(TAG, "Media browse request failed", e)
+                LibraryResult.ofError(SessionResult.RESULT_ERROR_IO)
+            }
+        }
+
+    private suspend fun searchSongsForBrowse(query: String): List<Song> =
+        if (query.isBlank()) emptyList() else browseSongs.get("SEARCH:${query.trim()}") {
+            youtubeRepository.search(query.trim())
+        }
+
+    private suspend fun loadBrowseSearch(
+        query: String,
+        params: MediaLibraryService.LibraryParams?,
+    ): LibraryResult<ImmutableList<MediaItem>> = try {
+        LibraryResult.ofItemList(searchSongsForBrowse(query).map(::mapSongToMediaItem), params)
+    } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+        KLog.w(TAG, "Media browse search timed out", e)
+        LibraryResult.ofError(SessionResult.RESULT_ERROR_IO)
+    } catch (e: CancellationException) {
+        currentCoroutineContext().ensureActive()
+        LibraryResult.ofError(SessionResult.RESULT_ERROR_INVALID_STATE)
+    } catch (e: Exception) {
+        KLog.e(TAG, "Media browse search failed", e)
+        LibraryResult.ofError(SessionResult.RESULT_ERROR_IO)
+    }
+
     // --- Browsing Helper Methods ---
 
     /**
-     * Root of the browse tree, ordered by how well each node survives a bad
-     * connection: the offline-first nodes (downloads, likes, history, device
-     * library) come before the two that need the network. A car is the
-     * environment most likely to be offline. All four offline nodes read
-     * device-local stores already in memory or one prefs/SQLite read away -
-     * none of them can come back empty because the network did.
+     * Cars normally expose at most four root tabs. Keep all local categories
+     * under Library so recommendations and playlists are not silently dropped.
+     * Opening the root or Library itself never needs the network.
      */
     private fun getRootItems(): ImmutableList<MediaItem> {
         val items = mutableListOf<MediaItem>()
-        // 1. Recommended
-        items.add(browsableCategoryItem("RECOMMENDED", "Recommended For You"))
-        // 2. Playlists
-        items.add(browsableCategoryItem("PLAYLISTS", "Your Playlists"))
-        // 3. Downloads - playable with no network at all
+        items.add(browsableCategoryItem("LIBRARY", "Library"))
+        items.add(browsableCategoryItem("RECOMMENDED", "Recommended"))
+        items.add(browsableCategoryItem("PLAYLISTS", "Playlists"))
+        return ImmutableList.copyOf(items)
+    }
+
+    private fun getLibraryItems(): ImmutableList<MediaItem> {
+        val items = mutableListOf<MediaItem>()
         items.add(browsableCategoryItem("DOWNLOADS", "Downloaded", "Offline"))
-        // 4. Liked - the device-side like store, not the account's
         items.add(browsableCategoryItem("LIKED", "Liked Songs"))
-        // 5. Recently played - from listening history
         items.add(browsableCategoryItem("RECENT", "Recently Played"))
-        // 6. The device's own audio library
         items.add(browsableCategoryItem("LOCAL_SONGS", "On This Device"))
         return ImmutableList.copyOf(items)
     }
@@ -1994,98 +2034,26 @@ class MusicService : MediaLibraryService() {
                 .build())
             .build()
 
-    private suspend fun fetchChildrenForId(parentId: String): List<MediaItem> {
-        val now = System.currentTimeMillis()
-        val isCacheValid = (now - lastBrowseCacheTime) < browseCacheValidityMs
-
-        return when (parentId) {
-            "RECOMMENDED" -> recommendedSongs(isCacheValid).map(::mapSongToMediaItem)
-            "PLAYLISTS" -> playlistEntries(isCacheValid)
-            // Offline-first nodes: all read device stores, none touch the
-            // network, so none can fail the way the two above can.
-            "DOWNLOADS" -> downloadRepository.downloadedSongs.value.map(::mapSongToMediaItem)
-            "LIKED" -> likedSongsRepository.likedSongs.value.map(::mapSongToMediaItem)
-            "RECENT" -> recentlyPlayedSongs().map(::mapSongToMediaItem)
-            "LOCAL_SONGS" -> localDeviceSongs().map(::mapSongToMediaItem)            else -> {
-                if (parentId.startsWith("PLAYLIST_")) {
-                    val playlistId = parentId.removePrefix("PLAYLIST_")
-                    val songs = cachedPlaylistSongs[playlistId]?.takeIf { isCacheValid }
-                        ?: youtubeRepository.getPlaylist(playlistId).also {
-                            if (it.isNotEmpty()) cachedPlaylistSongs[playlistId] = it
-                        }
-                    songs.map(::mapSongToMediaItem)
-                } else {
-                    emptyList()
-                }
-            }
+    private suspend fun fetchChildrenForId(parentId: String): List<MediaItem> = when (parentId) {
+        "LIBRARY" -> getLibraryItems()
+        "RECOMMENDED" -> browseSongs.get(parentId) {
+            youtubeRepository.getRecommendations()
+        }.map(::mapSongToMediaItem)
+        "PLAYLISTS" -> playlistsForBrowse().map(::playlistEntry)
+        "DOWNLOADS" -> downloadRepository.downloadedSongs.value.map(::mapSongToMediaItem)
+        "LIKED" -> likedSongsRepository.likedSongs.value.map(::mapSongToMediaItem)
+        "RECENT" -> localBrowseSongs.get(parentId) { recentlyPlayedSongs() }.map(::mapSongToMediaItem)
+        "LOCAL_SONGS" -> localBrowseSongs.get(parentId) { localDeviceSongs() }.map(::mapSongToMediaItem)
+        else -> {
+            require(parentId.startsWith("PLAYLIST_")) { "Unknown browse parent" }
+            browseSongs.get(parentId) {
+                youtubeRepository.getPlaylist(parentId.removePrefix("PLAYLIST_"))
+            }.map(::mapSongToMediaItem)
         }
     }
 
-    /**
-     * Network recommendations with stale-while-revalidate serving: a valid
-     * cache answers immediately, an expired one answers immediately from
-     * cache while a single background refresh runs, and only a cold start
-     * with nothing cached has to wait on the network.
-     */
-    private suspend fun recommendedSongs(isCacheValid: Boolean): List<Song> {
-        val cached = cachedRecommendations
-        if (cached != null && isCacheValid) return cached
-        if (cached != null) {
-            refreshRecommendationsInBackground()
-            return cached
-        }
-        return try {
-            youtubeRepository.getRecommendations().also {
-                if (it.isNotEmpty()) {
-                    cachedRecommendations = it
-                    lastBrowseCacheTime = System.currentTimeMillis()
-                }
-            }
-        } catch (e: Exception) {
-            KLog.e(TAG, "Failed to load recommendations for browse", e)
-            emptyList()
-        }
-    }
-
-    private fun refreshRecommendationsInBackground() {
-        if (!recommendationsRefreshing.compareAndSet(false, true)) return
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                val fresh = youtubeRepository.getRecommendations()
-                if (fresh.isNotEmpty()) {
-                    cachedRecommendations = fresh
-                    lastBrowseCacheTime = System.currentTimeMillis()
-                }
-            } catch (e: Exception) {
-                KLog.e(TAG, "Background recommendations refresh failed", e)
-            } finally {
-                recommendationsRefreshing.set(false)
-            }
-        }
-    }
-
-    private suspend fun playlistEntries(isCacheValid: Boolean): List<MediaItem> {
-        val cached = cachedPlaylists
-        val playlists = if (cached != null && isCacheValid) {
-            cached
-        } else if (cached != null) {
-            refreshPlaylistsInBackground()
-            cached
-        } else {
-            try {
-                youtubeRepository.getUserPlaylists().also {
-                    if (it.isNotEmpty()) {
-                        cachedPlaylists = it
-                        lastBrowseCacheTime = System.currentTimeMillis()
-                    }
-                }
-            } catch (e: Exception) {
-                KLog.e(TAG, "Failed to load playlists for browse", e)
-                emptyList()
-            }
-        }
-        return playlists.map { playlist -> playlistEntry(playlist) }
-    }
+    private suspend fun playlistsForBrowse(): List<PlaylistDisplayItem> =
+        browsePlaylists.get("PLAYLISTS") { youtubeRepository.getUserPlaylists() }
 
     private fun playlistEntry(playlist: PlaylistDisplayItem): MediaItem {
         val playlistId = playlist.url.substringAfter("list=")
@@ -2100,23 +2068,6 @@ class MusicService : MediaLibraryService() {
                 .setIsPlayable(false)
                 .build())
             .build()
-    }
-
-    private fun refreshPlaylistsInBackground() {
-        if (!playlistsRefreshing.compareAndSet(false, true)) return
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                val fresh = youtubeRepository.getUserPlaylists()
-                if (fresh.isNotEmpty()) {
-                    cachedPlaylists = fresh
-                    lastBrowseCacheTime = System.currentTimeMillis()
-                }
-            } catch (e: Exception) {
-                KLog.e(TAG, "Background playlists refresh failed", e)
-            } finally {
-                playlistsRefreshing.set(false)
-            }
-        }
     }
 
     /**
@@ -2201,8 +2152,10 @@ class MusicService : MediaLibraryService() {
             ?.let { return it }
         likedSongsRepository.likedSongs.value.firstOrNull { it.id == mediaId }
             ?.let { return it }
-        recentlyPlayedSongs().firstOrNull { it.id == mediaId }?.let { return it }
-        return null
+        localBrowseSongs.get("RECENT") { recentlyPlayedSongs() }
+            .firstOrNull { it.id == mediaId }?.let { return it }
+        return localBrowseSongs.get("LOCAL_SONGS") { localDeviceSongs() }
+            .firstOrNull { it.id == mediaId }
     }
 
     /** A search match shaped for the resolution pipeline: id plus placeholder,
@@ -2248,8 +2201,8 @@ class MusicService : MediaLibraryService() {
     }
     
     private fun findSongInCache(videoId: String): Song? {
-        return cachedRecommendations?.find { it.id == videoId }
-            ?: cachedPlaylistSongs.values.flatten().find { it.id == videoId }
+        return (browseSongs.values() + localBrowseSongs.values()).asSequence()
+            .flatten().firstOrNull { it.id == videoId }
     }
 
     // --- Helpers ---
