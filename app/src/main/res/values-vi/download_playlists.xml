@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d trong số %2$d bài hát có sẵn khi ngoại tuyến</string>
+    <string name="download_playlist_expanded">Đã mở rộng</string>
+    <string name="download_playlist_collapsed">Đã thu gọn</string>
+    <string name="download_playlist_none_offline">Chưa có bài nào trong số này trên máy này</string>
 </resources>

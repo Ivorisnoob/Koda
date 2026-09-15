@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%2$d parçadan %1$d tanesi çevrimdışı kullanılabilir</string>
+    <string name="download_playlist_expanded">Genişletildi</string>
+    <string name="download_playlist_collapsed">Daraltıldı</string>
+    <string name="download_playlist_none_offline">Bu parçaların hiçbiri henüz bu cihazda yok</string>
 </resources>

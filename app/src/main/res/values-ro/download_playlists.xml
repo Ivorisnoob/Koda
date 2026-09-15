@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d din %2$d melodii disponibile offline</string>
+    <string name="download_playlist_expanded">Extins</string>
+    <string name="download_playlist_collapsed">Restrâns</string>
+    <string name="download_playlist_none_offline">Nicio melodie de aici nu e încă pe acest dispozitiv</string>
 </resources>

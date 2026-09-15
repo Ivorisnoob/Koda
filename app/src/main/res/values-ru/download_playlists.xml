@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d из %2$d треков доступны офлайн</string>
+    <string name="download_playlist_expanded">Развёрнуто</string>
+    <string name="download_playlist_collapsed">Свёрнуто</string>
+    <string name="download_playlist_none_offline">Этих треков пока нет на устройстве</string>
 </resources>

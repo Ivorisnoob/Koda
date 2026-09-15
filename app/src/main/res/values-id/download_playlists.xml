@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d dari %2$d lagu tersedia offline</string>
+    <string name="download_playlist_expanded">Diperluas</string>
+    <string name="download_playlist_collapsed">Diciutkan</string>
+    <string name="download_playlist_none_offline">Belum ada lagu ini di perangkat ini</string>
 </resources>
