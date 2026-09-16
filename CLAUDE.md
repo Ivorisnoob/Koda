@@ -11,6 +11,7 @@ Markers: **[verified <month year>]** probed live, trust until YouTube changes; *
 | `docs/youtube-data.md` | `YouTubeRepository`, InnerTube parsers, clients, visitorData, rate limiting |
 | `docs/playback-music.md` | `MusicService`, queue occurrences, crossfade/AutoMix, speed, visualizer, lyrics |
 | `docs/playback-streams.md` | Stream resolution, NewPipe budgets, ranged requests, caches, quality/HDR, seeking |
+| `docs/playback-sabr.md` | SABR implementation sequence, reference snapshots, checkpoints and handoff (#259) |
 | `docs/playback-video.md` | `VideoPlayerViewModel`, minimize transition, video queue/resume, captions, SponsorBlock, live, Shorts |
 | `docs/screens.md` | Navigation, Home tabs, overlays, device videos, the three playlist kinds, video options sheet |
 | `docs/subscriptions.md` | Subscriptions (account + local), RSS feed, import/export, "Don't recommend" |

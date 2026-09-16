@@ -10,6 +10,11 @@ For how the app is built, see [`CLAUDE.md`](CLAUDE.md). For the design system an
 
 ## Where Koda is today
 
+SABR transport work (#259) is in progress on a separate branch. The implementation
+sequence and resumable checkpoints are in [`docs/playback-sabr.md`](docs/playback-sabr.md).
+This is not yet a shipped playback route; existing direct streams and live HLS
+remain the active paths.
+
 Version **4.6** (`versionCode` 24), targeting Android 16 (API 36) with a floor at Android 11 (API 30). Roughly **96,000 lines** of Kotlin across **191 files**, all of it Compose, all of it rendered inside a single `MaterialExpressiveTheme`.
 
 The app is past the point of proving itself. The core loops all work end to end:
