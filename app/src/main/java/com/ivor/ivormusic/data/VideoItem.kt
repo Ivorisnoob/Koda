@@ -299,10 +299,10 @@ data class VideoQuality(
      * consistent across NewPipe, InnerTube, downloads and restored sessions.
      */
     val delivery: VideoStreamDelivery
-        get() = when {
-            isDASH -> VideoStreamDelivery.ADAPTIVE_MANIFEST
-            audioUrl != null -> VideoStreamDelivery.SPLIT_VIDEO_AUDIO
-            else -> VideoStreamDelivery.MUXED_PROGRESSIVE
+        get() = when (playbackSource) {
+            is PlaybackSource.Manifest -> VideoStreamDelivery.ADAPTIVE_MANIFEST
+            is PlaybackSource.Split -> VideoStreamDelivery.SPLIT_VIDEO_AUDIO
+            is PlaybackSource.Progressive -> VideoStreamDelivery.MUXED_PROGRESSIVE
         }
 
     /** Taller than it is wide. Unknown dimensions read as landscape. */

@@ -107,15 +107,25 @@ change. Never mark a stage complete merely because scaffolding compiles.
 
 ## Checkpoint
 
-**Current state:** branch created; plan recorded. SABR is not enabled or playable.
+**Current state:** stage 1 and stage 2a (source/model foundation) complete. SABR is
+not enabled or playable. `PlaybackSource` separates URL-backed and SABR metadata;
+legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
+The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
+profile/login/attestation identity and lifetime, and permits audio-only selection.
+Segment identities distinguish rendition revision, opaque tags and audio track.
+Resolver/player migration (stage 2b) remains with the bridge integration so an
+unsupported source cannot be emitted into a URL-only consumer.
 
-**Checks:** inspected local branch/HEAD and working tree; `.probe` is ignored.
+**Checks:** `:app:compileDebugKotlin` and focused `:app:testDebugUnitTest` for
+`PlaybackSourceTest`, `VideoQualityVariantsTest`, `VideoStreamResolutionCacheTest`
+passed. Log: `.probe/sabr-foundation-check.log`. No packaging/device checks.
 
-**Next action:** implement stage 2 source/descriptor contracts and regression
-tests. Read current stream resolution, video delivery/expiry, identity and cache
-contracts before changing their callers.
+**Next action:** stage 3a: adapt/harden the independent protobuf and UMP readers
+with attribution and malicious/truncated-input tests before importing the media
+collector and timeline parsers. Upstream readers need explicit allocation limits
+and checks before narrowing protobuf lengths/tags to integers.
 
-**Outstanding:** stages 2-10. No live probes or device tests performed in this
+**Outstanding:** stages 2b and 3-10. No live probes or device tests performed in this
 implementation session yet. Update this section before every implementation
 commit so a replacement agent can resume without chat history.
 
