@@ -1008,6 +1008,7 @@
 
     <!-- Playback settings / captions sheets -->
     <string name="vpc_playback_settings">Playback settings</string>
+    <string name="vpc_quality_auto">Auto</string>
     <string name="vpc_listen_as_music">Listen as music</string>
     <string name="vpc_listen_as_music_sub">Move this video to the music player</string>
     <string name="vpc_autoplay">Autoplay</string>
