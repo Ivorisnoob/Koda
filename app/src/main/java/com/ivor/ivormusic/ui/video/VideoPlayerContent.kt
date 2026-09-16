@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
@@ -75,6 +77,7 @@ import com.ivor.ivormusic.data.CAPTION_TEXT_SCALE_MAX
 import com.ivor.ivormusic.data.CAPTION_TEXT_SCALE_MIN
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.LikeStatus
+import com.ivor.ivormusic.data.LocalVideo
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.PlayerTrackOption
@@ -117,6 +120,11 @@ fun VideoPlayerContent(
      * the way there.
      */
     onOpenChannel: (String) -> Unit = {},
+    /**
+     * Move the playing video into the music queue ("Listen as music").
+     * Owned by the host: it spans both ViewModels and the mode toggle.
+     */
+    onListenAsMusic: () -> Unit = {},
     // Swipe-down-to-minimize: raw drag deltas / release velocity from the
     // portrait video surface, driving the overlay's expand progress
     onMinimizeDragDelta: (Float) -> Unit = {},
@@ -179,6 +187,8 @@ fun VideoPlayerContent(
     val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
     val isAutoplayEnabled by viewModel.isAutoplayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
+    val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
+    val sleepTimerEndOfVideo by viewModel.sleepTimerEndOfVideo.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
@@ -211,6 +221,14 @@ fun VideoPlayerContent(
     val liveChatRestriction by viewModel.liveChatRestriction.collectAsState()
 
     val selectableQualities by viewModel.selectableQualities.collectAsState()
+
+    // "Listen as music" migrates into MusicService, which resolves YouTube
+    // audio streams: live broadcasts, device files and one-off external
+    // grants have no audio-only path there, so the row stays hidden for them.
+    // A local copy because a delegated property cannot be smart-cast.
+    val nowPlayingVideo = video
+    val showListenAsMusic = nowPlayingVideo != null && !isLive && !isLocalPlayback &&
+        !LocalVideo.isDeviceVideoId(nowPlayingVideo.videoId) && !nowPlayingVideo.videoId.startsWith("external:")
 
     // Local UI State
     var showControls by remember { mutableStateOf(false) }
@@ -509,6 +527,11 @@ fun VideoPlayerContent(
     // Playback-settings sheet state
     var showPlaybackSettings by remember { mutableStateOf(false) }
     val playbackSettingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // Sleep timer sheet. Opened from playback settings, which closes first:
+    // a picker sheet stacked over the settings sheet is the nesting the
+    // comments and queue sheets already avoid by the same hand-off.
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
 
     // Comments Sheet + Sign-in Dialog State
     var showCommentsSheet by remember { mutableStateOf(false) }
@@ -1290,6 +1313,23 @@ fun VideoPlayerContent(
         }
     }
 
+    // Sleep timer sheet. Sibling of the other sheets rather than nested in
+    // playback settings, which closes on the way here.
+    if (showSleepTimerSheet) {
+        com.ivor.ivormusic.ui.components.SleepTimerSheet(
+            endsAt = sleepTimerEndsAt,
+            endOfTrack = sleepTimerEndOfVideo,
+            onStartMinutes = { viewModel.startSleepTimer(it) },
+            onStartEndOfTrack = { viewModel.startSleepTimerEndOfVideo() },
+            onCancel = { viewModel.cancelSleepTimer() },
+            onDismiss = { showSleepTimerSheet = false },
+            endOfMediaLabel = stringResource(R.string.sleep_timer_end_of_video),
+            endOfMediaDetail = stringResource(R.string.sleep_timer_detail_video),
+            statusMediaHeadline = stringResource(R.string.sleep_timer_status_video),
+            durationDetail = stringResource(R.string.sleep_timer_detail_duration_video)
+        )
+    }
+
     // Chapters list sheet
     if (showChaptersSheet) {
         ChaptersSheet(
@@ -1362,6 +1402,12 @@ fun VideoPlayerContent(
             onLoopChanged = { enabled ->
                 if (enabled != isLooping) viewModel.toggleLooping()
             },
+            sleepTimerEndsAt = sleepTimerEndsAt,
+            sleepTimerEndOfVideo = sleepTimerEndOfVideo,
+            onSleepTimerClick = {
+                showPlaybackSettings = false
+                showSleepTimerSheet = true
+            },
             showPip = pipSupported,
             onPipClick = {
                 showPlaybackSettings = false
@@ -1406,7 +1452,14 @@ fun VideoPlayerContent(
             zoomToFillActive = isZoomedToFill,
             // Kept open like the timed-comments switch: the video stays
             // visible beside the panel, so the crop change answers instantly.
-            onZoomToFillChanged = { isZoomedToFill = it }
+            onZoomToFillChanged = { isZoomedToFill = it },
+            showListenAsMusic = showListenAsMusic,
+            // The migration tears the player down, so the settings close
+            // behind it the way the channel hand-off already does.
+            onListenAsMusic = {
+                showPlaybackSettings = false
+                onListenAsMusic()
+            }
         )
     }
 
@@ -1527,6 +1580,9 @@ private fun PlayerSettingsSections(
     onAutoplayChanged: (Boolean) -> Unit,
     isLooping: Boolean,
     onLoopChanged: (Boolean) -> Unit,
+    sleepTimerEndsAt: Long?,
+    sleepTimerEndOfVideo: Boolean,
+    onSleepTimerClick: () -> Unit,
     showPip: Boolean,
     onPipClick: () -> Unit,
     showComments: Boolean,
@@ -1544,7 +1600,9 @@ private fun PlayerSettingsSections(
     onVerticalLiveClick: () -> Unit,
     showZoomToFill: Boolean,
     zoomToFillActive: Boolean,
-    onZoomToFillChanged: (Boolean) -> Unit
+    onZoomToFillChanged: (Boolean) -> Unit,
+    showListenAsMusic: Boolean,
+    onListenAsMusic: () -> Unit
 ) {
     val optionColors = ToggleButtonDefaults.toggleButtonColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -1756,8 +1814,33 @@ private fun PlayerSettingsSections(
         }
     }
 
+    Spacer(modifier = Modifier.height(24.dp))
+    SettingsSectionLabel(icon = Icons.Rounded.Bedtime, label = stringResource(R.string.sleep_timer_title))
+    Spacer(modifier = Modifier.height(8.dp))
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        SettingsActionRow(
+            icon = Icons.Rounded.Bedtime,
+            title = stringResource(R.string.sleep_timer_title),
+            // Coarse minutes, no ticker: the picker sheet itself counts down
+            // once opened, and this row recomposes on every state change.
+            supportingText = when {
+                sleepTimerEndOfVideo -> stringResource(R.string.sleep_timer_status_video)
+                sleepTimerEndsAt != null -> {
+                    val remainingMin = ((sleepTimerEndsAt - System.currentTimeMillis()) / 60_000L)
+                        .coerceAtLeast(1L).toInt()
+                    stringResource(R.string.minutes_short, remainingMin)
+                }
+                else -> stringResource(R.string.sleep_timer_off)
+            },
+            onClick = onSleepTimerClick
+        )
+    }
+
     val hasSecondaryActions = showPip || showComments || showQueue ||
-        showTimedComments || showLiveChat || showVerticalLive || showZoomToFill
+        showTimedComments || showLiveChat || showVerticalLive || showZoomToFill || showListenAsMusic
     if (hasSecondaryActions) {
         Spacer(modifier = Modifier.height(24.dp))
         SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "More controls")
@@ -1774,6 +1857,14 @@ private fun PlayerSettingsSections(
                         supportingText = stringResource(R.string.vpc_zoom_to_fill_sub),
                         checked = zoomToFillActive,
                         onCheckedChange = onZoomToFillChanged
+                    )
+                }
+                if (showListenAsMusic) {
+                    SettingsActionRow(
+                        icon = Icons.Rounded.MusicNote,
+                        title = stringResource(R.string.vpc_listen_as_music),
+                        supportingText = stringResource(R.string.vpc_listen_as_music_sub),
+                        onClick = onListenAsMusic
                     )
                 }
                 if (showPip) {

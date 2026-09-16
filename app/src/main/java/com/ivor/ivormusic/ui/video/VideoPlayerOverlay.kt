@@ -225,6 +225,12 @@ fun VideoPlayerOverlay(
      */
     onOpenChannel: (String) -> Unit = {},
     /**
+     * Move the playing video into the music queue. Handled by the host: the
+     * handoff spans the video ViewModel, the music ViewModel and the mode
+     * toggle, none of which this overlay owns.
+     */
+    onListenAsMusic: () -> Unit = {},
+    /**
      * Take the collapsed bar off screen because something owns the whole window
      * - today, the full-screen music player.
      *
@@ -617,6 +623,7 @@ fun VideoPlayerOverlay(
                 timedCommentsFeatureEnabled = timedCommentsEnabled,
                 showRelatedVideos = showRelatedVideos,
                 onOpenChannel = onOpenChannel,
+                onListenAsMusic = onListenAsMusic,
                 holdsVideoSurface = pageHoldsSurface,
                 onMinimizeDragDelta = { dy ->
                     if (!isDragging) {

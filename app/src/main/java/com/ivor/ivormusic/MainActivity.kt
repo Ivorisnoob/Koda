@@ -51,6 +51,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import com.ivor.ivormusic.data.LocalVideo
+import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -799,6 +801,41 @@ fun MusicApp(
         }
     }
 
+    // "Listen as music" from video playback settings: a real migration into
+    // MusicService, so the track joins the music queue, notification and
+    // player styles. An opened VideoQueue migrates whole (the one case where
+    // "what plays next" is already decided); a lone video migrates alone and
+    // music's ordinary end-of-queue behavior applies.
+    //
+    // Pause-first rather than warm-then-swap: the music resolve buffers
+    // before it plays, and overlapping the two pipelines would echo the same
+    // audio twice. The cost is a short silence at the switch; the staged
+    // overlap from ROADMAP ("Switching modes without stopping the audio")
+    // remains the follow-up that removes it.
+    val moveVideoToMusic: () -> Unit = move@{
+        val video = videoPlayerViewModel.currentVideo.value ?: return@move
+        if (LocalVideo.isDeviceVideoId(video.videoId)) return@move
+        if (video.videoId.startsWith("external:")) return@move
+        if (videoPlayerViewModel.isLive.value) return@move
+        val positionMs = (videoPlayerViewModel.exoPlayer?.currentPosition ?: 0L).coerceAtLeast(0L)
+        val queueVideos = videoPlayerViewModel.queue.value?.videos.orEmpty()
+        val songs = if (queueVideos.isNotEmpty()) {
+            queueVideos.map { it.toSong() }
+        } else {
+            listOf(video.toSong())
+        }
+        if (songs.isEmpty()) return@move
+        val startIndex = videoPlayerViewModel.queue.value?.index?.coerceIn(songs.indices) ?: 0
+        val start = songs[startIndex]
+        val startPositionMs = start.duration.takeIf { it > 0L }
+            ?.let { positionMs.coerceIn(0L, it) }
+            ?: positionMs
+        videoPlayerViewModel.pause()
+        playerViewModel.playQueueAtPosition(songs, start, startPositionMs)
+        switchPlaybackMode(false)
+        videoPlayerViewModel.closePlayer()
+    }
+
     // A live broadcast that turned up in the Shorts feed. The Shorts player
     // cannot present one honestly (no chat, and a seek bar for a duration that
     // does not exist), so it closes itself and the stream reopens here, where
@@ -1468,6 +1505,7 @@ fun MusicApp(
             timedCommentsEnabled = timedCommentsEnabled,
             showRelatedVideos = showRelatedVideos,
             onOpenChannel = openChannel,
+            onListenAsMusic = moveVideoToMusic,
             hostBottomChrome = videoMiniBottomChrome,
             hostChromeFollowOffsetPx = videoMiniFollowOffsetPx,
             miniBarHidden = isMusicPlayerExpanded
@@ -1680,3 +1718,17 @@ private fun CrashReportPrompt(
         }
     )
 }
+
+/**
+ * Music-mode representation of a video handed over by "Listen as music".
+ * Same shape as the search and shared-link converters: the channel stands in
+ * for the artist, and there is no album to name.
+ */
+private fun VideoItem.toSong(): Song = Song.fromYouTube(
+    videoId = videoId,
+    title = title,
+    artist = channelName,
+    album = "",
+    duration = duration * 1000,
+    thumbnailUrl = thumbnailUrl
+)
