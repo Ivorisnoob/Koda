@@ -96,7 +96,12 @@ fun SubscriptionsManagerScreen(
     viewModel: HomeViewModel,
     onBack: () -> Unit,
     onLoginClick: () -> Unit,
-    contentPadding: PaddingValues = PaddingValues()
+    contentPadding: PaddingValues = PaddingValues(),
+    /**
+     * Open a channel page from a row tap. The trailing folder/unfollow
+     * buttons keep their own actions - only the row body navigates.
+     */
+    onOpenChannel: (String) -> Unit = {}
 ) {
     val subscriptions by viewModel.localSubscriptions.collectAsState()
     val groups by viewModel.subscriptionGroups.collectAsState()
@@ -335,6 +340,7 @@ fun SubscriptionsManagerScreen(
                     ManagedChannelRow(
                         channel = channel,
                         groupCount = groups.count { channel.channelId in it.channelIds },
+                        onOpenChannel = { onOpenChannel(channel.channelId) },
                         onEditGroups = { channelForGroups = channel },
                         onRemove = { viewModel.unsubscribeLocally(channel.channelId) }
                     )
@@ -613,13 +619,15 @@ private fun ManagerRow(
 private fun ManagedChannelRow(
     channel: LocalSubscription,
     groupCount: Int,
+    onOpenChannel: () -> Unit = {},
     onEditGroups: () -> Unit,
     onRemove: () -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        onClick = onOpenChannel
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),

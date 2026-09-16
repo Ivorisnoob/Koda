@@ -1158,7 +1158,9 @@ fun VideoPlayerContent(
                         onOpenQueue = { showQueueSheet = true },
                         isLive = isLive,
                         liveViewerCount = liveViewerCount,
-                        onLiveChatClick = { showLiveChat = true }
+                        onLiveChatClick = { showLiveChat = true },
+                        showListenAsMusic = showListenAsMusic,
+                        onListenAsMusic = onListenAsMusic
                     )
 
                     // Qualified: inside this Box the outer Column's scoped

@@ -317,6 +317,22 @@
             android:exported="false" />
 
         <!--
+            Category artwork for the Android Auto browse tree
+            (service/AutoArtworkProvider.kt): deterministic tonal tiles served
+            as plain PNGs. Exported with no read permission on purpose - the
+            car-side image loader cannot decode vector XML, so resource URIs
+            fail exactly where this art has to work, while a content URI loads
+            everywhere. Static art only, no user data behind it, so there is
+            nothing to protect. The authority rides ${applicationId} because
+            the debug build carries an applicationIdSuffix.
+        -->
+        <provider
+            android:name=".service.AutoArtworkProvider"
+            android:authorities="${applicationId}.autoartwork"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+
+        <!--
             Quick Settings playback tile. A pure session client: it binds a
             MediaController to MusicService, so the tile's play/pause and its
             state are the same playback the app shows. The BIND_QUICK_SETTINGS

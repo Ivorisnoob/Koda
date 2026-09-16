@@ -2045,6 +2045,11 @@ class MusicService : MediaLibraryService() {
             .setMediaMetadata(MediaMetadata.Builder()
                 .setTitle(title)
                 .setSubtitle(subtitle)
+                // Categories carry no song art of their own, and head units
+                // render artless grid tiles as a broken-image glyph - the
+                // warning triangles in the field photo. A deterministic tile
+                // from AutoArtworkProvider instead (content:// PNG, offline).
+                .setArtworkUri(AutoArtwork.categoryKey(mediaId)?.let { AutoArtwork.uriFor(this, it) })
                 .setExtras(contentStyleExtras(GRID_ITEM, LIST_ITEM))
                 .setIsBrowsable(true)
                 .setIsPlayable(false)

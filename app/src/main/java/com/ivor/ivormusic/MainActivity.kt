@@ -1308,7 +1308,8 @@ fun MusicApp(
                     // The sign-in dialog lives on the home screen, so a login
                     // ask from here has to go back for it rather than opening a
                     // second WebView on top of a settings sub-screen.
-                    onLoginClick = { navController.popBackStack("home", inclusive = false) }
+                    onLoginClick = { navController.popBackStack("home", inclusive = false) },
+                    onOpenChannel = openChannel
                 )
             }
             composable(
