@@ -107,7 +107,8 @@ change. Never mark a stage complete merely because scaffolding compiles.
 
 ## Checkpoint
 
-**Current state:** stages 1, 2a (source/model foundation) and 3a (wire readers) complete. SABR is
+**Current state:** stages 1, 2a (source/model foundation), 3a (wire readers) and
+3b (timeline parsers) complete. SABR is
 not enabled or playable. `PlaybackSource` separates URL-backed and SABR metadata;
 legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
 The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
@@ -122,19 +123,31 @@ excessive field/part counts. [judgement] Initial limits: 1 MiB buffered metadata
 64 MiB streamed UMP part, 256 MiB response payload, 16,384 parts. Revisit these
 against real high-resolution fixtures; never silently remove the limits.
 
+MP4/WebM timeline parsers are adapted with attribution. MP4 walks actual box
+boundaries (including extended sizes), validates SIDX headers and rounds absolute
+time boundaries without cumulative gaps. WebM permits partial/unknown-length
+Segment masters but rejects truncated leaves, unordered/missing cues and unknown
+final duration. Time arithmetic rejects overflow. Initialization is bounded to
+4 MiB and timelines to 65,536 entries. Seek lookup is binary search, with an
+end-of-stream sequence of entry count + 1. These limits and stricter rejection
+need validation against live initialization data before rollout.
+
 **Checks:** `:app:compileDebugKotlin` and focused `:app:testDebugUnitTest` for
 `PlaybackSourceTest`, `VideoQualityVariantsTest`, `VideoStreamResolutionCacheTest`
 passed. Log: `.probe/sabr-foundation-check.log`. `SabrWireTest` also passed
 (10 tests), including all five UMP widths, malformed protobuf, fragmented reads,
 8 MiB generated streaming input and interruption. Log: `.probe/sabr-wire-check.log`.
+`SabrTimelineTest` passed (7 tests), including MP4 v0/v1/extended boxes, every
+truncated prefix, fractional boundaries, embedded fake SIDX, WebM Segment forms,
+scales and invalid cue/duration cases. Log: `.probe/sabr-timeline-check.log`.
 No packaging/device checks.
 
-**Next action:** stage 3b: adapt/harden MP4/WebM timeline parsers, then the media
-collector/control decoder (3c). Upstream MP4 parsing scans for SIDX signatures
-and WebM parsing clamps every truncated element; preserve legitimate partial
-Segment masters without treating truncated leaf elements as valid.
+**Next action:** stage 3c: streamed segment assembly/compression and control
+decoding. Inspect upstream media header field numbers before adapting; enforce
+wire types, one-byte header IDs, per-segment/response/spool bounds and cleanup
+on malformed/interrupted streams. Add Brotli via the version catalog only.
 
-**Outstanding:** stages 2b, 3b/3c and 4-10. No live probes or device tests performed in this
+**Outstanding:** stages 2b, 3c and 4-10. No live probes or device tests performed in this
 implementation session yet. Update this section before every implementation
 commit so a replacement agent can resume without chat history.
 
