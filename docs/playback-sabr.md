@@ -4,6 +4,28 @@ Read `CLAUDE.md` first. This document records the implementation sequence and
 verified checkpoints for https://github.com/Ivorisnoob/Koda/issues/259. It is not
 a claim that SABR playback has shipped.
 
+## Resume here (next agent)
+
+1. `git checkout feature/sabr-playback && git pull`. Last pushed commit is the
+   stage 4 session/transport commit; `git log --oneline -8` shows the stage trail.
+   The untracked root `plan.md` is the maintainer's; do not commit or delete it.
+2. Read `CLAUDE.md`, then this file's **Checkpoint** section (bottom). Its
+   **Next action** is the exact starting point; **Outstanding** lists what remains.
+3. Re-run the baseline before changing anything:
+   `.\gradlew :app:testDebugUnitTest --tests "com.ivor.ivormusic.data.youtube.sabr.*"`
+   (expect 36 passing: Wire 10, Timeline 7, SegmentReader 6, Session 12, OkHttp 1).
+4. Code map: `data/youtube/sabr/` - `protocol/` (protobuf, UMP, response controls),
+   `media/` (timelines, segment header/reader, spool), `session/` (request model,
+   encoder, transport, session), `model/` (descriptor/format ids), `exception/`.
+   Upstream reference sources are the pinned clones under `.probe/` (below).
+5. Stage 5 needs live probes (`.probe/probe.py`). If probing is impossible,
+   write down what is blocked and what evidence is needed; never parse from recall.
+6. Per stage: implement, focused tests, log to `.probe/sabr-<stage>-check.log`,
+   update the Checkpoint (state, checks, next action, outstanding), update
+   `THIRD_PARTY_NOTICES.md` for adapted code, commit locally. Commits carry no AI
+   attribution and no `Changelog:` until something user-visible ships. Push only
+   when the maintainer asks; never open a PR unasked.
+
 ## Branch and authorization
 
 - Working branch: `feature/sabr-playback`.
