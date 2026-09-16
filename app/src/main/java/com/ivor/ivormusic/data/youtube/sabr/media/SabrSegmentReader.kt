@@ -7,6 +7,7 @@
  */
 package com.ivor.ivormusic.data.youtube.sabr.media
 
+import com.ivor.ivormusic.data.youtube.sabr.exception.SabrIncompleteMediaException
 import com.ivor.ivormusic.data.youtube.sabr.exception.SabrProtocolException
 import com.ivor.ivormusic.data.youtube.sabr.protocol.UmpReader
 import java.io.EOFException
@@ -43,9 +44,9 @@ internal object SabrSegmentReader {
             UmpReader.readPayloadsUntil(input) { type, size, payload ->
                 interrupted()
                 if (type == 21) {
-                    if (size < 1) throw SabrProtocolException("SABR media has no header id")
+                    if (size < 1) throw SabrIncompleteMediaException("SABR media has no header id")
                     val id = payload.read()
-                    val pending = open[id] ?: throw SabrProtocolException("SABR media has no open header")
+                    val pending = open[id] ?: throw SabrIncompleteMediaException("SABR media has no open header")
                     val declared = pending.header.wireLength ?: pending.limit
                     copy(payload, pending.lease, minOf(declared, pending.limit), buffer)
                 } else {
@@ -57,7 +58,13 @@ internal object SabrSegmentReader {
                     readExactly(payload, data)
                     when (type) {
                         20 -> {
-                            val header = SabrMediaHeader.decode(data)
+                            // [scar upstream] A corrupt header is transient server output:
+                            // recover with a fresh request rather than failing playback.
+                            val header = try {
+                                SabrMediaHeader.decode(data)
+                            } catch (error: SabrProtocolException) {
+                                throw SabrIncompleteMediaException("Malformed SABR media header", error)
+                            }
                             if (header.headerId in open || open.size >= MAX_OPEN_SEGMENTS) {
                                 throw SabrProtocolException("Duplicate or excessive SABR media headers")
                             }
@@ -68,7 +75,7 @@ internal object SabrSegmentReader {
                         22 -> {
                             if (size != 1) throw SabrProtocolException("Invalid SABR media end")
                             val pending = open.remove(data[0].toInt() and 255)
-                                ?: throw SabrProtocolException("SABR end has no open header")
+                                ?: throw SabrIncompleteMediaException("SABR end has no open header")
                             complete(pending, spool, buffer, onSegment)
                         }
                         else -> onControl(type, data)
@@ -76,7 +83,7 @@ internal object SabrSegmentReader {
                 }
                 true
             }
-            if (open.isNotEmpty()) throw SabrProtocolException("Incomplete SABR media at EOF")
+            if (open.isNotEmpty()) throw SabrIncompleteMediaException("Incomplete SABR media at EOF")
         } catch (error: Throwable) {
             failure = error
             throw error
@@ -99,7 +106,7 @@ internal object SabrSegmentReader {
         try {
             val expected = pending.header.wireLength
             if (pending.lease.length == 0L || (expected != null && expected != pending.lease.length)) {
-                throw SabrProtocolException("SABR media length mismatch")
+                throw SabrIncompleteMediaException("SABR media length mismatch")
             }
             pending.lease.finish()
             if (pending.header.compression != 0) {

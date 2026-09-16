@@ -39,3 +39,17 @@ compression identifiers from `protocol/SabrStreamingResponseReader.java` and
 `media/SabrMediaSegmentCollector.java` at the same revision. Their Kotlin
 implementation adds strict field types/widths and bounded file-backed assembly
 and decompression. `media/SabrSpool.kt` is Koda's source-scoped storage owner.
+
+`protocol/SabrResponseControls.kt` adapts UMP part ids and control field numbers
+from upstream `protocol/SabrResponseDecoder.java` and `YoutubeSabrSession.java`.
+`session/SabrRequestEncoder.kt` adapts request field numbers, MWEB client identity
+and URL parameters from `YoutubeSabrRequestHelper.java`. `session/SabrSession.kt`
+adapts control handling and redirect/backoff/integrity budgets from
+`YoutubeSabrSession.java`, and the progress loop from PipePipe (client)
+`app/src/main/java/org/schabi/newpipe/youtube/SabrRequestCoordinator.java` at
+[PipePipe](https://github.com/InfinityLoop1308/PipePipe) commit
+`08b277619ac05a5b227ca53a7fe4cb1958663c4d`, also GPL-3.0. Koda's changes add
+audio-only request state, explicit contiguous buffered ranges, strict streaming-URL
+host/client checks, typed failures, direct HTTP cancellation, cancellable waits and
+descriptor identity/expiry checks. `session/SabrRequest.kt`, `session/SabrTransport.kt`
+and `exception/SabrExceptions.kt` are Koda additions.

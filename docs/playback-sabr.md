@@ -108,7 +108,8 @@ change. Never mark a stage complete merely because scaffolding compiles.
 ## Checkpoint
 
 **Current state:** stages 1, 2a (source/model foundation), 3a (wire readers),
-3b (timeline parsers) and 3c (segment assembly) complete. SABR is
+3b (timeline parsers), 3c (segment assembly) and 4 (session/HTTP transport)
+complete. SABR is
 not enabled or playable. `PlaybackSource` separates URL-backed and SABR metadata;
 legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
 The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
@@ -146,6 +147,42 @@ failure, consumer exception or spool close deletes the pending/delivered files;
 closing the spool also invalidates open readers. `SabrSpool` is not Media3's
 cache - durable caching is stage 7.
 
+Session/transport (`session/`, `protocol/SabrResponseControls`,
+`exception/SabrExceptions`). One `SabrSession` per playback source owns the
+request number, playback cookie, SABR contexts, redirect target, backoff and a
+bandwidth estimate; the descriptor stays immutable. Transactions are serialized
+by a lock; `close()` from any thread cancels the active `SabrCall` (OkHttp
+`call.cancel()`) and wakes any backoff/retry wait, and the caller then closes the
+spool. Consumers own each delivered `SabrSegment` and must close it.
+- Requests: `SabrRequest.preparation` (formats preferred, not selected) and
+  `.playback` (actual player speed, one audio and/or one video track). Audio-only
+  sends track-type 1 and no viewport. `SabrTrack.buffered` is an explicit
+  contiguous sequence range translated through the timeline; upstream always
+  claimed "from sequence 1", which is not honest after a seek.
+- Before every request: descriptor `isUsable(now, currentIdentity())`, else
+  `SabrStaleDescriptorException` with no network. The streaming URL and every
+  redirect must be https `*.googlevideo.com`, and a `c=` parameter must be MWEB
+  to match the fixed MWEB User-Agent (invariant 2). [judgement] Unverified live:
+  stage 5 must confirm the player response's URL is MWEB-minted.
+- `rn` increments for every request that got an HTTP response, including
+  truncated ones, so a retry never reuses a number. Upstream reused it on a
+  streaming failure. [judgement]
+- Failures are typed: `SabrIncompleteMediaException`/EOF (retried, 3 consecutive
+  max), `SabrHttpException` (non-200), `SabrServerErrorException` (SABR_ERROR),
+  `SabrAttestationException` (status 3, or status 2 with no media 3 times),
+  `SabrReloadException` (reload player response - stage 8 re-resolves),
+  `SabrCancelledException`. LIVE_METADATA on a session is a protocol error:
+  live stays HLS (invariant 4). Malformed optional controls (policy, protection,
+  context) are skipped, max 16, as upstream observed transient invalid wire types.
+- Budgets [judgement, upstream values]: 3 redirects without media, a backoff
+  over 30s rejected, 30s continuous backoff and 30s continuous no-progress in
+  `request()`, 250 ms between empty responses, 64 contexts.
+- Not yet handled: rotating a session-bound PO token without a new descriptor
+  (stage 5 decides whether the session takes a token supplier); format
+  initialization metadata (part 42) is ignored because timelines come from the
+  initialization ranges; `SABR_SEEK` is ignored until the bridge (stage 6) shows
+  a need.
+
 **Checks:** `:app:compileDebugKotlin` and focused `:app:testDebugUnitTest` for
 `PlaybackSourceTest`, `VideoQualityVariantsTest`, `VideoStreamResolutionCacheTest`
 passed. Log: `.probe/sabr-foundation-check.log`. `SabrWireTest` also passed
@@ -157,14 +194,28 @@ scales and invalid cue/duration cases. Log: `.probe/sabr-timeline-check.log`.
 `SabrSegmentReaderTest` passed (6 tests): interleaving, gzip/Brotli, eight
 malformed/incomplete cases leaving zero files, spool budget and decompression
 expansion, consumer failure and release while reading. Log:
-`.probe/sabr-segment-check.log`. No packaging/device checks.
+`.probe/sabr-segment-check.log`. `SabrSessionTest` passed (12 tests): encoded
+audio-only body (speed, DRC, audio track id, token, cookie, active/unsent
+contexts, client id/version, URL `alr`/`cpn`/`rn`), buffered ranges in timeline
+time, URL/redirect host and client validation, redirect bound, incomplete retry
+bound with unique request numbers, the backoff/truncation loop with no extra
+calls, no-progress budget, typed controls including pending attestation, a
+malformed policy skipped next to valid media, context stop/discard, stale
+identity/expiry with no network, close during a blocked body read (call
+cancelled, zero spool files) and close waking a 20 s backoff.
+`OkHttpSabrTransportTest` (1 test) posts over loopback and proves `cancel()`
+aborts a stalled body read. Log: `.probe/sabr-session-check.log`. All controlled
+responses are synthetic; no live googlevideo request has been made.
+No packaging/device checks.
 
-**Next action:** stage 4: session/HTTP transport. Read upstream's request
-builder, session and streaming client first; decode the control parts the
-session needs (next request policy, playback cookie, redirect, context update,
-stream protection/reload, format init metadata) with the same strict typing.
+**Next action:** stage 5: attestation and MWEB resolution. Probe the current MWEB
+`/player` response (streaming URL `c=`, `serverAbrStreamingUrl`,
+`videoPlaybackUstreamerConfig`, adaptive format fields incl. `xtags`,
+`lastModified`, init/index ranges) and the BotGuard bootstrap with
+`.probe/probe.py` before writing any parser. If probing cannot run here, record
+exactly what is needed and stop rather than parse from recall.
 
-**Outstanding:** stages 2b and 4-10. No live probes or device tests performed in this
+**Outstanding:** stages 2b and 5-10. No live probes or device tests performed in this
 implementation session yet. Update this section before every implementation
 commit so a replacement agent can resume without chat history.
 
