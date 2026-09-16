@@ -316,8 +316,8 @@ fun HomeScreen(
     val isVideoHomeOffline by viewModel.isVideoHomeOffline.collectAsState()
     val downloadedVideos by viewModel.downloadedVideos.collectAsState()
     val shortsFeed by viewModel.shortsFeed.collectAsState()
-    val subscriptionFeed by viewModel.subscriptionFeed.collectAsState()
-    val isSubscriptionFeedLoading by viewModel.isSubscriptionFeedLoading.collectAsState()
+    val subscriptionMix by viewModel.subscriptionMix.collectAsState()
+    val isSubscriptionMixLoading by viewModel.isSubscriptionMixLoading.collectAsState()
     val localSubscriptions by viewModel.localSubscriptions.collectAsState()
     
     // Load videos when video mode is enabled. Hiding the Home destination
@@ -353,7 +353,7 @@ fun HomeScreen(
     ) {
         if (videoMode && videoHomeVisible && !videoHomeConfiguration.recommendationsEnabled) {
             viewModel.loadSubscriptions()
-            viewModel.loadSubscriptionFeed()
+            viewModel.loadSubscriptionMix()
         }
     }
 
@@ -742,15 +742,18 @@ fun HomeScreen(
                             } else if (videoModeContent) {
                                 VideoHomeContent(
                                     compact = compactVideoHome,
+                                    // Recommendations off: a shuffle across the
+                                    // followed channels' histories rather than a
+                                    // second copy of the Subscriptions tab.
                                     videos = if (videoHomeConfiguration.recommendationsEnabled) {
                                         trendingVideos
                                     } else {
-                                        subscriptionFeed
+                                        subscriptionMix
                                     },
                                     isLoading = if (videoHomeConfiguration.recommendationsEnabled) {
                                         isVideoLoading
                                     } else {
-                                        isSubscriptionFeedLoading
+                                        isSubscriptionMixLoading
                                     },
                                     isOffline = isVideoHomeOffline,
                                     downloadedVideos = downloadedVideos,
@@ -1498,17 +1501,17 @@ fun HomeScreen(
                 addAuthAsNewProfile = false
                 // Refresh login state, account info and the feeds so the UI
                 // reflects the account immediately instead of after a restart
-                viewModel.checkYouTubeConnection()
+                viewModel.checkYouTubeConnection(force = true)
                 if (videoMode) {
                     if (videoHomeConfiguration.recommendationsEnabled) {
                         viewModel.loadTrendingVideos()
                     } else {
                         viewModel.loadSubscriptions(force = true)
-                        viewModel.loadSubscriptionFeed(force = true)
+                        viewModel.loadSubscriptionMix(force = true)
                     }
                     viewModel.loadYouTubeHistory()
                 } else {
-                    viewModel.loadYouTubeRecommendations()
+                    viewModel.loadYouTubeRecommendations(force = true)
                 }
             },
             addAsNewProfile = addAuthAsNewProfile

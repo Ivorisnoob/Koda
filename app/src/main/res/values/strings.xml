@@ -603,6 +603,8 @@
     <string name="vh_recommended_for_you">Recommended For You</string>
     <string name="vh_trending_videos">Trending Videos</string>
     <string name="vh_from_subscriptions">From your subscriptions</string>
+    <string name="vh_subscription_mix">Shuffled from your subscriptions</string>
+    <string name="vh_subscription_mix_empty">Couldn\'t find videos from the channels you follow. Pull down to try again.</string>
     <string name="vh_no_subscriptions">No subscriptions yet</string>
     <string name="vh_no_subscriptions_sub">Subscribe to channels to see their latest videos on Home</string>
     <string name="vh_youre_offline">You\'re offline</string>
@@ -636,6 +638,15 @@
     <string name="remove_from_account_q">Remove from your YouTube account?</string>
     <string name="share_playlist_chooser">Share playlist</string>
     <string name="vl_no_videos">No videos in this playlist</string>
+    <plurals name="vpl_video_count">
+        <item quantity="one">%d video</item>
+        <item quantity="other">%d videos</item>
+    </plurals>
+    <string name="vpl_video_count_partial">%d+ videos</string>
+    <string name="vpl_section_videos">Videos</string>
+    <string name="vpl_load_failed_title">Couldn\'t load videos</string>
+    <string name="vpl_load_failed_body">This playlist didn\'t load. Check your connection and try again.</string>
+    <string name="vpl_empty_body">Videos saved to this playlist will show up here.</string>
     <string name="remove_from_watch_later">Remove from Watch Later</string>
     <string name="remove_from_liked_videos">Remove from Liked videos</string>
     <string name="remove_from_playlist">Remove from playlist</string>

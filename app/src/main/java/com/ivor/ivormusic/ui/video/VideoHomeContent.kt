@@ -62,6 +62,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -211,7 +212,12 @@ fun VideoHomeContent(
                 )
             }
         } else {
-            val isLoadingMore by viewModel.isVideoLoadingMore.collectAsState()
+            val isRecommendationsLoadingMore by viewModel.isVideoLoadingMore.collectAsState()
+            val isMixLoadingMore by viewModel.isSubscriptionMixLoadingMore.collectAsState()
+            val isLoadingMore = if (recommendationsEnabled) isRecommendationsLoadingMore else isMixLoadingMore
+            // Read through updated state: the effect below is keyed on the list
+            // alone and outlives a change of this setting.
+            val currentRecommendationsEnabled by rememberUpdatedState(recommendationsEnabled)
 
             // Endless feed: ask for the next page whenever the last visible
             // item is within 5 of the end. The ViewModel guards against
@@ -222,7 +228,11 @@ fun VideoHomeContent(
                     (info.visibleItemsInfo.lastOrNull()?.index ?: -1) to info.totalItemsCount
                 }.collect { (lastVisible, totalCount) ->
                     if (totalCount > 0 && lastVisible >= totalCount - 5) {
-                        viewModel.loadMoreTrendingVideos()
+                        if (currentRecommendationsEnabled) {
+                            viewModel.loadMoreTrendingVideos()
+                        } else {
+                            viewModel.loadMoreSubscriptionMix()
+                        }
                     }
                 }
             }
@@ -270,7 +280,7 @@ fun VideoHomeContent(
                         Text(
                             text = when {
                                 showOfflineDownloads -> stringResource(R.string.vh_available_offline)
-                                !recommendationsEnabled -> stringResource(R.string.vh_from_subscriptions)
+                                !recommendationsEnabled -> stringResource(R.string.vh_subscription_mix)
                                 isYouTubeConnected -> stringResource(R.string.vh_recommended_for_you)
                                 else -> stringResource(R.string.vh_trending_videos)
                             },
@@ -324,7 +334,7 @@ fun VideoHomeContent(
                                 onShortClick = onShortClick,
                                 isLoading = isShortsLoading,
                                 failed = shortsFeedFailed,
-                                onRefresh = viewModel::loadShortsFeed
+                                onRefresh = { viewModel.loadShortsFeed(force = true) }
                             )
                         }
                     }
@@ -370,7 +380,7 @@ fun VideoHomeContent(
                                     text = when {
                                         !recommendationsEnabled ->
                                             if (hasSubscriptions) {
-                                                stringResource(R.string.hvm_subs_feed_empty)
+                                                stringResource(R.string.vh_subscription_mix_empty)
                                             } else {
                                                 stringResource(R.string.vh_no_subscriptions)
                                             }

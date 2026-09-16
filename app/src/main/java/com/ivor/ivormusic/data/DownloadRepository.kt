@@ -789,6 +789,13 @@ class DownloadRepository private constructor(private val context: Context) {
             }
 
             if (attempt < MAX_ATTEMPTS) {
+                // Every attempt re-resolves from scratch. Under a bot-check
+                // verdict that is another refused extraction per attempt, so
+                // this item gives up now rather than repeating it.
+                if (YouTubeRepository.isBotCheckVerdictActive()) {
+                    KLog.w(TAG, "YouTube's bot check refused ${request.title}; not retrying")
+                    break
+                }
                 if (isMediaForbidden(lastError)) {
                     KLog.w(TAG, "googlevideo refused the media; re-minting visitorData before retry")
                     youtubeRepository.refreshVisitorDataAfterPlaybackFailure()

@@ -2500,31 +2500,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         loadQuality(chosen)
                         seekAndResumeAfterLoad(effectiveResumePositionMs, resumePaused)
                     } else {
-                        // Fallback to legacy stream URL
-                        val streamUrl = youtubeRepository.getVideoStreamUrl(video.videoId)
-                        if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
-                        if (streamUrl != null) {
-                            _currentQuality.value = VideoQuality(
-                                resolution = "Auto",
-                                url = streamUrl,
-                                isDASH = false,
-                                audioUrl = null
-                            )
-                            val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
-                                .createMediaSource(
-                                    cachedProgressiveMediaItem(
-                                        uri = streamUrl,
-                                        stream = VideoPlaybackCacheStream.MUXED,
-                                        fallbackVariant = "auto-muxed",
-                                    )
-                                )
-                            _exoPlayer?.setMediaSource(source)
-                            _exoPlayer?.prepare()
-                            seekAndResumeAfterLoad(effectiveResumePositionMs, resumePaused)
-                        } else {
-                            _playbackError.value = Exception("Unable to load video stream")
-                            _isLoading.value = false
-                        }
+                        // No second extraction here. The old "legacy stream URL"
+                        // fallback ran a whole NewPipe fetchPage (about seven
+                        // requests) again straight after the resolver above had
+                        // failed, so it failed the same way - and it could not
+                        // add anything when extraction succeeded, because every
+                        // muxed URL it picked from is already in that ladder.
+                        _playbackError.value = Exception("Unable to load video stream")
+                        _isLoading.value = false
                     }
                 }
             } catch (e: CancellationException) {
