@@ -107,7 +107,7 @@ change. Never mark a stage complete merely because scaffolding compiles.
 
 ## Checkpoint
 
-**Current state:** stage 1 and stage 2a (source/model foundation) complete. SABR is
+**Current state:** stages 1, 2a (source/model foundation) and 3a (wire readers) complete. SABR is
 not enabled or playable. `PlaybackSource` separates URL-backed and SABR metadata;
 legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
 The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
@@ -116,16 +116,25 @@ Segment identities distinguish rendition revision, opaque tags and audio track.
 Resolver/player migration (stage 2b) remains with the bridge integration so an
 unsupported source cannot be emitted into a URL-only consumer.
 
+The attributed PipePipe protobuf/UMP readers are now independent of its extractor.
+They reject oversized lengths/tags, varint overflow, truncated payloads and
+excessive field/part counts. [judgement] Initial limits: 1 MiB buffered metadata,
+64 MiB streamed UMP part, 256 MiB response payload, 16,384 parts. Revisit these
+against real high-resolution fixtures; never silently remove the limits.
+
 **Checks:** `:app:compileDebugKotlin` and focused `:app:testDebugUnitTest` for
 `PlaybackSourceTest`, `VideoQualityVariantsTest`, `VideoStreamResolutionCacheTest`
-passed. Log: `.probe/sabr-foundation-check.log`. No packaging/device checks.
+passed. Log: `.probe/sabr-foundation-check.log`. `SabrWireTest` also passed
+(10 tests), including all five UMP widths, malformed protobuf, fragmented reads,
+8 MiB generated streaming input and interruption. Log: `.probe/sabr-wire-check.log`.
+No packaging/device checks.
 
-**Next action:** stage 3a: adapt/harden the independent protobuf and UMP readers
-with attribution and malicious/truncated-input tests before importing the media
-collector and timeline parsers. Upstream readers need explicit allocation limits
-and checks before narrowing protobuf lengths/tags to integers.
+**Next action:** stage 3b: adapt/harden MP4/WebM timeline parsers, then the media
+collector/control decoder (3c). Upstream MP4 parsing scans for SIDX signatures
+and WebM parsing clamps every truncated element; preserve legitimate partial
+Segment masters without treating truncated leaf elements as valid.
 
-**Outstanding:** stages 2b and 3-10. No live probes or device tests performed in this
+**Outstanding:** stages 2b, 3b/3c and 4-10. No live probes or device tests performed in this
 implementation session yet. Update this section before every implementation
 commit so a replacement agent can resume without chat history.
 
