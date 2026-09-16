@@ -32,3 +32,10 @@ tests are Koda additions.
 
 This notice covers adapted source, not a dependency on the PipePipe app or its
 extractor artifact. Koda continues to use stock NewPipe Extractor independently.
+
+`media/SabrMediaHeader.kt` adapts protocol field mappings from upstream
+`generated/SabrMediaHeader.java`. `media/SabrSegmentReader.kt` adapts framing and
+compression identifiers from `protocol/SabrStreamingResponseReader.java` and
+`media/SabrMediaSegmentCollector.java` at the same revision. Their Kotlin
+implementation adds strict field types/widths and bounded file-backed assembly
+and decompression. `media/SabrSpool.kt` is Koda's source-scoped storage owner.

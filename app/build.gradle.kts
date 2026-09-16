@@ -217,6 +217,7 @@ dependencies {
         exclude(group = "org.mozilla", module = "rhino-engine")
     }
     implementation(libs.okhttp)
+    implementation(libs.brotli.decoder)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)
     implementation(libs.kotlinx.coroutines.guava)

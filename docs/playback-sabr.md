@@ -107,8 +107,8 @@ change. Never mark a stage complete merely because scaffolding compiles.
 
 ## Checkpoint
 
-**Current state:** stages 1, 2a (source/model foundation), 3a (wire readers) and
-3b (timeline parsers) complete. SABR is
+**Current state:** stages 1, 2a (source/model foundation), 3a (wire readers),
+3b (timeline parsers) and 3c (segment assembly) complete. SABR is
 not enabled or playable. `PlaybackSource` separates URL-backed and SABR metadata;
 legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
 The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
@@ -132,6 +132,20 @@ final duration. Time arithmetic rejects overflow. Initialization is bounded to
 end-of-stream sequence of entry count + 1. These limits and stricter rejection
 need validation against live initialization data before rollout.
 
+Segment assembly (`media/SabrSegmentReader`, `SabrMediaHeader`, `SabrSpool`)
+demultiplexes MEDIA_HEADER (20) / MEDIA (21) / MEDIA_END (22) straight to
+per-source temporary files; every other part type is handed to a control callback
+as bytes. Field numbers and compression codes (1 gzip, 2 Brotli via
+`org.brotli:dec`) match upstream at the snapshot revision. Headers enforce wire
+types, a one-byte header id, positive itag and 0/1 init flag. [judgement] Stricter
+than upstream: a non-init segment without a sequence number is rejected; revisit
+if live responses omit it. Limits: 16 open segments, 512 KiB / 512 control parts
+per response, 4 MiB init and 64 MiB media segment (also caps decompressed size),
+256 MiB spool per source. A declared length must match the bytes received. Any
+failure, consumer exception or spool close deletes the pending/delivered files;
+closing the spool also invalidates open readers. `SabrSpool` is not Media3's
+cache - durable caching is stage 7.
+
 **Checks:** `:app:compileDebugKotlin` and focused `:app:testDebugUnitTest` for
 `PlaybackSourceTest`, `VideoQualityVariantsTest`, `VideoStreamResolutionCacheTest`
 passed. Log: `.probe/sabr-foundation-check.log`. `SabrWireTest` also passed
@@ -140,14 +154,17 @@ passed. Log: `.probe/sabr-foundation-check.log`. `SabrWireTest` also passed
 `SabrTimelineTest` passed (7 tests), including MP4 v0/v1/extended boxes, every
 truncated prefix, fractional boundaries, embedded fake SIDX, WebM Segment forms,
 scales and invalid cue/duration cases. Log: `.probe/sabr-timeline-check.log`.
-No packaging/device checks.
+`SabrSegmentReaderTest` passed (6 tests): interleaving, gzip/Brotli, eight
+malformed/incomplete cases leaving zero files, spool budget and decompression
+expansion, consumer failure and release while reading. Log:
+`.probe/sabr-segment-check.log`. No packaging/device checks.
 
-**Next action:** stage 3c: streamed segment assembly/compression and control
-decoding. Inspect upstream media header field numbers before adapting; enforce
-wire types, one-byte header IDs, per-segment/response/spool bounds and cleanup
-on malformed/interrupted streams. Add Brotli via the version catalog only.
+**Next action:** stage 4: session/HTTP transport. Read upstream's request
+builder, session and streaming client first; decode the control parts the
+session needs (next request policy, playback cookie, redirect, context update,
+stream protection/reload, format init metadata) with the same strict typing.
 
-**Outstanding:** stages 2b, 3c and 4-10. No live probes or device tests performed in this
+**Outstanding:** stages 2b and 4-10. No live probes or device tests performed in this
 implementation session yet. Update this section before every implementation
 commit so a replacement agent can resume without chat history.
 
