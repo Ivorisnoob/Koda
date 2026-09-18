@@ -37,6 +37,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -923,6 +925,38 @@ fun VideoCard(
                             gapSize = 0.dp,
                             drawStopIndicator = {},
                         )
+                    }
+
+                    // Previews start silent so they never fight music playing
+                    // underneath; one tap here makes this card audible, another
+                    // silences it again. Fixed black scrim like the duration
+                    // badge, so it reads in either theme. The button consumes
+                    // the tap, so the card itself does not open.
+                    if (isPreviewing && preview != null && preview.isRendering) {
+                        androidx.compose.material3.IconButton(
+                            onClick = { preview.setPreviewMuted(!preview.isMuted) },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(36.dp),
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = Color.Black.copy(alpha = 0.6f),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(
+                                imageVector = if (preview.isMuted) {
+                                    Icons.AutoMirrored.Rounded.VolumeOff
+                                } else {
+                                    Icons.AutoMirrored.Rounded.VolumeUp
+                                },
+                                contentDescription = stringResource(
+                                    if (preview.isMuted) R.string.cd_volume_unmute
+                                    else R.string.cd_volume_mute
+                                ),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             

@@ -36,6 +36,8 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.data.defaultForPreference
+import com.ivor.ivormusic.data.deviceVideoHeightCap
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -70,6 +72,9 @@ private const val DWELL_MS = 700L
  * claim before then simply drops the work.
  */
 private const val RESOLVE_AFTER_MS = 300L
+
+/** How often visibility is sampled and the holder reconsidered. */
+private const val POLL_MS = 150L
 
 /** Beyond this the video is not worth waiting for; the card stays a thumbnail. */
 private const val RESOLVE_BUDGET_MS = 6_000L
@@ -115,6 +120,22 @@ class InlinePreviewController(
         private set
 
     /**
+     * Previews start silent and stay that way until the user says otherwise.
+     * Silence is what keeps a preview a moving thumbnail rather than a fourth
+     * playback pipeline: it takes no audio focus, so music keeps playing
+     * underneath and the preview needs no place in the mutual-exclusion
+     * effects. Unmuting is always an explicit tap on the card's toggle.
+     */
+    var isMuted: Boolean by mutableStateOf(true)
+        private set
+
+    /** Silent or audible. Explicit user choice - nothing calls this on its own. */
+    fun setPreviewMuted(muted: Boolean) {
+        isMuted = muted
+        player?.volume = if (muted) 0f else 1f
+    }
+
+    /**
      * Whether the feed is sitting still. Held here rather than passed to every
      * card so that a card, which may be drawn on surfaces that have no feed at
      * all, does not have to know which list it is in.
@@ -124,20 +145,80 @@ class InlinePreviewController(
     private var player: ExoPlayer? = null
     private var claimJob: Job? = null
     private var progressJob: Job? = null
+    // Fresh pref read per resolve (same reason as the video player VMs: Settings
+    // toggles through its own ThemePreferences instance). getDefaultVideoQuality
+    // reads SharedPreferences directly, so this never goes stale.
+    private val themePreferences = ThemePreferences(context)
+
+    init {
+        // One loop for the whole feed rather than one per card, because the
+        // decision is about the cards as a set: which of them is most visible.
+        scope.launch {
+            while (isActive) {
+                arbitrate()
+                delay(POLL_MS)
+            }
+        }
+    }
 
     /** The id whose dwell timer is running; not yet the one playing. */
     private var claimedId: String? = null
 
+    /** What every card on screen currently reports about itself. */
+    private val onScreen = LinkedHashMap<String, Pair<VideoItem, Float>>()
+
     val exoPlayer: ExoPlayer? get() = player
 
     /**
-     * A card says it is the most visible one and the list has settled.
+     * A card reports how visible it is. Cards do not claim the preview
+     * themselves.
      *
-     * Repeat claims by the same card are ignored, so an ordinary recomposition
-     * during the dwell does not restart the timer that recomposition is waiting
-     * on.
+     * **This arbitration is the whole reason the feature works.** [scar] Cards
+     * used to call `claim` directly whenever they were over the threshold, and
+     * a 16:9 feed routinely has two cards more than 60% on screen at once - so
+     * both claimed, every poll, and each claim cancelled the other's dwell
+     * timer. Neither ever survived to the end of its 700ms, resolution never
+     * started, and the feature did nothing while looking, in the log, like it
+     * was constantly about to.
      */
-    fun claim(video: VideoItem) {
+    fun report(video: VideoItem, fraction: Float) {
+        synchronized(onScreen) { onScreen[video.videoId] = video to fraction }
+    }
+
+    /** A card left the screen; it stops being a candidate. */
+    fun forget(videoId: String) {
+        synchronized(onScreen) { onScreen.remove(videoId) }
+        releaseIfHeldBy(videoId)
+    }
+
+    private fun fractionOf(videoId: String): Float =
+        synchronized(onScreen) { onScreen[videoId]?.second ?: 0f }
+
+    /**
+     * Pick who holds the preview. One holder, chosen here and nowhere else.
+     *
+     * **The holder keeps it while it stays above the release threshold**, even
+     * if another card is momentarily more visible. Handing the preview to
+     * whichever card is highest at each tick would restart playback every time
+     * two cards traded places by a percent, which on a settled list is
+     * constant.
+     */
+    private fun arbitrate() {
+        if (!isListSettled) {
+            release()
+            return
+        }
+        claimedId?.let { holder ->
+            if (fractionOf(holder) >= RELEASE_VISIBILITY) return
+            release()
+        }
+        val best = synchronized(onScreen) {
+            onScreen.values.filter { it.second >= CLAIM_VISIBILITY }.maxByOrNull { it.second }
+        } ?: return
+        claim(best.first)
+    }
+
+    private fun claim(video: VideoItem) {
         if (claimedId == video.videoId) return
         if (!isPreviewable(video)) {
             KLog.d(TAG, "Not previewing ${video.videoId}: ${skipReason(video)}")
@@ -145,12 +226,15 @@ class InlinePreviewController(
         }
         release()
         claimedId = video.videoId
+        KLog.d(TAG, "Claimed ${video.videoId}, dwelling")
         claimJob = scope.launch {
             delay(RESOLVE_AFTER_MS)
             val quality = resolve(video.videoId) ?: run {
+                KLog.d(TAG, "No playable rendition for ${video.videoId}")
                 claimedId = null
                 return@launch
             }
+            KLog.d(TAG, "Resolved ${video.videoId}: ${quality.resolution} dash=${quality.isDASH}")
             // The rest of the dwell, after the resolve rather than before it.
             delay((DWELL_MS - RESOLVE_AFTER_MS).coerceAtLeast(0L))
             if (claimedId != video.videoId) return@launch
@@ -168,6 +252,10 @@ class InlinePreviewController(
         previewingId = null
         isRendering = false
         progress = 0f
+        // Back to silent: the next preview starts muted, and a stopped player
+        // holding volume 1f would otherwise leak sound into it.
+        isMuted = true
+        player?.volume = 0f
         player?.stop()
         player?.clearMediaItems()
     }
@@ -218,28 +306,30 @@ class InlinePreviewController(
     }.getOrDefault(true)
 
     /**
-     * The smallest usable rendition, never HDR and never an adaptive manifest.
+     * The rendition matching the user's default video quality preference,
+     * never HDR (previews exclude HDR at resolve time) and never live.
      *
-     * A preview is a thumbnail that moves, drawn a third of the screen wide -
-     * spending a 1080p ladder on it would cost more data than the video the
-     * user eventually opens. Adaptive entries are skipped rather than handled
-     * because a manifest would have the player negotiating quality for a
-     * picture this small.
+     * Ranked on the `resolution` label via [defaultForPreference] - the same
+     * rule the watch page and Shorts use - never on [VideoQuality.height],
+     * which is 0 for entries whose resolver never declared both dimensions.
+     * Ordering by height silently treated "unknown" as "smallest" and handed
+     * back a 1440p VP9 stream the decoder refused to initialise.
      */
     private suspend fun resolve(videoId: String): VideoQuality? = withTimeoutOrNull(RESOLVE_BUDGET_MS) {
         runCatching {
             val playable = repository.getVideoStreamQualities(videoId, includeHdr = false)
                 .filterNot { it.isHdr || it.isLive }
-            // Progressive first and smallest, because a preview is a thumbnail
-            // that moves: a 1080p ladder for it would cost more data than the
-            // video the user eventually opens. **Adaptive is kept rather than
-            // filtered out**, which was the bug that made this feature do
-            // nothing at all - most YouTube videos resolve to an adaptive
-            // ladder and nothing else, so excluding it left an empty list and
-            // a preview that silently never started.
-            playable.filterNot { it.isDASH }
-                .minByOrNull { it.height.takeIf { h -> h > 0 } ?: Int.MAX_VALUE }
-                ?: playable.minByOrNull { it.height.takeIf { h -> h > 0 } ?: Int.MAX_VALUE }
+            // Same pick as opening the video: the user's default quality for
+            // this network, highest-first ladder, first entry at or below the
+            // target - capped at what this panel can show, so a preview never
+            // opens a 4K stream on a 720p phone. Adaptive manifests stay
+            // eligible - most videos resolve to an adaptive ladder and nothing
+            // else, so excluding them left an empty list and a preview that
+            // silently never started.
+            playable.defaultForPreference(
+                themePreferences.getDefaultVideoQuality(),
+                context.deviceVideoHeightCap()
+            )
         }.onFailure { error ->
             if (error is kotlinx.coroutines.CancellationException) throw error
             KLog.w(TAG, "Preview resolve failed for $videoId", error)
@@ -247,10 +337,15 @@ class InlinePreviewController(
     }
 
     private fun start(videoId: String, quality: VideoQuality) {
+        KLog.d(TAG, "Starting preview of $videoId")
         val active = player ?: buildPlayer().also { player = it }
         previewingId = videoId
         progress = 0f
         isRendering = false
+        // Every preview starts silent; sound is strictly opt-in per preview
+        // via the card's toggle, never inherited from a previous unmute.
+        isMuted = true
+        active.volume = 0f
 
         if (quality.isDASH) {
             // Feeding a manifest to ProgressiveMediaSource fails extraction
@@ -326,6 +421,7 @@ class InlinePreviewController(
                 repeatMode = Player.REPEAT_MODE_ONE
                 addListener(object : Player.Listener {
                     override fun onRenderedFirstFrame() {
+                        KLog.d(TAG, "First frame for $previewingId")
                         isRendering = true
                     }
 
@@ -387,6 +483,7 @@ fun rememberInlinePreviewController(enabled: Boolean): InlinePreviewController? 
         }
     }
     LaunchedEffect(controller, enabled) {
+        KLog.d("InlinePreview", "Controller enabled=$enabled")
         if (!enabled) controller.release()
     }
     return controller.takeIf { enabled }
@@ -408,7 +505,7 @@ fun InlinePreviewClaim(
     val controller = LocalInlinePreview.current ?: return
     val settled = controller.isListSettled
     DisposableEffect(controller, video.videoId) {
-        onDispose { controller.releaseIfHeldBy(video.videoId) }
+        onDispose { controller.forget(video.videoId) }
     }
     LaunchedEffect(controller, video.videoId, settled) {
         if (!settled) {
@@ -421,14 +518,11 @@ fun InlinePreviewClaim(
         // Polled rather than driven by the layout pass: the card reports its
         // visibility into a state nothing reads during composition, so a scroll
         // moves the number without recomposing ten cards a frame to do it.
+        // Reporting only - the controller decides who plays, because that
+        // decision needs every card's number and a card only knows its own.
         while (isActive) {
-            val fraction = visibility()
-            if (fraction >= CLAIM_VISIBILITY) {
-                controller.claim(video)
-            } else if (fraction < RELEASE_VISIBILITY) {
-                controller.releaseIfHeldBy(video.videoId)
-            }
-            delay(120)
+            controller.report(video, visibility())
+            delay(POLL_MS)
         }
     }
 }

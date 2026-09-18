@@ -28,6 +28,8 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.data.cappedAtHeight
+import com.ivor.ivormusic.data.deviceVideoHeightCap
 import com.ivor.ivormusic.data.bestSdrFallback
 import com.ivor.ivormusic.ui.video.hasHdrDisplay
 import kotlinx.coroutines.delay
@@ -965,14 +967,17 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        // Same device cap as the watch page: cappedAtHeight never empties, so
+        // the first() fallbacks below stay safe.
+        val options = qualities.cappedAtHeight(context.deviceVideoHeightCap())
         val preferred = themePreferences.getDefaultVideoQuality()
         if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
-            return qualities.firstOrNull { height(it.resolution) > 0 } ?: qualities.first()
+            return options.firstOrNull { height(it.resolution) > 0 } ?: options.first()
         }
         val targetHeight = height(preferred)
-        return qualities.firstOrNull { height(it.resolution) in 1..targetHeight }
-            ?: qualities.lastOrNull { height(it.resolution) > 0 }
-            ?: qualities.first()
+        return options.firstOrNull { height(it.resolution) in 1..targetHeight }
+            ?: options.lastOrNull { height(it.resolution) > 0 }
+            ?: options.first()
     }
 
     /**
