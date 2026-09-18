@@ -720,12 +720,23 @@ fun ShortsPlayerOverlay(
         }
 
         // Wavy playback progress, Koda's player signature; the wave settles
-        // flat while paused
-        val waveAmplitude by animateFloatAsState(
-            targetValue = if (isPlaying) 1f else 0f,
-            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy),
-            label = "waveAmplitude"
-        )
+        // flat while paused, the same as the music player's bar.
+        //
+        // **The amplitude is read straight from `isPlaying` and not animated
+        // here.** [scar] This used to feed an `animateFloatAsState` through
+        // `amplitude = { waveAmplitude }`, and the wave never flattened: that
+        // lambda captures only the animation's `State` object, whose identity
+        // never changes, so the compiler memoizes it, the progress node's
+        // element compares equal on every recomposition and its `update` never
+        // runs. The node went on drawing the amplitude it had captured while
+        // playing. The nine music players had it right by accident - their
+        // `{ if (isPlaying) 1f else 0f }` captures the *boolean*, so pausing
+        // produces a different lambda and the node is updated.
+        //
+        // Nothing is lost by dropping the animation: M3's wavy indicator holds
+        // its own amplitude `Animatable` and animates towards whatever this
+        // returns, which is why the music bars settle smoothly without one.
+        // Animating it here was always a second animation driving the first.
         LinearWavyProgressIndicator(
             progress = { progress.coerceIn(0f, 1f) },
             modifier = Modifier
@@ -734,7 +745,7 @@ fun ShortsPlayerOverlay(
                 .align(Alignment.BottomCenter),
             color = MaterialTheme.colorScheme.primary,
             trackColor = Color.White.copy(alpha = 0.25f),
-            amplitude = { waveAmplitude }
+            amplitude = { if (isPlaying) 1f else 0f }
         )
     }
 
