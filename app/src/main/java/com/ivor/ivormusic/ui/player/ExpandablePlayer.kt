@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -99,9 +100,12 @@ fun ExpandablePlayer(
     // live underneath it. The controller streams the hold-drag-release
     // gesture from the artwork into the wheel.
     val styleWheel = rememberPlayerStyleWheelController()
+    // The session outlives a pause so the artwork freezes on its last frame
+    // instead of dropping back to the still cover; the loop's own play state
+    // follows isPlaying through LocalMotionArtworkPlaying.
     val motionArtworkSession = rememberMotionArtworkSession(
         song = currentSong,
-        active = isExpanded && isPlaying && !styleWheel.isOpen
+        active = isExpanded && !styleWheel.isOpen
     )
     // Provided here rather than per style, so every style's progress bar reaches the measured
     // waveform through one wiring instead of eight that can each be forgotten. The scrub
@@ -115,6 +119,27 @@ fun ExpandablePlayer(
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     LaunchedEffect(isExpanded) {
         if (!isExpanded) styleWheel.dismiss()
+    }
+
+    // Keep the screen awake while the expanded player is open and playing,
+    // mirroring the video overlay's hold. Collapsed playback deliberately
+    // holds nothing: audio in the mini pill is meant to survive screen-off.
+    //
+    // Only the hold this effect took is released: opening the paused player
+    // over a playing video mini bar (or vice versa) must not clear the other
+    // player's hold, and a cleared queue disposes this without touching it.
+    val context = LocalContext.current
+    DisposableEffect(isExpanded, isPlaying) {
+        val holding = isExpanded && isPlaying
+        val window = (context as? android.app.Activity)?.window
+        if (holding) {
+            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            if (holding) {
+                window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
     }
 
     // Configuration.screenHeightDp/screenWidthDp exclude the status and
@@ -423,6 +448,7 @@ fun ExpandablePlayer(
                         ) { activeStyle ->
                         CompositionLocalProvider(
                             LocalMotionArtwork provides motionArtworkSession.takeIf { activeStyle == playerStyle },
+                            LocalMotionArtworkPlaying provides isPlaying,
                             LocalPlayerWaveform provides playerWaveform,
                             LocalPlayerScrubInteraction provides scrubInteraction,
                             // The rate every style's bar extrapolates at between

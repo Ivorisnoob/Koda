@@ -1085,6 +1085,10 @@ class MusicService : MediaLibraryService() {
 
     private fun prefetchUpcomingSongs() {
         if (!ThemePreferences.isPlaybackPreloadEnabled(this)) return
+        // Up to three full resolutions for songs not yet reached, each of which
+        // the bot check would refuse the same way. The song the user is on
+        // still resolves through validateAndPlayCurrentItem.
+        if (YouTubeRepository.isBotCheckVerdictActive()) return
         val currentIndex = player.currentMediaItemIndex
         if (currentIndex == C.INDEX_UNSET) return
 
@@ -1348,7 +1352,20 @@ class MusicService : MediaLibraryService() {
             return
         }
 
-        // 2. Retry Logic (YouTube songs only)
+        // 2. A resolution the bot check just refused with a fresh identity is
+        // not retried, and the queue is not skipped through. Each retry was a
+        // full NewPipe extraction plus the direct chain, and each skip resolved
+        // the next song into the same refusal, so a queue became a loop of
+        // 20-40 requests per song against a network YouTube had already
+        // refused. The player stays on this song: skipping or tapping another
+        // one still resolves it, and after the verdict expires this retries
+        // normally.
+        if (uri?.scheme == "error" && YouTubeRepository.isBotCheckVerdictActive()) {
+            KLog.w(TAG, "Error: $videoId refused by YouTube's bot check; not retrying or skipping")
+            return
+        }
+
+        // 3. Retry Logic (YouTube songs only)
         val retryCount = retryCounts[videoId] ?: 0
         // Only direct InnerTube streams are tied to Koda's visitorData. The
         // NewPipe-first path uses maintained Android/visionOS clients; a 403
@@ -2028,6 +2045,11 @@ class MusicService : MediaLibraryService() {
             .setMediaMetadata(MediaMetadata.Builder()
                 .setTitle(title)
                 .setSubtitle(subtitle)
+                // Categories carry no song art of their own, and head units
+                // render artless grid tiles as a broken-image glyph - the
+                // warning triangles in the field photo. A deterministic tile
+                // from AutoArtworkProvider instead (content:// PNG, offline).
+                .setArtworkUri(AutoArtwork.categoryKey(mediaId)?.let { AutoArtwork.uriFor(this, it) })
                 .setExtras(contentStyleExtras(GRID_ITEM, LIST_ITEM))
                 .setIsBrowsable(true)
                 .setIsPlayable(false)

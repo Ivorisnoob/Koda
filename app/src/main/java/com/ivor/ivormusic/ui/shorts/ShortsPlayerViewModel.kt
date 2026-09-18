@@ -290,9 +290,12 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         synchronized(watchNextCache) { watchNextCache[videoId] = data }
     }
 
+    // A bot-check verdict stands prefetch down for the same reason a 429 does:
+    // resolving Shorts nobody has swiped to yet would repeat a refusal.
     private fun canPrefetch(): Boolean =
         _isActive.value && ThemePreferences.isPlaybackPreloadEnabled(context) &&
-            !YouTubeRateLimit.isHeld()
+            !YouTubeRateLimit.isHeld() &&
+            !com.ivor.ivormusic.data.YouTubeRepository.isBotCheckVerdictActive()
 
     /** Resolve and warm only the next Short; cached ladders still need media bytes. */
     private fun prefetchAround(index: Int) {
@@ -844,16 +847,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                         loadQuality(pickDefaultQuality(qualities))
                         _exoPlayer?.play()
                     } else {
-                        val streamUrl = youtubeRepository.getVideoStreamUrl(item.videoId)
-                        if (streamUrl != null) {
-                            val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
-                                .createMediaSource(MediaItem.fromUri(streamUrl))
-                            _exoPlayer?.setMediaSource(source)
-                            _exoPlayer?.prepare()
-                            _exoPlayer?.play()
-                        } else {
-                            _playbackError.value = Exception("Unable to load this Short")
-                        }
+                        // No second NewPipe extraction: it repeats the failure
+                        // the resolver just had (see VideoPlayerViewModel).
+                        _playbackError.value = Exception("Unable to load this Short")
                     }
                 }
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {

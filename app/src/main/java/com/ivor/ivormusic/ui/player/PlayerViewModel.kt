@@ -58,7 +58,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     private data class PendingPlayRequest(
         val queue: List<MusicQueueItem>,
-        val startIndex: Int
+        val startIndex: Int,
+        val startPositionMs: Long = 0L
     )
 
     private var pendingPlayRequest: PendingPlayRequest? = null
@@ -560,7 +561,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             // until Play was tapped a second time.
             pendingPlayRequest?.let { pending ->
                 pendingPlayRequest = null
-                playQueueItems(pending.queue, pending.startIndex)
+                playQueueItems(pending.queue, pending.startIndex, pending.startPositionMs)
             } ?: restoreLastSession()
         }, MoreExecutors.directExecutor())
     }
@@ -740,6 +741,17 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     fun playQueue(songs: List<Song>, startSong: Song? = null) {
+        playQueueAtPosition(songs, startSong, 0L)
+    }
+
+    /**
+     * Play [songs] starting [startSong] at [startPositionMs] - the entry point
+     * for handing playback over from another pipeline (video mode's "Listen
+     * as music") rather than starting a list from its top. The absent-start
+     * guard is [playQueue]'s: a start song the list does not contain plays
+     * ahead of that list instead of clamping to index 0.
+     */
+    fun playQueueAtPosition(songs: List<Song>, startSong: Song? = null, startPositionMs: Long = 0L) {
         if (songs.isEmpty() && startSong == null) return
 
         val startIndex = queueStartIndex(songs, startSong)
@@ -760,6 +772,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             playQueueItems(
                 (listOf(startSong) + songs).map { MusicQueueItem(song = it) },
                 0,
+                startPositionMs.coerceAtLeast(0L),
             )
             return
         }
@@ -767,10 +780,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         playQueueItems(
             songs.map { MusicQueueItem(song = it) },
             startIndex.coerceAtLeast(0),
+            startPositionMs.coerceAtLeast(0L),
         )
     }
 
-    private fun playQueueItems(queue: List<MusicQueueItem>, startIndex: Int) {
+    private fun playQueueItems(queue: List<MusicQueueItem>, startIndex: Int, startPositionMs: Long = 0L) {
         if (queue.isEmpty()) return
 
         val playbackQueue = queue
@@ -792,12 +806,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _currentSong.value = currentSong
         _isBuffering.value = true // Immediately show loading
         _duration.value = 0L // Reset duration until we load the new song
+        // A handed-over position (video mode's "Listen as music", a restored
+        // session) is the position until the controller reports its own.
+        if (startPositionMs > 0) _progress.value = startPositionMs
+        if (currentSong.duration > 0) _duration.value = currentSong.duration
         updateCurrentSongLikedStatus()
         fetchLyrics(currentSong)
         
         val player = controller
         if (player == null) {
-            pendingPlayRequest = PendingPlayRequest(playbackQueue, safeStartIndex)
+            pendingPlayRequest = PendingPlayRequest(playbackQueue, safeStartIndex, startPositionMs)
             return
         }
         pendingPlayRequest = null
@@ -810,7 +828,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             it.setMediaItems(
                 playbackQueue.map(::createMediaItem),
                 safeStartIndex,
-                0L,
+                startPositionMs,
             )
             it.prepare()
             it.play()

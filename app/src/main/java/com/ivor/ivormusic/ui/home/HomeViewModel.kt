@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -535,11 +537,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun applyVideoRecommendationsPreference(enabled: Boolean) {
         if (enabled) {
+            // Runs on every return to Home, not only when the preference
+            // changes. A feed loaded minutes ago stays, with the user's place
+            // in it, instead of being refetched and replaced.
+            if (_trendingVideos.value.isNotEmpty() && loadedRecently(videoFeedLoadedAtMs)) {
+                loadShortsFeed()
+                return
+            }
             loadTrendingVideos()
         } else {
             loadShortsFeed()
             loadSubscriptions()
-            loadSubscriptionFeed()
+            // Home shows the shuffle now, not the date-ordered feed; that one
+            // is warmed for the Subscriptions tab on its own.
+            loadSubscriptionMix()
             _trendingVideos.value = emptyList()
             _isVideoLoading.value = false
             _isVideoLoadingMore.value = false
@@ -884,6 +895,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPlaylistVideosLoading = MutableStateFlow(false)
     val isPlaylistVideosLoading: StateFlow<Boolean> = _isPlaylistVideosLoading.asStateFlow()
 
+    // When each Home loader last reached the network successfully. HomeScreen
+    // is disposed by every real navigation (a channel page, a playlist) and
+    // its startup effects run again on the way back, so without these every
+    // return to Home re-downloaded the whole account: account info, every
+    // liked-songs page (nine for a 300-song library), every library playlist
+    // page, the music home, the video feed and the Shorts shelf - about twenty
+    // requests per visit in a September 2026 report, three times in under an
+    // hour, which is the traffic that gets a device refused by the bot check.
+    // Launch paid for the account half twice on top of that: init and
+    // HomeScreen's effect both call checkYouTubeConnection, and only the
+    // in-flight job below lets the second join the first.
+    // Explicit refreshes, sign-in, sign-out and profile switches pass force.
+    //
+    // Declared above init on purpose: init calls checkYouTubeConnection, whose
+    // launch runs up to its first suspension immediately, and an initializer
+    // placed after init would reset the job it just stored.
+    private var accountLoadJob: Job? = null
+    private var accountLoadedAtMs = 0L
+    private var recommendationsLoadJob: Job? = null
+    private var recommendationsLoadedAtMs = 0L
+    private var videoFeedLoadedAtMs = 0L
+    private var shortsFeedLoadedAtMs = 0L
+
     init {
         observeLocalVideoHistory()
         observeSubscriptionFeedWarmup()
@@ -1007,9 +1041,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // refetch leaves nothing rather than the wrong account's videos.
         _trendingVideos.value = emptyList()
         clearShortsFeed()
+        clearSubscriptionMix()
         _historyVideos.value = emptyList()
+        forgetHomeLoadTimes()
 
-        checkYouTubeConnection()
+        checkYouTubeConnection(force = true)
         loadSubscriptions(force = true)
         loadSubscriptionFeed(force = true)
 
@@ -1018,9 +1054,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // loadTrendingVideos already pulls the Shorts shelf itself.
         if (themePreferences.videoMode.value) {
             loadTrendingVideos()
+            loadSubscriptionMix(force = true)
             loadYouTubeHistory()
         } else {
-            loadYouTubeRecommendations()
+            loadYouTubeRecommendations(force = true)
         }
     }
 
@@ -1213,6 +1250,220 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _selectedChannelFeed.value = emptyList()
         _selectedChannelFeedError.value = null
         _isSelectedChannelFeedLoading.value = false
+    }
+
+    // ---------------- Shuffled subscriptions (Home, recommendations off) ----------------
+    //
+    // With recommendations off, Home used to be the Subscriptions feed a second
+    // time: newest first, one tap from the tab that already shows exactly that.
+    // It is now a shuffle across the followed channels' whole histories (see
+    // SubscriptionMix). Pools are fetched a batch of channels at a time as the
+    // user scrolls and kept for the session, so a refresh reshuffles what is
+    // already in hand and only the next unseen channels cost requests.
+
+    private val _subscriptionMix = MutableStateFlow<List<VideoItem>>(emptyList())
+
+    /** The shuffled Home feed minus what the user asked not to see. */
+    val subscriptionMix: StateFlow<List<VideoItem>> =
+        combine(
+            _subscriptionMix,
+            notInterestedRepository.hiddenVideos,
+            notInterestedRepository.blockedChannels
+        ) { videos, _, _ -> notInterestedRepository.filter(videos) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _isSubscriptionMixLoading = MutableStateFlow(false)
+    val isSubscriptionMixLoading: StateFlow<Boolean> = _isSubscriptionMixLoading.asStateFlow()
+
+    private val _isSubscriptionMixLoadingMore = MutableStateFlow(false)
+    val isSubscriptionMixLoadingMore: StateFlow<Boolean> = _isSubscriptionMixLoadingMore.asStateFlow()
+
+    /** Pools already fetched this session, by channel id. Main-thread only. */
+    private val mixPools = LinkedHashMap<String, com.ivor.ivormusic.data.ChannelMixPool>()
+    private val mixShownIds = HashSet<String>()
+    private var mixChannelOrder: List<com.ivor.ivormusic.data.SubscribedChannel> = emptyList()
+    private var mixNextChannel = 0
+    private var mixExhausted = false
+    private var mixJob: Job? = null
+    private var mixLoadedAtMs = 0L
+    private var mixGeneration = 0L
+    private val mixRandom = kotlin.random.Random(System.nanoTime())
+
+    /**
+     * Build or rebuild the shuffled Home feed.
+     *
+     * Not forced, it stands when it already has videos from the last ten
+     * minutes, like every other Home loader. Forced - a pull to refresh, a
+     * profile switch, recommendations just turned off - it reshuffles: channel
+     * order and picks start again, while pools already fetched are reused.
+     */
+    fun loadSubscriptionMix(force: Boolean = false) {
+        if (themePreferences.areVideoRecommendationsEnabled()) return
+        if (themePreferences.isLocalOnlyModeEnabled()) return
+        if (!force && mixJob?.isActive == true) return
+        if (!force && _subscriptionMix.value.isNotEmpty() && loadedRecently(mixLoadedAtMs)) return
+        mixJob?.cancel()
+        _isSubscriptionMixLoadingMore.value = false
+        val generation = ++mixGeneration
+        _isSubscriptionMixLoading.value = true
+        mixJob = viewModelScope.launch {
+            try {
+                val channels = subscribedChannelsForMix()
+                if (generation != mixGeneration) return@launch
+                // Pools for channels no longer followed are dropped, so an
+                // unfollow does not keep a creator in the shuffle.
+                val followed = channels.mapTo(HashSet()) { it.channelId }
+                mixPools.keys.retainAll(followed)
+                mixChannelOrder = channels.shuffled(mixRandom)
+                mixNextChannel = 0
+                mixShownIds.clear()
+                mixExhausted = channels.isEmpty()
+                val page = nextMixPage(generation)
+                if (generation != mixGeneration) return@launch
+                _subscriptionMix.value = page
+                if (page.isNotEmpty()) mixLoadedAtMs = System.currentTimeMillis()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                KLog.w("HomeViewModel", "Subscription mix failed", e)
+            } finally {
+                if (generation == mixGeneration) _isSubscriptionMixLoading.value = false
+            }
+        }
+    }
+
+    /** Append the next shuffled page as the user reaches the end of Home. */
+    fun loadMoreSubscriptionMix() {
+        if (themePreferences.areVideoRecommendationsEnabled()) return
+        if (mixExhausted || _subscriptionMix.value.isEmpty()) return
+        if (mixJob?.isActive == true) return
+        val generation = mixGeneration
+        _isSubscriptionMixLoadingMore.value = true
+        mixJob = viewModelScope.launch {
+            try {
+                val page = nextMixPage(generation)
+                if (generation != mixGeneration) return@launch
+                if (page.isNotEmpty()) _subscriptionMix.value = _subscriptionMix.value + page
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                KLog.w("HomeViewModel", "Subscription mix page failed", e)
+            } finally {
+                if (generation == mixGeneration) _isSubscriptionMixLoadingMore.value = false
+            }
+        }
+    }
+
+    /**
+     * One page: the next [MIX_CHANNELS_PER_PAGE] channels in this shuffle's
+     * order, fetching pools only for the ones not already held. Once every
+     * channel has had its turn, pages keep drawing unseen videos from the pools
+     * in hand at no network cost, until nothing unseen is left.
+     */
+    private suspend fun nextMixPage(generation: Long): List<VideoItem> {
+        val order = mixChannelOrder
+        if (order.isEmpty()) {
+            mixExhausted = true
+            return emptyList()
+        }
+        val page = mutableListOf<VideoItem>()
+        // A batch whose channels all come back empty (a new channel, a failed
+        // browse) must not end the feed while later channels could fill it.
+        var batchesTried = 0
+        while (page.isEmpty() && mixNextChannel < order.size && batchesTried < MIX_EMPTY_BATCH_LIMIT) {
+            batchesTried++
+            val batch = order.subList(mixNextChannel, minOf(order.size, mixNextChannel + MIX_CHANNELS_PER_PAGE))
+            mixNextChannel += batch.size
+            fetchMissingMixPools(batch)
+            if (generation != mixGeneration) return emptyList()
+            val pools = batch.mapNotNull { mixPools[it.channelId] }
+            page += com.ivor.ivormusic.data.SubscriptionMix.buildPage(pools, mixShownIds, mixRandom)
+        }
+        if (page.isEmpty() && mixNextChannel >= order.size) {
+            // Every channel has had a turn: keep shuffling what is in hand.
+            val pools = order.mapNotNull { mixPools[it.channelId] }.shuffled(mixRandom)
+            page += com.ivor.ivormusic.data.SubscriptionMix.buildPage(pools, mixShownIds, mixRandom)
+            if (!com.ivor.ivormusic.data.SubscriptionMix.hasUnseen(pools, mixShownIds + page.map { it.videoId })) {
+                mixExhausted = true
+            }
+        }
+        page.mapTo(mixShownIds) { it.videoId }
+        if (page.isEmpty()) mixExhausted = true
+        return page
+    }
+
+    /**
+     * Fetch pools for [channels] not yet held, [MIX_FETCH_CONCURRENCY] at a
+     * time. Discretionary fan-out, so a 429 hold stands it down: the batch
+     * stops and the channels without pools simply contribute nothing this
+     * page rather than being retried in a loop.
+     */
+    private suspend fun fetchMissingMixPools(channels: List<com.ivor.ivormusic.data.SubscribedChannel>) {
+        val missing = channels.filter { it.channelId !in mixPools }
+        if (missing.isEmpty()) return
+        if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) return
+        val gate = kotlinx.coroutines.sync.Semaphore(MIX_FETCH_CONCURRENCY)
+        val fetched = kotlinx.coroutines.coroutineScope {
+            missing.map { channel ->
+                async {
+                    gate.acquire()
+                    try {
+                        if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) null
+                        else youtubeRepository.getChannelMixPool(channel)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (e: Exception) {
+                        KLog.w("HomeViewModel", "Mix pool failed for ${channel.channelId}", e)
+                        null
+                    } finally {
+                        gate.release()
+                    }
+                }
+            }.awaitAll()
+        }
+        // Stored only when something came back: an empty pool from a failed
+        // browse would otherwise hide the channel for the rest of the session.
+        fetched.filterNotNull().filterNot { it.isEmpty }.forEach { mixPools[it.channelId] = it }
+    }
+
+    /**
+     * The channels the mix draws from: the same list the Subscriptions tab
+     * shows, resolved from the source setting. An account whose channel list
+     * has not arrived yet is waited for rather than treated as following
+     * nobody, which would end the feed before it started.
+     */
+    private suspend fun subscribedChannelsForMix(): List<com.ivor.ivormusic.data.SubscribedChannel> {
+        if (shouldUseAccountSubscriptions() && _accountChannels.value.isEmpty()) {
+            if (_isSubscriptionsLoading.value) {
+                _isSubscriptionsLoading.first { !it }
+            } else {
+                _isSubscriptionsLoading.value = true
+                try {
+                    _accountChannels.value = youtubeRepository.getSubscribedChannels()
+                } finally {
+                    _isSubscriptionsLoading.value = false
+                }
+            }
+        }
+        val account = if (shouldUseAccountSubscriptions()) _accountChannels.value else emptyList()
+        val local = if (themePreferences.currentSubscriptionSource() !=
+            com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_YOUTUBE
+        ) localSubscriptions.value.map { it.toSubscribedChannel() } else emptyList()
+        return (local + account).distinctBy { it.channelId }
+    }
+
+    private fun clearSubscriptionMix() {
+        mixGeneration++
+        mixJob?.cancel()
+        mixPools.clear()
+        mixShownIds.clear()
+        mixChannelOrder = emptyList()
+        mixNextChannel = 0
+        mixExhausted = false
+        mixLoadedAtMs = 0L
+        _subscriptionMix.value = emptyList()
+        _isSubscriptionMixLoading.value = false
+        _isSubscriptionMixLoadingMore.value = false
     }
 
     /**
@@ -1761,10 +2012,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return localRepository.getAvailableFolders()
     }
 
-    fun checkYouTubeConnection() {
-        viewModelScope.launch {
+    private fun loadedRecently(atMs: Long): Boolean =
+        atMs != 0L && System.currentTimeMillis() - atMs in 0 until HOME_REVISIT_REFRESH_MS
+
+    private fun forgetHomeLoadTimes() {
+        accountLoadedAtMs = 0L
+        recommendationsLoadedAtMs = 0L
+        videoFeedLoadedAtMs = 0L
+        shortsFeedLoadedAtMs = 0L
+    }
+
+    fun checkYouTubeConnection(force: Boolean = false) {
+        if (!force && accountLoadJob?.isActive == true) return
+        if (force) accountLoadJob?.cancel()
+        accountLoadJob = viewModelScope.launch {
             _isYouTubeConnected.value = sessionManager.isLoggedIn()
             if (_isYouTubeConnected.value) {
+                if (!force && loadedRecently(accountLoadedAtMs)) {
+                    _userAvatar.value = sessionManager.getUserAvatar()
+                    _userName.value = sessionManager.getUserName()
+                    return@launch
+                }
                 youtubeRepository.fetchAccountInfo()
                 _userAvatar.value = sessionManager.getUserAvatar()
                 _userName.value = sessionManager.getUserName()
@@ -1773,17 +2041,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun loadLibraryData() {
-        viewModelScope.launch {
-            try {
-                _likedSongs.value = youtubeRepository.getLikedMusic()
-                _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
-            } catch (e: Exception) { }
-        }
+    private suspend fun loadLibraryData() {
+        try {
+            _likedSongs.value = youtubeRepository.getLikedMusic()
+            _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
+            accountLoadedAtMs = System.currentTimeMillis()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) { }
     }
 
-    fun loadYouTubeRecommendations() {
-        viewModelScope.launch {
+    fun loadYouTubeRecommendations(force: Boolean = false) {
+        if (!force &&
+            (recommendationsLoadJob?.isActive == true || loadedRecently(recommendationsLoadedAtMs))
+        ) return
+        recommendationsLoadJob = viewModelScope.launch {
             _isLoading.value = true
             try {
                 if (sessionManager.isLoggedIn()) {
@@ -1793,6 +2065,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     if (recs.isNotEmpty()) {
                         _youtubeSongs.value = recs
                         homeRecommendationCache.save(recs)
+                        recommendationsLoadedAtMs = System.currentTimeMillis()
                     }
                 } else {
                     // Not logged in: personalize from the local taste profile
@@ -1804,6 +2077,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     if (recs.isNotEmpty()) {
                         _youtubeSongs.value = recs
                         homeRecommendationCache.save(recs)
+                        recommendationsLoadedAtMs = System.currentTimeMillis()
                     }
                 }
             } catch (e: Exception) {
@@ -2069,13 +2343,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _youtubeSongs.value = emptyList()
         _likedSongs.value = emptyList()
         _youtubePlaylists.value = emptyList()
+        forgetHomeLoadTimes()
+        accountLoadJob?.cancel()
+        clearSubscriptionMix()
         // The Subscriptions tab no longer empties itself on sign-out - local
         // subscriptions outlive the session - so the account's half has to be
         // dropped explicitly, or it would sit there unreachable and stale.
         _accountChannels.value = emptyList()
         _subscriptionFeed.value = emptyList()
         loadSubscriptionFeed(force = true)
-        loadYouTubeRecommendations()
+        loadYouTubeRecommendations(force = true)
     }
 
     fun refresh(excludedFolders: Set<String> = emptySet(), manualScan: Boolean = false) {
@@ -2095,11 +2372,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     if (recs.isNotEmpty()) {
                         _youtubeSongs.value = recs
                         homeRecommendationCache.save(recs)
+                        recommendationsLoadedAtMs = System.currentTimeMillis()
                     }
-                    
+
                     // Update library data
                     _likedSongs.value = youtubeRepository.getLikedMusic()
                     _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
+                    accountLoadedAtMs = System.currentTimeMillis()
                 } else if (_youtubeSongs.value.isNotEmpty()) {
                     // Logged-out YouTube mode: refresh the taste-based feed too.
                     // (Gated on a non-empty feed so local-only users don't pay
@@ -2179,6 +2458,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (page != null && page.videos.isNotEmpty()) {
                     _isVideoHomeOffline.value = false
                     _trendingVideos.value = page.videos
+                    videoFeedLoadedAtMs = System.currentTimeMillis()
                     videoFeedContinuation = page.continuation
                     tasteSeedOffset = 6
                     videoFeedExhausted = false
@@ -2324,8 +2604,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * since the settings screen toggles through its own ThemePreferences
      * instance. Failures leave the previous shelf in place.
      */
-    fun loadShortsFeed() {
+    fun loadShortsFeed(force: Boolean = false) {
         if (!themePreferences.isShortsEnabled() || shortsFeedLoadJob?.isActive == true) return
+        if (!force && _shortsFeed.value.isNotEmpty() && loadedRecently(shortsFeedLoadedAtMs)) return
         if (themePreferences.isLocalOnlyModeEnabled()) return
         if (!hasNetworkConnection()) {
             _shortsFeedFailed.value = true
@@ -2345,6 +2626,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val shorts = youtubeRepository.getShortsFeed()
                 if (isCurrent() && themePreferences.isShortsEnabled()) {
                     _shortsFeed.value = shorts
+                    shortsFeedLoadedAtMs = System.currentTimeMillis()
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -2602,10 +2884,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _isVideoLoading.value = false
             return
         }
-        loadShortsFeed()
+        loadShortsFeed(force = true)
         if (!themePreferences.areVideoRecommendationsEnabled()) {
             loadSubscriptions(force = true)
-            loadSubscriptionFeed(force = true)
+            // A pull on the shuffled Home is a reshuffle, and it fetches pools
+            // only for channels not already held this session.
+            loadSubscriptionMix(force = true)
             return
         }
         viewModelScope.launch {
@@ -3072,5 +3356,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
          * at about that depth instead of hammering the API.
          */
         const val MAX_REFRESH_PAGES = 3
+
+        /**
+         * How long a Home load stands when the user comes back to Home without
+         * asking for a refresh. [judgement] Long enough to cover browsing a
+         * channel or playlist and returning; short enough that likes and
+         * playlists changed elsewhere appear within a session.
+         */
+        const val HOME_REVISIT_REFRESH_MS = 10 * 60 * 1000L
+
+        /**
+         * Channels whose pools a page of the shuffled Home draws on. Each new
+         * channel costs two browse requests, so a page is at most sixteen, the
+         * same order as one page of the recommendation feed plus its Shorts.
+         */
+        const val MIX_CHANNELS_PER_PAGE = 8
+
+        /** Pool fetches in flight at once; below the subscriptions feed's six. */
+        const val MIX_FETCH_CONCURRENCY = 4
+
+        /** Consecutive empty channel batches one page will try before giving up. */
+        const val MIX_EMPTY_BATCH_LIMIT = 3
     }
 }

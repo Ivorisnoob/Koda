@@ -75,7 +75,16 @@ fun SleepTimerSheet(
     accent: Color = MaterialTheme.colorScheme.primary,
     onAccent: Color = MaterialTheme.colorScheme.onPrimary,
     container: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    onContainer: Color = MaterialTheme.colorScheme.onSurface
+    onContainer: Color = MaterialTheme.colorScheme.onSurface,
+    /**
+     * Video-mode wording. Null keeps the music copy ("this track", "the song
+     * playing now"), so the eight music call sites pass nothing.
+     */
+    endOfMediaLabel: String? = null,
+    endOfMediaDetail: String? = null,
+    statusMediaHeadline: String? = null,
+    /** Video pauses without a fade, so its duration copy says so. */
+    durationDetail: String? = null
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -119,8 +128,8 @@ fun SleepTimerSheet(
 
             if (endOfTrack) {
                 SleepTimerStatus(
-                    headline = stringResource(R.string.sleep_timer_status_track),
-                    detail = stringResource(R.string.sleep_timer_detail_track),
+                    headline = statusMediaHeadline ?: stringResource(R.string.sleep_timer_status_track),
+                    detail = endOfMediaDetail ?: stringResource(R.string.sleep_timer_detail_track),
                     accent = accent,
                     onContainer = onContainer
                 )
@@ -142,7 +151,7 @@ fun SleepTimerSheet(
                 }
                 SleepTimerStatus(
                     headline = formatRemaining(remainingMs),
-                    detail = stringResource(R.string.sleep_timer_detail_duration),
+                    detail = durationDetail ?: stringResource(R.string.sleep_timer_detail_duration),
                     accent = accent,
                     onContainer = onContainer
                 )
@@ -195,7 +204,7 @@ fun SleepTimerSheet(
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = stringResource(R.string.sleep_timer_end_of_track),
+                                text = endOfMediaLabel ?: stringResource(R.string.sleep_timer_end_of_track),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold
                             )

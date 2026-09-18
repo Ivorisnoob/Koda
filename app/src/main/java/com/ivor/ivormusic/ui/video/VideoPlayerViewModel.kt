@@ -488,6 +488,51 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     )
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
 
+    // Sleep timer: a wall-clock deadline, or stop at the end of this video.
+    // In-memory like the rest of this ViewModel's playback state (unlike
+    // music's, which survives process death inside MusicService): closing the
+    // player cancels it, and an explicit close means done with the video.
+    private val _sleepTimerEndsAt = MutableStateFlow<Long?>(null)
+    val sleepTimerEndsAt: StateFlow<Long?> = _sleepTimerEndsAt.asStateFlow()
+
+    private val _sleepTimerEndOfVideo = MutableStateFlow(false)
+    val sleepTimerEndOfVideo: StateFlow<Boolean> = _sleepTimerEndOfVideo.asStateFlow()
+
+    private var sleepTimerJob: kotlinx.coroutines.Job? = null
+
+    /** Arm a duration timer; expiry pauses playback and leaves the player open. */
+    fun startSleepTimer(minutes: Int) {
+        if (minutes <= 0) {
+            startSleepTimerEndOfVideo()
+            return
+        }
+        sleepTimerJob?.cancel()
+        _sleepTimerEndOfVideo.value = false
+        val endsAt = System.currentTimeMillis() + minutes * 60_000L
+        _sleepTimerEndsAt.value = endsAt
+        sleepTimerJob = viewModelScope.launch {
+            val remaining = endsAt - System.currentTimeMillis()
+            if (remaining > 0) kotlinx.coroutines.delay(remaining)
+            _sleepTimerEndsAt.value = null
+            _exoPlayer?.pause()
+        }
+    }
+
+    /** Stop when the playing video finishes instead of autoplaying on. */
+    fun startSleepTimerEndOfVideo() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerEndsAt.value = null
+        _sleepTimerEndOfVideo.value = true
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerEndsAt.value = null
+        _sleepTimerEndOfVideo.value = false
+    }
+
     private val _playbackSpeed = MutableStateFlow(themePreferences.getVideoPlaybackSpeed())
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
@@ -1040,6 +1085,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * playlist but never wanders into related videos.
      */
     private suspend fun handlePlaybackEnded() {
+        // An armed end-of-video timer beats autoplay, the queue and related:
+        // this video finishes, playback stops, the flag is consumed.
+        if (_sleepTimerEndOfVideo.value) {
+            _sleepTimerEndOfVideo.value = false
+            _exoPlayer?.pause()
+            CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, false)
+            return
+        }
         val activeQueue = _queue.value
         val nextRelated = relatedVideos.value.firstOrNull()
         when (
@@ -2500,31 +2553,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         loadQuality(chosen)
                         seekAndResumeAfterLoad(effectiveResumePositionMs, resumePaused)
                     } else {
-                        // Fallback to legacy stream URL
-                        val streamUrl = youtubeRepository.getVideoStreamUrl(video.videoId)
-                        if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
-                        if (streamUrl != null) {
-                            _currentQuality.value = VideoQuality(
-                                resolution = "Auto",
-                                url = streamUrl,
-                                isDASH = false,
-                                audioUrl = null
-                            )
-                            val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
-                                .createMediaSource(
-                                    cachedProgressiveMediaItem(
-                                        uri = streamUrl,
-                                        stream = VideoPlaybackCacheStream.MUXED,
-                                        fallbackVariant = "auto-muxed",
-                                    )
-                                )
-                            _exoPlayer?.setMediaSource(source)
-                            _exoPlayer?.prepare()
-                            seekAndResumeAfterLoad(effectiveResumePositionMs, resumePaused)
-                        } else {
-                            _playbackError.value = Exception("Unable to load video stream")
-                            _isLoading.value = false
-                        }
+                        // No second extraction here. The old "legacy stream URL"
+                        // fallback ran a whole NewPipe fetchPage (about seven
+                        // requests) again straight after the resolver above had
+                        // failed, so it failed the same way - and it could not
+                        // add anything when extraction succeeded, because every
+                        // muxed URL it picked from is already in that ladder.
+                        _playbackError.value = Exception("Unable to load video stream")
+                        _isLoading.value = false
                     }
                 }
             } catch (e: CancellationException) {
@@ -3093,6 +3129,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     fun closePlayer() {
         watchTracker.close()
+        cancelSleepTimer()
         saveCurrentVideoResumePosition()
         _resumedFromMs.value = null
         // Remove quality change listener to prevent leaks if player closed before STATE_READY

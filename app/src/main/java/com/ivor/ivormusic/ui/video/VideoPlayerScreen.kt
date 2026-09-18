@@ -94,6 +94,7 @@ import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -2663,6 +2664,13 @@ fun VideoInfoSection(
     onDownloadClick: () -> Unit = {},
     onChannelClick: () -> Unit = {},
     /**
+     * Listen-as-music entry in the action dock, beside Save. Gated by the
+     * caller (live, device and external items have no audio path in
+     * MusicService), defaulting to absent.
+     */
+    showListenAsMusic: Boolean = false,
+    onListenAsMusic: () -> Unit = {},
+    /**
      * Open a named channel, for the collaborators sheet. Distinct from
      * [onChannelClick], which opens *the* channel: a collab video has no single
      * one, so the row leads to a list and each entry navigates itself. Null
@@ -2759,8 +2767,9 @@ fun VideoInfoSection(
 
         // The action dock: one surfaceContainerHigh container under the title,
         // sticky so the actions survive the first swipe instead of scrolling
-        // away. Order is Like, Save, Share, Download. Its row still scrolls
-        // internally so the buttons never squash on narrow screens.
+        // away. Order is Like, Save, Listen as music, Share, Download. Its
+        // row still scrolls internally so the buttons never squash on narrow
+        // screens.
         if (!isOffline) stickyHeader(key = "action_dock") {
             Column(
                 modifier = Modifier
@@ -2774,7 +2783,9 @@ fun VideoInfoSection(
                     onLikeClick = onLikeClick,
                     onDislikeClick = onDislikeClick,
                     onSaveClick = onSaveClick,
-                    onDownloadClick = onDownloadClick
+                    onDownloadClick = onDownloadClick,
+                    showListenAsMusic = showListenAsMusic,
+                    onListenAsMusic = onListenAsMusic
                 )
             }
         }
@@ -3287,6 +3298,20 @@ private fun DockSaveButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Listen-as-music entry in the dock, beside Save: the same migration the
+ * playback settings offer, for the thumb that never opens settings.
+ */
+@Composable
+private fun DockListenAsMusicButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    DockActionButton(
+        icon = Icons.Rounded.MusicNote,
+        label = stringResource(R.string.action_listen_as_music),
+        contentDescription = stringResource(R.string.vpc_listen_as_music),
+        onClick = onClick,
+        modifier = modifier
+    )
+}
+/**
  * Share entry in the dock. Fires the system share sheet with the video's
  * watch URL, same as before - only the container changed.
  */
@@ -3436,9 +3461,9 @@ private fun ExpressiveLikeDislikeGroup(
 
 /**
  * The watch page's single action bar, in the user's order: Like, Save,
- * Share, Download. One surfaceContainerHigh container under the title, one
- * hero for the whole info column - everything else on the page is content.
- * Subscribe stays where it was, in the channel row below.
+ * Listen as music, Share, Download. One surfaceContainerHigh container under
+ * the title, one hero for the whole info column - everything else on the page
+ * is content. Subscribe stays where it was, in the channel row below.
  */
 @Composable
 private fun ActionDock(
@@ -3448,6 +3473,13 @@ private fun ActionDock(
     onDislikeClick: () -> Unit,
     onSaveClick: () -> Unit,
     onDownloadClick: () -> Unit,
+    /**
+     * Show the Listen-as-music entry beside Save. False where the migration
+     * has no audio path (live, device and external items) - the row is
+     * absent rather than disabled.
+     */
+    showListenAsMusic: Boolean = false,
+    onListenAsMusic: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -3468,6 +3500,9 @@ private fun ActionDock(
                 onDislikeClick = onDislikeClick
             )
             DockSaveButton(onClick = onSaveClick)
+            if (showListenAsMusic) {
+                DockListenAsMusicButton(onClick = onListenAsMusic)
+            }
             DockShareButton(video = video)
             DockDownloadButton(video = video, onDownloadClick = onDownloadClick)
         }
