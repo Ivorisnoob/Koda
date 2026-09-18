@@ -226,6 +226,13 @@ object CacheManager {
      */
     fun getCache(): SimpleCache? = simpleCache
 
+    /** Transient video store for playback bytes that must never enter the offline library. */
+    @Synchronized
+    internal fun videoCache(context: Context): SimpleCache? {
+        initializeVideoCache(context.applicationContext)
+        return videoCache
+    }
+
     /**
      * Mark one player surface as using the transient video cache.
      *

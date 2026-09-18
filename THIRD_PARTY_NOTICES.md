@@ -93,6 +93,11 @@ initialization from the spec, serialize through `SabrSession` instead of a
 bridge lock (no pending exception - undelivered segments surface as
 `IOException` for Media3's standard retry policy), keep spool files as the
 transient store, and compute honest buffered ranges from held segments.
+`bridge/SabrSelection.kt` and `bridge/SabrPlaybackAssembly.kt` are Koda
+orchestration around those pieces (fixed rendition policy, session over its
+own spool, manifest parse, transient-cache-backed chunk source, release-tied
+lifecycle); the synthetic-manifest and `sabrseg://` URI grammar above is what
+they carry over.
 
 ## PipePipe PO-token minter (client + extractor)
 
