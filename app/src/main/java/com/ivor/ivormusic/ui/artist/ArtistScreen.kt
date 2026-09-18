@@ -221,9 +221,7 @@ private fun ArtistSortRow(
                 checked = entry == selected,
                 onCheckedChange = {
                     if (entry != selected) {
-                        haptics.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick
-                        )
+                        haptics.subtle()
                         onSelect(entry)
                     }
                 },

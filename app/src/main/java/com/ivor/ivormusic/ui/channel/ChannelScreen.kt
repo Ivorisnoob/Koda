@@ -432,6 +432,7 @@ private fun ChannelTabRow(
     // description - but it belongs in the row, because as far as the reader is
     // concerned it is another thing this channel has.
     val entries = remember(tabs) { tabs + ABOUT_TAB }
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     Row(
         modifier = modifier
@@ -444,7 +445,12 @@ private fun ChannelTabRow(
             val isSelected = tab.kind == selected
             ToggleButton(
                 checked = isSelected,
-                onCheckedChange = { onSelect(tab.kind) },
+                onCheckedChange = {
+                    if (!isSelected) {
+                        haptics.subtle()
+                        onSelect(tab.kind)
+                    }
+                },
                 modifier = Modifier.height(42.dp),
                 shapes = when (index) {
                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()

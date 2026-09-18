@@ -214,6 +214,7 @@ fun DownloadsScreen(
         ) {
             // M3 Expressive connected button group, matching LibraryScreen's
             // view switcher.
+            val tabHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -229,7 +230,12 @@ fun DownloadsScreen(
                     }
                     ToggleButton(
                         checked = selected,
-                        onCheckedChange = { selectedTab = tab },
+                        onCheckedChange = {
+                            if (!selected) {
+                                tabHaptics.subtle()
+                                selectedTab = tab
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),

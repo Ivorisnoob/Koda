@@ -609,6 +609,7 @@ fun LibraryMainScreen(
     val selectedTab = remember(storedTabName) {
         LibraryTab.entries.firstOrNull { it.name == storedTabName } ?: LibraryTab.All
     }
+    val tabHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val storedSortName by themePreferences.librarySortOption.collectAsState()
     val sortOption = remember(storedSortName) {
         LibrarySortOption.entries.firstOrNull { it.name == storedSortName }
@@ -714,7 +715,12 @@ fun LibraryMainScreen(
                     val selected = selectedTab == tab
                     ToggleButton(
                         checked = selected,
-                        onCheckedChange = { themePreferences.setLibraryTab(tab.name) },
+                        onCheckedChange = {
+                            if (tab != selectedTab) {
+                                tabHaptics.subtle()
+                                themePreferences.setLibraryTab(tab.name)
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),

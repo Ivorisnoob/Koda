@@ -843,6 +843,7 @@ private fun CreateVideoPlaylistDialog(
                 Spacer(modifier = Modifier.height(16.dp))
                 if (canUseAccount) {
                     val storageOptions = listOf(false, true)
+                    val targetHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(
@@ -853,7 +854,12 @@ private fun CreateVideoPlaylistDialog(
                             val selected = onDevice == deviceOnly
                             ToggleButton(
                                 checked = selected,
-                                onCheckedChange = { onDevice = deviceOnly },
+                                onCheckedChange = {
+                                    if (!selected) {
+                                        targetHaptics.subtle()
+                                        onDevice = deviceOnly
+                                    }
+                                },
                                 modifier = Modifier.weight(1f),
                                 shapes = when (index) {
                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
