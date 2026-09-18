@@ -358,6 +358,31 @@ class MusicService : MediaLibraryService() {
         const val EXTRA_PLAYBACK_SPEED = "playback_speed"
 
         /**
+         * Session-extras key carrying the queue positions in the order they
+         * will actually be played.
+         *
+         * **The shuffle order does not cross the session boundary.** A
+         * `MediaController` receives a plain `Timeline`, whose base
+         * `getNextWindowIndex` returns `index + 1` and ignores the
+         * shuffleModeEnabled argument entirely [verified September 2026
+         * against the media3-common 1.11.0 bytecode]; only ExoPlayer's own
+         * concatenated timeline consults a `ShuffleOrder`. So a controller
+         * cannot see what plays next while shuffle is on - it can only see the
+         * order the items were added in, which is exactly what every queue
+         * screen in the app used to draw.
+         *
+         * **The resolved order is published rather than the shuffle seed**,
+         * although the seed is eight bytes and this is an int per queue entry.
+         * The seed only describes the permutation while nothing has disturbed
+         * it: ExoPlayer clones and rewrites its own `ShuffleOrder` whenever the
+         * queue is edited, so after one drag or one removal a seed-derived
+         * reconstruction would quietly disagree with what plays next - the
+         * exact class of bug this key exists to end. Walking the service's own
+         * timeline cannot drift, because it is the thing being asked.
+         */
+        const val EXTRA_PLAY_ORDER = "playback_play_order"
+
+        /**
          * How long the fade before the timer's pause takes. Long enough to read
          * as drifting off rather than as a glitch, short enough that the last
          * thing heard is not a minute of near-silence.
@@ -856,6 +881,11 @@ class MusicService : MediaLibraryService() {
                 lastShuffleOrderItemCount = itemCount
                 engine.refreshActiveShuffleOrder()
             }
+            // The queue changed, so the order the screens draw changed with it.
+            // Unconditional, and after any reorder above: a removal or an
+            // insertion rewrites the permutation even when the count check
+            // above declines to rebuild it.
+            publishSessionState()
         }
 
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -868,6 +898,10 @@ class MusicService : MediaLibraryService() {
             lastShuffleOrderItemCount = player.mediaItemCount
             themePreferences.setPlaybackShuffle(shuffleModeEnabled)
             engine.setShuffleState(shuffleModeEnabled, playbackShuffleSeed)
+            // After the engine has applied the new order, never before: this
+            // reads the permutation back off the player, so publishing first
+            // would send the outgoing one.
+            publishSessionState()
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
@@ -2377,6 +2411,32 @@ class MusicService : MediaLibraryService() {
      * replaces what is there rather than merging into it - a second publisher
      * with its own bundle would silently blank the first one's keys.
      */
+    /**
+     * The queue positions in playing order, which with shuffle off is simply
+     * 0..n and with shuffle on is the permutation the player is walking.
+     *
+     * Asked of the timeline rather than derived from the seed, because this
+     * player's timeline is the only thing that knows: `ShuffleOrder` is
+     * cloned and rewritten by ExoPlayer itself on every queue edit. Walked
+     * with `REPEAT_MODE_OFF` regardless of the real repeat mode - under
+     * REPEAT_MODE_ALL the walk never terminates, and a queue screen wants the
+     * running order once, not forever. The window count bounds it anyway,
+     * because a timeline that somehow cycles must not hang the service.
+     */
+    private fun currentPlayOrder(): IntArray {
+        val timeline = player.currentTimeline
+        val count = timeline.windowCount
+        if (count == 0) return IntArray(0)
+        val shuffled = player.shuffleModeEnabled
+        val order = ArrayList<Int>(count)
+        var index = timeline.getFirstWindowIndex(shuffled)
+        while (index != C.INDEX_UNSET && order.size < count) {
+            order.add(index)
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, shuffled)
+        }
+        return order.toIntArray()
+    }
+
     private fun publishSessionState() {
         val session = mediaLibrarySession ?: return
         runCatching {
@@ -2385,6 +2445,7 @@ class MusicService : MediaLibraryService() {
                     putLong(EXTRA_SLEEP_TIMER_ENDS_AT, sleepTimerEndsAt)
                     putBoolean(EXTRA_SLEEP_TIMER_END_OF_TRACK, sleepTimerEndOfTrack)
                     putFloat(EXTRA_PLAYBACK_SPEED, playbackSpeed)
+                    putIntArray(EXTRA_PLAY_ORDER, currentPlayOrder())
                 }
             )
         }

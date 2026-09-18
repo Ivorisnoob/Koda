@@ -120,7 +120,7 @@ fun BentoPlayerSheetContent(
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
-    val currentQueue by viewModel.currentQueue.collectAsState()
+    val currentQueue by viewModel.playOrderQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
@@ -161,7 +161,7 @@ fun BentoPlayerSheetContent(
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
                     onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
-                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
+                    onMoveSong = { from, to -> viewModel.movePlayOrderItem(from, to, persist = false) },
                     onCommitOrder = { viewModel.commitQueueOrder() },
                     onUndoRemove = { viewModel.undoQueueRemoval() },
                     onLoadMore = onLoadMore,
@@ -502,9 +502,16 @@ fun BentoPlayerSheetContent(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
+                                // index + 1 is the real next song now that this
+                                // list is the play order rather than the order
+                                // the queue was built in. The -1 guard matters
+                                // for the same reason: unfound would have read
+                                // getOrNull(0) and named the first song in the
+                                // queue as the one coming up.
                                 val nextTitle = remember(currentQueue, currentQueueItemId) {
                                     val index = currentQueue.indexOfFirst { it.id == currentQueueItemId }
-                                    currentQueue.getOrNull(index + 1)?.song?.title ?: "End of queue"
+                                    if (index < 0) "End of queue"
+                                    else currentQueue.getOrNull(index + 1)?.song?.title ?: "End of queue"
                                 }
                                 Text(
                                     text = nextTitle,

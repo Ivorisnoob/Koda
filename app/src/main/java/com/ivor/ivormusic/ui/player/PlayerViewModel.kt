@@ -17,6 +17,8 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.QUEUE_START_ABSENT
+import com.ivor.ivormusic.data.arrangedBy
+import com.ivor.ivormusic.data.queueIndexForPlayOrder
 import com.ivor.ivormusic.data.queueStartIndex
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
@@ -32,6 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -113,6 +116,37 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     private val _currentQueueItemId = MutableStateFlow<String?>(null)
     val currentQueueItemId: StateFlow<String?> = _currentQueueItemId.asStateFlow()
+
+    /** Queue positions in playing order, as last published by the service. */
+    private val _playOrder = MutableStateFlow(IntArray(0))
+
+    /**
+     * The queue in the order it will actually be heard.
+     *
+     * **This, not [currentQueue], is what a queue screen draws.** With shuffle
+     * off the two are the same list. With shuffle on they are not, and every
+     * queue surface in the app used to draw [currentQueue] anyway: the order
+     * songs were added in, while the player played a different one. "Up next"
+     * named a song that was not next, the row highlighted as playing was
+     * usually somewhere in the middle, and Bento's next-track line - which
+     * takes the item at index + 1 - named a song more or less at random.
+     *
+     * The order comes from the service, which walks its own player's timeline
+     * and publishes the result. It cannot be read here: a `MediaController`'s
+     * timeline is the plain base class, whose shuffle-aware walk is
+     * `index + 1` (see [MusicService.EXTRA_PLAY_ORDER]).
+     *
+     * An order that does not cover the queue exactly once is not trusted - it
+     * is a published order that has not caught up with a queue edited a moment
+     * ago - and the plain order is drawn instead. A wrong order is worse than
+     * an unshuffled one, because only one of the two looks wrong.
+     */
+    val playOrderQueue: StateFlow<List<MusicQueueItem>> = combine(
+        _currentQueue,
+        _playOrder,
+    ) { queue, order ->
+        queue.arrangedBy(order)
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
 
     // Stats tracking
     private var lastRecordedSongId: String? = null
@@ -342,6 +376,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 ) {
                     applySleepTimerExtras(extras)
                     applyPlaybackSpeedExtras(extras)
+                    applyPlayOrderExtras(extras)
                 }
             })
             .buildAsync()
@@ -582,7 +617,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _progress.value = ctrl.currentPosition
         _shuffleModeEnabled.value = ctrl.shuffleModeEnabled
         _repeatMode.value = ctrl.repeatMode
-        
+        // Extras carry the shuffle seed, and onExtrasChanged only fires on a
+        // change - a controller connecting to a session that is already
+        // shuffling would otherwise never be told which permutation it is in.
+        applyPlayOrderExtras(ctrl.sessionExtras)
+
         // Rebuild queue from MediaSession
         val itemCount = ctrl.mediaItemCount
         if (itemCount > 0 && _currentQueue.value.isEmpty()) {
@@ -1106,6 +1145,26 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         if (persist) savePlaybackSession()
     }
 
+    /**
+     * Move a queue item the user dragged on a queue screen.
+     *
+     * The screens draw [playOrderQueue], so both positions are positions in
+     * the play order, and with shuffle on that is not the queue: dragging row
+     * five onto row two and passing those straight to [moveQueueItem] would
+     * pick up whichever songs happen to sit at queue positions five and two -
+     * two songs the user was not touching. Unshuffled the two orders are the
+     * same list and this is exactly the old call.
+     */
+    fun movePlayOrderItem(fromIndex: Int, toIndex: Int, persist: Boolean = true) {
+        val order = _playOrder.value
+        val size = _currentQueue.value.size
+        moveQueueItem(
+            queueIndexForPlayOrder(order, size, fromIndex),
+            queueIndexForPlayOrder(order, size, toIndex),
+            persist,
+        )
+    }
+
     /** Save once, after a drag has settled. */
     fun commitQueueOrder() {
         savePlaybackSession()
@@ -1294,6 +1353,17 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 putBoolean(MusicService.ARG_PLAYBACK_SPEED_PERSIST, persist)
             },
         )
+    }
+
+    /**
+     * Adopt the play order the service published, so the queue screens draw
+     * what is going to be played. Also read on connect, so a player reopened
+     * mid-session shows the order already in force rather than the order the
+     * songs were queued in.
+     */
+    private fun applyPlayOrderExtras(extras: android.os.Bundle) {
+        if (!extras.containsKey(MusicService.EXTRA_PLAY_ORDER)) return
+        _playOrder.value = extras.getIntArray(MusicService.EXTRA_PLAY_ORDER) ?: IntArray(0)
     }
 
     private fun applyPlaybackSpeedExtras(extras: android.os.Bundle) {
