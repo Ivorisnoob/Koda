@@ -139,7 +139,10 @@ class InlinePreviewController(
      */
     fun claim(video: VideoItem) {
         if (claimedId == video.videoId) return
-        if (!isPreviewable(video)) return
+        if (!isPreviewable(video)) {
+            KLog.d(TAG, "Not previewing ${video.videoId}: ${skipReason(video)}")
+            return
+        }
         release()
         claimedId = video.videoId
         claimJob = scope.launch {
@@ -182,6 +185,15 @@ class InlinePreviewController(
         CacheManager.setVideoPlaybackActive(CACHE_OWNER, false)
     }
 
+    private fun skipReason(video: VideoItem): String = when {
+        video.isLive -> "live"
+        LocalVideo.isDeviceVideoId(video.videoId) -> "device file"
+        video.videoId.startsWith("external:") -> "external"
+        YouTubeRateLimit.isHeld() -> "rate limited"
+        isMetered() -> "metered connection"
+        else -> "eligible"
+    }
+
     private fun isPreviewable(video: VideoItem): Boolean {
         if (video.isLive) return false
         if (LocalVideo.isDeviceVideoId(video.videoId)) return false
@@ -198,8 +210,11 @@ class InlinePreviewController(
      */
     private fun isMetered(): Boolean = runCatching {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        manager.isActiveNetworkMetered ||
-            manager.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+        // Data Saver is not checked separately: its status only applies on a
+        // metered network, which this already refuses, and reading it as a
+        // second gate turned previews off on Wi-Fi for anyone who leaves Data
+        // Saver on permanently.
+        manager.isActiveNetworkMetered
     }.getOrDefault(true)
 
     /**
@@ -213,9 +228,18 @@ class InlinePreviewController(
      */
     private suspend fun resolve(videoId: String): VideoQuality? = withTimeoutOrNull(RESOLVE_BUDGET_MS) {
         runCatching {
-            repository.getVideoStreamQualities(videoId, includeHdr = false)
-                .filterNot { it.isHdr || it.isDASH || it.isLive }
+            val playable = repository.getVideoStreamQualities(videoId, includeHdr = false)
+                .filterNot { it.isHdr || it.isLive }
+            // Progressive first and smallest, because a preview is a thumbnail
+            // that moves: a 1080p ladder for it would cost more data than the
+            // video the user eventually opens. **Adaptive is kept rather than
+            // filtered out**, which was the bug that made this feature do
+            // nothing at all - most YouTube videos resolve to an adaptive
+            // ladder and nothing else, so excluding it left an empty list and
+            // a preview that silently never started.
+            playable.filterNot { it.isDASH }
                 .minByOrNull { it.height.takeIf { h -> h > 0 } ?: Int.MAX_VALUE }
+                ?: playable.minByOrNull { it.height.takeIf { h -> h > 0 } ?: Int.MAX_VALUE }
         }.onFailure { error ->
             if (error is kotlinx.coroutines.CancellationException) throw error
             KLog.w(TAG, "Preview resolve failed for $videoId", error)
@@ -227,6 +251,22 @@ class InlinePreviewController(
         previewingId = videoId
         progress = 0f
         isRendering = false
+
+        if (quality.isDASH) {
+            // Feeding a manifest to ProgressiveMediaSource fails extraction
+            // outright; the MediaSourceFactory on the player builds the right
+            // source from the MIME type.
+            active.setMediaItem(
+                MediaItem.Builder()
+                    .setUri(quality.url)
+                    .setMimeType(adaptivePreviewMimeType(quality))
+                    .build()
+            )
+            active.prepare()
+            active.play()
+            trackProgress(active, videoId)
+            return
+        }
 
         val factory = CacheManager.createVideoPlaybackDataSourceFactory(context, shorts = false)
         val videoSource = ProgressiveMediaSource.Factory(factory)
@@ -249,7 +289,15 @@ class InlinePreviewController(
         }
         active.prepare()
         active.play()
+        trackProgress(active, videoId)
+    }
 
+    /** MIME for an adaptive quality; both DASH and HLS arrive with isDASH set. */
+    private fun adaptivePreviewMimeType(quality: VideoQuality): String =
+        if (quality.url.contains(".m3u8")) androidx.media3.common.MimeTypes.APPLICATION_M3U8
+        else androidx.media3.common.MimeTypes.APPLICATION_MPD
+
+    private fun trackProgress(active: ExoPlayer, videoId: String) {
         progressJob?.cancel()
         progressJob = scope.launch {
             while (isActive && previewingId == videoId) {
@@ -311,7 +359,12 @@ val LocalInlinePreview = compositionLocalOf<InlinePreviewController?> { null }
  */
 @Composable
 fun rememberInlinePreviewController(enabled: Boolean): InlinePreviewController? {
-    if (!enabled) return null
+    // Built either way and returned only when enabled, rather than returning
+    // early on the flag: an early return before the remembers below changes the
+    // shape of the composition when the setting is toggled with the feed open,
+    // which is exactly when someone turning it on is looking at it. Nothing is
+    // spent while it is off - the player is built on the first preview, not
+    // here.
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val controller = remember(context) {
@@ -333,7 +386,10 @@ fun rememberInlinePreviewController(enabled: Boolean): InlinePreviewController? 
             controller.destroy()
         }
     }
-    return controller
+    LaunchedEffect(controller, enabled) {
+        if (!enabled) controller.release()
+    }
+    return controller.takeIf { enabled }
 }
 
 /**

@@ -4,6 +4,7 @@ import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -71,6 +72,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -860,18 +862,28 @@ fun VideoCard(
                     )
 
                     // Drawn over the thumbnail rather than in place of it, and
-                    // only once a frame has actually arrived: swapping to an
-                    // empty surface first shows a black hole where the picture
-                    // was for as long as the stream takes to start.
+                    // faded in only once a frame has actually arrived, so the
+                    // card never shows a black hole where the picture was while
+                    // the stream starts.
+                    //
+                    // **Faded, not conditionally composed.** [scar] Wrapping
+                    // this in an AnimatedVisibility keyed on isRendering was a
+                    // deadlock and the reason previews did nothing at all: the
+                    // surface only existed once a frame had rendered, and a
+                    // frame can only render into a surface. The player had
+                    // nowhere to draw, onRenderedFirstFrame never fired, and
+                    // the condition guarding the surface stayed false forever.
                     if (isPreviewing && preview != null) {
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = preview.isRendering,
-                            enter = androidx.compose.animation.fadeIn(),
-                            exit = androidx.compose.animation.fadeOut(),
-                            modifier = Modifier.matchParentSize()
-                        ) {
-                            InlinePreviewSurface(preview, Modifier.fillMaxSize())
-                        }
+                        val previewAlpha by animateFloatAsState(
+                            targetValue = if (preview.isRendering) 1f else 0f,
+                            label = "previewAlpha"
+                        )
+                        InlinePreviewSurface(
+                            controller = preview,
+                            modifier = Modifier
+                                .matchParentSize()
+                                .graphicsLayer { alpha = previewAlpha }
+                        )
                     }
 
                     // Gradient overlay at bottom for duration
