@@ -153,7 +153,10 @@ token-bound MWEB fetch through `fetchPlayerResponse`, parse, construct -
 JVM-verified with the suites above, 70 tests green 2026-09-18), plus the stage
 6 bridge (`bridge/SabrManifest.kt`, `SabrPlaybackSpec.kt`, `SabrBridge.kt`,
 `SabrSegmentDataSource.kt`, fixed selection, gated assembly - 83 tests green
-2026-09-18). SABR is
+2026-09-18), plus stage 7 integration (music waterfall branch with
+occurrence-keyed sources, video resolve/loadQuality branch with position
+restore intact, cache-toggle wiring, Local Only refusal by construction -
+compile-verified, rollout gate closed). SABR is
 not enabled or playable. The anonymous MWEB /player envelope is verified live
 (`c=MWEB`, 25 adaptive formats, ~6h expiry, ciphered URLs, no ustreamer leaf):
 `.probe/stage5-mweb-player-anon-2026-09-18.log`. `PlaybackSource` separates URL-backed and SABR metadata;
@@ -254,12 +257,12 @@ aborts a stalled body read. Log: `.probe/sabr-session-check.log`. All controlled
 responses are synthetic; no live googlevideo request has been made.
 No packaging/device checks.
 
-**Next action:** stage 7, music/cache integration: wire the gated assembly into
-the music (audio-only) and video pipelines behind the rollout flag with direct
-fallbacks intact, queue-occurrence safety, pre-resolution, crossfade/speed
-handling, then the on-device minter run and the signature/n decoder check.
-The bridge is implemented and JVM/compile-verified (logs:
-`.probe/sabr-6*-test.log`, `.probe/sabr-*-compile.log`). Still needs
+**Next action:** live validation before any rollout: on-device minter run
+(real BotGuard + GenerateIT through the app WebView), signature/n decoder
+check for the ciphered ladder URLs, token-bound ustreamer evidence, then flip
+`SABR_PLAYBACK_ENABLED` with fallbacks watching. Everything else is
+implemented and JVM/compile-verified (logs: `.probe/sabr-*-test.log`,
+`.probe/sabr-*-compile.log`). Still needs
 device/signed-in probes: token-bound ustreamer leaf, SESSION binding, actual
 BotGuard run. MWEB envelope (minus ustreamer) is verified live; do not invent
 beyond it.

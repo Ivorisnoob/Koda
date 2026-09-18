@@ -59,6 +59,12 @@ import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.data.youtube.sabr.SabrResolver
+import com.ivor.ivormusic.data.youtube.sabr.bridge.SABR_PLAYBACK_ENABLED
+import com.ivor.ivormusic.data.youtube.sabr.bridge.SabrPlayback
+import com.ivor.ivormusic.data.youtube.sabr.bridge.assembleSabrPlayback
+import com.ivor.ivormusic.data.youtube.sabr.model.SabrDescriptor
+import com.ivor.ivormusic.data.youtube.sabr.session.SabrAttestation
 import com.ivor.ivormusic.data.VideoPlaybackCacheStream
 import com.ivor.ivormusic.data.VideoSeekPreview
 import com.ivor.ivormusic.data.VttCue
@@ -321,6 +327,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private val _currentQuality = MutableStateFlow<VideoQuality?>(null)
     val currentQuality: StateFlow<VideoQuality?> = _currentQuality
+
+    // Attested SABR snapshot for the current video, resolved alongside the
+    // ladder and consumed by loadQuality. Null on live (invariant: live stays
+    // HLS), on any resolution failure, and whenever the video changes.
+    private var sabrDescriptor: SabrDescriptor? = null
+    private var sabrPlayback: SabrPlayback? = null
 
     private val notInterestedRepository =
         com.ivor.ivormusic.data.NotInterestedRepository(context)
@@ -1613,6 +1625,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         if (qualities.isEmpty()) return false
 
+        if (qualities.none { it.isLive }) {
+            sabrDescriptor = trySabrVideo(video.videoId)
+            if (_currentVideo.value?.videoId != video.videoId) return true
+        }
+
         _availableQualities.value = qualities
         val previousLabel = _currentQuality.value?.resolution
         val chosen = localVideoQualityOptions(qualities)
@@ -2397,6 +2414,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         resetSponsorBlock()
         _availableQualities.value = emptyList()
         _currentQuality.value = null
+        // A snapshot from the previous video must never feed the next one;
+        // the player release hook already freed its session and spool.
+        sabrDescriptor = null
+        sabrPlayback = null
         _relatedVideos.value = emptyList() // Clear previous related
         _chapters.value = emptyList() // Clear previous chapters
         _seekPreview.value = null // Never show a frame from the previous video
@@ -2580,6 +2601,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     }
                     if (_isLive.value) startLiveMetadataPolling(video.videoId)
 
+                    if (!_isLive.value) {
+                        sabrDescriptor = trySabrVideo(video.videoId)
+                        if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
+                    }
+
                     if (qualities.isNotEmpty()) {
                         val chosen = pickDefaultQuality(qualities)
                         if (chosen == null) {
@@ -2758,6 +2784,60 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * subtitle. Koda renders cues itself instead - see [setCaptionTrack] - so
      * this only ever deals with video and audio.
      */
+    /**
+     * Attested snapshot for loadQuality, resolved next to the ladder once the
+     * live verdict is definitive. Null keeps the direct path below untouched.
+     */
+    private suspend fun trySabrVideo(videoId: String): SabrDescriptor? {
+        if (!SABR_PLAYBACK_ENABLED) return null
+        return try {
+            SabrResolver(youtubeRepository, SabrAttestation.get(context)).resolve(videoId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.d("VideoPlayerVM", "SABR unavailable for $videoId, direct fallback", e)
+            null
+        }
+    }
+
+    /**
+     * Fixed-rendition SABR source for the picked quality. Position restoration
+     * stays with the callers (seek on READY), exactly like the direct path;
+     * a stale or missing snapshot falls back to it.
+     */
+    private fun loadSabrQuality(quality: VideoQuality): Boolean {
+        val video = _currentVideo.value ?: return false
+        val attestation = SabrAttestation.get(context)
+        val descriptor = sabrDescriptor
+            ?.takeIf {
+                it.videoId == video.videoId &&
+                    it.isUsable(System.currentTimeMillis(), attestation.currentIdentity())
+            }
+            ?: return false
+        return try {
+            val playback = assembleSabrPlayback(
+                context = context,
+                descriptor = descriptor,
+                mediaItem = nowPlayingMediaItem("sabr://${video.videoId}"),
+                audioOnly = false,
+                maxVideoHeight = quality.height,
+                positionMs = _exoPlayer?.currentPosition ?: 0,
+                playbackRate = { _playbackSpeed.value },
+                http = attestation.http,
+                identityNow = { attestation.currentIdentity() },
+                writeToCache = ThemePreferences.isVideoCacheEnabled(context),
+            )
+            sabrPlayback = playback
+            _exoPlayer?.setMediaSource(playback.mediaSource)
+            _exoPlayer?.prepare()
+            true
+        } catch (e: Exception) {
+            KLog.d("VideoPlayerVM", "SABR assembly failed for ${video.videoId}, direct fallback", e)
+            sabrDescriptor = null
+            false
+        }
+    }
+
     private fun loadQuality(quality: VideoQuality) {
         _currentQuality.value = quality
 
@@ -2767,6 +2847,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // runs for the initial pick.
             applyLiveQualityCap(quality)
         }
+
+        // Attested transport first when rolled out; live never qualifies.
+        if (!quality.isLive && loadSabrQuality(quality)) return
 
         if (quality.isDASH) {
             // Adaptive manifest - hand it to the player and let its MediaSource

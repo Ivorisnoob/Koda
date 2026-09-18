@@ -717,8 +717,10 @@ class MusicService : MediaLibraryService() {
                 .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(
                     object : MediaSource.Factory {
+                        // Occurrence-keyed: crossfade overlaps two players, and
+                        // two occurrences of one track must never share a source.
                         override fun createMediaSource(mediaItem: MediaItem): MediaSource =
-                            sabrPlaybacks[mediaItem.mediaId]?.mediaSource
+                            sabrPlaybacks[mediaItem.queueItemId ?: mediaItem.mediaId]?.mediaSource
                                 ?: defaultMediaSourceFactory.createMediaSource(mediaItem)
 
                         override fun setDrmSessionManagerProvider(
@@ -1389,6 +1391,7 @@ class MusicService : MediaLibraryService() {
      */
     private suspend fun trySabrMusic(originalItem: MediaItem): MediaItem? {
         val videoId = originalItem.mediaId
+        val occurrence = originalItem.queueItemId ?: videoId
         return try {
             val attestation = SabrAttestation.get(this)
             val now = System.currentTimeMillis()
@@ -1411,9 +1414,10 @@ class MusicService : MediaLibraryService() {
                 playbackRate = { playbackSpeed },
                 http = attestation.http,
                 identityNow = { attestation.currentIdentity() },
+                writeToCache = isCacheEnabled,
             )
             if (sabrPlaybacks.size > MAX_RESOLVED_URI_ENTRIES) sabrPlaybacks.clear()
-            sabrPlaybacks[videoId] = playback
+            sabrPlaybacks[occurrence] = playback
             KLog.d(TAG, "Resolution: SABR success for $videoId")
             buildMediaItemWithUri(originalItem, Uri.parse("sabr://$videoId"))
         } catch (e: CancellationException) {
