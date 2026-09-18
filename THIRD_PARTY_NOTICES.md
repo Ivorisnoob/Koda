@@ -82,6 +82,18 @@ decoder lands, absolute expiry, redacted diagnostics. `SabrResolution.toDescript
 follows upstream's descriptor assembly (token bytes, client version, lifetime);
 rotation resolves by re-resolving rather than swapping bytes under a session.
 
+## PipePipe SABR Media3 bridge (client)
+
+`bridge/SabrManifest.kt`, `bridge/SabrPlaybackSpec.kt`, `bridge/SabrBridge.kt`
+and `bridge/SabrSegmentDataSource.kt` adapt the `player/datasource` package
+(`SabrDashMediaSource`, `SabrSourceSpec`/`SabrSegmentKey`, `SabrMediaBridge`,
+`SabrSegmentDataSource`) at the commit above, also GPL-3.0. Koda's changes fix
+the selection (single audio plus optional video, no groups or ABR), serve
+initialization from the spec, serialize through `SabrSession` instead of a
+bridge lock (no pending exception - undelivered segments surface as
+`IOException` for Media3's standard retry policy), keep spool files as the
+transient store, and compute honest buffered ranges from held segments.
+
 ## PipePipe PO-token minter (client + extractor)
 
 `session/SabrMinter.kt` orchestrates minting after PipePipe (client)
