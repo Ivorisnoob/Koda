@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,7 +68,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -208,6 +212,10 @@ private fun ChannelRoot(
     val gridState = rememberLazyGridState()
     var searchMode by remember { mutableStateOf(false) }
     var optionsTarget by remember { mutableStateOf<VideoItem?>(null) }
+    // Same haptic the tab strip itself plays, so a gesture switch and a tap
+    // switch feel identical.
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val density = LocalDensity.current
 
     // The About panel is a tab in this UI and an engagement panel on YouTube's
     // side, so it is fetched the moment it is opened rather than with the page.
@@ -293,7 +301,61 @@ private fun ChannelRoot(
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize()
+                    // Gesture tab switch, deliberately without a pager: a fast
+                    // horizontal flick anywhere on the grid moves to the next
+                    // (swipe left) or previous (swipe right) tab and the content
+                    // just swaps, exactly as if the strip had been tapped. No
+                    // follow-the-finger animation, by request.
+                    //
+                    // Observe-only: nothing here is ever consumed, so vertical
+                    // scrolling and the shelf rows keep working untouched. The
+                    // price is that a fast horizontal flick *starting on* a
+                    // shelf row both scrolls the shelf and switches the tab.
+                    // Slow shelf browsing never trips it - the duration and
+                    // distance gates below only pass for a deliberate flick -
+                    // and multi-touch (pinch) is ignored outright.
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(tabs, selectedTab, searchMode) {
+                            if (searchMode) return@pointerInput
+                            val minDistancePx = with(density) { 96.dp.toPx() }
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var totalX = 0f
+                                var totalY = 0f
+                                val startTime = down.uptimeMillis
+                                var endTime = startTime
+                                var aborted = false
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.size > 1) {
+                                        aborted = true
+                                        break
+                                    }
+                                    for (change in event.changes) {
+                                        totalX += change.position.x - change.previousPosition.x
+                                        totalY += change.position.y - change.previousPosition.y
+                                    }
+                                    endTime = event.changes.firstOrNull()?.uptimeMillis ?: endTime
+                                    if (event.changes.all { !it.pressed }) break
+                                }
+                                if (aborted) return@awaitEachGesture
+                                val duration = endTime - startTime
+                                if (duration in 1..400 &&
+                                    kotlin.math.abs(totalX) >= minDistancePx &&
+                                    kotlin.math.abs(totalX) >= 1.5f * kotlin.math.abs(totalY)
+                                ) {
+                                    val entries = tabs + ABOUT_TAB
+                                    val index = entries.indexOfFirst { it.kind == selectedTab }
+                                    val target = if (totalX < 0f) entries.getOrNull(index + 1)
+                                    else entries.getOrNull(index - 1)
+                                    if (target != null && target.kind != selectedTab) {
+                                        haptics.subtle()
+                                        viewModel.selectTab(target.kind)
+                                    }
+                                }
+                            }
+                        }
                 ) {
                     item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
                         CreatorHeader(
