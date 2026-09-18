@@ -1352,6 +1352,17 @@ fun HomeScreen(
             onDispose { playerViewModel.setPlayerExpanded(false) }
         }
 
+        // A handover from an overlay above the NavHost ("Listen as music")
+        // cannot open this sheet itself, because the state that owns it lives
+        // here. It asks instead, and the ask is only honoured while Home is
+        // composed - the flow has no replay, so a request made from another
+        // route is dropped rather than springing the player open on return.
+        LaunchedEffect(playerViewModel) {
+            playerViewModel.playerExpandRequests.collect {
+                if (playerViewModel.currentSong.value != null) showPlayerSheet = true
+            }
+        }
+
         // Expandable Player (Mini <-> Full Screen)
         ExpandablePlayer(
             isExpanded = showPlayerSheet,

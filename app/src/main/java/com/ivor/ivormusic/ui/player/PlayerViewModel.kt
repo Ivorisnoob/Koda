@@ -25,8 +25,11 @@ import com.ivor.ivormusic.service.MusicService
 import com.ivor.ivormusic.service.EXTRA_QUEUE_ITEM_ID
 import com.ivor.ivormusic.service.toPlaybackMediaItem
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -1459,6 +1462,24 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     fun setPlayerExpanded(expanded: Boolean) {
         _isPlayerExpanded.value = expanded
+    }
+
+    /**
+     * Asks the screen hosting the player to open it full-screen.
+     *
+     * [setPlayerExpanded] cannot do this: it is a mirror, and writing true into
+     * it would only tell the video overlay the player is open while the sheet
+     * itself stayed shut. A handover that arrives from outside Home - "Listen
+     * as music", which starts in an overlay above the NavHost - has to ask
+     * instead, and the ask is dropped when nothing is listening (no replay, one
+     * slot of buffer): off the Home route there is no player sheet to open, and
+     * a queued request would spring one open minutes later when Home returns.
+     */
+    private val _playerExpandRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val playerExpandRequests: SharedFlow<Unit> = _playerExpandRequests.asSharedFlow()
+
+    fun requestPlayerExpanded() {
+        _playerExpandRequests.tryEmit(Unit)
     }
 
     fun pauseDownload(id: String) = downloadRepository.pauseDownload(id)

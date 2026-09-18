@@ -791,14 +791,26 @@ fun MusicApp(
     //
     // Callbacks repeating the current value are ignored, including preference
     // restoration during composition.
-    val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
+    //
+    // `pauseMusic` is false for exactly one caller: "Listen as music", which is
+    // a handover rather than a mode switch. The music pipeline has just been
+    // told to play at the video's position, and pausing it here would cancel
+    // that play before it ever started - `PlayerViewModel.pause()` also drops a
+    // pending playWhenReady, precisely so a song still resolving cannot begin
+    // over a video. That is the right behaviour for a switch and the wrong one
+    // for a handover, so the two are now separate entry points. [scar]
+    val changePlaybackMode: (Boolean, Boolean) -> Unit = { nextVideoMode, pauseMusic ->
         if (nextVideoMode != videoMode) {
-            playerViewModel.pause()
+            if (pauseMusic) playerViewModel.pause()
             videoPlayerViewModel.setExpanded(false)
             videoPlayerViewModel.pause()
             shortsPlayerViewModel.close()
             onVideoModeToggle(nextVideoMode)
         }
+    }
+
+    val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
+        changePlaybackMode(nextVideoMode, true)
     }
 
     // "Listen as music" from video playback settings: a real migration into
@@ -830,10 +842,18 @@ fun MusicApp(
         val startPositionMs = start.duration.takeIf { it > 0L }
             ?.let { positionMs.coerceIn(0L, it) }
             ?: positionMs
+        // Order is load-bearing. The mode switch runs first and without its
+        // music pause, so everything that stops the video pipeline has already
+        // happened by the time the music play is issued; starting the music
+        // first meant a play() followed immediately by the switch's pause(),
+        // and the track sat silent at the handed-over position. The player is
+        // then asked to open, so a full-screen video becomes a full-screen
+        // player rather than collapsing to a pill mid-song.
         videoPlayerViewModel.pause()
-        playerViewModel.playQueueAtPosition(songs, start, startPositionMs)
-        switchPlaybackMode(false)
+        changePlaybackMode(false, false)
         videoPlayerViewModel.closePlayer()
+        playerViewModel.playQueueAtPosition(songs, start, startPositionMs)
+        playerViewModel.requestPlayerExpanded()
     }
 
     // A live broadcast that turned up in the Shorts feed. The Shorts player
