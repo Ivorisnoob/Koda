@@ -51,6 +51,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import com.ivor.ivormusic.data.LocalVideo
+import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.hasWatchableVideo
+import com.ivor.ivormusic.data.toVideoItem
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -186,6 +190,7 @@ class MainActivity : ComponentActivity() {
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val showRecentSearches by themeViewModel.showRecentSearches.collectAsState()
             val showRelatedVideos by themeViewModel.showRelatedVideos.collectAsState()
+            val inlinePreviews by themeViewModel.inlinePreviews.collectAsState()
             val compactVideoHome by themeViewModel.compactVideoHome.collectAsState()
             val playlistSwipeEnabled by themeViewModel.playlistSwipeEnabled.collectAsState()
             val playlistSwipeStartAction by themeViewModel.playlistSwipeStartAction.collectAsState()
@@ -342,6 +347,8 @@ class MainActivity : ComponentActivity() {
                         onShowRecentSearchesToggle = { themeViewModel.setShowRecentSearches(it) },
                         showRelatedVideos = showRelatedVideos,
                         onShowRelatedVideosToggle = { themeViewModel.setShowRelatedVideos(it) },
+                        inlinePreviews = inlinePreviews,
+                        onInlinePreviewsToggle = { themeViewModel.setInlinePreviews(it) },
                         compactVideoHome = compactVideoHome,
                         onCompactVideoHomeToggle = { themeViewModel.setCompactVideoHome(it) },
                         playlistSwipeEnabled = playlistSwipeEnabled,
@@ -669,6 +676,8 @@ fun MusicApp(
     onShowRecentSearchesToggle: (Boolean) -> Unit,
     showRelatedVideos: Boolean,
     onShowRelatedVideosToggle: (Boolean) -> Unit,
+    inlinePreviews: Boolean,
+    onInlinePreviewsToggle: (Boolean) -> Unit,
     compactVideoHome: Boolean,
     onCompactVideoHomeToggle: (Boolean) -> Unit,
     playlistSwipeEnabled: Boolean,
@@ -789,14 +798,98 @@ fun MusicApp(
     //
     // Callbacks repeating the current value are ignored, including preference
     // restoration during composition.
-    val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
+    //
+    // `pauseMusic` is false for exactly one caller: "Listen as music", which is
+    // a handover rather than a mode switch. The music pipeline has just been
+    // told to play at the video's position, and pausing it here would cancel
+    // that play before it ever started - `PlayerViewModel.pause()` also drops a
+    // pending playWhenReady, precisely so a song still resolving cannot begin
+    // over a video. That is the right behaviour for a switch and the wrong one
+    // for a handover, so the two are now separate entry points. [scar]
+    val changePlaybackMode: (Boolean, Boolean) -> Unit = { nextVideoMode, pauseMusic ->
         if (nextVideoMode != videoMode) {
-            playerViewModel.pause()
+            if (pauseMusic) playerViewModel.pause()
             videoPlayerViewModel.setExpanded(false)
             videoPlayerViewModel.pause()
             shortsPlayerViewModel.close()
             onVideoModeToggle(nextVideoMode)
         }
+    }
+
+    val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
+        changePlaybackMode(nextVideoMode, true)
+    }
+
+    // "Listen as music" from video playback settings: a real migration into
+    // MusicService, so the track joins the music queue, notification and
+    // player styles. An opened VideoQueue migrates whole (the one case where
+    // "what plays next" is already decided); a lone video migrates alone and
+    // music's ordinary end-of-queue behavior applies.
+    //
+    // Pause-first rather than warm-then-swap: the music resolve buffers
+    // before it plays, and overlapping the two pipelines would echo the same
+    // audio twice. The cost is a short silence at the switch; the staged
+    // overlap from ROADMAP ("Switching modes without stopping the audio")
+    // remains the follow-up that removes it.
+    val moveVideoToMusic: () -> Unit = move@{
+        val video = videoPlayerViewModel.currentVideo.value ?: return@move
+        if (LocalVideo.isDeviceVideoId(video.videoId)) return@move
+        if (video.videoId.startsWith("external:")) return@move
+        if (videoPlayerViewModel.isLive.value) return@move
+        val positionMs = (videoPlayerViewModel.exoPlayer?.currentPosition ?: 0L).coerceAtLeast(0L)
+        val queueVideos = videoPlayerViewModel.queue.value?.videos.orEmpty()
+        val songs = if (queueVideos.isNotEmpty()) {
+            queueVideos.map { it.toSong() }
+        } else {
+            listOf(video.toSong())
+        }
+        if (songs.isEmpty()) return@move
+        val startIndex = videoPlayerViewModel.queue.value?.index?.coerceIn(songs.indices) ?: 0
+        val start = songs[startIndex]
+        val startPositionMs = start.duration.takeIf { it > 0L }
+            ?.let { positionMs.coerceIn(0L, it) }
+            ?: positionMs
+        // Order is load-bearing. The mode switch runs first and without its
+        // music pause, so everything that stops the video pipeline has already
+        // happened by the time the music play is issued; starting the music
+        // first meant a play() followed immediately by the switch's pause(),
+        // and the track sat silent at the handed-over position. The player is
+        // then asked to open, so a full-screen video becomes a full-screen
+        // player rather than collapsing to a pill mid-song.
+        videoPlayerViewModel.pause()
+        changePlaybackMode(false, false)
+        videoPlayerViewModel.closePlayer()
+        playerViewModel.playQueueAtPosition(songs, start, startPositionMs)
+        playerViewModel.requestPlayerExpanded()
+    }
+
+    // The reverse of "Listen as music": promote what is playing to its video.
+    //
+    // Not symmetric with its mirror, and deliberately so. Every video carries
+    // audio, so that direction always has somewhere to go; not every song has
+    // a video, which is why the control is conditional (see
+    // Song.hasWatchableVideo) rather than always offered and often broken.
+    //
+    // The music queue is not carried over. A video queue is an explicit
+    // ordered list the user chose, and a music queue is frequently a radio -
+    // an endless generated stream of songs, which is not a playlist and would
+    // arrive in the video player as one. The song moves; what plays next
+    // becomes video mode's ordinary related-videos behaviour, the same answer
+    // the other direction gives when it migrates a lone video.
+    val moveMusicToVideo: () -> Unit = move@{
+        val song = playerViewModel.currentSong.value ?: return@move
+        if (!song.hasWatchableVideo(context)) return@move
+        val positionMs = playerViewModel.progress.value.coerceAtLeast(0L)
+        val startPositionMs = song.duration.takeIf { it > 0L }
+            ?.let { positionMs.coerceIn(0L, it) }
+            ?: positionMs
+        // Pause-first and in this order, for the reason the mirror documents:
+        // the mode switch stops the other pipeline, so it has to finish before
+        // the incoming one is told to play, or the switch's own pause lands on
+        // top of the play it was meant to precede.
+        playerViewModel.pause()
+        changePlaybackMode(true, true)
+        videoPlayerViewModel.playVideoAt(song.toVideoItem(), startPositionMs)
     }
 
     // A live broadcast that turned up in the Shorts feed. The Shorts player
@@ -1035,6 +1128,8 @@ fun MusicApp(
             composable("home") {
                 HomeScreen(
                     compactVideoHome = compactVideoHome,
+                    inlinePreviews = inlinePreviews,
+                    onWatchAsVideo = moveMusicToVideo,
                     onSongClick = { song ->
                         playerViewModel.playSong(song)
                     },
@@ -1149,6 +1244,8 @@ fun MusicApp(
                     onShowRecentSearchesToggle = onShowRecentSearchesToggle,
                     showRelatedVideos = showRelatedVideos,
                     onShowRelatedVideosToggle = onShowRelatedVideosToggle,
+                    inlinePreviews = inlinePreviews,
+                    onInlinePreviewsToggle = onInlinePreviewsToggle,
                     compactVideoHome = compactVideoHome,
                     onCompactVideoHomeToggle = onCompactVideoHomeToggle,
                     playlistSwipeEnabled = playlistSwipeEnabled,
@@ -1271,7 +1368,8 @@ fun MusicApp(
                     // The sign-in dialog lives on the home screen, so a login
                     // ask from here has to go back for it rather than opening a
                     // second WebView on top of a settings sub-screen.
-                    onLoginClick = { navController.popBackStack("home", inclusive = false) }
+                    onLoginClick = { navController.popBackStack("home", inclusive = false) },
+                    onOpenChannel = openChannel
                 )
             }
             composable(
@@ -1468,6 +1566,7 @@ fun MusicApp(
             timedCommentsEnabled = timedCommentsEnabled,
             showRelatedVideos = showRelatedVideos,
             onOpenChannel = openChannel,
+            onListenAsMusic = moveVideoToMusic,
             hostBottomChrome = videoMiniBottomChrome,
             hostChromeFollowOffsetPx = videoMiniFollowOffsetPx,
             miniBarHidden = isMusicPlayerExpanded
@@ -1680,3 +1779,18 @@ private fun CrashReportPrompt(
         }
     )
 }
+
+/**
+ * Music-mode representation of a video handed over by "Listen as music".
+ * Same shape as the search and shared-link converters: the channel stands in
+ * for the artist, and there is no album to name.
+ */
+private fun VideoItem.toSong(): Song = Song.fromYouTube(
+    videoId = videoId,
+    title = title,
+    artist = channelName,
+    album = "",
+    duration = duration * 1000,
+    thumbnailUrl = thumbnailUrl
+)
+

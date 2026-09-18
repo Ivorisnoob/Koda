@@ -23,6 +23,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -157,6 +159,8 @@ fun LibraryContent(
     /** Open a musician's video-mode channel page, from the artist screen. */
     onOpenChannel: ((String) -> Unit)? = null,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
@@ -318,6 +322,7 @@ fun LibraryContent(
                 contentPadding = contentPadding,
                 onSongClick = onSongClick,
                 onPlayQueue = onPlayQueue,
+                onShuffleQueue = onShuffleQueue,
                 onDownloadsClick = onDownloadsClick,
                 onNavigateToPlaylist = { playlist ->
                     selectedPlaylist = playlist
@@ -388,6 +393,7 @@ fun LibraryContent(
                         playlist = playlist,
                         onBack = { back() },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         viewModel = viewModel,
                         isAlbum = false,
                         onSongLongPress = onSongLongPress,
@@ -415,6 +421,7 @@ fun LibraryContent(
                         playlist = albumItem,
                         onBack = { back() },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         viewModel = viewModel,
                         preloadedSongs = selectedAlbumSongs,
                         isAlbum = true,
@@ -433,6 +440,7 @@ fun LibraryContent(
                         songs = songs, // Pass all songs, screen filters locally or fetches
                         onBack = { back() },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         onSongClick = onSongClick,
                         onAlbumClick = { album, songs ->
                             selectedAlbumName = album
@@ -490,6 +498,7 @@ fun LibraryContent(
                     playlist = readyOfflineItem,
                     onBack = { back() },
                     onPlayQueue = onPlayQueue,
+                    onShuffleQueue = onShuffleQueue,
                     viewModel = viewModel,
                     preloadedSongs = readyOffline.songs,
                     isAlbum = false,
@@ -563,6 +572,8 @@ fun LibraryMainScreen(
     contentPadding: PaddingValues,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     onDownloadsClick: () -> Unit,
     onNavigateToPlaylist: (PlaylistDisplayItem) -> Unit,
     onNavigateToArtist: (String) -> Unit,
@@ -592,8 +603,6 @@ fun LibraryMainScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
 
-    var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.All) }
-
     // Sort order sticks across launches, so it lives in prefs rather than in
     // rememberSaveable. Matched by name instead of valueOf so an option
     // removed in a later version falls back to Title instead of throwing.
@@ -601,6 +610,17 @@ fun LibraryMainScreen(
     val todayLabel = stringResource(R.string.sc_today)
     val yesterdayLabel = stringResource(R.string.lh_yesterday)
     val themePreferences = remember(context) { ThemePreferences(context) }
+
+    // The open tab is persisted for the same reason, and it is the same bug:
+    // rememberSaveable survived rotation but not leaving the screen, and this
+    // screen lives inside Home's AnimatedContent, so every trip out to a
+    // playlist and back landed on All again. Someone who lives in Albums had
+    // to re-select it all day.
+    val storedTabName by themePreferences.libraryTab.collectAsState()
+    val selectedTab = remember(storedTabName) {
+        LibraryTab.entries.firstOrNull { it.name == storedTabName } ?: LibraryTab.All
+    }
+    val tabHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val storedSortName by themePreferences.librarySortOption.collectAsState()
     val sortOption = remember(storedSortName) {
         LibrarySortOption.entries.firstOrNull { it.name == storedSortName }
@@ -706,7 +726,12 @@ fun LibraryMainScreen(
                     val selected = selectedTab == tab
                     ToggleButton(
                         checked = selected,
-                        onCheckedChange = { selectedTab = tab },
+                        onCheckedChange = {
+                            if (tab != selectedTab) {
+                                tabHaptics.subtle()
+                                themePreferences.setLibraryTab(tab.name)
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),
@@ -738,16 +763,22 @@ fun LibraryMainScreen(
             isRefreshing = isLoading && librarySongs.isNotEmpty(),
             onRefresh = { viewModel.refresh() }
         ) {
-            // Using AnimatedContent for tab switching (expressive motion physics)
-            val tabSpatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
-            val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+            // No pager here, by decision: the Home shell owns the horizontal
+            // flick (switching main tabs), and a pager inside it both ate
+            // those flicks and fought them. Tab moves go through the strip
+            // above, with a directional slide for orientation.
             AnimatedContent(
                 targetState = selectedTab,
+                label = "LibraryTab",
                 transitionSpec = {
-                    fadeIn(animationSpec = tabEffectsSpec) +
-                    slideInVertically(animationSpec = tabSpatialSpec) { it / 20 } togetherWith
-                    fadeOut(animationSpec = tabEffectsSpec) +
-                    slideOutVertically(animationSpec = tabSpatialSpec) { -it / 20 }
+                    val forward = targetState.ordinal > initialState.ordinal
+                    if (forward) {
+                        (slideInHorizontally { width -> width } + fadeIn()) togetherWith
+                            (slideOutHorizontally { width -> -width / 3 } + fadeOut())
+                    } else {
+                        (slideInHorizontally { width -> -width / 3 } + fadeIn()) togetherWith
+                            (slideOutHorizontally { width -> width } + fadeOut())
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             ) { tab ->
@@ -769,6 +800,7 @@ fun LibraryMainScreen(
                             onSortOptionChange = { themePreferences.setLibrarySortOption(it.name) },
                             onSongClick = onSongClick,
                             onPlayQueue = onPlayQueue,
+                            onShuffleQueue = onShuffleQueue,
                             onDownloadsClick = onDownloadsClick,
                             onLikedSongsClick = {
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
@@ -931,6 +963,8 @@ fun AllSongsList(
     onSortOptionChange: (LibrarySortOption) -> Unit,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     onDownloadsClick: () -> Unit,
     onLikedSongsClick: () -> Unit,
     onNavigateToHistory: () -> Unit,
@@ -1052,8 +1086,7 @@ fun AllSongsList(
                     if (songs.isNotEmpty()) {
                         FilledIconButton(
                             onClick = {
-                                val shuffled = songs.shuffled()
-                                onPlayQueue(shuffled, shuffled.first())
+                                onShuffleQueue(songs)
                             },
                             modifier = Modifier.size(40.dp),
                             shapes = IconButtonDefaults.shapes()
@@ -2845,6 +2878,8 @@ fun PlaylistDetailScreen(
     playlist: PlaylistDisplayItem,
     onBack: () -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     viewModel: HomeViewModel,
     preloadedSongs: List<Song>? = null,
     isAlbum: Boolean = false,
@@ -3532,7 +3567,7 @@ fun PlaylistDetailScreen(
                     }
                     com.ivor.ivormusic.ui.artist.PlaySplitButton(
                         onPlay = { onPlayQueue(filteredSongs, filteredSongs.first()) },
-                        onShuffle = { onPlayQueue(filteredSongs.shuffled(), null) },
+                        onShuffle = { onShuffleQueue(filteredSongs) },
                         onStartRadio = if (radioSeed != null) {
                             {
                                 scope.launch {
@@ -3814,7 +3849,7 @@ fun PlaylistDetailScreen(
                     if (songs.isNotEmpty() && !isReorderMode && !isSearchActive) {
                         CollectionPlaybackActions(
                             onPlay = { onPlayQueue(songs, songs.first()) },
-                            onShuffle = { onPlayQueue(songs.shuffled(), null) },
+                            onShuffle = { onShuffleQueue(songs) },
                             modifier = Modifier
                                 .padding(horizontal = PLAYLIST_GUTTER)
                                 .padding(top = 18.dp),

@@ -41,9 +41,13 @@ The rules below are what to do. This is how the doing has gone when it went well
 
 **Read the result of a scripted edit before compiling it.** Compiling proves it parses. Only looking proves it did what you meant.
 
-**One item, one compile, one report.** The user feeds items as they find them, sometimes mid-turn. Finish the item in flight, acknowledge the new one, and keep a visible queue - dropping half-applied work to chase the newest request is how a branch ends up not building.
+**One item, one compile, one commit, one report.** The user feeds items as they find them, sometimes mid-turn. Finish the item in flight, acknowledge the new one, and keep a visible queue - dropping half-applied work to chase the newest request is how a branch ends up not building.
 
-**Commit per coherent change where the files allow it.** Several features landing in one commit is acceptable when they genuinely interleave across the same files, but say so; a bug fix that lives in one file deserves its own commit for revertability.
+**Commit locally at the end of every item, before starting the next one.** The commit is the checkpoint, and the reason for it is revertability: when one item out of a batch of nine turns out to be wrong on a real screen, `git revert <sha>` takes back exactly that item, and nothing else. That only holds if the boundaries are honest - one item per commit, no finished item left uncommitted at the end of a turn, no second item folded into the first because it was small, and a follow-up fix as its own commit rather than an amend or a rebase of one already in. Several features landing together is acceptable when they genuinely interleave across the same files, but say so. A bug fix that lives in one file always deserves its own commit.
+
+The subject is written for whoever reads `git log` a month from now: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched. Add a body when the reason is not obvious from the subject, and the `Changelog:` section whenever the change reaches an APK (format below).
+
+**Never destroy uncommitted work to get unstuck.** `git reset --hard`, `git checkout -- .`, `git clean -fd` and dropping a stash over a dirty tree are explicit-request actions, the same as touching the remote - they are the one class of mistake that no commit can undo. Commit what is there first, then experiment on top of it.
 
 **Think the feature through before you touch a file.** For anything user-facing, work out first:
 
@@ -78,7 +82,7 @@ Changelog:
 
 **Public GitHub releases ship APKs only.** Never attach `mapping.txt` or any other deobfuscation artifact to release assets. Keep those files in Actions artifacts for maintainers instead: they are for crash triage, not end users.
 
-**Do not touch the remote unless asked.** Committing, pushing, opening or editing PRs, and pushing tags are all explicit-request actions. Local edits are the default deliverable.
+**Local commits are expected; the remote is not yours.** Committing to the local branch is the normal end of an item and needs no permission - it is what makes a batch of items individually revertable. Pushing, creating remote branches, opening or editing PRs, and pushing tags are all explicit-request actions.
 
 ## Build, test, verify
 

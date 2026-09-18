@@ -82,6 +82,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     val showRecentSearches: StateFlow<Boolean> = themePreferences.showRecentSearches
     val showRelatedVideos: StateFlow<Boolean> = themePreferences.showRelatedVideos
+    val inlinePreviews: StateFlow<Boolean> = themePreferences.inlinePreviews
     val compactVideoHome: StateFlow<Boolean> = themePreferences.compactVideoHome
     val playlistSwipeEnabled: StateFlow<Boolean> = themePreferences.playlistSwipeEnabled
     val playlistSwipeStartAction: StateFlow<String> = themePreferences.playlistSwipeStartAction
@@ -314,6 +315,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setShowRecentSearches(show: Boolean) = themePreferences.setShowRecentSearches(show)
 
     fun setShowRelatedVideos(show: Boolean) = themePreferences.setShowRelatedVideos(show)
+    fun setInlinePreviews(enabled: Boolean) = themePreferences.setInlinePreviews(enabled)
     fun setCompactVideoHome(enabled: Boolean) = themePreferences.setCompactVideoHome(enabled)
     fun setPlaylistSwipeEnabled(enabled: Boolean) = themePreferences.setPlaylistSwipeEnabled(enabled)
     fun setPlaylistSwipeStartAction(action: String) = themePreferences.setPlaylistSwipeStartAction(action)

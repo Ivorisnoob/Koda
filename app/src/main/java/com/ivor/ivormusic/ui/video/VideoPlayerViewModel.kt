@@ -52,6 +52,8 @@ import com.ivor.ivormusic.data.LiveChatBanner
 import com.ivor.ivormusic.data.LiveChatMessage
 import com.ivor.ivormusic.data.VideoStreamResult
 import com.ivor.ivormusic.data.bestSdrFallback
+import com.ivor.ivormusic.data.cappedAtHeight
+import com.ivor.ivormusic.data.deviceVideoHeightCap
 import com.ivor.ivormusic.data.LiveChatPage
 import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
@@ -112,6 +114,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val youtubeRepository = YouTubeRepository(context)
     private val themePreferences = ThemePreferences(context)
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(context)
+
+    /**
+     * Tallest rendition this panel can show. Read once: it describes the
+     * hardware, not a setting, so it cannot change while the app runs. Every
+     * quality list and every default pick below runs through it, which is what
+     * keeps a 4K rung off the menu and out of Auto on a 720p phone.
+     */
+    private val deviceQualityCap: Int = context.deviceVideoHeightCap()
 
     // Device-held video playlists. Its state is process-wide, so a save taken
     // here shows up in the Library tab's own HomeViewModel without either of
@@ -306,7 +316,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** What the quality menu may offer right now: one entry per visible label. */
     val selectableQualities: StateFlow<List<VideoQuality>> =
         _availableQualities
-            .map(::localVideoQualityOptions)
+            .map { localVideoQualityOptions(it).cappedAtHeight(deviceQualityCap) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _currentQuality = MutableStateFlow<VideoQuality?>(null)
@@ -487,6 +497,51 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isAutoplayEnabled.value && themePreferences.isVideoRepeatEnabled()
     )
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
+
+    // Sleep timer: a wall-clock deadline, or stop at the end of this video.
+    // In-memory like the rest of this ViewModel's playback state (unlike
+    // music's, which survives process death inside MusicService): closing the
+    // player cancels it, and an explicit close means done with the video.
+    private val _sleepTimerEndsAt = MutableStateFlow<Long?>(null)
+    val sleepTimerEndsAt: StateFlow<Long?> = _sleepTimerEndsAt.asStateFlow()
+
+    private val _sleepTimerEndOfVideo = MutableStateFlow(false)
+    val sleepTimerEndOfVideo: StateFlow<Boolean> = _sleepTimerEndOfVideo.asStateFlow()
+
+    private var sleepTimerJob: kotlinx.coroutines.Job? = null
+
+    /** Arm a duration timer; expiry pauses playback and leaves the player open. */
+    fun startSleepTimer(minutes: Int) {
+        if (minutes <= 0) {
+            startSleepTimerEndOfVideo()
+            return
+        }
+        sleepTimerJob?.cancel()
+        _sleepTimerEndOfVideo.value = false
+        val endsAt = System.currentTimeMillis() + minutes * 60_000L
+        _sleepTimerEndsAt.value = endsAt
+        sleepTimerJob = viewModelScope.launch {
+            val remaining = endsAt - System.currentTimeMillis()
+            if (remaining > 0) kotlinx.coroutines.delay(remaining)
+            _sleepTimerEndsAt.value = null
+            _exoPlayer?.pause()
+        }
+    }
+
+    /** Stop when the playing video finishes instead of autoplaying on. */
+    fun startSleepTimerEndOfVideo() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerEndsAt.value = null
+        _sleepTimerEndOfVideo.value = true
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerEndsAt.value = null
+        _sleepTimerEndOfVideo.value = false
+    }
 
     private val _playbackSpeed = MutableStateFlow(themePreferences.getVideoPlaybackSpeed())
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
@@ -1040,6 +1095,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * playlist but never wanders into related videos.
      */
     private suspend fun handlePlaybackEnded() {
+        // An armed end-of-video timer beats autoplay, the queue and related:
+        // this video finishes, playback stops, the flag is consumed.
+        if (_sleepTimerEndOfVideo.value) {
+            _sleepTimerEndOfVideo.value = false
+            _exoPlayer?.pause()
+            CacheManager.setVideoPlaybackActive(VIDEO_CACHE_OWNER, false)
+            return
+        }
         val activeQueue = _queue.value
         val nextRelated = relatedVideos.value.firstOrNull()
         when (
@@ -1682,6 +1745,34 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * @param forceRestart reload even when this video is already current, for
      * the retry path - tapping the same video otherwise only re-expands.
      */
+    /**
+     * Play [video] from [startPositionMs] - the entry point for taking
+     * playback over from the music pipeline ("Watch as video"), rather than
+     * opening a video from a feed.
+     *
+     * `forceRestart` is set because the handover is the point: without it, a
+     * video id that happens to be current already would be expanded at
+     * whatever position it held instead of at the one being handed over.
+     * An explicit position also beats the history checkpoint inside
+     * [startVideo] and raises no "resumed from" notice, which is right here -
+     * the listener did not come back to this video, they were already inside
+     * it.
+     */
+    fun playVideoAt(video: VideoItem, startPositionMs: Long) {
+        if (LocalVideo.isDeviceVideoId(video.videoId)) {
+            playDeviceVideoItem(video)
+            return
+        }
+        leaveLocalPlayback()
+        _queue.value = null
+        lastQueueRemoval = null
+        startVideo(
+            video,
+            forceRestart = true,
+            resumePositionMs = startPositionMs.coerceAtLeast(0L),
+        )
+    }
+
     fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
         // A device video reaching the ordinary entry point is a watch-history
         // row being replayed: history stores VideoItems and nothing else, so a
@@ -1982,7 +2073,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     .map { group.getTrackFormat(it) }
                     .map { LiveRendition(it.width, it.height, it.frameRate) }
             }
-        val ladder = liveVideoQualityLadder(current, renditions)
+        val ladder = liveVideoQualityLadder(current, renditions).cappedAtHeight(deviceQualityCap)
         if (ladder.size < 2) return
         val previous = _availableQualities.value
         if (previous.map { it.resolution to it.width } == ladder.map { it.resolution to it.width }) return
@@ -2627,7 +2718,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
-        val baseOptions = localVideoQualityOptions(qualities)
+        // Capped before anything else, so Auto and an explicit 4K preference
+        // both land on the best rung this panel can show. Never empty, so the
+        // first()/last() picks below stay safe.
+        val baseOptions = localVideoQualityOptions(qualities).cappedAtHeight(deviceQualityCap)
         val options = if (!_isExpanded.value) {
             baseOptions.filterNot(VideoQuality::isHdr).ifEmpty { baseOptions }
         } else {
@@ -3076,6 +3170,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     fun closePlayer() {
         watchTracker.close()
+        cancelSleepTimer()
         saveCurrentVideoResumePosition()
         _resumedFromMs.value = null
         // Remove quality change listener to prevent leaks if player closed before STATE_READY

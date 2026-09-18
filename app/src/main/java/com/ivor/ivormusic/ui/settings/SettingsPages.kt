@@ -77,6 +77,7 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Recommend
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Search
@@ -1324,6 +1325,8 @@ internal fun ContentSettingsPage(
     onShowRecentSearchesToggle: (Boolean) -> Unit,
     showRelatedVideos: Boolean,
     onShowRelatedVideosToggle: (Boolean) -> Unit,
+    inlinePreviews: Boolean,
+    onInlinePreviewsToggle: (Boolean) -> Unit,
     compactVideoHome: Boolean,
     onCompactVideoHomeToggle: (Boolean) -> Unit,
     onNavigateToNotInterested: () -> Unit,
@@ -1491,6 +1494,17 @@ internal fun ContentSettingsPage(
                             enabled = showRelatedVideos,
                             onToggle = onShowRelatedVideosToggle,
                             explanation = stringResource(R.string.si_related_videos)
+                        )
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.SmartDisplay,
+                            title = stringResource(R.string.sp_inline_previews),
+                            subtitle = stringResource(R.string.sp_inline_previews_sub),
+                            enabled = inlinePreviews,
+                            onToggle = onInlinePreviewsToggle,
+                            explanation = stringResource(R.string.si_inline_previews)
                         )
 
                         SettingsDivider()

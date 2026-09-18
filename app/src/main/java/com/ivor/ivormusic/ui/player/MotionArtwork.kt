@@ -51,6 +51,9 @@ import kotlinx.coroutines.delay
 
 internal val LocalMotionArtwork = staticCompositionLocalOf<MotionArtworkSession?> { null }
 
+/** Whether the motion loop should be advancing; false freezes it on its last frame. */
+internal val LocalMotionArtworkPlaying = staticCompositionLocalOf { true }
+
 /** Only hero artwork opts in. Queue rows, backgrounds and the mini-player remain ordinary images. */
 @Composable
 internal fun PlayerArtwork(
@@ -61,11 +64,12 @@ internal fun PlayerArtwork(
     motionEligible: Boolean = true,
 ) {
     val session = LocalMotionArtwork.current?.takeIf { it.songId == song.id && motionEligible }
+    val motionPlaying = LocalMotionArtworkPlaying.current
     Box(modifier) {
         SongArtwork(song, contentDescription, Modifier.matchParentSize(), contentScale)
         if (session != null && !session.failed) {
             key(session) {
-                MotionArtworkSurface(session, contentScale, Modifier.matchParentSize())
+                MotionArtworkSurface(session, motionPlaying, contentScale, Modifier.matchParentSize())
             }
         }
     }
@@ -195,13 +199,23 @@ internal class MotionArtworkSession private constructor(
             setMediaItem(MediaItem.fromUri(chain.first()))
         }
 
-    fun attach(view: TextureView) {
+    fun attach(view: TextureView, autoplay: Boolean = true) {
         if (failed) return
         firstFrame = false
         surface = view
         player.setVideoTextureView(view)
         player.prepare()
-        player.play()
+        if (autoplay) player.play() else player.pause()
+    }
+
+    /**
+     * Freeze or resume the loop without tearing it down. A paused player keeps
+     * rendering its last frame into the TextureView, which is what holds the
+     * frozen artwork over the static cover instead of dropping back to it.
+     */
+    fun setPlaying(playing: Boolean) {
+        if (failed) return
+        if (playing) player.play() else player.pause()
     }
 
     fun detach(view: TextureView) {
@@ -282,10 +296,21 @@ internal class MotionArtworkSession private constructor(
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-private fun MotionArtworkSurface(session: MotionArtworkSession, contentScale: ContentScale, modifier: Modifier) {
+private fun MotionArtworkSurface(
+    session: MotionArtworkSession,
+    playing: Boolean,
+    contentScale: ContentScale,
+    modifier: Modifier,
+) {
     LaunchedEffect(session, session.attempt) {
         delay(12_000)
         if (!session.firstFrame) session.stepDown()
+    }
+    // Follows the music rather than the surface lifetime: pausing freezes the
+    // loop on its last frame (firstFrame stays true, so the alpha below holds)
+    // and resuming continues it, with no re-prepare either way.
+    LaunchedEffect(session, playing) {
+        session.setPlaying(playing)
     }
     AndroidView(
         modifier = modifier,
@@ -296,7 +321,7 @@ private fun MotionArtworkSurface(session: MotionArtworkSession, contentScale: Co
                 addView(TextureView(context).apply {
                     isOpaque = false
                     alpha = 0f
-                    session.attach(this)
+                    session.attach(this, autoplay = playing)
                 }, android.widget.FrameLayout.LayoutParams(-1, -1))
             }
         },
