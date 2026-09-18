@@ -592,8 +592,6 @@ fun LibraryMainScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
 
-    var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.All) }
-
     // Sort order sticks across launches, so it lives in prefs rather than in
     // rememberSaveable. Matched by name instead of valueOf so an option
     // removed in a later version falls back to Title instead of throwing.
@@ -601,6 +599,16 @@ fun LibraryMainScreen(
     val todayLabel = stringResource(R.string.sc_today)
     val yesterdayLabel = stringResource(R.string.lh_yesterday)
     val themePreferences = remember(context) { ThemePreferences(context) }
+
+    // The open tab is persisted for the same reason, and it is the same bug:
+    // rememberSaveable survived rotation but not leaving the screen, and this
+    // screen lives inside Home's AnimatedContent, so every trip out to a
+    // playlist and back landed on All again. Someone who lives in Albums had
+    // to re-select it all day.
+    val storedTabName by themePreferences.libraryTab.collectAsState()
+    val selectedTab = remember(storedTabName) {
+        LibraryTab.entries.firstOrNull { it.name == storedTabName } ?: LibraryTab.All
+    }
     val storedSortName by themePreferences.librarySortOption.collectAsState()
     val sortOption = remember(storedSortName) {
         LibrarySortOption.entries.firstOrNull { it.name == storedSortName }
@@ -706,7 +714,7 @@ fun LibraryMainScreen(
                     val selected = selectedTab == tab
                     ToggleButton(
                         checked = selected,
-                        onCheckedChange = { selectedTab = tab },
+                        onCheckedChange = { themePreferences.setLibraryTab(tab.name) },
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),

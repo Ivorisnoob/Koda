@@ -282,6 +282,9 @@ class ThemePreferences(context: Context) {
     private val _librarySortOption = MutableStateFlow(getLibrarySortOptionPreference())
     val librarySortOption: StateFlow<String> = _librarySortOption.asStateFlow()
 
+    private val _libraryTab = MutableStateFlow(getLibraryTabPreference())
+    val libraryTab: StateFlow<String> = _libraryTab.asStateFlow()
+
     // The Subscriptions feed's own controls. Persisted for the reason the
     // Library sort is: they were held in composition state, and the tab lives
     // inside Home's AnimatedContent, so leaving the tab disposed the state and
@@ -406,6 +409,7 @@ class ThemePreferences(context: Context) {
             KEY_TIME_LIMIT_ENABLED -> _timeLimitEnabled.value = getTimeLimitEnabledPreference()
             KEY_TIME_LIMIT_BUDGETS -> _timeLimitBudgets.value = getTimeLimitBudgetsPreference()
             KEY_LIBRARY_SORT_OPTION -> _librarySortOption.value = getLibrarySortOptionPreference()
+            KEY_LIBRARY_TAB -> _libraryTab.value = getLibraryTabPreference()
             KEY_SUBSCRIPTION_FEED_PERIOD ->
                 _subscriptionFeedPeriod.value = getSubscriptionFeedPeriodPreference()
             KEY_SUBSCRIPTION_FEED_ORDER ->
@@ -792,6 +796,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_REPORT_VERBOSE_LOGS = "report_verbose_logs"
 
         private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
+        private const val KEY_LIBRARY_TAB = "library_tab"
         private const val KEY_SUBSCRIPTION_FEED_PERIOD = "subscription_feed_period"
         private const val KEY_SUBSCRIPTION_FEED_ORDER = "subscription_feed_order"
         private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
@@ -815,6 +820,12 @@ class ThemePreferences(context: Context) {
          * carries an icon.
          */
         private const val LIBRARY_SORT_DEFAULT = "Title"
+
+        /**
+         * Fallback tab for the Library. Mirrors the name of LibraryTab.All,
+         * which lives in the UI layer because it carries a label.
+         */
+        private const val LIBRARY_TAB_DEFAULT = "All"
 
         /**
          * Static fresh read of the local-only preference for network layers
@@ -2077,6 +2088,26 @@ class ThemePreferences(context: Context) {
     fun setLibrarySortOption(optionName: String) {
         prefs.edit().putString(KEY_LIBRARY_SORT_OPTION, optionName).apply()
         _librarySortOption.value = optionName
+    }
+
+    /**
+     * Get the open Library tab, held as a LibraryTab name. Same contract as
+     * the sort order: the caller maps it back to the enum and owns the unknown
+     * case, so a tab dropped in a later version degrades to All rather than
+     * throwing on launch.
+     */
+    private fun getLibraryTabPreference(): String {
+        return prefs.getString(KEY_LIBRARY_TAB, LIBRARY_TAB_DEFAULT) ?: LIBRARY_TAB_DEFAULT
+    }
+
+    /**
+     * Save the open Library tab and update the flow. Pass a LibraryTab name;
+     * existing constants are frozen, since renaming one would silently reset
+     * every user's stored choice.
+     */
+    fun setLibraryTab(tabName: String) {
+        prefs.edit().putString(KEY_LIBRARY_TAB, tabName).apply()
+        _libraryTab.value = tabName
     }
 
     private fun getSubscriptionFeedPeriodPreference(): String =
