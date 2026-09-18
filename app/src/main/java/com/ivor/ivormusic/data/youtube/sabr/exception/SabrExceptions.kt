@@ -31,3 +31,10 @@ internal class SabrStaleDescriptorException : IOException("SABR descriptor is no
 /** The session was closed or its thread interrupted. Never retried. */
 internal class SabrCancelledException(message: String = "SABR session cancelled") :
     InterruptedIOException(message)
+
+/**
+ * Refused before any network ran: Local Only forbids token, bootstrap and
+ * descriptor preparation alike. Never retried, never leaves the device.
+ */
+internal class SabrLocalOnlyException(message: String = "SABR attestation is disabled in Local Only") :
+    IOException(message)
