@@ -261,7 +261,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Play/pause masks locally, skips settle first. Measure layouts against the size bucket. Colors from `KodaWidgetTheme`; picker previews are fixed literals without platform-styled widgets.
 
 ### UI conventions -> `docs/ui-conventions.md`
-- Request Google images at the drawn size (`googleImageAtSize`), layered over the original. Every video frame goes through `VideoThumbnail`.
+- Request Google images at the drawn size (`googleImageAtSize`), layered over the original. Every video frame goes through `VideoThumbnail`, and every duration/LIVE label over one through `ThumbnailBadge` (scrim role, never a theme container - a badge on a photo must not flip with the theme).
 - Every snackbar uses `DismissibleSnackbarHost`; `Dismissed` means the action stands.
 - M3 Expressive first; springs for touch, `tween` for crossfades/progress. The interface scale is a `LocalDensity` override - never provide another one.
 

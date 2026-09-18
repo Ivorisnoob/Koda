@@ -86,6 +86,7 @@ import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.ui.components.VideoThumbnail
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoItem
@@ -818,41 +819,14 @@ fun VideoCard(
                             )
                     )
                 
-                    // Duration badge (skip entirely when the duration is unknown)
-                    if (!video.isLive && video.duration > 0) {
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp),
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color.Black.copy(alpha = 0.8f)
-                        ) {
-                            Text(
-                                text = video.formattedDuration,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Medium,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    } else if (video.isLive) {
-                        // Live badge
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp),
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFFF0000)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.badge_live),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
+                    // Skipped entirely when the duration is unknown, rather
+                    // than drawn as "0:00".
+                    VideoThumbnailBadge(
+                        video = video,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                    )
                 }
             
                 // Video info

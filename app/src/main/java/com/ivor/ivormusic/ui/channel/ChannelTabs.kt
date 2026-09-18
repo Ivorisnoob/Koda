@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.ui.components.VideoThumbnail
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.data.ChannelAbout
 import com.ivor.ivormusic.data.ChannelPost
 import com.ivor.ivormusic.data.ChannelShelf
@@ -472,14 +473,12 @@ private fun ShelfVideoCard(
                 modifier = Modifier.fillMaxSize(),
                 indicatorSize = 28.dp
             )
-            if (video.duration > 0) {
-                DurationBadge(
-                    text = video.formattedDuration,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(6.dp)
-                )
-            }
+            VideoThumbnailBadge(
+                video = video,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+            )
         }
         Column(
             modifier = Modifier.padding(
@@ -701,23 +700,6 @@ private fun ChannelPlaylistCard(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun DurationBadge(text: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(4.dp),
-        color = Color.Black.copy(alpha = 0.8f)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = Color.White,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        )
     }
 }
 
