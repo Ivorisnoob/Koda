@@ -53,3 +53,14 @@ audio-only request state, explicit contiguous buffered ranges, strict streaming-
 host/client checks, typed failures, direct HTTP cancellation, cancellable waits and
 descriptor identity/expiry checks. `session/SabrRequest.kt`, `session/SabrTransport.kt`
 and `exception/SabrExceptions.kt` are Koda additions.
+
+## PipePipe home-page attestation bootstrap parser (client)
+
+`app/src/main/java/com/ivor/ivormusic/data/youtube/sabr/model/SabrBootstrap.kt`
+parses the `ytcfg.set` configs and `window.ytAtN` BotGuard challenge out of a
+YouTube home page and is adapted from PipePipe (client)
+`app/src/main/java/org/schabi/newpipe/youtube/YoutubePageAttestationBootstrap.kt`
+at the commit above, also GPL-3.0. Koda's changes use `org.json` instead of
+nanojson, require the WEB home client, keep empty-visitor fallthrough and
+`//`-relative interpreter URLs, and redact diagnostics. The home WEB identity
+was verified live 2026-09-18; see `docs/playback-sabr.md`.

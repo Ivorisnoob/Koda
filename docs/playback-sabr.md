@@ -46,6 +46,14 @@ Local, ignored research clones:
 - `.probe/PipePipeClient`, `dev`, `08b277619ac05a5b227ca53a7fe4cb1958663c4d`.
 - Older NewPipe/PipePipe checkouts exist under `.probe/reference`; do not confuse
   them with the snapshots above.
+- Refreshed 2026-09-18, all `--depth 1`: extractor `main` is still the pinned
+  `c0cd0d6`; the client `dev` branch is gone from GitHub (pinned SHA unfetchable
+  there) and was recovered from Codeberg `NullPointerException/PipePipeClient`
+  at the pinned `08b2776` under `.probe/PipePipeClient/PipePipeClient` (the
+  GitHub `PipePipe` repo at that path is only a submodule shell).
+  `.probe/NewPipeExtractor` is stock `TeamNewPipe` `dev` HEAD `ab984a8` plus the
+  `v0.26.5` tag Koda builds against; extractor `rewrite-sabr` tip `2970d67`
+  (Android VR player PO tokens) is fetched as `FETCH_HEAD`.
 
 Source inspection found a reusable protocol/UMP/timeline implementation, a
 persistent local-DOM token minter, synthetic DASH playback and checkpointed
@@ -131,7 +139,8 @@ change. Never mark a stage complete merely because scaffolding compiles.
 
 **Current state:** stages 1, 2a (source/model foundation), 3a (wire readers),
 3b (timeline parsers), 3c (segment assembly) and 4 (session/HTTP transport)
-complete. SABR is
+complete, plus stage 5a (home bootstrap parser, `model/SabrBootstrap.kt` with
+`SabrBootstrapTest` - implemented, JVM verification pending). SABR is
 not enabled or playable. `PlaybackSource` separates URL-backed and SABR metadata;
 legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
 The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
@@ -230,7 +239,8 @@ aborts a stalled body read. Log: `.probe/sabr-session-check.log`. All controlled
 responses are synthetic; no live googlevideo request has been made.
 No packaging/device checks.
 
-**Next action:** stage 5: attestation and MWEB resolution. Probe the current MWEB
+**Next action:** stage 5b: PO-token minter and MWEB resolution. The 5a bootstrap
+parser is implemented (JVM run pending - see item below). Probe the current MWEB
 `/player` response (streaming URL `c=`, `serverAbrStreamingUrl`,
 `videoPlaybackUstreamerConfig`, adaptive format fields incl. `xtags`,
 `lastModified`, init/index ranges) and the BotGuard bootstrap with
