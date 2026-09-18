@@ -149,6 +149,20 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val _isBuffering = MutableStateFlow(false)
     val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
 
+    /**
+     * Stream URLs are being resolved for the open Short: the work between a
+     * page settling and the player being given anything to play.
+     *
+     * **The player is IDLE for the whole of it**, which is neither playing nor
+     * buffering, so a UI reading only those two concluded "paused" and put a
+     * pause badge over a Short that was loading - for as long as the resolve
+     * took, up to the 15s guard on a bad connection. Buffering is a state the
+     * player reports; this is the state before the player has been told
+     * anything, and only this class knows it is happening.
+     */
+    private val _isResolving = MutableStateFlow(false)
+    val isResolving: StateFlow<Boolean> = _isResolving.asStateFlow()
+
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
@@ -822,6 +836,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         // Prefetched ladders skip extraction; warmed media heads let source
         // preparation read the first audio/video samples from disk.
         playJob = viewModelScope.launch {
+            _isResolving.value = true
             try {
                 _exoPlayer?.stop()
                 _exoPlayer?.clearMediaItems()
@@ -858,6 +873,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 throw e
             } catch (e: Exception) {
                 _playbackError.value = e
+            } finally {
+                // Only if this job is still the current one. `finally` also
+                // runs on cancellation, and the thing that cancels this job is
+                // the next Short starting - which has already set the flag for
+                // itself by the time we get here, so clearing it unconditionally
+                // would report the incoming Short as resolved before it began.
+                if (_currentIndex.value == index) _isResolving.value = false
             }
         }
 

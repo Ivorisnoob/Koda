@@ -152,6 +152,7 @@ fun ShortsPlayerOverlay(
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
+    val isResolving by viewModel.isResolving.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     // Account subscription OR device subscription - engagement only knows the
@@ -335,9 +336,14 @@ fun ShortsPlayerOverlay(
 
                 if (isCurrent) {
                     // Buffering: the expressive shape-morphing loader on a
-                    // tonal puck so it reads on any video frame
+                    // tonal puck so it reads on any video frame.
+                    //
+                    // `isResolving` counts as loading. The player is IDLE while
+                    // stream URLs are being fetched - not playing and not
+                    // buffering - so that window used to show neither this nor
+                    // anything else, while the badge below read it as paused.
                     AnimatedVisibility(
-                        visible = isBuffering && playbackError == null,
+                        visible = (isBuffering || isResolving) && playbackError == null,
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier.align(Alignment.Center)
@@ -356,9 +362,13 @@ fun ShortsPlayerOverlay(
                         }
                     }
 
-                    // Paused badge: expressive cookie shape with a springy pop
+                    // Paused badge: expressive cookie shape with a springy pop.
+                    // Only for a Short the user actually paused - a Short that
+                    // is still resolving is loading, and saying "paused" there
+                    // invites a tap that does nothing.
                     AnimatedVisibility(
-                        visible = !isPlaying && !isBuffering && playbackError == null,
+                        visible = !isPlaying && !isBuffering && !isResolving &&
+                            playbackError == null,
                         enter = scaleIn(
                             initialScale = 0.6f,
                             animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
