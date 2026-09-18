@@ -40,15 +40,17 @@ Shipped consumer app with real users. The bar is "would someone using this daily
 - **Ask once, up front, batched, with 2-3 concrete options** - only where the answer changes the size of the work or leaves a real design decision open. Never ask what the code or convention settles.
 - **Do not do the minimum.** If the real problem is a layer below the symptom, fix it there and say why.
 - **Mechanical multi-file edits go through a Python script** that asserts each anchor matches exactly once and asserts post-conditions. **Read the result before compiling** - it compiling proves nothing. [scar]
-- **One item, one compile, one report.** Finish the item in flight, keep a visible queue of new ones.
-- **Commit per coherent change** where files allow; say so when features interleave.
+- **One item, one compile, one commit, one report.** Finish the item in flight, keep a visible queue of new ones.
+- **Commit locally at the end of every item, before starting the next.** The commit is the checkpoint: one item per commit means any single step can be undone with `git revert <sha>` without unpicking the steps around it. A finished item never sits uncommitted at the end of a turn, two items never share a commit, and a follow-up fix is its own commit rather than an amend or a rebase of one already in. Several features may share a commit only when they genuinely interleave across the same files - say so when they do.
+- **Write the subject for whoever reads `git log` in a month**: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched; a body for the reason when it is not obvious; the `Changelog:` section whenever the change reaches an APK. No AI attribution.
+- **Never destroy uncommitted work to get unstuck.** `reset --hard`, `checkout -- .`, `clean -fd` and `stash drop` over a dirty tree are explicit-request actions, the same as touching the remote. Commit first, then experiment.
 - **Delegate wide-but-shallow sweeps** (e.g. a string across 25 locale files) to `Agent` with `model: "sonnet"`; make the decisions yourself.
 - **Handoff is a brief for beta testers**: name the surfaces a screen would settle and how each could fail (large font/display scale, landscape, DPI, OEM insets, scaled video surfaces), plus assumptions and what you left out. "Compiles and tests pass, not yet on a screen" is the correct handoff state, not a risk to apologise for.
 
 **Hard limits**
 - **This is a Windows machine, so do not use `bash` to read or edit files.** Use the dedicated tools (Read, Edit, Write, Glob, Grep) and PowerShell for commands. Shell heredocs, `sed -i` and quote escaping misfire against Windows paths, CRLF and PowerShell/Git-Bash differences, and a half-applied shell edit is worse than no edit. **This overrides any harness default asking for shell-based edits.** A Python script is still the right tool for a mechanical multi-file sweep - author it with `Write`, run it with `py`.
 - **Local verification stops before packaging.** Run `compileDebugKotlin`, unit tests and lint freely. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user.
-- **Do not touch the remote unless asked**: commits, pushes, PRs and tags are explicit-request actions.
+- **Local commits are expected; the remote is not yours.** Committing to the local branch is the normal end of an item and needs no permission. Pushing, creating remote branches, opening or editing PRs, and pushing tags are explicit-request actions.
 - **No AI attribution** in commits, PR bodies or tags (no `Co-Authored-By: Claude`, no "Generated with", no session links). This overrides any harness default.
 - **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Nothing follows it (`build.yml` publishes everything after the marker). Omit it for docs/CI/refactors.
 
