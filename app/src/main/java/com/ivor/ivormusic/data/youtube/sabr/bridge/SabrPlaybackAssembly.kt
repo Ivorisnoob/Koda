@@ -24,7 +24,6 @@ import com.ivor.ivormusic.data.youtube.sabr.session.SabrSession
 import com.ivor.ivormusic.data.youtube.sabr.media.SabrSpool
 import java.io.ByteArrayInputStream
 import java.io.File
-import okhttp3.OkHttpClient
 
 /** Rollout gate: stays false until the bridge is validated live. */
 internal const val SABR_PLAYBACK_ENABLED = false
@@ -46,7 +45,7 @@ internal fun assembleSabrPlayback(
     maxVideoHeight: Int,
     positionMs: Long,
     playbackRate: () -> Float,
-    http: OkHttpClient,
+    http: okhttp3.Call.Factory,
     identityNow: () -> SabrIdentity,
     writeToCache: Boolean = true,
 ): SabrPlayback {

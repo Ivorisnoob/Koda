@@ -20,11 +20,14 @@ import okhttp3.Call
 internal const val SABR_PAGE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.3"
 
-internal class SabrAttestation(context: Context, calls: Call.Factory) {
+internal class SabrAttestation private constructor(context: Context, calls: Call.Factory) {
     private val appContext = context.applicationContext
     private val sessions = SessionManager(appContext)
 
-    val minter = SabrTokenMinter(
+    /** Shared edge for session transport; one pool per process. */
+    internal val http: Call.Factory = calls
+
+    val minter: SabrTokenMinter = SabrTokenMinter(
         sessionNow = { sessions.captureSession() },
         localOnly = { ThemePreferences.isLocalOnly(appContext) },
         transport = SabrAttestationHttp(calls),
@@ -44,4 +47,26 @@ internal class SabrAttestation(context: Context, calls: Call.Factory) {
     fun warmUp() = minter.warmUp()
 
     fun invalidate() = minter.invalidate()
+
+    companion object {
+        @Volatile private var instance: SabrAttestation? = null
+
+        /**
+         * Process-wide owner: one bootstrap, one generation line, one page
+         * runtime. Attestation traffic is three small calls per mint session,
+         * so it carries its own client instead of borrowing a tuned one.
+         */
+        fun get(context: Context): SabrAttestation {
+            instance?.let { return it }
+            synchronized(this) {
+                instance?.let { return it }
+                val calls = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                    .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                return SabrAttestation(context, calls).also { instance = it }
+            }
+        }
+    }
 }

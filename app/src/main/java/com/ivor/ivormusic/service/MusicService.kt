@@ -5,6 +5,7 @@ import com.ivor.ivormusic.util.KLog
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import androidx.media3.exoplayer.source.MediaSource
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.ViewConfiguration
@@ -38,6 +39,12 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.ivor.ivormusic.MainActivity
 import android.media.audiofx.AudioEffect
 import com.ivor.ivormusic.data.CacheManager
+import com.ivor.ivormusic.data.youtube.sabr.SabrResolver
+import com.ivor.ivormusic.data.youtube.sabr.bridge.SABR_PLAYBACK_ENABLED
+import com.ivor.ivormusic.data.youtube.sabr.bridge.SabrPlayback
+import com.ivor.ivormusic.data.youtube.sabr.bridge.assembleSabrPlayback
+import com.ivor.ivormusic.data.youtube.sabr.model.SabrDescriptor
+import com.ivor.ivormusic.data.youtube.sabr.session.SabrAttestation
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.NotificationArtworkLoader
 import com.ivor.ivormusic.data.AudioProfileStore
@@ -142,6 +149,18 @@ class MusicService : MediaLibraryService() {
     private val uriCache = java.util.Collections.synchronizedMap(
         BoundedLruMap<String, CachedUri>(MAX_RESOLVED_URI_ENTRIES)
     )
+
+    // Verified SABR descriptors by track id. Descriptors self-expire and
+    // self-invalidate, so unlike uriCache no expiry bookkeeping is needed.
+    private val sabrDescriptors = java.util.Collections.synchronizedMap(
+        BoundedLruMap<String, SabrDescriptor>(MAX_RESOLVED_URI_ENTRIES)
+    )
+
+    // Assembled SABR sources by track id, read by the media-source factory
+    // below. Player release hooks free the real resources; entries are only
+    // lookup shells afterwards, and clearing the map never breaks playback
+    // (the player holds its sources, re-resolution rebuilds).
+    private val sabrPlaybacks = ConcurrentHashMap<String, SabrPlayback>()
 
     // Per-song playback error retries. Kept separate from uriCache and reset
     // on successful playback so a song can't permanently exhaust its budget
@@ -692,10 +711,33 @@ class MusicService : MediaLibraryService() {
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .build()
             }.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+            val defaultMediaSourceFactory =
+                DefaultMediaSourceFactory(this).setDataSourceFactory(smartDataSourceFactory)
             ExoPlayer.Builder(this)
                 .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(
-                    DefaultMediaSourceFactory(this).setDataSourceFactory(smartDataSourceFactory)
+                    object : MediaSource.Factory {
+                        override fun createMediaSource(mediaItem: MediaItem): MediaSource =
+                            sabrPlaybacks[mediaItem.mediaId]?.mediaSource
+                                ?: defaultMediaSourceFactory.createMediaSource(mediaItem)
+
+                        override fun setDrmSessionManagerProvider(
+                            drmSessionManagerProvider: androidx.media3.exoplayer.drm.DrmSessionManagerProvider,
+                        ): MediaSource.Factory = apply {
+                            defaultMediaSourceFactory.setDrmSessionManagerProvider(
+                                drmSessionManagerProvider)
+                        }
+
+                        override fun setLoadErrorHandlingPolicy(
+                            loadErrorHandlingPolicy: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy,
+                        ): MediaSource.Factory = apply {
+                            defaultMediaSourceFactory.setLoadErrorHandlingPolicy(
+                                loadErrorHandlingPolicy)
+                        }
+
+                        override fun getSupportedTypes(): IntArray =
+                            defaultMediaSourceFactory.supportedTypes
+                    }
                 )
                 .setLoadControl(buildLoadControl())
                 .setAudioAttributes(AudioAttributes.DEFAULT, false)
@@ -1310,6 +1352,10 @@ class MusicService : MediaLibraryService() {
         }
 
         // 4. Network with Retry
+        // SABR first when rolled out; any failure falls through to direct.
+        if (SABR_PLAYBACK_ENABLED) {
+            trySabrMusic(originalItem)?.let { return it }
+        }
         // YouTubeRepository owns the NewPipe-first client fallback. This layer
         // bounds the whole resolution and handles playback-time re-resolution.
         return try {
@@ -1331,6 +1377,51 @@ class MusicService : MediaLibraryService() {
         } catch (e: Exception) {
             KLog.e(TAG, "Resolution: Exception for $videoId", e)
             buildMediaItemWithUri(originalItem, Uri.parse("error://exception/$videoId"))
+        }
+    }
+
+    /**
+     * Audio-only SABR resolution. Descriptors are cached by their own
+     * usability (expiry plus identity); the assembled source is published for
+     * the media-source factory above. Null on any failure - including Local
+     * Only, which the minter refuses before any network runs - so the direct
+     * path below stays the behavior callers already know.
+     */
+    private suspend fun trySabrMusic(originalItem: MediaItem): MediaItem? {
+        val videoId = originalItem.mediaId
+        return try {
+            val attestation = SabrAttestation.get(this)
+            val now = System.currentTimeMillis()
+            var descriptor = sabrDescriptors[videoId]
+                ?.takeIf { it.isUsable(now, attestation.currentIdentity()) }
+            if (descriptor == null) {
+                descriptor = SabrResolver(youtubeRepository, attestation).resolve(videoId)
+                if (sabrDescriptors.size > MAX_RESOLVED_URI_ENTRIES) sabrDescriptors.clear()
+                sabrDescriptors[videoId] = descriptor
+            }
+            // Audio-only startup: no video selection, prepare from zero; the
+            // demand loop backfills honestly from the playhead on seeks.
+            val playback = assembleSabrPlayback(
+                context = this,
+                descriptor = descriptor,
+                mediaItem = originalItem,
+                audioOnly = true,
+                maxVideoHeight = 0,
+                positionMs = 0,
+                playbackRate = { playbackSpeed },
+                http = attestation.http,
+                identityNow = { attestation.currentIdentity() },
+            )
+            if (sabrPlaybacks.size > MAX_RESOLVED_URI_ENTRIES) sabrPlaybacks.clear()
+            sabrPlaybacks[videoId] = playback
+            KLog.d(TAG, "Resolution: SABR success for $videoId")
+            buildMediaItemWithUri(originalItem, Uri.parse("sabr://$videoId"))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.d(TAG, "Resolution: SABR unavailable for $videoId, direct fallback", e)
+            sabrDescriptors.remove(videoId)
+            null
         }
     }
 

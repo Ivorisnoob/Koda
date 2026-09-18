@@ -3,8 +3,8 @@ package com.ivor.ivormusic.data.youtube.sabr.session
 import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.InputStream
+import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
@@ -35,7 +35,7 @@ internal class SabrHttpResponse(
  * [client] should be the caller's shared transport with a read timeout; SABR responses
  * stream media for many seconds, so a whole-call timeout does not fit.
  */
-internal class OkHttpSabrTransport(private val client: OkHttpClient) : SabrTransport {
+internal class OkHttpSabrTransport(private val client: Call.Factory) : SabrTransport {
     override fun newCall(url: String, headers: Map<String, String>, body: ByteArray): SabrCall {
         val contentType = headers["Content-Type"] ?: "application/x-protobuf"
         val request = Request.Builder().url(url).apply {
