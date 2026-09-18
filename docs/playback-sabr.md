@@ -140,9 +140,12 @@ change. Never mark a stage complete merely because scaffolding compiles.
 **Current state:** stages 1, 2a (source/model foundation), 3a (wire readers),
 3b (timeline parsers), 3c (segment assembly) and 4 (session/HTTP transport)
 complete, plus stage 5a (home bootstrap parser, `model/SabrBootstrap.kt` with
-`SabrBootstrapTest`, and token-bound request shape, `model/SabrPlayerRequest.kt`
-with `SabrPlayerRequestTest` - implemented, JVM verification pending). SABR is
-not enabled or playable. `PlaybackSource` separates URL-backed and SABR metadata;
+`SabrBootstrapTest`; token-bound request shape, `model/SabrPlayerRequest.kt` with
+`SabrPlayerRequestTest`; MWEB envelope parser, `model/SabrResolution.kt` with
+`SabrResolutionTest` - implemented, JVM verification pending). SABR is
+not enabled or playable. The anonymous MWEB /player envelope is verified live
+(`c=MWEB`, 25 adaptive formats, ~6h expiry, ciphered URLs, no ustreamer leaf):
+`.probe/stage5-mweb-player-anon-2026-09-18.log`. `PlaybackSource` separates URL-backed and SABR metadata;
 legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
 The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
 profile/login/attestation identity and lifetime, and permits audio-only selection.
@@ -240,18 +243,16 @@ aborts a stalled body read. Log: `.probe/sabr-session-check.log`. All controlled
 responses are synthetic; no live googlevideo request has been made.
 No packaging/device checks.
 
-**Next action:** stage 5b: PO-token minter and MWEB resolution. The 5a bootstrap
-parser and the token-bound request shape (`model/SabrPlayerRequest.kt` with
-`SabrPlayerRequestTest`, seam on `fetchPlayerResponse`) are implemented (JVM runs
-pending - see item below). Probe the current MWEB
-`/player` response (streaming URL `c=`, `serverAbrStreamingUrl`,
-`videoPlaybackUstreamerConfig`, adaptive format fields incl. `xtags`,
-`lastModified`, init/index ranges) and the BotGuard bootstrap with
-`.probe/probe.py` before writing any parser. If probing cannot run here, record
-exactly what is needed and stop rather than parse from recall.
+**Next action:** stage 5b: PO-token minter, descriptor construction from
+`SabrResolution`, and the signature/n decoder check. The 5a parsers and request
+shape are implemented (JVM runs pending - see item below). Still needs
+device/signed-in probes: token-bound ustreamer leaf, SESSION binding, actual
+BotGuard run. MWEB envelope (minus ustreamer) is verified live; do not invent
+beyond it.
 
-**Outstanding:** stages 2b and 5-10. No live probes or device tests performed in this
-implementation session yet. Update this section before every implementation
+**Outstanding:** stages 2b and 5b-10. Anonymous live probes done (home bootstrap,
+MWEB envelope - see `.probe/stage5-*-2026-09-18.log`); signed-in/device probes
+still open. Update this section before every implementation
 commit so a replacement agent can resume without chat history.
 
 ## Device acceptance matrix (maintainer-run)

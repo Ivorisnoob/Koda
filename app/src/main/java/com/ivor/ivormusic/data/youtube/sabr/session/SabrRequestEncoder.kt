@@ -9,9 +9,8 @@ package com.ivor.ivormusic.data.youtube.sabr.session
 import com.ivor.ivormusic.data.youtube.sabr.exception.SabrProtocolException
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrDescriptor
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrFormat
+import com.ivor.ivormusic.data.youtube.sabr.model.validateSabrStreamingUrl
 import com.ivor.ivormusic.data.youtube.sabr.protocol.SabrProto
-import java.net.URI
-import java.net.URLDecoder
 import java.util.Base64
 
 /** Mutable per-session inputs, snapshotted by [SabrSession] under its transaction lock. */
@@ -32,7 +31,6 @@ internal object SabrRequestEncoder {
      */
     const val MWEB_USER_AGENT = "Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 " +
         "(KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)"
-    private const val MWEB_CLIENT_NAME = "MWEB"
     private const val MWEB_CLIENT_ID = 2
     private const val MIN_WIDTH = 640
     private const val MIN_HEIGHT = 360
@@ -45,20 +43,7 @@ internal object SabrRequestEncoder {
     )
 
     /** Rejects anything but https googlevideo, and a URL minted for another client. */
-    fun validateStreamingUrl(url: String) {
-        val uri = try { URI(url) } catch (error: Exception) {
-            throw SabrProtocolException("Malformed SABR streaming URL", error)
-        }
-        val host = uri.host?.lowercase()
-        if (!"https".equals(uri.scheme, ignoreCase = true) || host == null ||
-            !(host == "googlevideo.com" || host.endsWith(".googlevideo.com"))) {
-            throw SabrProtocolException("SABR streaming URL is not a googlevideo host")
-        }
-        val client = queryValues(uri.rawQuery, "c")
-        if (client.any { !it.equals(MWEB_CLIENT_NAME, ignoreCase = true) }) {
-            throw SabrProtocolException("SABR streaming URL was minted for another client")
-        }
-    }
+    fun validateStreamingUrl(url: String) = validateSabrStreamingUrl(url)
 
     /** `alr`/`cpn` are kept if the server already set them; `rn` always reflects this request. */
     fun url(base: String, cpn: String, requestNumber: Int): String {
@@ -175,10 +160,4 @@ internal object SabrRequestEncoder {
             }
         }
     }
-
-    private fun queryValues(rawQuery: String?, name: String): List<String> =
-        rawQuery.orEmpty().split('&').mapNotNull {
-            if (it.substringBefore('=') != name) null
-            else URLDecoder.decode(it.substringAfter('=', ""), "UTF-8")
-        }
 }

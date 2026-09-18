@@ -71,3 +71,11 @@ revision: token-bound client version and visitor data, MWEB user agent,
 `playbackContext` with the player-JS signature timestamp, and
 `serviceIntegrityDimensions` carrying the base64url PO token. The transport
 stays Koda's `fetchPlayerResponse`, which only emits those fields when asked.
+
+`model/SabrResolution.kt` parses the answering MWEB envelope after upstream
+`buildSabrInfoFromPlayerResponse`/`parseSabrFormats` at the same revision
+(streaming URL, ustreamer path, format ladder with microsecond `lastModified`
+and string init/index ranges, skip-malformed formats) and owns the single
+MWEB-minted-URL check the session transport reuses. Koda-only shape:
+fail-closed envelope, opaque ranges, no per-format URLs until the signature
+decoder lands, absolute expiry, redacted diagnostics.
