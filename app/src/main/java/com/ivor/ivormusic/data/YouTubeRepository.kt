@@ -2119,7 +2119,7 @@ class YouTubeRepository(private val context: Context) {
      * playability LOGIN_REQUIRED ("Sign in to confirm you're not a bot"), or a
      * 200/OK response with streamingData missing (stale/missing visitorData).
      */
-    private class PlayerResponse(
+    internal class PlayerResponse(
         val streamingData: org.json.JSONObject?,
         val visitorDataSuspect: Boolean,
         val captionTracks: List<CaptionTrack> = emptyList(),
@@ -2131,6 +2131,8 @@ class YouTubeRepository(private val context: Context) {
          * playability.
          */
         val loudnessDb: Float? = null,
+        /** Full envelope; only the SABR resolution path reads past streamingData. */
+        val root: org.json.JSONObject? = null,
     )
 
     /**
@@ -2389,7 +2391,7 @@ class YouTubeRepository(private val context: Context) {
      * object plus a bot-check verdict (see [PlayerResponse]). Shared by audio
      * resolution and video quality listing.
      */
-    private suspend fun fetchPlayerResponse(
+    internal suspend fun fetchPlayerResponse(
         videoId: String,
         clientName: String,
         clientVersion: String,
@@ -2509,7 +2511,7 @@ class YouTubeRepository(private val context: Context) {
                 // of a stale/missing visitorData.
                 return@withContext PlayerResponse(null, true, captionTracks, loudnessDb)
             }
-            PlayerResponse(streamingData, false, captionTracks, loudnessDb)
+            PlayerResponse(streamingData, false, captionTracks, loudnessDb, root)
         } catch (e: CancellationException) {
             // Swallowing this would report a cancelled call as a client that
             // has no streams, sending the chain on to the next client inside a
@@ -2952,7 +2954,7 @@ class YouTubeRepository(private val context: Context) {
         return url // Fallback: return the URL as-is
     }
 
-    private fun generateCpn(): String {
+    internal fun generateCpn(): String {
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
         return (1..16).map { chars.random() }.joinToString("")
     }

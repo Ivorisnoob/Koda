@@ -16,6 +16,7 @@ package com.ivor.ivormusic.data.youtube.sabr.model
 
 import com.ivor.ivormusic.data.youtube.sabr.exception.SabrProtocolException
 import java.net.URI
+import java.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -77,6 +78,46 @@ internal fun parseSabrResolution(
         visitorData = token.visitorData,
         expiresAtMs = resolvedAtMs + expiresInSec * 1000,
         formats = formats,
+    )
+}
+
+/**
+ * Builds the immutable playback snapshot. The ustreamer leaf is required: without
+ * token-bound evidence that resolutions succeed lacking it, failing closed is the
+ * only honest option. Padding is restored explicitly rather than relying on the
+ * decoder tolerating its absence.
+ */
+@Throws(SabrProtocolException::class)
+internal fun SabrResolution.toDescriptor(
+    videoId: String,
+    cpn: String,
+    token: SabrMintedToken,
+    identity: SabrIdentity,
+    resolvedAtMs: Long,
+): SabrDescriptor {
+    require(videoId.isNotBlank() && cpn.isNotBlank()) { "Incomplete SABR resolution request" }
+    val ustreamer = ustreamerConfig?.takeIf { it.isNotBlank() }
+        ?: throw SabrProtocolException("MWEB resolution has no ustreamer config")
+    val padded = token.poTokenBase64Url +
+        "=".repeat((4 - token.poTokenBase64Url.length % 4) % 4)
+    val tokenBytes = try {
+        Base64.getUrlDecoder().decode(padded)
+    } catch (error: IllegalArgumentException) {
+        throw SabrProtocolException("PO token is not base64", error)
+    }
+    if (tokenBytes.isEmpty()) throw SabrProtocolException("PO token decoded empty")
+    return SabrDescriptor(
+        videoId = videoId,
+        cpn = cpn,
+        clientVersion = token.clientVersion,
+        visitorData = visitorData,
+        serverAbrStreamingUrl = serverAbrStreamingUrl,
+        ustreamerConfig = ustreamer,
+        identity = identity,
+        resolvedAtMs = resolvedAtMs,
+        expiresAtMs = expiresAtMs,
+        formats = formats,
+        poToken = tokenBytes,
     )
 }
 

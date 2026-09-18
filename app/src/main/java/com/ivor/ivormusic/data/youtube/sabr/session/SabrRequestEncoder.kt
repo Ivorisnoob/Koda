@@ -31,7 +31,8 @@ internal object SabrRequestEncoder {
      */
     const val MWEB_USER_AGENT = "Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 " +
         "(KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)"
-    private const val MWEB_CLIENT_ID = 2
+    internal const val MWEB_CLIENT_NAME = "MWEB"
+    internal const val MWEB_CLIENT_ID = 2
     private const val MIN_WIDTH = 640
     private const val MIN_HEIGHT = 360
 

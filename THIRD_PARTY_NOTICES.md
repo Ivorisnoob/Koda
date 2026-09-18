@@ -78,7 +78,9 @@ stays Koda's `fetchPlayerResponse`, which only emits those fields when asked.
 and string init/index ranges, skip-malformed formats) and owns the single
 MWEB-minted-URL check the session transport reuses. Koda-only shape:
 fail-closed envelope, opaque ranges, no per-format URLs until the signature
-decoder lands, absolute expiry, redacted diagnostics.
+decoder lands, absolute expiry, redacted diagnostics. `SabrResolution.toDescriptor`
+follows upstream's descriptor assembly (token bytes, client version, lifetime);
+rotation resolves by re-resolving rather than swapping bytes under a session.
 
 ## PipePipe PO-token minter (client + extractor)
 

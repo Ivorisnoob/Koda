@@ -1,8 +1,10 @@
 package com.ivor.ivormusic.data.youtube.sabr
 
 import com.ivor.ivormusic.data.youtube.sabr.exception.SabrProtocolException
+import com.ivor.ivormusic.data.youtube.sabr.model.SabrIdentity
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrMintedToken
 import com.ivor.ivormusic.data.youtube.sabr.model.parseSabrResolution
+import com.ivor.ivormusic.data.youtube.sabr.model.toDescriptor
 import com.ivor.ivormusic.data.youtube.sabr.model.validateSabrStreamingUrl
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -39,12 +41,55 @@ class SabrResolutionTest {
     }
 
     @Test fun `ustreamer path resolves when the server sends it`() {
+        val resolution = parseSabrResolution(
+            responseWithUstreamer(), "WKZO-CWeOVA", "cpn1", token, 0)
+        assertEquals("ustreamer", resolution.ustreamerConfig)
+    }
+
+    @Test fun `descriptor maps token identity and lifetime`() {
+        val identity = SabrIdentity("p1", 7, 0)
+        val descriptor = parseSabrResolution(
+            responseWithUstreamer(), "WKZO-CWeOVA", "cpn1", token, 1000)
+            .toDescriptor("WKZO-CWeOVA", "cpn1", token, identity, 1000)
+        assertEquals("WKZO-CWeOVA", descriptor.videoId)
+        assertEquals("cpn1", descriptor.cpn)
+        assertEquals("2.20260917.01.00", descriptor.clientVersion)
+        assertEquals("Cgt0ZXN0dj09", descriptor.visitorData)
+        assertEquals("ustreamer", descriptor.ustreamerConfig)
+        assertEquals(identity, descriptor.identity)
+        assertEquals(1000, descriptor.resolvedAtMs)
+        assertEquals(1000 + 21540 * 1000, descriptor.expiresAtMs)
+        assertEquals(2, descriptor.formats.size)
+        assertArrayEquals(byteArrayOf(65, 66, 67), descriptor.poToken)
+        assertTrue(descriptor.isUsable(2000, identity))
+        assertFalse(descriptor.isUsable(2000, SabrIdentity("p1", 7, 1)))
+    }
+
+    @Test fun `descriptor fails closed without ustreamer or with bad token bytes`() {
+        val resolution = parseSabrResolution(response(), "WKZO-CWeOVA", "cpn1", token, 0)
+        assertThrows(SabrProtocolException::class.java) {
+            resolution.toDescriptor("WKZO-CWeOVA", "cpn1", token, SabrIdentity("p1", 7, 0), 0)
+        }
+        val full = parseSabrResolution(
+            responseWithUstreamer(), "WKZO-CWeOVA", "cpn1", token, 0)
+        for (bad in listOf("!!!", "Q")) {
+            val badToken = SabrMintedToken("Cgt0ZXN0dj09", "2.20260917.01.00", bad)
+            assertThrows(SabrProtocolException::class.java) {
+                full.toDescriptor("WKZO-CWeOVA", "cpn1", badToken, SabrIdentity("p1", 7, 0), 0)
+            }
+        }
+        // Unpadded two-char input decodes through the restored padding.
+        val short = SabrMintedToken("Cgt0ZXN0dj09", "2.20260917.01.00", "QQ")
+        assertArrayEquals(byteArrayOf(65),
+            full.toDescriptor("WKZO-CWeOVA", "cpn1", short, SabrIdentity("p1", 7, 0), 0).poToken)
+    }
+
+    private fun responseWithUstreamer(): JSONObject {
         val root = JSONObject(response().toString())
         root.getJSONObject("playerConfig").getJSONObject("mediaCommonConfig")
             .put("mediaUstreamerRequestConfig", JSONObject()
                 .put("videoPlaybackUstreamerConfig", "ustreamer"))
-        val resolution = parseSabrResolution(root, "WKZO-CWeOVA", "cpn1", token, 0)
-        assertEquals("ustreamer", resolution.ustreamerConfig)
+        return root
     }
 
     @Test fun `malformed formats are skipped but an empty ladder throws`() {
