@@ -23,6 +23,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -752,20 +754,53 @@ fun LibraryMainScreen(
             isRefreshing = isLoading && librarySongs.isNotEmpty(),
             onRefresh = { viewModel.refresh() }
         ) {
-            // Using AnimatedContent for tab switching (expressive motion physics)
-            val tabSpatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
-            val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-            AnimatedContent(
-                targetState = selectedTab,
-                transitionSpec = {
-                    fadeIn(animationSpec = tabEffectsSpec) +
-                    slideInVertically(animationSpec = tabSpatialSpec) { it / 20 } togetherWith
-                    fadeOut(animationSpec = tabEffectsSpec) +
-                    slideOutVertically(animationSpec = tabSpatialSpec) { -it / 20 }
-                },
-                modifier = Modifier.fillMaxSize()
-            ) { tab ->
-                when (tab) {
+            // A pager rather than the AnimatedContent this used to be: the tabs
+            // are swipeable, and running both meant content sliding vertically
+            // under a finger dragging it horizontally. The pager owns the
+            // transition now, and it is the same expressive spring - Compose's
+            // default fling for a pager - rather than a hand-specified one.
+            //
+            // The open tab still lives in preferences, so the two directions
+            // are wired as separate one-way effects: a tap writes the
+            // preference and the pager follows it, a swipe settles and writes
+            // the preference. Each is a no-op when the other put them in
+            // agreement already, which is also what stops a settle after a tap
+            // from firing a second haptic.
+            val pagerState = rememberPagerState(
+                initialPage = selectedTab.ordinal,
+                pageCount = { LibraryTab.entries.size }
+            )
+            LaunchedEffect(selectedTab) {
+                if (pagerState.currentPage != selectedTab.ordinal) {
+                    pagerState.animateScrollToPage(selectedTab.ordinal)
+                }
+            }
+            // Keyed on the pager alone, and the open tab is read through a
+            // holder rather than captured. Keying this on `selectedTab` too
+            // restarted the collector the instant a tap changed it, and
+            // `settledPage` still reported the tab being animated away from -
+            // so the effect wrote that one straight back and the tap bounced.
+            val openTab by rememberUpdatedState(selectedTab)
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.settledPage }.collect { page ->
+                    val settled = LibraryTab.entries.getOrNull(page)
+                    if (settled != null && settled != openTab) {
+                        tabHaptics.subtle()
+                        themePreferences.setLibraryTab(settled.name)
+                    }
+                }
+            }
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                // Neighbours compose only while a drag is in flight. Each tab
+                // is a lazy list of its own, and pre-composing three of them to
+                // make the swipe smoother would pay for the other two on every
+                // arrival at this screen.
+                beyondViewportPageCount = 0,
+                key = { LibraryTab.entries[it].name }
+            ) { page ->
+                when (LibraryTab.entries[page]) {
                     LibraryTab.All -> if (isLoading && sortedSongs.isEmpty()) {
                         // First load over an empty library: placeholder rows
                         // rather than a bare pull spinner over nothing.
