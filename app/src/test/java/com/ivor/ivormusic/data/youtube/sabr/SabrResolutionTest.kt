@@ -41,8 +41,8 @@ class SabrResolutionTest {
     @Test fun `ustreamer path resolves when the server sends it`() {
         val root = JSONObject(response().toString())
         root.getJSONObject("playerConfig").getJSONObject("mediaCommonConfig")
-            .getJSONObject("mediaUstreamerRequestConfig")
-            .put("videoPlaybackUstreamerConfig", "ustreamer")
+            .put("mediaUstreamerRequestConfig", JSONObject()
+                .put("videoPlaybackUstreamerConfig", "ustreamer"))
         val resolution = parseSabrResolution(root, "WKZO-CWeOVA", "cpn1", token, 0)
         assertEquals("ustreamer", resolution.ustreamerConfig)
     }
