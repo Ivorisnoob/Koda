@@ -228,6 +228,12 @@ fun HomeScreen(
     compactVideoHome: Boolean = false,
     /** Cards on the video feed play a silent preview when rested on. */
     inlinePreviews: Boolean = false,
+    /**
+     * Hand the playing song to the video player, from the player's overflow.
+     * Null where the host has no video pipeline, which is every caller but
+     * MainActivity.
+     */
+    onWatchAsVideo: (() -> Unit)? = null,
     loadLocalSongs: Boolean = false,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
@@ -1398,6 +1404,7 @@ fun HomeScreen(
             onPlayerStyleChange = onPlayerStyleChange,
             collapsedBottomSpacing = miniPlayerCollapsedSpacing,
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
+            onWatchAsVideo = onWatchAsVideo,
             onArtistClick = { artistName ->
                 // Collapse the player and open the artist inside the music
                 // Library tab. The origin tab is remembered so back returns to

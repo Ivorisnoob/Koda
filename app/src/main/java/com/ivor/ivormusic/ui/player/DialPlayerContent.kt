@@ -100,6 +100,8 @@ fun DialPlayerSheetContent(
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
     onArtistClick: (String) -> Unit = {},
+    /** Hand this song to the video player; null where there is no video pipeline. */
+    onWatchAsVideo: (() -> Unit)? = null,
     onAlbumClick: (String) -> Unit = {},
     onOpenAlbum: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {}
 ) {
@@ -404,6 +406,7 @@ fun DialPlayerSheetContent(
                 viewModel = viewModel,
                 onDismiss = { showOptions = false },
                 onArtistClick = onArtistClick,
+                onWatchAsVideo = onWatchAsVideo,
                 onAlbumClick = onAlbumClick,
                 onOpenAlbum = onOpenAlbum
             )

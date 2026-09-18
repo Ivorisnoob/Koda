@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
@@ -64,6 +65,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.hasWatchableVideo
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
@@ -137,6 +139,12 @@ fun NowPlayingOptionsSheet(
      * a stream's is a browse id.
      */
     onOpenAlbum: (PlaylistDisplayItem) -> Unit = {},
+    /**
+     * Take this song over to the video player at its current position. Null
+     * where the host has no video pipeline to hand it to; the pill also hides
+     * itself for a song with no video behind it.
+     */
+    onWatchAsVideo: (() -> Unit)? = null,
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
     val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
@@ -326,14 +334,27 @@ fun NowPlayingOptionsSheet(
             // Every one of these leaves the player or the app, so each closes
             // the sheet ahead of whatever replaces it. Pills rather than rows
             // because an artist's name and an album title are the label.
+            val watchAsVideo = onWatchAsVideo?.takeIf { song.hasWatchableVideo(context) }
             if (goToArtist != null || goToAlbum != null || goToStreamingAlbum != null ||
-                shareUrl != null || canBlockArtist
+                shareUrl != null || canBlockArtist || watchAsVideo != null
             ) {
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // First, because it is the only pill here that changes what
+                    // the app is doing rather than where it is looking.
+                    if (watchAsVideo != null) {
+                        OptionPill(
+                            icon = Icons.Rounded.Movie,
+                            label = stringResource(R.string.np_pill_watch_video),
+                            onClick = {
+                                onDismiss()
+                                watchAsVideo()
+                            }
+                        )
+                    }
                     if (goToArtist != null && artist != null) {
                         OptionPill(
                             icon = Icons.Rounded.AccountCircle,

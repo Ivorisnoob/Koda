@@ -1735,6 +1735,34 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * @param forceRestart reload even when this video is already current, for
      * the retry path - tapping the same video otherwise only re-expands.
      */
+    /**
+     * Play [video] from [startPositionMs] - the entry point for taking
+     * playback over from the music pipeline ("Watch as video"), rather than
+     * opening a video from a feed.
+     *
+     * `forceRestart` is set because the handover is the point: without it, a
+     * video id that happens to be current already would be expanded at
+     * whatever position it held instead of at the one being handed over.
+     * An explicit position also beats the history checkpoint inside
+     * [startVideo] and raises no "resumed from" notice, which is right here -
+     * the listener did not come back to this video, they were already inside
+     * it.
+     */
+    fun playVideoAt(video: VideoItem, startPositionMs: Long) {
+        if (LocalVideo.isDeviceVideoId(video.videoId)) {
+            playDeviceVideoItem(video)
+            return
+        }
+        leaveLocalPlayback()
+        _queue.value = null
+        lastQueueRemoval = null
+        startVideo(
+            video,
+            forceRestart = true,
+            resumePositionMs = startPositionMs.coerceAtLeast(0L),
+        )
+    }
+
     fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
         // A device video reaching the ordinary entry point is a watch-history
         // row being replayed: history stores VideoItems and nothing else, so a

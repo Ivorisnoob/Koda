@@ -53,6 +53,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import com.ivor.ivormusic.data.LocalVideo
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.hasWatchableVideo
+import com.ivor.ivormusic.data.toVideoItem
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
@@ -861,6 +863,35 @@ fun MusicApp(
         playerViewModel.requestPlayerExpanded()
     }
 
+    // The reverse of "Listen as music": promote what is playing to its video.
+    //
+    // Not symmetric with its mirror, and deliberately so. Every video carries
+    // audio, so that direction always has somewhere to go; not every song has
+    // a video, which is why the control is conditional (see
+    // Song.hasWatchableVideo) rather than always offered and often broken.
+    //
+    // The music queue is not carried over. A video queue is an explicit
+    // ordered list the user chose, and a music queue is frequently a radio -
+    // an endless generated stream of songs, which is not a playlist and would
+    // arrive in the video player as one. The song moves; what plays next
+    // becomes video mode's ordinary related-videos behaviour, the same answer
+    // the other direction gives when it migrates a lone video.
+    val moveMusicToVideo: () -> Unit = move@{
+        val song = playerViewModel.currentSong.value ?: return@move
+        if (!song.hasWatchableVideo(context)) return@move
+        val positionMs = playerViewModel.progress.value.coerceAtLeast(0L)
+        val startPositionMs = song.duration.takeIf { it > 0L }
+            ?.let { positionMs.coerceIn(0L, it) }
+            ?: positionMs
+        // Pause-first and in this order, for the reason the mirror documents:
+        // the mode switch stops the other pipeline, so it has to finish before
+        // the incoming one is told to play, or the switch's own pause lands on
+        // top of the play it was meant to precede.
+        playerViewModel.pause()
+        changePlaybackMode(true, true)
+        videoPlayerViewModel.playVideoAt(song.toVideoItem(), startPositionMs)
+    }
+
     // A live broadcast that turned up in the Shorts feed. The Shorts player
     // cannot present one honestly (no chat, and a seek bar for a duration that
     // does not exist), so it closes itself and the stream reopens here, where
@@ -1098,6 +1129,7 @@ fun MusicApp(
                 HomeScreen(
                     compactVideoHome = compactVideoHome,
                     inlinePreviews = inlinePreviews,
+                    onWatchAsVideo = moveMusicToVideo,
                     onSongClick = { song ->
                         playerViewModel.playSong(song)
                     },
@@ -1761,3 +1793,4 @@ private fun VideoItem.toSong(): Song = Song.fromYouTube(
     duration = duration * 1000,
     thumbnailUrl = thumbnailUrl
 )
+

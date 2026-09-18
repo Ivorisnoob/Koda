@@ -118,6 +118,8 @@ fun HeroPlayerSheetContent(
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
     onArtistClick: (String) -> Unit = {},
+    /** Hand this song to the video player; null where there is no video pipeline. */
+    onWatchAsVideo: (() -> Unit)? = null,
     onAlbumClick: (String) -> Unit = {},
     onOpenAlbum: (PlaylistDisplayItem) -> Unit = {}
 ) {
@@ -566,6 +568,7 @@ fun HeroPlayerSheetContent(
                 viewModel = viewModel,
                 onDismiss = { showOptions = false },
                 onArtistClick = onArtistClick,
+                onWatchAsVideo = onWatchAsVideo,
                 onAlbumClick = onAlbumClick,
                 onOpenAlbum = onOpenAlbum
             )
