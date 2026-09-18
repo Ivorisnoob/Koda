@@ -142,7 +142,9 @@ change. Never mark a stage complete merely because scaffolding compiles.
 complete, plus stage 5a (home bootstrap parser, `model/SabrBootstrap.kt` with
 `SabrBootstrapTest`; token-bound request shape, `model/SabrPlayerRequest.kt` with
 `SabrPlayerRequestTest`; MWEB envelope parser, `model/SabrResolution.kt` with
-`SabrResolutionTest` - implemented, JVM verification pending). SABR is
+`SabrResolutionTest` - implemented and JVM-verified 2026-09-18: 30 tests green
+(`SabrBootstrapTest`, `SabrPlayerRequestTest`, `SabrResolutionTest`,
+`SabrSessionTest`; one fixture bug fixed in `82b8617`). SABR is
 not enabled or playable. The anonymous MWEB /player envelope is verified live
 (`c=MWEB`, 25 adaptive formats, ~6h expiry, ciphered URLs, no ustreamer leaf):
 `.probe/stage5-mweb-player-anon-2026-09-18.log`. `PlaybackSource` separates URL-backed and SABR metadata;
@@ -245,7 +247,8 @@ No packaging/device checks.
 
 **Next action:** stage 5b: PO-token minter, descriptor construction from
 `SabrResolution`, and the signature/n decoder check. The 5a parsers and request
-shape are implemented (JVM runs pending - see item below). Still needs
+shape are implemented and JVM-verified (logs: `.probe/sabr-slice-tests.log`,
+`.probe/sabr-resolution-retest.log`). Still needs
 device/signed-in probes: token-bound ustreamer leaf, SESSION binding, actual
 BotGuard run. MWEB envelope (minus ustreamer) is verified live; do not invent
 beyond it.
