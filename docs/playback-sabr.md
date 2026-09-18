@@ -254,8 +254,11 @@ BotGuard run. MWEB envelope (minus ustreamer) is verified live; do not invent
 beyond it.
 
 **Outstanding:** stages 2b and 5b-10. Anonymous live probes done (home bootstrap,
-MWEB envelope - see `.probe/stage5-*-2026-09-18.log`); signed-in/device probes
-still open. Update this section before every implementation
+MWEB envelope - see `.probe/stage5-*-2026-09-18.log`); signed-in probes done
+2026-09-18 from the app WebView jar - home honors the session (LOGGED_IN,
+DATASYNC_ID) but /player answers logged_in:0 on this IP/visitor, so
+token-bound deltas still need a honored session or the on-device minter.
+Update this section before every implementation
 commit so a replacement agent can resume without chat history.
 
 ## Device acceptance matrix (maintainer-run)
