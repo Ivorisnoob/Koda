@@ -103,6 +103,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.graphics.graphicsLayer
@@ -667,6 +671,21 @@ fun HomeScreen(
     androidx.compose.runtime.CompositionLocalProvider(
         com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset
     ) {
+    // Experiment: flick between the main tabs with a swipe, same contract as
+    // the channel page - a fast horizontal flick moves to the next/previous
+    // visible destination and the existing AnimatedContent slide carries it,
+    // so there is deliberately no follow-the-finger pager here. Observe-only:
+    // nothing is consumed, taps and vertical scrolling are untouched, and the
+    // same flick gates (fast, far, horizontal) keep shelf browsing from
+    // tripping it. Uses the nav bar's own destination order, so hidden
+    // destinations are never landed on.
+    val gestureHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val gestureDensity = LocalDensity.current
+    val gestureTabIds = if (videoMode) {
+        videoHomeConfiguration.orderedVisibleDestinations.map { it.tabId }
+    } else {
+        listOf(0, 1, 2)
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -675,6 +694,44 @@ fun HomeScreen(
                 if (nonExpressiveNavigationBar) Modifier
                 else Modifier.nestedScroll(floatingToolbarScrollBehavior)
             )
+            .pointerInput(selectedTab, videoMode, gestureTabIds) {
+                val minDistancePx = with(gestureDensity) { 96.dp.toPx() }
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var totalX = 0f
+                    var totalY = 0f
+                    val startTime = down.uptimeMillis
+                    var endTime = startTime
+                    var aborted = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.changes.size > 1) {
+                            aborted = true
+                            break
+                        }
+                        for (change in event.changes) {
+                            totalX += change.position.x - change.previousPosition.x
+                            totalY += change.position.y - change.previousPosition.y
+                        }
+                        endTime = event.changes.firstOrNull()?.uptimeMillis ?: endTime
+                        if (event.changes.all { !it.pressed }) break
+                    }
+                    if (aborted) return@awaitEachGesture
+                    val duration = endTime - startTime
+                    if (duration in 1..400 &&
+                        kotlin.math.abs(totalX) >= minDistancePx &&
+                        kotlin.math.abs(totalX) >= 1.5f * kotlin.math.abs(totalY)
+                    ) {
+                        val index = gestureTabIds.indexOf(selectedTab)
+                        val target = if (totalX < 0f) gestureTabIds.getOrNull(index + 1)
+                        else gestureTabIds.getOrNull(index - 1)
+                        if (target != null && target != selectedTab) {
+                            gestureHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                            selectedTab = target
+                        }
+                    }
+                }
+            }
     ) {
         // Main content
         if (!loadLocalSongs || permissionState.isGranted) {
