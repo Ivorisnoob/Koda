@@ -159,6 +159,8 @@ fun LibraryContent(
     /** Open a musician's video-mode channel page, from the artist screen. */
     onOpenChannel: ((String) -> Unit)? = null,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     contentPadding: PaddingValues,
     viewModel: HomeViewModel,
     isDarkMode: Boolean,
@@ -320,6 +322,7 @@ fun LibraryContent(
                 contentPadding = contentPadding,
                 onSongClick = onSongClick,
                 onPlayQueue = onPlayQueue,
+                onShuffleQueue = onShuffleQueue,
                 onDownloadsClick = onDownloadsClick,
                 onNavigateToPlaylist = { playlist ->
                     selectedPlaylist = playlist
@@ -390,6 +393,7 @@ fun LibraryContent(
                         playlist = playlist,
                         onBack = { back() },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         viewModel = viewModel,
                         isAlbum = false,
                         onSongLongPress = onSongLongPress,
@@ -417,6 +421,7 @@ fun LibraryContent(
                         playlist = albumItem,
                         onBack = { back() },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         viewModel = viewModel,
                         preloadedSongs = selectedAlbumSongs,
                         isAlbum = true,
@@ -435,6 +440,7 @@ fun LibraryContent(
                         songs = songs, // Pass all songs, screen filters locally or fetches
                         onBack = { back() },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         onSongClick = onSongClick,
                         onAlbumClick = { album, songs ->
                             selectedAlbumName = album
@@ -492,6 +498,7 @@ fun LibraryContent(
                     playlist = readyOfflineItem,
                     onBack = { back() },
                     onPlayQueue = onPlayQueue,
+                    onShuffleQueue = onShuffleQueue,
                     viewModel = viewModel,
                     preloadedSongs = readyOffline.songs,
                     isAlbum = false,
@@ -565,6 +572,8 @@ fun LibraryMainScreen(
     contentPadding: PaddingValues,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     onDownloadsClick: () -> Unit,
     onNavigateToPlaylist: (PlaylistDisplayItem) -> Unit,
     onNavigateToArtist: (String) -> Unit,
@@ -818,6 +827,7 @@ fun LibraryMainScreen(
                             onSortOptionChange = { themePreferences.setLibrarySortOption(it.name) },
                             onSongClick = onSongClick,
                             onPlayQueue = onPlayQueue,
+                            onShuffleQueue = onShuffleQueue,
                             onDownloadsClick = onDownloadsClick,
                             onLikedSongsClick = {
                                 onNavigateToPlaylist(PlaylistDisplayItem("Liked Songs", "LM", "You", likedSongs.size, null))
@@ -980,6 +990,8 @@ fun AllSongsList(
     onSortOptionChange: (LibrarySortOption) -> Unit,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     onDownloadsClick: () -> Unit,
     onLikedSongsClick: () -> Unit,
     onNavigateToHistory: () -> Unit,
@@ -1101,8 +1113,7 @@ fun AllSongsList(
                     if (songs.isNotEmpty()) {
                         FilledIconButton(
                             onClick = {
-                                val shuffled = songs.shuffled()
-                                onPlayQueue(shuffled, shuffled.first())
+                                onShuffleQueue(songs)
                             },
                             modifier = Modifier.size(40.dp),
                             shapes = IconButtonDefaults.shapes()
@@ -2894,6 +2905,8 @@ fun PlaylistDetailScreen(
     playlist: PlaylistDisplayItem,
     onBack: () -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     viewModel: HomeViewModel,
     preloadedSongs: List<Song>? = null,
     isAlbum: Boolean = false,
@@ -3581,7 +3594,7 @@ fun PlaylistDetailScreen(
                     }
                     com.ivor.ivormusic.ui.artist.PlaySplitButton(
                         onPlay = { onPlayQueue(filteredSongs, filteredSongs.first()) },
-                        onShuffle = { onPlayQueue(filteredSongs.shuffled(), null) },
+                        onShuffle = { onShuffleQueue(filteredSongs) },
                         onStartRadio = if (radioSeed != null) {
                             {
                                 scope.launch {
@@ -3863,7 +3876,7 @@ fun PlaylistDetailScreen(
                     if (songs.isNotEmpty() && !isReorderMode && !isSearchActive) {
                         CollectionPlaybackActions(
                             onPlay = { onPlayQueue(songs, songs.first()) },
-                            onShuffle = { onPlayQueue(songs.shuffled(), null) },
+                            onShuffle = { onShuffleQueue(songs) },
                             modifier = Modifier
                                 .padding(horizontal = PLAYLIST_GUTTER)
                                 .padding(top = 18.dp),

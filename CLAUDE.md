@@ -123,6 +123,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | A per-call-site wiring parameter defaulting to null | Feature ships half-wired, nothing compile-fails | `screens.md`, `player-ui.md` |
 | A tab-index hand-off assigned across the video toggle | Tab 2 is two different screens, and `selectedTab`'s `videoMode` key discards the write; use `goToTab` | `screens.md` |
 | Queue row keys qualified by index | `animateItem` has nothing to animate | `player-ui.md` |
+| A queue screen reading `currentQueue` rather than `playOrderQueue` | Draws the order songs were added in while the player plays another; a `MediaController`'s timeline cannot see a `ShuffleOrder` | `playback-music.md` |
 | A new history/search/stats write not gated on `IncognitoMode` | Records silently while the switch says it is paused | `identity.md` |
 | A profile-scoped store left in `BackupRepository`'s raw preference copy | Restores onto whichever profile is that device's legacy one | `identity.md` |
 | Cookies captured from the page URL rather than the `music.youtube.com` jar | "Logged in but anonymous" | `identity.md` |
@@ -191,6 +192,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Music playback -> `docs/playback-music.md`
 - `MusicService` (Media3 `MediaLibraryService`) + `PlayerViewModel` over a `MediaController`. Video is a separate pipeline: the ViewModel owns the player and `VideoPlaybackService` only wraps it in a media session.
+- **A queue screen draws `playOrderQueue`, never `currentQueue`**: the shuffle order does not cross the session boundary, so the service publishes it and positions coming back from those screens go through `movePlayOrderItem`. A Shuffle button sets the mode (`playQueueShuffled`), it does not play a shuffled copy.
 - **Anchor on the queue occurrence (`MusicQueueItem.id`), never an index or media id**, for anything planned across a suspension: crossfades, pending skips, prefetch, validation, error retries. Read `MusicServiceOccurrenceTest` and `CrossfadeEngineTest` before touching this.
 - `replaceMusicSource` keeps index, position and play intent - replacing a stream is not a restart. Queue replacement is one atomic `setMediaItems`.
 - Crossfades cancel on seeks and mode changes; clock checks use a net-displacement budget (1100ms), not a tight absolute cap - two earlier caps abandoned every fade. [scar]

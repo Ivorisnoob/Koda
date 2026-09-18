@@ -597,6 +597,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             // made during controller connection updated the mini player but
             // silently lost the actual play command, leaving the song paused
             // until Play was tapped a second time.
+            // Before the queue below: a Shuffle button pressed during
+            // connection left both a queue and a mode waiting, and applying
+            // the mode after setMediaItems would start the first song
+            // unshuffled and only shuffle from the second one on.
+            pendingShuffleEnabled?.let { enabled ->
+                pendingShuffleEnabled = null
+                ctrl.shuffleModeEnabled = enabled
+            }
+
             pendingPlayRequest?.let { pending ->
                 pendingPlayRequest = null
                 playQueueItems(pending.queue, pending.startIndex, pending.startPositionMs)
@@ -1253,9 +1262,44 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     fun toggleShuffle() {
-        controller?.let {
-            it.shuffleModeEnabled = !it.shuffleModeEnabled
+        setShuffleEnabled(!(controller?.shuffleModeEnabled ?: false))
+    }
+
+    fun setShuffleEnabled(enabled: Boolean) {
+        val ctrl = controller
+        if (ctrl == null) {
+            // Nothing to write to yet. Remembered rather than dropped, because
+            // the one caller that hits this is a Shuffle button pressed on a
+            // cold start, where the queue it is shuffling is also waiting in
+            // pendingPlayRequest.
+            pendingShuffleEnabled = enabled
+            return
         }
+        ctrl.shuffleModeEnabled = enabled
+    }
+
+    private var pendingShuffleEnabled: Boolean? = null
+
+    /**
+     * Play a collection with shuffle on, for the Shuffle button on a playlist,
+     * album, artist or the library.
+     *
+     * **This is a mode, not a one-off.** Those buttons used to play a
+     * `songs.shuffled()` copy as an ordinary queue while the player's shuffle
+     * toggle stayed off, so the two controls disagreed about what had just
+     * happened: the toggle said "not shuffling" over an obviously shuffled
+     * queue, turning it off did nothing, and turning it on shuffled the
+     * already-shuffled copy again.
+     *
+     * The start song is picked at random rather than taken from the top,
+     * because with shuffle on Media3 starts at the timeline index it is given
+     * and only then follows the permutation - starting at 0 would open every
+     * shuffle of an album with track one.
+     */
+    fun playQueueShuffled(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        setShuffleEnabled(true)
+        playQueueAtPosition(songs, songs.random(), 0L)
     }
 
     fun toggleRepeat() {

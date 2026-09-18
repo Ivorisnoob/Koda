@@ -942,6 +942,15 @@ fun HomeScreen(
                             playerViewModel.playQueue(songList, song)
                             showPlayerSheet = true
                         },
+                        // Wired explicitly even though the parameter has a
+                        // default: the default plays in order, and search
+                        // opens artists and playlists whose Shuffle buttons
+                        // would otherwise have quietly stopped shuffling here
+                        // while working everywhere else.
+                        onShuffleQueue = { songList ->
+                            playerViewModel.playQueueShuffled(songList)
+                            showPlayerSheet = true
+                        },
                         onPlayRadio = { song ->
                             playerViewModel.playSongRadio(song)
                             showPlayerSheet = true
@@ -1001,6 +1010,10 @@ fun HomeScreen(
                                 },
                                 onPlayQueue = { songs: List<Song>, selectedSong: Song? ->
                                     playerViewModel.playQueue(songs, selectedSong)
+                                    showPlayerSheet = true
+                                },
+                                onShuffleQueue = { songs: List<Song> ->
+                                    playerViewModel.playQueueShuffled(songs)
                                     showPlayerSheet = true
                                 },
                                 contentPadding = listContentPadding,
@@ -2449,6 +2462,14 @@ fun SearchContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit = { _, song -> song?.let { onSongClick(it) } },
+    /**
+     * Play a collection with shuffle mode on. Defaults to playing it in
+     * order rather than to a one-time shuffled copy: a host that has not
+     * wired a player cannot turn shuffle on, and silently playing a
+     * shuffled copy would leave the player's own toggle disagreeing with
+     * the queue - the disagreement this parameter exists to end.
+     */
+    onShuffleQueue: (List<Song>) -> Unit = { songs -> onPlayQueue(songs, null) },
     onPlayRadio: (Song) -> Unit = { song -> onPlayQueue(listOf(song), song) },
     onVideoClick: (VideoItem) -> Unit = {},
     /**
@@ -2571,6 +2592,7 @@ fun SearchContent(
                         songs = emptyList(), // We let the screen fetch songs via viewModel
                         onBack = { viewedArtist = null },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         onSongClick = onSongClick,
                         onAlbumClick = { album, albumSongs ->
                              // Optional: Handle playing album from artist screen
@@ -2596,6 +2618,7 @@ fun SearchContent(
                         playlist = playlist,
                         onBack = { viewedPlaylist = null },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         viewModel = viewModel,
                         onSongLongPress = onSongLongPress,
                         onEnqueueSong = onEnqueueSong,
