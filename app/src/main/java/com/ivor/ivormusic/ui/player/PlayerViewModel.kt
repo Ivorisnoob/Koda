@@ -1167,11 +1167,39 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun movePlayOrderItem(fromIndex: Int, toIndex: Int, persist: Boolean = true) {
         val order = _playOrder.value
         val size = _currentQueue.value.size
-        moveQueueItem(
-            queueIndexForPlayOrder(order, size, fromIndex),
-            queueIndexForPlayOrder(order, size, toIndex),
-            persist,
+
+        // Shuffle off: the two orders are the same list and this is the old
+        // call, queue edit and all.
+        if (!_shuffleModeEnabled.value || order.size != size) {
+            moveQueueItem(
+                queueIndexForPlayOrder(order, size, fromIndex),
+                queueIndexForPlayOrder(order, size, toIndex),
+                persist,
+            )
+            return
+        }
+
+        // Shuffle on: what the user is editing is the order, not the queue, so
+        // the queue is left exactly as it is. Going through moveMediaItem here
+        // would be worse than doing nothing - ExoPlayer clones its ShuffleOrder
+        // on a timeline move and DefaultShuffleOrder.cloneAndInsert drops the
+        // item at a random position in the permutation, so the song would
+        // leave the row it was dropped on and reappear somewhere arbitrary.
+        if (fromIndex !in order.indices || toIndex !in order.indices || fromIndex == toIndex) return
+        val rearranged = order.toMutableList()
+        rearranged.add(toIndex, rearranged.removeAt(fromIndex))
+        _playOrder.value = rearranged.toIntArray()
+
+        controller?.sendCustomCommand(
+            androidx.media3.session.SessionCommand(
+                MusicService.CMD_SET_PLAY_ORDER,
+                android.os.Bundle.EMPTY,
+            ),
+            android.os.Bundle().apply {
+                putIntArray(MusicService.ARG_PLAY_ORDER, _playOrder.value)
+            },
         )
+        if (persist) savePlaybackSession()
     }
 
     /** Save once, after a drag has settled. */

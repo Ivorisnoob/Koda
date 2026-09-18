@@ -348,6 +348,22 @@ class MusicService : MediaLibraryService() {
         const val CMD_SET_PLAYBACK_SPEED = "com.ivor.ivormusic.SET_PLAYBACK_SPEED"
         const val ARG_PLAYBACK_SPEED = "playback_speed"
         const val ARG_PLAYBACK_SPEED_PERSIST = "playback_speed_persist"
+
+        /**
+         * Rearrange the shuffle permutation, for a row dragged on a queue
+         * screen while shuffle is on. Carries [ARG_PLAY_ORDER], the queue
+         * positions in their new playing order.
+         *
+         * **A drag while shuffled cannot go through `moveMediaItem`.** Moving
+         * an item in the timeline makes ExoPlayer clone its `ShuffleOrder`,
+         * and `DefaultShuffleOrder.cloneAndInsert` puts the item back at a
+         * *random* position in the permutation - so the song would leave the
+         * row it was dropped on and reappear somewhere arbitrary in the play
+         * order. The queue is not what the user is editing here; the order is.
+         * So the queue is left alone and the permutation is replaced outright.
+         */
+        const val CMD_SET_PLAY_ORDER = "com.ivor.ivormusic.SET_PLAY_ORDER"
+        const val ARG_PLAY_ORDER = "play_order"
         const val EXTRA_SONG_SOURCE = "com.ivor.ivormusic.SONG_SOURCE"
 
         /** Session-extras keys the timer state is published under. */
@@ -1638,6 +1654,7 @@ class MusicService : MediaLibraryService() {
                     .add(SessionCommand(CMD_SKIP_TO_INDEX, Bundle.EMPTY))
                     .add(SessionCommand(CMD_RESTORE_PLAYBACK, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SET_PLAYBACK_SPEED, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SET_PLAY_ORDER, Bundle.EMPTY))
                     .build()
 
             return MediaSession.ConnectionResult.accept(
@@ -1711,6 +1728,10 @@ class MusicService : MediaLibraryService() {
             }
             CMD_SKIP_TO_INDEX -> {
                 requestManualTransition(args.getInt(ARG_SKIP_INDEX, C.INDEX_UNSET))
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_SET_PLAY_ORDER -> {
+                applyPlayOrder(args.getIntArray(ARG_PLAY_ORDER))
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
             CMD_SET_PLAYBACK_SPEED -> {
@@ -2412,13 +2433,7 @@ class MusicService : MediaLibraryService() {
      * with its own bundle would silently blank the first one's keys.
      */
     /**
-     * The queue positions in playing order, which with shuffle off is simply
-     * 0..n and with shuffle on is the permutation the player is walking.
-     *
-     * Asked of the timeline rather than derived from the seed, because this
-     * player's timeline is the only thing that knows: `ShuffleOrder` is
-     * cloned and rewritten by ExoPlayer itself on every queue edit. Walked
-     * with `REPEAT_MODE_OFF` regardless of the real repeat mode - under
+     * Walked with `REPEAT_MODE_OFF` regardless of the real repeat mode - under
      * REPEAT_MODE_ALL the walk never terminates, and a queue screen wants the
      * running order once, not forever. The window count bounds it anyway,
      * because a timeline that somehow cycles must not hang the service.
@@ -2437,6 +2452,38 @@ class MusicService : MediaLibraryService() {
         return order.toIntArray()
     }
 
+    /**
+     * Replace the shuffle permutation with [order], the queue positions in the
+     * order the user has just arranged them.
+     *
+     * Refused unless it addresses every queue position exactly once: this
+     * arrives from another process across a session boundary, and a
+     * `ShuffleOrder` that skips or repeats an index is a corrupt player rather
+     * than a wrong-looking queue. Ignored when shuffle is off, where the
+     * permutation is not in use and the drag was an ordinary `moveMediaItem`.
+     */
+    private fun applyPlayOrder(order: IntArray?) {
+        if (order == null || !playbackShuffleEnabled) return
+        val count = player.mediaItemCount
+        if (order.size != count) return
+        val seen = BooleanArray(count)
+        for (index in order) {
+            if (index !in 0 until count || seen[index]) return
+            seen[index] = true
+        }
+        engine.setExplicitShuffleOrder(order)
+        publishSessionState()
+    }
+
+    /**
+     * The queue positions in playing order, which with shuffle off is simply
+     * 0..n and with shuffle on is the permutation the player is walking.
+     *
+     * Asked of the timeline rather than derived from the seed, because this
+     * player's timeline is the only thing that knows: `ShuffleOrder` is
+     * cloned and rewritten by ExoPlayer itself on every queue edit, and may
+     * have been replaced outright by [applyPlayOrder].
+     */
     private fun publishSessionState() {
         val session = mediaLibrarySession ?: return
         runCatching {
