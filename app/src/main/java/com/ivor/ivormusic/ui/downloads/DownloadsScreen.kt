@@ -55,10 +55,15 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -267,15 +272,36 @@ fun DownloadsScreen(
                 }
             }
 
-            AnimatedContent(
-                targetState = selectedTab,
-                transitionSpec = {
-                    fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
-                        fadeOut(spring(stiffness = Spring.StiffnessMediumLow))
-                },
-                label = "downloads_tab"
-            ) { tab ->
-                when (tab) {
+            // Swipeable, the same as the Library tabs and for the same reason:
+            // two tabs, each its own scroller, and nothing shared above them
+            // that a pager would displace. See docs/channels.md for why the
+            // channel page is the one tab strip that deliberately does not get
+            // this.
+            val pagerState = rememberPagerState(
+                initialPage = selectedTab.ordinal,
+                pageCount = { DownloadsTab.entries.size }
+            )
+            LaunchedEffect(selectedTab) {
+                if (pagerState.currentPage != selectedTab.ordinal) {
+                    pagerState.animateScrollToPage(selectedTab.ordinal)
+                }
+            }
+            val openTab by rememberUpdatedState(selectedTab)
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.settledPage }.collect { page ->
+                    val settled = DownloadsTab.entries.getOrNull(page)
+                    if (settled != null && settled != openTab) {
+                        tabHaptics.subtle()
+                        selectedTab = settled
+                    }
+                }
+            }
+            HorizontalPager(
+                state = pagerState,
+                beyondViewportPageCount = 0,
+                key = { DownloadsTab.entries[it].name }
+            ) { page ->
+                when (DownloadsTab.entries[page]) {
                     DownloadsTab.MUSIC -> MusicTab(
                         songs = downloadedSongs,
                         progress = musicProgress,
