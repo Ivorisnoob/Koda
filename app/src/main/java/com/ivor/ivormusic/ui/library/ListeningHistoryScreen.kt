@@ -710,6 +710,7 @@ private fun RangeSelector(
 ) {
     // The same connected group the Library tabs use, so the control is already
     // familiar and morphs on select rather than just recolouring.
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
@@ -717,7 +718,12 @@ private fun RangeSelector(
         HistoryRange.entries.forEachIndexed { index, entry ->
             ToggleButton(
                 checked = selected == entry,
-                onCheckedChange = { onSelect(entry) },
+                onCheckedChange = {
+                    if (selected != entry) {
+                        haptics.subtle()
+                        onSelect(entry)
+                    }
+                },
                 modifier = Modifier
                     .weight(1f)
                     .height(44.dp),

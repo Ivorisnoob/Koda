@@ -107,6 +107,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.ui.components.VideoThumbnail
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
@@ -842,6 +843,7 @@ private fun CreateVideoPlaylistDialog(
                 Spacer(modifier = Modifier.height(16.dp))
                 if (canUseAccount) {
                     val storageOptions = listOf(false, true)
+                    val targetHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(
@@ -852,7 +854,12 @@ private fun CreateVideoPlaylistDialog(
                             val selected = onDevice == deviceOnly
                             ToggleButton(
                                 checked = selected,
-                                onCheckedChange = { onDevice = deviceOnly },
+                                onCheckedChange = {
+                                    if (!selected) {
+                                        targetHaptics.subtle()
+                                        onDevice = deviceOnly
+                                    }
+                                },
                                 modifier = Modifier.weight(1f),
                                 shapes = when (index) {
                                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
@@ -1101,22 +1108,12 @@ private fun HistoryPreviewCard(
                 modifier = Modifier.fillMaxSize(),
                 indicatorSize = 26.dp
             )
-            if (!video.isLive && video.duration > 0) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(6.dp),
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color.Black.copy(alpha = 0.8f)
-                ) {
-                    Text(
-                        text = video.formattedDuration,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                    )
-                }
-            }
+            VideoThumbnailBadge(
+                video = video,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+            )
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(

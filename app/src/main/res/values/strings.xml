@@ -210,6 +210,7 @@
     <string name="np_tile_download">Download</string>
     <string name="np_tile_downloading">Saving</string>
     <string name="np_tile_downloaded">Saved</string>
+    <string name="np_pill_watch_video">Watch video</string>
     <string name="np_pill_block">Don\'t recommend</string>
     <string name="np_volume">Volume</string>
     <string name="np_volume_value">%1$d%%</string>
@@ -444,6 +445,8 @@
     <string name="sp_show_recent_searches_sub">Your past queries under the search bar</string>
     <string name="sp_show_related_videos">Show related videos</string>
     <string name="sp_show_related_videos_sub">Suggestions under a video while it plays</string>
+    <string name="sp_inline_previews">Preview videos on cards</string>
+    <string name="sp_inline_previews_sub">Rest on a card and it plays silently in place</string>
     <string name="sp_playlist_songs">Playlist songs</string>
     <string name="sp_playlist_swipe">Swipe actions</string>
     <string name="sp_playlist_swipe_sub_on">Swipe a song for its quick action</string>
@@ -1482,6 +1485,7 @@
     <string name="si_recent_searches">Shows your past searches when you tap the search field. Turning this off hides them without deleting them.</string>
     <string name="si_compact_video_home">Smaller video cards in the video Home feed, so more fit on one screen.</string>
     <string name="si_related_videos">The suggestions under a playing video. Turning them off removes the distraction; playlists and queues keep working.</string>
+    <string name="si_inline_previews">A card you stop on starts playing where it sits, without sound and without opening it. One preview at a time, and never on mobile data or with Data Saver on. Off by default, because a feed that moves on its own spends battery and data you did not ask it to.</string>
     <string name="si_not_interested">Everything you have told Koda to stop recommending - hidden videos and blocked channels. Anything can be un-hidden here.</string>
     <string name="si_private_downloads">Stores downloads inside Koda\'s private folder, invisible to other apps and the gallery, instead of the shared Downloads/Koda folder.</string>
     <string name="si_cache_music">Keeps recently streamed songs on disk so replays start instantly and cost no data. The oldest entries are evicted when the limit below is reached.</string>
