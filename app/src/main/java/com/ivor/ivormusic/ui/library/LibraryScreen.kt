@@ -763,53 +763,26 @@ fun LibraryMainScreen(
             isRefreshing = isLoading && librarySongs.isNotEmpty(),
             onRefresh = { viewModel.refresh() }
         ) {
-            // A pager rather than the AnimatedContent this used to be: the tabs
-            // are swipeable, and running both meant content sliding vertically
-            // under a finger dragging it horizontally. The pager owns the
-            // transition now, and it is the same expressive spring - Compose's
-            // default fling for a pager - rather than a hand-specified one.
-            //
-            // The open tab still lives in preferences, so the two directions
-            // are wired as separate one-way effects: a tap writes the
-            // preference and the pager follows it, a swipe settles and writes
-            // the preference. Each is a no-op when the other put them in
-            // agreement already, which is also what stops a settle after a tap
-            // from firing a second haptic.
-            val pagerState = rememberPagerState(
-                initialPage = selectedTab.ordinal,
-                pageCount = { LibraryTab.entries.size }
-            )
-            LaunchedEffect(selectedTab) {
-                if (pagerState.currentPage != selectedTab.ordinal) {
-                    pagerState.animateScrollToPage(selectedTab.ordinal)
-                }
-            }
-            // Keyed on the pager alone, and the open tab is read through a
-            // holder rather than captured. Keying this on `selectedTab` too
-            // restarted the collector the instant a tap changed it, and
-            // `settledPage` still reported the tab being animated away from -
-            // so the effect wrote that one straight back and the tap bounced.
-            val openTab by rememberUpdatedState(selectedTab)
-            LaunchedEffect(pagerState) {
-                snapshotFlow { pagerState.settledPage }.collect { page ->
-                    val settled = LibraryTab.entries.getOrNull(page)
-                    if (settled != null && settled != openTab) {
-                        tabHaptics.subtle()
-                        themePreferences.setLibraryTab(settled.name)
+            // No pager here, by decision: the Home shell owns the horizontal
+            // flick (switching main tabs), and a pager inside it both ate
+            // those flicks and fought them. Tab moves go through the strip
+            // above, with a directional slide for orientation.
+            AnimatedContent(
+                targetState = selectedTab,
+                label = "LibraryTab",
+                transitionSpec = {
+                    val forward = targetState.ordinal > initialState.ordinal
+                    if (forward) {
+                        (slideInHorizontally { width -> width } + fadeIn()) togetherWith
+                            (slideOutHorizontally { width -> -width / 3 } + fadeOut())
+                    } else {
+                        (slideInHorizontally { width -> -width / 3 } + fadeIn()) togetherWith
+                            (slideOutHorizontally { width -> width } + fadeOut())
                     }
-                }
-            }
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-                // Neighbours compose only while a drag is in flight. Each tab
-                // is a lazy list of its own, and pre-composing three of them to
-                // make the swipe smoother would pay for the other two on every
-                // arrival at this screen.
-                beyondViewportPageCount = 0,
-                key = { LibraryTab.entries[it].name }
-            ) { page ->
-                when (LibraryTab.entries[page]) {
+                },
+                modifier = Modifier.fillMaxSize()
+            ) { tab ->
+                when (tab) {
                     LibraryTab.All -> if (isLoading && sortedSongs.isEmpty()) {
                         // First load over an empty library: placeholder rows
                         // rather than a bare pull spinner over nothing.
