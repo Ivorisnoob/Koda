@@ -140,7 +140,8 @@ change. Never mark a stage complete merely because scaffolding compiles.
 **Current state:** stages 1, 2a (source/model foundation), 3a (wire readers),
 3b (timeline parsers), 3c (segment assembly) and 4 (session/HTTP transport)
 complete, plus stage 5a (home bootstrap parser, `model/SabrBootstrap.kt` with
-`SabrBootstrapTest` - implemented, JVM verification pending). SABR is
+`SabrBootstrapTest`, and token-bound request shape, `model/SabrPlayerRequest.kt`
+with `SabrPlayerRequestTest` - implemented, JVM verification pending). SABR is
 not enabled or playable. `PlaybackSource` separates URL-backed and SABR metadata;
 legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
 The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
@@ -240,7 +241,9 @@ responses are synthetic; no live googlevideo request has been made.
 No packaging/device checks.
 
 **Next action:** stage 5b: PO-token minter and MWEB resolution. The 5a bootstrap
-parser is implemented (JVM run pending - see item below). Probe the current MWEB
+parser and the token-bound request shape (`model/SabrPlayerRequest.kt` with
+`SabrPlayerRequestTest`, seam on `fetchPlayerResponse`) are implemented (JVM runs
+pending - see item below). Probe the current MWEB
 `/player` response (streaming URL `c=`, `serverAbrStreamingUrl`,
 `videoPlaybackUstreamerConfig`, adaptive format fields incl. `xtags`,
 `lastModified`, init/index ranges) and the BotGuard bootstrap with

@@ -64,3 +64,10 @@ at the commit above, also GPL-3.0. Koda's changes use `org.json` instead of
 nanojson, require the WEB home client, keep empty-visitor fallthrough and
 `//`-relative interpreter URLs, and redact diagnostics. The home WEB identity
 was verified live 2026-09-18; see `docs/playback-sabr.md`.
+
+`model/SabrPlayerRequest.kt` shapes the token-bound MWEB resolving call after
+upstream `createMwebPlayerRequest` (`YoutubeParsingHelper.java`) at the same
+revision: token-bound client version and visitor data, MWEB user agent,
+`playbackContext` with the player-JS signature timestamp, and
+`serviceIntegrityDimensions` carrying the base64url PO token. The transport
+stays Koda's `fetchPlayerResponse`, which only emits those fields when asked.

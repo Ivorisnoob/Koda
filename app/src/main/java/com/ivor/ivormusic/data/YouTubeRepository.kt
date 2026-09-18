@@ -2399,6 +2399,8 @@ class YouTubeRepository(private val context: Context) {
         extraClientFields: org.json.JSONObject = org.json.JSONObject(),
         contentPlaybackNonce: String? = null,
         mobileTParameter: String? = null,
+        playbackSignatureTimestamp: Int? = null,
+        serviceIntegrityDimensions: org.json.JSONObject? = null,
     ): PlayerResponse = withContext(Dispatchers.IO) {
         try {
             val clientObj = org.json.JSONObject().apply {
@@ -2415,10 +2417,11 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
             val contextObj = org.json.JSONObject().put("client", clientObj)
-            // No playbackContext.signatureTimestamp: that field is the player-JS
+            // No playbackContext.signatureTimestamp by default: that field is the player-JS
             // "sts" value, which only matters for ciphered WEB streams. The
             // native clients used here (ANDROID_VR / IOS) return unciphered
-            // URLs and don't need it.
+            // URLs and don't need it. Token-bound SABR/MWEB resolution passes one
+            // explicitly alongside serviceIntegrityDimensions (upstream requires both).
             val jsonBody = org.json.JSONObject().apply {
                 put("videoId", videoId)
                 put("context", contextObj)
@@ -2426,6 +2429,13 @@ class YouTubeRepository(private val context: Context) {
                 if (mobileTParameter != null) put("t", mobileTParameter)
                 put("contentCheckOk", true)
                 put("racyCheckOk", true)
+                if (playbackSignatureTimestamp != null) put("playbackContext", org.json.JSONObject()
+                    .put("contentPlaybackContext", org.json.JSONObject()
+                        .put("html5Preference", "HTML5_PREF_WANTS")
+                        .put("signatureTimestamp", playbackSignatureTimestamp)))
+                if (serviceIntegrityDimensions != null) {
+                    put("serviceIntegrityDimensions", serviceIntegrityDimensions)
+                }
             }.toString()
 
             val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY&prettyPrint=false"
