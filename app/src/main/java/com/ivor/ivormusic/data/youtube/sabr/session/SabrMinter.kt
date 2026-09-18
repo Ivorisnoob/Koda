@@ -41,8 +41,8 @@ internal interface SabrJsCallbacks {
     fun onJsError(error: String)
     fun onBotguardResult(botguardResponse: String)
     fun onMinterReady()
-    fun onTokenResult(identifier: String, tokenCsvU8: String)
-    fun onTokenError(identifier: String, error: String)
+    fun onObtainPoTokenResult(identifier: String, tokenCsvU8: String)
+    fun onObtainPoTokenError(identifier: String, error: String)
 }
 
 /**
@@ -53,6 +53,8 @@ internal interface SabrLocalDom {
     fun postScript(script: String, onError: (Throwable) -> Unit): Boolean
     fun registerCallbacks(sessionId: String, callbacks: SabrJsCallbacks): () -> Unit
     fun deleteSession(sessionId: String)
+    /** The page helper (asset text); posted before any session call. */
+    fun helperScript(): String
 }
 
 /** Network edge of attestation; implemented where OkHttp lives (4c). No caching here. */
@@ -163,6 +165,16 @@ internal class SabrTokenMinter(
         generation.incrementAndGet()
         state.unregister()
         dom.deleteSession(state.sessionId)
+        // Threads blocked in mint would otherwise hang until their timeouts even
+        // though their session is gone; fail them so they re-init immediately.
+        val waiters = synchronized(state.waiters) {
+            state.waiters.values.toList().also { state.waiters.clear() }
+        }
+        val closed = SabrCancelledException("PO token session closed")
+        waiters.forEach {
+            it.error.compareAndSet(null, closed)
+            it.latch.countDown()
+        }
     }
 
     private fun ensureTask(): FutureTask<MintState> {
@@ -195,13 +207,20 @@ internal class SabrTokenMinter(
                 botguardDone.countDown()
             },
             onJsError = {
-                // Outside the minter-ready window there is no waiter to fail; the
-                // BotGuard leg below and the token legs carry their own errors.
+                // Async page faults on the helper and BotGuard legs land here; the
+                // minter-ready window and the token legs fail their own waiters.
                 botguardError.set(SabrProtocolException(it))
                 botguardDone.countDown()
             },
         ))
         try {
+            if (!dom.postScript(dom.helperScript() + "\ntrue",
+                    onError = {
+                        botguardError.set(it)
+                        botguardDone.countDown()
+                    })) {
+                throw SabrProtocolException("Could not post PO token helper")
+            }
             val inline = bootstrap.challenge.interpreterJavascript
             val interpreter = inline ?: transport.getInterpreter(
                 bootstrap.challenge.interpreterUrl
@@ -339,7 +358,7 @@ internal class SabrTokenMinter(
             waiter.latch.countDown()
         }
 
-        override fun onTokenResult(identifier: String, tokenCsvU8: String) {
+        override fun onObtainPoTokenResult(identifier: String, tokenCsvU8: String) {
             val waiter = synchronized(waiters) { waiters.remove(identifier) } ?: return
             try {
                 waiter.token.set(csvToBytes(tokenCsvU8))
@@ -350,7 +369,7 @@ internal class SabrTokenMinter(
             }
         }
 
-        override fun onTokenError(identifier: String, error: String) {
+        override fun onObtainPoTokenError(identifier: String, error: String) {
             failWaiter(waiters, identifier, SabrProtocolException(error))
         }
     }

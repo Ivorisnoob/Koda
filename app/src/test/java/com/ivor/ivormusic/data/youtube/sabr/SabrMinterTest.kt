@@ -30,6 +30,8 @@ class SabrMinterTest {
         // which only advances when a session is abandoned.
         assertEquals("AQID", token.poTokenBase64Url)
         assertEquals(0, fakes.minter.attestationGeneration)
+        // The helper goes out before any session call.
+        assertTrue(fakes.dom.scripts.first().endsWith("\ntrue"))
     }
 
     @Test fun `session binding mints once and reuses`() {
@@ -181,10 +183,14 @@ class SabrMinterTest {
     private class FakeDom : SabrLocalDom {
         val tokenCalls = AtomicInteger()
         val mintedFor = mutableListOf<String>()
+        val scripts = mutableListOf<String>()
         var silentTokens = false
         private var callbacks: SabrJsCallbacks? = null
 
+        override fun helperScript(): String = "true"
+
         override fun postScript(script: String, onError: (Throwable) -> Unit): Boolean {
+            synchronized(scripts) { scripts.add(script) }
             when {
                 script.startsWith("kodaSabrRunBotguard(") ->
                     callbacks?.onBotguardResult("botguard-response")
@@ -196,7 +202,7 @@ class SabrMinterTest {
                         val id = script.split("\"").getOrNull(3) ?: return true
                         tokenCalls.incrementAndGet()
                         synchronized(mintedFor) { mintedFor.add(id) }
-                        callbacks?.onTokenResult(id, "1,2,3")
+                        callbacks?.onObtainPoTokenResult(id, "1,2,3")
                     }
                 }
             }
