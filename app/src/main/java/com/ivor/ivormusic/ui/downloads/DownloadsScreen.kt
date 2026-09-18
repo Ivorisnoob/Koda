@@ -90,7 +90,8 @@ private enum class DownloadsTab(val label: String) {
 }
 
 /**
- * Outer radius of a connected group. Matches AlbumScreen's track list.
+ * Outer radius of a connected group. Matches the track list on the album and
+ * playlist page (`PlaylistDetailScreen`).
  *
  * Internal rather than private because [DownloadedPlaylistCard] is the head of
  * one of these groups and has to round its top by the same amount; a second
