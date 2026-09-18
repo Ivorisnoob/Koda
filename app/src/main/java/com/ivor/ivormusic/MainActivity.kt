@@ -188,6 +188,7 @@ class MainActivity : ComponentActivity() {
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val showRecentSearches by themeViewModel.showRecentSearches.collectAsState()
             val showRelatedVideos by themeViewModel.showRelatedVideos.collectAsState()
+            val inlinePreviews by themeViewModel.inlinePreviews.collectAsState()
             val compactVideoHome by themeViewModel.compactVideoHome.collectAsState()
             val playlistSwipeEnabled by themeViewModel.playlistSwipeEnabled.collectAsState()
             val playlistSwipeStartAction by themeViewModel.playlistSwipeStartAction.collectAsState()
@@ -344,6 +345,8 @@ class MainActivity : ComponentActivity() {
                         onShowRecentSearchesToggle = { themeViewModel.setShowRecentSearches(it) },
                         showRelatedVideos = showRelatedVideos,
                         onShowRelatedVideosToggle = { themeViewModel.setShowRelatedVideos(it) },
+                        inlinePreviews = inlinePreviews,
+                        onInlinePreviewsToggle = { themeViewModel.setInlinePreviews(it) },
                         compactVideoHome = compactVideoHome,
                         onCompactVideoHomeToggle = { themeViewModel.setCompactVideoHome(it) },
                         playlistSwipeEnabled = playlistSwipeEnabled,
@@ -671,6 +674,8 @@ fun MusicApp(
     onShowRecentSearchesToggle: (Boolean) -> Unit,
     showRelatedVideos: Boolean,
     onShowRelatedVideosToggle: (Boolean) -> Unit,
+    inlinePreviews: Boolean,
+    onInlinePreviewsToggle: (Boolean) -> Unit,
     compactVideoHome: Boolean,
     onCompactVideoHomeToggle: (Boolean) -> Unit,
     playlistSwipeEnabled: Boolean,
@@ -1092,6 +1097,7 @@ fun MusicApp(
             composable("home") {
                 HomeScreen(
                     compactVideoHome = compactVideoHome,
+                    inlinePreviews = inlinePreviews,
                     onSongClick = { song ->
                         playerViewModel.playSong(song)
                     },
@@ -1206,6 +1212,8 @@ fun MusicApp(
                     onShowRecentSearchesToggle = onShowRecentSearchesToggle,
                     showRelatedVideos = showRelatedVideos,
                     onShowRelatedVideosToggle = onShowRelatedVideosToggle,
+                    inlinePreviews = inlinePreviews,
+                    onInlinePreviewsToggle = onInlinePreviewsToggle,
                     compactVideoHome = compactVideoHome,
                     onCompactVideoHomeToggle = onCompactVideoHomeToggle,
                     playlistSwipeEnabled = playlistSwipeEnabled,

@@ -226,6 +226,8 @@ fun HomeScreen(
     onOpenChannel: (String) -> Unit = {},
     shortsEnabled: Boolean = false,
     compactVideoHome: Boolean = false,
+    /** Cards on the video feed play a silent preview when rested on. */
+    inlinePreviews: Boolean = false,
     loadLocalSongs: Boolean = false,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
@@ -742,6 +744,7 @@ fun HomeScreen(
                             } else if (videoModeContent) {
                                 VideoHomeContent(
                                     compact = compactVideoHome,
+                                    inlinePreviews = inlinePreviews,
                                     // Recommendations off: a shuffle across the
                                     // followed channels' histories rather than a
                                     // second copy of the Subscriptions tab.

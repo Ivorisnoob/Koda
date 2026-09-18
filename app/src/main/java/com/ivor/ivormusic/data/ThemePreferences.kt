@@ -309,6 +309,9 @@ class ThemePreferences(context: Context) {
     private val _showRelatedVideos = MutableStateFlow(getShowRelatedVideosPreference())
     val showRelatedVideos: StateFlow<Boolean> = _showRelatedVideos.asStateFlow()
 
+    private val _inlinePreviews = MutableStateFlow(getInlinePreviewsPreference())
+    val inlinePreviews: StateFlow<Boolean> = _inlinePreviews.asStateFlow()
+
     private val _compactVideoHome = MutableStateFlow(getCompactVideoHomePreference())
     val compactVideoHome: StateFlow<Boolean> = _compactVideoHome.asStateFlow()
 
@@ -417,6 +420,7 @@ class ThemePreferences(context: Context) {
             KEY_HIDE_WATCHED_IN_FEED -> _hideWatchedInFeed.value = getHideWatchedInFeedPreference()
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
+            KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
             KEY_COMPACT_VIDEO_HOME -> _compactVideoHome.value = getCompactVideoHomePreference()
             KEY_PLAYLIST_SWIPE_ENABLED -> _playlistSwipeEnabled.value = getPlaylistSwipeEnabledPreference()
             KEY_PLAYLIST_SWIPE_START_ACTION -> _playlistSwipeStartAction.value = getPlaylistSwipeStartActionPreference()
@@ -802,6 +806,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
+        private const val KEY_INLINE_PREVIEWS = "inline_previews"
         private const val KEY_COMPACT_VIDEO_HOME = "compact_video_home"
         private const val KEY_PLAYLIST_SWIPE_ENABLED = "playlist_swipe_enabled"
         private const val KEY_PLAYLIST_SWIPE_START_ACTION = "playlist_swipe_start_action"
@@ -2161,6 +2166,22 @@ class ThemePreferences(context: Context) {
     fun setShowRelatedVideos(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_RELATED_VIDEOS, show).apply()
         _showRelatedVideos.value = show
+    }
+
+    /**
+     * Whether a video card plays a silent preview when you rest on it.
+     *
+     * **Off by default, and deliberately so.** It spends data and battery on
+     * something nobody asked for, on a screen people scroll past, and a feed
+     * that starts moving on its own is a different product from one that does
+     * not. Someone who wants it can say so.
+     */
+    private fun getInlinePreviewsPreference(): Boolean =
+        prefs.getBoolean(KEY_INLINE_PREVIEWS, false)
+
+    fun setInlinePreviews(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_INLINE_PREVIEWS, enabled).apply()
+        _inlinePreviews.value = enabled
     }
 
     private fun getPlaylistSwipeEnabledPreference(): Boolean =

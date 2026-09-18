@@ -60,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -71,6 +72,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -130,8 +132,36 @@ fun VideoHomeContent(
     // Hoisted by HomeScreen so the position survives a tab switch and the nav
     // bar can send it back to the top on a re-tap. Defaulted for previews and
     // any caller that does not care.
-    listState: LazyListState = rememberLazyListState()
+    listState: LazyListState = rememberLazyListState(),
+    /**
+     * Whether a card plays a silent preview when the feed is rested on it.
+     * Off by default here as well as in preferences: a caller that has not
+     * thought about it gets the feed that does not move on its own.
+     */
+    inlinePreviews: Boolean = false
 ) {
+    // Null when the setting is off, and then the cards read a null local and
+    // draw exactly what they drew before this existed.
+    val previewController = rememberInlinePreviewController(enabled = inlinePreviews)
+    if (previewController != null) {
+        // The dwell timer only runs while the list is still. Written here
+        // rather than read per card, so one state read feeds every card.
+        previewController.isListSettled = !listState.isScrollInProgress
+    }
+
+    // Anything that opens over the feed stops the preview under it. The video
+    // player and the Shorts overlay are drawn above the NavHost, so this screen
+    // is never paused and the card's own visibility still reads as on screen -
+    // nothing else here would notice that a full-screen player is covering it.
+    val openVideo: (VideoItem) -> Unit = { video ->
+        previewController?.release()
+        onVideoClick(video)
+    }
+    val openShort: (Int) -> Unit = { index ->
+        previewController?.release()
+        onShortClick(index)
+    }
+
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -238,6 +268,9 @@ fun VideoHomeContent(
                 }
             }
 
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalInlinePreview provides previewController
+            ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -321,7 +354,7 @@ fun VideoHomeContent(
                         VideoCard(
                             compact = compact,
                             video = video,
-                            onClick = { onVideoClick(video) },
+                            onClick = { openVideo(video) },
                             onLongClick = { onVideoLongPress(video) },
                             onOpenChannel = onOpenChannel,
                             modifier = Modifier.padding(horizontal = 16.dp)
@@ -332,7 +365,7 @@ fun VideoHomeContent(
                         item(key = "shorts_shelf") {
                             ShortsShelf(
                                 shorts = shorts,
-                                onShortClick = onShortClick,
+                                onShortClick = openShort,
                                 isLoading = isShortsLoading,
                                 failed = shortsFeedFailed,
                                 onRefresh = { viewModel.loadShortsFeed(force = true) }
@@ -344,7 +377,7 @@ fun VideoHomeContent(
                         VideoCard(
                             compact = compact,
                             video = video,
-                            onClick = { onVideoClick(video) },
+                            onClick = { openVideo(video) },
                             onLongClick = { onVideoLongPress(video) },
                             onOpenChannel = onOpenChannel,
                             modifier = Modifier.padding(horizontal = 16.dp)
@@ -429,6 +462,7 @@ fun VideoHomeContent(
                 }
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
+            }
             }
         }
     }
@@ -794,17 +828,51 @@ fun VideoCard(
             CompactVideoCardContent(video, openChannel, onLongClick)
         } else {
             Column {
+                // Rested on with previews turned on, this card plays where it
+                // sits. The fraction is written into a float state nothing
+                // reads during composition - only the claim's polling lambda -
+                // so scrolling moves the number without recomposing every card
+                // on screen every frame.
+                val preview = LocalInlinePreview.current
+                val visibleFraction = remember(video.videoId) { mutableFloatStateOf(0f) }
+                val isPreviewing = preview?.previewingId == video.videoId
+
                 // Thumbnail with duration overlay
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
                         .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                        .then(
+                            if (preview == null) Modifier
+                            else Modifier.onGloballyPositioned {
+                                visibleFraction.floatValue = it.visibleVerticalFraction()
+                            }
+                        )
                 ) {
+                    if (preview != null) {
+                        InlinePreviewClaim(video = video) { visibleFraction.floatValue }
+                    }
+
                     VideoThumbnail(
                         video = video,
                         modifier = Modifier.fillMaxSize()
                     )
+
+                    // Drawn over the thumbnail rather than in place of it, and
+                    // only once a frame has actually arrived: swapping to an
+                    // empty surface first shows a black hole where the picture
+                    // was for as long as the stream takes to start.
+                    if (isPreviewing && preview != null) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = preview.isRendering,
+                            enter = androidx.compose.animation.fadeIn(),
+                            exit = androidx.compose.animation.fadeOut(),
+                            modifier = Modifier.matchParentSize()
+                        ) {
+                            InlinePreviewSurface(preview, Modifier.fillMaxSize())
+                        }
+                    }
 
                     // Gradient overlay at bottom for duration
                     Box(
@@ -827,6 +895,23 @@ fun VideoCard(
                             .align(Alignment.BottomEnd)
                             .padding(8.dp)
                     )
+
+                    // How far the preview has got, on the card itself. Drawn
+                    // only while previewing, so a card at rest is exactly the
+                    // card it was before this feature existed.
+                    if (isPreviewing && preview != null && preview.isRendering) {
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { preview.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .align(Alignment.BottomCenter),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = Color.White.copy(alpha = 0.25f),
+                            gapSize = 0.dp,
+                            drawStopIndicator = {},
+                        )
+                    }
                 }
             
                 // Video info
