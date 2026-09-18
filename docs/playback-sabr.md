@@ -144,7 +144,11 @@ complete, plus stage 5a (home bootstrap parser, `model/SabrBootstrap.kt` with
 `SabrPlayerRequestTest`; MWEB envelope parser, `model/SabrResolution.kt` with
 `SabrResolutionTest` - implemented and JVM-verified 2026-09-18: 30 tests green
 (`SabrBootstrapTest`, `SabrPlayerRequestTest`, `SabrResolutionTest`,
-`SabrSessionTest`; one fixture bug fixed in `82b8617`). SABR is
+`SabrSessionTest`; one fixture bug fixed in `82b8617`), plus the minter
+orchestration (`session/SabrMinter.kt` with `SabrMinterTest`, 9 tests green),
+headless page runtime (`session/SabrWebViewRuntime.kt`,
+`assets/koda_sabr_po_token.js`) and Android owner (`session/SabrAttestation.kt`
+with identity producer). SABR is
 not enabled or playable. The anonymous MWEB /player envelope is verified live
 (`c=MWEB`, 25 adaptive formats, ~6h expiry, ciphered URLs, no ustreamer leaf):
 `.probe/stage5-mweb-player-anon-2026-09-18.log`. `PlaybackSource` separates URL-backed and SABR metadata;
@@ -245,10 +249,14 @@ aborts a stalled body read. Log: `.probe/sabr-session-check.log`. All controlled
 responses are synthetic; no live googlevideo request has been made.
 No packaging/device checks.
 
-**Next action:** stage 5b: PO-token minter, descriptor construction from
-`SabrResolution`, and the signature/n decoder check. The 5a parsers and request
-shape are implemented and JVM-verified (logs: `.probe/sabr-slice-tests.log`,
-`.probe/sabr-resolution-retest.log`). Still needs
+**Next action:** slice 5, the resolution pipeline: mint via `SabrAttestation`,
+MWEB player fetch through the `fetchPlayerResponse` seam (sts: epoch-seconds
+placeholder per the WEB_REMIX precedent until the signature decoder lands),
+`parseSabrResolution`, descriptor construction, and rotation-by-re-resolution
+on attestation failures (no token swapping under live sessions - see
+`SabrAttestation.kt`). Device run of the minter still open. The 5a parsers,
+request shape, minter and runtime are implemented and JVM/compile-verified
+(logs: `.probe/sabr-*-test.log`, `.probe/sabr-*-compile.log`). Still needs
 device/signed-in probes: token-bound ustreamer leaf, SESSION binding, actual
 BotGuard run. MWEB envelope (minus ustreamer) is verified live; do not invent
 beyond it.

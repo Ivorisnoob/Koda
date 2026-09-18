@@ -93,6 +93,9 @@ class SessionManager(context: Context) {
         return profileManager.cookiesFor(active.id)
     }
 
+    /** Stable id of whoever is active, signed in or device-only. */
+    internal fun activeProfileId(): String = profileManager.active().id
+
     /**
      * Sign the active profile out.
      *

@@ -158,7 +158,7 @@ internal class SabrWebViewRuntime private constructor(appContext: Context) : Sab
             if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
             view.settings.javaScriptEnabled = true
             view.settings.domStorageEnabled = false
-            view.settings.userAgentString = PAGE_USER_AGENT
+            view.settings.userAgentString = SABR_PAGE_USER_AGENT
             view.settings.blockNetworkLoads = true
             view.addJavascriptInterface(Bridge(), BRIDGE_NAME)
             view.webChromeClient = object : WebChromeClient() {
@@ -331,8 +331,6 @@ internal class SabrWebViewRuntime private constructor(appContext: Context) : Sab
         private const val TAG = "SabrWebView"
         private const val BRIDGE_NAME = "KodaSabrBridge"
         private const val HELPER_ASSET = "koda_sabr_po_token.js"
-        private const val PAGE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.3"
         private const val DEFAULT_TIMEOUT_MS = 30_000L
         private const val READY_TIMEOUT_MS = 5_000L
         private const val MAX_ATTEMPTS = 2

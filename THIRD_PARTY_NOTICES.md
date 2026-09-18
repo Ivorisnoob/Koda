@@ -79,3 +79,17 @@ and string init/index ranges, skip-malformed formats) and owns the single
 MWEB-minted-URL check the session transport reuses. Koda-only shape:
 fail-closed envelope, opaque ranges, no per-format URLs until the signature
 decoder lands, absolute expiry, redacted diagnostics.
+
+## PipePipe PO-token minter (client + extractor)
+
+`session/SabrMinter.kt` orchestrates minting after PipePipe (client)
+`LocalDomPoTokenProvider.kt` at the commit above: home bootstrap, BotGuard
+challenge, `GenerateIT` integrity exchange, content/session binding,
+expiry-aware single-flight sessions. `session/SabrWebViewRuntime.kt` and
+`app/src/main/assets/koda_sabr_po_token.js` adapt `SharedWebViewRuntime.java`
+and `sabr_po_token.js` (bridge renamed to `KodaSabrBridge`, entry points to
+`kodaSabr*`; BotGuard logic untouched), also GPL-3.0. Koda's changes inject
+the transport and page runtime (no Android APIs in the orchestration), skip
+re-warming idle sessions, re-init on profile/login-generation moves instead
+of cookie bytes, fail abandoned sessions explicitly, refuse Local Only up
+front, reset on renderer death, and never block a delete on readiness.
