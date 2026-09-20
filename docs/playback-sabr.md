@@ -168,7 +168,10 @@ compile-verified, rollout gate closed), plus stage 2b boundary hardening and
 the code-only half of 5b (stale completion rejection via identity generation,
 JVM-verified 2026-09-20 - logs `.probe/sabr-2b-check.log`,
 `.probe/sabr-5b-check.log`), plus stage 8a bounded reload recovery
-(`reloadOnce`, JVM-verified 2026-09-20 - log `.probe/sabr-8a-check.log`). SABR is
+(`reloadOnce`, JVM-verified 2026-09-20 - log `.probe/sabr-8a-check.log`), plus
+stage 9a download checkpoints and support policy (durable rendition/sequence
+progress format, upfront remux check, error classification, JVM-verified
+2026-09-20 - log `.probe/sabr-9a-check.log`). SABR is
 not enabled or playable. The anonymous MWEB /player envelope is verified live
 (`c=MWEB`, 25 adaptive formats, ~6h expiry, ciphered URLs, no ustreamer leaf):
 `.probe/stage5-mweb-player-anon-2026-09-18.log`. `PlaybackSource` separates URL-backed and SABR metadata;
@@ -277,7 +280,9 @@ including stale-prepare with zero calls and mid-preparation invalidation
 discarding late init. Log: `.probe/sabr-5b-check.log`. `SabrReloadTest` passed
 (6 tests): single bounded retry, fallback after the second failure, no reload
 on other failures, cancellation propagated. Log: `.probe/sabr-8a-check.log`.
-All controlled
+`SabrDownloadCheckpointTest` passed (6 tests) and `SabrDownloadSupportTest`
+passed (4 tests): checkpoint round-trips, ordered advance, support matrix,
+error classification. Log: `.probe/sabr-9a-check.log`. All controlled
 responses are synthetic; no live googlevideo request has been made.
 No packaging/device checks.
 
@@ -293,8 +298,9 @@ beyond it.
 
 **Outstanding:** stage 5b-live (on-device minter run, signature/n decoder,
 token-bound ustreamer, token-supplier decision), stages 8b-10 (quality changes
-across transports, alternate audio identity, Shorts sessions, downloads,
-hardening). (Stages 2b, 5b-code and 8a landed 2026-09-20.) Anonymous live probes done (home bootstrap,
+across transports, alternate audio identity, Shorts sessions, download
+pipeline with persistence and remux wiring, hardening). (Stages 2b,
+5b-code, 8a and 9a landed 2026-09-20.) Anonymous live probes done (home bootstrap,
 MWEB envelope - see `.probe/stage5-*-2026-09-18.log`); signed-in probes done
 2026-09-18 from the app WebView jar - home honors the session (LOGGED_IN,
 DATASYNC_ID) but /player answers logged_in:0 on this IP/visitor, so
