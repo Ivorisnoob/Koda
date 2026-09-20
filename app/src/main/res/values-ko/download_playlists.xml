@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%2$d곡 중 %1$d곡 오프라인에서 이용 가능</string>
+    <string name="download_playlist_expanded">펼침</string>
+    <string name="download_playlist_collapsed">접음</string>
+    <string name="download_playlist_none_offline">이 트랙들은 아직 이 기기에 없어요</string>
 </resources>

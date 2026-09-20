@@ -28,6 +28,18 @@ data class DownloadedPlaylist(
             files[song.id] ?: song.takeIf { it.source == SongSource.LOCAL && it.uri != null }
         }
     }
+
+    /**
+     * Whether this snapshot describes nothing that is here or on its way.
+     *
+     * The [pending] half is the one that matters and the one with no compile
+     * error behind it: a playlist download is remembered when it is accepted,
+     * so between that moment and the first file landing the snapshot has
+     * legitimately nothing to show. A prune that only counted files would
+     * delete the record of the download currently running.
+     */
+    fun isOrphaned(downloads: List<Song>, pending: Set<String>): Boolean =
+        offlineSongs(downloads).isEmpty() && songs.none { it.id in pending }
 }
 
 /** Owned by the singleton download repository; no account or network is needed. */
@@ -49,17 +61,38 @@ class DownloadedPlaylistStore(context: Context) {
 
     suspend fun remember(playlist: DownloadedPlaylist) = withContext(Dispatchers.IO) {
         mutex.withLock {
-            val updated = listOf(playlist) + state.value.filterNot { it.id == playlist.id }
-            val bytes = json.encodeToString(updated).toByteArray(Charsets.UTF_8)
-            val output = file.startWrite()
-            try {
-                output.write(bytes)
-                file.finishWrite(output)
-                state.value = updated
-            } catch (error: Exception) {
-                file.failWrite(output)
-                throw error
-            }
+            write(listOf(playlist) + state.value.filterNot { it.id == playlist.id })
+        }
+    }
+
+    /**
+     * Drop snapshots by id. The store only ever grew, so a playlist whose last
+     * track had been deleted stayed on the Downloads tab forever as a card
+     * reading "0 of 12 available offline" - an entry offering nothing, which
+     * cannot be got rid of because the thing it describes is already gone.
+     *
+     * Deliberately not a deletion of files: the songs are what hold the bytes,
+     * and this is only the record that they were once downloaded together.
+     */
+    suspend fun forget(ids: Set<String>) = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext
+        mutex.withLock {
+            val remaining = state.value.filterNot { it.id in ids }
+            if (remaining.size != state.value.size) write(remaining)
+        }
+    }
+
+    /** Callers hold [mutex]; the flow is only updated once the bytes are down. */
+    private fun write(playlists: List<DownloadedPlaylist>) {
+        val bytes = json.encodeToString(playlists).toByteArray(Charsets.UTF_8)
+        val output = file.startWrite()
+        try {
+            output.write(bytes)
+            file.finishWrite(output)
+            state.value = playlists
+        } catch (error: Exception) {
+            file.failWrite(output)
+            throw error
         }
     }
 }

@@ -62,6 +62,7 @@
     <string name="action_done">Done</string>
     <string name="action_create">Create</string>
     <string name="action_save">Save</string>
+    <string name="action_listen_as_music">Music</string>
     <string name="action_delete">Delete</string>
     <string name="action_edit">Edit</string>
     <string name="action_share">Share</string>
@@ -157,11 +158,16 @@
 
     <!-- Sleep timer -->
     <string name="sleep_timer_title">Sleep timer</string>
+    <string name="sleep_timer_off">Off</string>
     <string name="sleep_timer_status_track">This track</string>
     <string name="sleep_timer_detail_track">Playback stops when the song playing now finishes</string>
     <string name="sleep_timer_detail_duration">Playback fades out and pauses when the timer ends</string>
     <string name="minutes_short">%1$d min</string>
     <string name="sleep_timer_end_of_track">End of this track</string>
+    <string name="sleep_timer_end_of_video">End of this video</string>
+    <string name="sleep_timer_status_video">This video</string>
+    <string name="sleep_timer_detail_video">Playback stops when the video playing now ends</string>
+    <string name="sleep_timer_detail_duration_video">Playback pauses when the timer ends</string>
     <string name="sleep_timer_turn_off">Turn off</string>
 
     <!-- Mini player / shared component content descriptions -->
@@ -204,6 +210,7 @@
     <string name="np_tile_download">Download</string>
     <string name="np_tile_downloading">Saving</string>
     <string name="np_tile_downloaded">Saved</string>
+    <string name="np_pill_watch_video">Watch video</string>
     <string name="np_pill_block">Don\'t recommend</string>
     <string name="np_volume">Volume</string>
     <string name="np_volume_value">%1$d%%</string>
@@ -438,6 +445,8 @@
     <string name="sp_show_recent_searches_sub">Your past queries under the search bar</string>
     <string name="sp_show_related_videos">Show related videos</string>
     <string name="sp_show_related_videos_sub">Suggestions under a video while it plays</string>
+    <string name="sp_inline_previews">Preview videos on cards</string>
+    <string name="sp_inline_previews_sub">Rest on a card and it plays silently in place</string>
     <string name="sp_playlist_songs">Playlist songs</string>
     <string name="sp_playlist_swipe">Swipe actions</string>
     <string name="sp_playlist_swipe_sub_on">Swipe a song for its quick action</string>
@@ -603,6 +612,8 @@
     <string name="vh_recommended_for_you">Recommended For You</string>
     <string name="vh_trending_videos">Trending Videos</string>
     <string name="vh_from_subscriptions">From your subscriptions</string>
+    <string name="vh_subscription_mix">Shuffled from your subscriptions</string>
+    <string name="vh_subscription_mix_empty">Couldn\'t find videos from the channels you follow. Pull down to try again.</string>
     <string name="vh_no_subscriptions">No subscriptions yet</string>
     <string name="vh_no_subscriptions_sub">Subscribe to channels to see their latest videos on Home</string>
     <string name="vh_youre_offline">You\'re offline</string>
@@ -636,6 +647,15 @@
     <string name="remove_from_account_q">Remove from your YouTube account?</string>
     <string name="share_playlist_chooser">Share playlist</string>
     <string name="vl_no_videos">No videos in this playlist</string>
+    <plurals name="vpl_video_count">
+        <item quantity="one">%d video</item>
+        <item quantity="other">%d videos</item>
+    </plurals>
+    <string name="vpl_video_count_partial">%d+ videos</string>
+    <string name="vpl_section_videos">Videos</string>
+    <string name="vpl_load_failed_title">Couldn\'t load videos</string>
+    <string name="vpl_load_failed_body">This playlist didn\'t load. Check your connection and try again.</string>
+    <string name="vpl_empty_body">Videos saved to this playlist will show up here.</string>
     <string name="remove_from_watch_later">Remove from Watch Later</string>
     <string name="remove_from_liked_videos">Remove from Liked videos</string>
     <string name="remove_from_playlist">Remove from playlist</string>
@@ -992,6 +1012,9 @@
 
     <!-- Playback settings / captions sheets -->
     <string name="vpc_playback_settings">Playback settings</string>
+    <string name="vpc_quality_auto">Auto</string>
+    <string name="vpc_listen_as_music">Listen as music</string>
+    <string name="vpc_listen_as_music_sub">Move this video to the music player</string>
     <string name="vpc_autoplay">Autoplay</string>
     <string name="vpc_autoplay_on">Play the next playlist or related video</string>
     <string name="vpc_autoplay_off">Stop and stay on this video</string>
@@ -1462,6 +1485,7 @@
     <string name="si_recent_searches">Shows your past searches when you tap the search field. Turning this off hides them without deleting them.</string>
     <string name="si_compact_video_home">Smaller video cards in the video Home feed, so more fit on one screen.</string>
     <string name="si_related_videos">The suggestions under a playing video. Turning them off removes the distraction; playlists and queues keep working.</string>
+    <string name="si_inline_previews">A card you stop on starts playing where it sits, without sound and without opening it. One preview at a time, and never on mobile data or with Data Saver on. Off by default, because a feed that moves on its own spends battery and data you did not ask it to.</string>
     <string name="si_not_interested">Everything you have told Koda to stop recommending - hidden videos and blocked channels. Anything can be un-hidden here.</string>
     <string name="si_private_downloads">Stores downloads inside Koda\'s private folder, invisible to other apps and the gallery, instead of the shared Downloads/Koda folder.</string>
     <string name="si_cache_music">Keeps recently streamed songs on disk so replays start instantly and cost no data. The oldest entries are evicted when the limit below is reached.</string>
@@ -1495,7 +1519,7 @@
     <string name="motion_quality_balanced">Balanced</string>
     <string name="motion_quality_high">High</string>
     <string name="motion_quality_maximum">Max</string>
-    <string name="si_motion_artwork">Looks up the song title and artist with Apple Music; no account is needed. Not every song has an animated cover. Uses extra data and battery, and keeps the original cover when unavailable. Animation stops when music is paused or the player is closed, and stays off in Battery Saver, Data Saver, reduced motion, Local Only and Incognito.</string>
+    <string name="si_motion_artwork">Looks up the song title and artist with Apple Music; no account is needed. Not every song has an animated cover. Uses extra data and battery, and keeps the original cover when unavailable. Animation pauses with the music and resumes with it, closes with the player, and stays off in Battery Saver, Data Saver, reduced motion, Local Only and Incognito.</string>
     <string name="sp_visualizer">Music visualizer</string>
     <string name="sp_visualizer_sub">Animated bars that dance with the music in the full player</string>
     <string name="sp_visualizer_style">Style</string>

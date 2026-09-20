@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d von %2$d Titeln offline verfügbar</string>
+    <string name="download_playlist_expanded">Erweitert</string>
+    <string name="download_playlist_collapsed">Reduziert</string>
+    <string name="download_playlist_none_offline">Noch keiner dieser Titel ist auf diesem Gerät</string>
 </resources>

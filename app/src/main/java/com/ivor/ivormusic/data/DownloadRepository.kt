@@ -170,6 +170,40 @@ class DownloadRepository private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Forget playlist snapshots with nothing left on the device.
+     *
+     * Deleting tracks one at a time used to leave the playlist behind as a
+     * permanent "0 downloaded" card: the store only ever gained entries, so the
+     * shell outlived everything it described and there was no control anywhere
+     * that removed it.
+     *
+     * **A playlist still being fetched is not an orphan**, and that is the
+     * whole difficulty: between accepting a playlist download and its first
+     * file landing, a snapshot legitimately has nothing to show, and a prune
+     * that only counted files would delete the record of the download that was
+     * in progress. Anything still in flight or still queued holds its playlist
+     * open.
+     */
+    private fun pruneEmptyDownloadedPlaylists() {
+        repositoryScope.launch {
+            val downloads = _downloadedSongs.value
+            val pending = _downloadingIds.value +
+                _downloadQueue.value.mapTo(hashSetOf()) { it.id }
+            val orphans = playlistStore.playlists.value
+                .filter { it.isOrphaned(downloads, pending) }
+                .mapTo(hashSetOf()) { it.id }
+            if (orphans.isEmpty()) return@launch
+            try {
+                playlistStore.forget(orphans)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                KLog.e(TAG, "Cannot forget empty downloaded playlists", error)
+            }
+        }
+    }
+
     private val downloadsFile = File(context.filesDir, "downloaded_songs_metadata.json")
     private val videosFile = File(context.filesDir, "downloaded_videos_metadata.json")
 
@@ -232,6 +266,16 @@ class DownloadRepository private constructor(private val context: Context) {
                 loadDownloadedSongs()
             }
             moveSharedArtworkOutOfGallery()
+            // Also on launch, not only on delete. These files are user-visible
+            // now, so a playlist can be emptied from the Files app without this
+            // process running at all, and installations that predate the prune
+            // carry the shells the store used to accumulate. Nothing is in
+            // flight this early, so anything empty here is genuinely orphaned.
+            //
+            // After the migration rather than beside it: a reload can put songs
+            // back into the list, and pruning first would forget a playlist for
+            // files that were about to reappear under their new paths.
+            pruneEmptyDownloadedPlaylists()
         }
     }
 
@@ -789,6 +833,13 @@ class DownloadRepository private constructor(private val context: Context) {
             }
 
             if (attempt < MAX_ATTEMPTS) {
+                // Every attempt re-resolves from scratch. Under a bot-check
+                // verdict that is another refused extraction per attempt, so
+                // this item gives up now rather than repeating it.
+                if (YouTubeRepository.isBotCheckVerdictActive()) {
+                    KLog.w(TAG, "YouTube's bot check refused ${request.title}; not retrying")
+                    break
+                }
                 if (isMediaForbidden(lastError)) {
                     KLog.w(TAG, "googlevideo refused the media; re-minting visitorData before retry")
                     youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
@@ -1448,6 +1499,7 @@ class DownloadRepository private constructor(private val context: Context) {
         currentList.remove(songToDelete)
         _downloadedSongs.value = currentList
         saveMetadata()
+        pruneEmptyDownloadedPlaylists()
     }
 
     fun isDownloaded(songId: String): Boolean {

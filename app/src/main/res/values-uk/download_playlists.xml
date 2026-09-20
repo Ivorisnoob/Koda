@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d із %2$d композицій доступні офлайн</string>
+    <string name="download_playlist_expanded">Розгорнуто</string>
+    <string name="download_playlist_collapsed">Згорнуто</string>
+    <string name="download_playlist_none_offline">Цих треків поки немає на пристрої</string>
 </resources>

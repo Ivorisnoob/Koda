@@ -291,6 +291,57 @@ class YouTubeRepository(private val context: Context) {
         private val visitorDataMutex = kotlinx.coroutines.sync.Mutex()
         private const val VISITOR_DATA_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
 
+        /**
+         * When the bot check last refused a stream in a way no fresh identity
+         * could fix: a just-minted visitorData refused as well, or NewPipe
+         * (which mints its own fresh token per client) refused alongside the
+         * direct chain. Part of the visitorData cache rather than new state:
+         * it is the verdict on that identity, and MusicService, the video
+         * players and downloads each hold their own repository instance.
+         *
+         * [verified September 2026] A tester's signed-in session hit this at
+         * the IP level: a remint, then both clients refused again within 300ms,
+         * three times across two videos. Account cookies cannot help (the
+         * stream clients reject them; see docs/youtube-data.md). What the
+         * verdict changes is only the *automatic* work that repeats a refusal -
+         * remint-and-retry, playback retries, speculative prefetch. A request
+         * the user makes still goes out, as with [YouTubeRateLimit].
+         */
+        @Volatile private var botCheckVerdictAtMs: Long = 0L
+        private const val BOT_CHECK_VERDICT_MS = 3 * 60 * 1000L
+
+        /**
+         * Whether stream resolution was refused by the bot check recently
+         * enough that repeating it automatically would only add requests.
+         * Never a reason to refuse a request the user made.
+         */
+        fun isBotCheckVerdictActive(): Boolean {
+            val at = botCheckVerdictAtMs
+            if (at == 0L) return false
+            val age = System.currentTimeMillis() - at
+            // A negative age is a clock that moved backwards: expire it rather
+            // than pin the verdict.
+            return age in 0 until BOT_CHECK_VERDICT_MS
+        }
+
+        private fun noteBotCheckVerdict(videoId: String) {
+            if (!isBotCheckVerdictActive()) {
+                KLog.w(
+                    "YouTubeRepository",
+                    "Bot check refused videoId=$videoId with a fresh identity; " +
+                        "holding automatic retries and prefetch for ${BOT_CHECK_VERDICT_MS / 1000}s",
+                )
+            }
+            botCheckVerdictAtMs = System.currentTimeMillis()
+        }
+
+        private fun clearBotCheckVerdict() {
+            if (botCheckVerdictAtMs != 0L) {
+                botCheckVerdictAtMs = 0L
+                KLog.i("YouTubeRepository", "Stream resolved; bot-check verdict cleared")
+            }
+        }
+
         private class CachedCaptions(val tracks: List<CaptionTrack>, val fetchedAt: Long)
 
         // Caption tracklists harvested from the /player response already made to
@@ -332,6 +383,7 @@ class YouTubeRepository(private val context: Context) {
         fun invalidateSessionScopedCaches(context: Context, commitNow: Boolean = false) {
             cachedVisitorData = null
             visitorDataFetchedAt = 0L
+            botCheckVerdictAtMs = 0L
             VideoStreamResolutionCache.clear()
             val editor = context.applicationContext
                 .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
@@ -913,8 +965,10 @@ class YouTubeRepository(private val context: Context) {
         // primary path ran out MusicService's whole resolution budget and the
         // song resolved to an error URI and was skipped - with a working
         // fallback sitting unused behind it.
-        val newPipeUrl = resolveAudioUrlWithinBudget(videoId)
+        val newPipe = resolveAudioUrlWithinBudget(videoId)
+        val newPipeUrl = newPipe.url
         if (!newPipeUrl.isNullOrEmpty()) {
+            clearBotCheckVerdict()
             KLog.i(
                 "YouTubeRepository",
                 "Resolve[NewPipe] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
@@ -925,7 +979,8 @@ class YouTubeRepository(private val context: Context) {
         // Last-resort fallback: the older direct /player chain. It can still
         // cover a client-specific NewPipe extraction failure, but its progressive
         // URLs must not be the normal path for the reason above.
-        val innerTubeUrl = resolvePlayerStreamingData(videoId)?.let { pickAudioStreamUrl(videoId, it) }
+        val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked)
+            ?.let { pickAudioStreamUrl(videoId, it) }
         val dt = System.currentTimeMillis() - startMs
         if (!innerTubeUrl.isNullOrEmpty()) {
             KLog.i(
@@ -952,10 +1007,14 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getDownloadAudioStreamUrl(videoId: String): Result<String> =
         withContext(Dispatchers.IO) {
-            val newPipeUrl = resolveM4aAudioUrlViaNewPipe(videoId)
-            if (!newPipeUrl.isNullOrBlank()) return@withContext Result.success(newPipeUrl)
+            val newPipe = resolveM4aAudioUrlViaNewPipe(videoId)
+            val newPipeUrl = newPipe.url
+            if (!newPipeUrl.isNullOrBlank()) {
+                clearBotCheckVerdict()
+                return@withContext Result.success(newPipeUrl)
+            }
 
-            val innerTubeUrl = resolvePlayerStreamingData(videoId)
+            val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked)
                 ?.let(::pickM4aAudioStreamUrl)
             if (!innerTubeUrl.isNullOrBlank()) return@withContext Result.success(innerTubeUrl)
 
@@ -978,7 +1037,7 @@ class YouTubeRepository(private val context: Context) {
      * outside the returned value, and a resolution that arrives late is simply
      * discarded.
      */
-    private suspend fun resolveAudioUrlWithinBudget(videoId: String): String? {
+    private suspend fun resolveAudioUrlWithinBudget(videoId: String): NewPipeAudioResult {
         val extraction = newPipeScope.async { resolveAudioUrlViaNewPipe(videoId) }
         return try {
             kotlinx.coroutines.withTimeoutOrNull(NEWPIPE_STREAM_BUDGET_MS) { extraction.await() }
@@ -993,7 +1052,7 @@ class YouTubeRepository(private val context: Context) {
                         "Resolve[NewPipe] over ${NEWPIPE_STREAM_BUDGET_MS}ms budget " +
                             "videoId=$videoId, falling back to InnerTube",
                     )
-                    null
+                    NewPipeAudioResult.NONE
                 }
         } catch (e: CancellationException) {
             // The caller went away rather than the budget expiring. Abandon the
@@ -1011,7 +1070,7 @@ class YouTubeRepository(private val context: Context) {
      * URL is tagged with its issuing client, so playback selects the matching
      * user agent through [uaForPlaybackUri].
      */
-    private suspend fun resolveAudioUrlViaNewPipe(videoId: String): String? = withContext(Dispatchers.IO) {
+    private suspend fun resolveAudioUrlViaNewPipe(videoId: String): NewPipeAudioResult = withContext(Dispatchers.IO) {
         try {
             val streamUrl = "https://www.youtube.com/watch?v=$videoId"
             val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
@@ -1025,14 +1084,16 @@ class YouTubeRepository(private val context: Context) {
             pickAudioStreamForCurrentQuality(audioStreams)
                 ?.content
                 ?.takeIf { it.isNotBlank() }
-                ?.let { return@withContext it }
+                ?.let { return@withContext NewPipeAudioResult(it) }
 
             // No audio-only stream — a muxed stream still carries an audio track.
-            streamExtractor.videoStreams
-                .asSequence()
-                .filter { it.isUrl }
-                .mapNotNull { it.content?.takeIf(String::isNotBlank) }
-                .firstOrNull()
+            NewPipeAudioResult(
+                streamExtractor.videoStreams
+                    .asSequence()
+                    .filter { it.isUrl }
+                    .mapNotNull { it.content?.takeIf(String::isNotBlank) }
+                    .firstOrNull()
+            )
         } catch (e: CancellationException) {
             // The budget in resolveAudioUrlWithinBudget expired, or the caller
             // went away. Either way this is not an extraction failure and must
@@ -1043,11 +1104,27 @@ class YouTubeRepository(private val context: Context) {
                 "YouTubeRepository",
                 "Resolve[NewPipe] failed videoId=$videoId: ${e.message}",
             )
-            null
+            NewPipeAudioResult(url = null, botChecked = e.isNewPipeBotCheck())
         }
     }
 
-    private suspend fun resolveM4aAudioUrlViaNewPipe(videoId: String): String? =
+    /**
+     * A NewPipe audio resolution, and whether it failed on the bot check. The
+     * direct fallback needs the second half: NewPipe mints a fresh visitorData
+     * per client, so its refusal already says a remint will not help.
+     */
+    private class NewPipeAudioResult(val url: String?, val botChecked: Boolean = false) {
+        companion object {
+            val NONE = NewPipeAudioResult(null)
+        }
+    }
+
+    private fun Throwable.isNewPipeBotCheck(): Boolean =
+        generateSequence(this) { it.cause }
+            .take(8)
+            .any { it is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException }
+
+    private suspend fun resolveM4aAudioUrlViaNewPipe(videoId: String): NewPipeAudioResult =
         withContext(Dispatchers.IO) {
             try {
                 val extractor = youtubeService.getStreamExtractor(
@@ -1061,9 +1138,11 @@ class YouTubeRepository(private val context: Context) {
                     stream.format?.suffix.equals("m4a", ignoreCase = true) ||
                         stream.codec?.contains("mp4a", ignoreCase = true) == true
                 }
-                pickAudioStreamForCurrentQuality(m4aStreams)
-                    ?.content
-                    ?.takeIf(String::isNotBlank)
+                NewPipeAudioResult(
+                    pickAudioStreamForCurrentQuality(m4aStreams)
+                        ?.content
+                        ?.takeIf(String::isNotBlank)
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1071,7 +1150,7 @@ class YouTubeRepository(private val context: Context) {
                     "YouTubeRepository",
                     "Resolve[M4A/NewPipe] failed videoId=$videoId: ${e.message}"
                 )
-                null
+                NewPipeAudioResult(url = null, botChecked = e.isNewPipeBotCheck())
             }
         }
 
@@ -2060,8 +2139,19 @@ class YouTubeRepository(private val context: Context) {
      * flagged by YouTube's bot check. Without the remint, a token flagged
      * mid-TTL poisons every resolution until it expires — the "music played
      * fine, then nothing plays anymore" failure mode.
+     *
+     * The remint is skipped when a fresh identity has already been refused,
+     * because then the verdict is on the network rather than the token:
+     * [newPipeBotChecked] means NewPipe, which mints a new visitorData for each
+     * of its clients, was just refused for this video, and an active
+     * [isBotCheckVerdictActive] means a remint was refused moments ago. Minting
+     * again there cost a mint plus two more refused /player calls per
+     * resolution, on every song or video the player moved on to.
      */
-    private suspend fun resolvePlayerStreamingData(videoId: String): org.json.JSONObject? {
+    private suspend fun resolvePlayerStreamingData(
+        videoId: String,
+        newPipeBotChecked: Boolean = false,
+    ): org.json.JSONObject? {
         var visitorData = getVisitorData()
         // A blank token is not "no identity, carry on": the bot check refuses
         // ANDROID_VR and VISIONOS outright without one (see getVisitorData).
@@ -2077,8 +2167,20 @@ class YouTubeRepository(private val context: Context) {
             }
         }
         val first = runPlayerClientChain(videoId, visitorData)
-        first.streamingData?.let { return it }
+        first.streamingData?.let {
+            clearBotCheckVerdict()
+            return it
+        }
         if (!first.visitorDataSuspect) return null
+
+        if (newPipeBotChecked || isBotCheckVerdictActive()) {
+            KLog.w(
+                "YouTubeRepository",
+                "Resolve: bot check refused a fresh identity already, not reminting videoId=$videoId",
+            )
+            noteBotCheckVerdict(videoId)
+            return null
+        }
 
         KLog.w(
             "YouTubeRepository",
@@ -2086,7 +2188,13 @@ class YouTubeRepository(private val context: Context) {
         )
         val fresh = remintVisitorData(flagged = visitorData) ?: return null
         if (fresh == visitorData) return null
-        return runPlayerClientChain(videoId, fresh).streamingData
+        val retry = runPlayerClientChain(videoId, fresh)
+        retry.streamingData?.let {
+            clearBotCheckVerdict()
+            return it
+        }
+        if (retry.visitorDataSuspect) noteBotCheckVerdict(videoId)
+        return null
     }
 
     /**
@@ -2146,7 +2254,7 @@ class YouTubeRepository(private val context: Context) {
         val visitorData = getVisitorData()
         val first = fetchVisionOsPlayerResponse(videoId, visitorData)
         first.streamingData?.let { return it }
-        if (!first.visitorDataSuspect) return null
+        if (!first.visitorDataSuspect || isBotCheckVerdictActive()) return null
 
         val fresh = remintVisitorData(flagged = visitorData) ?: return null
         if (fresh == visitorData) return null
@@ -4729,47 +4837,6 @@ class YouTubeRepository(private val context: Context) {
 
 
     /**
-     * Get the video stream URL (both audio and video) for playback.
-     * For video mode, we need the video stream not just audio.
-     */
-    suspend fun getVideoStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        try {
-            val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
-            streamExtractor.fetchPage()
-
-            // A muxed URL does not expose which language YouTube selected.
-            // Do not use this last-resort path for multi-audio videos; the
-            // quality resolver's separate original audio stream is the only
-            // deterministic source for them.
-            if (streamExtractor.audioStreams.any {
-                    it.audioTrackType != null &&
-                        it.audioTrackType != AudioTrackType.ORIGINAL
-                }
-            ) return@withContext null
-            
-            // Get video streams (with audio)
-            val videoStreams = streamExtractor.videoStreams
-            // Prefer higher quality
-            val bestVideoStream = videoStreams
-                .filter { it.resolution != null }
-                .maxByOrNull { 
-                    it.resolution?.replace("p", "")?.toIntOrNull() ?: 0 
-                }
-            
-            bestVideoStream?.content
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error getting video stream", e)
-            null
-        }
-    }
-
-    /**
-     * Get available video qualities for a video.
-     */
-
-
-    /**
      * WEB `/browse` on www.youtube.com, signed when there is a session and
      * anonymous when there is not.
      *
@@ -4940,9 +5007,11 @@ class YouTubeRepository(private val context: Context) {
         // progressive byte ceiling on long videos even though /player itself
         // succeeds, so accepting that ladder first creates a source that starts
         // normally and then dies part-way through playback.
+        var newPipeBotChecked = false
         try {
             val extracted = getVideoStreamsFromNewPipe(videoId)
             if (extracted.qualities.isNotEmpty()) {
+                clearBotCheckVerdict()
                 val hdrQualities = if (extracted.qualities.any { it.isLive }) {
                     visionOsResult?.cancel()
                     emptyList()
@@ -4968,6 +5037,7 @@ class YouTubeRepository(private val context: Context) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            newPipeBotChecked = e.isNewPipeBotCheck()
             KLog.w(
                 "YouTubeRepo",
                 "NewPipe quality resolution failed, falling back to direct InnerTube",
@@ -4978,7 +5048,7 @@ class YouTubeRepository(private val context: Context) {
         // Last-resort fallback. It is still useful for a client-specific edge
         // case, but it must not be the normal VOD path for the reason above.
         try {
-            VideoStreamResult(getVideoQualitiesFromInnerTube(videoId, includeHdr))
+            VideoStreamResult(getVideoQualitiesFromInnerTube(videoId, includeHdr, newPipeBotChecked))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -5140,8 +5210,10 @@ class YouTubeRepository(private val context: Context) {
     private suspend fun getVideoQualitiesFromInnerTube(
         videoId: String,
         includeHdr: Boolean = false,
+        newPipeBotChecked: Boolean = false,
     ): List<VideoQuality> {
-        val streamingData = resolvePlayerStreamingData(videoId) ?: return emptyList()
+        val streamingData = resolvePlayerStreamingData(videoId, newPipeBotChecked)
+            ?: return emptyList()
         return parseQualitiesFromStreamingData(streamingData, includeHdr)
     }
 
@@ -7263,24 +7335,74 @@ class YouTubeRepository(private val context: Context) {
                 val parsed = parseLockupViewModel(content.optJSONObject("lockupViewModel"))
                     ?: parseVideoRenderer(content.optJSONObject("videoRenderer"))
                     ?: return@mapNotNull null
-                // On the channel page the first metadata row is "N views • date",
-                // which the generic parser reads as the channel name.
-                val viewCount = if (parsed.viewCount.isBlank() &&
-                    (parsed.channelName.contains("view", ignoreCase = true) ||
-                        parsed.channelName.contains("watching", ignoreCase = true))
-                ) parsed.channelName else parsed.viewCount
-                parsed.copy(
-                    channelName = channel.name,
-                    channelId = channel.channelId,
-                    channelIconUrl = channel.avatarUrl ?: parsed.channelIconUrl,
-                    viewCount = viewCount
-                )
+                withSubscribedChannelIdentity(parsed, channel)
             }.distinctBy { it.videoId }
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "getChannelVideos failed", e)
             emptyList()
         }
     }
+
+    /**
+     * A channel-page card with the followed channel's identity put back.
+     * Channel-page lockups omit the channel row, and the generic parser then
+     * reads the first metadata row - "N views • date" - as the channel name.
+     */
+    private fun withSubscribedChannelIdentity(parsed: VideoItem, channel: SubscribedChannel): VideoItem {
+        val viewCount = if (parsed.viewCount.isBlank() &&
+            (parsed.channelName.contains("view", ignoreCase = true) ||
+                parsed.channelName.contains("watching", ignoreCase = true))
+        ) parsed.channelName else parsed.viewCount
+        return parsed.copy(
+            channelName = channel.name,
+            channelId = channel.channelId,
+            channelIconUrl = channel.avatarUrl ?: parsed.channelIconUrl,
+            viewCount = viewCount
+        )
+    }
+
+    /**
+     * One followed channel's contribution to the shuffled Home feed: its latest
+     * uploads and its all-time Popular order. Two requests - the Videos tab,
+     * which also carries the sort chips, then the Popular continuation - and
+     * nothing when the Popular order is not offered beyond the first.
+     *
+     * Only finished uploads are kept. A live stream or an upcoming premiere has
+     * no duration on these cards, and a shuffled list of videos from any point
+     * in a channel's history is not where either belongs.
+     *
+     * Throws [YouTubeRateLimitedException] rather than returning empty during a
+     * hold, so the caller can stop the whole batch instead of recording every
+     * channel as having nothing.
+     */
+    suspend fun getChannelMixPool(channel: SubscribedChannel): ChannelMixPool =
+        withContext(Dispatchers.IO) {
+            if (YouTubeRateLimit.isHeld()) {
+                throw YouTubeRateLimitedException(YouTubeRateLimit.remainingMs())
+            }
+            val tab = getChannelTab(channel.channelId, CHANNEL_VIDEOS_TAB_PARAMS)
+            val recent = tab.videos
+                .map { withSubscribedChannelIdentity(it, channel) }
+                .filter(::isFinishedUpload)
+            val popularToken = ChannelSortChips.popularToken(tab.sortOptions)
+            val catalogue = if (popularToken != null && !YouTubeRateLimit.isHeld()) {
+                getChannelContinuation(popularToken).videos
+                    .map { withSubscribedChannelIdentity(it, channel) }
+                    .filter(::isFinishedUpload)
+            } else emptyList()
+            if (YouTubeRateLimit.isHeld()) {
+                throw YouTubeRateLimitedException(YouTubeRateLimit.remainingMs())
+            }
+            ChannelMixPool(channelId = channel.channelId, recent = recent, catalogue = catalogue)
+        }
+
+    /**
+     * A card for a finished upload: not live, and either carrying a duration or
+     * an upload date. An upcoming premiere has neither, and the date half keeps
+     * a card whose duration badge simply failed to parse.
+     */
+    private fun isFinishedUpload(video: VideoItem): Boolean =
+        !video.isLive && (video.duration > 0 || !video.uploadedDate.isNullOrBlank())
 
     // ============================================================
     // The channel page. Verified against live responses, signed out,
@@ -8038,9 +8160,15 @@ class YouTubeRepository(private val context: Context) {
      * uses for them - see [ChannelSortOption] for why both are kept.
      */
     private fun parseChannelSortOptions(scope: org.json.JSONObject): List<ChannelSortOption> {
+        // Videos / Shorts / Live, current shape: plain chips carrying their
+        // continuation directly. See ChannelSortChips for the shape change that
+        // made the sheet branch below find nothing.
+        ChannelSortChips.parse(scope).takeIf { it.isNotEmpty() }?.let { return it }
+
         val options = mutableListOf<ChannelSortOption>()
 
-        // Videos / Shorts / Live: a chip that opens a sheet of continuations.
+        // Videos / Shorts / Live, August 2026 shape: a chip that opens a sheet
+        // of continuations. Kept as the fallback for a response still using it.
         val chips = mutableListOf<org.json.JSONObject>()
         findObjectsByKey(scope, "chipViewModel", chips)
         for (chip in chips) {

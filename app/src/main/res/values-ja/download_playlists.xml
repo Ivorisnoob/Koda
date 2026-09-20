@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%2$d 曲中 %1$d 曲がオフラインで利用可能</string>
+    <string name="download_playlist_expanded">展開済み</string>
+    <string name="download_playlist_collapsed">折りたたみ済み</string>
+    <string name="download_playlist_none_offline">これらの曲はまだこの端末にありません</string>
 </resources>

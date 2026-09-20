@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d من أصل %2$d مقطع متاح بلا إنترنت</string>
+    <string name="download_playlist_expanded">موسّعة</string>
+    <string name="download_playlist_collapsed">مطوية</string>
+    <string name="download_playlist_none_offline">لا يوجد أي من هذه المقاطع على هذا الجهاز بعد</string>
 </resources>

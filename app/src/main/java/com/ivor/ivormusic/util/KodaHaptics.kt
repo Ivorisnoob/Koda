@@ -116,6 +116,11 @@ class KodaHaptics(
             HapticFeedbackType.LongPress -> longPress()
             HapticFeedbackType.TextHandleMove -> tick()
             HapticFeedbackType.SegmentFrequentTick -> tick()
+            // Tab and segment selects. Without this line they fell through to
+            // the raw platform call, which respects Off but nothing else, so
+            // Subtle and Expressive were silently identical on the connected
+            // button groups that had reached for this type directly.
+            HapticFeedbackType.SegmentTick -> subtle()
             HapticFeedbackType.ContextClick -> subtle()
             HapticFeedbackType.GestureThresholdActivate -> threshold()
             HapticFeedbackType.ToggleOn -> toggle(true)

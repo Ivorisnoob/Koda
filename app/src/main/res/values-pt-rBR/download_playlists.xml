@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d de %2$d faixas disponíveis off-line</string>
+    <string name="download_playlist_expanded">Expandida</string>
+    <string name="download_playlist_collapsed">Recolhida</string>
+    <string name="download_playlist_none_offline">Nenhuma destas faixas está ainda neste dispositivo</string>
 </resources>

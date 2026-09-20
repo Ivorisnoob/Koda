@@ -28,6 +28,8 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.data.cappedAtHeight
+import com.ivor.ivormusic.data.deviceVideoHeightCap
 import com.ivor.ivormusic.data.bestSdrFallback
 import com.ivor.ivormusic.ui.video.hasHdrDisplay
 import kotlinx.coroutines.delay
@@ -148,6 +150,20 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     private val _isBuffering = MutableStateFlow(false)
     val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+
+    /**
+     * Stream URLs are being resolved for the open Short: the work between a
+     * page settling and the player being given anything to play.
+     *
+     * **The player is IDLE for the whole of it**, which is neither playing nor
+     * buffering, so a UI reading only those two concluded "paused" and put a
+     * pause badge over a Short that was loading - for as long as the resolve
+     * took, up to the 15s guard on a bad connection. Buffering is a state the
+     * player reports; this is the state before the player has been told
+     * anything, and only this class knows it is happening.
+     */
+    private val _isResolving = MutableStateFlow(false)
+    val isResolving: StateFlow<Boolean> = _isResolving.asStateFlow()
 
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
@@ -290,9 +306,12 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         synchronized(watchNextCache) { watchNextCache[videoId] = data }
     }
 
+    // A bot-check verdict stands prefetch down for the same reason a 429 does:
+    // resolving Shorts nobody has swiped to yet would repeat a refusal.
     private fun canPrefetch(): Boolean =
         _isActive.value && ThemePreferences.isPlaybackPreloadEnabled(context) &&
-            !YouTubeRateLimit.isHeld()
+            !YouTubeRateLimit.isHeld() &&
+            !com.ivor.ivormusic.data.YouTubeRepository.isBotCheckVerdictActive()
 
     /** Resolve and warm only the next Short; cached ladders still need media bytes. */
     private fun prefetchAround(index: Int) {
@@ -819,6 +838,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         // Prefetched ladders skip extraction; warmed media heads let source
         // preparation read the first audio/video samples from disk.
         playJob = viewModelScope.launch {
+            _isResolving.value = true
             try {
                 _exoPlayer?.stop()
                 _exoPlayer?.clearMediaItems()
@@ -844,16 +864,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                         loadQuality(pickDefaultQuality(qualities))
                         _exoPlayer?.play()
                     } else {
-                        val streamUrl = youtubeRepository.getVideoStreamUrl(item.videoId)
-                        if (streamUrl != null) {
-                            val source = ProgressiveMediaSource.Factory(streamDataSourceFactory)
-                                .createMediaSource(MediaItem.fromUri(streamUrl))
-                            _exoPlayer?.setMediaSource(source)
-                            _exoPlayer?.prepare()
-                            _exoPlayer?.play()
-                        } else {
-                            _playbackError.value = Exception("Unable to load this Short")
-                        }
+                        // No second NewPipe extraction: it repeats the failure
+                        // the resolver just had (see VideoPlayerViewModel).
+                        _playbackError.value = Exception("Unable to load this Short")
                     }
                 }
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
@@ -862,6 +875,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 throw e
             } catch (e: Exception) {
                 _playbackError.value = e
+            } finally {
+                // Only if this job is still the current one. `finally` also
+                // runs on cancellation, and the thing that cancels this job is
+                // the next Short starting - which has already set the flag for
+                // itself by the time we get here, so clearing it unconditionally
+                // would report the incoming Short as resolved before it began.
+                if (_currentIndex.value == index) _isResolving.value = false
             }
         }
 
@@ -947,14 +967,17 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
         fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+        // Same device cap as the watch page: cappedAtHeight never empties, so
+        // the first() fallbacks below stay safe.
+        val options = qualities.cappedAtHeight(context.deviceVideoHeightCap())
         val preferred = themePreferences.getDefaultVideoQuality()
         if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
-            return qualities.firstOrNull { height(it.resolution) > 0 } ?: qualities.first()
+            return options.firstOrNull { height(it.resolution) > 0 } ?: options.first()
         }
         val targetHeight = height(preferred)
-        return qualities.firstOrNull { height(it.resolution) in 1..targetHeight }
-            ?: qualities.lastOrNull { height(it.resolution) > 0 }
-            ?: qualities.first()
+        return options.firstOrNull { height(it.resolution) in 1..targetHeight }
+            ?: options.lastOrNull { height(it.resolution) > 0 }
+            ?: options.first()
     }
 
     /**

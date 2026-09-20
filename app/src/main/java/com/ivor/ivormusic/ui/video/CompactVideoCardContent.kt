@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.components.VideoThumbnail
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 
 /** Presentation only: VideoCard owns the same playback and channel actions in either layout. */
 @Composable
@@ -37,20 +38,10 @@ internal fun CompactVideoCardContent(
                 .clip(RoundedCornerShape(10.dp))
         ) {
             VideoThumbnail(video = video, modifier = Modifier.fillMaxSize())
-            if (video.isLive || video.duration > 0L) {
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
-                    shape = RoundedCornerShape(4.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f)
-                ) {
-                    Text(
-                        text = if (video.isLive) stringResource(R.string.badge_live) else video.formattedDuration,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-            }
+            VideoThumbnailBadge(
+                video = video,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+            )
         }
         Column(modifier = Modifier.weight(0.64f)) {
             Text(

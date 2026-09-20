@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d av %2$d spår tillgängliga offline</string>
+    <string name="download_playlist_expanded">Expanderad</string>
+    <string name="download_playlist_collapsed">Hopfälld</string>
+    <string name="download_playlist_none_offline">Inga av dessa spår finns på den här enheten ännu</string>
 </resources>

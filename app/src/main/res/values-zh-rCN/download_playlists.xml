@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%2$d 首歌曲中有 %1$d 首可离线播放</string>
+    <string name="download_playlist_expanded">已展开</string>
+    <string name="download_playlist_collapsed">已收起</string>
+    <string name="download_playlist_none_offline">这些歌曲尚未保存在此设备上</string>
 </resources>

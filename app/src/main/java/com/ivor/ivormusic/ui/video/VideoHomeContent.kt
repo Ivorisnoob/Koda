@@ -4,6 +4,7 @@ import com.ivor.ivormusic.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,6 +37,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -60,8 +63,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -69,7 +74,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -85,6 +92,7 @@ import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.toShape
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.ui.components.VideoThumbnail
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoItem
@@ -128,8 +136,36 @@ fun VideoHomeContent(
     // Hoisted by HomeScreen so the position survives a tab switch and the nav
     // bar can send it back to the top on a re-tap. Defaulted for previews and
     // any caller that does not care.
-    listState: LazyListState = rememberLazyListState()
+    listState: LazyListState = rememberLazyListState(),
+    /**
+     * Whether a card plays a silent preview when the feed is rested on it.
+     * Off by default here as well as in preferences: a caller that has not
+     * thought about it gets the feed that does not move on its own.
+     */
+    inlinePreviews: Boolean = false
 ) {
+    // Null when the setting is off, and then the cards read a null local and
+    // draw exactly what they drew before this existed.
+    val previewController = rememberInlinePreviewController(enabled = inlinePreviews)
+    if (previewController != null) {
+        // The dwell timer only runs while the list is still. Written here
+        // rather than read per card, so one state read feeds every card.
+        previewController.isListSettled = !listState.isScrollInProgress
+    }
+
+    // Anything that opens over the feed stops the preview under it. The video
+    // player and the Shorts overlay are drawn above the NavHost, so this screen
+    // is never paused and the card's own visibility still reads as on screen -
+    // nothing else here would notice that a full-screen player is covering it.
+    val openVideo: (VideoItem) -> Unit = { video ->
+        previewController?.release()
+        onVideoClick(video)
+    }
+    val openShort: (Int) -> Unit = { index ->
+        previewController?.release()
+        onShortClick(index)
+    }
+
     val backgroundColor = MaterialTheme.colorScheme.background
     val textColor = MaterialTheme.colorScheme.onBackground
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -211,7 +247,12 @@ fun VideoHomeContent(
                 )
             }
         } else {
-            val isLoadingMore by viewModel.isVideoLoadingMore.collectAsState()
+            val isRecommendationsLoadingMore by viewModel.isVideoLoadingMore.collectAsState()
+            val isMixLoadingMore by viewModel.isSubscriptionMixLoadingMore.collectAsState()
+            val isLoadingMore = if (recommendationsEnabled) isRecommendationsLoadingMore else isMixLoadingMore
+            // Read through updated state: the effect below is keyed on the list
+            // alone and outlives a change of this setting.
+            val currentRecommendationsEnabled by rememberUpdatedState(recommendationsEnabled)
 
             // Endless feed: ask for the next page whenever the last visible
             // item is within 5 of the end. The ViewModel guards against
@@ -222,11 +263,18 @@ fun VideoHomeContent(
                     (info.visibleItemsInfo.lastOrNull()?.index ?: -1) to info.totalItemsCount
                 }.collect { (lastVisible, totalCount) ->
                     if (totalCount > 0 && lastVisible >= totalCount - 5) {
-                        viewModel.loadMoreTrendingVideos()
+                        if (currentRecommendationsEnabled) {
+                            viewModel.loadMoreTrendingVideos()
+                        } else {
+                            viewModel.loadMoreSubscriptionMix()
+                        }
                     }
                 }
             }
 
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalInlinePreview provides previewController
+            ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -270,7 +318,7 @@ fun VideoHomeContent(
                         Text(
                             text = when {
                                 showOfflineDownloads -> stringResource(R.string.vh_available_offline)
-                                !recommendationsEnabled -> stringResource(R.string.vh_from_subscriptions)
+                                !recommendationsEnabled -> stringResource(R.string.vh_subscription_mix)
                                 isYouTubeConnected -> stringResource(R.string.vh_recommended_for_you)
                                 else -> stringResource(R.string.vh_trending_videos)
                             },
@@ -310,7 +358,7 @@ fun VideoHomeContent(
                         VideoCard(
                             compact = compact,
                             video = video,
-                            onClick = { onVideoClick(video) },
+                            onClick = { openVideo(video) },
                             onLongClick = { onVideoLongPress(video) },
                             onOpenChannel = onOpenChannel,
                             modifier = Modifier.padding(horizontal = 16.dp)
@@ -321,10 +369,10 @@ fun VideoHomeContent(
                         item(key = "shorts_shelf") {
                             ShortsShelf(
                                 shorts = shorts,
-                                onShortClick = onShortClick,
+                                onShortClick = openShort,
                                 isLoading = isShortsLoading,
                                 failed = shortsFeedFailed,
-                                onRefresh = viewModel::loadShortsFeed
+                                onRefresh = { viewModel.loadShortsFeed(force = true) }
                             )
                         }
                     }
@@ -333,7 +381,7 @@ fun VideoHomeContent(
                         VideoCard(
                             compact = compact,
                             video = video,
-                            onClick = { onVideoClick(video) },
+                            onClick = { openVideo(video) },
                             onLongClick = { onVideoLongPress(video) },
                             onOpenChannel = onOpenChannel,
                             modifier = Modifier.padding(horizontal = 16.dp)
@@ -370,7 +418,7 @@ fun VideoHomeContent(
                                     text = when {
                                         !recommendationsEnabled ->
                                             if (hasSubscriptions) {
-                                                stringResource(R.string.hvm_subs_feed_empty)
+                                                stringResource(R.string.vh_subscription_mix_empty)
                                             } else {
                                                 stringResource(R.string.vh_no_subscriptions)
                                             }
@@ -418,6 +466,7 @@ fun VideoHomeContent(
                 }
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
+            }
             }
         }
     }
@@ -783,17 +832,61 @@ fun VideoCard(
             CompactVideoCardContent(video, openChannel, onLongClick)
         } else {
             Column {
+                // Rested on with previews turned on, this card plays where it
+                // sits. The fraction is written into a float state nothing
+                // reads during composition - only the claim's polling lambda -
+                // so scrolling moves the number without recomposing every card
+                // on screen every frame.
+                val preview = LocalInlinePreview.current
+                val visibleFraction = remember(video.videoId) { mutableFloatStateOf(0f) }
+                val isPreviewing = preview?.previewingId == video.videoId
+
                 // Thumbnail with duration overlay
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
                         .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                        .then(
+                            if (preview == null) Modifier
+                            else Modifier.onGloballyPositioned {
+                                visibleFraction.floatValue = it.visibleVerticalFraction()
+                            }
+                        )
                 ) {
+                    if (preview != null) {
+                        InlinePreviewClaim(video = video) { visibleFraction.floatValue }
+                    }
+
                     VideoThumbnail(
                         video = video,
                         modifier = Modifier.fillMaxSize()
                     )
+
+                    // Drawn over the thumbnail rather than in place of it, and
+                    // faded in only once a frame has actually arrived, so the
+                    // card never shows a black hole where the picture was while
+                    // the stream starts.
+                    //
+                    // **Faded, not conditionally composed.** [scar] Wrapping
+                    // this in an AnimatedVisibility keyed on isRendering was a
+                    // deadlock and the reason previews did nothing at all: the
+                    // surface only existed once a frame had rendered, and a
+                    // frame can only render into a surface. The player had
+                    // nowhere to draw, onRenderedFirstFrame never fired, and
+                    // the condition guarding the surface stayed false forever.
+                    if (isPreviewing && preview != null) {
+                        val previewAlpha by animateFloatAsState(
+                            targetValue = if (preview.isRendering) 1f else 0f,
+                            label = "previewAlpha"
+                        )
+                        InlinePreviewSurface(
+                            controller = preview,
+                            modifier = Modifier
+                                .matchParentSize()
+                                .graphicsLayer { alpha = previewAlpha }
+                        )
+                    }
 
                     // Gradient overlay at bottom for duration
                     Box(
@@ -808,38 +901,60 @@ fun VideoCard(
                             )
                     )
                 
-                    // Duration badge (skip entirely when the duration is unknown)
-                    if (!video.isLive && video.duration > 0) {
-                        Surface(
+                    // Skipped entirely when the duration is unknown, rather
+                    // than drawn as "0:00".
+                    VideoThumbnailBadge(
+                        video = video,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                    )
+
+                    // How far the preview has got, on the card itself. Drawn
+                    // only while previewing, so a card at rest is exactly the
+                    // card it was before this feature existed.
+                    if (isPreviewing && preview != null && preview.isRendering) {
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { preview.progress },
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp),
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color.Black.copy(alpha = 0.8f)
-                        ) {
-                            Text(
-                                text = video.formattedDuration,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Medium,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .align(Alignment.BottomCenter),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = Color.White.copy(alpha = 0.25f),
+                            gapSize = 0.dp,
+                            drawStopIndicator = {},
+                        )
+                    }
+
+                    // Previews start silent so they never fight music playing
+                    // underneath; one tap here makes this card audible, another
+                    // silences it again. Fixed black scrim like the duration
+                    // badge, so it reads in either theme. The button consumes
+                    // the tap, so the card itself does not open.
+                    if (isPreviewing && preview != null && preview.isRendering) {
+                        androidx.compose.material3.IconButton(
+                            onClick = { preview.setPreviewMuted(!preview.isMuted) },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(36.dp),
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = Color.Black.copy(alpha = 0.6f),
+                                contentColor = Color.White
                             )
-                        }
-                    } else if (video.isLive) {
-                        // Live badge
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp),
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFFF0000)
                         ) {
-                            Text(
-                                text = stringResource(R.string.badge_live),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            Icon(
+                                imageVector = if (preview.isMuted) {
+                                    Icons.AutoMirrored.Rounded.VolumeOff
+                                } else {
+                                    Icons.AutoMirrored.Rounded.VolumeUp
+                                },
+                                contentDescription = stringResource(
+                                    if (preview.isMuted) R.string.cd_volume_unmute
+                                    else R.string.cd_volume_mute
+                                ),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }

@@ -1399,4 +1399,25 @@
     <string name="widget_preview_next_1">Casa de vidro</string>
     <string name="widget_preview_next_2">Ultravioleta</string>
     <string name="widget_preview_title">Viagem à meia-noite</string>
+
+    <string name="cd_volume_mute">Silenciar</string>
+    <string name="cd_volume_unmute">Ativar som</string>
+    <string name="np_pill_block">Não recomendar</string>
+    <string name="np_tile_download">Baixar</string>
+    <string name="np_tile_downloaded">Baixada</string>
+    <string name="np_tile_downloading">Baixando</string>
+    <string name="np_tile_like">Curtir</string>
+    <string name="np_tile_liked">Curtida</string>
+    <string name="np_tile_playlist">Playlist</string>
+    <string name="np_tile_radio">Rádio</string>
+    <string name="np_volume">Volume</string>
+    <string name="np_volume_value">%1$d%%</string>
+    <string name="ps_style_hero">Hero</string>
+    <string name="ps_sub_hero">Arte em tela cheia, grande botão de tocar</string>
+    <string name="queue_save_as_playlist">Salvar fila como playlist</string>
+    <string name="queue_save_default_name">Fila · %1$s</string>
+    <plurals name="queue_saved_to_playlist">
+        <item quantity="one">%1$d música salva em %2$s</item>
+        <item quantity="other">%1$d músicas salvas em %2$s</item>
+    </plurals>
 </resources>

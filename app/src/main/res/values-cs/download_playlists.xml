@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d z %2$d skladeb dostupných offline</string>
+    <string name="download_playlist_expanded">Rozbaleno</string>
+    <string name="download_playlist_collapsed">Sbaleno</string>
+    <string name="download_playlist_none_offline">Žádná z těchto skladeb zatím není v tomto zařízení</string>
 </resources>

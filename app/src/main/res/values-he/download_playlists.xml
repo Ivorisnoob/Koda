@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%1$d מתוך %2$d רצועות זמינות ללא חיבור לאינטרנט</string>
+    <string name="download_playlist_expanded">מורחב</string>
+    <string name="download_playlist_collapsed">מכווץ</string>
+    <string name="download_playlist_none_offline">אף אחת מהרצועות האלה עדיין לא במכשיר הזה</string>
 </resources>

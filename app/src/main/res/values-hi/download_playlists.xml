@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="download_playlist_available">%2$d में से %1$d गाने ऑफ़लाइन उपलब्ध हैं</string>
+    <string name="download_playlist_expanded">विस्तारित</string>
+    <string name="download_playlist_collapsed">संक्षिप्त</string>
+    <string name="download_playlist_none_offline">इनमें से कोई गाना अभी इस डिवाइस पर नहीं है</string>
 </resources>

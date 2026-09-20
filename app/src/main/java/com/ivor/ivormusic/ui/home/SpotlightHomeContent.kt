@@ -501,7 +501,7 @@ private fun SpotlightFilterChips(
                 checked = entry == selected,
                 onCheckedChange = {
                     if (entry != selected) {
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        haptics.subtle()
                         onSelect(entry)
                     }
                 },
