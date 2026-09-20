@@ -294,7 +294,14 @@ No packaging/device checks.
 **Next action:** live validation before any rollout: on-device minter run
 (real BotGuard + GenerateIT through the app WebView), signature/n decoder
 check for the ciphered ladder URLs, token-bound ustreamer evidence, then flip
-`SABR_PLAYBACK_ENABLED` with fallbacks watching. Everything else is
+`SABR_PLAYBACK_ENABLED` with fallbacks watching. Re-probed 2026-09-20 from
+this machine (5 requests): anon MWEB /player bare and with fresh visitorData,
+plus cookie MWEB, all UNPLAYABLE with 0 formats on dQw4w9WgXcQ - the 09-16
+session no longer yields formats either, and nothing in production calls
+`warmUp()` while the gate is closed, so the mint needs a gated build on a
+honored network. Anon-envelope claim left standing but unconfirmed on
+re-probe (its stage5 log is absent here). See `.probe/sabr-5b-live-check.log`.
+Everything else is
 implemented and JVM/compile-verified (logs: `.probe/sabr-*-test.log`,
 `.probe/sabr-*-compile.log`). Still needs
 device/signed-in probes: token-bound ustreamer leaf, SESSION binding, actual
