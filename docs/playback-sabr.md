@@ -300,7 +300,12 @@ plus cookie MWEB, all UNPLAYABLE with 0 formats on dQw4w9WgXcQ - the 09-16
 session no longer yields formats either, and nothing in production calls
 `warmUp()` while the gate is closed, so the mint needs a gated build on a
 honored network. Anon-envelope claim left standing but unconfirmed on
-re-probe (its stage5 log is absent here). See `.probe/sabr-5b-live-check.log`.
+re-probe (its stage5 log is absent here). On-device mint SUCCEEDED 2026-09-20
+(emulator, WebView 145, temp DEBUG trigger): real BotGuard + GenerateIT,
+clientVersion 2.20260918.00.00, generation 0; token-bound resolve then OK on
+the emulator while the first streaming POST 403'd in prepareTimelines (URL
+passed MWEB validation, so not a client mismatch - IP refusal or body shape;
+probe now captures the 403 body). See `.probe/sabr-5b-live-check.log`.
 Everything else is
 implemented and JVM/compile-verified (logs: `.probe/sabr-*-test.log`,
 `.probe/sabr-*-compile.log`). Still needs
