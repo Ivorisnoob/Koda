@@ -42,6 +42,7 @@ import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.remember
 import com.ivor.ivormusic.ui.components.QueueDragHandle
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.ui.components.QueueRowContainer
 import com.ivor.ivormusic.ui.components.queueRowKeys
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
@@ -241,22 +242,12 @@ private fun QueueRow(
                     contentScale = ContentScale.Crop
                 )
             }
-            if (video.duration > 0) {
-                Surface(
-                    color = Color.Black.copy(alpha = 0.7f),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(3.dp)
-                ) {
-                    Text(
-                        text = video.formattedDuration,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
-            }
+            VideoThumbnailBadge(
+                video = video,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(3.dp)
+            )
         }
 
         Column(modifier = Modifier.weight(1f)) {

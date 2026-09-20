@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Recommend
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.AccountCircle
@@ -453,6 +454,14 @@ internal fun buildSettingsSearchIndex(
         "show_related_videos", stringResource(R.string.sp_show_related_videos), stringResource(R.string.settings_content_and_feeds),
         Icons.Rounded.Recommend,
         listOf("related", "suggested", "up next", "recommendations", "distraction", "hide")
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "inline_previews", stringResource(R.string.sp_inline_previews), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.SmartDisplay,
+        listOf(
+            "preview", "previews", "autoplay", "auto play", "hover", "card",
+            "inline", "silent", "thumbnail", "motion"
+        )
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "not_interested", stringResource(R.string.sp_not_recommended), stringResource(R.string.settings_content_and_feeds), Icons.Rounded.NotInterested,

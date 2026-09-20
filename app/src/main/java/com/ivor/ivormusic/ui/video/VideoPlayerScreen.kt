@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.video
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 
 import android.app.Activity
 import android.content.Context
@@ -3094,23 +3095,12 @@ fun VideoInfoSection(
                                 )
                             }
                             
-                            // Duration
-                            if (relatedVideo.duration > 0) {
-                                Surface(
-                                    color = Color.Black.copy(alpha = 0.7f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(4.dp)
-                                ) {
-                                    Text(
-                                        text = relatedVideo.formattedDuration,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
+                            VideoThumbnailBadge(
+                                video = relatedVideo,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(4.dp)
+                            )
                         }
                         
                         // Info

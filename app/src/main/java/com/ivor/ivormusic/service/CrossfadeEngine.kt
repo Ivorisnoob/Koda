@@ -142,6 +142,10 @@ class CrossfadeEngine(
      */
     fun setShuffleState(enabled: Boolean, seed: Long) {
         if (shuffleEnabled != enabled || shuffleSeed != seed) cancelTransition()
+        // A new seed is a new shuffle, and a hand-arranged order belonged to
+        // the old one. Keeping it would make turning shuffle off and on again
+        // return the same sequence, which is the one thing that gesture is for.
+        if (shuffleSeed != seed) explicitShuffleOrder = null
         shuffleEnabled = enabled
         shuffleSeed = seed
         applyPlaybackOrder(playerA)
@@ -196,14 +200,41 @@ class CrossfadeEngine(
         applyPlaybackOrder(active)
     }
 
+    /**
+     * Use [order] as the permutation instead of the seeded one, for a queue
+     * the user has arranged by hand while shuffle is on.
+     *
+     * Held so that both players and every later rebuild use it, for the reason
+     * [setShuffleState] shares one seed: an incoming crossfade player that
+     * generated its own order would put songs the user has just ordered back
+     * into a random sequence at the next transition. It is dropped as soon as
+     * the queue changes length, because a permutation is a permutation of a
+     * particular queue and nothing sensible can be salvaged from one that no
+     * longer fits - the seeded order takes over again there.
+     */
+    fun setExplicitShuffleOrder(order: IntArray) {
+        explicitShuffleOrder = order.copyOf()
+        cancelTransition()
+        applyPlaybackOrder(playerA)
+        applyPlaybackOrder(playerB)
+    }
+
+    private var explicitShuffleOrder: IntArray? = null
+
     fun setPauseAtEndOfMediaItems(enabled: Boolean) {
         playerA.pauseAtEndOfMediaItems = enabled
         playerB.pauseAtEndOfMediaItems = enabled
     }
 
     private fun applyPlaybackOrder(target: ExoPlayer) {
+        val explicit = explicitShuffleOrder?.takeIf { it.size == target.mediaItemCount }
+        if (explicit == null) explicitShuffleOrder = null
         target.setShuffleOrder(
-            ShuffleOrder.DefaultShuffleOrder(target.mediaItemCount, shuffleSeed)
+            if (explicit != null) {
+                ShuffleOrder.DefaultShuffleOrder(explicit.copyOf(), shuffleSeed)
+            } else {
+                ShuffleOrder.DefaultShuffleOrder(target.mediaItemCount, shuffleSeed)
+            }
         )
         target.shuffleModeEnabled = shuffleEnabled
         target.repeatMode = repeatMode

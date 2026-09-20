@@ -1,8 +1,11 @@
 package com.ivor.ivormusic.ui.channel
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +28,8 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,22 +56,30 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.ui.components.VideoThumbnail
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.data.ChannelAbout
 import com.ivor.ivormusic.data.ChannelPost
 import com.ivor.ivormusic.data.ChannelShelf
@@ -88,6 +101,18 @@ import com.ivor.ivormusic.ui.video.VideoCard
 internal val ABOUT_TAB = ChannelTab(ChannelTabKind.ABOUT, "About", "")
 
 /**
+ * What the tab strip - and the swipe gesture, which must move through the
+ * same order - may land on.
+ *
+ * The response advertises a Search tab that carries no content (its page is
+ * always empty), so it is dropped here rather than shown as a dead button.
+ * Search itself is unaffected: the header action opens the search pane, and
+ * its availability is still read off the raw tab list via [ChannelTabKind.SEARCH].
+ */
+internal fun channelTabEntries(tabs: List<ChannelTab>): List<ChannelTab> =
+    tabs.filterNot { it.kind == ChannelTabKind.SEARCH } + ABOUT_TAB
+
+/**
  * The body of whichever tab is open, emitted into the channel screen's single
  * grid.
  *
@@ -107,7 +132,9 @@ internal fun LazyGridScope.channelTabContent(
     onOpenShorts: (List<ShortsItem>, Int) -> Unit,
     onOpenPlaylist: (VideoPlaylist) -> Unit,
     onOpenChannel: (String) -> Unit,
-    onSelectSort: (ChannelSortOption) -> Unit
+    onSelectSort: (ChannelSortOption) -> Unit,
+    /** Open post photos in the fullscreen zoomable viewer, at [Int]. */
+    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> }
 ) {
     if (tabKind == ChannelTabKind.ABOUT) {
         aboutTab(about = about, isLoading = isAboutLoading)
@@ -160,7 +187,8 @@ internal fun LazyGridScope.channelTabContent(
                 onVideoLongPress = onVideoLongPress,
                 onOpenShorts = onOpenShorts,
                 onOpenPlaylist = onOpenPlaylist,
-                onOpenChannel = onOpenChannel
+                onOpenChannel = onOpenChannel,
+                onOpenPhotos = onOpenPhotos
             )
         }
     }
@@ -191,7 +219,7 @@ internal fun LazyGridScope.channelTabContent(
     }
 
     spanItems(page.posts, key = { "post_${it.postId}" }) { post ->
-        ChannelPostCard(post = post, onPlayVideo = onPlayVideo)
+        ChannelPostCard(post = post, onPlayVideo = onPlayVideo, onOpenPhotos = onOpenPhotos)
     }
 }
 
@@ -397,7 +425,8 @@ private fun ChannelShelfRow(
     onVideoLongPress: (VideoItem) -> Unit,
     onOpenShorts: (List<ShortsItem>, Int) -> Unit,
     onOpenPlaylist: (VideoPlaylist) -> Unit,
-    onOpenChannel: (String) -> Unit
+    onOpenChannel: (String) -> Unit,
+    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> }
 ) {
     Column(modifier = Modifier.bleedHorizontally().fillMaxWidth()) {
         Text(
@@ -439,6 +468,7 @@ private fun ChannelShelfRow(
                 ChannelPostCard(
                     post = post,
                     onPlayVideo = onPlayVideo,
+                    onOpenPhotos = onOpenPhotos,
                     modifier = Modifier.width(300.dp)
                 )
             }
@@ -472,14 +502,12 @@ private fun ShelfVideoCard(
                 modifier = Modifier.fillMaxSize(),
                 indicatorSize = 28.dp
             )
-            if (video.duration > 0) {
-                DurationBadge(
-                    text = video.formattedDuration,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(6.dp)
-                )
-            }
+            VideoThumbnailBadge(
+                video = video,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+            )
         }
         Column(
             modifier = Modifier.padding(
@@ -704,23 +732,6 @@ private fun ChannelPlaylistCard(
     }
 }
 
-@Composable
-private fun DurationBadge(text: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(4.dp),
-        color = Color.Black.copy(alpha = 0.8f)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = Color.White,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        )
-    }
-}
-
 /**
  * What a tab says when it genuinely has nothing in it.
  *
@@ -922,7 +933,8 @@ private fun AboutCard(title: String, content: @Composable () -> Unit) {
 private fun ChannelPostCard(
     post: ChannelPost,
     onPlayVideo: (VideoItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> }
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -975,18 +987,20 @@ private fun ChannelPostCard(
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp)),
+                            .clip(RoundedCornerShape(14.dp))
+                            .combinedClickableCompat { onOpenPhotos(post.images, 0) },
                         contentScale = ContentScale.FillWidth
                     )
                 } else {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(post.images) { image ->
+                        itemsIndexed(post.images) { index, image ->
                             AsyncImage(
                                 model = image,
                                 contentDescription = null,
                                 modifier = Modifier
                                     .size(180.dp)
-                                    .clip(RoundedCornerShape(14.dp)),
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .combinedClickableCompat { onOpenPhotos(post.images, index) },
                                 contentScale = ContentScale.Crop
                             )
                         }
@@ -1208,3 +1222,144 @@ internal fun ChannelSearchPane(
 @OptIn(ExperimentalFoundationApi::class)
 private fun Modifier.combinedClickableCompat(onClick: () -> Unit): Modifier =
     this.combinedClickable(onClick = onClick)
+
+// ---------------------------------------------------------------------------
+// Fullscreen photo viewer
+// ---------------------------------------------------------------------------
+
+/**
+ * A community post's photos, fullscreen: swipe between them, pinch or
+ * double-tap to zoom. Opened from [ChannelPostCard], hosted by the channel
+ * screen next to its options sheet.
+ */
+@Composable
+internal fun ChannelPhotoViewer(
+    images: List<String>,
+    startIndex: Int,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        val pagerState = rememberPagerState(
+            initialPage = startIndex.coerceIn(images.indices)
+        ) { images.size }
+        // A zoomed photo owns the finger: the pager only scrolls while every
+        // photo is at rest scale, otherwise pinch-panning would fling pages.
+        var pagerLocked by remember { mutableStateOf(false) }
+        BackHandler(onBack = onDismiss)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = !pagerLocked,
+                key = { images[it] }
+            ) { page ->
+                ZoomableChannelImage(
+                    imageUrl = images[page],
+                    onZoomChanged = { pagerLocked = it }
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    onClick = onDismiss,
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.6f),
+                    contentColor = Color.White,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Close photos",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                if (images.size > 1) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Black.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            text = "${pagerState.currentPage + 1} / ${images.size}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One photo with pinch and double-tap zoom, 1x to 4x. Panning is clamped to
+ * the zoomed frame so the picture cannot be thrown off screen, and dropping
+ * back to 1x re-centres it. Reports zoom state so the viewer can pin the
+ * pager while a photo owns the finger.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ZoomableChannelImage(
+    imageUrl: String,
+    onZoomChanged: (Boolean) -> Unit
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var layoutSize by remember { mutableStateOf(IntSize.Zero) }
+
+    fun setZoom(nextScale: Float, pan: Offset = Offset.Zero) {
+        scale = nextScale.coerceIn(1f, 4f)
+        if (scale <= 1f) {
+            offset = Offset.Zero
+        } else {
+            val maxX = (layoutSize.width * (scale - 1f) / 2f).coerceAtLeast(0f)
+            val maxY = (layoutSize.height * (scale - 1f) / 2f).coerceAtLeast(0f)
+            offset = Offset(
+                (offset.x + pan.x).coerceIn(-maxX, maxX),
+                (offset.y + pan.y).coerceIn(-maxY, maxY)
+            )
+        }
+        onZoomChanged(scale > 1.02f)
+    }
+
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        setZoom(scale * zoomChange, panChange)
+    }
+    AsyncImage(
+        model = imageUrl,
+        contentDescription = null,
+        modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged { layoutSize = it }
+            .transformable(transformState)
+            .graphicsLayer(
+                scaleX = scale,
+                scaleY = scale,
+                translationX = offset.x,
+                translationY = offset.y
+            )
+            .combinedClickable(
+                onClick = {},
+                onDoubleClick = { if (scale > 1f) setZoom(1f) else setZoom(3f) }
+            ),
+        contentScale = ContentScale.Fit
+    )
+}

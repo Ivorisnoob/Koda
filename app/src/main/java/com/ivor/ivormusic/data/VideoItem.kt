@@ -507,3 +507,62 @@ data class VideoPlaylist(
     val videoCountText: String? = null, // e.g. "28 videos"
     val subtitle: String? = null // e.g. "Private"
 )
+
+/**
+ * The rendition to play for [preferred], the user's default video quality.
+ *
+ * **Ranked on the `resolution` label, never on [VideoQuality.height].** The
+ * height field is only filled in when the resolver declared both dimensions,
+ * and for a good number of entries it is simply 0 - so ordering by it silently
+ * treats "unknown" as "smallest" and hands back whatever happened to come
+ * first. That is how a card preview asking for the smallest rendition got a
+ * 2560x1440 VP9 stream and a decoder that refused to initialise.
+ *
+ * Ladders arrive highest-first, so the first entry at or below the target is
+ * the best one that fits.
+ *
+ * [maxHeight] caps the pick at what the device can display - pass
+ * [android.content.Context.deviceVideoHeightCap]. Both Auto and an explicit
+ * preference above the cap resolve to the best rung at or below it, which is
+ * what stopped 4K playback from being offered on 720p phones.
+ */
+fun List<VideoQuality>.defaultForPreference(preferred: String, maxHeight: Int = Int.MAX_VALUE): VideoQuality? {
+    fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+    if (isEmpty()) return null
+    if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
+        return firstOrNull { height(it.resolution) in 1..maxHeight } ?: first()
+    }
+    val target = minOf(height(preferred), maxHeight).takeIf { it > 0 } ?: maxHeight
+    return firstOrNull { height(it.resolution) in 1..target }
+        ?: lastOrNull { height(it.resolution) in 1..maxHeight }
+        ?: first()
+}
+
+/**
+ * Long edge of the screen in px: the tallest picture this device can show.
+ *
+ * `maximumWindowMetrics` is always available (minSdk 30) and, unlike the
+ * current window bounds, does not shrink in split-screen or portrait - a cap
+ * has to describe the panel, not the moment. Compared against rendition
+ * labels, which name the short edge by YouTube convention: a 720x1280 phone
+ * caps at 1280, so 1080p still plays and 1440p/4K never start.
+ */
+fun android.content.Context.deviceVideoHeightCap(): Int = runCatching {
+    val manager = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
+    val bounds = manager.maximumWindowMetrics.bounds
+    maxOf(bounds.width(), bounds.height())
+}.getOrDefault(0).takeIf { it > 0 } ?: 1080
+
+/**
+ * Drop every rung taller than [maxHeight], keeping entries with no parseable
+ * height (the live "Auto" entry) unconditionally. Never returns empty: a
+ * video whose whole ladder sits above the cap still has to play something,
+ * so that case falls back to its single lowest rung.
+ */
+fun List<VideoQuality>.cappedAtHeight(maxHeight: Int): List<VideoQuality> {
+    fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+    val kept = filter { height(it.resolution) in 0..maxHeight }
+    if (kept.isNotEmpty()) return kept
+    return minByOrNull { height(it.resolution).takeIf { h -> h > 0 } ?: Int.MAX_VALUE }
+        ?.let { listOf(it) } ?: this
+}

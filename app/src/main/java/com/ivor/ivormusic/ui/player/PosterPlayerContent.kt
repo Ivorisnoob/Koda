@@ -104,6 +104,8 @@ fun PosterPlayerSheetContent(
     onCollapse: () -> Unit,
     onLoadMore: () -> Unit = {},
     onArtistClick: (String) -> Unit = {},
+    /** Hand this song to the video player; null where there is no video pipeline. */
+    onWatchAsVideo: (() -> Unit)? = null,
     onAlbumClick: (String) -> Unit = {},
     onOpenAlbum: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit = {}
 ) {
@@ -119,7 +121,7 @@ fun PosterPlayerSheetContent(
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
-    val currentQueue by viewModel.currentQueue.collectAsState()
+    val currentQueue by viewModel.playOrderQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
@@ -181,7 +183,7 @@ fun PosterPlayerSheetContent(
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
                     onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
-                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to, persist = false) },
+                    onMoveSong = { from, to -> viewModel.movePlayOrderItem(from, to, persist = false) },
                     onCommitOrder = { viewModel.commitQueueOrder() },
                     onUndoRemove = { viewModel.undoQueueRemoval() },
                     onLoadMore = onLoadMore,
@@ -607,6 +609,7 @@ fun PosterPlayerSheetContent(
                 viewModel = viewModel,
                 onDismiss = { showOptions = false },
                 onArtistClick = onArtistClick,
+                onWatchAsVideo = onWatchAsVideo,
                 onAlbumClick = onAlbumClick,
                 onOpenAlbum = onOpenAlbum
             )

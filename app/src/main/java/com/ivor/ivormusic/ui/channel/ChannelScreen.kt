@@ -12,7 +12,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +32,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -66,7 +68,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -208,6 +216,17 @@ private fun ChannelRoot(
     val gridState = rememberLazyGridState()
     var searchMode by remember { mutableStateOf(false) }
     var optionsTarget by remember { mutableStateOf<VideoItem?>(null) }
+    // Same haptic the tab strip itself plays, so a gesture switch and a tap
+    // switch feel identical.
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val density = LocalDensity.current
+    // Window-space bounds of the tab strip and of the grid, so the swipe
+    // detector can tell a flick that started on the strip - scrolling it to a
+    // hidden tab - from one that started on the content, which switches tabs.
+    // Plain refs, never read in composition: the detector reads .value through
+    // these stable State objects, so no restart is needed as they move.
+    val tabStripBounds = remember { mutableStateOf<Rect?>(null) }
+    val gridOrigin = remember { mutableStateOf(Offset.Zero) }
 
     // The About panel is a tab in this UI and an engagement panel on YouTube's
     // side, so it is fetched the moment it is opened rather than with the page.
@@ -265,6 +284,17 @@ private fun ChannelRoot(
         )
     }
 
+    // Fullscreen post-photo viewer: images plus the tapped index. A Dialog,
+    // so it needs no Box coordination with the grid underneath.
+    var photoViewer by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    photoViewer?.let { (images, index) ->
+        ChannelPhotoViewer(
+            images = images,
+            startIndex = index,
+            onDismiss = { photoViewer = null }
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -293,7 +323,72 @@ private fun ChannelRoot(
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize()
+                    // Gesture tab switch, deliberately without a pager: a fast
+                    // horizontal flick anywhere on the grid moves to the next
+                    // (swipe left) or previous (swipe right) tab and the content
+                    // just swaps, exactly as if the strip had been tapped. No
+                    // follow-the-finger animation, by request.
+                    //
+                    // Observe-only: nothing here is ever consumed, so vertical
+                    // scrolling and the shelf rows keep working untouched. The
+                    // price is that a fast horizontal flick *starting on* a
+                    // shelf row both scrolls the shelf and switches the tab.
+                    // Slow shelf browsing never trips it - the duration and
+                    // distance gates below only pass for a deliberate flick -
+                    // and multi-touch (pinch) is ignored outright. Flicks that
+                    // start on the tab strip itself are ignored too: those
+                    // belong to the strip's own scroll, reaching a hidden tab.
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned {
+                            gridOrigin.value = it.boundsInWindow().topLeft
+                        }
+                        .pointerInput(tabs, selectedTab, searchMode) {
+                            if (searchMode) return@pointerInput
+                            val minDistancePx = with(density) { 96.dp.toPx() }
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val touch = gridOrigin.value + down.position
+                                if (tabStripBounds.value?.contains(touch) == true) {
+                                    return@awaitEachGesture
+                                }
+                                var totalX = 0f
+                                var totalY = 0f
+                                val startTime = down.uptimeMillis
+                                var endTime = startTime
+                                var aborted = false
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.size > 1) {
+                                        aborted = true
+                                        break
+                                    }
+                                    for (change in event.changes) {
+                                        totalX += change.position.x - change.previousPosition.x
+                                        totalY += change.position.y - change.previousPosition.y
+                                    }
+                                    endTime = event.changes.firstOrNull()?.uptimeMillis ?: endTime
+                                    if (event.changes.all { !it.pressed }) break
+                                }
+                                if (aborted) return@awaitEachGesture
+                                val duration = endTime - startTime
+                                if (duration in 1..400 &&
+                                    kotlin.math.abs(totalX) >= minDistancePx &&
+                                    kotlin.math.abs(totalX) >= 1.5f * kotlin.math.abs(totalY)
+                                ) {
+                                    // Same order the strip shows: the dead
+                                    // Search tab is excluded on both sides.
+                                    val entries = channelTabEntries(tabs)
+                                    val index = entries.indexOfFirst { it.kind == selectedTab }
+                                    val target = if (totalX < 0f) entries.getOrNull(index + 1)
+                                    else entries.getOrNull(index - 1)
+                                    if (target != null && target.kind != selectedTab) {
+                                        haptics.subtle()
+                                        viewModel.selectTab(target.kind)
+                                    }
+                                }
+                            }
+                        }
                 ) {
                     item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
                         CreatorHeader(
@@ -337,7 +432,11 @@ private fun ChannelRoot(
                             tabs = tabs,
                             selected = selectedTab,
                             onSelect = viewModel::selectTab,
-                            modifier = Modifier.bleedHorizontally()
+                            modifier = Modifier
+                                .bleedHorizontally()
+                                .onGloballyPositioned {
+                                    tabStripBounds.value = it.boundsInWindow()
+                                }
                         )
                     }
 
@@ -352,7 +451,8 @@ private fun ChannelRoot(
                         onOpenShorts = onOpenShorts,
                         onOpenPlaylist = onOpenPlaylist,
                         onOpenChannel = onOpenChannel,
-                        onSelectSort = { viewModel.selectSort(it, selectedTab) }
+                        onSelectSort = { viewModel.selectSort(it, selectedTab) },
+                        onOpenPhotos = { images, index -> photoViewer = images to index }
                     )
 
                     if (isLoadingMore) {
@@ -427,24 +527,46 @@ private fun ChannelTabRow(
     onSelect: (ChannelTabKind) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     // About is not one of YouTube's tabs - it is a panel behind the header's
     // description - but it belongs in the row, because as far as the reader is
     // concerned it is another thing this channel has.
-    val entries = remember(tabs) { tabs + ABOUT_TAB }
+    val entries = remember(tabs) { channelTabEntries(tabs) }
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
-    Row(
+    // The strip follows the selection, so a gesture switch onto a hidden tab
+    // (About lives off the right edge) never leaves the active button out of
+    // sight. A LazyRow rather than a scrolled Row for exactly this: the
+    // selected index scrolls itself into view.
+    androidx.compose.runtime.LaunchedEffect(selected, entries) {
+        val index = entries.indexOfFirst { it.kind == selected }
+        if (index >= 0) listState.animateScrollToItem(index)
+    }
+
+    LazyRow(
+        state = listState,
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(scrollState)
             .padding(horizontal = CHANNEL_GUTTER, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
     ) {
-        entries.forEachIndexed { index, tab ->
+        items(
+            count = entries.size,
+            // Kind alone is not unique: a channel can hold two OTHER tabs at
+            // once (Store plus Courses), which crashed the strip with a
+            // duplicate key the moment it measured on scroll.
+            key = { index -> "${entries[index].kind}_$index" }
+        ) { index ->
+            val tab = entries[index]
             val isSelected = tab.kind == selected
             ToggleButton(
                 checked = isSelected,
-                onCheckedChange = { onSelect(tab.kind) },
+                onCheckedChange = {
+                    if (!isSelected) {
+                        haptics.subtle()
+                        onSelect(tab.kind)
+                    }
+                },
                 modifier = Modifier.height(42.dp),
                 shapes = when (index) {
                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()

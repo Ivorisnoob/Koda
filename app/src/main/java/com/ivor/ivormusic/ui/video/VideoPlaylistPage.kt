@@ -108,6 +108,7 @@ import com.ivor.ivormusic.data.googleImageAtSize
 import com.ivor.ivormusic.ui.artist.PlaySplitButton
 import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import com.ivor.ivormusic.ui.components.VideoThumbnail
+import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.ui.downloads.VideoPlaylistDownloadAction
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.library.CollectionPlaybackActions
@@ -846,22 +847,12 @@ private fun VideoPlaylistRow(
                     indicatorSize = 24.dp,
                     placeholderColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
-                if (video.isLive || video.duration > 0) {
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(5.dp),
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f)
-                    ) {
-                        Text(
-                            text = if (video.isLive) stringResource(R.string.badge_live) else video.formattedDuration,
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                        )
-                    }
-                }
+                VideoThumbnailBadge(
+                    video = video,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(5.dp)
+                )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(

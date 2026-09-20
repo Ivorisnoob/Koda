@@ -221,9 +221,7 @@ private fun ArtistSortRow(
                 checked = entry == selected,
                 onCheckedChange = {
                     if (entry != selected) {
-                        haptics.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick
-                        )
+                        haptics.subtle()
                         onSelect(entry)
                     }
                 },
@@ -295,6 +293,8 @@ fun ArtistScreen(
     songs: List<Song>,
     onBack: () -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit,
+    /** Play a collection with shuffle mode on; see PlayerViewModel.playQueueShuffled. */
+    onShuffleQueue: (List<Song>) -> Unit,
     onSongClick: (Song) -> Unit,
     onAlbumClick: ((String, List<Song>) -> Unit)? = null,
     onOpenAlbum: ((com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit)? = null,
@@ -499,7 +499,7 @@ fun ArtistScreen(
         if (artistSongs.isNotEmpty()) onPlayQueue(artistSongs, null)
     }
     val shuffleAll: () -> Unit = {
-        if (artistSongs.isNotEmpty()) onPlayQueue(artistSongs.shuffled(), null)
+        if (artistSongs.isNotEmpty()) onShuffleQueue(artistSongs)
     }
     val radioSeed = artistSongs.firstOrNull { it.source == SongSource.YOUTUBE }
     val startRadio: (() -> Unit)? = if (radioSeed != null && viewModel != null) {

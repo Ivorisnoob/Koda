@@ -103,6 +103,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.graphics.graphicsLayer
@@ -226,6 +230,14 @@ fun HomeScreen(
     onOpenChannel: (String) -> Unit = {},
     shortsEnabled: Boolean = false,
     compactVideoHome: Boolean = false,
+    /** Cards on the video feed play a silent preview when rested on. */
+    inlinePreviews: Boolean = false,
+    /**
+     * Hand the playing song to the video player, from the player's overflow.
+     * Null where the host has no video pipeline, which is every caller but
+     * MainActivity.
+     */
+    onWatchAsVideo: (() -> Unit)? = null,
     loadLocalSongs: Boolean = false,
     excludedFolders: Set<String> = emptySet(),
     ambientBackground: Boolean = true,
@@ -659,6 +671,21 @@ fun HomeScreen(
     androidx.compose.runtime.CompositionLocalProvider(
         com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset
     ) {
+    // Experiment: flick between the main tabs with a swipe, same contract as
+    // the channel page - a fast horizontal flick moves to the next/previous
+    // visible destination and the existing AnimatedContent slide carries it,
+    // so there is deliberately no follow-the-finger pager here. Observe-only:
+    // nothing is consumed, taps and vertical scrolling are untouched, and the
+    // same flick gates (fast, far, horizontal) keep shelf browsing from
+    // tripping it. Uses the nav bar's own destination order, so hidden
+    // destinations are never landed on.
+    val gestureHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val gestureDensity = LocalDensity.current
+    val gestureTabIds = if (videoMode) {
+        videoHomeConfiguration.orderedVisibleDestinations.map { it.tabId }
+    } else {
+        listOf(0, 1, 2)
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -667,6 +694,44 @@ fun HomeScreen(
                 if (nonExpressiveNavigationBar) Modifier
                 else Modifier.nestedScroll(floatingToolbarScrollBehavior)
             )
+            .pointerInput(selectedTab, videoMode, gestureTabIds) {
+                val minDistancePx = with(gestureDensity) { 96.dp.toPx() }
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var totalX = 0f
+                    var totalY = 0f
+                    val startTime = down.uptimeMillis
+                    var endTime = startTime
+                    var aborted = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.changes.size > 1) {
+                            aborted = true
+                            break
+                        }
+                        for (change in event.changes) {
+                            totalX += change.position.x - change.previousPosition.x
+                            totalY += change.position.y - change.previousPosition.y
+                        }
+                        endTime = event.changes.firstOrNull()?.uptimeMillis ?: endTime
+                        if (event.changes.all { !it.pressed }) break
+                    }
+                    if (aborted) return@awaitEachGesture
+                    val duration = endTime - startTime
+                    if (duration in 1..400 &&
+                        kotlin.math.abs(totalX) >= minDistancePx &&
+                        kotlin.math.abs(totalX) >= 1.5f * kotlin.math.abs(totalY)
+                    ) {
+                        val index = gestureTabIds.indexOf(selectedTab)
+                        val target = if (totalX < 0f) gestureTabIds.getOrNull(index + 1)
+                        else gestureTabIds.getOrNull(index - 1)
+                        if (target != null && target != selectedTab) {
+                            gestureHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                            selectedTab = target
+                        }
+                    }
+                }
+            }
     ) {
         // Main content
         if (!loadLocalSongs || permissionState.isGranted) {
@@ -742,6 +807,7 @@ fun HomeScreen(
                             } else if (videoModeContent) {
                                 VideoHomeContent(
                                     compact = compactVideoHome,
+                                    inlinePreviews = inlinePreviews,
                                     // Recommendations off: a shuffle across the
                                     // followed channels' histories rather than a
                                     // second copy of the Subscriptions tab.
@@ -942,6 +1008,15 @@ fun HomeScreen(
                             playerViewModel.playQueue(songList, song)
                             showPlayerSheet = true
                         },
+                        // Wired explicitly even though the parameter has a
+                        // default: the default plays in order, and search
+                        // opens artists and playlists whose Shuffle buttons
+                        // would otherwise have quietly stopped shuffling here
+                        // while working everywhere else.
+                        onShuffleQueue = { songList ->
+                            playerViewModel.playQueueShuffled(songList)
+                            showPlayerSheet = true
+                        },
                         onPlayRadio = { song ->
                             playerViewModel.playSongRadio(song)
                             showPlayerSheet = true
@@ -1001,6 +1076,10 @@ fun HomeScreen(
                                 },
                                 onPlayQueue = { songs: List<Song>, selectedSong: Song? ->
                                     playerViewModel.playQueue(songs, selectedSong)
+                                    showPlayerSheet = true
+                                },
+                                onShuffleQueue = { songs: List<Song> ->
+                                    playerViewModel.playQueueShuffled(songs)
                                     showPlayerSheet = true
                                 },
                                 contentPadding = listContentPadding,
@@ -1352,6 +1431,17 @@ fun HomeScreen(
             onDispose { playerViewModel.setPlayerExpanded(false) }
         }
 
+        // A handover from an overlay above the NavHost ("Listen as music")
+        // cannot open this sheet itself, because the state that owns it lives
+        // here. It asks instead, and the ask is only honoured while Home is
+        // composed - the flow has no replay, so a request made from another
+        // route is dropped rather than springing the player open on return.
+        LaunchedEffect(playerViewModel) {
+            playerViewModel.playerExpandRequests.collect {
+                if (playerViewModel.currentSong.value != null) showPlayerSheet = true
+            }
+        }
+
         // Expandable Player (Mini <-> Full Screen)
         ExpandablePlayer(
             isExpanded = showPlayerSheet,
@@ -1371,6 +1461,7 @@ fun HomeScreen(
             onPlayerStyleChange = onPlayerStyleChange,
             collapsedBottomSpacing = miniPlayerCollapsedSpacing,
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
+            onWatchAsVideo = onWatchAsVideo,
             onArtistClick = { artistName ->
                 // Collapse the player and open the artist inside the music
                 // Library tab. The origin tab is remembered so back returns to
@@ -2438,6 +2529,14 @@ fun SearchContent(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onPlayQueue: (List<Song>, Song?) -> Unit = { _, song -> song?.let { onSongClick(it) } },
+    /**
+     * Play a collection with shuffle mode on. Defaults to playing it in
+     * order rather than to a one-time shuffled copy: a host that has not
+     * wired a player cannot turn shuffle on, and silently playing a
+     * shuffled copy would leave the player's own toggle disagreeing with
+     * the queue - the disagreement this parameter exists to end.
+     */
+    onShuffleQueue: (List<Song>) -> Unit = { songs -> onPlayQueue(songs, null) },
     onPlayRadio: (Song) -> Unit = { song -> onPlayQueue(listOf(song), song) },
     onVideoClick: (VideoItem) -> Unit = {},
     /**
@@ -2560,6 +2659,7 @@ fun SearchContent(
                         songs = emptyList(), // We let the screen fetch songs via viewModel
                         onBack = { viewedArtist = null },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         onSongClick = onSongClick,
                         onAlbumClick = { album, albumSongs ->
                              // Optional: Handle playing album from artist screen
@@ -2585,6 +2685,7 @@ fun SearchContent(
                         playlist = playlist,
                         onBack = { viewedPlaylist = null },
                         onPlayQueue = onPlayQueue,
+                        onShuffleQueue = onShuffleQueue,
                         viewModel = viewModel,
                         onSongLongPress = onSongLongPress,
                         onEnqueueSong = onEnqueueSong,
