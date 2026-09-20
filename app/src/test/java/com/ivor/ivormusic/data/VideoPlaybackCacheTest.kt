@@ -156,4 +156,17 @@ class VideoPlaybackCacheTest {
         assertFalse(isUncacheablePlaybackUrl("content://media/external/video/media/42"))
         assertFalse(isUncacheablePlaybackUrl("file:///storage/emulated/0/Movies/clip.mp4"))
     }
+
+    @Test
+    fun `synthetic sabr uris never reach the playback cache`() {
+        // Stage 2b boundary: the top-level sabr:// manifest URI and sabrseg://
+        // segment URIs only travel inside SabrSegmentDataSource.
+        assertTrue(isSabrUri("sabr://abc123"))
+        assertTrue(isSabrUri("sabrseg://a0/1"))
+        assertTrue(isSabrUri("SABRSEG://a0/init"))
+        assertTrue(isUncacheablePlaybackUrl("sabr://abc123"))
+        assertTrue(isUncacheablePlaybackUrl("sabrseg://a0/1"))
+        assertFalse(isSabrUri("https://r2.googlevideo.com/videoplayback?itag=140&c=IOS"))
+        assertFalse(isSabrUri("content://media/external/video/media/42"))
+    }
 }

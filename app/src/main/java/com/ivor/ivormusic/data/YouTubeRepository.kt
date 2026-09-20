@@ -208,6 +208,12 @@ class YouTubeRepository(private val context: Context) {
          * look like that client. Pick the UA per URL, not globally.
          */
         fun uaForPlaybackUri(uri: android.net.Uri): String {
+            // Stage 2b boundary: synthetic SABR URIs carry no `?c=` client and
+            // must never reach the googlevideo UA match; fail loudly on a leak.
+            val scheme = try { uri.scheme?.lowercase() } catch (_: Exception) { null }
+            require(scheme != "sabr" && scheme != "sabrseg") {
+                "SABR URIs have no playback User-Agent"
+            }
             val c = try { uri.getQueryParameter("c") } catch (_: Exception) { null }
             return when (c?.uppercase()) {
                 "IOS" -> IOS_USER_AGENT

@@ -137,7 +137,10 @@ change. Never mark a stage complete merely because scaffolding compiles.
 
 ## Checkpoint
 
-**Current state:** stages 1, 2a (source/model foundation), 3a (wire readers),
+**Current state:** stages 1, 2a (source/model foundation), 2b (source/boundary
+hardening: synthetic `sabr://`/`sabrseg://` URIs fail fast at every URL-only
+boundary - `isSabrUri`, uncacheable playback URLs, chunked source, UA match -
+plus JVM boundary tests, 2026-09-20), 3a (wire readers),
 3b (timeline parsers), 3c (segment assembly) and 4 (session/HTTP transport)
 complete, plus stage 5a (home bootstrap parser, `model/SabrBootstrap.kt` with
 `SabrBootstrapTest`; token-bound request shape, `model/SabrPlayerRequest.kt` with
@@ -161,11 +164,15 @@ not enabled or playable. The anonymous MWEB /player envelope is verified live
 (`c=MWEB`, 25 adaptive formats, ~6h expiry, ciphered URLs, no ustreamer leaf):
 `.probe/stage5-mweb-player-anon-2026-09-18.log`. `PlaybackSource` separates URL-backed and SABR metadata;
 legacy `VideoQuality.delivery` uses its URL-backed compatibility projection.
+`PlaybackSource.Sabr` is not `UrlBacked` by construction, and the compat
+projection provably carries no SABR-scheme URL (stage 2b, `PlaybackSourceTest`).
 The SABR descriptor copies token bytes/list inputs, redacts diagnostics, checks
 profile/login/attestation identity and lifetime, and permits audio-only selection.
 Segment identities distinguish rendition revision, opaque tags and audio track.
-Resolver/player migration (stage 2b) remains with the bridge integration so an
-unsupported source cannot be emitted into a URL-only consumer.
+Resolver/player migration (stage 2b) is done at the boundary layer: an
+unsupported source cannot be emitted into a URL-only consumer because the
+synthetic schemes fail fast there. What remains with the bridge integration is
+only enabling the SABR route itself after live validation.
 
 The attributed PipePipe protobuf/UMP readers are now independent of its extractor.
 They reject oversized lengths/tags, varint overflow, truncated payloads and
@@ -253,7 +260,10 @@ malformed policy skipped next to valid media, context stop/discard, stale
 identity/expiry with no network, close during a blocked body read (call
 cancelled, zero spool files) and close waking a 20 s backoff.
 `OkHttpSabrTransportTest` (1 test) posts over loopback and proves `cancel()`
-aborts a stalled body read. Log: `.probe/sabr-session-check.log`. All controlled
+aborts a stalled body read. Log: `.probe/sabr-session-check.log`. Stage 2b
+boundary tests passed (`PlaybackSourceTest` 6, `VideoPlaybackCacheTest` 8),
+including sabr-scheme rejection at the chunked source, UA match and playback
+cache. Log: `.probe/sabr-2b-check.log`. All controlled
 responses are synthetic; no live googlevideo request has been made.
 No packaging/device checks.
 
@@ -267,7 +277,8 @@ device/signed-in probes: token-bound ustreamer leaf, SESSION binding, actual
 BotGuard run. MWEB envelope (minus ustreamer) is verified live; do not invent
 beyond it.
 
-**Outstanding:** stages 2b and 5b-10. Anonymous live probes done (home bootstrap,
+**Outstanding:** stages 5b-10 (stage 2b landed 2026-09-20; see
+`.probe/sabr-2b-check.log`). Anonymous live probes done (home bootstrap,
 MWEB envelope - see `.probe/stage5-*-2026-09-18.log`); signed-in probes done
 2026-09-18 from the app WebView jar - home honors the session (LOGGED_IN,
 DATASYNC_ID) but /player answers logged_in:0 on this IP/visitor, so

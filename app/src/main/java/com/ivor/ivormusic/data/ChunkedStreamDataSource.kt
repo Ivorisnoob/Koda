@@ -113,6 +113,12 @@ class ChunkedStreamDataSource private constructor(
     }
 
     override fun open(dataSpec: DataSpec): Long {
+        val scheme = dataSpec.uri.scheme?.lowercase()
+        if (scheme == "sabr" || scheme == "sabrseg") {
+            // Stage 2b boundary: synthetic SABR URIs are served by
+            // SabrSegmentDataSource, never by the ranged googlevideo path.
+            throw java.io.IOException("SABR URI never enters ChunkedStreamDataSource")
+        }
         if (!allowNetwork()) {
             throw java.io.IOException("Local only mode is on: network disabled")
         }

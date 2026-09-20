@@ -55,6 +55,16 @@ class PlaybackSourceTest {
         assertThrows(IllegalArgumentException::class.java) { PlaybackSource.Sabr(descriptor(), null, audio.id) }
     }
 
+    @Test fun `sabr sources never enter url backed consumers`() {
+        // Stage 2b boundary: no synthetic SABR URL may reach a progressive
+        // source or the ranged downloader; SABR is not UrlBacked by construction.
+        val source: PlaybackSource = PlaybackSource.Sabr(descriptor(), audio.id, null)
+        assertFalse(PlaybackSource.UrlBacked::class.java.isInstance(source))
+        val projected = VideoQuality("360p", "https://r.googlevideo.com/videoplayback?itag=18")
+            .playbackSource
+        assertFalse(projected.urls.any { isSabrUri(it) })
+    }
+
     @Test fun `cache identity distinguishes rendition track tags and initialization`() {
         val id = audio.id
         val keys = listOf(id.cacheKey("v"), id.cacheKey("v", 1), id.cacheKey("other", 1),

@@ -91,6 +91,14 @@ internal fun playbackCacheCategoryKey(key: String, shorts: Boolean): String =
 
 internal fun isShortsCacheKey(key: String): Boolean = key.startsWith("shorts:")
 
+/** Synthetic SABR URIs: the top-level `sabr://` manifest URI and `sabrseg://` segment
+ * URIs. They only travel inside [com.ivor.ivormusic.data.youtube.sabr.bridge.SabrSegmentDataSource];
+ * any other consumer seeing one is a stage 2b boundary leak, never progressive media. */
+internal fun isSabrUri(url: String): Boolean {
+    val scheme = url.substringBefore("://", missingDelimiterValue = "").lowercase()
+    return scheme == "sabr" || scheme == "sabrseg"
+}
+
 /**
  * Whether [url] addresses YouTube's adaptive pipeline - an HLS/DASH manifest,
  * an HLS media playlist, or a live segment - rather than a progressive media
@@ -116,8 +124,9 @@ internal fun isShortsCacheKey(key: String): Boolean = key.startsWith("shorts:")
  * at - is path-style with no query at all [verified August 2026]. Excluding
  * the segments as well as the playlists is deliberate: the video cache has no
  * byte ceiling, and an hour of a broadcast is an hour of media nobody replays.
- */
+  */
 internal fun isUncacheablePlaybackUrl(url: String): Boolean {
+    if (isSabrUri(url)) return true
     val afterScheme = url.substringAfter("://", missingDelimiterValue = "")
     if (afterScheme.isEmpty()) return false
     val authorityEnd = afterScheme.indexOfFirst { it == '/' || it == '?' || it == '#' }
