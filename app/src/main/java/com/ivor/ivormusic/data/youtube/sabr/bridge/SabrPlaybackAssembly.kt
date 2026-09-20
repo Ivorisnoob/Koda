@@ -58,7 +58,11 @@ internal fun assembleSabrPlayback(
         "${descriptor.videoId}-${System.nanoTime()}")
     val spool = SabrSpool(spoolDir)
     val session = SabrSession(descriptor, OkHttpSabrTransport(http), spool, identityNow)
-    val bridge = SabrBridge(session, spec, playbackRate)
+    // Token invalidation, profile switch or expiry mid-preparation must not arm
+    // timelines from the previous attestation: stale completions are rejected by
+    // identity generation and the callers fall back to the direct path.
+    val bridge = SabrBridge(session, spec, playbackRate,
+        staleCheck = { !descriptor.isUsable(System.currentTimeMillis(), identityNow()) })
     try {
         bridge.prepareTimelines(positionMs)
         if (!bridge.hasTimelines()) {

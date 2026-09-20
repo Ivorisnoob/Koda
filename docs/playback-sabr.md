@@ -69,8 +69,10 @@ Important differences from Koda's requirements:
   re-resolution and source restoration at the preserved position.
 - Bridge stop does not explicitly cancel the active OkHttp call. Koda must wire
   cancellation to network reads and backoff, especially for Shorts.
-- Token invalidation ignores initialization still in flight. Koda must reject
-  stale completions using its session/profile generation.
+- Token invalidation ignores initialization still in flight. Koda rejects
+  stale completions using its session/profile generation (done 2026-09-20:
+  `SabrBridge.staleCheck` wired to descriptor usability in the assembly, JVM
+  tests in `SabrBridgeTest`; see `.probe/sabr-5b-check.log`).
 - Playback requests currently send speed 1.0; Koda must send actual player speed.
 - Segment keys include itag, lastModified and xtags. Offline completeness and
   cold-start metadata still need Koda integration.
@@ -159,7 +161,10 @@ JVM-verified with the suites above, 70 tests green 2026-09-18), plus the stage
 2026-09-18), plus stage 7 integration (music waterfall branch with
 occurrence-keyed sources, video resolve/loadQuality branch with position
 restore intact, cache-toggle wiring, Local Only refusal by construction -
-compile-verified, rollout gate closed). SABR is
+compile-verified, rollout gate closed), plus stage 2b boundary hardening and
+the code-only half of 5b (stale completion rejection via identity generation,
+JVM-verified 2026-09-20 - logs `.probe/sabr-2b-check.log`,
+`.probe/sabr-5b-check.log`). SABR is
 not enabled or playable. The anonymous MWEB /player envelope is verified live
 (`c=MWEB`, 25 adaptive formats, ~6h expiry, ciphered URLs, no ustreamer leaf):
 `.probe/stage5-mweb-player-anon-2026-09-18.log`. `PlaybackSource` separates URL-backed and SABR metadata;
@@ -263,7 +268,9 @@ cancelled, zero spool files) and close waking a 20 s backoff.
 aborts a stalled body read. Log: `.probe/sabr-session-check.log`. Stage 2b
 boundary tests passed (`PlaybackSourceTest` 6, `VideoPlaybackCacheTest` 8),
 including sabr-scheme rejection at the chunked source, UA match and playback
-cache. Log: `.probe/sabr-2b-check.log`. All controlled
+cache. Log: `.probe/sabr-2b-check.log`. `SabrBridgeTest` passed (7 tests),
+including stale-prepare with zero calls and mid-preparation invalidation
+discarding late init. Log: `.probe/sabr-5b-check.log`. All controlled
 responses are synthetic; no live googlevideo request has been made.
 No packaging/device checks.
 
@@ -277,8 +284,9 @@ device/signed-in probes: token-bound ustreamer leaf, SESSION binding, actual
 BotGuard run. MWEB envelope (minus ustreamer) is verified live; do not invent
 beyond it.
 
-**Outstanding:** stages 5b-10 (stage 2b landed 2026-09-20; see
-`.probe/sabr-2b-check.log`). Anonymous live probes done (home bootstrap,
+**Outstanding:** stage 5b-live (on-device minter run, signature/n decoder,
+token-bound ustreamer, token-supplier decision) and stages 8-10. (Stages 2b
+and 5b-code-only landed 2026-09-20.) Anonymous live probes done (home bootstrap,
 MWEB envelope - see `.probe/stage5-*-2026-09-18.log`); signed-in probes done
 2026-09-18 from the app WebView jar - home honors the session (LOGGED_IN,
 DATASYNC_ID) but /player answers logged_in:0 on this IP/visitor, so

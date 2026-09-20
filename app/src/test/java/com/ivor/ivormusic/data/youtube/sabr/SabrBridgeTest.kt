@@ -5,6 +5,7 @@ import com.ivor.ivormusic.data.youtube.sabr.bridge.SabrPlaybackSpec
 import com.ivor.ivormusic.data.youtube.sabr.bridge.SabrSegmentRef
 import com.ivor.ivormusic.data.youtube.sabr.bridge.contiguousBuffered
 import com.ivor.ivormusic.data.youtube.sabr.exception.SabrProtocolException
+import com.ivor.ivormusic.data.youtube.sabr.exception.SabrStaleDescriptorException
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrDescriptor
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrFormat
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrFormatId
@@ -101,6 +102,35 @@ class SabrBridgeTest {
         val bridge = SabrBridge(session(transport), SabrPlaybackSpec("video", audio))
         bridge.prepareTimelines(0)
         assertThrows(IOException::class.java) { bridge.awaitSegment(SabrSegmentRef(audio, 1)) }
+        bridge.stop()
+    }
+
+    @Test fun `stale bridge prepares nothing and sends nothing`() {
+        val transport = FakeTransport(
+            { ump(initPart(140, sidx(intArrayOf(1000, 1000)))) },
+        )
+        val bridge = SabrBridge(
+            session(transport), SabrPlaybackSpec("video", audio), staleCheck = { true })
+        assertThrows(SabrStaleDescriptorException::class.java) { bridge.prepareTimelines(0) }
+        assertEquals(0, transport.calls)
+        assertFalse(bridge.hasTimelines())
+        bridge.stop()
+    }
+
+    @Test fun `invalidation mid preparation discards late init`() {
+        val transport = FakeTransport(
+            { ump(initPart(140, sidx(intArrayOf(1000, 1000)))) },
+        )
+        // Fresh at prepare entry, stale by the time init arrives: the late
+        // completion must not arm timelines from the previous attestation.
+        var checks = 0
+        val bridge = SabrBridge(
+            session(transport), SabrPlaybackSpec("video", audio), staleCheck = { ++checks > 1 })
+        assertThrows(SabrStaleDescriptorException::class.java) { bridge.prepareTimelines(0) }
+        assertFalse(bridge.hasTimelines())
+        assertThrows(SabrStaleDescriptorException::class.java) {
+            bridge.awaitSegment(SabrSegmentRef(audio, 1))
+        }
         bridge.stop()
     }
 

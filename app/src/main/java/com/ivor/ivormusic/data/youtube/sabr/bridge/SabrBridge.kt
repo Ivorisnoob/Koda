@@ -16,6 +16,7 @@ package com.ivor.ivormusic.data.youtube.sabr.bridge
 
 import com.ivor.ivormusic.data.youtube.sabr.SabrFormatTimeline
 import com.ivor.ivormusic.data.youtube.sabr.exception.SabrProtocolException
+import com.ivor.ivormusic.data.youtube.sabr.exception.SabrStaleDescriptorException
 import com.ivor.ivormusic.data.youtube.sabr.media.SabrSegment
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrFormat
 import com.ivor.ivormusic.data.youtube.sabr.session.SabrRequest
@@ -28,6 +29,14 @@ internal class SabrBridge(
     private val session: SabrSession,
     val spec: SabrPlaybackSpec,
     private val playbackRate: () -> Float = { 1f },
+    /**
+     * True when the descriptor behind this bridge stopped being usable -
+     * token invalidation, profile switch or expiry - while work was in flight.
+     * Upstream applies initialization still arriving after invalidation;
+     * Koda rejects those stale completions by identity generation instead, so a
+     * rotation can never arm timelines from the previous attestation.
+     */
+    private val staleCheck: () -> Boolean = { false },
 ) {
     @Volatile private var audioTimeline: SabrFormatTimeline? = null
     @Volatile private var videoTimeline: SabrFormatTimeline? = null
@@ -46,6 +55,7 @@ internal class SabrBridge(
 
     /** Pulls initialization until timelines parse; retains media around position. */
     fun prepareTimelines(positionMs: Long) {
+        if (staleCheck()) throw SabrStaleDescriptorException()
         session.request(
             SabrRequest.preparation(maxOf(0, positionMs), listOfNotNull(spec.audio, spec.video)),
             ::accept,
@@ -59,6 +69,7 @@ internal class SabrBridge(
      * with its standard policy) and [IllegalStateException] past the timeline.
      */
     fun awaitSegment(ref: SabrSegmentRef): SabrSegment {
+        if (staleCheck()) throw SabrStaleDescriptorException()
         val sequence = requireNotNull(ref.sequence) { "SABR initialization is served from the spec" }
         nextSequences[ref.format] = sequence
         val end = timeline(ref.format).endSequence
@@ -105,6 +116,10 @@ internal class SabrBridge(
         if (stopped) {
             segment.close()
             return
+        }
+        if (staleCheck()) {
+            segment.close()
+            throw SabrStaleDescriptorException()
         }
         val header = segment.header
         val format = spec.formatFor(header.itag, header.xtags)
