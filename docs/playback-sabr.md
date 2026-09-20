@@ -303,9 +303,12 @@ honored network. Anon-envelope claim left standing but unconfirmed on
 re-probe (its stage5 log is absent here). On-device mint SUCCEEDED 2026-09-20
 (emulator, WebView 145, temp DEBUG trigger): real BotGuard + GenerateIT,
 clientVersion 2.20260918.00.00, generation 0; token-bound resolve then OK on
-the emulator while the first streaming POST 403'd in prepareTimelines (URL
-passed MWEB validation, so not a client mismatch - IP refusal or body shape;
-probe now captures the 403 body). See `.probe/sabr-5b-live-check.log`.
+the emulator (29 formats, ~5h expiry, MWEB URL, ustreamer present) while the
+first streaming POST 403'd in prepareTimelines with an empty UMP-typed body.
+Wire headers/params/body verified identical to pinned upstream, and audio+video
+preparation 403s identically, so this is an edge attestation refusal on this
+network, not a shape bug - next attempt needs a honored egress IP. Probe
+captures non-200 streaming bodies. See `.probe/sabr-5b-live-check.log`.
 Everything else is
 implemented and JVM/compile-verified (logs: `.probe/sabr-*-test.log`,
 `.probe/sabr-*-compile.log`). Still needs
