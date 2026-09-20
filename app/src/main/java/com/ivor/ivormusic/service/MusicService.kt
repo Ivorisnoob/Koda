@@ -43,6 +43,8 @@ import com.ivor.ivormusic.data.youtube.sabr.SabrResolver
 import com.ivor.ivormusic.data.youtube.sabr.bridge.SABR_PLAYBACK_ENABLED
 import com.ivor.ivormusic.data.youtube.sabr.bridge.SabrPlayback
 import com.ivor.ivormusic.data.youtube.sabr.bridge.assembleSabrPlayback
+import com.ivor.ivormusic.data.youtube.sabr.bridge.reloadOnce
+import com.ivor.ivormusic.data.youtube.sabr.exception.SabrReloadException
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrDescriptor
 import com.ivor.ivormusic.data.youtube.sabr.session.SabrAttestation
 import com.ivor.ivormusic.data.DownloadRepository
@@ -1392,40 +1394,51 @@ class MusicService : MediaLibraryService() {
     private suspend fun trySabrMusic(originalItem: MediaItem): MediaItem? {
         val videoId = originalItem.mediaId
         val occurrence = originalItem.queueItemId ?: videoId
-        return try {
-            val attestation = SabrAttestation.get(this)
-            val now = System.currentTimeMillis()
-            var descriptor = sabrDescriptors[videoId]
-                ?.takeIf { it.isUsable(now, attestation.currentIdentity()) }
-            if (descriptor == null) {
-                descriptor = SabrResolver(youtubeRepository, attestation).resolve(videoId)
-                if (sabrDescriptors.size > MAX_RESOLVED_URI_ENTRIES) sabrDescriptors.clear()
-                sabrDescriptors[videoId] = descriptor
-            }
-            // Audio-only startup: no video selection, prepare from zero; the
-            // demand loop backfills honestly from the playhead on seeks.
-            val playback = assembleSabrPlayback(
-                context = this,
-                descriptor = descriptor,
-                mediaItem = originalItem,
-                audioOnly = true,
-                maxVideoHeight = 0,
-                positionMs = 0,
-                playbackRate = { playbackSpeed },
-                http = attestation.http,
-                identityNow = { attestation.currentIdentity() },
-                writeToCache = isCacheEnabled,
-            )
-            if (sabrPlaybacks.size > MAX_RESOLVED_URI_ENTRIES) sabrPlaybacks.clear()
-            sabrPlaybacks[occurrence] = playback
-            KLog.d(TAG, "Resolution: SABR success for $videoId")
-            buildMediaItemWithUri(originalItem, Uri.parse("sabr://$videoId"))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.d(TAG, "Resolution: SABR unavailable for $videoId, direct fallback", e)
+        // Bounded reload recovery (stage 8a): exactly one fresh re-resolution
+        // after a reload-player-response, then the direct fallback. Resolution
+        // runs pre-playback, so the fresh attempt starts at position 0.
+        return reloadOnce(onReload = {
+            SabrAttestation.get(this).invalidate()
             sabrDescriptors.remove(videoId)
-            null
+        }) {
+            try {
+                val attestation = SabrAttestation.get(this)
+                val now = System.currentTimeMillis()
+                var descriptor = sabrDescriptors[videoId]
+                    ?.takeIf { it.isUsable(now, attestation.currentIdentity()) }
+                if (descriptor == null) {
+                    descriptor = SabrResolver(youtubeRepository, attestation).resolve(videoId)
+                    if (sabrDescriptors.size > MAX_RESOLVED_URI_ENTRIES) sabrDescriptors.clear()
+                    sabrDescriptors[videoId] = descriptor
+                }
+                // Audio-only startup: no video selection, prepare from zero; the
+                // demand loop backfills honestly from the playhead on seeks.
+                val playback = assembleSabrPlayback(
+                    context = this,
+                    descriptor = descriptor,
+                    mediaItem = originalItem,
+                    audioOnly = true,
+                    maxVideoHeight = 0,
+                    positionMs = 0,
+                    playbackRate = { playbackSpeed },
+                    http = attestation.http,
+                    identityNow = { attestation.currentIdentity() },
+                    writeToCache = isCacheEnabled,
+                )
+                if (sabrPlaybacks.size > MAX_RESOLVED_URI_ENTRIES) sabrPlaybacks.clear()
+                sabrPlaybacks[occurrence] = playback
+                KLog.d(TAG, "Resolution: SABR success for $videoId")
+                buildMediaItemWithUri(originalItem, Uri.parse("sabr://$videoId"))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SabrReloadException) {
+                // Escapes to reloadOnce for one bounded fresh attempt, never the fallback.
+                throw e
+            } catch (e: Exception) {
+                KLog.d(TAG, "Resolution: SABR unavailable for $videoId, direct fallback", e)
+                sabrDescriptors.remove(videoId)
+                null
+            }
         }
     }
 

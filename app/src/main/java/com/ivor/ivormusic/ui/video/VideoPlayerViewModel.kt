@@ -63,6 +63,7 @@ import com.ivor.ivormusic.data.youtube.sabr.SabrResolver
 import com.ivor.ivormusic.data.youtube.sabr.bridge.SABR_PLAYBACK_ENABLED
 import com.ivor.ivormusic.data.youtube.sabr.bridge.SabrPlayback
 import com.ivor.ivormusic.data.youtube.sabr.bridge.assembleSabrPlayback
+import com.ivor.ivormusic.data.youtube.sabr.exception.SabrReloadException
 import com.ivor.ivormusic.data.youtube.sabr.model.SabrDescriptor
 import com.ivor.ivormusic.data.youtube.sabr.session.SabrAttestation
 import com.ivor.ivormusic.data.VideoPlaybackCacheStream
@@ -2831,6 +2832,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             _exoPlayer?.setMediaSource(playback.mediaSource)
             _exoPlayer?.prepare()
             true
+        } catch (e: SabrReloadException) {
+            // Bounded by construction: no auto re-resolve here. The attestation
+            // is invalidated and the snapshot dropped, so the direct path plays
+            // at the preserved position and only a fresh resolve tries SABR again.
+            SabrAttestation.get(context).invalidate()
+            sabrDescriptor = null
+            KLog.d("VideoPlayerVM", "SABR reload for ${video.videoId}, direct fallback", e)
+            false
         } catch (e: Exception) {
             KLog.d("VideoPlayerVM", "SABR assembly failed for ${video.videoId}, direct fallback", e)
             sabrDescriptor = null
