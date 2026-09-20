@@ -275,11 +275,16 @@ cancelled, zero spool files) and close waking a 20 s backoff.
 aborts a stalled body read. Log: `.probe/sabr-session-check.log`. Stage 2b
 boundary tests passed (`PlaybackSourceTest` 6, `VideoPlaybackCacheTest` 8),
 including sabr-scheme rejection at the chunked source, UA match and playback
-cache. Log: `.probe/sabr-2b-check.log`. `SabrBridgeTest` passed (7 tests),
+cache. Log: `.probe/sabr-2b-check.log`. Device evidence 2026-09-20: a local
+`installDebug` from this branch played video with frames flowing, no crash,
+and none of the 2b guards fired - no leak reached them and no guard
+false-positives on direct playback. `SabrBridgeTest` passed (7 tests),
 including stale-prepare with zero calls and mid-preparation invalidation
 discarding late init. Log: `.probe/sabr-5b-check.log`. `SabrReloadTest` passed
 (6 tests): single bounded retry, fallback after the second failure, no reload
 on other failures, cancellation propagated. Log: `.probe/sabr-8a-check.log`.
+The same 2026-09-20 device run covered the 8a caller changes (`trySabrMusic`,
+`loadSabrQuality` fallbacks) with no behavior change behind the closed gate.
 `SabrDownloadCheckpointTest` passed (6 tests) and `SabrDownloadSupportTest`
 passed (4 tests): checkpoint round-trips, ordered advance, support matrix,
 error classification. Log: `.probe/sabr-9a-check.log`. All controlled
