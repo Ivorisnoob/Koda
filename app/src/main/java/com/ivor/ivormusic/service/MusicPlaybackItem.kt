@@ -10,6 +10,11 @@ import com.ivor.ivormusic.data.SongSource
 internal const val EXTRA_QUEUE_ITEM_ID = "com.ivor.ivormusic.QUEUE_ITEM_ID"
 internal const val EXTRA_MUSIC_ALBUM_ID = "com.ivor.ivormusic.MUSIC_ALBUM_ID"
 internal const val EXTRA_MUSIC_RELEASE_TYPE = "com.ivor.ivormusic.MUSIC_RELEASE_TYPE"
+internal const val EXTRA_MUSIC_IS_UPLOAD = "com.ivor.ivormusic.MUSIC_IS_UPLOAD"
+
+/** A plain YouTube upload played as a song; see [com.ivor.ivormusic.data.Song.isUpload]. */
+internal val MediaItem.isUpload: Boolean
+    get() = mediaMetadata.extras?.getBoolean(EXTRA_MUSIC_IS_UPLOAD, false) == true
 
 /** The identity of this exact queue occurrence, when Koda created the item. */
 internal val MediaItem.queueItemId: String?
@@ -74,6 +79,7 @@ internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
         putString(MusicService.EXTRA_SONG_SOURCE, song.source.name)
         song.albumId?.let { putString(EXTRA_MUSIC_ALBUM_ID, it) }
         song.releaseType?.let { putString(EXTRA_MUSIC_RELEASE_TYPE, it.name) }
+        if (song.isUpload) putBoolean(EXTRA_MUSIC_IS_UPLOAD, true)
     }
     val metadata = MediaMetadata.Builder()
         .setTitle(song.title)

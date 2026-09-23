@@ -2335,7 +2335,7 @@ private sealed interface LinkLookupState {
  * progressive, and a live stream is only playable through its HLS manifest.
  */
 private fun List<VideoItem>.asPlayableSongs(): List<Song> =
-    filter { !it.isLive && it.duration > 0L }.map { it.toSong() }
+    filter { !it.isLive && it.duration > 0L }.map { it.toSong().copy(isUpload = true) }
 
 private fun VideoItem.toSong(): Song = Song.fromYouTube(
     videoId = videoId,
