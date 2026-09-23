@@ -354,6 +354,8 @@ jobs:
         extract_changelog() {
           git show -s --format=%B "$1" | awk '
             /^Changelog:[[:space:]]*$/ { found = 1; next }
+            # Git trailers sit after the changelog; they are not changelog.
+            found && tolower($0) ~ /^(co-authored-by|signed-off-by):/ { next }
             found { lines[++count] = $0 }
             END {
               first = 1
