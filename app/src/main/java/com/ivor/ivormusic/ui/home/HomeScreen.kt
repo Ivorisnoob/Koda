@@ -675,9 +675,10 @@ fun HomeScreen(
     // the channel page - a fast horizontal flick moves to the next/previous
     // visible destination and the existing AnimatedContent slide carries it,
     // so there is deliberately no follow-the-finger pager here. Observe-only:
-    // nothing is consumed, taps and vertical scrolling are untouched, and the
-    // same flick gates (fast, far, horizontal) keep shelf browsing from
-    // tripping it. Uses the nav bar's own destination order, so hidden
+    // nothing is consumed, taps and vertical scrolling are untouched. The flick
+    // gates (fast, far, horizontal) alone did not keep shelf browsing or the
+    // mini player's swipes from tripping it, so a gesture any child consumed
+    // is never a tab flick. Uses the nav bar's own destination order, so hidden
     // destinations are never landed on.
     val gestureHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val gestureDensity = LocalDensity.current
@@ -706,6 +707,16 @@ fun HomeScreen(
                     while (true) {
                         val event = awaitPointerEvent()
                         if (event.changes.size > 1) {
+                            aborted = true
+                            break
+                        }
+                        // A child claimed this gesture: a shelf or carousel
+                        // scrolling, the mini player's swipe-to-skip or its
+                        // drag to dismiss. Their drag detectors consume every
+                        // move once past touch slop (even at a list's end),
+                        // and children see the Main pass before this parent,
+                        // so a consumed change means the swipe was theirs.
+                        if (event.changes.any { it.isConsumed }) {
                             aborted = true
                             break
                         }
