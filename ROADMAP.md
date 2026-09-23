@@ -397,6 +397,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+**Playback up to 8x.** Music and video both go up to 8x. The video speed strip adds 2.5x, 3x, 4x and 8x; the music slider became logarithmic so the everyday 0.5x to 2x range keeps most of the travel. The tempo release after an AutoMix transition now changes rate five times instead of twenty-five, since every rate change rebuilds the audio pipeline. Device validation: 4x and 8x video at 1080p and above on a mid-range phone (dropped frames, rebuffering on mobile data), 8x music with AutoMix on, and the slider's feel around 1x.
+
 **Lyrics try harder before giving up.** When no provider finds a match, Koda searches again with the title cleaned of YouTube decoration such as "(Official Video)", "Artist - Title" and feat. credits, and when the title was already clean it retries the providers that failed or timed out. Device validation: official music videos, Topic uploads, songs with featured artists, and a flaky connection.
 
 **Shuffle plays the whole playlist before anything else.** Shuffle put the song you started on somewhere in the middle of its order, so every song shuffled in ahead of it was skipped. It also started auto-queue early and spread the recommendations through the playlist, reshuffling the queue each time. Shuffle now opens on the playing song, recommendations and Add to queue come after the whole shuffled queue, Play next still plays next, and a restored session keeps its shuffled order. Device validation: shuffle a 5-song and a 200-song playlist with auto-queue on and off, Play next and Add to queue while shuffled, drag in the queue while shuffled, crossfade and AutoMix across a shuffled queue, and kill the app mid-shuffle and reopen.

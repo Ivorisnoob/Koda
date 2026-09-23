@@ -1719,7 +1719,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Set the playback speed for the current video and remember it for the next one. */
     fun setPlaybackSpeed(speed: Float) {
-        val bounded = speed.coerceIn(0.25f, 2f)
+        val bounded = speed.coerceIn(0.25f, ThemePreferences.MAX_PLAYBACK_SPEED)
         _playbackSpeed.value = bounded
         _exoPlayer?.setPlaybackSpeed(bounded)
         // A live broadcast always plays at 1x: a manual change there is a
@@ -3936,7 +3936,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
 
         /** Speeds offered in the player's speed menu. */
-        val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+        val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f, 4f, 8f)
 
         /**
          * One skip step, shared by the double-tap gesture on the player, the

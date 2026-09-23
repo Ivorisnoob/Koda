@@ -776,7 +776,8 @@ class ThemePreferences(context: Context) {
          * Util.constrainValue in setPlaybackParameters.]
          */
         const val MIN_PLAYBACK_SPEED = 0.1f
-        const val MAX_PLAYBACK_SPEED = 2f
+        /** Media3's ceiling, from the same constrainValue call as the floor. */
+        const val MAX_PLAYBACK_SPEED = 8f
         const val DEFAULT_PLAYBACK_SPEED = 1f
 
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
@@ -1701,11 +1702,11 @@ class ThemePreferences(context: Context) {
      * Live broadcasts always play at 1x and never overwrite the stored value.
      */
     fun getVideoPlaybackSpeed(): Float =
-        prefs.getFloat(KEY_VIDEO_PLAYBACK_SPEED, 1f).coerceIn(0.25f, 2f)
+        prefs.getFloat(KEY_VIDEO_PLAYBACK_SPEED, 1f).coerceIn(0.25f, MAX_PLAYBACK_SPEED)
 
     fun setVideoPlaybackSpeed(speed: Float) {
         prefs.edit()
-            .putFloat(KEY_VIDEO_PLAYBACK_SPEED, speed.coerceIn(0.25f, 2f))
+            .putFloat(KEY_VIDEO_PLAYBACK_SPEED, speed.coerceIn(0.25f, MAX_PLAYBACK_SPEED))
             .apply()
     }
 

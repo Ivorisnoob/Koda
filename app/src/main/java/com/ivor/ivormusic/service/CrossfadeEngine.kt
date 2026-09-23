@@ -187,6 +187,9 @@ class CrossfadeEngine(
     /** [PlaybackParameters] at the user's rate: this engine's resting tempo. */
     private fun baseParameters() = PlaybackParameters(baseSpeed, 1f)
 
+    /** The sink clamps above 8x while the player reports the unclamped rate. */
+    private fun transitionSpeed(factor: Float) = (baseSpeed * factor).coerceAtMost(MAX_SINK_SPEED)
+
     /**
      * Change the resting tempo of both engines.
      *
@@ -313,7 +316,7 @@ class CrossfadeEngine(
             // time, from the live timeline rather than a stale snapshot.
             incoming.setMediaItem(nextItem, incomingStartMs.coerceAtLeast(0L))
             incoming.playbackParameters = PlaybackParameters(
-                baseSpeed * incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED),
+                transitionSpeed(incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED)),
                 1f
             )
             incoming.volume = 0f
@@ -838,7 +841,12 @@ class CrossfadeEngine(
         private const val MIN_BASE_SPEED = 0.1f
         private const val MIN_TRANSITION_SPEED = 0.96f
         private const val MAX_TRANSITION_SPEED = 1.04f
+        private const val MAX_SINK_SPEED = 8f
         private const val TEMPO_RELEASE_MS = 2_500L
-        private const val TEMPO_RELEASE_STEP_MS = 100L
+        // Few steps on purpose: DefaultAudioSink drains and rebuilds its
+        // processor chain for every rate change [verified September 2026,
+        // 1.11.0 afterDrainParameters], and each rebuild can click. Five
+        // steps of under 1% tempo are inaudible as jumps.
+        private const val TEMPO_RELEASE_STEP_MS = 500L
     }
 }
