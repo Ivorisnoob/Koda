@@ -611,13 +611,19 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     /**
-     * Seek the current Short, for a timestamp link in its description.
+     * Seek the current Short: a description timestamp (precise) or a scrub
+     * (nearest keyframe, which lands without a decode-ahead stall).
      *
      * Clamped at zero only: a timestamp past the end is YouTube's data being
      * wrong about its own video, and ExoPlayer already clamps to the duration.
      */
-    fun seekTo(positionMs: Long) {
-        _exoPlayer?.seekTo(positionMs.coerceAtLeast(0L))
+    fun seekTo(positionMs: Long, precise: Boolean = true) {
+        val player = _exoPlayer ?: return
+        player.setSeekParameters(
+            if (precise) androidx.media3.exoplayer.SeekParameters.EXACT
+            else androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC
+        )
+        player.seekTo(positionMs.coerceAtLeast(0L))
     }
 
     fun togglePlayPause() {

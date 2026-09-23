@@ -397,6 +397,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+**Shorts can be scrubbed.** The progress line under a Short is now draggable: it thickens under the finger, shows the target time, and seeks once on release. It moved above the navigation bar, since a sideways drag in the gesture area switches apps, and the title row moved up to make room. Device validation: gesture and three-button navigation, a scrub started on the title row's edge, very short (under 10s) and long Shorts, and scrubbing while paused.
+
 **Text readable in dark mode everywhere.** Text drawn without an explicit color, including video mode's "Up next" header and the related-videos list, was black on dark backgrounds. The theme now gives such text the theme's foreground color app-wide, and two leftover hardcoded colors were moved onto the theme. Device validation: video watch page, Home, Settings and channel pages in dark, light and pure black themes, with dynamic color on and off.
 
 **Playback up to 8x.** Music and video both go up to 8x. The video speed strip adds 2.5x, 3x, 4x and 8x; the music slider became logarithmic so the everyday 0.5x to 2x range keeps most of the travel. The tempo release after an AutoMix transition now changes rate five times instead of twenty-five, since every rate change rebuilds the audio pipeline. Device validation: 4x and 8x video at 1080p and above on a mid-range phone (dropped frames, rebuffering on mobile data), 8x music with AutoMix on, and the slider's feel around 1x.

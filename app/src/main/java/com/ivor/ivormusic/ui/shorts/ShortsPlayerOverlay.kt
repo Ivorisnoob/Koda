@@ -520,7 +520,8 @@ fun ShortsPlayerOverlay(
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(start = 16.dp, end = 10.dp, bottom = 18.dp),
+                // Clear of the scrub strip, which has the space below.
+                .padding(start = 16.dp, end = 10.dp, bottom = SHORTS_SCRUB_ZONE + 6.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -747,15 +748,15 @@ fun ShortsPlayerOverlay(
         // its own amplitude `Animatable` and animates towards whatever this
         // returns, which is why the music bars settle smoothly without one.
         // Animating it here was always a second animation driving the first.
-        LinearWavyProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
+        ShortsScrubBar(
+            mediaId = currentVideo?.videoId,
+            progress = { progress },
+            durationMs = { viewModel.exoPlayer?.duration?.takeIf { it > 0L } ?: 0L },
+            isPlaying = isPlaying,
+            onSeek = { viewModel.seekTo(it, precise = false) },
             modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .align(Alignment.BottomCenter),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = Color.White.copy(alpha = 0.25f),
-            amplitude = { if (isPlaying) 1f else 0f }
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.navigationBars),
         )
     }
 
