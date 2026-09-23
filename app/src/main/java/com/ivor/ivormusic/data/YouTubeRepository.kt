@@ -3016,13 +3016,15 @@ class YouTubeRepository(private val context: Context) {
                 .build()
 
             val playerResponse = okHttpClient.newCall(playerRequest).execute()
+            val playerCode = playerResponse.code
             val playerResponseBody = playerResponse.body?.string()
             playerResponse.close()
-            
+
             if (playerResponseBody.isNullOrEmpty()) {
-                KLog.e("YouTubeRepo", "Player response empty for $videoId")
+                KLog.e("YouTubeRepo", "History sync: /player HTTP $playerCode with an empty body for $videoId")
                 return@withContext
             }
+            if (historyPlayerSignedOut(playerResponseBody, session, "Music")) return@withContext
 
             // Parse response to extract playback tracking URL
             val playerJson = org.json.JSONObject(playerResponseBody)
@@ -3065,7 +3067,10 @@ class YouTubeRepository(private val context: Context) {
             // the cookies as they are now, which /player itself may have
             // rotated on the way through.
             if (IncognitoMode.isEnabled(context)) return@withContext
-            val live = sessionManager.currentSession(session) ?: return@withContext
+            val live = sessionManager.currentSession(session) ?: run {
+                KLog.w("YouTubeRepo", "History sync: login changed before the ping for $videoId")
+                return@withContext
+            }
 
             val trackingRequest = okhttp3.Request.Builder()
                 .url(trackingUrl)
@@ -3078,9 +3083,9 @@ class YouTubeRepository(private val context: Context) {
 
             val trackingResponse = okHttpClient.newCall(trackingRequest).execute()
             if (trackingResponse.isSuccessful) {
-                KLog.d("YouTubeRepo", "History sync SUCCESS for $videoId")
+                KLog.d("YouTubeRepo", "History sync: ping accepted for $videoId")
             } else {
-                KLog.e("YouTubeRepo", "History sync failed: ${trackingResponse.code}")
+                KLog.e("YouTubeRepo", "History sync: ping HTTP ${trackingResponse.code} for $videoId")
             }
             trackingResponse.close()
 
@@ -7221,18 +7226,35 @@ class YouTubeRepository(private val context: Context) {
         if (!mayWriteVideoHistory()) return@withContext null
         try {
             val cpn = generateCpn()
+            // postWatchApi has already logged the HTTP failure or the changed login.
             val raw = postWatchApi("player", org.json.JSONObject()
-                .put("context", webContext()).put("videoId", videoId).put("cpn", cpn))
-                ?: return@withContext null
-            val tracking = org.json.JSONObject(raw).optJSONObject("playbackTracking")
-                ?: return@withContext null
-            val playback = tracking.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
-            val watchtime = tracking.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")
-            if (playback.isNullOrBlank() || watchtime.isNullOrBlank()) return@withContext null
-            val history = VideoHistorySession(videoId, session, cpn, playback, watchtime)
-            history.takeIf {
-                sendVideoHistoryPing(it, playback, positionMs, positionMs, false) == HistoryPingResult.SENT
+                .put("context", webContext()).put("videoId", videoId).put("cpn", cpn), session)
+                ?: run {
+                    KLog.w("YouTubeRepo", "Video history: no /player response for $videoId")
+                    return@withContext null
+                }
+            if (historyPlayerSignedOut(raw, session = null, "Video")) return@withContext null
+            val json = org.json.JSONObject(raw)
+            val tracking = json.optJSONObject("playbackTracking")
+            val playback = tracking?.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
+            val watchtime = tracking?.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")
+            if (playback.isNullOrBlank() || watchtime.isNullOrBlank()) {
+                val status = json.optJSONObject("playabilityStatus")
+                KLog.w(
+                    "YouTubeRepo",
+                    "Video history: no tracking URLs for $videoId " +
+                        "(playback=${!playback.isNullOrBlank()} watchtime=${!watchtime.isNullOrBlank()} " +
+                        "status=${status?.optString("status")} reason=${status?.optString("reason")})"
+                )
+                return@withContext null
             }
+            val history = VideoHistorySession(videoId, session, cpn, playback, watchtime)
+            val first = sendVideoHistoryPing(history, playback, positionMs, positionMs, false)
+            if (first != HistoryPingResult.SENT) {
+                KLog.w("YouTubeRepo", "Video history: first ping for $videoId ended $first")
+                return@withContext null
+            }
+            history
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -7258,6 +7280,26 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
+    /**
+     * True, with a log line saying so, when YouTube answered a history /player
+     * call as signed out.
+     *
+     * A session YouTube no longer accepts still gets `status: OK`, full
+     * tracking URLs and a 204 on every ping - and the play is recorded nowhere.
+     * `logged_in` in the responseContext is the only thing that tells the two
+     * apart, so the pings are skipped rather than reported as a sync that did
+     * nothing. Probed September 2026 against FEhistory and FEmusic_history.
+     *
+     * [session] is noted for the expired badge where the caller's request did
+     * not already do it (postWatchApi notes its own responses).
+     */
+    private fun historyPlayerSignedOut(raw: String, session: YouTubeSession?, surface: String): Boolean {
+        if (session != null) noteSessionState(raw, session)
+        if (LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) != "0") return false
+        KLog.w("YouTubeRepo", "$surface history: YouTube treated the session as signed out, nothing recorded")
+        return true
+    }
+
     /** The switches, as opposed to the session. Both have to hold at ping time. */
     private fun mayWriteVideoHistory(): Boolean =
         !IncognitoMode.isEnabled(context) && videoHistoryPreferences.isSaveVideoHistoryEnabled()
@@ -7276,10 +7318,14 @@ class YouTubeRepository(private val context: Context) {
         // the video on a perfectly valid account. This asks the question that
         // was meant - same profile, still active, still the same login - and
         // hands back the refreshed cookies to sign this ping with.
-        val live = sessionManager.currentSession(session.login) ?: return HistoryPingResult.SESSION_ENDED
+        val live = sessionManager.currentSession(session.login) ?: run {
+            KLog.w("YouTubeRepo", "Video history: login changed, reporting stops for ${session.videoId}")
+            return HistoryPingResult.SESSION_ENDED
+        }
         val url = baseUrl.toHttpUrlOrNull() ?: return HistoryPingResult.FAILED
         // Credentials only go to the YouTube tracking hosts returned by /player.
         if (url.scheme != "https" || url.host !in setOf("s.youtube.com", "www.youtube.com")) {
+            KLog.w("YouTubeRepo", "Video history: refused a tracking URL on ${url.host}")
             return HistoryPingResult.FAILED
         }
         val position = (positionMs.coerceAtLeast(0L) / 1000.0).toString()
