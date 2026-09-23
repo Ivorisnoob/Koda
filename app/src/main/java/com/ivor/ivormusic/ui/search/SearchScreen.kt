@@ -74,6 +74,7 @@ import androidx.compose.material.icons.rounded.KeyboardVoice
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TravelExplore
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bookmark
@@ -120,6 +121,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
@@ -239,6 +241,9 @@ fun SearchScreen(
     var songResultsExhausted by remember { mutableStateOf(false) }
     var videoResultsExhausted by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+    // Music mode's Videos tab: ordinary YouTube uploads (remixes, covers, fan
+    // edits) that YouTube Music does not list, played as songs.
+    var videoSongResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
     var channelResults by remember {
@@ -336,6 +341,7 @@ fun SearchScreen(
             // stale text-search results linger behind the link result card.
             isLoading = false
             youtubeResults = emptyList()
+            videoSongResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
@@ -369,6 +375,7 @@ fun SearchScreen(
 
             // Clear previous results of other types
             youtubeResults = emptyList()
+            videoSongResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
@@ -389,6 +396,7 @@ fun SearchScreen(
             } else {
                 when (selectedCategory) {
                     SearchCategory.SONGS -> youtubeResults = viewModel.searchYouTube(query)
+                    SearchCategory.VIDEOS -> videoSongResults = viewModel.searchVideos(query).asPlayableSongs()
                     SearchCategory.ARTISTS -> artistResults = viewModel.searchArtists(query)
                     SearchCategory.ALBUMS -> albumResults = viewModel.searchAlbums(query)
                     SearchCategory.PLAYLISTS -> playlistResults = viewModel.searchPlaylists(query)
@@ -398,6 +406,7 @@ fun SearchScreen(
         } else {
             isLoading = false
             youtubeResults = emptyList()
+            videoSongResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
@@ -412,7 +421,7 @@ fun SearchScreen(
     // immediately pulls the next one, instead of stalling until the user
     // nudges the list.
     LaunchedEffect(
-        isNearListEnd, isLoading, youtubeResults.size, videoResults.size,
+        isNearListEnd, isLoading, youtubeResults.size, videoResults.size, videoSongResults.size,
         query, videoMode, selectedCategory, selectedVideoCategory, selectedDateFilter, selectedSort
     ) {
         if (!isNearListEnd || isLoading || isLoadingMore) return@LaunchedEffect
@@ -420,6 +429,7 @@ fun SearchScreen(
 
         val loadingVideos = videoMode && selectedVideoCategory == VideoSearchCategory.VIDEOS
         val loadingSongs = !videoMode && selectedCategory == SearchCategory.SONGS
+        val loadingVideoSongs = !videoMode && selectedCategory == SearchCategory.VIDEOS
         try {
             when {
                 loadingVideos && videoResults.isNotEmpty() && !videoResultsExhausted -> {
@@ -435,6 +445,13 @@ fun SearchScreen(
                         if (merged.size == videoResults.size) videoResultsExhausted = true
                         videoResults = merged
                     }
+                }
+                loadingVideoSongs && videoSongResults.isNotEmpty() && !videoResultsExhausted -> {
+                    isLoadingMore = true
+                    val more = viewModel.loadMoreVideoResults(query).asPlayableSongs()
+                    val merged = (videoSongResults + more).distinctBy { it.id }
+                    if (merged.size == videoSongResults.size) videoResultsExhausted = true
+                    videoSongResults = merged
                 }
                 loadingSongs && youtubeResults.isNotEmpty() && !songResultsExhausted -> {
                     isLoadingMore = true
@@ -780,7 +797,7 @@ fun SearchScreen(
                                 Text(
                                     when {
                                         videoMode && selectedVideoCategory == VideoSearchCategory.PLAYLISTS -> stringResource(R.string.searching_playlists)
-                                        videoMode -> stringResource(R.string.searching_videos)
+                                        videoMode || selectedCategory == SearchCategory.VIDEOS -> stringResource(R.string.searching_videos)
                                         selectedCategory == SearchCategory.ARTISTS -> stringResource(R.string.searching_artists)
                                         selectedCategory == SearchCategory.ALBUMS -> stringResource(R.string.searching_albums)
                                         selectedCategory == SearchCategory.PLAYLISTS -> stringResource(R.string.searching_playlists)
@@ -1106,6 +1123,50 @@ fun SearchScreen(
                             onToggleSave = { viewModel.toggleSavedPlaylist(playlist) }
                         )
                         Spacer(modifier = Modifier.height(12.dp))
+                    }
+                }
+
+                !videoMode && selectedCategory == SearchCategory.VIDEOS && videoSongResults.isNotEmpty() -> {
+                    item {
+                        ResultHeader(
+                            title = stringResource(R.string.cat_videos),
+                            count = videoSongResults.size,
+                            icon = Icons.Rounded.SmartDisplay,
+                            color = primaryColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                    itemsIndexed(videoSongResults) { index, song ->
+                        SearchSongCard(
+                            song = song,
+                            // Radio, as on Songs: an upload's related mix is
+                            // what YouTube itself would play after it.
+                            onClick = { onPlayRadio(song) },
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } },
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = primaryColor,
+                            isYouTube = true,
+                            shape = getSegmentedShape(index, videoSongResults.size, hasMore = true),
+                            modifier = Modifier.padding(horizontal = 20.dp)
+                        )
+                        if (index < videoSongResults.size - 1) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 44.dp),
+                                color = textColor.copy(alpha = 0.06f)
+                            )
+                        }
+                    }
+                    item {
+                        SearchPagingFooter(
+                            isLoadingMore = isLoadingMore,
+                            isExhausted = videoResultsExhausted,
+                            cardColor = cardColor,
+                            accentColor = primaryColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
                     }
                 }
 
@@ -1766,7 +1827,7 @@ private fun SearchSongCard(
 }
 
 enum class SearchCategory {
-    SONGS, ARTISTS, ALBUMS, PLAYLISTS
+    SONGS, VIDEOS, ARTISTS, ALBUMS, PLAYLISTS
 }
 
 enum class VideoSearchCategory {
@@ -1893,13 +1954,20 @@ fun SearchFilterChips(
                 Text(
                     when (category) {
                         SearchCategory.SONGS -> stringResource(R.string.cat_songs)
+                        SearchCategory.VIDEOS -> stringResource(R.string.cat_videos)
                         SearchCategory.ARTISTS -> stringResource(R.string.cat_artists)
                         SearchCategory.ALBUMS -> stringResource(R.string.cat_albums)
                         SearchCategory.PLAYLISTS -> stringResource(R.string.cat_playlists)
                     },
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    maxLines = 1
+                    maxLines = 1,
+                    // Five segments: shrink rather than clip on narrow phones
+                    // and at large font scales.
+                    autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
+                        minFontSize = 10.sp,
+                        maxFontSize = MaterialTheme.typography.labelLarge.fontSize,
+                    )
                 )
             }
         }
@@ -2262,6 +2330,13 @@ private sealed interface LinkLookupState {
 }
 
 /** Music-mode representation of a video resolved from a pasted link. */
+/**
+ * Uploads that can play as a song. Live streams are dropped: the music path is
+ * progressive, and a live stream is only playable through its HLS manifest.
+ */
+private fun List<VideoItem>.asPlayableSongs(): List<Song> =
+    filter { !it.isLive && it.duration > 0L }.map { it.toSong() }
+
 private fun VideoItem.toSong(): Song = Song.fromYouTube(
     videoId = videoId,
     title = title,

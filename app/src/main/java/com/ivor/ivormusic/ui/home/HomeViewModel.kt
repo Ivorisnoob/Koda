@@ -2152,6 +2152,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             when (category) {
                 "SONGS" -> songSearchCache.has(key)
+                // Music mode's Videos tab is video search with default filters.
+                "VIDEOS" -> videoSearchCache.has(videoSearchKey(
+                    query,
+                    com.ivor.ivormusic.data.VideoSearchDateFilter.ANY,
+                    com.ivor.ivormusic.data.VideoSearchSort.RELEVANCE,
+                ))
                 "ARTISTS" -> artistSearchCache.has(key)
                 "ALBUMS" -> albumSearchCache.has(key)
                 "PLAYLISTS" -> playlistSearchCache.has(key)

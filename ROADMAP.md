@@ -397,6 +397,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+**Videos in music search.** Music search gains a Videos tab that searches regular YouTube and plays what it finds in the music player, for remixes, covers and uploads YouTube Music does not list. Device validation: a query with fan remixes, the tab row at the largest font size on a narrow phone, endless scroll, and lyrics/scrobbling on an upload titled "Artist - Song (Slowed)".
+
 **Watch as video no longer leaves the song behind.** Moving a song to its video now closes the music player, as Listen as music already closed the video player, so the same track is no longer open in both. Device validation: Watch as video from each player style, then Listen as music back, and a mode switch with unrelated content in each player (both must survive).
 
 **Swipe up for the player's options.** On the expanded music player, a swipe up opens the three-dot options sheet in every player style. Device validation: each of the nine styles, swipes that start on lyrics, the queue, the dial and the sticker, a diagonal skip swipe, and scrubbing.
