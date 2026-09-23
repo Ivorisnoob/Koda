@@ -491,10 +491,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Albums behind the play history, for Classic Home's "Recent albums".
+    // Read from the same history load as the recents rail below.
+    private val _recentAlbums = MutableStateFlow<List<RecentAlbum>>(emptyList())
+    val recentAlbums: StateFlow<List<RecentAlbum>> = _recentAlbums.asStateFlow()
+
     fun refreshRecentlyPlayed(limit: Int = 15) {
         viewModelScope.launch {
             val history = statsRepository.loadHistory() // newest first
             _playCounts.value = history.groupingBy { it.songId }.eachCount()
+            _recentAlbums.value = recentAlbumsFrom(history)
             val localSongs = _songs.value
             val seen = mutableSetOf<String>()
             val recents = mutableListOf<Song>()
@@ -2341,6 +2347,49 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             throw e
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /**
+     * The album page a Recent albums card opens, or null when there is none to
+     * open: a device album, or a streaming play whose release could not be
+     * resolved. Plays recorded before the history kept release ids cost one
+     * music /next call here, on the tap rather than for every card.
+     */
+    suspend fun resolveRecentAlbum(album: RecentAlbum): PlaylistDisplayItem? {
+        if (album.source == com.ivor.ivormusic.data.SongSource.LOCAL) return null
+        val id = album.albumId ?: getSongAlbumRef(album.songId)?.albumId ?: return null
+        return PlaylistDisplayItem(
+            name = album.title,
+            url = "https://music.youtube.com/browse/$id",
+            uploaderName = album.artist,
+            thumbnailUrl = album.artwork,
+        )
+    }
+
+    /**
+     * What a Recent albums card plays when it has no page to open. A device
+     * album is the library's tracks under that name, in album order; a
+     * streaming one that would not resolve is the songs heard from it.
+     */
+    fun recentAlbumQueue(album: RecentAlbum): List<Song> {
+        if (album.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
+            return _songs.value
+                .filter {
+                    it.source == com.ivor.ivormusic.data.SongSource.LOCAL &&
+                        it.album.trim().equals(album.title, ignoreCase = true)
+                }
+                .sortedWith(compareBy<Song>({ it.discNumber ?: Int.MAX_VALUE }, { it.trackNumber ?: Int.MAX_VALUE }))
+        }
+        return album.tracks.map {
+            Song.fromYouTube(
+                videoId = it.songId,
+                title = it.title,
+                artist = it.artist,
+                album = it.album,
+                duration = it.duration,
+                thumbnailUrl = it.thumbnailUrl
+            )
         }
     }
 

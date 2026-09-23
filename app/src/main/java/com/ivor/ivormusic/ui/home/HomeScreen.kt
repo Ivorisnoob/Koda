@@ -107,6 +107,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -942,7 +943,29 @@ fun HomeScreen(
                                             // spinner - the top bar, titles and nav have
                                             // nothing to wait for.
                                             val classicPlaylists by viewModel.userPlaylists.collectAsState()
+                                            val classicRecentAlbums by viewModel.recentAlbums.collectAsState()
                                             YourMixContent(
+                                                recentAlbums = classicRecentAlbums,
+                                                onRecentAlbumClick = { album ->
+                                                    scope.launch {
+                                                        val page = viewModel.resolveRecentAlbum(album)
+                                                        // The resolve can take a network round
+                                                        // trip; if the user has moved on, a late
+                                                        // jump to Library would yank them away.
+                                                        if (selectedTab != 0 || videoMode) return@launch
+                                                        if (page != null) {
+                                                            noteLibraryReturn()
+                                                            viewedPlaylistFromHome = page
+                                                            selectedTab = 2
+                                                        } else {
+                                                            val queue = viewModel.recentAlbumQueue(album)
+                                                            if (queue.isNotEmpty()) {
+                                                                playerViewModel.playQueue(queue)
+                                                                showPlayerSheet = true
+                                                            }
+                                                        }
+                                                    }
+                                                },
                                                 songs = songs,
                                                 isInitialLoading = isLoading && songs.isEmpty(),
                                                 recentlyPlayed = recentlyPlayed,
@@ -1685,6 +1708,10 @@ fun YourMixContent(
     /** Local play history for the "Jump back in" rail. Empty for a new user. */
     recentlyPlayed: List<Song> = emptyList(),
     onRecentClick: (Song) -> Unit = {},
+    /** Albums behind the play history, newest first. */
+    recentAlbums: List<RecentAlbum>,
+    /** Required: a shelf card left unwired is a dead card. */
+    onRecentAlbumClick: (RecentAlbum) -> Unit,
     /** The merged local, saved and account playlists, as Spotlight shows them. */
     playlists: List<com.ivor.ivormusic.data.PlaylistDisplayItem>,
     /** Required: a shelf card left unwired is a dead card. */
@@ -1803,20 +1830,22 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else 30f
                 }) {
-                    Spacer(modifier = Modifier.height(32.dp))
                     if (isInitialLoading) {
+                        Spacer(modifier = Modifier.height(32.dp))
                         HomeCarouselSkeleton(
                             title = stringResource(R.string.home_section_recent_albums),
                             itemWidth = 200.dp,
                             itemHeight = 240.dp,
                             skeletonAlpha = skeletonAlpha
                         )
-                    } else {
+                    } else if (recentAlbums.isNotEmpty()) {
+                        // Absent for someone who has not played an album yet,
+                        // rather than a shelf of the recommendations above it
+                        // under an "albums" title - what it used to show.
+                        Spacer(modifier = Modifier.height(32.dp))
                         RecentAlbumsSection(
-                            songs = songs,
-                            onSongClick = onSongClick,
-                            onSongLongPress = onSongLongPress,
-                            isDarkMode = isDarkMode,
+                            albums = recentAlbums,
+                            onAlbumClick = onRecentAlbumClick,
                             onShowAll = onShowAllInLibrary
                         )
                     }
@@ -2759,19 +2788,17 @@ fun SearchContent(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun RecentAlbumsSection(
-    songs: List<Song>,
-    onSongClick: (Song) -> Unit,
-    onSongLongPress: ((Song) -> Unit)? = null,
-    isDarkMode: Boolean = true,
+    albums: List<RecentAlbum>,
+    onAlbumClick: (RecentAlbum) -> Unit,
     onShowAll: (() -> Unit)? = null
 ) {
-    if (songs.isEmpty()) return
+    if (albums.isEmpty()) return
 
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
 
     // We need at least one large, one medium, one small for full effect,
     // but the component handles fewer items gracefully.
-    val state = rememberCarouselState { songs.size }
+    val state = rememberCarouselState { albums.size }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         HomeSectionHeader(title = stringResource(R.string.home_section_recent_albums), onShowAll = onShowAll)
@@ -2785,32 +2812,37 @@ fun RecentAlbumsSection(
                 .fillMaxWidth()
                 .height(240.dp)
         ) { index ->
-            val song = songs[index]
+            val album = albums[index]
             Box(
                 modifier = Modifier
                     // 28dp is the M3 carousel item radius; shapes.medium (12dp)
                     // made these read as generic cards.
                     .maskClip(RoundedCornerShape(28.dp))
                     .background(cardBgColor)
-                    .songRowClick(
-                        onClick = { onSongClick(song) },
-                        onLongClick = onSongLongPress?.let { press -> { press(song) } }
-                    )
+                    .songRowClick(onClick = { onAlbumClick(album) }, onLongClick = null),
+                contentAlignment = Alignment.Center
             ) {
-                if (song.albumArtUri != null || song.thumbnailUrl != null) {
+                Icon(
+                    imageVector = Icons.Rounded.Album,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(32.dp)
+                )
+                if (album.artwork != null) {
+                    val label = if (album.artist.isNotBlank()) "${album.title}, ${album.artist}" else album.title
                     AsyncImage(
-                        model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
-                        contentDescription = song.title,
+                        model = album.artwork,
+                        contentDescription = label,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                         Icon(
-                            imageVector = Icons.Rounded.MusicNote,
+                    val sized = com.ivor.ivormusic.data.googleImageAtSize(album.artwork, 600)
+                    if (sized != null && sized != album.artwork) {
+                        AsyncImage(
+                            model = sized,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
                     }
                 }
