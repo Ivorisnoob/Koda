@@ -397,6 +397,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+**Watch as video no longer leaves the song behind.** Moving a song to its video now closes the music player, as Listen as music already closed the video player, so the same track is no longer open in both. Device validation: Watch as video from each player style, then Listen as music back, and a mode switch with unrelated content in each player (both must survive).
+
 **Swipe up for the player's options.** On the expanded music player, a swipe up opens the three-dot options sheet in every player style. Device validation: each of the nine styles, swipes that start on lyrics, the queue, the dial and the sticker, a diagonal skip swipe, and scrubbing.
 
 **Shorts can be scrubbed.** The progress line under a Short is now draggable: it thickens under the finger, shows the target time, and seeks once on release. It moved above the navigation bar, since a sideways drag in the gesture area switches apps, and the title row moved up to make room. Device validation: gesture and three-button navigation, a scrub started on the title row's edge, very short (under 10s) and long Shorts, and scrubbing while paused.

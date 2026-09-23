@@ -889,6 +889,12 @@ fun MusicApp(
         // top of the play it was meant to precede.
         playerViewModel.pause()
         changePlaybackMode(true, true)
+        // The song moved, so the music player has nothing left to hold: left
+        // paused, its mini bar sat beside the video showing the same track.
+        // Its mirror closes the video player for the same reason. Unrelated
+        // content in the other player is still only paused by a mode switch.
+        playerViewModel.setPlayerExpanded(false)
+        playerViewModel.clearPlayer()
         videoPlayerViewModel.playVideoAt(song.toVideoItem(), startPositionMs)
     }
 
