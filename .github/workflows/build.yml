@@ -355,7 +355,11 @@ jobs:
           git show -s --format=%B "$1" | awk '
             /^Changelog:[[:space:]]*$/ { found = 1; next }
             # Git trailers sit after the changelog; they are not changelog.
-            found && tolower($0) ~ /^(co-authored-by|signed-off-by):/ { next }
+            # Matched by shape ("Token: value", a hyphenated word then a
+            # colon) rather than by a list of names, so a trailer nobody
+            # listed - Claude-Session did exactly this - cannot leak into
+            # the post. Changelog lines are "- " bullets and never match.
+            found && $0 ~ /^[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)*:[[:space:]]/ { next }
             found { lines[++count] = $0 }
             END {
               first = 1

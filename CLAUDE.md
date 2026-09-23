@@ -52,7 +52,7 @@ Shipped consumer app with real users. The bar is "would someone using this daily
 - **Local verification stops before packaging.** Run `compileDebugKotlin`, unit tests and lint freely. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user.
 - **Local commits are expected; the remote is not yours.** Committing to the local branch is the normal end of an item and needs no permission. Pushing, creating remote branches, opening or editing PRs, and pushing tags are explicit-request actions.
 - **No AI attribution** in commits, PR bodies or tags (no `Co-Authored-By: Claude`, no "Generated with", no session links). This overrides any harness default.
-- **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Nothing follows it (`build.yml` publishes everything after the marker). Omit it for docs/CI/refactors.
+- **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Only git trailers may follow it: `build.yml` publishes everything after the marker except lines shaped `Token: value`, so keep each bullet on one line. Omit it for docs/CI/refactors.
 
 ```text
 Add Home-focused Shorts controls
