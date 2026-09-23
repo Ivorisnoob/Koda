@@ -439,6 +439,7 @@ class CrossfadeEngineTest {
                 "prepare" -> { state = if (readyOnPrepare) Player.STATE_READY else Player.STATE_BUFFERING; null }
                 "stop" -> { position = position; state = Player.STATE_IDLE; null }
                 "clearMediaItems" -> { items.clear(); index = 0; position = 0; null }
+                "getShuffleOrder" -> androidx.media3.exoplayer.source.ShuffleOrder.UnshuffledShuffleOrder(items.size)
                 "setShuffleOrder", "setShuffleModeEnabled", "setRepeatMode",
                 "addListener", "removeListener", "release" -> null
                 else -> error("Unexpected player call: ${method.name}")

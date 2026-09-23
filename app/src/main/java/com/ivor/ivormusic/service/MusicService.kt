@@ -195,7 +195,8 @@ class MusicService : MediaLibraryService() {
     private var playbackShuffleEnabled = false
     private var playbackShuffleSeed = 0L
     private var playbackRepeatMode = Player.REPEAT_MODE_OFF
-    private var lastShuffleOrderItemCount = -1
+    /** A restored session's play order, applied once its queue is in place. */
+    private var pendingRestoredPlayOrder: IntArray? = null
 
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
@@ -887,20 +888,13 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-            val itemCount = player.mediaItemCount
-            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED &&
-                playbackShuffleEnabled &&
-                itemCount != lastShuffleOrderItemCount
-            ) {
-                // Set before applying: setShuffleOrder itself publishes a
-                // timeline change with the same count.
-                lastShuffleOrderItemCount = itemCount
-                engine.refreshActiveShuffleOrder()
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                pendingRestoredPlayOrder?.let { order ->
+                    pendingRestoredPlayOrder = null
+                    applyPlayOrder(order)
+                }
             }
             // The queue changed, so the order the screens draw changed with it.
-            // Unconditional, and after any reorder above: a removal or an
-            // insertion rewrites the permutation even when the count check
-            // above declines to rebuild it.
             publishSessionState()
         }
 
@@ -911,7 +905,6 @@ class MusicService : MediaLibraryService() {
                 themePreferences.setPlaybackShuffleSeed(playbackShuffleSeed)
             }
             playbackShuffleEnabled = shuffleModeEnabled
-            lastShuffleOrderItemCount = player.mediaItemCount
             themePreferences.setPlaybackShuffle(shuffleModeEnabled)
             engine.setShuffleState(shuffleModeEnabled, playbackShuffleSeed)
             // After the engine has applied the new order, never before: this
@@ -1553,7 +1546,7 @@ class MusicService : MediaLibraryService() {
     // --- Media Library Session Callback ---
 
     /** Read the last playable queue without touching a Player from the IO thread. */
-    private fun loadPlaybackResumption(): MediaSession.MediaItemsWithStartPosition? {
+    private fun loadPlaybackResumption(): Pair<MediaSession.MediaItemsWithStartPosition, IntArray?>? {
         val saved = PlaybackSessionRepository(this).load()
         val queue: List<MusicQueueItem>
         val startIndex: Int
@@ -1574,7 +1567,7 @@ class MusicService : MediaLibraryService() {
             queue.map { it.toPlaybackMediaItem() },
             startIndex,
             startPositionMs,
-        )
+        ) to saved?.playOrder?.takeIf { it.isNotEmpty() }?.toIntArray()
     }
     
     private inner class LibrarySessionCallback : MediaLibrarySession.Callback {
@@ -1688,7 +1681,7 @@ class MusicService : MediaLibraryService() {
             // System UI also asks for resume-card metadata without applying
             // a queue. That read remains independent of current playback.
             if (!isForPlayback) return resolveScope.future {
-                loadPlaybackResumption()
+                loadPlaybackResumption()?.first
                     ?: throw IllegalStateException("No saved playback session")
             }
             val requestedPlayer = mediaSession.player
@@ -1701,6 +1694,8 @@ class MusicService : MediaLibraryService() {
                 // Refuse on the application thread before returning stale data.
                 check(queueStillEmpty()) { "Playback queue changed during resumption" }
                 restored ?: throw IllegalStateException("No saved playback session")
+                pendingRestoredPlayOrder = restored.second
+                restored.first
             }
         }
 
@@ -1749,10 +1744,11 @@ class MusicService : MediaLibraryService() {
                     // suspended. Do not replace a queue that became live in
                     // the meantime (or reset its freshly changed position).
                     if (session.player.mediaItemCount == 0) {
+                        pendingRestoredPlayOrder = restored.second
                         session.player.setMediaItems(
-                            restored.mediaItems,
-                            restored.startIndex,
-                            restored.startPositionMs,
+                            restored.first.mediaItems,
+                            restored.first.startIndex,
+                            restored.first.startPositionMs,
                         )
                         session.player.prepare()
                     }

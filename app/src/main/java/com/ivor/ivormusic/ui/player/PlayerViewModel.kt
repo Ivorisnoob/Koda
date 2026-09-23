@@ -97,8 +97,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             ?.takeIf { it in queue.indices }
             ?: currentIndexInQueue()
         val position = controller?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        val order = _playOrder.value.takeIf { _shuffleModeEnabled.value && it.size == queue.size }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            playbackSessionRepository.save(queue, index, position)
+            playbackSessionRepository.save(queue, index, position, order)
         }
     }
 
@@ -333,6 +334,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 val items = session.queue.map { createMediaItem(it) }
                 player.setMediaItems(items, session.currentIndex, session.positionMs)
                 player.prepare()
+                // The shuffle order it was walking, so songs already heard
+                // stay behind the current one.
+                session.playOrder.takeIf { player.shuffleModeEnabled && it.size == items.size }
+                    ?.let { sendPlayOrder(it.toIntArray()) }
             }
 
             fetchLyrics(song)
@@ -579,9 +584,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         // Fresh pref read: the settings screen toggles through
                         // its own ThemePreferences instance, so this VM's
                         // StateFlow copy is stale at decision time.
+                        // Counted in play order: shuffled, the timeline index
+                        // says nothing about how much of the queue is left.
                         val totalItems = controller?.mediaItemCount ?: 0
                         val currentIndex = controller?.currentMediaItemIndex ?: 0
-                        val songsLeft = totalItems - currentIndex - 1
+                        val order = _playOrder.value
+                        val playedThrough = if (order.size == totalItems) {
+                            order.indexOf(currentIndex).coerceAtLeast(0)
+                        } else currentIndex
+                        val songsLeft = totalItems - playedThrough - 1
 
                         if (songsLeft < 5 && !_isLoadingMore.value &&
                             themePreferences.isAutoLoadQueueEnabled()
@@ -1087,6 +1098,19 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 insertAt.coerceAtMost(it.mediaItemCount),
                 added.map { createMediaItem(it) }
             )
+            // Behind the last queue row an insertion looks like an append,
+            // which the shuffle order plays last; put it after the current song.
+            val order = _playOrder.value
+            val currentAt = order.indexOf(insertAt - 1)
+            if (_shuffleModeEnabled.value && insertAt == currentList.size &&
+                order.size == currentList.size && currentAt >= 0
+            ) {
+                sendPlayOrder(
+                    order.toMutableList()
+                        .apply { addAll(currentAt + 1, added.indices.map { i -> insertAt + i }) }
+                        .toIntArray()
+                )
+            }
         }
         savePlaybackSession()
     }
@@ -1188,18 +1212,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         if (fromIndex !in order.indices || toIndex !in order.indices || fromIndex == toIndex) return
         val rearranged = order.toMutableList()
         rearranged.add(toIndex, rearranged.removeAt(fromIndex))
-        _playOrder.value = rearranged.toIntArray()
+        sendPlayOrder(rearranged.toIntArray())
+        if (persist) savePlaybackSession()
+    }
 
+    /** Replace the service's shuffle permutation; refused there unless it fits the queue. */
+    private fun sendPlayOrder(order: IntArray) {
+        _playOrder.value = order
         controller?.sendCustomCommand(
             androidx.media3.session.SessionCommand(
                 MusicService.CMD_SET_PLAY_ORDER,
                 android.os.Bundle.EMPTY,
             ),
-            android.os.Bundle().apply {
-                putIntArray(MusicService.ARG_PLAY_ORDER, _playOrder.value)
-            },
+            android.os.Bundle().apply { putIntArray(MusicService.ARG_PLAY_ORDER, order) },
         )
-        if (persist) savePlaybackSession()
     }
 
     /** Save once, after a drag has settled. */
@@ -1319,10 +1345,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      * queue, turning it off did nothing, and turning it on shuffled the
      * already-shuffled copy again.
      *
-     * The start song is picked at random rather than taken from the top,
-     * because with shuffle on Media3 starts at the timeline index it is given
-     * and only then follows the permutation - starting at 0 would open every
-     * shuffle of an album with track one.
+     * The start song is picked at random rather than taken from the top:
+     * the shuffle order opens with the song playback starts on, so starting
+     * at 0 would open every shuffle of an album with track one.
      */
     fun playQueueShuffled(songs: List<Song>) {
         if (songs.isEmpty()) return
