@@ -2895,7 +2895,9 @@ fun PlaylistsShelfSection(
                 Column(
                     modifier = Modifier
                         .width(ARTWORK_SIZE)
+                        .clip(HOME_CARD_SHAPE)
                         .songRowClick(onClick = { onPlaylistClick(playlist) }, onLongClick = null)
+                        .padding(bottom = CAPTION_BOTTOM_INSET)
                 ) {
                     Box(
                         modifier = Modifier
@@ -2940,7 +2942,8 @@ fun PlaylistsShelfSection(
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
                     )
                     val subtitle = when {
                         playlist.itemCount >= 0 -> androidx.compose.ui.res.pluralStringResource(
@@ -2954,7 +2957,8 @@ fun PlaylistsShelfSection(
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
                         )
                     }
                 }
@@ -2968,6 +2972,21 @@ private const val PLAYLIST_SHELF_ITEMS = 20
 
 /** Square artwork edge, and the rail's item width. */
 private val ARTWORK_SIZE = 140.dp
+
+/**
+ * A rail card's shape: the artwork's own 28dp, so the press ripple and the
+ * cover share one outline and the ripple is never a square around a rounded
+ * picture.
+ */
+private val HOME_CARD_SHAPE = RoundedCornerShape(28.dp)
+
+/**
+ * How far captions sit in from a clipped card's edges. At 10dp up from the
+ * bottom a 28dp corner has curved in by about 6.6dp, so 8dp at the sides keeps
+ * every glyph clear of it.
+ */
+private val CAPTION_SIDE_INSET = 8.dp
+private val CAPTION_BOTTOM_INSET = 10.dp
 
 /** Space between artwork and the first caption line. */
 private val CAPTION_GAP = 8.dp
@@ -3006,16 +3025,19 @@ fun JumpBackInSection(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(songs, key = { "recent_${it.id}" }) { song ->
-                // No clip on this column: a rounded clip here is what rounds
-                // the corners off the caption text underneath the artwork.
-                // Only the artwork itself gets a shape.
+                // Clipped to the artwork's shape so the press ripple is a
+                // rounded card rather than a square. The captions are inset
+                // (CAPTION_*_INSET) so that curve never reaches their glyphs -
+                // the reason this column once had no clip at all.
                 Column(
                     modifier = Modifier
                         .width(ARTWORK_SIZE)
+                        .clip(HOME_CARD_SHAPE)
                         .songRowClick(
                             onClick = { onSongClick(song) },
                             onLongClick = onSongLongPress?.let { press -> { press(song) } }
                         )
+                        .padding(bottom = CAPTION_BOTTOM_INSET)
                 ) {
                     Box(
                         modifier = Modifier
@@ -3052,14 +3074,16 @@ fun JumpBackInSection(
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = textColor
+                        color = textColor,
+                        modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
                     )
                     Text(
                         text = song.artist.takeIf { !isUnknownArtist(it) } ?: stringResource(R.string.unknown_artist),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelMedium,
-                        color = secondaryTextColor
+                        color = secondaryTextColor,
+                        modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
                     )
                 }
             }
