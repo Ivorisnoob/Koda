@@ -694,7 +694,7 @@ private fun VideoPlaylistHero(
     collapse: () -> Float,
 ) {
     val ground = playlistPageGround()
-    val windowHeight = LocalWindowInfo.current.containerDpSize.height
+    val windowHeight = com.ivor.ivormusic.ui.theme.windowDpSize().height
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val heroHeight: Dp = (maxWidth * (9f / 16f) + statusBarTop)

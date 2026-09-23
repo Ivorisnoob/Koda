@@ -190,6 +190,7 @@ class MusicService : MediaLibraryService() {
     // volatile field fed by the preference flow instead of a prefs read.
     @Volatile private var isCacheEnabled = true
     private var fadeVolumeJob: Job? = null
+    private var sleepFadeJob: Job? = null
     private var progressJob: Job? = null
     private var transitionJob: Job? = null
     private var playbackShuffleEnabled = false
@@ -404,7 +405,7 @@ class MusicService : MediaLibraryService() {
          * as drifting off rather than as a glitch, short enough that the last
          * thing heard is not a minute of near-silence.
          */
-        private const val SLEEP_TIMER_FADE_MS = 5_000L
+        private const val SLEEP_TIMER_FADE_MS = 30_000L
 
         /**
          * Longest a single slice of the countdown sleeps for. Bounded so the
@@ -2341,10 +2342,14 @@ class MusicService : MediaLibraryService() {
         sleepTimerJob = serviceScope.launch {
             while (true) {
                 val remaining = sleepTimerEndsAt - System.currentTimeMillis()
-                if (remaining <= 0L) break
-                delay(remaining.coerceAtMost(SLEEP_TIMER_TICK_MS))
+                if (remaining <= SLEEP_TIMER_FADE_MS) break
+                delay((remaining - SLEEP_TIMER_FADE_MS).coerceAtMost(SLEEP_TIMER_TICK_MS))
             }
-            fadeOutAndPause()
+            // Fade ends on the deadline. A skip's fade-in can pre-empt it, so the pause is also enforced here.
+            fadeOutAndPause((sleepTimerEndsAt - System.currentTimeMillis()).coerceAtLeast(0L)).join()
+            val left = sleepTimerEndsAt - System.currentTimeMillis()
+            if (left > 0L) delay(left)
+            if (player.playWhenReady) player.pause()
             clearSleepTimer()
         }
     }
@@ -2374,22 +2379,26 @@ class MusicService : MediaLibraryService() {
      * fire: the silence is what wakes people. Runs on [fadeVolumeJob] so it and
      * the crossfade fade-in can never drive the volume at the same time.
      */
-    private fun fadeOutAndPause() {
+    private fun fadeOutAndPause(durationMs: Long): Job {
         launchVolumeFade {
-            val steps = 20
+            val steps = 60
             for (i in steps - 1 downTo 0) {
-                player.volume = trackGain * (i / steps.toFloat())
-                delay(SLEEP_TIMER_FADE_MS / steps)
+                player.volume = trackGain * engine.duckGain * (i / steps.toFloat())
+                delay(durationMs / steps)
             }
             player.pause()
             // launchVolumeFade restores the current gain, including ducking.
         }
+        return fadeVolumeJob!!.also { sleepFadeJob = it }
     }
 
     /** Disarm, whether it fired or the user cancelled it. */
     private fun clearSleepTimer(publish: Boolean = true) {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
+        // Cancelling mid-fade restores full volume (launchVolumeFade's completion).
+        sleepFadeJob?.takeIf { it.isActive }?.cancel()
+        sleepFadeJob = null
         sleepTimerEndsAt = 0L
         sleepTimerEndOfTrack = false
         // Both engines matter. The standby becomes audible at the next

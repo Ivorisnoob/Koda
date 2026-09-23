@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.automirrored.rounded.Comment
@@ -169,6 +172,7 @@ internal fun buildSettingsSearchIndex(
     onOpenRoutingPicker: (SubscriptionDialogTarget) -> Unit,
     onShowAbout: () -> Unit,
     onShowShortsButtons: () -> Unit,
+    onShowContentRegion: () -> Unit,
     onOpenFolderExclusion: () -> Unit,
     onNavigateToColorPalette: () -> Unit,
     onNavigateToSubscriptions: () -> Unit,
@@ -441,14 +445,40 @@ internal fun buildSettingsSearchIndex(
         listOf("hide buttons", "like", "share", "overlay", "actions")
     ) { onShowShortsButtons() }
     entry(
+        "shorts_hard_block", stringResource(R.string.sp_shorts_hard_block), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.Block,
+        listOf(
+            "block shorts", "remove shorts", "no shorts", "disable shorts", "kill shorts",
+            "hide shorts everywhere", "reels", "channel shorts tab"
+        )
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "subscription_refresh", stringResource(R.string.sp_subs_refresh), stringResource(R.string.settings_subscriptions),
+        Icons.Rounded.Schedule,
+        listOf("refresh", "reload", "interval", "manual refresh", "subscriptions feed", "every restart", "pull to refresh")
+    ) { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
+    entry(
+        "return_dislike", stringResource(R.string.sp_return_dislike), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.ThumbDown,
+        listOf("dislikes", "ryd", "return youtube dislike", "thumbs down", "dislike count")
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "content_region", stringResource(R.string.sp_content_region), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.Public,
+        listOf(
+            "region", "country", "location", "locale", "trending", "local content",
+            "recommendations region", "gl", "wrong country"
+        )
+    ) { onShowContentRegion() }
+    entry(
         "show_recent_searches", stringResource(R.string.sp_show_recent_searches), stringResource(R.string.settings_content_and_feeds),
         Icons.Rounded.Search,
         listOf("recent", "history", "suggestions", "search bar", "past queries", "hide")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
-        "compact_video_home", stringResource(R.string.sp_compact_video_home), stringResource(R.string.settings_content_and_feeds),
+        "video_list_layout", stringResource(R.string.sp_video_layout), stringResource(R.string.settings_content_and_feeds),
         Icons.Rounded.ViewList,
-        listOf("compact", "video", "home", "small", "thumbnail", "list", "layout", "density")
+        listOf("compact", "grid", "cards", "video", "home", "small", "thumbnail", "list", "layout", "density")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "show_related_videos", stringResource(R.string.sp_show_related_videos), stringResource(R.string.settings_content_and_feeds),

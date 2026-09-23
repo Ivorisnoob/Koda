@@ -34,6 +34,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.automirrored.rounded.Comment
@@ -1319,6 +1322,12 @@ internal fun ContentSettingsPage(
     onTimedCommentsToggle: (Boolean) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
+    shortsHardBlock: Boolean,
+    onShortsHardBlockToggle: (Boolean) -> Unit,
+    returnDislike: Boolean,
+    onReturnDislikeToggle: (Boolean) -> Unit,
+    contentRegion: String,
+    onShowContentRegion: () -> Unit,
     shortsHiddenActions: Set<String>,
     onShowShortsButtons: () -> Unit,
     showRecentSearches: Boolean,
@@ -1418,6 +1427,17 @@ internal fun ContentSettingsPage(
                         SettingsDivider()
 
                         SettingsToggleRow(
+                            icon = Icons.Rounded.ThumbDown,
+                            title = stringResource(R.string.sp_return_dislike),
+                            subtitle = stringResource(R.string.sp_return_dislike_sub),
+                            enabled = returnDislike,
+                            onToggle = onReturnDislikeToggle,
+                            explanation = stringResource(R.string.si_return_dislike)
+                        )
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
                             icon = Icons.Rounded.Bolt,
                             title = stringResource(R.string.sp_shorts),
                             subtitle = if (shortsEnabled) {
@@ -1429,6 +1449,36 @@ internal fun ContentSettingsPage(
                             onToggle = onShortsEnabledToggle,
                             explanation = stringResource(R.string.si_shorts)
                         )
+
+                        // The stronger form of "off": off alone hides the shelf
+                        // and plays Shorts found elsewhere as ordinary videos;
+                        // this removes them from every list. Offered only while
+                        // Shorts are off, because with them on it would contradict
+                        // the switch above.
+                        AnimatedVisibility(
+                            visible = !shortsEnabled,
+                            enter = fadeIn(tween(200)) + slideInVertically(
+                                initialOffsetY = { -it / 4 },
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                            ),
+                            exit = fadeOut(tween(150))
+                        ) {
+                            Column {
+                                SettingsDivider()
+                                SettingsToggleRow(
+                                    icon = Icons.Rounded.Block,
+                                    title = stringResource(R.string.sp_shorts_hard_block),
+                                    subtitle = if (shortsHardBlock) {
+                                        stringResource(R.string.sp_shorts_hard_block_on)
+                                    } else {
+                                        stringResource(R.string.sp_shorts_hard_block_off)
+                                    },
+                                    enabled = shortsHardBlock,
+                                    onToggle = onShortsHardBlockToggle,
+                                    explanation = stringResource(R.string.si_shorts_hard_block)
+                                )
+                            }
+                        }
 
                         // Action-rail choices only apply to the dedicated swipe player.
                         AnimatedVisibility(
@@ -1461,6 +1511,16 @@ internal fun ContentSettingsPage(
             item {
                 SettingsSection(title = stringResource(R.string.sp_recommendations)) {
                     SettingsCard {
+                        SettingsRow(
+                            icon = Icons.Rounded.Public,
+                            title = stringResource(R.string.sp_content_region),
+                            subtitle = contentRegionLabel(contentRegion),
+                            onClick = onShowContentRegion,
+                            showChevron = true
+                        )
+
+                        SettingsDivider()
+
                         // Both are worded as what is shown, so the switch
                         // position and the sentence agree. They sit above the
                         // blocklist row because they are the blunt version of
@@ -1476,14 +1536,7 @@ internal fun ContentSettingsPage(
 
                         SettingsDivider()
 
-                        SettingsToggleRow(
-                            icon = Icons.Rounded.ViewList,
-                            title = stringResource(R.string.sp_compact_video_home),
-                            subtitle = stringResource(R.string.sp_compact_video_home_sub),
-                            enabled = compactVideoHome,
-                            onToggle = onCompactVideoHomeToggle,
-                            explanation = stringResource(R.string.si_compact_video_home)
-                        )
+                        VideoListLayoutChooser()
 
                         SettingsDivider()
 
@@ -1726,6 +1779,8 @@ internal fun SubscriptionsSettingsPage(
     subscribeTarget: String,
     fastSubscriptionFeed: Boolean,
     onFastSubscriptionFeedToggle: (Boolean) -> Unit,
+    subscriptionRefresh: Int,
+    onSubscriptionRefreshChange: (Int) -> Unit,
     onNavigateToSubscriptions: () -> Unit,
     onOpenRoutingPicker: (SubscriptionDialogTarget) -> Unit,
     onBack: () -> Unit
@@ -1784,6 +1839,8 @@ internal fun SubscriptionsSettingsPage(
                         onToggle = onFastSubscriptionFeedToggle,
                         explanation = stringResource(R.string.si_fast_refresh)
                     )
+                    SettingsDivider()
+                    SubscriptionRefreshChooser(selected = subscriptionRefresh, onSelect = onSubscriptionRefreshChange)
                 }
             }
         }

@@ -2660,6 +2660,7 @@ fun VideoInfoSection(
     isSubscribed: Boolean = false,
     onLikeClick: () -> Unit = {},
     onDislikeClick: () -> Unit = {},
+    dislikeCount: String?,
     onSubscribeClick: () -> Unit = {},
     onCommentsClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
@@ -2787,6 +2788,7 @@ fun VideoInfoSection(
                         video = video,
                         onLikeClick = onLikeClick,
                         onDislikeClick = onDislikeClick,
+                        dislikeCount = dislikeCount,
                         onSaveClick = onSaveClick,
                         onDownloadClick = onDownloadClick,
                         showListenAsMusic = showListenAsMusic,
@@ -3396,6 +3398,7 @@ private fun ExpressiveLikeDislikeGroup(
     engagement: VideoEngagement?,
     onLikeClick: () -> Unit,
     onDislikeClick: () -> Unit,
+    dislikeCount: String?,
     modifier: Modifier = Modifier
 ) {
     val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
@@ -3450,6 +3453,14 @@ private fun ExpressiveLikeDislikeGroup(
                 contentDescription = if (likeStatus == LikeStatus.DISLIKE) stringResource(R.string.vp_remove_dislike) else stringResource(R.string.cd_dislike),
                 modifier = Modifier.size(18.dp)
             )
+            if (!dislikeCount.isNullOrBlank()) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = dislikeCount,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
@@ -3466,6 +3477,7 @@ private fun ActionDock(
     video: VideoItem,
     onLikeClick: () -> Unit,
     onDislikeClick: () -> Unit,
+    dislikeCount: String?,
     onSaveClick: () -> Unit,
     onDownloadClick: () -> Unit,
     /**
@@ -3492,7 +3504,8 @@ private fun ActionDock(
             ExpressiveLikeDislikeGroup(
                 engagement = engagement,
                 onLikeClick = onLikeClick,
-                onDislikeClick = onDislikeClick
+                onDislikeClick = onDislikeClick,
+                dislikeCount = dislikeCount
             )
             DockSaveButton(onClick = onSaveClick)
             if (showListenAsMusic) {

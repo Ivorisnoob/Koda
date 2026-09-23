@@ -36,6 +36,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.launch
 
+internal const val BROWSE_HOME = "FEmusic_home"
+internal const val BROWSE_EXPLORE = "FEmusic_explore"
+internal const val BROWSE_CHARTS = "FEmusic_charts"
+internal const val BROWSE_NEW = "FEmusic_new_releases"
+internal const val BROWSE_MOOD = "mood"
+
 internal fun shouldWarmSubscriptionFeed(
     source: String,
     hasLocalSubscriptions: Boolean,
@@ -248,6 +254,74 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         (localItems + savedItems + ytPlaylists).filterNot { it.id in hiddenIds }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // --- Spotlight's YouTube Music tabs (home, explore, charts, new, a mood) ---
+
+    data class MusicBrowseState(
+        val shelves: List<com.ivor.ivormusic.data.MusicShelf> = emptyList(),
+        val loading: Boolean = false,
+        val failed: Boolean = false,
+        val continuation: String? = null,
+        val title: String? = null,
+    )
+
+    private val _musicBrowse = MutableStateFlow<Map<String, MusicBrowseState>>(emptyMap())
+    val musicBrowse: StateFlow<Map<String, MusicBrowseState>> = _musicBrowse.asStateFlow()
+    private var moodRequest: com.ivor.ivormusic.data.MusicShelfItem.Mood? = null
+
+    private fun updateBrowse(key: String, block: (MusicBrowseState) -> MusicBrowseState) {
+        _musicBrowse.value = _musicBrowse.value + (key to block(_musicBrowse.value[key] ?: MusicBrowseState()))
+    }
+
+    private fun withoutDismissed(shelves: List<com.ivor.ivormusic.data.MusicShelf>) = shelves.mapNotNull { shelf ->
+        val items = shelf.items.filterNot {
+            it is com.ivor.ivormusic.data.MusicShelfItem.Track && notInterestedRepository.filterSongs(listOf(it.song)).isEmpty()
+        }
+        shelf.copy(items = items).takeIf { items.isNotEmpty() }
+    }
+
+    fun loadMusicBrowse(key: String, force: Boolean = false) {
+        val current = _musicBrowse.value[key]
+        if (current?.loading == true || (!force && current?.shelves?.isNotEmpty() == true)) return
+        if (themePreferences.isLocalOnlyModeEnabled()) return
+        val mood = if (key == BROWSE_MOOD) moodRequest ?: return else null
+        updateBrowse(key) { it.copy(loading = true, failed = false) }
+        viewModelScope.launch {
+            val page = youtubeRepository.getMusicShelves(mood?.browseId ?: key, mood?.params)
+            updateBrowse(key) {
+                if (page == null) it.copy(loading = false, failed = it.shelves.isEmpty())
+                else MusicBrowseState(withoutDismissed(page.shelves), false, false, page.continuation, mood?.title)
+            }
+        }
+    }
+
+    fun loadMoreMusicBrowse(key: String) {
+        val current = _musicBrowse.value[key] ?: return
+        val token = current.continuation ?: return
+        if (current.loading) return
+        updateBrowse(key) { it.copy(loading = true) }
+        viewModelScope.launch {
+            val page = youtubeRepository.getMusicShelvesContinuation(token)
+            updateBrowse(key) {
+                it.copy(
+                    loading = false,
+                    shelves = it.shelves + withoutDismissed(page?.shelves.orEmpty()),
+                    continuation = page?.continuation
+                )
+            }
+        }
+    }
+
+    fun openMood(mood: com.ivor.ivormusic.data.MusicShelfItem.Mood) {
+        moodRequest = mood
+        _musicBrowse.value = _musicBrowse.value - BROWSE_MOOD
+        loadMusicBrowse(BROWSE_MOOD)
+    }
+
+    fun closeMood() {
+        moodRequest = null
+        _musicBrowse.value = _musicBrowse.value - BROWSE_MOOD
+    }
+
     // --- Spotlight's "New for you" shelf ---
 
     private val _discoverySongs = MutableStateFlow<List<Song>>(emptyList())
@@ -413,9 +487,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val savedPlaylistIds: StateFlow<Set<String>> = combine(
         savedPlaylistsRepository.savedPlaylists,
         _youtubePlaylists
-    ) { saved, ytPlaylists ->
-        val accountIds = ytPlaylists.map { it.id }.toSet()
-        saved.map { it.id }.filterNot { it in accountIds }.toSet()
+    ) { saved, _ ->
+        // Not filtered by the account list: a saved playlist is also liked into
+        // the account's library when signed in, and still is not the user's own.
+        saved.map { it.id }.toSet()
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptySet())
 
     fun isPlaylistSaved(playlistId: String?): Boolean = savedPlaylistsRepository.isSaved(playlistId)
@@ -441,9 +516,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             releaseType = playlist.releaseType,
             releaseYear = playlist.releaseYear
         )
-    )
+    ).also { saved -> syncSavedToAccount(playlist.id, saved) }
 
-    fun removeSavedPlaylist(playlistId: String) = savedPlaylistsRepository.remove(playlistId)
+    fun removeSavedPlaylist(playlistId: String) {
+        savedPlaylistsRepository.remove(playlistId)
+        syncSavedToAccount(playlistId, false)
+    }
+
+    // Signed in, Save also puts the playlist in the account's library. Albums
+    // (MPREb browse ids) have no playlist id to like, so they stay device-only.
+    private fun syncSavedToAccount(playlistId: String, saved: Boolean) {
+        if (!sessionManager.isLoggedIn() || playlistId.startsWith("MPRE")) return
+        viewModelScope.launch {
+            if (!youtubeRepository.setPlaylistInLibrary(playlistId, saved)) {
+                KLog.w("HomeViewModel", "Account library ${if (saved) "save" else "remove"} failed for $playlistId")
+            }
+        }
+    }
 
     private val _userAvatar = MutableStateFlow<String?>(sessionManager.getUserAvatar())
     val userAvatar: StateFlow<String?> = _userAvatar.asStateFlow()
@@ -749,16 +838,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Shorts shelf minus individually hidden Shorts.
+     * Shorts shelf minus hidden Shorts and blocked channels.
      *
-     * Only video ids can be filtered here: a shelf ShortsItem carries no
-     * channel at all (see ShortsItem), so a channel block cannot reach it.
-     * The block still applies the moment the Short is opened and enriched -
-     * it just cannot pre-empt the shelf.
+     * A channel block reaches only the entries that name their channel -
+     * prefetched ones (see ShortsItem). The rest are caught in the player:
+     * dropped from the sequence once prefetch names them, or skipped when the
+     * one on screen turns out to be from a blocked channel.
      */
     val shortsFeed: StateFlow<List<com.ivor.ivormusic.data.ShortsItem>> =
-        combine(_shortsFeed, notInterestedRepository.hiddenVideos) { shorts, _ ->
-            shorts.filterNot { notInterestedRepository.isVideoHidden(it.videoId) }
+        combine(
+            _shortsFeed,
+            notInterestedRepository.hiddenVideos,
+            notInterestedRepository.blockedChannels
+        ) { shorts, _, _ ->
+            shorts.filterNot {
+                notInterestedRepository.isVideoHidden(it.videoId) ||
+                    ((it.channelId != null || it.channelName.isNotBlank()) &&
+                        notInterestedRepository.isCreatorBlocked(it.channelId, it.channelName))
+            }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     
     private val _isHistoryLoading = MutableStateFlow(false)
@@ -872,6 +969,33 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * explicit refresh goes again.
      */
     private var subscriptionFeedAttempted = false
+
+    private val subscriptionFeedCache = com.ivor.ivormusic.data.SubscriptionFeedCache(application)
+    private val _subscriptionFeedUpdatedAt = MutableStateFlow<Long?>(null)
+    val subscriptionFeedUpdatedAt: StateFlow<Long?> = _subscriptionFeedUpdatedAt.asStateFlow()
+
+    private fun subscriptionFeedKey(): String =
+        listOf(
+            themePreferences.currentSubscriptionSource(),
+            sessionManager.isLoggedIn().toString(),
+            _selectedGroupId.value.orEmpty(),
+            groupFilteredLocalChannels().map { it.channelId }.sorted().joinToString(",")
+        ).joinToString("|")
+
+    /** Serve the saved feed when the refresh setting says it is still fresh. */
+    private fun restoreCachedSubscriptionFeed(): Boolean {
+        val interval = themePreferences.subscriptionRefreshMinutes()
+        if (interval == com.ivor.ivormusic.data.ThemePreferences.SUBS_REFRESH_ON_OPEN) return false
+        val snapshot = subscriptionFeedCache.read() ?: return false
+        if (snapshot.key != subscriptionFeedKey() || snapshot.videos.isEmpty()) return false
+        val age = System.currentTimeMillis() - snapshot.fetchedAtMs
+        if (interval != com.ivor.ivormusic.data.ThemePreferences.SUBS_REFRESH_MANUAL && age > interval * 60_000L) return false
+        _subscriptionFeed.value = snapshot.videos
+        _subscriptionFeedError.value = null
+        _subscriptionFeedUpdatedAt.value = snapshot.fetchedAtMs
+        subscriptionFeedAttempted = true
+        return true
+    }
 
     private val _selectedChannelFeed = MutableStateFlow<List<VideoItem>>(emptyList())
     val selectedChannelFeed: StateFlow<List<VideoItem>> = _selectedChannelFeed.asStateFlow()
@@ -1076,7 +1200,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             isLoggedIn = sessionManager.isLoggedIn()
                         )
                     ) {
-                        loadSubscriptionFeed(force = true)
+                        if (!restoreCachedSubscriptionFeed()) loadSubscriptionFeed(force = true)
                     } else {
                         _subscriptionFeed.value = emptyList()
                         _subscriptionFeedError.value = null
@@ -1283,6 +1407,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 } else emptyList()
 
                 _subscriptionFeed.value = mergeFeeds(accountFeed, localFeed)
+                if (_subscriptionFeed.value.isNotEmpty()) {
+                    subscriptionFeedCache.write(_subscriptionFeed.value, subscriptionFeedKey())
+                    _subscriptionFeedUpdatedAt.value = System.currentTimeMillis()
+                }
                 if (_subscriptionFeed.value.isEmpty() && (useAccount || channels.isNotEmpty())) {
                     // Only blame the connection when nothing was reachable.
                     // Channels that answer but have nothing recent are a normal

@@ -3674,7 +3674,7 @@ fun PlaylistDetailScreen(
                 // than in the bare background, so the band the app bar fades
                 // in over is already the page's own color.
                 val ground = playlistPageGround()
-                val windowHeight = LocalWindowInfo.current.containerDpSize.height
+                val windowHeight = com.ivor.ivormusic.ui.theme.windowDpSize().height
                 Column(modifier = Modifier.fillMaxWidth()) {
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         // Near-square on a phone, but never more than a

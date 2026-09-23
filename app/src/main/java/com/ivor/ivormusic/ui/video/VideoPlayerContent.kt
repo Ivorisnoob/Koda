@@ -193,6 +193,7 @@ fun VideoPlayerContent(
     val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
     val isAutoplayEnabled by viewModel.isAutoplayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
+    val dislikeCount by viewModel.dislikeCount.collectAsState()
     val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
     val sleepTimerEndOfVideo by viewModel.sleepTimerEndOfVideo.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
@@ -301,9 +302,12 @@ fun VideoPlayerContent(
 
     // Landscape chat column: about a third of the screen, bounded so it stays
     // readable on a small phone and does not eat a tablet.
+    // Measured in the scaled dp (windowDpSize), not Configuration's: at any
+    // interface scale but 100% the platform figure is a different unit.
     val configuration = LocalConfiguration.current
-    val landscapeChatWidth = remember(configuration.screenWidthDp) {
-        (configuration.screenWidthDp * 0.34f).dp.coerceIn(260.dp, 360.dp)
+    val windowWidth = com.ivor.ivormusic.ui.theme.windowDpSize().width
+    val landscapeChatWidth = remember(windowWidth) {
+        (windowWidth * 0.34f).coerceIn(260.dp, 360.dp)
     }
 
     /**
@@ -1130,6 +1134,7 @@ fun VideoPlayerContent(
                         isSubscribed = isSubscribedToChannel,
                         onLikeClick = { requireLogin { viewModel.toggleLike() } },
                         onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
+                        dislikeCount = dislikeCount,
                         onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                         onCommentsClick = {
                             viewModel.ensureCommentsLoaded()

@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.search
+
+import com.ivor.ivormusic.ui.video.videoListItems
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
@@ -245,6 +247,7 @@ fun SearchScreen(
     // edits) that YouTube Music does not list, played as songs.
     var videoSongResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    val searchListLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
     var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
     var channelResults by remember {
         mutableStateOf<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
@@ -1002,14 +1005,16 @@ fun SearchScreen(
                         }
 
                         // Display video results; long-press opens the save sheet
-                        itemsIndexed(videoResults) { index, video ->
-                            VideoCard(
-                                video = video,
-                                onClick = { onVideoClick(video) },
-                                onLongClick = { onVideoLongPress(video) },
-                                onOpenChannel = onOpenChannel,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
+                        run {
+                            videoListItems(videoResults, searchListLayout) { video, cell ->
+                                VideoCard(
+                                    video = video,
+                                    onClick = { onVideoClick(video) },
+                                    onLongClick = { onVideoLongPress(video) },
+                                    onOpenChannel = onOpenChannel,
+                                    modifier = cell.padding(vertical = 8.dp)
+                                )
+                            }
                         }
 
                         item {

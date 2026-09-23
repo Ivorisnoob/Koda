@@ -582,6 +582,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
 
+    private val returnDislikeRepository = com.ivor.ivormusic.data.ReturnDislikeRepository()
+    private val _dislikeCount = MutableStateFlow<String?>(null)
+    val dislikeCount: StateFlow<String?> = _dislikeCount.asStateFlow()
+
     private val _engagement = MutableStateFlow<VideoEngagement?>(null)
     val engagement: StateFlow<VideoEngagement?> = _engagement.asStateFlow()
 
@@ -2421,6 +2425,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         // Reset engagement + comments state for the new video
         _engagement.value = null
+        _dislikeCount.value = null
         _comments.value = emptyList()
         _replies.value = emptyMap()
         _loadingReplyIds.value = emptySet()
@@ -2645,6 +2650,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // Guard against a video switch that happened mid-flight
                 if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
                 _engagement.value = watchNext.engagement
+                if (themePreferences.isReturnDislikeEnabled() && video.videoId.length == 11) {
+                    launch {
+                        val count = returnDislikeRepository.getDislikes(video.videoId) ?: return@launch
+                        if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
+                            _dislikeCount.value = android.icu.text.CompactDecimalFormat
+                                .getInstance(java.util.Locale.getDefault(), android.icu.text.CompactDecimalFormat.CompactStyle.SHORT)
+                                .format(count)
+                        }
+                    }
+                }
                 if (watchNext.updatedVideoItem != null) {
                     val wasNameless = _currentVideo.value?.title.isNullOrBlank()
                     _currentVideo.value = watchNext.updatedVideoItem

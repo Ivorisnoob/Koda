@@ -129,8 +129,19 @@ class ThemePreferences(context: Context) {
     private val _timedCommentsEnabled = MutableStateFlow(getTimedCommentsEnabledPreference())
     val timedCommentsEnabled: StateFlow<Boolean> = _timedCommentsEnabled.asStateFlow()
 
+    private val _returnDislike = MutableStateFlow(prefs.getBoolean(KEY_RETURN_DISLIKE, false))
+    val returnDislike: StateFlow<Boolean> = _returnDislike.asStateFlow()
+
     private val _shortsEnabled = MutableStateFlow(getShortsEnabledPreference())
     val shortsEnabled: StateFlow<Boolean> = _shortsEnabled.asStateFlow()
+
+    /** Whether Shorts are removed from every surface; see [isShortsHardBlocked]. */
+    private val _shortsHardBlock = MutableStateFlow(prefs.getBoolean(KEY_SHORTS_HARD_BLOCK, false))
+    val shortsHardBlock: StateFlow<Boolean> = _shortsHardBlock.asStateFlow()
+
+    /** The chosen content region's ISO code, or "" to follow the device. */
+    private val _contentRegion = MutableStateFlow(prefs.getString(KEY_CONTENT_REGION, "").orEmpty())
+    val contentRegion: StateFlow<String> = _contentRegion.asStateFlow()
 
     private val _shortsHiddenActions = MutableStateFlow(getShortsHiddenActionsPreference())
     val shortsHiddenActions: StateFlow<Set<String>> = _shortsHiddenActions.asStateFlow()
@@ -205,6 +216,9 @@ class ThemePreferences(context: Context) {
 
     private val _subscribeTarget = MutableStateFlow(getSubscribeTargetPreference())
     val subscribeTarget: StateFlow<String> = _subscribeTarget.asStateFlow()
+
+    private val _subscriptionRefresh = MutableStateFlow(prefs.getInt(KEY_SUBS_REFRESH_MINUTES, SUBS_REFRESH_ON_OPEN))
+    val subscriptionRefresh: StateFlow<Int> = _subscriptionRefresh.asStateFlow()
 
     private val _fastSubscriptionFeed = MutableStateFlow(getFastSubscriptionFeedPreference())
     val fastSubscriptionFeed: StateFlow<Boolean> = _fastSubscriptionFeed.asStateFlow()
@@ -312,6 +326,9 @@ class ThemePreferences(context: Context) {
     private val _inlinePreviews = MutableStateFlow(getInlinePreviewsPreference())
     val inlinePreviews: StateFlow<Boolean> = _inlinePreviews.asStateFlow()
 
+    private val _videoListLayout = MutableStateFlow(getVideoListLayoutPreference())
+    val videoListLayout: StateFlow<String> = _videoListLayout.asStateFlow()
+
     private val _compactVideoHome = MutableStateFlow(getCompactVideoHomePreference())
     val compactVideoHome: StateFlow<Boolean> = _compactVideoHome.asStateFlow()
 
@@ -361,6 +378,9 @@ class ThemePreferences(context: Context) {
             KEY_LIVE_PLAYBACK_UPDATES -> _livePlaybackUpdates.value = getLivePlaybackUpdatesPreference()
             KEY_TIMED_COMMENTS_ENABLED -> _timedCommentsEnabled.value = getTimedCommentsEnabledPreference()
             KEY_SHORTS_ENABLED -> _shortsEnabled.value = getShortsEnabledPreference()
+            KEY_RETURN_DISLIKE -> _returnDislike.value = prefs.getBoolean(KEY_RETURN_DISLIKE, false)
+            KEY_CONTENT_REGION -> _contentRegion.value = prefs.getString(KEY_CONTENT_REGION, "").orEmpty()
+            KEY_SHORTS_HARD_BLOCK -> _shortsHardBlock.value = prefs.getBoolean(KEY_SHORTS_HARD_BLOCK, false)
             KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
             KEY_VIDEO_QUALITY_WIFI -> _videoQualityWifi.value = getVideoQualityWifiPreference()
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
@@ -387,6 +407,7 @@ class ThemePreferences(context: Context) {
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
+            KEY_SUBS_REFRESH_MINUTES -> _subscriptionRefresh.value = prefs.getInt(KEY_SUBS_REFRESH_MINUTES, SUBS_REFRESH_ON_OPEN)
             KEY_EXCLUDED_FOLDERS -> _excludedFolders.value = getExcludedFoldersPreference()
             KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
             KEY_VIDEO_CACHE_ENABLED -> _videoCacheEnabled.value = getVideoCacheEnabledPreference()
@@ -422,6 +443,7 @@ class ThemePreferences(context: Context) {
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
             KEY_COMPACT_VIDEO_HOME -> _compactVideoHome.value = getCompactVideoHomePreference()
+            KEY_VIDEO_LIST_LAYOUT -> _videoListLayout.value = getVideoListLayoutPreference()
             KEY_PLAYLIST_SWIPE_ENABLED -> _playlistSwipeEnabled.value = getPlaylistSwipeEnabledPreference()
             KEY_PLAYLIST_SWIPE_START_ACTION -> _playlistSwipeStartAction.value = getPlaylistSwipeStartActionPreference()
             KEY_PLAYLIST_SWIPE_END_ACTION -> _playlistSwipeEndAction.value = getPlaylistSwipeEndActionPreference()
@@ -532,6 +554,51 @@ class ThemePreferences(context: Context) {
                     .getBoolean(KEY_LIVE_PLAYBACK_UPDATES, false)
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
         private const val KEY_SHORTS_ENABLED = "shorts_enabled"
+        private const val KEY_CONTENT_REGION = "content_region"
+        private const val KEY_SHORTS_HARD_BLOCK = "shorts_hard_block"
+        private const val KEY_RETURN_DISLIKE = "return_dislike"
+
+        /**
+         * Whether Shorts are gone from the whole app: the Shorts experience is
+         * off *and* the user asked for them fully blocked. Off alone only
+         * hides the Home shelf and plays any Short found elsewhere in the
+         * ordinary player; blocked also drops the channel page's Shorts tab
+         * and shelves and NewPipe-flagged Shorts from video search - the
+         * surfaces that know what a Short is, kept light on purpose. The switch only
+         * exists while Shorts are off, so a stale true under Shorts-on is
+         * ignored rather than trusted. Static fresh read for the same reason
+         * as [resolveContentRegion].
+         */
+        fun isShortsHardBlocked(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return !prefs.getBoolean(KEY_SHORTS_ENABLED, false) &&
+                prefs.getBoolean(KEY_SHORTS_HARD_BLOCK, false)
+        }
+
+        /**
+         * The country YouTube should rank for: the chosen region, else the
+         * device's, else US. A static fresh read, because every repository
+         * instance builds its own request context and the setting is changed
+         * from the settings screen's own instance.
+         *
+         * Only the country follows the user. The language stays English on
+         * purpose: parsers read English UI text (view counts, shelf names), and
+         * a translated response would break them silently. [verified September
+         * 2026] `gl` alone moves signed-out search and feeds (13 of 27 results
+         * shared US vs IN, against 20 of 27 for two US calls); signed-in feeds
+         * are ranked by the account and do not move with it.
+         */
+        fun resolveContentRegion(context: Context): String {
+            val chosen = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_CONTENT_REGION, "").orEmpty()
+            if (chosen.length == 2) return chosen
+            return deviceRegion() ?: "US"
+        }
+
+        /** The device's country as an ISO alpha-2 code, or null when it has none. */
+        fun deviceRegion(): String? =
+            java.util.Locale.getDefault().country.uppercase()
+                .takeIf { it.length == 2 && it.all { c -> c in 'A'..'Z' } }
         private const val KEY_SHORTS_HIDDEN_ACTIONS = "shorts_hidden_actions"
 
         /** Ids for the Shorts action-rail buttons that can be hidden. */
@@ -578,6 +645,14 @@ class ThemePreferences(context: Context) {
         private const val KEY_SUBSCRIPTION_SOURCE = "subscription_source"
         private const val KEY_SUBSCRIBE_TARGET = "subscribe_target"
         private const val KEY_FAST_SUBSCRIPTION_FEED = "fast_subscription_feed"
+        private const val KEY_SUBS_REFRESH_MINUTES = "subscription_refresh_minutes"
+        private const val KEY_VIDEO_LIST_LAYOUT = "video_list_layout"
+        const val VIDEO_LAYOUT_CARDS = "cards"
+        const val VIDEO_LAYOUT_COMPACT = "compact"
+        const val VIDEO_LAYOUT_GRID = "grid"
+        const val SUBS_REFRESH_ON_OPEN = 0
+        const val SUBS_REFRESH_MANUAL = -1
+        val SUBS_REFRESH_OPTIONS = listOf(SUBS_REFRESH_ON_OPEN, 60, 360, 720, 1440, SUBS_REFRESH_MANUAL)
 
         /**
          * Show whichever subscriptions exist - the device's, the account's, or
@@ -1325,6 +1400,18 @@ class ThemePreferences(context: Context) {
         _shortsEnabled.value = enabled
     }
 
+    fun setShortsHardBlock(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHORTS_HARD_BLOCK, enabled).apply()
+        _shortsHardBlock.value = enabled
+    }
+
+    /** "" follows the device; otherwise an ISO 3166 alpha-2 code. */
+    fun setContentRegion(code: String) {
+        val value = code.trim().uppercase().takeIf { it.length == 2 }.orEmpty()
+        prefs.edit().putString(KEY_CONTENT_REGION, value).apply()
+        _contentRegion.value = value
+    }
+
     /**
      * Get the Shorts action buttons the user chose to hide (ids from
      * SHORTS_ACTION_OPTIONS). Defaults to empty: all buttons visible.
@@ -1351,6 +1438,13 @@ class ThemePreferences(context: Context) {
     /**
      * Save timed comments preference and update the flow.
      */
+    fun isReturnDislikeEnabled(): Boolean = prefs.getBoolean(KEY_RETURN_DISLIKE, false)
+
+    fun setReturnDislike(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_RETURN_DISLIKE, enabled).apply()
+        _returnDislike.value = enabled
+    }
+
     fun setTimedCommentsEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_TIMED_COMMENTS_ENABLED, enabled).apply()
         _timedCommentsEnabled.value = enabled
@@ -1492,6 +1586,13 @@ class ThemePreferences(context: Context) {
      * live badge. Off means a full channel fetch per channel, which restores
      * those at a real cost on a large subscription list.
      */
+    fun subscriptionRefreshMinutes(): Int = prefs.getInt(KEY_SUBS_REFRESH_MINUTES, SUBS_REFRESH_ON_OPEN)
+
+    fun setSubscriptionRefreshMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_SUBS_REFRESH_MINUTES, minutes).apply()
+        _subscriptionRefresh.value = minutes
+    }
+
     fun setFastSubscriptionFeed(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_FAST_SUBSCRIPTION_FEED, enabled).apply()
         _fastSubscriptionFeed.value = enabled
@@ -2151,6 +2252,16 @@ class ThemePreferences(context: Context) {
     fun setShowRecentSearches(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_RECENT_SEARCHES, show).apply()
         _showRecentSearches.value = show
+    }
+
+    // Falls back to the old Home-only compact switch so existing choices carry over.
+    private fun getVideoListLayoutPreference(): String =
+        prefs.getString(KEY_VIDEO_LIST_LAYOUT, null)
+            ?: if (prefs.getBoolean(KEY_COMPACT_VIDEO_HOME, false)) VIDEO_LAYOUT_COMPACT else VIDEO_LAYOUT_CARDS
+
+    fun setVideoListLayout(layout: String) {
+        prefs.edit().putString(KEY_VIDEO_LIST_LAYOUT, layout).apply()
+        _videoListLayout.value = layout
     }
 
     private fun getCompactVideoHomePreference(): Boolean =

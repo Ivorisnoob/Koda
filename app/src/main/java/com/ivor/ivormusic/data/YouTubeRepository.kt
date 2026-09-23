@@ -52,6 +52,7 @@ class YouTubeRepository(private val context: Context) {
         private const val UPLOAD_BATCH_PAUSE_MS = 400L
         private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
         @Volatile private var isInitialized = false
+        @Volatile private var appliedNewPipeRegion: String? = null
         private val newPipeInitLock = Any()
 
         // ServiceList eagerly constructs every extractor NewPipe supports. Koda
@@ -476,6 +477,34 @@ class YouTubeRepository(private val context: Context) {
         videoSearchContinuations.clear()
     }
 
+    /**
+     * A NewPipe search extractor that ranks for [contentRegion].
+     *
+     * NewPipe keeps one global localization, defaulting to en-GB, so without
+     * this every NewPipe-backed search (videos, artists, albums, playlists)
+     * was British whatever the device said. Re-applied only when the region
+     * changed; the language stays English for the same reason as the InnerTube
+     * context (see ThemePreferences.resolveContentRegion).
+     */
+    private fun regionalSearchExtractor(
+        query: String,
+        filters: List<String>,
+        sort: String,
+    ): org.schabi.newpipe.extractor.search.SearchExtractor {
+        val region = contentRegion()
+        if (region != appliedNewPipeRegion) {
+            NewPipe.setupLocalization(
+                org.schabi.newpipe.extractor.localization.Localization("en", region),
+                org.schabi.newpipe.extractor.localization.ContentCountry(region)
+            )
+            appliedNewPipeRegion = region
+        }
+        return youtubeService.getSearchExtractor(query, filters, sort)
+    }
+
+    /** The country every InnerTube context and NewPipe search ranks for. */
+    private fun contentRegion(): String = ThemePreferences.resolveContentRegion(context)
+
     private fun initializeNewPipe() {
         if (isInitialized) return
         synchronized(newPipeInitLock) {
@@ -537,7 +566,7 @@ class YouTubeRepository(private val context: Context) {
         }
         try {
             // YouTube Music search often uses the search extractor with specific filters
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(filter), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(filter), "")
             searchExtractor.fetchPage()
             
             // Cache for pagination
@@ -569,7 +598,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -597,7 +626,7 @@ class YouTubeRepository(private val context: Context) {
             if (releases.isNotEmpty()) return@withContext releases
         }
         try {
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_ALBUMS), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_ALBUMS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -619,7 +648,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchArtists(query: String): List<ArtistItem> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_ARTISTS), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_ARTISTS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<ChannelInfoItem>().mapNotNull { item ->
@@ -873,11 +902,23 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /** Metadata-only WEB_REMIX calls, public when signed out. Never playback. */
+    /** A YouTube Music browse page (FEmusic_home, _explore, _charts, _new_releases, a mood) as shelves. */
+    suspend fun getMusicShelves(browseId: String, params: String? = null): MusicShelfPage? =
+        withContext(Dispatchers.IO) {
+            postMusicMetadata("browse", org.json.JSONObject().put("browseId", browseId).apply {
+                if (params != null) put("params", params)
+            })?.let(::parseMusicShelves)
+        }
+
+    suspend fun getMusicShelvesContinuation(token: String): MusicShelfPage? = withContext(Dispatchers.IO) {
+        postMusicMetadata("browse", org.json.JSONObject().put("continuation", token))?.let(::parseMusicShelves)
+    }
+
     private fun postMusicMetadata(endpoint: String, payload: org.json.JSONObject): org.json.JSONObject? {
         return try {
             val session = sessionManager.captureSession()
             val client = org.json.JSONObject().put("clientName", "WEB_REMIX")
-                .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", "US")
+                .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", contentRegion())
             cachedVisitorDataOrNull()?.let { client.put("visitorData", it) }
             payload.put("context", org.json.JSONObject().put("client", client))
             val builder = okhttp3.Request.Builder()
@@ -1410,7 +1451,7 @@ class YouTubeRepository(private val context: Context) {
                         put("clientName", "WEB")
                         put("clientVersion", WEB_VERSION)
                         put("hl", "en")
-                        put("gl", "US")
+                        put("gl", contentRegion())
                     }
                 )
             ).toString()
@@ -1561,7 +1602,7 @@ class YouTubeRepository(private val context: Context) {
                             "clientName": "WEB_REMIX",
                             "clientVersion": "$WEB_REMIX_VERSION",
                             "hl": "en",
-                            "gl": "US"
+                            "gl": "${contentRegion()}"
                         }
                     },
                     "videoId": "$videoId",
@@ -1743,7 +1784,7 @@ class YouTubeRepository(private val context: Context) {
                         "clientName": "WEB_REMIX",
                         "clientVersion": "$WEB_REMIX_VERSION",
                         "hl": "en",
-                        "gl": "US"
+                        "gl": "${contentRegion()}"
                     }
                 },
                 "continuation": "$continuationToken"
@@ -2539,7 +2580,7 @@ class YouTubeRepository(private val context: Context) {
                             "clientName": "WEB_REMIX",
                             "clientVersion": "$WEB_REMIX_VERSION",
                             "hl": "en",
-                            "gl": "US"
+                            "gl": "${contentRegion()}"
                         }
                     },
                     "browseId": "$endpoint"
@@ -2553,7 +2594,7 @@ class YouTubeRepository(private val context: Context) {
                             "clientName": "WEB_REMIX",
                             "clientVersion": "$WEB_REMIX_VERSION",
                             "hl": "en",
-                            "gl": "US"
+                            "gl": "${contentRegion()}"
                         }
                     }
                 }
@@ -3127,7 +3168,7 @@ class YouTubeRepository(private val context: Context) {
 
         try {
             // Use YouTube videos filter (not music_videos)
-            val searchExtractor = youtubeService.getSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
+            val searchExtractor = regionalSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
             searchExtractor.fetchPage()
 
             // Cache for pagination (see searchVideosNext)
@@ -3181,6 +3222,11 @@ class YouTubeRepository(private val context: Context) {
     /** Map a NewPipe search page's streams to [VideoItem]s, skipping unusable rows. */
     private fun List<org.schabi.newpipe.extractor.InfoItem>.toVideoItems(): List<VideoItem> =
         filterIsInstance<StreamInfoItem>().mapNotNull { item ->
+            // "Fully block Shorts": NewPipe already knows which results are
+            // Shorts, so they are dropped here rather than drawn.
+            if (item.isShortFormContent && ThemePreferences.isShortsHardBlocked(context)) {
+                return@mapNotNull null
+            }
             try {
                 val uploaderUrl = item.uploaderUrl ?: ""
                 val channelId = when {
@@ -3215,7 +3261,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchVideoPlaylists(query: String): List<VideoPlaylist> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
             searchExtractor.fetchPage()
 
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -3250,7 +3296,7 @@ class YouTubeRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 val searchExtractor =
-                    youtubeService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
+                    regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
                 searchExtractor.fetchPage()
 
                 searchExtractor.initialPage.items
@@ -3449,7 +3495,7 @@ class YouTubeRepository(private val context: Context) {
                         "clientName": "WEB",
                         "clientVersion": "$WEB_VERSION",
                         "hl": "en",
-                        "gl": "US",
+                        "gl": "${contentRegion()}",
                         "originalUrl": "https://www.youtube.com/",
                         "platform": "DESKTOP"
                     },
@@ -4876,7 +4922,7 @@ class YouTubeRepository(private val context: Context) {
                         .put("clientName", "WEB")
                         .put("clientVersion", WEB_VERSION)
                         .put("hl", "en")
-                        .put("gl", "US")
+                        .put("gl", contentRegion())
                         .apply { visitorData?.let { put("visitorData", it) } }
                 )
             )
@@ -5370,7 +5416,7 @@ class YouTubeRepository(private val context: Context) {
                 .put("clientName", "WEB")
                 .put("clientVersion", WEB_VERSION)
                 .put("hl", "en")
-                .put("gl", "US")
+                .put("gl", contentRegion())
                 .apply {
                     cachedVisitorDataOrNull()?.let { put("visitorData", it) }
                 }
@@ -6787,7 +6833,7 @@ class YouTubeRepository(private val context: Context) {
                 .put("clientName", "WEB_REMIX")
                 .put("clientVersion", WEB_REMIX_VERSION)
                 .put("hl", "en")
-                .put("gl", "US")
+                .put("gl", contentRegion())
         )
 
     /**
@@ -6917,6 +6963,16 @@ class YouTubeRepository(private val context: Context) {
      * owns; for saved (someone else's) playlists it fails, so fall back to
      * removing the playlist from the library instead. Requires login.
      */
+    /** Add or remove someone else's playlist from the account's YouTube Music library. */
+    suspend fun setPlaylistInLibrary(playlistId: String, saved: Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext false
+            val body = org.json.JSONObject()
+                .put("context", playlistContext(true))
+                .put("target", org.json.JSONObject().put("playlistId", normalizePlaylistId(playlistId)))
+            postPlaylistApi(true, if (saved) "like/like" else "like/removelike", body) != null
+        }
+
     suspend fun deleteYouTubePlaylist(playlistId: String, music: Boolean): Boolean =
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext false

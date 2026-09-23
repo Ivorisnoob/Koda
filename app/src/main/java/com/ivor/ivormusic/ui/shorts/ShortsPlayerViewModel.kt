@@ -132,12 +132,39 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     val shorts: StateFlow<List<ShortsItem>> = _shorts.asStateFlow()
 
     /**
-     * Only ids can be filtered here: a sequence entry carries no channel at
-     * all (see ShortsItem), so a channel block cannot pre-empt one. It still
-     * applies the moment a Short is opened and its channel is known.
+     * Hidden Shorts, and Shorts from blocked channels where the entry names
+     * its channel. Most sequence entries do not (see ShortsItem), so a channel
+     * block reaches the rest later: [dropUpcomingIfBlocked] when a prefetched
+     * watch-next names an upcoming Short's channel, and [playIndex] when the
+     * one on screen turns out to be from a blocked channel.
      */
     private fun withoutHidden(items: List<ShortsItem>): List<ShortsItem> =
-        items.filterNot { notInterestedRepository.isVideoHidden(it.videoId) }
+        items.filterNot {
+            notInterestedRepository.isVideoHidden(it.videoId) ||
+                ((it.channelId != null || it.channelName.isNotBlank()) &&
+                    notInterestedRepository.isCreatorBlocked(it.channelId, it.channelName))
+        }
+
+    private fun isFromBlockedChannel(data: com.ivor.ivormusic.data.WatchNextData): Boolean {
+        val id = data.engagement?.channelId ?: data.updatedVideoItem?.channelId
+        val name = data.updatedVideoItem?.channelName
+        if (id == null && name.isNullOrBlank()) return false
+        return notInterestedRepository.isCreatorBlocked(id, name)
+    }
+
+    /**
+     * Take a Short out of the sequence ahead of the one playing, once its
+     * prefetched watch-next shows a blocked channel - before the user reaches
+     * it. Only strictly later positions: removing anything at or before the
+     * current index would move the pager and playback off the Short on screen.
+     */
+    private fun dropUpcomingIfBlocked(videoId: String, data: com.ivor.ivormusic.data.WatchNextData) {
+        if (!isFromBlockedChannel(data)) return
+        val list = _shorts.value
+        val position = list.indexOfFirst { it.videoId == videoId }
+        if (position <= _currentIndex.value) return
+        _shorts.value = list.filterIndexed { index, _ -> index != position }
+    }
 
     private val _currentIndex = MutableStateFlow(0)
     val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
@@ -353,6 +380,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     val data = youtubeRepository.getWatchNextData(id, item.toVideoItem())
                     ensureActive()
                     cacheWatchNext(id, data)
+                    dropUpcomingIfBlocked(id, data)
                 }
             }
         }
@@ -900,6 +928,12 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     ?: youtubeRepository.getWatchNextData(item.videoId, item.toVideoItem())
                         .also { cacheWatchNext(item.videoId, it) }
                 if (_currentIndex.value != index) return@launch
+                // The sequence gave no channel for this one; now there is.
+                // A blocked channel is passed over rather than played.
+                if (isFromBlockedChannel(watchNext)) {
+                    dropCurrentAndAdvance(item.videoId)
+                    return@launch
+                }
                 _engagement.value = watchNext.engagement
                 if (watchNext.updatedVideoItem != null) {
                     _currentVideo.value = watchNext.updatedVideoItem

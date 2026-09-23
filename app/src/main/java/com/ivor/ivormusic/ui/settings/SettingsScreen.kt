@@ -343,6 +343,12 @@ fun SettingsScreen(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String> = emptySet(),
     onShortsHiddenActionsChange: (Set<String>) -> Unit = {},
+    shortsHardBlock: Boolean,
+    onShortsHardBlockToggle: (Boolean) -> Unit,
+    returnDislike: Boolean,
+    onReturnDislikeToggle: (Boolean) -> Unit,
+    contentRegion: String,
+    onContentRegionChange: (String) -> Unit,
     videoQualityWifi: String,
     onVideoQualityWifiChange: (String) -> Unit,
     videoQualityMobile: String,
@@ -359,6 +365,8 @@ fun SettingsScreen(
     onSubscribeTargetChange: (String) -> Unit = {},
     fastSubscriptionFeed: Boolean = true,
     onFastSubscriptionFeedToggle: (Boolean) -> Unit = {},
+    subscriptionRefresh: Int,
+    onSubscriptionRefreshChange: (Int) -> Unit,
     onNavigateToSubscriptions: () -> Unit = {},
     onNavigateToNotInterested: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
@@ -597,6 +605,7 @@ fun SettingsScreen(
     // Dialog state for Folder Exclusion
     var showFolderExclusionDialog by remember { mutableStateOf(false) }
     var showShortsButtonsDialog by remember { mutableStateOf(false) }
+    var showContentRegionSheet by remember { mutableStateOf(false) }
     var showAutoHelpDialog by remember { mutableStateOf(false) }
     var availableFolders by remember { mutableStateOf<List<FolderInfo>>(emptyList()) }
     var isFoldersLoading by remember { mutableStateOf(false) }
@@ -619,6 +628,7 @@ fun SettingsScreen(
         onOpenRoutingPicker = { subscriptionDialogTarget = it },
         onShowAbout = { showAboutDialog = true },
         onShowShortsButtons = { showShortsButtonsDialog = true },
+        onShowContentRegion = { showContentRegionSheet = true },
         onOpenFolderExclusion = openFolderExclusion,
         onNavigateToColorPalette = onNavigateToColorPalette,
         onNavigateToSubscriptions = onNavigateToSubscriptions,
@@ -903,6 +913,12 @@ fun SettingsScreen(
                     onTimedCommentsToggle = onTimedCommentsToggle,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
+                    shortsHardBlock = shortsHardBlock,
+                    onShortsHardBlockToggle = onShortsHardBlockToggle,
+                    returnDislike = returnDislike,
+                    onReturnDislikeToggle = onReturnDislikeToggle,
+                    contentRegion = contentRegion,
+                    onShowContentRegion = { showContentRegionSheet = true },
                     shortsHiddenActions = shortsHiddenActions,
                     onShowShortsButtons = { showShortsButtonsDialog = true },
                     onNavigateToNotInterested = onNavigateToNotInterested,
@@ -925,6 +941,8 @@ fun SettingsScreen(
                     subscribeTarget = subscribeTarget,
                     fastSubscriptionFeed = fastSubscriptionFeed,
                     onFastSubscriptionFeedToggle = onFastSubscriptionFeedToggle,
+                    subscriptionRefresh = subscriptionRefresh,
+                    onSubscriptionRefreshChange = onSubscriptionRefreshChange,
                     onNavigateToSubscriptions = onNavigateToSubscriptions,
                     onOpenRoutingPicker = { subscriptionDialogTarget = it },
                     onBack = { page = SettingsPage.HUB }
@@ -1097,6 +1115,14 @@ fun SettingsScreen(
             onAddExcludedFolder = onAddExcludedFolder,
             onRemoveExcludedFolder = onRemoveExcludedFolder,
             onDismiss = { showFolderExclusionDialog = false }
+        )
+    }
+
+    if (showContentRegionSheet) {
+        ContentRegionSheet(
+            selected = contentRegion,
+            onSelect = onContentRegionChange,
+            onDismiss = { showContentRegionSheet = false }
         )
     }
 

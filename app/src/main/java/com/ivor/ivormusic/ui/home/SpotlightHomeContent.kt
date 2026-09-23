@@ -136,11 +136,13 @@ fun SpotlightHomeContent(
     val discoverySongs by viewModel.discoverySongs.collectAsState()
     val discoveryCollections by viewModel.discoveryCollections.collectAsState()
     val isDiscoveryLoading by viewModel.isDiscoveryLoading.collectAsState()
+    val musicBrowse by viewModel.musicBrowse.collectAsState()
 
     // Fetched when its tab is opened rather than with the rest of Home: it is
     // several searches plus a radio call, and most sessions never look at it.
     LaunchedEffect(filter) {
         if (filter == SpotlightFilter.Recommended) viewModel.loadDiscovery()
+        filter.browseKey()?.let { viewModel.loadMusicBrowse(it) }
     }
 
     val quickPicks = remember(filter, songs, likedSongs, recentlyPlayed, discoverySongs) {
@@ -148,6 +150,7 @@ fun SpotlightHomeContent(
             SpotlightFilter.Liked -> likedSongs
             SpotlightFilter.Recent -> recentlyPlayed
             SpotlightFilter.Recommended -> discoverySongs
+            SpotlightFilter.MusicHome, SpotlightFilter.Explore, SpotlightFilter.Charts, SpotlightFilter.NewReleases -> emptyList()
             else -> songs
         }.take(QUICK_PICK_PAGES * QUICK_PICK_ROWS)
     }
@@ -170,7 +173,10 @@ fun SpotlightHomeContent(
         // something other than what the screen is showing.
         isRefreshing = (isRefreshing || isDiscoveryLoading) && !isInitialLoading,
         onRefresh = {
-            if (filter == SpotlightFilter.Recommended) {
+            val browseKey = filter.browseKey()
+            if (browseKey != null) {
+                viewModel.loadMusicBrowse(browseKey, force = true)
+            } else if (filter == SpotlightFilter.Recommended) {
                 viewModel.loadDiscovery(force = true)
             } else {
                 viewModel.refresh(excludedFolders, manualScan)
@@ -323,6 +329,7 @@ fun SpotlightHomeContent(
 
             if (filter != SpotlightFilter.Playlists &&
                 filter != SpotlightFilter.Recommended &&
+                filter.browseKey() == null &&
                 recentlyPlayed.isNotEmpty()
             ) {
                 item(key = "recent-header") {
@@ -396,7 +403,24 @@ fun SpotlightHomeContent(
 
             // A filter that turned up nothing is a real state, and a blank page
             // reads as a bug rather than as an answer.
-            if (!isInitialLoading && !isDiscoveryLoading && quickPicks.isEmpty() &&
+            filter.browseKey()?.let { key ->
+                val mood = musicBrowse[BROWSE_MOOD]
+                val showingMood = filter == SpotlightFilter.Explore && mood != null
+                musicBrowseItems(
+                    state = if (showingMood) mood!! else musicBrowse[key],
+                    moodTitle = if (showingMood) mood!!.title else null,
+                    onCloseMood = { viewModel.closeMood() },
+                    onRetry = { viewModel.loadMusicBrowse(if (showingMood) BROWSE_MOOD else key, force = true) },
+                    onLoadMore = { viewModel.loadMoreMusicBrowse(if (showingMood) BROWSE_MOOD else key) },
+                    onPlaylistClick = onPlaylistClick,
+                    onArtistClick = { viewModel.requestArtistPage(it.name) },
+                    onPlayTracks = onPlaySongs,
+                    onMoodClick = { viewModel.openMood(it) },
+                    onSongLongPress = onSongLongPress,
+                )
+            }
+
+            if (filter.browseKey() == null && !isInitialLoading && !isDiscoveryLoading && quickPicks.isEmpty() &&
                 (filter == SpotlightFilter.Recommended || shortcuts.isEmpty()) &&
                 (filter != SpotlightFilter.Recommended || discoveryCollections.isEmpty()) &&
                 (filter != SpotlightFilter.Playlists || ownPlaylists.isEmpty())
@@ -456,9 +480,21 @@ internal enum class SpotlightFilter(val label: String, val quickPickCaption: Str
      * entry that answers "what should I listen to that I have not heard".
      */
     Recommended("For you", "Not in your library yet"),
+    MusicHome("Home", null),
+    Explore("Explore", null),
+    Charts("Charts", null),
+    NewReleases("New", null),
     Liked("Liked", "From songs you liked"),
     Recent("Recent", "From what you played lately"),
     Playlists("Playlists", null),
+}
+
+internal fun SpotlightFilter.browseKey(): String? = when (this) {
+    SpotlightFilter.MusicHome -> BROWSE_HOME
+    SpotlightFilter.Explore -> BROWSE_EXPLORE
+    SpotlightFilter.Charts -> BROWSE_CHARTS
+    SpotlightFilter.NewReleases -> BROWSE_NEW
+    else -> null
 }
 
 /** The Spin pool matching what a filter shows, so "spin these" means these. */
@@ -466,7 +502,7 @@ private fun SpotlightFilter.spinSource(): SpinSource = when (this) {
     SpotlightFilter.Recommended -> SpinSource.ForYou
     SpotlightFilter.Liked -> SpinSource.Liked
     SpotlightFilter.Recent -> SpinSource.Recent
-    SpotlightFilter.All, SpotlightFilter.Playlists -> SpinSource.Mix
+    else -> SpinSource.Mix
 }
 
 /**
@@ -530,6 +566,10 @@ private fun spotlightFilterLabel(filter: SpotlightFilter): String = when (filter
     SpotlightFilter.Liked -> stringResource(R.string.filter_liked)
     SpotlightFilter.Recent -> stringResource(R.string.filter_recent)
     SpotlightFilter.Playlists -> stringResource(R.string.filter_playlists)
+    SpotlightFilter.MusicHome -> stringResource(R.string.filter_music_home)
+    SpotlightFilter.Explore -> stringResource(R.string.filter_explore)
+    SpotlightFilter.Charts -> stringResource(R.string.filter_charts)
+    SpotlightFilter.NewReleases -> stringResource(R.string.filter_new_releases)
 }
 
 @Composable
@@ -834,7 +874,7 @@ internal data class ShelfItem(
  * between a shelf and a list with pictures.
  */
 @Composable
-private fun SpotlightShelf(items: List<ShelfItem>, onClick: (String) -> Unit) {
+internal fun SpotlightShelf(items: List<ShelfItem>, onClick: (String) -> Unit) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -916,7 +956,7 @@ private fun PlaylistDisplayItem.toShelfItem(): ShelfItem = ShelfItem(
  * beneath it, so the rail scans as "people" at a glance.
  */
 @Composable
-private fun SpotlightArtistRail(
+internal fun SpotlightArtistRail(
     artists: List<com.ivor.ivormusic.data.ArtistItem>,
     onClick: (com.ivor.ivormusic.data.ArtistItem) -> Unit,
 ) {
@@ -977,7 +1017,7 @@ private fun SpotlightArtistRail(
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun SpotlightSectionHeader(
+internal fun SpotlightSectionHeader(
     title: String,
     subtitle: String? = null,
     actionLabel: String? = null,
@@ -1062,7 +1102,7 @@ private fun SpotlightEmptyState(filter: SpotlightFilter) {
                 SpotlightFilter.Recent -> stringResource(R.string.spotlight_empty_no_recent)
                 SpotlightFilter.Playlists -> stringResource(R.string.spotlight_empty_no_playlists)
                 SpotlightFilter.Recommended -> stringResource(R.string.spotlight_discovery_empty)
-                SpotlightFilter.All -> stringResource(R.string.spotlight_empty_generic)
+                else -> stringResource(R.string.spotlight_empty_generic)
             },
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface,

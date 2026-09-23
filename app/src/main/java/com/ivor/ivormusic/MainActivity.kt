@@ -196,6 +196,9 @@ class MainActivity : ComponentActivity() {
             val playlistSwipeStartAction by themeViewModel.playlistSwipeStartAction.collectAsState()
             val playlistSwipeEndAction by themeViewModel.playlistSwipeEndAction.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
+            val shortsHardBlock by themeViewModel.shortsHardBlock.collectAsState()
+            val returnDislike by themeViewModel.returnDislike.collectAsState()
+            val contentRegion by themeViewModel.contentRegion.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
             val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
@@ -217,6 +220,7 @@ class MainActivity : ComponentActivity() {
             val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
             val subscribeTarget by themeViewModel.subscribeTarget.collectAsState()
             val fastSubscriptionFeed by themeViewModel.fastSubscriptionFeed.collectAsState()
+            val subscriptionRefresh by themeViewModel.subscriptionRefresh.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
@@ -256,6 +260,10 @@ class MainActivity : ComponentActivity() {
                 uiScale = uiScale,
                 paletteStyle = paletteStyle
             ) {
+                val videoListLayout by themeViewModel.videoListLayout.collectAsState()
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.ivor.ivormusic.ui.video.LocalVideoListLayout provides videoListLayout
+                ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
@@ -359,6 +367,12 @@ class MainActivity : ComponentActivity() {
                         onPlaylistSwipeEndActionChange = { themeViewModel.setPlaylistSwipeEndAction(it) },
                         shortsEnabled = shortsEnabled,
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
+                        shortsHardBlock = shortsHardBlock,
+                        onShortsHardBlockToggle = { themeViewModel.setShortsHardBlock(it) },
+                        returnDislike = returnDislike,
+                        onReturnDislikeToggle = { themeViewModel.setReturnDislike(it) },
+                        contentRegion = contentRegion,
+                        onContentRegionChange = { themeViewModel.setContentRegion(it) },
                         shortsHiddenActions = shortsHiddenActions,
                         onShortsHiddenActionsChange = { themeViewModel.setShortsHiddenActions(it) },
                         videoQualityWifi = videoQualityWifi,
@@ -377,6 +391,8 @@ class MainActivity : ComponentActivity() {
                         onSubscribeTargetChange = { themeViewModel.setSubscribeTarget(it) },
                         fastSubscriptionFeed = fastSubscriptionFeed,
                         onFastSubscriptionFeedToggle = { themeViewModel.setFastSubscriptionFeed(it) },
+                        subscriptionRefresh = subscriptionRefresh,
+                        onSubscriptionRefreshChange = { themeViewModel.setSubscriptionRefresh(it) },
                         excludedFolders = excludedFolders,
                         onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
                         onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
@@ -433,6 +449,7 @@ class MainActivity : ComponentActivity() {
                         localOnlyMode = localOnlyMode,
                         onLocalOnlyModeToggle = { themeViewModel.setLocalOnlyMode(it) }
                     )
+                }
                 }
             }
         }
@@ -688,6 +705,12 @@ fun MusicApp(
     onPlaylistSwipeEndActionChange: (String) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
+    shortsHardBlock: Boolean,
+    onShortsHardBlockToggle: (Boolean) -> Unit,
+    returnDislike: Boolean,
+    onReturnDislikeToggle: (Boolean) -> Unit,
+    contentRegion: String,
+    onContentRegionChange: (String) -> Unit,
     shortsHiddenActions: Set<String>,
     onShortsHiddenActionsChange: (Set<String>) -> Unit,
     videoQualityWifi: String,
@@ -706,6 +729,8 @@ fun MusicApp(
     onSubscribeTargetChange: (String) -> Unit,
     fastSubscriptionFeed: Boolean,
     onFastSubscriptionFeedToggle: (Boolean) -> Unit,
+    subscriptionRefresh: Int,
+    onSubscriptionRefreshChange: (Int) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -1262,6 +1287,12 @@ fun MusicApp(
                     onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
+                    shortsHardBlock = shortsHardBlock,
+                    onShortsHardBlockToggle = onShortsHardBlockToggle,
+                    returnDislike = returnDislike,
+                    onReturnDislikeToggle = onReturnDislikeToggle,
+                    contentRegion = contentRegion,
+                    onContentRegionChange = onContentRegionChange,
                     shortsHiddenActions = shortsHiddenActions,
                     onShortsHiddenActionsChange = onShortsHiddenActionsChange,
                     videoQualityWifi = videoQualityWifi,
@@ -1280,6 +1311,8 @@ fun MusicApp(
                     onSubscribeTargetChange = onSubscribeTargetChange,
                     fastSubscriptionFeed = fastSubscriptionFeed,
                     onFastSubscriptionFeedToggle = onFastSubscriptionFeedToggle,
+                    subscriptionRefresh = subscriptionRefresh,
+                    onSubscriptionRefreshChange = onSubscriptionRefreshChange,
                     excludedFolders = excludedFolders,
                     onAddExcludedFolder = onAddExcludedFolder,
                     onRemoveExcludedFolder = onRemoveExcludedFolder,

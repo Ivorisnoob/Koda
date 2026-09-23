@@ -156,7 +156,7 @@ fun ExpandablePlayer(
     // device that keeps its bar on the side) it is short by the same inset.
     // VideoPlayerOverlay solves the same problem with BoxWithConstraints; here
     // the measurement is needed above the layout that would provide it.
-    val windowSize = LocalWindowInfo.current.containerDpSize
+    val windowSize = com.ivor.ivormusic.ui.theme.windowDpSize()
     val screenHeight = windowSize.height
     val screenWidth = windowSize.width
     val density = LocalDensity.current
