@@ -75,7 +75,22 @@ class LyricsRepository internal constructor(
             val providers = (wordProviders + fallbackProviders)
                 .filter { it.name !in configuration.disabledProviders }
                 .sortedBy { configuration.providerOrder.indexOf(it.name).takeIf { rank -> rank >= 0 } ?: it.priority }
-            val stage = fetchStage(providers, request, configuration)
+            var stage = fetchStage(providers, request, configuration)
+            // One second pass when nothing matched: every provider again with
+            // YouTube decoration stripped from the title, or else only the
+            // providers that errored or timed out, since those never answered.
+            if (stage.candidates.isEmpty()) {
+                val cleaned = request.cleanedForSearch()
+                val retry = when {
+                    cleaned != null -> fetchStage(providers, cleaned, configuration)
+                    stage.failedProviders.isNotEmpty() ->
+                        fetchStage(providers.filter { it in stage.failedProviders }, request, configuration)
+                    else -> null
+                }
+                if (retry != null) {
+                    stage = retry.copy(hadFailure = retry.hadFailure || (retry.candidates.isEmpty() && stage.hadFailure))
+                }
+            }
             val best = if (configuration.preferSynced) {
                 stage.candidates.maxByOrNull { it.parsed.syncType.quality }
             } else stage.candidates.firstOrNull()
@@ -113,7 +128,7 @@ class LyricsRepository internal constructor(
         if (providers.isEmpty()) return@supervisorScope ProviderStageResult()
 
         val candidates = mutableListOf<ProviderCandidate>()
-        var errorCount = 0
+        val failed = mutableListOf<RemoteLyricsProvider>()
         val running = providers.map { provider ->
             RunningProvider(
                 provider = provider,
@@ -137,7 +152,7 @@ class LyricsRepository internal constructor(
                 }
                 running.remove(completed)
                 attempt.error?.let { error ->
-                    errorCount++
+                    failed += completed.provider
                     KLog.w(TAG, "${completed.provider.name} lyrics request failed", error)
                 }
                 attempt.parsed
@@ -159,12 +174,14 @@ class LyricsRepository internal constructor(
         candidates.sortBy { providers.indexOf(it.provider) }
 
         val timedOut = earlyWordResult == null && running.isNotEmpty()
+        if (timedOut) failed += running.map { it.provider }
         running.forEach { it.deferred.cancel() }
 
         ProviderStageResult(
             candidates = candidates,
             earlyWordResult = earlyWordResult,
-            hadFailure = timedOut || errorCount > 0
+            hadFailure = failed.isNotEmpty(),
+            failedProviders = failed,
         )
     }
 }
@@ -193,7 +210,9 @@ private data class ProviderCandidate(
 private data class ProviderStageResult(
     val candidates: List<ProviderCandidate> = emptyList(),
     val earlyWordResult: ProviderCandidate? = null,
-    val hadFailure: Boolean = false
+    val hadFailure: Boolean = false,
+    /** Providers that errored or were still running at the deadline. */
+    val failedProviders: List<RemoteLyricsProvider> = emptyList(),
 )
 
 private fun LyricsRequest.cacheKey(): String = buildString {
