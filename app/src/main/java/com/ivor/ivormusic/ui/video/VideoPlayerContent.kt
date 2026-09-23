@@ -1248,12 +1248,19 @@ fun VideoPlayerContent(
     // Long-press options sheet, and the "save" action in the info area
     saveTargetVideo?.let { target ->
         val localVideoPlaylists by viewModel.localVideoPlaylists.collectAsState()
+        val accountContaining by viewModel.accountPlaylistsContainingVideo.collectAsState()
+        LaunchedEffect(target.videoId, isLoggedIn) {
+            if (isLoggedIn && !isLocalPlayback) viewModel.loadVideoPlaylistMembership(target.videoId)
+        }
         VideoOptionsSheet(
             video = target,
             playlists = videoPlaylists,
             isLoading = isVideoPlaylistsLoading,
             onSave = { playlistId, onResult ->
                 viewModel.addVideoToPlaylist(playlistId, target, onResult)
+            },
+            onRemove = { playlistId, onResult ->
+                viewModel.removeVideoFromPlaylist(playlistId, target, onResult)
             },
             onDownload = {
                 saveTargetVideo = null
@@ -1287,9 +1294,12 @@ fun VideoPlayerContent(
                     .toSet()
                 // Signed out the pinned Watch later row saves into the device
                 // list, so that is what says whether it is already there.
-                if (!isLoggedIn &&
-                    com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids
-                ) ids + "WL" else ids
+                when {
+                    !isLoggedIn &&
+                        com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids -> ids + "WL"
+                    isLoggedIn -> ids + accountContaining
+                    else -> ids
+                }
             }
         )
     }

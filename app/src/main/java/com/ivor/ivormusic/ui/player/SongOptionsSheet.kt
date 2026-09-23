@@ -101,21 +101,9 @@ fun SongOptionsSheet(
     onOpenAlbum: (PlaylistDisplayItem) -> Unit = {},
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
-    val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
 
     if (showPlaylists) {
-        AddToPlaylistSheet(
-            playlists = addToPlaylistItems,
-            onPlaylistClick = { playlist ->
-                viewModel.addToPlaylist(playlist.id, song)
-                onDismiss()
-            },
-            onCreateNewClick = { name, desc ->
-                viewModel.createPlaylistWithSong(name, desc, song)
-                onDismiss()
-            },
-            onDismissRequest = onDismiss
-        )
+        SongPlaylistPicker(song = song, viewModel = viewModel, onDismiss = onDismiss)
         return
     }
 

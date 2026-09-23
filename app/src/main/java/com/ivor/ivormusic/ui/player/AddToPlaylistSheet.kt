@@ -40,6 +40,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,7 +66,15 @@ fun AddToPlaylistSheet(
     playlists: List<PlaylistDisplayItem>,
     onPlaylistClick: (PlaylistDisplayItem) -> Unit,
     onCreateNewClick: (String, String?) -> Unit,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    /**
+     * Playlists already holding the item. With [onToggle] set, rows carry a
+     * check box and a tap adds or removes instead of closing the sheet.
+     */
+    containing: Set<String> = emptySet(),
+    /** The account half of [containing] is still loading. */
+    membershipLoading: Boolean = false,
+    onToggle: ((PlaylistDisplayItem, Boolean) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -96,12 +105,23 @@ fun AddToPlaylistSheet(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(bottom = 16.dp)
         ) {
-            Text(
-                stringResource(R.string.add_to_playlist_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
-            )
+            ) {
+                Text(
+                    stringResource(R.string.add_to_playlist_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                if (membershipLoading) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
@@ -135,8 +155,17 @@ fun AddToPlaylistSheet(
                     )
                 }
 
-                items(playlists) { playlist ->
+                items(playlists, key = { it.id }) { playlist ->
+                    val isIn = playlist.id in containing
                     ListItem(
+                        trailingContent = onToggle?.let { toggle ->
+                            {
+                                androidx.compose.material3.Checkbox(
+                                    checked = isIn,
+                                    onCheckedChange = { toggle(playlist, it) }
+                                )
+                            }
+                        },
                         headlineContent = {
                             Text(
                                 playlist.name,
@@ -174,7 +203,9 @@ fun AddToPlaylistSheet(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onPlaylistClick(playlist) }
+                            .clickable {
+                                if (onToggle != null) onToggle(playlist, !isIn) else onPlaylistClick(playlist)
+                            }
                             .padding(horizontal = 16.dp, vertical = 4.dp)
                             .clip(RoundedCornerShape(16.dp)),
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -184,6 +215,51 @@ fun AddToPlaylistSheet(
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+}
+
+/**
+ * [AddToPlaylistSheet] for one song, with check marks: device playlists are
+ * read locally, the account's with one request per open, and a tap adds or
+ * removes without closing. A device file only lists device playlists, since an
+ * account playlist can only hold YouTube songs.
+ */
+@Composable
+fun SongPlaylistPicker(
+    song: com.ivor.ivormusic.data.Song,
+    viewModel: PlayerViewModel,
+    onDismiss: () -> Unit,
+) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val items by viewModel.addToPlaylistItems.collectAsState()
+    val localContents by viewModel.localPlaylistContents.collectAsState()
+    val accountContaining by viewModel.accountPlaylistsContaining.collectAsState()
+    val loading by viewModel.isPlaylistMembershipLoading.collectAsState()
+    LaunchedEffect(song.id) { viewModel.loadPlaylistMembership(song) }
+
+    val localIds = localContents.map { it.id }.toSet()
+    val containing = localContents.filter { list -> list.songs.any { it.id == song.id } }
+        .map { it.id }
+        .toSet() + accountContaining
+    val isYouTube = song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
+
+    AddToPlaylistSheet(
+        playlists = if (isYouTube) items else items.filter { it.id in localIds },
+        onPlaylistClick = {},
+        onCreateNewClick = { name, desc ->
+            viewModel.createPlaylistWithSong(name, desc, song)
+            onDismiss()
+        },
+        onDismissRequest = onDismiss,
+        containing = containing,
+        membershipLoading = loading && isYouTube,
+        onToggle = { playlist, add ->
+            haptics.performHapticFeedback(
+                if (add) androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOn
+                else androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff
+            )
+            viewModel.setPlaylistMembership(playlist.id, song, add)
+        },
+    )
 }
 
 @Composable

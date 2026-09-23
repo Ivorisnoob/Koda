@@ -397,6 +397,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+**See, and change, which playlists hold a song or video.** The add-to-playlist sheets in both modes now tick the playlists that already contain the item, on the device and on the account, and a tap adds or removes it without closing the sheet, like YouTube's own. Opening the sheet costs one account request. Device validation: a song in several playlists, removing and re-adding, reopening the sheet straight after a change, signed out, a device song, and a video in Watch later.
+
 **Upload a local playlist to YouTube Music.** A local playlist's menu gains Upload to YouTube Music when signed in. It creates a private copy on the account (the local one stays) in batches, so a 1,000-song playlist is about twenty requests rather than a thousand, and device-only songs are left out with a count. Device validation: a small and a several-hundred-song playlist, one mixing device files and YouTube songs, leaving the page mid-upload, and a failed network mid-way.
 
 **Videos in music search.** Music search gains a Videos tab that searches regular YouTube and plays what it finds in the music player, for remixes, covers and uploads YouTube Music does not list. Device validation: a query with fan remixes, the tab row at the largest font size on a narrow phone, endless scroll, and lyrics/scrobbling on an upload titled "Artist - Song (Slowed)".

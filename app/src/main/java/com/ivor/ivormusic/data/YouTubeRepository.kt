@@ -7012,6 +7012,20 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * The account playlists holding [videoId], from one www
+     * `playlist/get_add_to_playlist` (only www reports membership). Eventually
+     * consistent - see [PlaylistMembership]. Null signed out or on failure.
+     */
+    suspend fun getPlaylistsContaining(videoId: String): Set<String>? = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext null
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("videoIds", org.json.JSONArray().put(videoId))
+            .put("excludeWatchLater", false)
+        postWatchApi("playlist/get_add_to_playlist", body)?.let(::parsePlaylistsContaining)
+    }
+
+    /**
      * Fetch the per-row playlist item ids ("setVideoId") for a playlist the
      * user can edit. Reordering via edit_playlist identifies rows by these,
      * not by videoId. Values stay occurrence-ordered because duplicate videos

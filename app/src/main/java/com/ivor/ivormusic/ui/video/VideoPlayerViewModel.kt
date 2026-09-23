@@ -3646,6 +3646,34 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * base and no DI to hand one an instance of the other; the store underneath
      * is process-wide, so both see the same list either way.
      */
+    /** Account playlists holding the video a save sheet is open on. */
+    private val videoPlaylistMembership =
+        com.ivor.ivormusic.data.PlaylistMembership(youtubeRepository, viewModelScope)
+    val accountPlaylistsContainingVideo: StateFlow<Set<String>> = videoPlaylistMembership.containing
+
+    /** One account lookup per sheet open. */
+    fun loadVideoPlaylistMembership(videoId: String) = videoPlaylistMembership.load(videoId)
+
+    /** Untick a video in the save sheet; the mirror of adding it. */
+    fun removeVideoFromPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
+            val ok = when {
+                local.isLocal(playlistId) -> {
+                    localVideoPlaylistsRepository.removeVideo(playlistId, video.videoId)
+                    true
+                }
+                playlistId == "WL" && !_isLoggedIn.value -> {
+                    localVideoPlaylistsRepository.removeVideo(local.WATCH_LATER_ID, video.videoId)
+                    true
+                }
+                else -> youtubeRepository.removeFromYouTubePlaylist(playlistId, video.videoId, music = false)
+                    .also { if (it) videoPlaylistMembership.record(playlistId, video.videoId, false) }
+            }
+            onResult(ok)
+        }
+    }
+
     fun addVideoToPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
             val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
@@ -3662,7 +3690,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         playlistId,
                         video.videoId,
                         music = false
-                    )
+                    ).also { if (it) videoPlaylistMembership.record(playlistId, video.videoId, true) }
                 }
             )
         }

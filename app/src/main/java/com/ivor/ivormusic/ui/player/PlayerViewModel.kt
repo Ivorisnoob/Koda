@@ -248,6 +248,44 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             (local + youtube).filterNot { it.id in hiddenIds }
         }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Account playlists holding the song the picker is open on. */
+    private val playlistMembership = com.ivor.ivormusic.data.PlaylistMembership(youTubeRepository, viewModelScope)
+    val accountPlaylistsContaining: StateFlow<Set<String>> = playlistMembership.containing
+    val isPlaylistMembershipLoading: StateFlow<Boolean> = playlistMembership.loading
+
+    /** Device playlists, songs included, for the picker's local check marks. */
+    val localPlaylistContents: StateFlow<List<com.ivor.ivormusic.data.UserPlaylist>> = playlistRepository.userPlaylists
+
+    /**
+     * Prepare the picker for [song]: re-read the device playlists (another
+     * screen's repository instance may have written since) and ask the account
+     * once which of its playlists hold it.
+     */
+    fun loadPlaylistMembership(song: Song) {
+        viewModelScope.launch { playlistRepository.refreshPlaylists() }
+        if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) playlistMembership.load(song.id)
+    }
+
+    /** Tick or untick [song] in a playlist from the picker. */
+    fun setPlaylistMembership(playlistId: String, song: Song, contains: Boolean) {
+        viewModelScope.launch {
+            val isLocal = playlistRepository.userPlaylists.value.any { it.id == playlistId }
+            if (isLocal) {
+                if (contains) playlistRepository.addSongToPlaylist(playlistId, song)
+                else playlistRepository.removeSongFromPlaylist(playlistId, song.id)
+                return@launch
+            }
+            if (song.source != com.ivor.ivormusic.data.SongSource.YOUTUBE) return@launch
+            playlistMembership.record(playlistId, song.id, contains)
+            val ok = if (contains) {
+                youTubeRepository.addToYouTubePlaylist(playlistId, song.id, music = true)
+            } else {
+                youTubeRepository.removeFromYouTubePlaylist(playlistId, song.id, music = true)
+            }
+            if (!ok) playlistMembership.forget(playlistId, song.id)
+        }
+    }
+
     /** Fetch the user's YouTube playlists for the Add to Playlist sheet (once per session). */
     fun loadYouTubePlaylistsForSheet() {
         if (_youtubeAddablePlaylists.value.isNotEmpty() || !youTubeRepository.isLoggedIn()) return

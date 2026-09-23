@@ -149,7 +149,6 @@ fun NowPlayingOptionsSheet(
     onWatchAsVideo: (() -> Unit)? = null,
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
-    val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
 
     // The account's playlists are a network read, and seven of the eight styles
     // never asked for them - their picker listed local playlists only. Asking
@@ -162,18 +161,7 @@ fun NowPlayingOptionsSheet(
         // picker is the same flow one tap on, and a menu that changed palette
         // halfway through it would be the worst of both.
         MaterialTheme(colorScheme = appColorScheme()) {
-            AddToPlaylistSheet(
-                playlists = addToPlaylistItems,
-                onPlaylistClick = { playlist ->
-                    viewModel.addToPlaylist(playlist.id, song)
-                    onDismiss()
-                },
-                onCreateNewClick = { name, desc ->
-                    viewModel.createPlaylistWithSong(name, desc, song)
-                    onDismiss()
-                },
-                onDismissRequest = onDismiss
-            )
+            SongPlaylistPicker(song = song, viewModel = viewModel, onDismiss = onDismiss)
         }
         return
     }
