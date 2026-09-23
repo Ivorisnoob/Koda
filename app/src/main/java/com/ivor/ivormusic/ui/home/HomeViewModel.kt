@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.launch
 
 internal fun shouldWarmSubscriptionFeed(
@@ -496,11 +497,104 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _recentAlbums = MutableStateFlow<List<RecentAlbum>>(emptyList())
     val recentAlbums: StateFlow<List<RecentAlbum>> = _recentAlbums.asStateFlow()
 
+    /**
+     * Whether the device has a validated connection, kept live from the
+     * default-network callback so an offline-only shelf appears when the
+     * signal goes and leaves when it comes back, not on the next refresh.
+     * Starts from [hasNetworkConnection] so the first frame is already right.
+     */
+    val isOnline: StateFlow<Boolean> = kotlinx.coroutines.flow.callbackFlow {
+        val cm = getApplication<Application>()
+            .getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as android.net.ConnectivityManager
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                caps: android.net.NetworkCapabilities,
+            ) {
+                trySend(
+                    caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                        caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                )
+            }
+
+            override fun onLost(network: android.net.Network) {
+                trySend(false)
+            }
+        }
+        trySend(hasNetworkConnection())
+        val registered = runCatching { cm.registerDefaultNetworkCallback(callback) }.isSuccess
+        awaitClose { if (registered) runCatching { cm.unregisterNetworkCallback(callback) } }
+    }.distinctUntilChanged().stateIn(
+        viewModelScope,
+        kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+        true
+    )
+
+    // Classic Home's top artists rail, and the photos found for them so far.
+    // Photos arrive separately and late, so the rail draws immediately with a
+    // monogram and each face fades in when its lookup lands.
+    private val _topArtists = MutableStateFlow<List<TopArtist>>(emptyList())
+    val topArtists: StateFlow<List<TopArtist>> = _topArtists.asStateFlow()
+    private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
+    val artistPhotos: StateFlow<Map<String, String>> = _artistPhotos.asStateFlow()
+    private val artistPhotoCache = com.ivor.ivormusic.data.ArtistPhotoCache(application)
+    private var artistPhotoJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Fill [artistPhotos] for [artists]: cached answers at once, then one artist
+     * search per name the cache cannot answer, one at a time.
+     *
+     * Discretionary fan-out, so it stands down during a rate-limit hold and
+     * offline, and it is capped by the rail's own length. A name is taken only
+     * when the search's top artist carries that exact name: a near miss would
+     * put a stranger's face on someone's favourite artist, and the monogram is
+     * the better answer.
+     */
+    private fun loadArtistPhotos(artists: List<TopArtist>) {
+        artistPhotoJob?.cancel()
+        val known = HashMap<String, String>()
+        val missing = mutableListOf<String>()
+        for (artist in artists) {
+            when (val hit = artistPhotoCache.lookup(artist.name)) {
+                is com.ivor.ivormusic.data.ArtistPhotoCache.Lookup.Photo -> known[artist.name] = hit.url
+                com.ivor.ivormusic.data.ArtistPhotoCache.Lookup.Miss -> Unit
+                com.ivor.ivormusic.data.ArtistPhotoCache.Lookup.Unknown -> missing += artist.name
+            }
+        }
+        _artistPhotos.value = known
+        // Fresh pref read: Local Only is flipped from the settings screen's own
+        // ThemePreferences instance.
+        if (missing.isEmpty() || themePreferences.isLocalOnlyModeEnabled()) return
+        artistPhotoJob = viewModelScope.launch {
+            for (name in missing) {
+                if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld() || !hasNetworkConnection()) return@launch
+                val match = try {
+                    youtubeRepository.searchArtists(name)
+                        .firstOrNull()
+                        ?.takeIf { it.name.trim().equals(name.trim(), ignoreCase = true) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+                val url = com.ivor.ivormusic.data.googleImageAtSize(match?.thumbnailUrl, 288)
+                artistPhotoCache.put(name, url)
+                if (url != null) _artistPhotos.value = _artistPhotos.value + (name to url)
+            }
+        }
+    }
+
     fun refreshRecentlyPlayed(limit: Int = 15) {
         viewModelScope.launch {
             val history = statsRepository.loadHistory() // newest first
             _playCounts.value = history.groupingBy { it.songId }.eachCount()
             _recentAlbums.value = recentAlbumsFrom(history)
+            val artists = topArtistsFrom(history, System.currentTimeMillis())
+            if (artists != _topArtists.value || _artistPhotos.value.isEmpty()) {
+                _topArtists.value = artists
+                loadArtistPhotos(artists)
+            }
             val localSongs = _songs.value
             val seen = mutableSetOf<String>()
             val recents = mutableListOf<Song>()

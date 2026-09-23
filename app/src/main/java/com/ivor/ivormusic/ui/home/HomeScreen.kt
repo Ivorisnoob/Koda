@@ -944,9 +944,51 @@ fun HomeScreen(
                                             // nothing to wait for.
                                             val classicPlaylists by viewModel.userPlaylists.collectAsState()
                                             val classicRecentAlbums by viewModel.recentAlbums.collectAsState()
+                                            val classicLiked by viewModel.likedSongs.collectAsState()
+                                            val classicTopArtists by viewModel.topArtists.collectAsState()
+                                            val classicArtistPhotos by viewModel.artistPhotos.collectAsState()
+                                            val classicOnline by viewModel.isOnline.collectAsState()
+                                            val classicReadyOffline by viewModel.readyOffline.collectAsState()
+                                            val classicDownloads by viewModel.downloadedSongs.collectAsState()
+                                            // The cache changes as a side effect of
+                                            // listening, so it is re-read each time the
+                                            // connection goes, not held from earlier.
+                                            LaunchedEffect(classicOnline) {
+                                                if (!classicOnline) viewModel.refreshReadyOffline()
+                                            }
+                                            val classicOfflineSongs = remember(classicDownloads, classicReadyOffline) {
+                                                (classicDownloads + classicReadyOffline.songs).distinctBy { it.id }
+                                            }
                                             YourMixContent(
+                                                likedCount = classicLiked.size,
+                                                // Straight onto the likes, as the Library's
+                                                // own Liked row opens them.
+                                                onLikedClick = {
+                                                    noteLibraryReturn()
+                                                    viewedPlaylistFromHome = com.ivor.ivormusic.data.PlaylistDisplayItem(
+                                                        context.getString(R.string.liked_songs), "LM", "You", classicLiked.size, null
+                                                    )
+                                                    selectedTab = 2
+                                                },
+                                                topArtists = classicTopArtists,
+                                                artistPhotos = classicArtistPhotos,
+                                                onArtistClick = { artist -> viewModel.requestArtistPage(artist.name) },
+                                                isOffline = !classicOnline,
+                                                offlineSongs = classicOfflineSongs,
+                                                onOfflineSongClick = { song ->
+                                                    playerViewModel.playQueue(classicOfflineSongs, song)
+                                                    showPlayerSheet = true
+                                                },
                                                 recentAlbums = classicRecentAlbums,
                                                 onRecentAlbumClick = { album ->
+                                                    // A device album has a page of its own in
+                                                    // the Library, opened by name.
+                                                    if (album.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
+                                                        noteLibraryReturn()
+                                                        viewedAlbumFromPlayer = album.title
+                                                        selectedTab = 2
+                                                        return@YourMixContent
+                                                    }
                                                     scope.launch {
                                                         val page = viewModel.resolveRecentAlbum(album)
                                                         // The resolve can take a network round
@@ -1716,6 +1758,17 @@ fun YourMixContent(
     playlists: List<com.ivor.ivormusic.data.PlaylistDisplayItem>,
     /** Required: a shelf card left unwired is a dead card. */
     onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit,
+    /** Liked songs, for the tile leading Your playlists; 0 hides it. */
+    likedCount: Int,
+    onLikedClick: () -> Unit,
+    topArtists: List<TopArtist>,
+    artistPhotos: Map<String, String>,
+    onArtistClick: (TopArtist) -> Unit,
+    /** Whether to lead with [offlineSongs]; the shelf exists only offline. */
+    isOffline: Boolean,
+    /** Downloads, then songs cached in full, newest first. */
+    offlineSongs: List<Song>,
+    onOfflineSongClick: (Song) -> Unit,
     /**
      * Carousels on a vertically-scrolling page need a way to reach every item
      * without scrolling sideways; this backs the arrow button in each header.
@@ -1747,6 +1800,10 @@ fun YourMixContent(
     val textColor = MaterialTheme.colorScheme.onBackground
 
     val isRefreshing by viewModel.isLoading.collectAsState()
+
+    // One pass over the merged list: what the user made or saved, and the
+    // mixes YouTube Music generated for them, each to its own rail.
+    val (mixes, ownPlaylists) = remember(playlists) { playlists.partition { isAutoMix(it.name) } }
 
     // Do not leave an infinite transition running behind the loaded Home.
     // Reading its value here invalidates this whole composition on every
@@ -1800,6 +1857,24 @@ fun YourMixContent(
                         isLoading = isInitialLoading,
                         skeletonAlpha = skeletonAlpha
                     )
+                }
+            }
+
+            // Offline, the mix below is mostly songs that need a connection.
+            // What will actually play goes first, and only while it is true.
+            if (isOffline && offlineSongs.isNotEmpty()) {
+                item(key = "ready-offline") {
+                    Column {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        JumpBackInSection(
+                            songs = offlineSongs,
+                            onSongClick = onOfflineSongClick,
+                            onSongLongPress = onSongLongPress,
+                            onShowAll = onShowAllInLibrary,
+                            title = stringResource(R.string.ready_offline),
+                            subtitle = stringResource(R.string.home_offline_subtitle)
+                        )
+                    }
                 }
             }
 
@@ -1858,9 +1933,37 @@ fun YourMixContent(
             item {
                 if (!isInitialLoading) {
                     PlaylistsShelfSection(
-                        playlists = playlists,
+                        title = stringResource(R.string.spotlight_your_playlists),
+                        playlists = ownPlaylists,
                         onPlaylistClick = onPlaylistClick,
-                        onShowAll = onShowAllInLibrary
+                        onShowAll = onShowAllInLibrary,
+                        likedCount = likedCount,
+                        onLikedClick = onLikedClick
+                    )
+                }
+            }
+
+            item {
+                if (!isInitialLoading) {
+                    TopArtistsSection(
+                        artists = topArtists,
+                        photos = artistPhotos,
+                        onArtistClick = onArtistClick
+                    )
+                }
+            }
+
+            // YouTube Music's own generated mixes: kept out of Your playlists
+            // (they churn on their own and would crowd out what was chosen)
+            // and given their own rail rather than dropped, since they are
+            // still some of the best things to put on.
+            item {
+                if (!isInitialLoading) {
+                    PlaylistsShelfSection(
+                        title = stringResource(R.string.home_section_mixes),
+                        playlists = mixes,
+                        onPlaylistClick = onPlaylistClick,
+                        onShowAll = null
                     )
                 }
             }
@@ -2860,9 +2963,11 @@ fun RecentAlbumsSection(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun HomeSectionHeader(
+internal fun HomeSectionHeader(
     title: String,
-    onShowAll: (() -> Unit)? = null
+    onShowAll: (() -> Unit)? = null,
+    /** One line under the title, for a shelf whose reason for being there is not obvious. */
+    subtitle: String? = null
 ) {
     Row(
         modifier = Modifier
@@ -2870,12 +2975,20 @@ private fun HomeSectionHeader(
             .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         if (onShowAll != null) {
             // Default size on purpose: M3's own 40dp container carries a 48dp
             // touch target, and pinning it smaller would break that.
@@ -2894,41 +3007,49 @@ private fun HomeSectionHeader(
 }
 
 /**
- * The user's playlists - local, saved and the account's own - as a rail of
- * covers, so Classic reaches the things the user built without a detour
- * through Library. Same card shape as [JumpBackInSection] below it, for the
- * same reason: captions under the art rule out a masking carousel.
+ * A rail of playlist covers - the user's own playlists, or YouTube Music's
+ * mixes for them - so Classic reaches them without a detour through Library.
+ * Same card shape as [JumpBackInSection], for the same reason: captions under
+ * the art rule out a masking carousel. The caller decides which playlists
+ * belong ([isAutoMix] splits the two shelves).
  *
- * YouTube Music's auto-generated mixes are dropped as Spotlight drops them
- * ([isAutoMix]): they churn on their own and would push out what was chosen.
+ * [likedCount] above zero leads the rail with the Liked songs tile, the one
+ * entry to the user's likes on this Home.
  */
 @Composable
 fun PlaylistsShelfSection(
+    title: String,
     playlists: List<com.ivor.ivormusic.data.PlaylistDisplayItem>,
     onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit,
-    onShowAll: (() -> Unit)? = null
+    onShowAll: (() -> Unit)?,
+    likedCount: Int = 0,
+    onLikedClick: () -> Unit = {}
 ) {
     // distinctBy: a LazyRow key seen twice throws, and three sources merge here.
     val shown = remember(playlists) {
-        playlists.filterNot { isAutoMix(it.name) }.distinctBy { it.id }.take(PLAYLIST_SHELF_ITEMS)
+        playlists.distinctBy { it.id }.take(PLAYLIST_SHELF_ITEMS)
     }
-    if (shown.isEmpty()) return
+    if (shown.isEmpty() && likedCount <= 0) return
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Spacer(modifier = Modifier.height(24.dp))
-        HomeSectionHeader(title = stringResource(R.string.spotlight_your_playlists), onShowAll = onShowAll)
+        HomeSectionHeader(title = title, onShowAll = onShowAll)
 
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (likedCount > 0) {
+                item(key = "liked_tile") {
+                    LikedSongsTile(count = likedCount, onClick = onLikedClick)
+                }
+            }
             items(shown, key = { "playlist_${it.id}" }) { playlist ->
                 Column(
                     modifier = Modifier
                         .width(ARTWORK_SIZE)
-                        .clip(HOME_CARD_SHAPE)
-                        .songRowClick(onClick = { onPlaylistClick(playlist) }, onLongClick = null)
+                        .homeCardClickable(HOME_CARD_SHAPE, onClick = { onPlaylistClick(playlist) })
                         .padding(bottom = CAPTION_BOTTOM_INSET)
                 ) {
                     Box(
@@ -3003,25 +3124,25 @@ fun PlaylistsShelfSection(
 private const val PLAYLIST_SHELF_ITEMS = 20
 
 /** Square artwork edge, and the rail's item width. */
-private val ARTWORK_SIZE = 140.dp
+internal val ARTWORK_SIZE = 140.dp
 
 /**
  * A rail card's shape: the artwork's own 28dp, so the press ripple and the
  * cover share one outline and the ripple is never a square around a rounded
  * picture.
  */
-private val HOME_CARD_SHAPE = RoundedCornerShape(28.dp)
+internal val HOME_CARD_SHAPE = RoundedCornerShape(28.dp)
 
 /**
  * How far captions sit in from a clipped card's edges. At 10dp up from the
  * bottom a 28dp corner has curved in by about 6.6dp, so 8dp at the sides keeps
  * every glyph clear of it.
  */
-private val CAPTION_SIDE_INSET = 8.dp
-private val CAPTION_BOTTOM_INSET = 10.dp
+internal val CAPTION_SIDE_INSET = 8.dp
+internal val CAPTION_BOTTOM_INSET = 10.dp
 
 /** Space between artwork and the first caption line. */
-private val CAPTION_GAP = 8.dp
+internal val CAPTION_GAP = 8.dp
 
 /**
  * The user's own play history, newest first - the "resume what you were doing"
@@ -3040,7 +3161,10 @@ fun JumpBackInSection(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onSongLongPress: ((Song) -> Unit)? = null,
-    onShowAll: (() -> Unit)? = null
+    onShowAll: (() -> Unit)? = null,
+    /** Another rail of songs in the same cards (Ready offline); null is Jump back in. */
+    title: String? = null,
+    subtitle: String? = null
 ) {
     if (songs.isEmpty()) return
 
@@ -3049,7 +3173,11 @@ fun JumpBackInSection(
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        HomeSectionHeader(title = stringResource(R.string.home_section_jump_back_in), onShowAll = onShowAll)
+        HomeSectionHeader(
+            title = title ?: stringResource(R.string.home_section_jump_back_in),
+            onShowAll = onShowAll,
+            subtitle = subtitle
+        )
 
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -3064,8 +3192,8 @@ fun JumpBackInSection(
                 Column(
                     modifier = Modifier
                         .width(ARTWORK_SIZE)
-                        .clip(HOME_CARD_SHAPE)
-                        .songRowClick(
+                        .homeCardClickable(
+                            HOME_CARD_SHAPE,
                             onClick = { onSongClick(song) },
                             onLongClick = onSongLongPress?.let { press -> { press(song) } }
                         )

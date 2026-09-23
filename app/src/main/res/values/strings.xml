@@ -112,6 +112,9 @@
     <!-- Home screen -->
     <string name="home_section_recent_albums">Recent Albums</string>
     <string name="home_section_jump_back_in">Jump back in</string>
+    <string name="home_section_top_artists">Your top artists</string>
+    <string name="home_section_mixes">Mixes for you</string>
+    <string name="home_offline_subtitle">You\'re offline. These play without a connection.</string>
     <string name="your_mix_line1">Your</string>
     <string name="your_mix_line2">Mix</string>
     <string name="update_badge_version">v%1$s</string>
