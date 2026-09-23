@@ -397,6 +397,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+**Text readable in dark mode everywhere.** Text drawn without an explicit color, including video mode's "Up next" header and the related-videos list, was black on dark backgrounds. The theme now gives such text the theme's foreground color app-wide, and two leftover hardcoded colors were moved onto the theme. Device validation: video watch page, Home, Settings and channel pages in dark, light and pure black themes, with dynamic color on and off.
+
 **Playback up to 8x.** Music and video both go up to 8x. The video speed strip adds 2.5x, 3x, 4x and 8x; the music slider became logarithmic so the everyday 0.5x to 2x range keeps most of the travel. The tempo release after an AutoMix transition now changes rate five times instead of twenty-five, since every rate change rebuilds the audio pipeline. Device validation: 4x and 8x video at 1080p and above on a mid-range phone (dropped frames, rebuffering on mobile data), 8x music with AutoMix on, and the slider's feel around 1x.
 
 **Lyrics try harder before giving up.** When no provider finds a match, Koda searches again with the title cleaned of YouTube decoration such as "(Official Video)", "Artist - Title" and feat. credits, and when the title was already clean it retries the providers that failed or timed out. Device validation: official music videos, Topic uploads, songs with featured artists, and a flaky connection.

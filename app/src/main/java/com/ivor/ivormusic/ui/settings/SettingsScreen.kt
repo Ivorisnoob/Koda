@@ -2799,7 +2799,7 @@ private fun FolderItem(
                 colors = CheckboxDefaults.colors(
                     checkedColor = excludedColor,
                     uncheckedColor = secondaryTextColor.copy(alpha = 0.5f),
-                    checkmarkColor = Color.White
+                    checkmarkColor = MaterialTheme.colorScheme.onError
                 )
             )
             

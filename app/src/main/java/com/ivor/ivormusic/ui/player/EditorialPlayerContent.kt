@@ -882,7 +882,7 @@ internal fun EditorialQueueView(
                 Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(26.dp))
             }
             Text(
-                text = "Up Next",
+                text = stringResource(R.string.ps_up_next),
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontFamily = FontFamily.Serif,
                     fontStyle = FontStyle.Italic,
