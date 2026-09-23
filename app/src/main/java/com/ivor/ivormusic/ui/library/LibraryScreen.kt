@@ -111,6 +111,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import androidx.lifecycle.viewModelScope
+import androidx.compose.material.icons.rounded.CloudUpload
 import kotlin.math.roundToInt
 
 /**
@@ -2974,6 +2977,8 @@ fun PlaylistDetailScreen(
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
+    var isUploading by remember(playlist.id) { mutableStateOf(false) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val headerScrolledAway by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
 
@@ -3408,6 +3413,49 @@ fun PlaylistDetailScreen(
                                                     }
                                                 )
                                             }
+                                        }
+                                        if (isLocalPlaylist && isYouTubeConnected && !isUploading &&
+                                            songs.any { it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.lib_upload_ytm)) },
+                                                leadingIcon = { Icon(Icons.Rounded.CloudUpload, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    isUploading = true
+                                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar(
+                                                            shareContext.getString(R.string.lib_upload_ytm_started)
+                                                        )
+                                                    }
+                                                    // Uploaded in the ViewModel's scope, so leaving
+                                                    // the page does not abandon it halfway; only
+                                                    // the result message waits on this screen.
+                                                    val upload = viewModel.viewModelScope.async {
+                                                        viewModel.uploadLocalPlaylistToYouTube(
+                                                            name = resolvedPlaylist.name ?: "",
+                                                            description = resolvedPlaylist.description,
+                                                            songs = songs,
+                                                        )
+                                                    }
+                                                    scope.launch {
+                                                        val (result, skipped) = upload.await()
+                                                        isUploading = false
+                                                        val message = when {
+                                                            result == null -> shareContext.getString(R.string.lib_upload_ytm_failed)
+                                                            result.uploaded < result.total -> shareContext.getString(
+                                                                R.string.lib_upload_ytm_partial, result.uploaded, result.total
+                                                            )
+                                                            skipped > 0 -> shareContext.resources.getQuantityString(
+                                                                R.plurals.lib_upload_ytm_done_skipped, skipped, skipped
+                                                            )
+                                                            else -> shareContext.getString(R.string.lib_upload_ytm_done)
+                                                        }
+                                                        snackbarHostState.showSnackbar(message)
+                                                    }
+                                                }
+                                            )
                                         }
                                         if (canCopyToLocal) {
                                             DropdownMenuItem(

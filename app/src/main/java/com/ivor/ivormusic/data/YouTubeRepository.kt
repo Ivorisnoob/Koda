@@ -47,6 +47,9 @@ class YouTubeRepository(private val context: Context) {
     private val videoHistoryPreferences by lazy { ThemePreferences(context) }
 
     companion object {
+        private const val UPLOAD_CREATE_BATCH = 100
+        private const val UPLOAD_ADD_BATCH = 50
+        private const val UPLOAD_BATCH_PAUSE_MS = 400L
         private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
         @Volatile private var isInitialized = false
         private val newPipeInitLock = Any()
@@ -6857,6 +6860,52 @@ class YouTubeRepository(private val context: Context) {
             null
         }
     }
+
+    /** How an upload went: [uploaded] of [total] songs reached [playlistId]. */
+    data class PlaylistUpload(val playlistId: String, val uploaded: Int, val total: Int)
+
+    /**
+     * Copy a playlist onto the YouTube Music account as a new private playlist.
+     *
+     * Batched so a long playlist costs a handful of writes, not one per song:
+     * `playlist/create` carries the first [UPLOAD_CREATE_BATCH] ids and each
+     * `edit_playlist` carries [UPLOAD_ADD_BATCH] add actions [verified September
+     * 2026: a 100-id create and a 50-action edit both landed every row]. A
+     * failed batch stops the upload and reports how far it got, rather than
+     * retrying writes against an account. Null when nothing was created.
+     */
+    suspend fun uploadPlaylist(title: String, description: String?, videoIds: List<String>): PlaylistUpload? =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn() || videoIds.isEmpty()) return@withContext null
+            val first = videoIds.take(UPLOAD_CREATE_BATCH)
+            val createBody = org.json.JSONObject()
+                .put("context", musicContext())
+                .put("title", title)
+                .put("privacyStatus", "PRIVATE")
+                .put("videoIds", org.json.JSONArray(first))
+            val playlistId = postMusicApi("playlist/create", createBody)
+                ?.let { runCatching { org.json.JSONObject(it).optString("playlistId") }.getOrNull() }
+                ?.takeIf { it.isNotBlank() }
+                ?: return@withContext null
+            var uploaded = first.size
+            for (batch in videoIds.drop(UPLOAD_CREATE_BATCH).chunked(UPLOAD_ADD_BATCH)) {
+                kotlinx.coroutines.delay(UPLOAD_BATCH_PAUSE_MS)
+                val actions = org.json.JSONArray()
+                batch.forEach {
+                    actions.put(org.json.JSONObject().put("action", "ACTION_ADD_VIDEO").put("addedVideoId", it))
+                }
+                val body = org.json.JSONObject()
+                    .put("context", musicContext())
+                    .put("playlistId", playlistId)
+                    .put("actions", actions)
+                if (!editStatusOk(postMusicApi("browse/edit_playlist", body))) break
+                uploaded += batch.size
+            }
+            if (!description.isNullOrBlank()) {
+                renameYouTubePlaylist(playlistId, title, music = true, description = description)
+            }
+            PlaylistUpload(playlistId, uploaded, videoIds.size)
+        }
 
     /**
      * Delete a playlist. playlist/delete only works on playlists the user

@@ -1222,6 +1222,15 @@
     <string name="lib_saved_to_library">Saved to your library</string>
     <string name="lib_copy_editable">Save as editable copy</string>
     <string name="lib_copy_editable_done">Copied to your library. Edit it there.</string>
+    <string name="lib_upload_ytm">Upload to YouTube Music</string>
+    <string name="lib_upload_ytm_started">Uploading to YouTube Music…</string>
+    <string name="lib_upload_ytm_done">Uploaded to YouTube Music as a private playlist</string>
+    <plurals name="lib_upload_ytm_done_skipped">
+        <item quantity="one">Uploaded. %d song on this device only was left out.</item>
+        <item quantity="other">Uploaded. %d songs on this device only were left out.</item>
+    </plurals>
+    <string name="lib_upload_ytm_partial">Uploaded %1$d of %2$d songs to YouTube Music.</string>
+    <string name="lib_upload_ytm_failed">Couldn\'t upload to YouTube Music</string>
     <string name="lib_hide_playlist">Hide from Koda</string>
     <string name="lib_hidden_playlists">Hidden playlists</string>
     <string name="lib_hidden_count">%1$d hidden</string>

@@ -397,6 +397,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 
 ## Shipped
 
+**Upload a local playlist to YouTube Music.** A local playlist's menu gains Upload to YouTube Music when signed in. It creates a private copy on the account (the local one stays) in batches, so a 1,000-song playlist is about twenty requests rather than a thousand, and device-only songs are left out with a count. Device validation: a small and a several-hundred-song playlist, one mixing device files and YouTube songs, leaving the page mid-upload, and a failed network mid-way.
+
 **Videos in music search.** Music search gains a Videos tab that searches regular YouTube and plays what it finds in the music player, for remixes, covers and uploads YouTube Music does not list. Device validation: a query with fan remixes, the tab row at the largest font size on a narrow phone, endless scroll, and lyrics/scrobbling on an upload titled "Artist - Song (Slowed)".
 
 **Watch as video no longer leaves the song behind.** Moving a song to its video now closes the music player, as Listen as music already closed the video player, so the same track is no longer open in both. Device validation: Watch as video from each player style, then Listen as music back, and a mode switch with unrelated content in each player (both must survive).

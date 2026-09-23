@@ -3067,6 +3067,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      *
      * @return the new playlist's id, or null if there was nothing to copy.
      */
+    /**
+     * Upload a local playlist to the YouTube Music account (it stays local
+     * too). Only YouTube songs can travel; device files are counted and left
+     * out. The account library is re-read afterwards so the copy shows up.
+     */
+    suspend fun uploadLocalPlaylistToYouTube(
+        name: String,
+        description: String?,
+        songs: List<Song>,
+    ): Pair<com.ivor.ivormusic.data.YouTubeRepository.PlaylistUpload?, Int> {
+        val ids = songs.filter { it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE }
+            .map { it.id }
+            .distinct()
+        val skipped = songs.size - songs.count { it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE }
+        val result = youtubeRepository.uploadPlaylist(name, description, ids)
+        if (result != null) {
+            runCatching { _youtubePlaylists.value = youtubeRepository.getUserPlaylists() }
+        }
+        return result to skipped
+    }
+
     suspend fun copyPlaylistToLocal(
         name: String,
         description: String?,
