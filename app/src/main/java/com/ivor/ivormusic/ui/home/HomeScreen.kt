@@ -106,6 +106,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -940,10 +941,18 @@ fun HomeScreen(
                                             // data-backed sections rather than a full-screen
                                             // spinner - the top bar, titles and nav have
                                             // nothing to wait for.
+                                            val classicPlaylists by viewModel.userPlaylists.collectAsState()
                                             YourMixContent(
                                                 songs = songs,
                                                 isInitialLoading = isLoading && songs.isEmpty(),
                                                 recentlyPlayed = recentlyPlayed,
+                                                playlists = classicPlaylists,
+                                                // The same Library hand-off Spotlight uses.
+                                                onPlaylistClick = { playlist ->
+                                                    noteLibraryReturn()
+                                                    viewedPlaylistFromHome = playlist
+                                                    selectedTab = 2
+                                                },
                                                 onRecentClick = { song ->
                                                     // Resume from the history rail: the
                                                     // recents are the queue, not the mix.
@@ -1676,6 +1685,10 @@ fun YourMixContent(
     /** Local play history for the "Jump back in" rail. Empty for a new user. */
     recentlyPlayed: List<Song> = emptyList(),
     onRecentClick: (Song) -> Unit = {},
+    /** The merged local, saved and account playlists, as Spotlight shows them. */
+    playlists: List<com.ivor.ivormusic.data.PlaylistDisplayItem>,
+    /** Required: a shelf card left unwired is a dead card. */
+    onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit,
     /**
      * Carousels on a vertically-scrolling page need a way to reach every item
      * without scrolling sideways; this backs the arrow button in each header.
@@ -1809,7 +1822,20 @@ fun YourMixContent(
                     }
                 }
             }
-            
+
+            // Arrives from its own fetch, independently of the mix above, so
+            // it has no skeleton: it appears when it has something and is
+            // absent for someone with no playlists, rather than an empty title.
+            item {
+                if (!isInitialLoading) {
+                    PlaylistsShelfSection(
+                        playlists = playlists,
+                        onPlaylistClick = onPlaylistClick,
+                        onShowAll = onShowAllInLibrary
+                    )
+                }
+            }
+
             item {
                 // No entrance animation on this last section: the staggered
                 // fade/slide above only starts its timer when the item scrolls
@@ -2834,6 +2860,111 @@ private fun HomeSectionHeader(
         }
     }
 }
+
+/**
+ * The user's playlists - local, saved and the account's own - as a rail of
+ * covers, so Classic reaches the things the user built without a detour
+ * through Library. Same card shape as [JumpBackInSection] below it, for the
+ * same reason: captions under the art rule out a masking carousel.
+ *
+ * YouTube Music's auto-generated mixes are dropped as Spotlight drops them
+ * ([isAutoMix]): they churn on their own and would push out what was chosen.
+ */
+@Composable
+fun PlaylistsShelfSection(
+    playlists: List<com.ivor.ivormusic.data.PlaylistDisplayItem>,
+    onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit,
+    onShowAll: (() -> Unit)? = null
+) {
+    // distinctBy: a LazyRow key seen twice throws, and three sources merge here.
+    val shown = remember(playlists) {
+        playlists.filterNot { isAutoMix(it.name) }.distinctBy { it.id }.take(PLAYLIST_SHELF_ITEMS)
+    }
+    if (shown.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Spacer(modifier = Modifier.height(24.dp))
+        HomeSectionHeader(title = stringResource(R.string.spotlight_your_playlists), onShowAll = onShowAll)
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(shown, key = { "playlist_${it.id}" }) { playlist ->
+                Column(
+                    modifier = Modifier
+                        .width(ARTWORK_SIZE)
+                        .songRowClick(onClick = { onPlaylistClick(playlist) }, onLongClick = null)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(ARTWORK_SIZE)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        if (playlist.thumbnailUrl != null) {
+                            // Layered over the icon, so a cover that fails to
+                            // load leaves the playlist glyph rather than a hole;
+                            // the drawn-size cover then over the original, so a
+                            // resize miss costs sharpness, not the picture.
+                            AsyncImage(
+                                model = playlist.thumbnailUrl,
+                                contentDescription = playlist.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                            val sized = com.ivor.ivormusic.data.googleImageAtSize(playlist.thumbnailUrl, 512)
+                            if (sized != null && sized != playlist.thumbnailUrl) {
+                                AsyncImage(
+                                    model = sized,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(CAPTION_GAP))
+
+                    Text(
+                        text = playlist.name,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    val subtitle = when {
+                        playlist.itemCount >= 0 -> androidx.compose.ui.res.pluralStringResource(
+                            R.plurals.n_songs, playlist.itemCount, playlist.itemCount
+                        )
+                        else -> playlist.uploaderName
+                    }
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Covers on the Classic playlists rail; the header arrow reaches the rest. */
+private const val PLAYLIST_SHELF_ITEMS = 20
 
 /** Square artwork edge, and the rail's item width. */
 private val ARTWORK_SIZE = 140.dp
