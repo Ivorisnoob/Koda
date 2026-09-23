@@ -171,7 +171,7 @@ fun EditorialPlayerSheetContent(
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // The two-tone contract: field + accent, nothing else.
     val field = MaterialTheme.colorScheme.primaryContainer

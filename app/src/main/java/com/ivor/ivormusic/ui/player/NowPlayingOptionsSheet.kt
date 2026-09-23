@@ -45,6 +45,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -741,3 +743,14 @@ private fun sliderToSpeed(position: Float): Float =
 
 /** Half a step either side of the recorded speed, so 100% is easy to hit. */
 private const val SPEED_DETENT = 0.03f
+
+/**
+ * Whether the expanded player's options sheet is open. Hoisted into
+ * [ExpandablePlayer] so its swipe-up gesture can open the sheet of whichever
+ * style is showing; each style falls back to its own state without it.
+ */
+internal val LocalNowPlayingOptionsOpen = compositionLocalOf<MutableState<Boolean>?> { null }
+
+@Composable
+internal fun rememberNowPlayingOptionsOpen(): MutableState<Boolean> =
+    LocalNowPlayingOptionsOpen.current ?: remember { mutableStateOf(false) }

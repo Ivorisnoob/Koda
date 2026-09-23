@@ -115,7 +115,7 @@ fun PlayerSheetContent(
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     
     var showQueue by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // 🌟 Stable shapes - prevents "square flash" on initial render
     // IconButtonDefaults.shapes() already uses internal remember/caching

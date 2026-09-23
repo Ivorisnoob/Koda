@@ -125,7 +125,7 @@ fun GesturePlayerSheetContent(
     
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // Sleep timer
     val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
