@@ -1724,6 +1724,16 @@
 
     <!-- Add songs from another playlist -->
     <string name="lib_add_from_playlists">Add from your playlists</string>
+    <string name="lib_edit_details">Edit details</string>
+    <string name="lib_sort_playlist">Sort</string>
+    <string name="lib_sort_title">By title</string>
+    <string name="lib_sort_artist">By artist</string>
+    <string name="lib_sort_album">By album</string>
+    <string name="lib_sort_reverse">Reverse order</string>
+    <string name="lib_sort_shuffle">Shuffle order</string>
+    <string name="lib_sorted">Playlist reordered</string>
+    <string name="lib_playlist_empty">This playlist is empty</string>
+    <string name="lib_album_empty">This album is empty</string>
     <string name="import_title">Add songs</string>
     <string name="import_pick_source">Copy songs from any of your playlists into %1$s.</string>
     <string name="import_select_all">Select all</string>

@@ -52,6 +52,7 @@ import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -558,6 +559,14 @@ enum class LibraryTab(val label: String) {
  * Sort orders for the All tab's track list. Labels state their own direction
  * ("Most played", not "Play count") so the list needs no asc/desc toggle.
  */
+enum class PlaylistSortAction(val label: Int) {
+    Title(R.string.lib_sort_title),
+    Artist(R.string.lib_sort_artist),
+    Album(R.string.lib_sort_album),
+    Reverse(R.string.lib_sort_reverse),
+    Shuffle(R.string.lib_sort_shuffle),
+}
+
 enum class LibrarySortOption(val label: String, val icon: ImageVector) {
     Title("Title", Icons.Rounded.SortByAlpha),
     Artist("Artist", Icons.Rounded.Person),
@@ -2964,6 +2973,7 @@ fun PlaylistDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var songPendingRemoval by remember { mutableStateOf<Song?>(null) }
     var showOverflow by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
     var isReorderMode by remember { mutableStateOf(false) }
     var descriptionExpanded by remember { mutableStateOf(false) }
     var reorderDirty by remember { mutableStateOf(false) }
@@ -3218,6 +3228,37 @@ fun PlaylistDetailScreen(
         }
     }
 
+    val sortLocal: (PlaylistSortAction) -> Unit = { action ->
+        val previous = songRows
+        songRows = when (action) {
+            PlaylistSortAction.Title -> songRows.sortedBy { it.song.title.lowercase() }
+            PlaylistSortAction.Artist -> songRows.sortedWith(
+                compareBy({ it.song.artist.lowercase() }, { it.song.title.lowercase() })
+            )
+            PlaylistSortAction.Album -> songRows.sortedWith(
+                compareBy({ it.song.album.lowercase() }, { it.song.title.lowercase() })
+            )
+            PlaylistSortAction.Reverse -> songRows.reversed()
+            PlaylistSortAction.Shuffle -> songRows.shuffled()
+        }
+        if (songRows != previous) {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songRows.map { it.song })
+            reorderDirty = false
+            scope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = shareContext.getString(R.string.lib_sorted),
+                    actionLabel = shareContext.getString(R.string.undo),
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    songRows = previous
+                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, previous.map { it.song })
+                }
+            }
+        }
+    }
+
     val removeSong: (PlaylistSongRow) -> Unit = { row ->
         val song = row.song
         val previous = songRows
@@ -3353,6 +3394,20 @@ fun PlaylistDetailScreen(
                                         Icon(Icons.Rounded.MoreVert, "More options")
                                     }
                                     DropdownMenu(
+                                        expanded = showSortMenu,
+                                        onDismissRequest = { showSortMenu = false }
+                                    ) {
+                                        PlaylistSortAction.entries.forEach { action ->
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(action.label)) },
+                                                onClick = {
+                                                    showSortMenu = false
+                                                    sortLocal(action)
+                                                }
+                                            )
+                                        }
+                                    }
+                                    DropdownMenu(
                                         expanded = showOverflow,
                                         onDismissRequest = { showOverflow = false }
                                     ) {
@@ -3373,11 +3428,21 @@ fun PlaylistDetailScreen(
                                         }
                                         if (hasRename) {
                                             DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.action_rename)) },
+                                                text = { Text(stringResource(R.string.lib_edit_details)) },
                                                 leadingIcon = { Icon(Icons.Rounded.Edit, null) },
                                                 onClick = {
                                                     showOverflow = false
                                                     showEditDialog = true
+                                                }
+                                            )
+                                        }
+                                        if (isLocalPlaylist && songs.size > 1) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.lib_sort_playlist)) },
+                                                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Sort, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    showSortMenu = true
                                                 }
                                             )
                                         }
@@ -4077,7 +4142,7 @@ fun PlaylistDetailScreen(
                     // fill it rather than only reporting that it is empty.
                     EmptyLibraryState(
                         icon = Icons.Rounded.MusicNote,
-                        title = stringResource(R.string.vl_no_videos),
+                        title = stringResource(if (isAlbum) R.string.lib_album_empty else R.string.lib_playlist_empty),
                         subtitle = "Songs you add to this ${if (isAlbum) "album" else "playlist"} will show up here",
                         action = if (isLocalPlaylist && onAddSongsRequest != null) {
                             {
