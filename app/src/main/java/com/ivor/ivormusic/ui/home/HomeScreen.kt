@@ -1124,7 +1124,7 @@ fun HomeScreen(
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
                         localOnly = localOnly,
-                        requestInitialFocus = !hasExpandedVideoPlayer,
+                        requestInitialFocus = !hasExpandedVideoPlayer && !showPlayerSheet,
                         listState = searchScrollState
                     )
                     2 -> {

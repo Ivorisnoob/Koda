@@ -2595,96 +2595,93 @@ private fun PlaylistTrackRow(
         tonalElevation = 2.dp,
         shadowElevation = shadowElevation.coerceAtLeast(0.dp)
     ) {
-        ListItem(
-            headlineContent = {
+        // A plain Row rather than ListItem: on material3 1.5 alphas a long
+        // headline starved the trailing duration to zero width.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = (if (manageEnabled) Modifier else Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick))
+                .fillMaxWidth()
+                .heightIn(min = 72.dp)
+                .padding(start = 16.dp, end = if (manageEnabled) 4.dp else 16.dp, top = 8.dp, bottom = 8.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.size(48.dp)
+            ) {
+                if (song.albumArtUri != null || song.thumbnailUrl != null) {
+                    AsyncImage(
+                        model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp)
+            ) {
                 Text(
                     song.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = playlistOnGround(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold
                 )
-            },
-            supportingContent = {
-                Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            },
-            leadingContent = {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    if (song.albumArtUri != null || song.thumbnailUrl != null) {
-                        AsyncImage(
-                            model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop
+                Text(
+                    song.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = playlistOnGround().copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (manageEnabled) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onRemove, enabled = !isDragging) {
+                        Icon(
+                            imageVector = Icons.Rounded.RemoveCircleOutline,
+                            contentDescription = "Remove ${song.title}",
+                            tint = MaterialTheme.colorScheme.error
                         )
-                    } else {
-                        Box(contentAlignment = Alignment.Center) {
+                    }
+                    if (reorderEnabled) {
+                        Box(
+                            modifier = dragHandleModifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
-                                Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                imageVector = Icons.Rounded.DragIndicator,
+                                contentDescription = "Reorder ${song.title}",
+                                tint = if (isDragging) {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     }
                 }
-            },
-            // A plain swap, not an AnimatedContent: one transition object per
-            // row is what made entering edit mode stutter, and the controls
-            // appearing is a content change rather than a moving surface.
-            trailingContent = {
-                if (manageEnabled) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onRemove, enabled = !isDragging) {
-                            Icon(
-                                imageVector = Icons.Rounded.RemoveCircleOutline,
-                                contentDescription = "Remove ${song.title}",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        if (reorderEnabled) {
-                            Box(
-                                modifier = dragHandleModifier.size(48.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.DragIndicator,
-                                    contentDescription = "Reorder ${song.title}",
-                                    tint = if (isDragging) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                        }
-                    }
-                } else if (song.duration > 0) {
-                    Text(
-                        formatSongDuration(song.duration),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = playlistOnGround().copy(alpha = 0.7f)
-                    )
-                }
-            },
-            // Manage mode owns the gesture: rows are being dragged and removed
-            // there, so a long press must not open a sheet on top of it.
-            modifier = if (manageEnabled) {
-                Modifier
-            } else {
-                Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick)
-            },
-            // The row's own card is built from the cover, so its text is too.
-            // Left on the defaults it resolves to `onSurface`, the pair for a
-            // theme surface that is not what the row is drawn on.
-            colors = ListItemDefaults.colors(
-                containerColor = Color.Transparent,
-                headlineColor = playlistOnGround(),
-                supportingColor = playlistOnGround().copy(alpha = 0.78f),
-                trailingIconColor = playlistOnGround().copy(alpha = 0.78f)
-            )
-        )
+            } else if (song.duration > 0) {
+                Text(
+                    formatSongDuration(song.duration),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = playlistOnGround().copy(alpha = 0.7f),
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
     }
 }
 
@@ -3076,6 +3073,17 @@ fun PlaylistDetailScreen(
             )
             isFetching.value = false
             loadAttempted = true
+        }
+    }
+
+    LaunchedEffect(resolvedPlaylist.id, isLocalPlaylist, isFetching.value) {
+        if (!isLocalPlaylist || isFetching.value) return@LaunchedEffect
+        val found = viewModel.backfillLocalPlaylistDurations(resolvedPlaylist.id, songRows.map { it.song })
+        if (found.isNotEmpty()) {
+            songRows = songRows.map { row ->
+                found[row.song.id]?.takeIf { row.song.duration <= 0 }
+                    ?.let { row.copy(song = row.song.copy(duration = it)) } ?: row
+            }
         }
     }
 

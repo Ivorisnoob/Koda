@@ -227,6 +227,7 @@ fun SearchScreen(
     listState: androidx.compose.foundation.lazy.LazyListState =
         androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
+    var initialFocusConsumed by remember { mutableStateOf(false) }
     // Saveable, not just remembered: this composable is disposed and rebuilt
     // both on a tab switch (AnimatedContent in HomeScreen only keeps the
     // target tab's subtree composed) and on process death, and a plainly-
@@ -588,7 +589,8 @@ fun SearchScreen(
                     surfaceColor = surfaceColor,
                     textColor = textColor,
                     secondaryTextColor = secondaryTextColor,
-                    requestInitialFocus = requestInitialFocus
+                    requestInitialFocus = requestInitialFocus && !initialFocusConsumed,
+                    onInitialFocusConsumed = { initialFocusConsumed = true }
                 )
             }
             
@@ -1450,14 +1452,19 @@ private fun SearchHeroHeader(
     surfaceColor: Color,
     textColor: Color,
     secondaryTextColor: Color,
-    requestInitialFocus: Boolean
+    requestInitialFocus: Boolean,
+    onInitialFocusConsumed: () -> Unit
 ) {
-    // Auto-focus the search field (and pop the keyboard) when the screen appears
+    // Once per visit: this header is a lazy item, so it re-enters composition
+    // on scroll and relayout, and each re-entry used to pop the keyboard.
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val stillWanted by androidx.compose.runtime.rememberUpdatedState(requestInitialFocus)
     LaunchedEffect(Unit) {
         if (!requestInitialFocus) return@LaunchedEffect
-        delay(150) // let the enter transition settle so focus/IME lands reliably
+        delay(150)
+        if (!stillWanted) return@LaunchedEffect
+        onInitialFocusConsumed()
         focusRequester.requestFocus()
         keyboardController?.show()
     }

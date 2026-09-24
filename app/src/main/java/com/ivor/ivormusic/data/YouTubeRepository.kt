@@ -1595,47 +1595,62 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getRelatedSongs(videoId: String, limit: Int = 25): List<Song> = withContext(Dispatchers.IO) {
         try {
-            val jsonBody = """
-                {
-                    "context": {
-                        "client": {
-                            "clientName": "WEB_REMIX",
-                            "clientVersion": "$WEB_REMIX_VERSION",
-                            "hl": "en",
-                            "gl": "${contentRegion()}"
-                        }
-                    },
-                    "videoId": "$videoId",
-                    "playlistId": "RDAMVM$videoId",
-                    "isAudioOnly": true,
-                    "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
-                }
-            """.trimIndent()
-
-            val requestBuilder = okhttp3.Request.Builder()
-                .url("https://music.youtube.com/youtubei/v1/next")
-                .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .addHeader("User-Agent", getRandomUserAgent())
-                .addHeader("Origin", "https://music.youtube.com")
-
-            // Personalize the radio when logged in; anonymous works fine too.
-            requestBuilder.authenticate(sessionManager.captureSession())
-
-            val response = okHttpClient.newCall(requestBuilder.build()).execute()
-            val body = response.body?.string()
-            if (body.isNullOrEmpty()) return@withContext emptyList()
-
-            val renderers = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(org.json.JSONObject(body), "playlistPanelVideoRenderer", renderers)
-
-            renderers.mapNotNull { parsePlaylistPanelVideo(it) }
+            radioPanelSongs(videoId)
                 .filter { it.id != videoId } // first radio item is the seed itself
                 .distinctBy { it.id }
                 .take(limit)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             KLog.e("YouTubeRepo", "Error fetching related songs for $videoId", e)
             emptyList()
         }
+    }
+
+    /** The song itself as the radio panel describes it: title, artist and length. */
+    suspend fun getSongFromPanel(videoId: String): Song? = withContext(Dispatchers.IO) {
+        try {
+            radioPanelSongs(videoId).firstOrNull { it.id == videoId }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            KLog.w("YouTubeRepo", "No panel entry for $videoId", e)
+            null
+        }
+    }
+
+    private fun radioPanelSongs(videoId: String): List<Song> {
+        val jsonBody = """
+            {
+                "context": {
+                    "client": {
+                        "clientName": "WEB_REMIX",
+                        "clientVersion": "$WEB_REMIX_VERSION",
+                        "hl": "en",
+                        "gl": "${contentRegion()}"
+                    }
+                },
+                "videoId": "$videoId",
+                "playlistId": "RDAMVM$videoId",
+                "isAudioOnly": true,
+                "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
+            }
+        """.trimIndent()
+
+        val requestBuilder = okhttp3.Request.Builder()
+            .url("https://music.youtube.com/youtubei/v1/next")
+            .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .addHeader("User-Agent", getRandomUserAgent())
+            .addHeader("Origin", "https://music.youtube.com")
+
+        // Personalize the radio when logged in; anonymous works fine too.
+        requestBuilder.authenticate(sessionManager.captureSession())
+
+        val response = okHttpClient.newCall(requestBuilder.build()).execute()
+        val body = response.use { it.body?.string() }
+        if (body.isNullOrEmpty()) return emptyList()
+
+        val renderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(org.json.JSONObject(body), "playlistPanelVideoRenderer", renderers)
+        return renderers.mapNotNull { parsePlaylistPanelVideo(it) }
     }
 
     /**

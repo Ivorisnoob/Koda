@@ -44,6 +44,7 @@ internal const val BROWSE_EXPLORE = "FEmusic_explore"
 internal const val BROWSE_CHARTS = "FEmusic_charts"
 internal const val BROWSE_NEW = "FEmusic_new_releases"
 internal const val BROWSE_MOOD = "mood"
+private const val MAX_DURATION_BACKFILL = 30
 
 internal fun shouldWarmSubscriptionFeed(
     source: String,
@@ -3571,6 +3572,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playlistRepository.moveSongInPlaylist(playlistId, fromIndex, toIndex)
         }
+    }
+
+    /**
+     * Looks up lengths for YouTube songs saved without one (added from lists
+     * that carried none) and stores them. Capped per open; the rest fill in on
+     * later visits.
+     */
+    suspend fun backfillLocalPlaylistDurations(playlistId: String, songs: List<Song>): Map<String, Long> {
+        val missing = songs.filter { it.source == SongSource.YOUTUBE && it.duration <= 0 }
+            .distinctBy { it.id }
+            .take(MAX_DURATION_BACKFILL)
+        if (missing.isEmpty() || com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) return emptyMap()
+        val found = mutableMapOf<String, Long>()
+        missing.chunked(3).forEach { batch ->
+            kotlinx.coroutines.coroutineScope {
+                batch.map { song ->
+                    async { song.id to (youtubeRepository.getSongFromPanel(song.id)?.duration ?: 0L) }
+                }.awaitAll()
+            }.filter { it.second > 0 }.forEach { found[it.first] = it.second }
+        }
+        playlistRepository.updateSongDurations(playlistId, found)
+        return found
     }
 
     fun replaceLocalPlaylistSongs(playlistId: String, songs: List<Song>) {
