@@ -698,19 +698,10 @@ fun LibraryMainScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // headlineSmall matches video mode's Library header, which
-                // uses the same string, so switching modes no longer changes
-                // the size of the same word. It also frees the width that
-                // displayLarge's 57sp took: the row now has room for a second
-                // action if one is ever wanted, where before a single button
-                // truncated the title.
-                //
-                // This deliberately leaves the music Home on displayLarge, so
-                // the two are no longer one scale - see issue #118, which is
-                // where a heading system for the whole app belongs.
+                // headlineLarge matches the music Search title beside it.
                 Text(
                     text = stringResource(R.string.tab_library),
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
