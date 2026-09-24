@@ -556,6 +556,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
+    /**
+     * Network advice for the current error when YouTube refused the connection
+     * rather than the video; see [com.ivor.ivormusic.data.connectionAdviceFor].
+     * While it stands, a network change retries on its own.
+     */
+    private val _connectionAdvice = MutableStateFlow<com.ivor.ivormusic.data.ConnectionAdvice?>(null)
+    val connectionAdvice: StateFlow<com.ivor.ivormusic.data.ConnectionAdvice?> =
+        _connectionAdvice.asStateFlow()
+
+    private val connectionWatcher = com.ivor.ivormusic.data.NetworkChangeWatcher(context) {
+        viewModelScope.launch { retryAfterNetworkChange() }
+    }
+
+    init {
+        viewModelScope.launch {
+            _playbackError.collect { error ->
+                // A device video never asked YouTube for anything.
+                val advice = error
+                    ?.takeUnless { _isLocalPlayback.value }
+                    ?.let { com.ivor.ivormusic.data.connectionAdviceFor(context, it) }
+                _connectionAdvice.value = advice
+                if (advice != null) connectionWatcher.start() else connectionWatcher.stop()
+            }
+        }
+    }
+
+    private suspend fun retryAfterNetworkChange() {
+        if (_connectionAdvice.value == null) return
+        KLog.i("VideoPlayerVM", "Network changed while YouTube was refusing the connection; retrying")
+        YouTubeRepository.forgetConnectionVerdicts()
+        youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+        // The user may have moved on or retried while the remint ran.
+        if (_connectionAdvice.value != null) retryPlayback()
+    }
+
     // Video rendering is suspended while the app is not visible - see onEnterBackground()
     private var isVideoSuspended = false
 
@@ -2351,6 +2386,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             playFromExternal()
             return
         }
+        com.ivor.ivormusic.data.YouTubeRequestLedger.begin("video ${video.videoId}")
 
         // Capture the outgoing item before any player state is reset. The
         // explicit session restore position wins; ordinary opens use this
@@ -4071,6 +4107,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     override fun onCleared() {
+        connectionWatcher.stop()
         watchTracker.close()
         super.onCleared()
         // Remove quality change listener to prevent leaks

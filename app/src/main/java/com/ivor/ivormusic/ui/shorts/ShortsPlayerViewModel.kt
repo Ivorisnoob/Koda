@@ -195,6 +195,35 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
+    /** Network advice for a connection refusal; see VideoPlayerViewModel.connectionAdvice. */
+    private val _connectionAdvice = MutableStateFlow<com.ivor.ivormusic.data.ConnectionAdvice?>(null)
+    val connectionAdvice: StateFlow<com.ivor.ivormusic.data.ConnectionAdvice?> =
+        _connectionAdvice.asStateFlow()
+
+    private val connectionWatcher = com.ivor.ivormusic.data.NetworkChangeWatcher(context) {
+        viewModelScope.launch { retryAfterNetworkChange() }
+    }
+
+    init {
+        viewModelScope.launch {
+            _playbackError.collect { error ->
+                val advice = error?.let { com.ivor.ivormusic.data.connectionAdviceFor(context, it) }
+                _connectionAdvice.value = advice
+                if (advice != null) connectionWatcher.start() else connectionWatcher.stop()
+            }
+        }
+    }
+
+    private suspend fun retryAfterNetworkChange() {
+        if (_connectionAdvice.value == null || !_isActive.value) return
+        KLog.i("ShortsPlayerVM", "Network changed while YouTube was refusing the connection; retrying")
+        com.ivor.ivormusic.data.YouTubeRepository.forgetConnectionVerdicts()
+        youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+        // Everything prefetched was resolved under the old address.
+        invalidatePrefetchedQualities()
+        if (_connectionAdvice.value != null && _isActive.value) retryCurrent()
+    }
+
     /**
      * A live broadcast that arrived through the Shorts feed, to be reopened in
      * the main video player.
@@ -233,8 +262,12 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         sequenceLoadJob = null
     }
     private var playJob: Job? = null
+    private var watchNextJob: Job? = null
     private val watchTracker = com.ivor.ivormusic.data.VideoWatchTracker(context, viewModelScope, youtubeRepository)
     private var recoveryJob: Job? = null
+
+    /** When the previous Short started, to tell a swipe streak from a watch. */
+    private var lastPlayIndexAtMs = 0L
 
     // Retry budgets for the current Short, reset by playIndex - see handlePlayerError.
     private var rendererRetryCount = 0
@@ -628,6 +661,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         refreshSequenceForProfile = false
         _isActive.value = false
         playJob?.cancel()
+        watchNextJob?.cancel()
+        // Reopening is a fresh tap, never the tail of a streak.
+        lastPlayIndexAtMs = 0L
         watchTracker.close()
         recoveryJob?.cancel()
         _exoPlayer?.stop()
@@ -853,7 +889,17 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     private fun playIndex(index: Int) {
         val item = _shorts.value.getOrNull(index) ?: return
+        com.ivor.ivormusic.data.YouTubeRequestLedger.begin("short ${item.videoId}")
+        // Mid-streak, a Short with nothing cached waits a moment before any
+        // network work. A cancelled job cannot stop a NewPipe extraction that
+        // has started (eight blocking requests, three fresh visitor ids), so
+        // a skimmer used to pay that in full for every Short flicked past.
+        // Waiting is cheap to cancel; the extraction is not.
+        val now = android.os.SystemClock.elapsedRealtime()
+        val inSwipeStreak = now - lastPlayIndexAtMs < SWIPE_STREAK_MS
+        lastPlayIndexAtMs = now
         playJob?.cancel()
+        watchNextJob?.cancel()
         watchTracker.close()
         recoveryJob?.cancel()
         // Per Short, so a run of unrelated failures across the feed does not
@@ -876,6 +922,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             try {
                 _exoPlayer?.stop()
                 _exoPlayer?.clearMediaItems()
+                if (inSwipeStreak && cachedQualities(item.videoId) == null) {
+                    delay(COLD_RESOLVE_DWELL_MS)
+                }
                 kotlinx.coroutines.withTimeout(15_000L) {
                     val qualities = cachedQualities(item.videoId)
                         ?: resolvePlayableQualities(item.videoId)
@@ -922,9 +971,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         // Phase 2: one watch-next call fills engagement + real metadata
         // (title, channel, avatar) — sequence entries arrive with id only.
         // Prefetched payloads make the metadata and like rail appear at once.
-        viewModelScope.launch {
+        // Tracked, and gated like the streams above: a Short flicked past no
+        // longer leaves its /next behind it.
+        watchNextJob = viewModelScope.launch {
             try {
-                val watchNext = cachedWatchNext(item.videoId)
+                val cached = cachedWatchNext(item.videoId)
+                if (cached == null && inSwipeStreak) delay(COLD_RESOLVE_DWELL_MS)
+                val watchNext = cached
                     ?: youtubeRepository.getWatchNextData(item.videoId, item.toVideoItem())
                         .also { cacheWatchNext(item.videoId, it) }
                 if (_currentIndex.value != index) return@launch
@@ -938,6 +991,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 if (watchNext.updatedVideoItem != null) {
                     _currentVideo.value = watchNext.updatedVideoItem
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w("ShortsPlayerVM", "watch-next failed for ${item.videoId}", e)
             }
@@ -1291,6 +1346,21 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         private const val SHORTS_CACHE_OWNER = "shorts"
         private const val PREFETCH_SETTLE_MS = 750L
 
+        /**
+         * A Short started within this long of the previous one is part of a
+         * swipe streak. Long enough to cover a flick and its settle animation;
+         * a Short actually watched, even briefly, is outside it, so ordinary
+         * swiping never waits.
+         */
+        private const val SWIPE_STREAK_MS = 1_500L
+
+        /**
+         * How long a cold Short in a streak waits before its extraction and
+         * /next start. Spent under the thumbnail and spinner; a Short passed
+         * within it costs no requests at all.
+         */
+        private const val COLD_RESOLVE_DWELL_MS = 450L
+
         /** Speculative work is limited to the immediate next Short. */
         private const val STREAM_PREFETCH_AHEAD = 1
 
@@ -1314,6 +1384,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     override fun onCleared() {
+        connectionWatcher.stop()
         cancelPrefetch()
         watchTracker.close()
         super.onCleared()

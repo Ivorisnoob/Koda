@@ -58,7 +58,9 @@ These are not goals. They are the walls the roadmap has to fit inside, and any p
 
 ## Known defects
 
-There are no diagnosed, still-open defects recorded here for version 4.7. Fixed diagnoses are retained under [Shipped](#shipped), where they cannot be mistaken for current behaviour.
+Fixed diagnoses are retained under [Shipped](#shipped), where they cannot be mistaken for current behaviour.
+
+- **With captions on, each video still makes one extra `/player`.** `ensureCaptionsLoaded` runs as the video starts, in parallel with stream resolution, so `getCaptionTracks` finds the caption cache empty and asks `ANDROID_VR` (plus a `timedtext`) for tracks the visionOS response is about to deliver. Seen in `YTRequests` lines September 2026. Fix by loading the track list after the stream phase, or by awaiting the in-flight resolution.
 
 ---
 
@@ -396,6 +398,8 @@ Realistically it shares the data layer and almost nothing else. That makes it th
 ---
 
 ## Shipped
+
+**A song, video or Short is one request, and no new identity.** Every play used to run a NewPipe extraction: eight requests that minted three brand-new anonymous visitor ids each time, so a Shorts session showed YouTube about 45 new visitors a minute from one address - the pattern its bot check looks for, and the likeliest reason refusals were reported mostly in video mode. Playback now resolves with one visionOS `/player` under the visitorData Koda already holds, with HDR, captions and the seek-preview storyboard from the same response; NewPipe stays as the fallback. Measured on a device with the new per-open request log: 8 requests and 3 new ids down to 2 and 0 per video or Short, and to 1 and 0 per song. Shorts flicked past in under a second no longer resolve at all. When YouTube does refuse the connection, the players say what to do on that kind of network (airplane mode on mobile data, another network on Wi-Fi, another server on a VPN), open Android's internet panel, and resume playback on their own once the network changes. Device validation should cover a video over an hour played near its end, scrub previews, captions, live, dubbed audio, HDR, music quality settings and downloads, and the advice card in the inline, fullscreen, vertical live and Shorts layouts at large font scale.
 
 **September 2026 batch (#291 #285 #277 #240 #242 #139 #276 #266 #274).** Window sizes measured in the scaled density (`windowDpSize()`); a Content region setting (`gl` only, `hl` stays `en` for the parsers) plus blocked channels kept out of Shorts; Fully block Shorts (channel tab/shelves, NewPipe search); 30s sleep fade ending on the deadline; opt-in read-only Return YouTube Dislike; Save also likes into the account library when signed in; subscription feed refresh interval with a per-profile cache; Cards/Compact/Grid video lists via `LocalVideoListLayout`; Spotlight Home/Explore/Charts/New tabs from `parseMusicShelves` (WEB_REMIX, continuations in the body). Classic Home gained Your playlists, Liked tile, top artists, mixes, Ready offline and real Recent albums. Device validation pending for all. Playlists: local playlists sort (title/artist/album/reverse/shuffle, with undo) and export as m3u8; Library > Playlists imports m3u/m3u8 and NewPipe/PipePipe backups (local playlists become Koda playlists, saved ones become saved references), reporting skipped files and non-YouTube entries. The NewPipe playlist tables are read by column name and have not been checked against a real export yet.
 

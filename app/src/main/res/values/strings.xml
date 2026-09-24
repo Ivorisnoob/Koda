@@ -738,6 +738,16 @@
     <string name="loading">Loading...</string>
     <string name="load_more">Load More</string>
 
+    <!-- Connection refused by YouTube (video, Shorts) -->
+    <string name="conn_refused_title">YouTube is limiting this connection</string>
+    <string name="conn_refused_mobile">Turn airplane mode on for a few seconds, then off. Your carrier usually gives you a new address.</string>
+    <string name="conn_refused_wifi">Switch to mobile data for a while, or join a different Wi-Fi network.</string>
+    <string name="conn_refused_vpn">Your VPN\'s address is being limited. Try another server, or turn the VPN off.</string>
+    <string name="conn_refused_other">Try a different network for a while.</string>
+    <string name="conn_refused_wait">Waiting a few minutes also helps.</string>
+    <string name="conn_refused_auto_retry">Plays again by itself once your connection changes</string>
+    <string name="conn_refused_change_network">Change network</string>
+
     <!-- Shorts -->
     <string name="sh_playback_failed">Playback failed</string>
     <string name="cd_close_shorts">Close Shorts</string>

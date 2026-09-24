@@ -154,6 +154,7 @@ fun ShortsPlayerOverlay(
     val isBuffering by viewModel.isBuffering.collectAsState()
     val isResolving by viewModel.isResolving.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
+    val connectionAdvice by viewModel.connectionAdvice.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     // Account subscription OR device subscription - engagement only knows the
     // first, and read alone it showed "Subscribe" for locally followed channels.
@@ -392,7 +393,15 @@ fun ShortsPlayerOverlay(
                         }
                     }
 
-                    if (playbackError != null) {
+                    val advice = connectionAdvice
+                    if (playbackError != null && advice != null) {
+                        // Refused connection: network advice in place of the
+                        // failure card, whose Retry would fail the same way.
+                        com.ivor.ivormusic.ui.components.ConnectionAdviceCard(
+                            advice = advice,
+                            onRetry = { viewModel.retryCurrent() },
+                        )
+                    } else if (playbackError != null) {
                         Surface(
                             modifier = Modifier
                                 .align(Alignment.Center)

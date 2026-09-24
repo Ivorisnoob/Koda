@@ -243,16 +243,16 @@ class MusicService : MediaLibraryService() {
         private const val PREFETCH_AHEAD_COUNT = 3
         private const val MAX_RESOLVED_URI_ENTRIES = 128
         private const val MAX_WARMED_IDS = 256
-        // Covers the maintained NewPipe extraction and the direct InnerTube
-        // fallback; their individual requests are also bounded by OkHttp.
+        // Covers the direct visionOS call and the NewPipe fallback behind it;
+        // their individual requests are also bounded by OkHttp.
         //
         // This timeout does not itself interrupt anything - both paths block
         // inside OkHttp, so it can only discard a late result, and a discarded
         // result is a skipped song. The budgets underneath are what keep the
-        // arithmetic inside it: YouTubeRepository gives NewPipe
-        // NEWPIPE_STREAM_BUDGET_MS (8s) before handing over, and each direct
-        // /player call is capped at 8s by streamResolveClient, so the ordinary
-        // failing case is one budget plus one client and lands well inside 20s.
+        // arithmetic inside it: each direct /player call is capped at 8s by
+        // streamResolveClient, and YouTubeRepository gives NewPipe
+        // NEWPIPE_STREAM_BUDGET_MS (8s), so the ordinary failing case is one
+        // client plus one budget and lands inside 20s.
         // Lowering either one without the other reintroduces the case where a
         // working fallback exists and is never reached.
         private const val RESOLVE_TIMEOUT_MS = 20_000L
@@ -925,6 +925,9 @@ class MusicService : MediaLibraryService() {
             super.onMediaItemTransition(mediaItem, reason)
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) lastFmTracker?.reset()
             automaticTransitionAttempt = null
+            mediaItem?.mediaId?.let {
+                com.ivor.ivormusic.data.YouTubeRequestLedger.begin("song $it")
+            }
 
             // 1. Loudness correction for the new track, before anything sets a
             // volume. It may still be unknown here - an unresolved song has not
@@ -1304,7 +1307,7 @@ class MusicService : MediaLibraryService() {
         }
 
         // 4. Network with Retry
-        // YouTubeRepository owns the NewPipe-first client fallback. This layer
+        // YouTubeRepository owns the visionOS-first client fallback. This layer
         // bounds the whole resolution and handles playback-time re-resolution.
         return try {
             val result = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {

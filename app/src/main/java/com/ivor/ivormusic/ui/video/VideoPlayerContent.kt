@@ -198,6 +198,7 @@ fun VideoPlayerContent(
     val sleepTimerEndOfVideo by viewModel.sleepTimerEndOfVideo.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
+    val connectionAdvice by viewModel.connectionAdvice.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     // Account subscription OR device subscription - engagement only knows the
     // first, and read alone it showed "Subscribe" for locally followed channels.
@@ -674,6 +675,7 @@ fun VideoPlayerContent(
                 onToggleControls = { showControls = !showControls },
                 hasError = playbackError != null,
                 errorMessage = playbackError?.message ?: "",
+                connectionAdvice = connectionAdvice,
                 isLoading = isLoading,
                 isBuffering = isBuffering,
                 isPlaying = isPlaying,
@@ -891,6 +893,7 @@ fun VideoPlayerContent(
                     isBuffering = isBuffering,
                     hasError = playbackError != null,
                     errorMessage = playbackError?.message ?: "",
+                    connectionAdvice = connectionAdvice,
                     progress = progress,
                     bufferedProgress = bufferedProgress,
                     duration = duration,
@@ -1009,6 +1012,7 @@ fun VideoPlayerContent(
                         onToggleControls = { showControls = !showControls },
                         hasError = playbackError != null,
                         errorMessage = playbackError?.message ?: "",
+                        connectionAdvice = connectionAdvice,
                         isLoading = isLoading,
                         isBuffering = isBuffering,
                         isPlaying = isPlaying,

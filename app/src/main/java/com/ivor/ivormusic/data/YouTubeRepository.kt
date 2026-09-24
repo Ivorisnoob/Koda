@@ -339,6 +339,18 @@ class YouTubeRepository(private val context: Context) {
             botCheckVerdictAtMs = System.currentTimeMillis()
         }
 
+        /**
+         * The device moved to a different network, so the verdicts YouTube
+         * passed on the old address no longer describe this one: drop the
+         * bot-check verdict, the 429 hold and every ladder resolved under the
+         * old address. The caller remints visitorData on the new one.
+         */
+        fun forgetConnectionVerdicts() {
+            botCheckVerdictAtMs = 0L
+            YouTubeRateLimit.clear()
+            VideoStreamResolutionCache.clear()
+        }
+
         private fun clearBotCheckVerdict() {
             if (botCheckVerdictAtMs != 0L) {
                 botCheckVerdictAtMs = 0L
@@ -408,6 +420,9 @@ class YouTubeRepository(private val context: Context) {
             }
             chain.proceed(chain.request())
         }
+        // After the kill-switch, so a request local-only mode refused is not
+        // counted as one YouTube saw.
+        .addInterceptor(YouTubeRequestLedger)
         // Folds Google's rotated session cookies back into storage. Without it
         // the login snapshot goes stale on its own and every authenticated
         // endpoint quietly answers as signed out. A *network* interceptor
@@ -997,33 +1012,49 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
 
-        // Primary: NewPipe's maintained Android/visionOS client chain. Direct
-        // ANDROID_VR URLs can start successfully and then hit GVS's progressive
-        // byte ceiling on long media, which is the same failure that moved video
-        // playback to NewPipe first. Audio must use the maintained path too or a
-        // long song can fail only after it has already been playing for a while.
+        // Primary: one visionOS /player under Koda's own visitorData, the same
+        // resolver video and Shorts use - see resolveVisionOsPlayer for why it
+        // replaced NewPipe (eight requests and three fresh visitor ids per song,
+        // times three for the songs prefetched ahead). visionOS URLs serve the
+        // whole file in bounded ranges [verified September 2026: a 141-minute
+        // audio track downloaded whole], unlike ANDROID_VR's below.
+        val direct = resolveVisionOsPlayer(videoId)
+        direct.response?.streamingData
+            ?.let { pickAudioStreamUrl(videoId, it) }
+            ?.let { url ->
+                clearBotCheckVerdict()
+                KLog.i(
+                    "YouTubeRepository",
+                    "Resolve[visionOS] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
+                )
+                return@withContext Result.success(url)
+            }
+
+        // Fallback: NewPipe's maintained Android/visionOS client chain, with
+        // identities of its own.
         //
         // Bounded, because being slow here used to be indistinguishable from
         // failing: the extraction is eight blocking requests (see newPipeClient)
         // and the caller's own timeout could not interrupt one, so a stalled
-        // primary path ran out MusicService's whole resolution budget and the
-        // song resolved to an error URI and was skipped - with a working
-        // fallback sitting unused behind it.
+        // path ran out MusicService's whole resolution budget and the song
+        // resolved to an error URI and was skipped - with a working fallback
+        // sitting unused behind it.
         val newPipe = resolveAudioUrlWithinBudget(videoId)
         val newPipeUrl = newPipe.url
         if (!newPipeUrl.isNullOrEmpty()) {
             clearBotCheckVerdict()
             KLog.i(
                 "YouTubeRepository",
-                "Resolve[NewPipe] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
+                "Resolve[NewPipe fallback] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
             )
             return@withContext Result.success(newPipeUrl)
         }
 
-        // Last-resort fallback: the older direct /player chain. It can still
-        // cover a client-specific NewPipe extraction failure, but its progressive
-        // URLs must not be the normal path for the reason above.
-        val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked)
+        // Last resort: the ANDROID_VR -> IOS chain. It can still cover a
+        // client-specific failure, but never the normal path: ANDROID_VR URLs
+        // can start and then hit googlevideo's progressive byte ceiling on long
+        // media, so a long song fails after it has already been playing.
+        val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked || direct.botChecked)
             ?.let { pickAudioStreamUrl(videoId, it) }
         val dt = System.currentTimeMillis() - startMs
         if (!innerTubeUrl.isNullOrEmpty()) {
@@ -1051,6 +1082,14 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getDownloadAudioStreamUrl(videoId: String): Result<String> =
         withContext(Dispatchers.IO) {
+            // Same order as getStreamUrl: visionOS under Koda's own identity,
+            // then NewPipe, then the direct chain.
+            val direct = resolveVisionOsPlayer(videoId)
+            direct.response?.streamingData?.let(::pickM4aAudioStreamUrl)?.let { url ->
+                clearBotCheckVerdict()
+                return@withContext Result.success(url)
+            }
+
             val newPipe = resolveM4aAudioUrlViaNewPipe(videoId)
             val newPipeUrl = newPipe.url
             if (!newPipeUrl.isNullOrBlank()) {
@@ -1058,7 +1097,7 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext Result.success(newPipeUrl)
             }
 
-            val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked)
+            val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked || direct.botChecked)
                 ?.let(::pickM4aAudioStreamUrl)
             if (!innerTubeUrl.isNullOrBlank()) return@withContext Result.success(innerTubeUrl)
 
@@ -2190,6 +2229,8 @@ class YouTubeRepository(private val context: Context) {
          * playability.
          */
         val loudnessDb: Float? = null,
+        /** The scrub-preview storyboard from `storyboards`; see [parseStoryboardSeekPreview]. */
+        val seekPreview: VideoSeekPreview? = null,
     )
 
     /**
@@ -2305,19 +2346,59 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Resolve the direct visionOS response used only to augment an otherwise
-     * successful NewPipe extraction with HDR formats. Its VP9.2 HDR URLs
-     * serve bounded ranges across all HDR itags 330-337 without throttling.
+     * A direct visionOS `/player` resolution, and whether the bot check refused
+     * it even after a fresh identity - which the fallbacks behind it need, so
+     * they do not remint for a refusal that is already known.
      */
-    private suspend fun resolveVisionOsStreamingData(videoId: String): org.json.JSONObject? {
-        val visitorData = getVisitorData()
-        val first = fetchVisionOsPlayerResponse(videoId, visitorData)
-        first.streamingData?.let { return it }
-        if (!first.visitorDataSuspect || isBotCheckVerdictActive()) return null
+    private class VisionOsResolution(val response: PlayerResponse?, val botChecked: Boolean)
 
-        val fresh = remintVisitorData(flagged = visitorData) ?: return null
-        if (fresh == visitorData) return null
-        return fetchVisionOsPlayerResponse(videoId, fresh).streamingData
+    /**
+     * Resolve a video's streams with one visionOS `/player` call carrying
+     * Koda's own persisted visitorData.
+     *
+     * This is the primary video and Shorts resolver because of what it does
+     * not do. A NewPipe v0.26.5 extraction is eight requests and mints three
+     * brand-new anonymous visitor ids every time [verified September 2026 on
+     * device through YouTubeRequestLedger: visitor_id(ANDROID),
+     * reel_item_watch, visitor_id(VISIONOS), player(VISIONOS), visitor_id(WEB),
+     * player(WEB), next, and sw.js once per process] - so every video opened
+     * and every Short swiped showed YouTube three new visitors from one
+     * address, the pattern its bot check is built to catch. One call under the
+     * identity Koda already holds is the same work without that signature.
+     *
+     * [verified September 2026, `.probe/visionos_reuse_probe.py`] One WEB-minted
+     * visitorData reused across videos: visionOS answered OK with a plain URL
+     * on every format (none ciphered, none SABR-only) for ordinary, 2-hour and
+     * live videos; bounded ranges were served at 0/25/50/90% and the tail of
+     * audio and 1080p video, 3.7 GB into a 2-hour file; a 141-minute audio
+     * track downloaded whole in 10 MB ranges; live returned an HLS master with
+     * every variant; HDR itags 330-337 were present with ranges served to 95%;
+     * and its caption URLs serve WebVTT without a PO token. NewPipe's own dev
+     * branch dropped every stream client except visionOS in August 2026.
+     *
+     * The same response carries HDR, captions and the storyboard, so the HDR
+     * augmentation call and a CC tap's `/player` both disappear with it.
+     */
+    private suspend fun resolveVisionOsPlayer(videoId: String): VisionOsResolution {
+        var visitorData = getVisitorData()
+        // Same reasoning as resolvePlayerStreamingData: without a token the
+        // refusal is already known, so mint before spending the request.
+        if (visitorData.isBlank()) visitorData = remintVisitorData(flagged = "").orEmpty()
+        val first = fetchVisionOsPlayerResponse(videoId, visitorData)
+        if (first.streamingData != null) return VisionOsResolution(first, botChecked = false)
+        if (!first.visitorDataSuspect) return VisionOsResolution(null, botChecked = false)
+        if (isBotCheckVerdictActive()) return VisionOsResolution(null, botChecked = true)
+
+        KLog.w(
+            "YouTubeRepository",
+            "Resolve[visionOS] visitorData flagged by bot check, reminting videoId=$videoId",
+        )
+        val fresh = remintVisitorData(flagged = visitorData)
+        if (fresh == null || fresh == visitorData) return VisionOsResolution(null, botChecked = false)
+        val retry = fetchVisionOsPlayerResponse(videoId, fresh)
+        if (retry.streamingData != null) return VisionOsResolution(retry, botChecked = false)
+        if (retry.visitorDataSuspect) noteBotCheckVerdict(videoId)
+        return VisionOsResolution(null, botChecked = retry.visitorDataSuspect)
     }
 
     private suspend fun fetchVisionOsPlayerResponse(
@@ -2419,10 +2500,16 @@ class YouTubeRepository(private val context: Context) {
             ?.takeIf { it.isNotEmpty() }?.let { return it }
 
         // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).
-        // ExoPlayer happily plays just the audio track of these.
-        val muxedFormats = formats.filter {
-            it.optString("mimeType").startsWith("video/") && hasPlayableUrl(it)
-        }
+        // ExoPlayer happily plays just the audio track of these. Only
+        // `formats` is muxed: every video/ entry in adaptiveFormats is
+        // video-only, and the lowest-bitrate one used to win here - a silent
+        // 144p stream. [verified September 2026: visionOS returns an empty
+        // `formats`, so on the primary path this fallback finds nothing rather
+        // than something silent.]
+        val muxedFormats = streamingData.optJSONArray("formats")
+            ?.let { arr -> (0 until arr.length()).mapNotNull(arr::optJSONObject) }
+            .orEmpty()
+            .filter { it.optString("mimeType").startsWith("video/") && hasPlayableUrl(it) }
         muxedFormats.minByOrNull { it.optInt("bitrate") }?.optString("url")
             ?.takeIf { it.isNotEmpty() }?.let {
                 KLog.w(
@@ -2558,7 +2645,10 @@ class YouTubeRepository(private val context: Context) {
                 // of a stale/missing visitorData.
                 return@withContext PlayerResponse(null, true, captionTracks, loudnessDb)
             }
-            PlayerResponse(streamingData, false, captionTracks, loudnessDb)
+            // Best-effort, like the NewPipe path it replaces: a malformed spec
+            // costs the scrub preview, never the stream.
+            val seekPreview = runCatching { parseStoryboardSeekPreview(root) }.getOrNull()
+            PlayerResponse(streamingData, false, captionTracks, loudnessDb, seekPreview)
         } catch (e: CancellationException) {
             // Swallowing this would report a cancelled call as a client that
             // has no streams, sending the chain on to the next client inside a
@@ -5049,59 +5139,44 @@ class YouTubeRepository(private val context: Context) {
         videoId: String,
         includeHdr: Boolean = false,
     ): VideoStreamResult = withContext(Dispatchers.IO) {
-        // NewPipe already performs this visionOS call internally, but v0.26.5
-        // drops HDR itags 330-337 because they are absent from its ItagItem
-        // table. When HDR is requested, run the raw visionOS request in parallel
-        // to recover those otherwise discarded formats.
-        val visionOsResult = if (includeHdr) {
-            async {
-                try {
-                    resolveVisionOsStreamingData(videoId)
-                        ?.let { parseQualitiesFromStreamingData(it, includeHdr = true) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    KLog.w("YouTubeRepo", "visionOS HDR resolution failed for $videoId", e)
-                    null
-                }
+        // Primary: one visionOS /player under Koda's own visitorData. See
+        // resolveVisionOsPlayer for why this is not NewPipe any more. The
+        // direct parser keeps HDR itags 330-337 that NewPipe v0.26.5's ItagItem
+        // table drops, so HDR comes from this same response rather than from a
+        // second request merged into NewPipe's ladder as it used to.
+        val direct = resolveVisionOsPlayer(videoId)
+        direct.response?.let { response ->
+            val qualities = response.streamingData
+                ?.let { parseQualitiesFromStreamingData(it, includeHdr) }
+                .orEmpty()
+            if (qualities.isNotEmpty()) {
+                clearBotCheckVerdict()
+                // Makes a CC tap free: getCaptionTracks reads this cache first.
+                cacheCaptionTracks(videoId, response.captionTracks)
+                KLog.i(
+                    "YouTubeRepo",
+                    "Video qualities via visionOS: ${qualities.size} for $videoId" +
+                        qualities.count(VideoQuality::isHdr).let { if (it > 0) " (HDR=$it)" else "" },
+                )
+                return@withContext VideoStreamResult(qualities, response.seekPreview)
             }
-        } else {
-            null
+            KLog.w("YouTubeRepo", "visionOS answered with no usable formats for $videoId")
         }
 
-        // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
-        // reel endpoint and a visionOS fallback, both of which avoid the WEB
-        // client's SABR-only response. Keep that maintained client selection in
-        // front of our older ANDROID_VR resolver: ANDROID_VR URLs now hit GVS's
-        // progressive byte ceiling on long videos even though /player itself
-        // succeeds, so accepting that ladder first creates a source that starts
-        // normally and then dies part-way through playback.
+        // Fallback: NewPipe's maintained Android reel + visionOS chain, with
+        // identities of its own. It no longer carries the HDR augmentation - a
+        // video that reaches this far is already a failure being covered, and
+        // the augmentation was the same visionOS call that just failed.
         var newPipeBotChecked = false
         try {
             val extracted = getVideoStreamsFromNewPipe(videoId)
             if (extracted.qualities.isNotEmpty()) {
                 clearBotCheckVerdict()
-                val hdrQualities = if (extracted.qualities.any { it.isLive }) {
-                    visionOsResult?.cancel()
-                    emptyList()
-                } else {
-                    visionOsResult?.await().orEmpty().filter(VideoQuality::isHdr)
-                }
-                val merged = if (hdrQualities.isEmpty()) {
-                    extracted
-                } else {
-                    extracted.copy(
-                        qualities = deduplicateVideoQualityVariants(
-                            extracted.qualities + hdrQualities
-                        )
-                    )
-                }
                 KLog.i(
                     "YouTubeRepo",
-                    "Video qualities via NewPipe: ${merged.qualities.size} for $videoId" +
-                        if (hdrQualities.isNotEmpty()) " (HDR=${hdrQualities.size})" else ""
+                    "Video qualities via NewPipe fallback: ${extracted.qualities.size} for $videoId",
                 )
-                return@withContext merged
+                return@withContext extracted
             }
         } catch (e: CancellationException) {
             throw e
@@ -5114,10 +5189,18 @@ class YouTubeRepository(private val context: Context) {
             )
         }
 
-        // Last-resort fallback. It is still useful for a client-specific edge
-        // case, but it must not be the normal VOD path for the reason above.
+        // Last resort: the ANDROID_VR -> IOS chain. Still useful for a
+        // client-specific edge case, but never the normal VOD path: ANDROID_VR
+        // URLs hit googlevideo's progressive byte ceiling on long videos even
+        // though /player succeeds, so the source starts and then dies part-way.
         try {
-            VideoStreamResult(getVideoQualitiesFromInnerTube(videoId, includeHdr, newPipeBotChecked))
+            VideoStreamResult(
+                getVideoQualitiesFromInnerTube(
+                    videoId,
+                    includeHdr,
+                    newPipeBotChecked || direct.botChecked,
+                )
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -1,6 +1,8 @@
 package com.ivor.ivormusic.ui.video
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.ui.components.ConnectionAdviceCard
+import com.ivor.ivormusic.data.ConnectionAdvice
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 
@@ -334,6 +336,7 @@ fun FullscreenPlayerContent(
     onToggleControls: () -> Unit,
     hasError: Boolean,
     errorMessage: String,
+    connectionAdvice: ConnectionAdvice?,
     isLoading: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
@@ -581,7 +584,7 @@ fun FullscreenPlayerContent(
 
         // Overlays
         if (hasError) {
-            ErrorOverlay(errorMessage, onRetry)
+            ErrorOverlay(errorMessage, connectionAdvice, onRetry)
         } else if (isLoading || (isBuffering && !showControls)) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 ContainedLoadingIndicator()
@@ -863,6 +866,7 @@ fun PortraitPlayerContent(
     onToggleControls: () -> Unit,
     hasError: Boolean,
     errorMessage: String,
+    connectionAdvice: ConnectionAdvice?,
     isLoading: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
@@ -1010,7 +1014,7 @@ fun PortraitPlayerContent(
             background = captionBackground
         )
 
-        if (hasError) ErrorOverlay(errorMessage, onRetry)
+        if (hasError) ErrorOverlay(errorMessage, connectionAdvice, onRetry)
         if (isLoading || (isBuffering && !showControls)) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             ContainedLoadingIndicator()
         }
@@ -3604,7 +3608,17 @@ fun ExpressivePlayPauseButton(
 }
 
 @Composable
-fun ErrorOverlay(message: String, onRetry: (() -> Unit)? = null) {
+fun ErrorOverlay(
+    message: String,
+    connectionAdvice: ConnectionAdvice?,
+    onRetry: (() -> Unit)? = null,
+) {
+    // A connection refusal gets advice instead of a message: the Retry
+    // below would fail the same way until the network changes.
+    if (connectionAdvice != null) {
+        ConnectionAdviceCard(connectionAdvice, onRetry)
+        return
+    }
     Box(
         modifier = Modifier
             .fillMaxSize(),
