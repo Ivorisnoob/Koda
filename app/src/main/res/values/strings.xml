@@ -1734,6 +1734,30 @@
     <string name="lib_sorted">Playlist reordered</string>
     <string name="lib_playlist_empty">This playlist is empty</string>
     <string name="lib_album_empty">This album is empty</string>
+    <string name="pl_import">Import</string>
+    <string name="pl_export">Export as m3u8</string>
+    <string name="pl_export_done">Playlist exported</string>
+    <string name="pl_export_failed">Could not export the playlist</string>
+    <string name="pl_import_done_title">Import finished</string>
+    <string name="pl_import_nothing_new">Everything in that file is already in your library.</string>
+    <string name="pl_import_failed_title">Could not read that file</string>
+    <string name="pl_import_failed_body">Pick an m3u or m3u8 playlist, or a NewPipe or PipePipe backup (.zip).</string>
+    <plurals name="pl_import_playlists">
+        <item quantity="one">Added %1$d playlist with %2$d songs.</item>
+        <item quantity="other">Added %1$d playlists with %2$d songs.</item>
+    </plurals>
+    <plurals name="pl_import_saved">
+        <item quantity="one">Saved %d YouTube playlist to your library.</item>
+        <item quantity="other">Saved %d YouTube playlists to your library.</item>
+    </plurals>
+    <plurals name="pl_import_missing">
+        <item quantity="one">%d file is not on this device, so it was skipped.</item>
+        <item quantity="other">%d files are not on this device, so they were skipped.</item>
+    </plurals>
+    <plurals name="pl_import_foreign">
+        <item quantity="one">%d entry was from a service other than YouTube and was skipped.</item>
+        <item quantity="other">%d entries were from services other than YouTube and were skipped.</item>
+    </plurals>
     <string name="import_title">Add songs</string>
     <string name="import_pick_source">Copy songs from any of your playlists into %1$s.</string>
     <string name="import_select_all">Select all</string>

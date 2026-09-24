@@ -53,6 +53,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -859,7 +860,8 @@ fun LibraryMainScreen(
                             onHidePlaylist = { playlist -> viewModel.hidePlaylist(playlist) },
                             onUnhidePlaylist = { id -> viewModel.unhidePlaylist(id) },
                             contentPadding = contentPadding,
-                            isLoggedIn = isYouTubeConnected
+                            isLoggedIn = isYouTubeConnected,
+                            importAction = { PlaylistImportButton(viewModel) }
                         )
                     }
                     LibraryTab.Artists -> {
@@ -1459,7 +1461,8 @@ fun PlaylistsGrid(
     onHidePlaylist: (PlaylistDisplayItem) -> Unit = {},
     onUnhidePlaylist: (String) -> Unit = {},
     /** Signed in, so the account's own playlists live on YouTube for real. */
-    isLoggedIn: Boolean = false
+    isLoggedIn: Boolean = false,
+    importAction: @Composable () -> Unit
 ) {
     var showHiddenSheet by remember { mutableStateOf(false) }
 
@@ -1487,7 +1490,7 @@ fun PlaylistsGrid(
         // The header stands whenever there is either a playlist or something
         // hidden, because the hidden count is the only route back and a
         // library whose every playlist is hidden is exactly when it is needed.
-        if (playlists.isNotEmpty() || hiddenPlaylists.isNotEmpty()) {
+        run {
             item(key = "playlists_header", span = { GridItemSpan(maxLineSpan) }) {
                 Row(
                     modifier = Modifier
@@ -1500,8 +1503,10 @@ fun PlaylistsGrid(
                         text = "Your playlists • ${playlists.size}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f)
                     )
+                    importAction()
                     if (hiddenPlaylists.isNotEmpty()) {
                         TextButton(onClick = { showHiddenSheet = true }) {
                             Icon(
@@ -3021,6 +3026,16 @@ fun PlaylistDetailScreen(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
     }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val ok = viewModel.exportLocalPlaylist(songRows.map { it.song }, uri)
+            snackbarHostState.showSnackbar(
+                shareContext.getString(if (ok) R.string.pl_export_done else R.string.pl_export_failed)
+            )
+        }
+    }
 
     // Drag state. The dragged row is addressed by its lazy list key so the
     // reorder maths can read real offsets and sizes out of the layout.
@@ -3443,6 +3458,18 @@ fun PlaylistDetailScreen(
                                                 onClick = {
                                                     showOverflow = false
                                                     showSortMenu = true
+                                                }
+                                            )
+                                        }
+                                        if (isLocalPlaylist && songs.isNotEmpty()) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.pl_export)) },
+                                                leadingIcon = { Icon(Icons.Rounded.FileUpload, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    val base = (resolvedPlaylist.name ?: "playlist")
+                                                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                                    exportLauncher.launch("$base.m3u8")
                                                 }
                                             )
                                         }

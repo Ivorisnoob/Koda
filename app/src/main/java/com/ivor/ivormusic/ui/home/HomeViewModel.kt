@@ -10,6 +10,9 @@ import androidx.lifecycle.viewModelScope
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongRepository
+import com.ivor.ivormusic.data.SongSource
+import com.ivor.ivormusic.data.SubscriptionTransfer
+import com.ivor.ivormusic.data.UNKNOWN_ARTIST
 import com.ivor.ivormusic.data.FolderInfo
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.ArtistItem
@@ -3436,6 +3439,91 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (tracks.isNotEmpty()) playlistRepository.replacePlaylistSongs(id, tracks)
         return id
     }
+
+    data class PlaylistImportResult(
+        val playlists: Int,
+        val songs: Int,
+        val saved: Int,
+        val missing: Int,
+        val foreign: Int,
+    )
+
+    /** Null means the file was not a format we read. */
+    suspend fun importPlaylists(uri: android.net.Uri): PlaylistImportResult? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val source = java.io.File(app.cacheDir, "playlist_import.src")
+            val scratch = java.io.File(app.cacheDir, "playlist_import.db")
+            try {
+                app.contentResolver.openInputStream(uri)?.use { SubscriptionTransfer.copyImport(it, source) }
+                    ?: return@withContext null
+                val fallbackName = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')
+                    ?.ifBlank { null } ?: "Imported playlist"
+                val file = com.ivor.ivormusic.data.PlaylistTransfer.read(source, scratch, fallbackName)
+                if (file.playlists.isEmpty() && file.remote.isEmpty()) return@withContext null
+                val device = _songs.value.filter { it.source == SongSource.LOCAL }
+                val byPath = device.mapNotNull { s -> s.filePath?.lowercase()?.let { it to s } }.toMap()
+                val byName = device.mapNotNull { s ->
+                    s.filePath?.substringAfterLast('/')?.lowercase()?.let { it to s }
+                }.toMap()
+                var songs = 0
+                var missing = 0
+                var created = 0
+                file.playlists.forEach { playlist ->
+                    val resolved = playlist.tracks.mapNotNull { t ->
+                        when {
+                            t.videoId != null -> Song.fromYouTube(
+                                t.videoId, t.title, t.artist.ifBlank { UNKNOWN_ARTIST }, "", t.durationMs,
+                                "https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg"
+                            )
+                            t.path != null -> {
+                                val key = t.path.replace('\\', '/').lowercase()
+                                byPath[key] ?: byName[key.substringAfterLast('/')]
+                            }
+                            else -> null
+                        } ?: run { missing++; null }
+                    }.distinctBy { it.id }
+                    if (resolved.isNotEmpty()) {
+                        createLocalPlaylistWithSongs(playlist.name, null, resolved)
+                        created++
+                        songs += resolved.size
+                    }
+                }
+                var saved = 0
+                file.remote.forEach { r ->
+                    if (savedPlaylistsRepository.savedPlaylists.value.none { it.id == r.playlistId }) {
+                        savedPlaylistsRepository.save(
+                            com.ivor.ivormusic.data.SavedPlaylist(
+                                id = r.playlistId,
+                                url = "https://www.youtube.com/playlist?list=${r.playlistId}",
+                                name = r.name,
+                                uploaderName = r.uploader,
+                                thumbnailUrl = r.thumbnailUrl,
+                                itemCount = r.itemCount,
+                            )
+                        )
+                        saved++
+                    }
+                }
+                PlaylistImportResult(created, songs, saved, missing, file.foreignServiceEntries)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                KLog.w("HomeViewModel", "Playlist import failed", e)
+                null
+            } finally {
+                source.delete()
+                scratch.delete()
+            }
+        }
+
+    suspend fun exportLocalPlaylist(songs: List<Song>, uri: android.net.Uri): Boolean =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use {
+                    it.write(com.ivor.ivormusic.data.PlaylistTransfer.buildM3u(songs).toByteArray(Charsets.UTF_8))
+                } != null
+            }.getOrDefault(false)
+        }
 
     /**
      * What the playlist studio seeds its suggestion chips from: recency-ranked
