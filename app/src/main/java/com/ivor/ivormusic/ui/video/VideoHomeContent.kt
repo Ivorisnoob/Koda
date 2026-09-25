@@ -173,6 +173,7 @@ fun VideoHomeContent(
     val subscribedChannels by viewModel.subscribedChannels.collectAsState()
     val showOfflineDownloads = isOffline && downloadedVideos.isNotEmpty()
     val isShortsLoading by viewModel.isShortsLoading.collectAsState()
+    val listLayout = LocalVideoListLayout.current
     val shortsFeedFailed by viewModel.shortsFeedFailed.collectAsState()
 
     // Notifications sheet state
@@ -333,7 +334,6 @@ fun VideoHomeContent(
                 if (showOfflineDownloads) {
                     items(downloadedVideos, key = { "download_${it.id}" }) { downloaded ->
                         VideoCard(
-                            compact = compact,
                             video = downloaded.asOfflineVideoItem(),
                             onClick = { onDownloadedVideoClick(downloaded) },
                             modifier = Modifier.padding(horizontal = 16.dp)
@@ -354,14 +354,13 @@ fun VideoHomeContent(
                         feedVideos.drop(2)
                     }
 
-                    items(leadingVideos) { video ->
+                    videoListItems(leadingVideos, listLayout, keyPrefix = "lead_") { video, cell ->
                         VideoCard(
-                            compact = compact,
                             video = video,
                             onClick = { openVideo(video) },
                             onLongClick = { onVideoLongPress(video) },
                             onOpenChannel = onOpenChannel,
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = cell
                         )
                     }
 
@@ -377,14 +376,13 @@ fun VideoHomeContent(
                         }
                     }
 
-                    items(trailingVideos) { video ->
+                    videoListItems(trailingVideos, listLayout, keyPrefix = "trail_") { video, cell ->
                         VideoCard(
-                            compact = compact,
                             video = video,
                             onClick = { openVideo(video) },
                             onLongClick = { onVideoLongPress(video) },
                             onOpenChannel = onOpenChannel,
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = cell
                         )
                     }
                 }
@@ -807,8 +805,14 @@ fun VideoCard(
     onLongClick: (() -> Unit)? = null,
     /** Opens the creator when the avatar is tapped, without invoking [onClick]. */
     onOpenChannel: ((String) -> Unit)? = null,
-    compact: Boolean = false
+    /** Null follows the app-wide [LocalVideoListLayout]. */
+    compact: Boolean? = null
 ) {
+    val layout = when (compact) {
+        true -> com.ivor.ivormusic.data.ThemePreferences.VIDEO_LAYOUT_COMPACT
+        false -> com.ivor.ivormusic.data.ThemePreferences.VIDEO_LAYOUT_CARDS
+        null -> LocalVideoListLayout.current
+    }
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val cardShape = RoundedCornerShape(16.dp)
@@ -828,8 +832,42 @@ fun VideoCard(
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 1.dp
     ) {
-        if (compact) {
+        if (layout == com.ivor.ivormusic.data.ThemePreferences.VIDEO_LAYOUT_COMPACT) {
             CompactVideoCardContent(video, openChannel, onLongClick)
+        } else if (layout == com.ivor.ivormusic.data.ThemePreferences.VIDEO_LAYOUT_GRID) {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                ) {
+                    VideoThumbnail(video = video, modifier = Modifier.fillMaxSize())
+                    VideoThumbnailBadge(
+                        video = video,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                    )
+                }
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Text(
+                        text = video.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = textColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = listOf(video.channelName, video.viewCount).filter { it.isNotBlank() }.joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .then(if (openChannel != null) Modifier.clickable(onClick = openChannel) else Modifier)
+                    )
+                }
+            }
         } else {
             Column {
                 // Rested on with previews turned on, this card plays where it

@@ -16,7 +16,14 @@ data class ShortsItem(
      * Search/channel seed params, or the continuation after the loaded Home
      * shelf. Raw sequence entries have none until added to a Home shelf.
      */
-    val sequenceParams: String? = null
+    val sequenceParams: String? = null,
+    /**
+     * The uploader, when the entry said. Only prefetched sequence entries and
+     * watch-next carry it, so null is common and means unknown - the blocklist
+     * can only pre-empt a Short whose channel is known.
+     */
+    val channelId: String? = null,
+    val channelName: String = ""
 ) {
     /** Portrait first-frame thumbnail YouTube serves for every Short. */
     val portraitThumbnailUrl: String
@@ -25,7 +32,8 @@ data class ShortsItem(
     fun toVideoItem(): VideoItem = VideoItem(
         videoId = videoId,
         title = title.ifBlank { "Short" },
-        channelName = "",
+        channelName = channelName,
+        channelId = channelId,
         thumbnailUrl = portraitThumbnailUrl,
         duration = 0L,
         viewCount = viewCount

@@ -45,6 +45,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -147,7 +149,6 @@ fun NowPlayingOptionsSheet(
     onWatchAsVideo: (() -> Unit)? = null,
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
-    val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
 
     // The account's playlists are a network read, and seven of the eight styles
     // never asked for them - their picker listed local playlists only. Asking
@@ -160,18 +161,7 @@ fun NowPlayingOptionsSheet(
         // picker is the same flow one tap on, and a menu that changed palette
         // halfway through it would be the worst of both.
         MaterialTheme(colorScheme = appColorScheme()) {
-            AddToPlaylistSheet(
-                playlists = addToPlaylistItems,
-                onPlaylistClick = { playlist ->
-                    viewModel.addToPlaylist(playlist.id, song)
-                    onDismiss()
-                },
-                onCreateNewClick = { name, desc ->
-                    viewModel.createPlaylistWithSong(name, desc, song)
-                    onDismiss()
-                },
-                onDismissRequest = onDismiss
-            )
+            SongPlaylistPicker(song = song, viewModel = viewModel, onDismiss = onDismiss)
         }
         return
     }
@@ -583,10 +573,10 @@ private fun PlaybackSpeedRow(viewModel: PlayerViewModel) {
         }
     ) {
         Slider(
-            value = sliderSpeed,
-            onValueChange = { raw ->
+            value = speedToSlider(sliderSpeed),
+            onValueChange = { position ->
                 dragging = true
-                val snapped = snapPlaybackSpeed(raw)
+                val snapped = snapPlaybackSpeed(sliderToSpeed(position))
                 if (snapped != sliderSpeed) {
                     // One tick as the thumb crosses the recorded speed, so the
                     // detent can be felt without looking at the number.
@@ -604,7 +594,6 @@ private fun PlaybackSpeedRow(viewModel: PlayerViewModel) {
                 dragging = false
                 viewModel.setPlaybackSpeed(sliderSpeed)
             },
-            valueRange = ThemePreferences.MIN_PLAYBACK_SPEED..ThemePreferences.MAX_PLAYBACK_SPEED,
             modifier = Modifier.fillMaxWidth()
         )
     }
@@ -722,8 +711,34 @@ private fun snapPlaybackSpeed(raw: Float): Float {
     if (kotlin.math.abs(bounded - ThemePreferences.DEFAULT_PLAYBACK_SPEED) < SPEED_DETENT) {
         return ThemePreferences.DEFAULT_PLAYBACK_SPEED
     }
-    return (bounded * 20f).roundToInt() / 20f
+    // Five percent is too fine above 2x, where a finger moves a lot of speed.
+    return if (bounded <= 2f) (bounded * 20f).roundToInt() / 20f else (bounded * 4f).roundToInt() / 4f
 }
+
+/**
+ * The slider is logarithmic: 0.1x to 8x linearly would put 0.5x-2x, the range
+ * nearly everyone uses, into a fifth of the track. Log spacing puts 1x near
+ * the middle and gives halving and doubling equal travel.
+ */
+private val SPEED_LOG_SPAN = kotlin.math.ln(ThemePreferences.MAX_PLAYBACK_SPEED / ThemePreferences.MIN_PLAYBACK_SPEED)
+
+private fun speedToSlider(speed: Float): Float =
+    (kotlin.math.ln(speed.coerceIn(ThemePreferences.MIN_PLAYBACK_SPEED, ThemePreferences.MAX_PLAYBACK_SPEED) /
+        ThemePreferences.MIN_PLAYBACK_SPEED) / SPEED_LOG_SPAN).coerceIn(0f, 1f)
+
+private fun sliderToSpeed(position: Float): Float =
+    ThemePreferences.MIN_PLAYBACK_SPEED * kotlin.math.exp(position.coerceIn(0f, 1f) * SPEED_LOG_SPAN)
 
 /** Half a step either side of the recorded speed, so 100% is easy to hit. */
 private const val SPEED_DETENT = 0.03f
+
+/**
+ * Whether the expanded player's options sheet is open. Hoisted into
+ * [ExpandablePlayer] so its swipe-up gesture can open the sheet of whichever
+ * style is showing; each style falls back to its own state without it.
+ */
+internal val LocalNowPlayingOptionsOpen = compositionLocalOf<MutableState<Boolean>?> { null }
+
+@Composable
+internal fun rememberNowPlayingOptionsOpen(): MutableState<Boolean> =
+    LocalNowPlayingOptionsOpen.current ?: remember { mutableStateOf(false) }

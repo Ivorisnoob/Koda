@@ -50,6 +50,9 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val livePlaybackUpdates: StateFlow<Boolean> = themePreferences.livePlaybackUpdates
     val timedCommentsEnabled: StateFlow<Boolean> = themePreferences.timedCommentsEnabled
     val shortsEnabled: StateFlow<Boolean> = themePreferences.shortsEnabled
+    val shortsHardBlock: StateFlow<Boolean> = themePreferences.shortsHardBlock
+    val returnDislike: StateFlow<Boolean> = themePreferences.returnDislike
+    val contentRegion: StateFlow<String> = themePreferences.contentRegion
     val shortsHiddenActions: StateFlow<Set<String>> = themePreferences.shortsHiddenActions
     val videoQualityWifi: StateFlow<String> = themePreferences.videoQualityWifi
     val videoQualityMobile: StateFlow<String> = themePreferences.videoQualityMobile
@@ -69,6 +72,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val subscriptionSource: StateFlow<String> = themePreferences.subscriptionSource
     val subscribeTarget: StateFlow<String> = themePreferences.subscribeTarget
     val fastSubscriptionFeed: StateFlow<Boolean> = themePreferences.fastSubscriptionFeed
+    val subscriptionRefresh: StateFlow<Int> = themePreferences.subscriptionRefresh
     val excludedFolders: StateFlow<Set<String>> = themePreferences.excludedFolders
     
     val autoLoadQueue: StateFlow<Boolean> = themePreferences.autoLoadQueue
@@ -84,6 +88,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val showRelatedVideos: StateFlow<Boolean> = themePreferences.showRelatedVideos
     val inlinePreviews: StateFlow<Boolean> = themePreferences.inlinePreviews
     val compactVideoHome: StateFlow<Boolean> = themePreferences.compactVideoHome
+    val videoListLayout: StateFlow<String> = themePreferences.videoListLayout
     val playlistSwipeEnabled: StateFlow<Boolean> = themePreferences.playlistSwipeEnabled
     val playlistSwipeStartAction: StateFlow<String> = themePreferences.playlistSwipeStartAction
     val playlistSwipeEndAction: StateFlow<String> = themePreferences.playlistSwipeEndAction
@@ -201,6 +206,18 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
         themePreferences.setShortsEnabled(enabled)
     }
 
+    fun setReturnDislike(enabled: Boolean) {
+        themePreferences.setReturnDislike(enabled)
+    }
+
+    fun setShortsHardBlock(enabled: Boolean) {
+        themePreferences.setShortsHardBlock(enabled)
+    }
+
+    fun setContentRegion(code: String) {
+        themePreferences.setContentRegion(code)
+    }
+
     fun setShortsHiddenActions(hidden: Set<String>) {
         themePreferences.setShortsHiddenActions(hidden)
     }
@@ -272,6 +289,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
         themePreferences.setSubscribeTarget(target)
     }
 
+    fun setSubscriptionRefresh(minutes: Int) {
+        themePreferences.setSubscriptionRefreshMinutes(minutes)
+    }
+
     fun setFastSubscriptionFeed(enabled: Boolean) {
         themePreferences.setFastSubscriptionFeed(enabled)
     }
@@ -317,6 +338,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setShowRelatedVideos(show: Boolean) = themePreferences.setShowRelatedVideos(show)
     fun setInlinePreviews(enabled: Boolean) = themePreferences.setInlinePreviews(enabled)
     fun setCompactVideoHome(enabled: Boolean) = themePreferences.setCompactVideoHome(enabled)
+    fun setVideoListLayout(layout: String) = themePreferences.setVideoListLayout(layout)
     fun setPlaylistSwipeEnabled(enabled: Boolean) = themePreferences.setPlaylistSwipeEnabled(enabled)
     fun setPlaylistSwipeStartAction(action: String) = themePreferences.setPlaylistSwipeStartAction(action)
     fun setPlaylistSwipeEndAction(action: String) = themePreferences.setPlaylistSwipeEndAction(action)

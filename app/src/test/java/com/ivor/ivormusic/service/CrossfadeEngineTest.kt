@@ -300,7 +300,7 @@ class CrossfadeEngineTest {
             delay(20L)
             pair.incoming.items[1] = item("replacement")
             val writes = pair.incoming.parameterWrites
-            delay(150L)
+            delay(650L)
             assertEquals("tempo release wrote into the replacement track", writes, pair.incoming.parameterWrites)
         } finally { pair.engine.release() }
     }
@@ -312,10 +312,10 @@ class CrossfadeEngineTest {
             assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 400L, targetIndex = 1, incomingSpeed = 1.04f))
             awaitCondition { !pair.engine.isFading }
             delay(20L)
-            assertTrue(pair.engine.startTransition(pair.incoming.items[2], 400L, targetIndex = 2))
+            assertTrue(pair.engine.startTransition(pair.incoming.items[2], 2_000L, targetIndex = 2))
             assertEquals(1f, pair.incoming.player.playbackParameters.speed, 0.001f)
             val writes = pair.incoming.parameterWrites
-            delay(150L)
+            delay(650L)
             assertEquals("old release changed the outgoing clock during a new overlap", writes, pair.incoming.parameterWrites)
         } finally { pair.engine.release() }
     }
@@ -439,6 +439,7 @@ class CrossfadeEngineTest {
                 "prepare" -> { state = if (readyOnPrepare) Player.STATE_READY else Player.STATE_BUFFERING; null }
                 "stop" -> { position = position; state = Player.STATE_IDLE; null }
                 "clearMediaItems" -> { items.clear(); index = 0; position = 0; null }
+                "getShuffleOrder" -> androidx.media3.exoplayer.source.ShuffleOrder.UnshuffledShuffleOrder(items.size)
                 "setShuffleOrder", "setShuffleModeEnabled", "setRepeatMode",
                 "addListener", "removeListener", "release" -> null
                 else -> error("Unexpected player call: ${method.name}")

@@ -102,7 +102,8 @@ class MusicServiceOccurrenceTest {
                 "play" -> { playing = true; null }
                 "pause", "stop" -> { playing = false; null }
                 "clearMediaItems" -> { items.clear(); null }
-                "prepare", "release" -> null
+                "prepare", "release", "setShuffleOrder" -> null
+                "getShuffleOrder" -> androidx.media3.exoplayer.source.ShuffleOrder.UnshuffledShuffleOrder(items.size)
                 else -> error("Unexpected player call: ${method.name}")
             }
         } as ExoPlayer

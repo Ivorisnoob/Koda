@@ -129,7 +129,7 @@ fun PosterPlayerSheetContent(
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     val playerHaptics = rememberPlayerHaptics()
     val styleWheel = LocalPlayerStyleWheelController.current

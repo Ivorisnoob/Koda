@@ -22,7 +22,11 @@ data class PlayHistoryEntry(
     val timestamp: Long,
     val duration: Long,
     val thumbnailUrl: String? = null,
-    val source: SongSource = SongSource.YOUTUBE
+    val source: SongSource = SongSource.YOUTUBE,
+    // The streaming release (MPREb...) when the song knew it. Absent from
+    // plays recorded before it existed; ignoreUnknownKeys and the default
+    // keep old files and backups reading as they did.
+    val albumId: String? = null
 )
 
 @Serializable
@@ -73,7 +77,8 @@ class StatsRepository(private val context: Context) {
                     timestamp = System.currentTimeMillis(),
                     duration = song.duration,
                     thumbnailUrl = song.thumbnailUrl ?: song.albumArtUri?.toString(),
-                    source = song.source
+                    source = song.source,
+                    albumId = song.albumId
                 )
                 history.add(0, entry)
                 val trimmedHistory = if (history.size > MAX_HISTORY_ENTRIES) {

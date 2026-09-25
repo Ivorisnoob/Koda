@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
@@ -58,15 +59,33 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
     private val _header = MutableStateFlow<ChannelHeader?>(null)
     val header: StateFlow<ChannelHeader?> = _header.asStateFlow()
 
+    /**
+     * "Fully block Shorts" as seen by a channel page: no Shorts tab and no
+     * Shorts shelf on Home. A presentation filter over what was fetched, read
+     * fresh when the page opens - the switch lives on the settings screen's
+     * own preferences instance.
+     */
+    private val shortsBlocked = com.ivor.ivormusic.data.ThemePreferences.isShortsHardBlocked(context)
+
     private val _tabs = MutableStateFlow<List<ChannelTab>>(emptyList())
-    val tabs: StateFlow<List<ChannelTab>> = _tabs.asStateFlow()
+    val tabs: StateFlow<List<ChannelTab>> = if (!shortsBlocked) _tabs.asStateFlow() else
+        _tabs.map { tabs -> tabs.filterNot { it.kind == ChannelTabKind.SHORTS } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _selectedTab = MutableStateFlow(ChannelTabKind.HOME)
     val selectedTab: StateFlow<ChannelTabKind> = _selectedTab.asStateFlow()
 
     /** Loaded content per tab. A tab absent from the map has never been opened. */
     private val _pages = MutableStateFlow<Map<ChannelTabKind, ChannelTabPage>>(emptyMap())
-    val pages: StateFlow<Map<ChannelTabKind, ChannelTabPage>> = _pages.asStateFlow()
+    val pages: StateFlow<Map<ChannelTabKind, ChannelTabPage>> = if (!shortsBlocked) _pages.asStateFlow() else
+        _pages.map { pages ->
+            pages.mapValues { (_, page) ->
+                page.copy(
+                    shorts = emptyList(),
+                    shelves = page.shelves.map { it.copy(shorts = emptyList()) }.filterNot { it.isEmpty }
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     private val _loadingTabs = MutableStateFlow<Set<ChannelTabKind>>(emptySet())
     val loadingTabs: StateFlow<Set<ChannelTabKind>> = _loadingTabs.asStateFlow()

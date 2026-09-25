@@ -145,7 +145,7 @@ fun HeroPlayerSheetContent(
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // Swipe-to-skip, shared by the art and the title on it so both commit at
     // the same threshold with the same spring home.

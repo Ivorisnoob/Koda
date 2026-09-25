@@ -41,9 +41,9 @@ The rules below are what to do. This is how the doing has gone when it went well
 
 **Read the result of a scripted edit before compiling it.** Compiling proves it parses. Only looking proves it did what you meant.
 
-**One item, one compile, one commit, one report.** The user feeds items as they find them, sometimes mid-turn. Finish the item in flight, acknowledge the new one, and keep a visible queue - dropping half-applied work to chase the newest request is how a branch ends up not building.
+**One item, one compile, one report.** The user feeds items as they find them, sometimes mid-turn. Finish the item in flight, acknowledge the new one, and keep a visible queue - dropping half-applied work to chase the newest request is how a branch ends up not building.
 
-**Commit locally at the end of every item, before starting the next one.** The commit is the checkpoint, and the reason for it is revertability: when one item out of a batch of nine turns out to be wrong on a real screen, `git revert <sha>` takes back exactly that item, and nothing else. That only holds if the boundaries are honest - one item per commit, no finished item left uncommitted at the end of a turn, no second item folded into the first because it was small, and a follow-up fix as its own commit rather than an amend or a rebase of one already in. Several features landing together is acceptable when they genuinely interleave across the same files, but say so. A bug fix that lives in one file always deserves its own commit.
+**Never commit until the user says to.** Finished work stays uncommitted and the report says so. The user commits in batches (up to about 15 items) so the Telegram changelog reads in a sensible order; when asked, group related items and keep fixes and features distinguishable.
 
 The subject is written for whoever reads `git log` a month from now: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched. Add a body when the reason is not obvious from the subject, and the `Changelog:` section whenever the change reaches an APK (format below).
 

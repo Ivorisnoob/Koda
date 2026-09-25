@@ -556,6 +556,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
+    /**
+     * Network advice for the current error when YouTube refused the connection
+     * rather than the video; see [com.ivor.ivormusic.data.connectionAdviceFor].
+     * While it stands, a network change retries on its own.
+     */
+    private val _connectionAdvice = MutableStateFlow<com.ivor.ivormusic.data.ConnectionAdvice?>(null)
+    val connectionAdvice: StateFlow<com.ivor.ivormusic.data.ConnectionAdvice?> =
+        _connectionAdvice.asStateFlow()
+
+    private val connectionWatcher = com.ivor.ivormusic.data.NetworkChangeWatcher(context) {
+        viewModelScope.launch { retryAfterNetworkChange() }
+    }
+
+    init {
+        viewModelScope.launch {
+            _playbackError.collect { error ->
+                // A device video never asked YouTube for anything.
+                val advice = error
+                    ?.takeUnless { _isLocalPlayback.value }
+                    ?.let { com.ivor.ivormusic.data.connectionAdviceFor(context, it) }
+                _connectionAdvice.value = advice
+                if (advice != null) connectionWatcher.start() else connectionWatcher.stop()
+            }
+        }
+    }
+
+    private suspend fun retryAfterNetworkChange() {
+        if (_connectionAdvice.value == null) return
+        KLog.i("VideoPlayerVM", "Network changed while YouTube was refusing the connection; retrying")
+        YouTubeRepository.forgetConnectionVerdicts()
+        youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+        // The user may have moved on or retried while the remint ran.
+        if (_connectionAdvice.value != null) retryPlayback()
+    }
+
     // Video rendering is suspended while the app is not visible - see onEnterBackground()
     private var isVideoSuspended = false
 
@@ -581,6 +616,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private var queueErrorSkipCount = 0
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
+
+    private val returnDislikeRepository = com.ivor.ivormusic.data.ReturnDislikeRepository()
+    private val _dislikeCount = MutableStateFlow<String?>(null)
+    val dislikeCount: StateFlow<String?> = _dislikeCount.asStateFlow()
 
     private val _engagement = MutableStateFlow<VideoEngagement?>(null)
     val engagement: StateFlow<VideoEngagement?> = _engagement.asStateFlow()
@@ -1719,7 +1758,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Set the playback speed for the current video and remember it for the next one. */
     fun setPlaybackSpeed(speed: Float) {
-        val bounded = speed.coerceIn(0.25f, 2f)
+        val bounded = speed.coerceIn(0.25f, ThemePreferences.MAX_PLAYBACK_SPEED)
         _playbackSpeed.value = bounded
         _exoPlayer?.setPlaybackSpeed(bounded)
         // A live broadcast always plays at 1x: a manual change there is a
@@ -2347,6 +2386,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             playFromExternal()
             return
         }
+        com.ivor.ivormusic.data.YouTubeRequestLedger.begin("video ${video.videoId}")
 
         // Capture the outgoing item before any player state is reset. The
         // explicit session restore position wins; ordinary opens use this
@@ -2421,6 +2461,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         // Reset engagement + comments state for the new video
         _engagement.value = null
+        _dislikeCount.value = null
         _comments.value = emptyList()
         _replies.value = emptyMap()
         _loadingReplyIds.value = emptySet()
@@ -2645,6 +2686,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // Guard against a video switch that happened mid-flight
                 if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
                 _engagement.value = watchNext.engagement
+                if (themePreferences.isReturnDislikeEnabled() && video.videoId.length == 11) {
+                    launch {
+                        val count = returnDislikeRepository.getDislikes(video.videoId) ?: return@launch
+                        if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
+                            _dislikeCount.value = android.icu.text.CompactDecimalFormat
+                                .getInstance(java.util.Locale.getDefault(), android.icu.text.CompactDecimalFormat.CompactStyle.SHORT)
+                                .format(count)
+                        }
+                    }
+                }
                 if (watchNext.updatedVideoItem != null) {
                     val wasNameless = _currentVideo.value?.title.isNullOrBlank()
                     _currentVideo.value = watchNext.updatedVideoItem
@@ -3646,6 +3697,34 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * base and no DI to hand one an instance of the other; the store underneath
      * is process-wide, so both see the same list either way.
      */
+    /** Account playlists holding the video a save sheet is open on. */
+    private val videoPlaylistMembership =
+        com.ivor.ivormusic.data.PlaylistMembership(youtubeRepository, viewModelScope)
+    val accountPlaylistsContainingVideo: StateFlow<Set<String>> = videoPlaylistMembership.containing
+
+    /** One account lookup per sheet open. */
+    fun loadVideoPlaylistMembership(videoId: String) = videoPlaylistMembership.load(videoId)
+
+    /** Untick a video in the save sheet; the mirror of adding it. */
+    fun removeVideoFromPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
+            val ok = when {
+                local.isLocal(playlistId) -> {
+                    localVideoPlaylistsRepository.removeVideo(playlistId, video.videoId)
+                    true
+                }
+                playlistId == "WL" && !_isLoggedIn.value -> {
+                    localVideoPlaylistsRepository.removeVideo(local.WATCH_LATER_ID, video.videoId)
+                    true
+                }
+                else -> youtubeRepository.removeFromYouTubePlaylist(playlistId, video.videoId, music = false)
+                    .also { if (it) videoPlaylistMembership.record(playlistId, video.videoId, false) }
+            }
+            onResult(ok)
+        }
+    }
+
     fun addVideoToPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
             val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
@@ -3662,7 +3741,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         playlistId,
                         video.videoId,
                         music = false
-                    )
+                    ).also { if (it) videoPlaylistMembership.record(playlistId, video.videoId, true) }
                 }
             )
         }
@@ -3936,7 +4015,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
 
         /** Speeds offered in the player's speed menu. */
-        val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+        val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f, 4f, 8f)
 
         /**
          * One skip step, shared by the double-tap gesture on the player, the
@@ -4028,6 +4107,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     override fun onCleared() {
+        connectionWatcher.stop()
         watchTracker.close()
         super.onCleared()
         // Remove quality change listener to prevent leaks

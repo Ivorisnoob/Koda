@@ -22,7 +22,9 @@ data class PlaybackSession(
     val legacySongs: List<Song> = emptyList(),
     val currentIndex: Int,
     val positionMs: Long,
-    val savedAt: Long
+    val savedAt: Long,
+    /** The shuffle permutation (queue indices in playing order), or empty when unshuffled. */
+    val playOrder: List<Int> = emptyList(),
 )
 
 internal val PlaybackSession.items: List<MusicQueueItem>
@@ -53,7 +55,7 @@ class PlaybackSessionRepository(context: Context) {
         isLenient = true
     }
 
-    fun save(queue: List<MusicQueueItem>, currentIndex: Int, positionMs: Long) {
+    fun save(queue: List<MusicQueueItem>, currentIndex: Int, positionMs: Long, playOrder: IntArray? = null) {
         if (queue.isEmpty() || currentIndex !in queue.indices) return
         try {
             // Keep a window around the current song when trimming, so both
@@ -65,7 +67,11 @@ class PlaybackSessionRepository(context: Context) {
                 queue = trimmed,
                 currentIndex = currentIndex - start,
                 positionMs = positionMs.coerceAtLeast(0L),
-                savedAt = System.currentTimeMillis()
+                savedAt = System.currentTimeMillis(),
+                playOrder = playOrder
+                    ?.filter { it in start until end }
+                    ?.map { it - start }
+                    .orEmpty(),
             )
             val tmp = File(sessionFile.parentFile, "$FILE_NAME.tmp")
             tmp.writeText(json.encodeToString(session))
@@ -84,7 +90,11 @@ class PlaybackSessionRepository(context: Context) {
             val decoded = json.decodeFromString<PlaybackSession>(sessionFile.readText())
             val items = decoded.items
             if (items.isEmpty() || decoded.currentIndex !in items.indices) null
-            else decoded.copy(queue = items, legacySongs = emptyList())
+            else decoded.copy(
+                queue = items,
+                legacySongs = emptyList(),
+                playOrder = decoded.playOrder.takeIf { it.sorted() == items.indices.toList() }.orEmpty(),
+            )
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load playback session", e)
             null

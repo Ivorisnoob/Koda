@@ -151,7 +151,7 @@ fun StickerPlayerSheetContent(
         onNext = { playerHaptics.skip(); viewModel.skipToNext() },
         onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
     )
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // Color-block board: two flat tonal fields meeting on a hard edge.
     val boardTop = MaterialTheme.colorScheme.surfaceContainerLow

@@ -52,6 +52,8 @@ import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -111,6 +113,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import androidx.lifecycle.viewModelScope
+import androidx.compose.material.icons.rounded.CloudUpload
 import kotlin.math.roundToInt
 
 /**
@@ -555,6 +560,14 @@ enum class LibraryTab(val label: String) {
  * Sort orders for the All tab's track list. Labels state their own direction
  * ("Most played", not "Play count") so the list needs no asc/desc toggle.
  */
+enum class PlaylistSortAction(val label: Int) {
+    Title(R.string.lib_sort_title),
+    Artist(R.string.lib_sort_artist),
+    Album(R.string.lib_sort_album),
+    Reverse(R.string.lib_sort_reverse),
+    Shuffle(R.string.lib_sort_shuffle),
+}
+
 enum class LibrarySortOption(val label: String, val icon: ImageVector) {
     Title("Title", Icons.Rounded.SortByAlpha),
     Artist("Artist", Icons.Rounded.Person),
@@ -685,19 +698,10 @@ fun LibraryMainScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // headlineSmall matches video mode's Library header, which
-                // uses the same string, so switching modes no longer changes
-                // the size of the same word. It also frees the width that
-                // displayLarge's 57sp took: the row now has room for a second
-                // action if one is ever wanted, where before a single button
-                // truncated the title.
-                //
-                // This deliberately leaves the music Home on displayLarge, so
-                // the two are no longer one scale - see issue #118, which is
-                // where a heading system for the whole app belongs.
+                // headlineLarge matches the music Search title beside it.
                 Text(
                     text = stringResource(R.string.tab_library),
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -847,7 +851,8 @@ fun LibraryMainScreen(
                             onHidePlaylist = { playlist -> viewModel.hidePlaylist(playlist) },
                             onUnhidePlaylist = { id -> viewModel.unhidePlaylist(id) },
                             contentPadding = contentPadding,
-                            isLoggedIn = isYouTubeConnected
+                            isLoggedIn = isYouTubeConnected,
+                            importAction = { PlaylistImportButton(viewModel) }
                         )
                     }
                     LibraryTab.Artists -> {
@@ -1447,7 +1452,8 @@ fun PlaylistsGrid(
     onHidePlaylist: (PlaylistDisplayItem) -> Unit = {},
     onUnhidePlaylist: (String) -> Unit = {},
     /** Signed in, so the account's own playlists live on YouTube for real. */
-    isLoggedIn: Boolean = false
+    isLoggedIn: Boolean = false,
+    importAction: @Composable () -> Unit
 ) {
     var showHiddenSheet by remember { mutableStateOf(false) }
 
@@ -1475,7 +1481,7 @@ fun PlaylistsGrid(
         // The header stands whenever there is either a playlist or something
         // hidden, because the hidden count is the only route back and a
         // library whose every playlist is hidden is exactly when it is needed.
-        if (playlists.isNotEmpty() || hiddenPlaylists.isNotEmpty()) {
+        run {
             item(key = "playlists_header", span = { GridItemSpan(maxLineSpan) }) {
                 Row(
                     modifier = Modifier
@@ -1488,8 +1494,10 @@ fun PlaylistsGrid(
                         text = "Your playlists • ${playlists.size}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f)
                     )
+                    importAction()
                     if (hiddenPlaylists.isNotEmpty()) {
                         TextButton(onClick = { showHiddenSheet = true }) {
                             Icon(
@@ -2587,96 +2595,93 @@ private fun PlaylistTrackRow(
         tonalElevation = 2.dp,
         shadowElevation = shadowElevation.coerceAtLeast(0.dp)
     ) {
-        ListItem(
-            headlineContent = {
+        // A plain Row rather than ListItem: on material3 1.5 alphas a long
+        // headline starved the trailing duration to zero width.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = (if (manageEnabled) Modifier else Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick))
+                .fillMaxWidth()
+                .heightIn(min = 72.dp)
+                .padding(start = 16.dp, end = if (manageEnabled) 4.dp else 16.dp, top = 8.dp, bottom = 8.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.size(48.dp)
+            ) {
+                if (song.albumArtUri != null || song.thumbnailUrl != null) {
+                    AsyncImage(
+                        model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp)
+            ) {
                 Text(
                     song.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = playlistOnGround(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold
                 )
-            },
-            supportingContent = {
-                Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            },
-            leadingContent = {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    if (song.albumArtUri != null || song.thumbnailUrl != null) {
-                        AsyncImage(
-                            model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop
+                Text(
+                    song.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = playlistOnGround().copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (manageEnabled) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onRemove, enabled = !isDragging) {
+                        Icon(
+                            imageVector = Icons.Rounded.RemoveCircleOutline,
+                            contentDescription = "Remove ${song.title}",
+                            tint = MaterialTheme.colorScheme.error
                         )
-                    } else {
-                        Box(contentAlignment = Alignment.Center) {
+                    }
+                    if (reorderEnabled) {
+                        Box(
+                            modifier = dragHandleModifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
-                                Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                imageVector = Icons.Rounded.DragIndicator,
+                                contentDescription = "Reorder ${song.title}",
+                                tint = if (isDragging) {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     }
                 }
-            },
-            // A plain swap, not an AnimatedContent: one transition object per
-            // row is what made entering edit mode stutter, and the controls
-            // appearing is a content change rather than a moving surface.
-            trailingContent = {
-                if (manageEnabled) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onRemove, enabled = !isDragging) {
-                            Icon(
-                                imageVector = Icons.Rounded.RemoveCircleOutline,
-                                contentDescription = "Remove ${song.title}",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        if (reorderEnabled) {
-                            Box(
-                                modifier = dragHandleModifier.size(48.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.DragIndicator,
-                                    contentDescription = "Reorder ${song.title}",
-                                    tint = if (isDragging) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                            }
-                        }
-                    }
-                } else if (song.duration > 0) {
-                    Text(
-                        formatSongDuration(song.duration),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = playlistOnGround().copy(alpha = 0.7f)
-                    )
-                }
-            },
-            // Manage mode owns the gesture: rows are being dragged and removed
-            // there, so a long press must not open a sheet on top of it.
-            modifier = if (manageEnabled) {
-                Modifier
-            } else {
-                Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick)
-            },
-            // The row's own card is built from the cover, so its text is too.
-            // Left on the defaults it resolves to `onSurface`, the pair for a
-            // theme surface that is not what the row is drawn on.
-            colors = ListItemDefaults.colors(
-                containerColor = Color.Transparent,
-                headlineColor = playlistOnGround(),
-                supportingColor = playlistOnGround().copy(alpha = 0.78f),
-                trailingIconColor = playlistOnGround().copy(alpha = 0.78f)
-            )
-        )
+            } else if (song.duration > 0) {
+                Text(
+                    formatSongDuration(song.duration),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = playlistOnGround().copy(alpha = 0.7f),
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
     }
 }
 
@@ -2961,6 +2966,7 @@ fun PlaylistDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var songPendingRemoval by remember { mutableStateOf<Song?>(null) }
     var showOverflow by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
     var isReorderMode by remember { mutableStateOf(false) }
     var descriptionExpanded by remember { mutableStateOf(false) }
     var reorderDirty by remember { mutableStateOf(false) }
@@ -2974,6 +2980,8 @@ fun PlaylistDetailScreen(
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
+    var isUploading by remember(playlist.id) { mutableStateOf(false) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val headerScrolledAway by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
 
@@ -3005,6 +3013,16 @@ fun PlaylistDetailScreen(
         coverPicker.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
+    }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val ok = viewModel.exportLocalPlaylist(songRows.map { it.song }, uri)
+            snackbarHostState.showSnackbar(
+                shareContext.getString(if (ok) R.string.pl_export_done else R.string.pl_export_failed)
+            )
+        }
     }
 
     // Drag state. The dragged row is addressed by its lazy list key so the
@@ -3055,6 +3073,17 @@ fun PlaylistDetailScreen(
             )
             isFetching.value = false
             loadAttempted = true
+        }
+    }
+
+    LaunchedEffect(resolvedPlaylist.id, isLocalPlaylist, isFetching.value) {
+        if (!isLocalPlaylist || isFetching.value) return@LaunchedEffect
+        val found = viewModel.backfillLocalPlaylistDurations(resolvedPlaylist.id, songRows.map { it.song })
+        if (found.isNotEmpty()) {
+            songRows = songRows.map { row ->
+                found[row.song.id]?.takeIf { row.song.duration <= 0 }
+                    ?.let { row.copy(song = row.song.copy(duration = it)) } ?: row
+            }
         }
     }
 
@@ -3213,6 +3242,37 @@ fun PlaylistDetailScreen(
         }
     }
 
+    val sortLocal: (PlaylistSortAction) -> Unit = { action ->
+        val previous = songRows
+        songRows = when (action) {
+            PlaylistSortAction.Title -> songRows.sortedBy { it.song.title.lowercase() }
+            PlaylistSortAction.Artist -> songRows.sortedWith(
+                compareBy({ it.song.artist.lowercase() }, { it.song.title.lowercase() })
+            )
+            PlaylistSortAction.Album -> songRows.sortedWith(
+                compareBy({ it.song.album.lowercase() }, { it.song.title.lowercase() })
+            )
+            PlaylistSortAction.Reverse -> songRows.reversed()
+            PlaylistSortAction.Shuffle -> songRows.shuffled()
+        }
+        if (songRows != previous) {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songRows.map { it.song })
+            reorderDirty = false
+            scope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = shareContext.getString(R.string.lib_sorted),
+                    actionLabel = shareContext.getString(R.string.undo),
+                    duration = SnackbarDuration.Short
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    songRows = previous
+                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, previous.map { it.song })
+                }
+            }
+        }
+    }
+
     val removeSong: (PlaylistSongRow) -> Unit = { row ->
         val song = row.song
         val previous = songRows
@@ -3348,6 +3408,20 @@ fun PlaylistDetailScreen(
                                         Icon(Icons.Rounded.MoreVert, "More options")
                                     }
                                     DropdownMenu(
+                                        expanded = showSortMenu,
+                                        onDismissRequest = { showSortMenu = false }
+                                    ) {
+                                        PlaylistSortAction.entries.forEach { action ->
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(action.label)) },
+                                                onClick = {
+                                                    showSortMenu = false
+                                                    sortLocal(action)
+                                                }
+                                            )
+                                        }
+                                    }
+                                    DropdownMenu(
                                         expanded = showOverflow,
                                         onDismissRequest = { showOverflow = false }
                                     ) {
@@ -3368,11 +3442,33 @@ fun PlaylistDetailScreen(
                                         }
                                         if (hasRename) {
                                             DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.action_rename)) },
+                                                text = { Text(stringResource(R.string.lib_edit_details)) },
                                                 leadingIcon = { Icon(Icons.Rounded.Edit, null) },
                                                 onClick = {
                                                     showOverflow = false
                                                     showEditDialog = true
+                                                }
+                                            )
+                                        }
+                                        if (isLocalPlaylist && songs.size > 1) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.lib_sort_playlist)) },
+                                                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Sort, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    showSortMenu = true
+                                                }
+                                            )
+                                        }
+                                        if (isLocalPlaylist && songs.isNotEmpty()) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.pl_export)) },
+                                                leadingIcon = { Icon(Icons.Rounded.FileUpload, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    val base = (resolvedPlaylist.name ?: "playlist")
+                                                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                                    exportLauncher.launch("$base.m3u8")
                                                 }
                                             )
                                         }
@@ -3408,6 +3504,49 @@ fun PlaylistDetailScreen(
                                                     }
                                                 )
                                             }
+                                        }
+                                        if (isLocalPlaylist && isYouTubeConnected && !isUploading &&
+                                            songs.any { it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.lib_upload_ytm)) },
+                                                leadingIcon = { Icon(Icons.Rounded.CloudUpload, null) },
+                                                onClick = {
+                                                    showOverflow = false
+                                                    isUploading = true
+                                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar(
+                                                            shareContext.getString(R.string.lib_upload_ytm_started)
+                                                        )
+                                                    }
+                                                    // Uploaded in the ViewModel's scope, so leaving
+                                                    // the page does not abandon it halfway; only
+                                                    // the result message waits on this screen.
+                                                    val upload = viewModel.viewModelScope.async {
+                                                        viewModel.uploadLocalPlaylistToYouTube(
+                                                            name = resolvedPlaylist.name ?: "",
+                                                            description = resolvedPlaylist.description,
+                                                            songs = songs,
+                                                        )
+                                                    }
+                                                    scope.launch {
+                                                        val (result, skipped) = upload.await()
+                                                        isUploading = false
+                                                        val message = when {
+                                                            result == null -> shareContext.getString(R.string.lib_upload_ytm_failed)
+                                                            result.uploaded < result.total -> shareContext.getString(
+                                                                R.string.lib_upload_ytm_partial, result.uploaded, result.total
+                                                            )
+                                                            skipped > 0 -> shareContext.resources.getQuantityString(
+                                                                R.plurals.lib_upload_ytm_done_skipped, skipped, skipped
+                                                            )
+                                                            else -> shareContext.getString(R.string.lib_upload_ytm_done)
+                                                        }
+                                                        snackbarHostState.showSnackbar(message)
+                                                    }
+                                                }
+                                            )
                                         }
                                         if (canCopyToLocal) {
                                             DropdownMenuItem(
@@ -3626,7 +3765,7 @@ fun PlaylistDetailScreen(
                 // than in the bare background, so the band the app bar fades
                 // in over is already the page's own color.
                 val ground = playlistPageGround()
-                val windowHeight = LocalWindowInfo.current.containerDpSize.height
+                val windowHeight = com.ivor.ivormusic.ui.theme.windowDpSize().height
                 Column(modifier = Modifier.fillMaxWidth()) {
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         // Near-square on a phone, but never more than a
@@ -4029,7 +4168,7 @@ fun PlaylistDetailScreen(
                     // fill it rather than only reporting that it is empty.
                     EmptyLibraryState(
                         icon = Icons.Rounded.MusicNote,
-                        title = stringResource(R.string.vl_no_videos),
+                        title = stringResource(if (isAlbum) R.string.lib_album_empty else R.string.lib_playlist_empty),
                         subtitle = "Songs you add to this ${if (isAlbum) "album" else "playlist"} will show up here",
                         action = if (isLocalPlaylist && onAddSongsRequest != null) {
                             {

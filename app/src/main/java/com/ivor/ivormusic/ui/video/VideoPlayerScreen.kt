@@ -1,5 +1,8 @@
 package com.ivor.ivormusic.ui.video
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.ui.components.ConnectionAdviceCard
+import com.ivor.ivormusic.data.ConnectionAdvice
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 
@@ -333,6 +336,7 @@ fun FullscreenPlayerContent(
     onToggleControls: () -> Unit,
     hasError: Boolean,
     errorMessage: String,
+    connectionAdvice: ConnectionAdvice?,
     isLoading: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
@@ -580,7 +584,7 @@ fun FullscreenPlayerContent(
 
         // Overlays
         if (hasError) {
-            ErrorOverlay(errorMessage, onRetry)
+            ErrorOverlay(errorMessage, connectionAdvice, onRetry)
         } else if (isLoading || (isBuffering && !showControls)) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 ContainedLoadingIndicator()
@@ -862,6 +866,7 @@ fun PortraitPlayerContent(
     onToggleControls: () -> Unit,
     hasError: Boolean,
     errorMessage: String,
+    connectionAdvice: ConnectionAdvice?,
     isLoading: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
@@ -1009,7 +1014,7 @@ fun PortraitPlayerContent(
             background = captionBackground
         )
 
-        if (hasError) ErrorOverlay(errorMessage, onRetry)
+        if (hasError) ErrorOverlay(errorMessage, connectionAdvice, onRetry)
         if (isLoading || (isBuffering && !showControls)) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             ContainedLoadingIndicator()
         }
@@ -2659,6 +2664,7 @@ fun VideoInfoSection(
     isSubscribed: Boolean = false,
     onLikeClick: () -> Unit = {},
     onDislikeClick: () -> Unit = {},
+    dislikeCount: String?,
     onSubscribeClick: () -> Unit = {},
     onCommentsClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
@@ -2705,437 +2711,442 @@ fun VideoInfoSection(
             onDismiss = { showCollaborators = false }
         )
     }
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
-            top = 20.dp,
-            // Scrolling clearance rather than a viewport inset: the list
-            // passes under the navigation bar and only its last item has to
-            // clear it. The parent no longer takes the bottom inset for the
-            // same reason.
-            bottom = 80.dp +
-                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        ),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        // Title & Stats Group
-        item(key = "title") {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = video.title,
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            // A live stream's "view count" is a concurrent-viewer number that
-            // moves, and its upload date is meaningless, so the badge replaces
-            // the static line rather than sitting next to it.
-            if (isLive) {
-                LiveBadge(
-                    viewerCount = liveViewerCount ?: video.viewCount.takeIf { it.isNotEmpty() }
-                )
-            } else if (isOffline) {
-                Text(
-                    text = stringResource(R.string.vh_available_offline),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                Text(
-                    text = buildString {
-                        if (video.viewCount.isNotEmpty()) append(video.viewCount)
-                        if (!video.uploadedDate.isNullOrEmpty()) append(" • ${video.uploadedDate}")
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        }
-
-        // The playlist this is being watched through. Directly under the title
-        // because it is context for what is on screen rather than a section of
-        // its own, and it is the only thing on the page that says where the
-        // next video is coming from.
-        if (queue != null) {
-            item(key = "queue") {
-            PlayingFromPlaylistCard(queue = queue, onClick = onOpenQueue)
-            }
-        }
-
-        // The action dock: one surfaceContainerHigh container under the title,
-        // sticky so the actions survive the first swipe instead of scrolling
-        // away. Order is Like, Save, Listen as music, Share, Download. Its
-        // row still scrolls internally so the buttons never squash on narrow
-        // screens.
-        if (!isOffline) stickyHeader(key = "action_dock") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(vertical = 4.dp)
-            ) {
-                ActionDock(
-                    engagement = engagement,
-                    video = video,
-                    onLikeClick = onLikeClick,
-                    onDislikeClick = onDislikeClick,
-                    onSaveClick = onSaveClick,
-                    onDownloadClick = onDownloadClick,
-                    showListenAsMusic = showListenAsMusic,
-                    onListenAsMusic = onListenAsMusic
-                )
-            }
-        }
-
-        // Channel Info Surface (tap navigates to the channel)
-        //
-        // A collab video is the exception: it credits several channels and
-        // names none of them as the owner, so there is no channel to navigate
-        // to and nothing for Subscribe to act on - the row becomes the way into
-        // the list instead. Only ever entered when the response actually
-        // carried collaborators, so an ordinary video is untouched.
-        if (!isOffline) item(key = "channel") { Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = if (isCollab) {
-                { showCollaborators = true }
-            } else {
-                onChannelClick
-            }
+    // The caller paints this list's surface as a plain background, so no
+    // Surface sets a content color and uncolored text fell back to black.
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 20.dp,
+                // Scrolling clearance rather than a viewport inset: the list
+                // passes under the navigation bar and only its last item has to
+                // clear it. The parent no longer takes the bottom inset for the
+                // same reason.
+                bottom = 80.dp +
+                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            ),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            ListItem(
-                headlineContent = {
-                    Text(
-                        text = video.channelName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                supportingContent = {
-                    Text(
-                         text = if (isCollab) {
-                             pluralStringResource(
-                                 R.plurals.vp_collaborators_count,
-                                 collaborators.size,
-                                 collaborators.size
-                             )
-                         } else {
-                             engagement?.subscriberCountText ?: video.subscriberCount ?: ""
-                         },
-                         style = MaterialTheme.typography.bodySmall
-                    )
-                },
-                leadingContent = {
-                    if (isCollab) {
-                        CollaboratorAvatarStack(collaborators = collaborators)
-                    } else if (!video.channelIconUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = video.channelIconUrl,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = video.channelName.take(1).uppercase(),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                },
-                trailingContent = {
-                    if (isCollab) {
-                        // No Subscribe here on purpose: subscribing to "KSI and
-                        // 2 more" is ambiguous, and a button permanently
-                        // disabled because the response carried no channel id
-                        // is worse than one that is not offered. Each row in
-                        // the sheet opens a channel page, which has a working
-                        // one that routes through SubscriptionActions.
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Button(
-                            onClick = onSubscribeClick,
-                            enabled = engagement?.channelId != null,
-                            colors = if (isSubscribed) {
-                                ButtonDefaults.filledTonalButtonColors()
-                            } else {
-                                ButtonDefaults.buttonColors()
-                            }
-                        ) {
-                            Text(if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
-                        }
-                    }
-                },
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent
+            // Title & Stats Group
+            item(key = "title") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = video.title,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth()
                 )
-            )
-        }
-        }
 
-        // Live chat entry. On a live stream this replaces comments outright
-        // rather than sitting above them: chat is where the conversation
-        // actually is, and the comment section on a running broadcast is
-        // usually empty or disabled, so offering both sent people to the dead
-        // one.
-        if (isLive) {
-            item(key = "live_chat") { Surface(
+                // A live stream's "view count" is a concurrent-viewer number that
+                // moves, and its upload date is meaningless, so the badge replaces
+                // the static line rather than sitting next to it.
+                if (isLive) {
+                    LiveBadge(
+                        viewerCount = liveViewerCount ?: video.viewCount.takeIf { it.isNotEmpty() }
+                    )
+                } else if (isOffline) {
+                    Text(
+                        text = stringResource(R.string.vh_available_offline),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Text(
+                        text = buildString {
+                            if (video.viewCount.isNotEmpty()) append(video.viewCount)
+                            if (!video.uploadedDate.isNullOrEmpty()) append(" • ${video.uploadedDate}")
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            }
+
+            // The playlist this is being watched through. Directly under the title
+            // because it is context for what is on screen rather than a section of
+            // its own, and it is the only thing on the page that says where the
+            // next video is coming from.
+            if (queue != null) {
+                item(key = "queue") {
+                PlayingFromPlaylistCard(queue = queue, onClick = onOpenQueue)
+                }
+            }
+
+            // The action dock: one surfaceContainerHigh container under the title,
+            // sticky so the actions survive the first swipe instead of scrolling
+            // away. Order is Like, Save, Listen as music, Share, Download. Its
+            // row still scrolls internally so the buttons never squash on narrow
+            // screens.
+            if (!isOffline) stickyHeader(key = "action_dock") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(vertical = 4.dp)
+                ) {
+                    ActionDock(
+                        engagement = engagement,
+                        video = video,
+                        onLikeClick = onLikeClick,
+                        onDislikeClick = onDislikeClick,
+                        dislikeCount = dislikeCount,
+                        onSaveClick = onSaveClick,
+                        onDownloadClick = onDownloadClick,
+                        showListenAsMusic = showListenAsMusic,
+                        onListenAsMusic = onListenAsMusic
+                    )
+                }
+            }
+
+            // Channel Info Surface (tap navigates to the channel)
+            //
+            // A collab video is the exception: it credits several channels and
+            // names none of them as the owner, so there is no channel to navigate
+            // to and nothing for Subscribe to act on - the row becomes the way into
+            // the list instead. Only ever entered when the response actually
+            // carried collaborators, so an ordinary video is untouched.
+            if (!isOffline) item(key = "channel") { Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.fillMaxWidth(),
-                onClick = onLiveChatClick
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.Chat,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = stringResource(R.string.vp_live_chat),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    LiveDot()
-                    Icon(
-                        Icons.Rounded.ExpandMore,
-                        contentDescription = stringResource(R.string.vp_open_live_chat),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                onClick = if (isCollab) {
+                    { showCollaborators = true }
+                } else {
+                    onChannelClick
                 }
-            }
-        }
-        }
-
-        // Comments + description share one card now. The comments half stays
-        // a door - the list itself is never rendered inline, it slides up on
-        // tap - and the card itself is never clickable, so the comments row
-        // and the description links keep their own tap targets.
-        if (!isLive && !isOffline) {
-            item(key = "about_${video.videoId}") { Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
-                val commentsAvailable = engagement?.commentsToken != null
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(enabled = commentsAvailable, onClick = onCommentsClick)
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.Comment,
-                        contentDescription = null,
-                        tint = if (commentsAvailable) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = stringResource(R.string.cd_comments),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (commentsAvailable) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Icon(
-                        Icons.Rounded.ExpandMore,
-                        contentDescription = stringResource(R.string.cd_comments),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-        
-                // Description Surface
-                if (!video.description.isNullOrBlank()) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        text = stringResource(R.string.vp_description),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    
-                    var isDescriptionExpanded by remember { mutableStateOf(false) }
-                    // YouTube's link offsets are measured against the raw
-                    // attributedDescription text, so it must not be rewritten
-                    // when we have them. Only the NewPipe-sourced descriptions
-                    // (which carry no links) still need HTML unescaping.
-                    val cleanedDescription = remember(video.description, video.descriptionLinks) {
-                        when {
-                            video.description == null -> ""
-                            video.descriptionLinks.isNotEmpty() -> video.description
-                            else -> androidx.core.text.HtmlCompat.fromHtml(
-                                video.description,
-                                androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY
-                            ).toString().trim()
-                        }
-                    }
-                    val describedText = com.ivor.ivormusic.ui.components.rememberLinkedText(
-                        rich = com.ivor.ivormusic.data.RichText(
-                            cleanedDescription,
-                            video.descriptionLinks
-                        ),
-                        onTimestampClick = onSeekTo
-                    )
-
-                    if (cleanedDescription.isNotEmpty()) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            androidx.compose.foundation.text.selection.SelectionContainer {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = video.channelName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                             text = if (isCollab) {
+                                 pluralStringResource(
+                                     R.plurals.vp_collaborators_count,
+                                     collaborators.size,
+                                     collaborators.size
+                                 )
+                             } else {
+                                 engagement?.subscriberCountText ?: video.subscriberCount ?: ""
+                             },
+                             style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    leadingContent = {
+                        if (isCollab) {
+                            CollaboratorAvatarStack(collaborators = collaborators)
+                        } else if (!video.channelIconUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = video.channelIconUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Text(
-                                    text = describedText,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = if (isDescriptionExpanded) Int.MAX_VALUE else 3,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-
-                            if (cleanedDescription.length > 100 || cleanedDescription.count { it == '\n' } > 2) {
-                                // Only this row toggles expansion. It used to be
-                                // the whole block, which would now fight the
-                                // links inside the text for the same tap.
-                                Text(
-                                    text = if (isDescriptionExpanded) stringResource(R.string.vp_show_less) else stringResource(R.string.action_show_more),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .clickable { isDescriptionExpanded = !isDescriptionExpanded }
-                                        .padding(top = 8.dp)
+                                    text = video.channelName.take(1).uppercase(),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
-                    }
-                }
-                } // if (!video.description.isNullOrBlank())
-                } // merged info card Column
-            } // Surface
-            } // item
-        } // if (!isLive && !isOffline)
-        // Related Videos Section
-        if (relatedVideos.isNotEmpty()) {
-            item(key = "related_header") {
-                Text(
-                    // "Up Next" is a promise about what plays when this ends,
-                    // and inside a playlist that promise belongs to the queue.
-                    // These are then just recommendations, and saying so is the
-                    // difference between the header being true and being wrong.
-                    text = if (queue != null) stringResource(R.string.vp_related_videos) else stringResource(R.string.ps_up_next),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    },
+                    trailingContent = {
+                        if (isCollab) {
+                            // No Subscribe here on purpose: subscribing to "KSI and
+                            // 2 more" is ambiguous, and a button permanently
+                            // disabled because the response carried no channel id
+                            // is worse than one that is not offered. Each row in
+                            // the sheet opens a channel page, which has a working
+                            // one that routes through SubscriptionActions.
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Button(
+                                onClick = onSubscribeClick,
+                                enabled = engagement?.channelId != null,
+                                colors = if (isSubscribed) {
+                                    ButtonDefaults.filledTonalButtonColors()
+                                } else {
+                                    ButtonDefaults.buttonColors()
+                                }
+                            ) {
+                                Text(if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
+                            }
+                        }
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent
+                    )
                 )
             }
-            items(relatedVideos, key = { it.videoId }) { relatedVideo ->
+            }
+
+            // Live chat entry. On a live stream this replaces comments outright
+            // rather than sitting above them: chat is where the conversation
+            // actually is, and the comment section on a running broadcast is
+            // usually empty or disabled, so offering both sent people to the dead
+            // one.
+            if (isLive) {
+                item(key = "live_chat") { Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onLiveChatClick
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.Chat,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.vp_live_chat),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        LiveDot()
+                        Icon(
+                            Icons.Rounded.ExpandMore,
+                            contentDescription = stringResource(R.string.vp_open_live_chat),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            }
+
+            // Comments + description share one card now. The comments half stays
+            // a door - the list itself is never rendered inline, it slides up on
+            // tap - and the card itself is never clickable, so the comments row
+            // and the description links keep their own tap targets.
+            if (!isLive && !isOffline) {
+                item(key = "about_${video.videoId}") { Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column {
+                    val commentsAvailable = engagement?.commentsToken != null
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            // Long-press saves to Watch Later / a playlist,
-                            // same gesture as the home feed cards
-                            .combinedClickable(
-                                onClick = { onVideoSelect(relatedVideo) },
-                                onLongClick = onRelatedLongPress?.let { longPress ->
-                                    { longPress(relatedVideo) }
-                                }
-                            )
-                            .padding(vertical = 8.dp),
+                            .clickable(enabled = commentsAvailable, onClick = onCommentsClick)
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Thumbnail
-                        Box(
-                            modifier = Modifier
-                                .width(144.dp)
-                                .aspectRatio(16f/9f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        ) {
-                            if (relatedVideo.thumbnailUrl != null) {
-                                AsyncImage(
-                                    model = relatedVideo.thumbnailUrl,
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            }
-                            
-                            VideoThumbnailBadge(
-                                video = relatedVideo,
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(4.dp)
-                            )
-                        }
+                        Icon(
+                            Icons.AutoMirrored.Rounded.Comment,
+                            contentDescription = null,
+                            tint = if (commentsAvailable) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = stringResource(R.string.cd_comments),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (commentsAvailable) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            Icons.Rounded.ExpandMore,
+                            contentDescription = stringResource(R.string.cd_comments),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+            
+                    // Description Surface
+                    if (!video.description.isNullOrBlank()) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant
+                        )
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            text = stringResource(R.string.vp_description),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(8.dp))
                         
-                        // Info
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = relatedVideo.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = relatedVideo.channelName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            val stats = listOfNotNull(
-                                relatedVideo.viewCount.takeIf { it.isNotBlank() },
-                                relatedVideo.uploadedDate?.takeIf { it.isNotBlank() }
-                            ).joinToString(" • ")
-                            if (stats.isNotBlank()) {
-                                Text(
-                                    text = stats,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        var isDescriptionExpanded by remember { mutableStateOf(false) }
+                        // YouTube's link offsets are measured against the raw
+                        // attributedDescription text, so it must not be rewritten
+                        // when we have them. Only the NewPipe-sourced descriptions
+                        // (which carry no links) still need HTML unescaping.
+                        val cleanedDescription = remember(video.description, video.descriptionLinks) {
+                            when {
+                                video.description == null -> ""
+                                video.descriptionLinks.isNotEmpty() -> video.description
+                                else -> androidx.core.text.HtmlCompat.fromHtml(
+                                    video.description,
+                                    androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY
+                                ).toString().trim()
+                            }
+                        }
+                        val describedText = com.ivor.ivormusic.ui.components.rememberLinkedText(
+                            rich = com.ivor.ivormusic.data.RichText(
+                                cleanedDescription,
+                                video.descriptionLinks
+                            ),
+                            onTimestampClick = onSeekTo
+                        )
+
+                        if (cleanedDescription.isNotEmpty()) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                androidx.compose.foundation.text.selection.SelectionContainer {
+                                    Text(
+                                        text = describedText,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = if (isDescriptionExpanded) Int.MAX_VALUE else 3,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                if (cleanedDescription.length > 100 || cleanedDescription.count { it == '\n' } > 2) {
+                                    // Only this row toggles expansion. It used to be
+                                    // the whole block, which would now fight the
+                                    // links inside the text for the same tap.
+                                    Text(
+                                        text = if (isDescriptionExpanded) stringResource(R.string.vp_show_less) else stringResource(R.string.action_show_more),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clickable { isDescriptionExpanded = !isDescriptionExpanded }
+                                            .padding(top = 8.dp)
+                                    )
+                                }
                             }
                         }
                     }
+                    } // if (!video.description.isNullOrBlank())
+                    } // merged info card Column
+                } // Surface
+                } // item
+            } // if (!isLive && !isOffline)
+            // Related Videos Section
+            if (relatedVideos.isNotEmpty()) {
+                item(key = "related_header") {
+                    Text(
+                        // "Up Next" is a promise about what plays when this ends,
+                        // and inside a playlist that promise belongs to the queue.
+                        // These are then just recommendations, and saying so is the
+                        // difference between the header being true and being wrong.
+                        text = if (queue != null) stringResource(R.string.vp_related_videos) else stringResource(R.string.ps_up_next),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                items(relatedVideos, key = { it.videoId }) { relatedVideo ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                // Long-press saves to Watch Later / a playlist,
+                                // same gesture as the home feed cards
+                                .combinedClickable(
+                                    onClick = { onVideoSelect(relatedVideo) },
+                                    onLongClick = onRelatedLongPress?.let { longPress ->
+                                        { longPress(relatedVideo) }
+                                    }
+                                )
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Thumbnail
+                            Box(
+                                modifier = Modifier
+                                    .width(144.dp)
+                                    .aspectRatio(16f/9f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            ) {
+                                if (relatedVideo.thumbnailUrl != null) {
+                                    AsyncImage(
+                                        model = relatedVideo.thumbnailUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                                
+                                VideoThumbnailBadge(
+                                    video = relatedVideo,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(4.dp)
+                                )
+                            }
+                            
+                            // Info
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = relatedVideo.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = relatedVideo.channelName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                val stats = listOfNotNull(
+                                    relatedVideo.viewCount.takeIf { it.isNotBlank() },
+                                    relatedVideo.uploadedDate?.takeIf { it.isNotBlank() }
+                                ).joinToString(" • ")
+                                if (stats.isNotBlank()) {
+                                    Text(
+                                        text = stats,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                }
             }
         }
     }
@@ -3391,6 +3402,7 @@ private fun ExpressiveLikeDislikeGroup(
     engagement: VideoEngagement?,
     onLikeClick: () -> Unit,
     onDislikeClick: () -> Unit,
+    dislikeCount: String?,
     modifier: Modifier = Modifier
 ) {
     val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
@@ -3445,6 +3457,14 @@ private fun ExpressiveLikeDislikeGroup(
                 contentDescription = if (likeStatus == LikeStatus.DISLIKE) stringResource(R.string.vp_remove_dislike) else stringResource(R.string.cd_dislike),
                 modifier = Modifier.size(18.dp)
             )
+            if (!dislikeCount.isNullOrBlank()) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = dislikeCount,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
@@ -3461,6 +3481,7 @@ private fun ActionDock(
     video: VideoItem,
     onLikeClick: () -> Unit,
     onDislikeClick: () -> Unit,
+    dislikeCount: String?,
     onSaveClick: () -> Unit,
     onDownloadClick: () -> Unit,
     /**
@@ -3487,7 +3508,8 @@ private fun ActionDock(
             ExpressiveLikeDislikeGroup(
                 engagement = engagement,
                 onLikeClick = onLikeClick,
-                onDislikeClick = onDislikeClick
+                onDislikeClick = onDislikeClick,
+                dislikeCount = dislikeCount
             )
             DockSaveButton(onClick = onSaveClick)
             if (showListenAsMusic) {
@@ -3586,7 +3608,17 @@ fun ExpressivePlayPauseButton(
 }
 
 @Composable
-fun ErrorOverlay(message: String, onRetry: (() -> Unit)? = null) {
+fun ErrorOverlay(
+    message: String,
+    connectionAdvice: ConnectionAdvice?,
+    onRetry: (() -> Unit)? = null,
+) {
+    // A connection refusal gets advice instead of a message: the Retry
+    // below would fail the same way until the network changes.
+    if (connectionAdvice != null) {
+        ConnectionAdviceCard(connectionAdvice, onRetry)
+        return
+    }
     Box(
         modifier = Modifier
             .fillMaxSize(),

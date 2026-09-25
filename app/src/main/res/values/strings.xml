@@ -112,6 +112,9 @@
     <!-- Home screen -->
     <string name="home_section_recent_albums">Recent Albums</string>
     <string name="home_section_jump_back_in">Jump back in</string>
+    <string name="home_section_top_artists">Your top artists</string>
+    <string name="home_section_mixes">Mixes for you</string>
+    <string name="home_offline_subtitle">You\'re offline. These play without a connection.</string>
     <string name="your_mix_line1">Your</string>
     <string name="your_mix_line2">Mix</string>
     <string name="update_badge_version">v%1$s</string>
@@ -403,6 +406,34 @@
     <string name="sp_no_description">No description</string>
     <string name="sp_shorts_enabled_sub">Shown on Home and opened in the swipe player</string>
     <string name="sp_shorts_disabled_sub">Hidden from Home; opened in the video player elsewhere</string>
+    <string name="sp_shorts_hard_block">Fully block Shorts</string>
+    <string name="sp_return_dislike">Show dislike counts</string>
+    <string name="filter_music_home">Home</string>
+    <string name="filter_explore">Explore</string>
+    <string name="filter_charts">Charts</string>
+    <string name="filter_new_releases">New</string>
+    <string name="sp_video_layout">Video lists</string>
+    <string name="sp_video_layout_sub">How Home, subscriptions, search and history show videos</string>
+    <string name="sp_video_layout_cards">Cards</string>
+    <string name="sp_video_layout_compact">Compact</string>
+    <string name="sp_video_layout_grid">Grid</string>
+    <string name="sp_subs_refresh">Refresh the feed</string>
+    <string name="sp_subs_refresh_sub">Pull down on the feed to refresh any time</string>
+    <string name="sp_subs_refresh_on_open">On open</string>
+    <string name="sp_subs_refresh_hours">Every %1$dh</string>
+    <string name="sp_subs_refresh_manual">Manually</string>
+    <string name="subs_feed_updated">Updated %1$s</string>
+    <string name="sp_return_dislike_sub">Estimates from returnyoutubedislikeapi.com</string>
+    <string name="si_return_dislike">Shows an estimated dislike count on the watch page, fetched from the Return YouTube Dislike project. Only the video id is sent, and nothing is ever submitted.</string>
+    <string name="sp_shorts_hard_block_on">Hidden from channel pages and video search too</string>
+    <string name="sp_shorts_hard_block_off">Shorts found elsewhere still play as videos</string>
+    <string name="sp_content_region">Content region</string>
+    <string name="sp_content_region_auto">Automatic</string>
+    <string name="sp_content_region_auto_value">Automatic (%1$s)</string>
+    <string name="sp_content_region_auto_sub">Follows your phone: %1$s</string>
+    <string name="sp_content_region_sheet_sub">The country search, trending and signed-out feeds are ranked for</string>
+    <string name="sp_content_region_search">Search countries</string>
+    <string name="sp_content_region_none">No country matches \"%1$s\"</string>
     <string name="sp_shorts_buttons">Shorts Buttons</string>
     <string name="sp_shorts_buttons_sub">Tap a button to show or hide it in Shorts</string>
     <string name="sp_excluded_folders_sub">Songs from selected folders won\'t appear in your library</string>
@@ -706,6 +737,16 @@
     </plurals>
     <string name="loading">Loading...</string>
     <string name="load_more">Load More</string>
+
+    <!-- Connection refused by YouTube (video, Shorts) -->
+    <string name="conn_refused_title">YouTube is limiting this connection</string>
+    <string name="conn_refused_mobile">Turn airplane mode on for a few seconds, then off. Your carrier usually gives you a new address.</string>
+    <string name="conn_refused_wifi">Switch to mobile data for a while, or join a different Wi-Fi network.</string>
+    <string name="conn_refused_vpn">Your VPN\'s address is being limited. Try another server, or turn the VPN off.</string>
+    <string name="conn_refused_other">Try a different network for a while.</string>
+    <string name="conn_refused_wait">Waiting a few minutes also helps.</string>
+    <string name="conn_refused_auto_retry">Plays again by itself once your connection changes</string>
+    <string name="conn_refused_change_network">Change network</string>
 
     <!-- Shorts -->
     <string name="sh_playback_failed">Playback failed</string>
@@ -1222,6 +1263,15 @@
     <string name="lib_saved_to_library">Saved to your library</string>
     <string name="lib_copy_editable">Save as editable copy</string>
     <string name="lib_copy_editable_done">Copied to your library. Edit it there.</string>
+    <string name="lib_upload_ytm">Upload to YouTube Music</string>
+    <string name="lib_upload_ytm_started">Uploading to YouTube Music…</string>
+    <string name="lib_upload_ytm_done">Uploaded to YouTube Music as a private playlist</string>
+    <plurals name="lib_upload_ytm_done_skipped">
+        <item quantity="one">Uploaded. %d song on this device only was left out.</item>
+        <item quantity="other">Uploaded. %d songs on this device only were left out.</item>
+    </plurals>
+    <string name="lib_upload_ytm_partial">Uploaded %1$d of %2$d songs to YouTube Music.</string>
+    <string name="lib_upload_ytm_failed">Couldn\'t upload to YouTube Music</string>
     <string name="lib_hide_playlist">Hide from Koda</string>
     <string name="lib_hidden_playlists">Hidden playlists</string>
     <string name="lib_hidden_count">%1$d hidden</string>
@@ -1481,6 +1531,7 @@
     <string name="si_local_only">Cuts all internet use. Only downloads and files on this device play; search, streaming and every YouTube surface stay off until you switch back.</string>
     <string name="si_home_mode_toggle">Shows a music/video switch in the Home header so you can change modes without opening Settings.</string>
     <string name="si_timed_comments">Shows comments pinned to the moment they talk about, floating above the seek bar as the video plays.</string>
+    <string name="si_shorts_hard_block">Goes further than turning Shorts off: the Shorts tab and Shorts shelves disappear from channel pages, and Shorts are left out of video search. Turn Shorts back on to undo it.</string>
     <string name="si_shorts">Show or hide Shorts across the app. Hidden Shorts are not just tucked away - they stop being fetched at all.</string>
     <string name="si_recent_searches">Shows your past searches when you tap the search field. Turning this off hides them without deleting them.</string>
     <string name="si_compact_video_home">Smaller video cards in the video Home feed, so more fit on one screen.</string>
@@ -1683,6 +1734,40 @@
 
     <!-- Add songs from another playlist -->
     <string name="lib_add_from_playlists">Add from your playlists</string>
+    <string name="lib_edit_details">Edit details</string>
+    <string name="lib_sort_playlist">Sort</string>
+    <string name="lib_sort_title">By title</string>
+    <string name="lib_sort_artist">By artist</string>
+    <string name="lib_sort_album">By album</string>
+    <string name="lib_sort_reverse">Reverse order</string>
+    <string name="lib_sort_shuffle">Shuffle order</string>
+    <string name="lib_sorted">Playlist reordered</string>
+    <string name="lib_playlist_empty">This playlist is empty</string>
+    <string name="lib_album_empty">This album is empty</string>
+    <string name="pl_import">Import</string>
+    <string name="pl_export">Export as m3u8</string>
+    <string name="pl_export_done">Playlist exported</string>
+    <string name="pl_export_failed">Could not export the playlist</string>
+    <string name="pl_import_done_title">Import finished</string>
+    <string name="pl_import_nothing_new">Everything in that file is already in your library.</string>
+    <string name="pl_import_failed_title">Could not read that file</string>
+    <string name="pl_import_failed_body">Pick an m3u or m3u8 playlist, or a NewPipe or PipePipe backup (.zip).</string>
+    <plurals name="pl_import_playlists">
+        <item quantity="one">Added %1$d playlist with %2$d songs.</item>
+        <item quantity="other">Added %1$d playlists with %2$d songs.</item>
+    </plurals>
+    <plurals name="pl_import_saved">
+        <item quantity="one">Saved %d YouTube playlist to your library.</item>
+        <item quantity="other">Saved %d YouTube playlists to your library.</item>
+    </plurals>
+    <plurals name="pl_import_missing">
+        <item quantity="one">%d file is not on this device, so it was skipped.</item>
+        <item quantity="other">%d files are not on this device, so they were skipped.</item>
+    </plurals>
+    <plurals name="pl_import_foreign">
+        <item quantity="one">%d entry was from a service other than YouTube and was skipped.</item>
+        <item quantity="other">%d entries were from services other than YouTube and were skipped.</item>
+    </plurals>
     <string name="import_title">Add songs</string>
     <string name="import_pick_source">Copy songs from any of your playlists into %1$s.</string>
     <string name="import_select_all">Select all</string>

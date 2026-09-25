@@ -156,7 +156,7 @@ fun ExpandablePlayer(
     // device that keeps its bar on the side) it is short by the same inset.
     // VideoPlayerOverlay solves the same problem with BoxWithConstraints; here
     // the measurement is needed above the layout that would provide it.
-    val windowSize = LocalWindowInfo.current.containerDpSize
+    val windowSize = com.ivor.ivormusic.ui.theme.windowDpSize()
     val screenHeight = windowSize.height
     val screenWidth = windowSize.width
     val density = LocalDensity.current
@@ -247,6 +247,12 @@ fun ExpandablePlayer(
     // Swipe Logic for expand/collapse (vertical)
     var verticalDragOffset by remember { mutableFloatStateOf(0f) }
     val verticalSwipeThreshold = -50f
+    // Swipe up on the expanded player opens the options sheet. Longer than
+    // the collapse swipe, so a slightly upward flick does not open it.
+    val optionsSwipeThreshold = with(density) { 80.dp.toPx() }
+    val nowPlayingOptionsOpen = remember { mutableStateOf(false) }
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    LaunchedEffect(isExpanded) { if (!isExpanded) nowPlayingOptionsOpen.value = false }
     
     // Swipe Logic for dismiss (horizontal) - only when collapsed
     var horizontalDragOffset by remember { mutableFloatStateOf(0f) }
@@ -305,6 +311,13 @@ fun ExpandablePlayer(
                             onDragEnd = {
                                 if (verticalDragOffset > -verticalSwipeThreshold) {
                                     onExpandChange(false)
+                                } else if (verticalDragOffset < -optionsSwipeThreshold &&
+                                    !nowPlayingOptionsOpen.value
+                                ) {
+                                    haptics.performHapticFeedback(
+                                        androidx.compose.ui.hapticfeedback.HapticFeedbackType.GestureEnd
+                                    )
+                                    nowPlayingOptionsOpen.value = true
                                 }
                                 verticalDragOffset = 0f
                             },
@@ -456,6 +469,7 @@ fun ExpandablePlayer(
                             // The rate every style's bar extrapolates at between
                             // the service's once-a-second samples.
                             LocalPlaybackSpeed provides playbackSpeed,
+                            LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
                         ) {
                         when (activeStyle) {
                             PlayerStyle.CLASSIC -> {

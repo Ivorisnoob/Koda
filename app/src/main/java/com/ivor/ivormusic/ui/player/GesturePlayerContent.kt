@@ -125,7 +125,7 @@ fun GesturePlayerSheetContent(
     
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // Sleep timer
     val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
@@ -1197,7 +1197,7 @@ private fun GestureQueueView(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Up Next",
+                            text = stringResource(R.string.ps_up_next),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )

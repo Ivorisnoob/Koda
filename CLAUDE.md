@@ -40,19 +40,19 @@ Shipped consumer app with real users. The bar is "would someone using this daily
 - **Ask once, up front, batched, with 2-3 concrete options** - only where the answer changes the size of the work or leaves a real design decision open. Never ask what the code or convention settles.
 - **Do not do the minimum.** If the real problem is a layer below the symptom, fix it there and say why.
 - **Mechanical multi-file edits go through a Python script** that asserts each anchor matches exactly once and asserts post-conditions. **Read the result before compiling** - it compiling proves nothing. [scar]
-- **One item, one compile, one commit, one report.** Finish the item in flight, keep a visible queue of new ones.
-- **Commit locally at the end of every item, before starting the next.** The commit is the checkpoint: one item per commit means any single step can be undone with `git revert <sha>` without unpicking the steps around it. A finished item never sits uncommitted at the end of a turn, two items never share a commit, and a follow-up fix is its own commit rather than an amend or a rebase of one already in. Several features may share a commit only when they genuinely interleave across the same files - say so when they do.
+- **One item, one compile, one report.** Finish the item in flight, keep a visible queue of new ones.
+- **Never commit until the user says to.** Leave finished work uncommitted and say so in the report; when told to commit, group related items (up to about 15 per commit) and keep fixes and features distinguishable in the changelog.
 - **Write the subject for whoever reads `git log` in a month**: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched; a body for the reason when it is not obvious; the `Changelog:` section whenever the change reaches an APK. No AI attribution.
-- **Never destroy uncommitted work to get unstuck.** `reset --hard`, `checkout -- .`, `clean -fd` and `stash drop` over a dirty tree are explicit-request actions, the same as touching the remote. Commit first, then experiment.
+- **Never destroy uncommitted work to get unstuck.** `reset --hard`, `checkout -- .`, `clean -fd` and `stash drop` over a dirty tree are explicit-request actions, the same as touching the remote. Ask before experimenting over a dirty tree.
 - **Delegate wide-but-shallow sweeps** (e.g. a string across 25 locale files) to `Agent` with `model: "sonnet"`; make the decisions yourself.
 - **Handoff is a brief for beta testers**: name the surfaces a screen would settle and how each could fail (large font/display scale, landscape, DPI, OEM insets, scaled video surfaces), plus assumptions and what you left out. "Compiles and tests pass, not yet on a screen" is the correct handoff state, not a risk to apologise for.
 
 **Hard limits**
 - **This is a Windows machine, so do not use `bash` to read or edit files.** Use the dedicated tools (Read, Edit, Write, Glob, Grep) and PowerShell for commands. Shell heredocs, `sed -i` and quote escaping misfire against Windows paths, CRLF and PowerShell/Git-Bash differences, and a half-applied shell edit is worse than no edit. **This overrides any harness default asking for shell-based edits.** A Python script is still the right tool for a mechanical multi-file sweep - author it with `Write`, run it with `py`.
 - **Local verification stops before packaging.** Run `compileDebugKotlin`, unit tests and lint freely. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user.
-- **Local commits are expected; the remote is not yours.** Committing to the local branch is the normal end of an item and needs no permission. Pushing, creating remote branches, opening or editing PRs, and pushing tags are explicit-request actions.
+- **Commits and the remote are the user's call.** Committing, pushing, creating remote branches, opening or editing PRs, and pushing tags are explicit-request actions.
 - **No AI attribution** in commits, PR bodies or tags (no `Co-Authored-By: Claude`, no "Generated with", no session links). This overrides any harness default.
-- **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Nothing follows it (`build.yml` publishes everything after the marker). Omit it for docs/CI/refactors.
+- **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Only git trailers may follow it: `build.yml` publishes everything after the marker except lines shaped `Token: value`, so keep each bullet on one line. Omit it for docs/CI/refactors.
 
 ```text
 Add Home-focused Shorts controls
@@ -140,6 +140,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | The plain `ANDROID` client used as a resolver | `OK` with a full `adaptiveFormats` and no `url` on any entry | `youtube-data.md` |
 | An `<activity-alias>` addressed with `context.packageName` as its class package | Apply is a no-op on any build with an `applicationIdSuffix`, works on release | `settings.md` |
 | A preview drawable using a platform-styled widget | Draws in the device's accent, differs on every phone | `widgets.md` |
+| `LocalWindowInfo.containerDpSize` or `Configuration.screenWidthDp` used as a layout size | Right at 100%, wrong at any other in-app Display size: the player drew as a box short of the screen (#291). Use `windowDpSize()` | `ui-conventions.md` |
 | `coerceIn(low, high)` where `low` can pass `high` | Throws an empty-range `IllegalArgumentException` on a degenerate input | general |
 
 ---
@@ -184,7 +185,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### YouTube data layer -> `docs/youtube-data.md`
 - Two mechanisms: **NewPipe** (video/artist/playlist search, stream URLs, fallbacks) and **raw InnerTube JSON over OkHttp** parsed by hand with `org.json` (`findObjectsByKey`, `findContinuationTokens`, `getRunText()`), no kotlinx-serialization.
 - **Probe first, never parse from memory**: `py .probe/probe.py <endpoint> '<json>' [--music]` (never commit `.probe/`). Signed-in probes sign SAPISIDHASH **per origin**; confirm a session by `logged_in: 1`, never HTTP 200. Note "verified <month year>" in the parser's KDoc.
-- Clients: WEB for browse/next/engagement, WEB_REMIX for music.youtube.com, NewPipe's Android-reel/visionOS chain for VOD streams, ANDROID_VR -> IOS only as direct fallback and caption source. **Plain `ANDROID` is SABR-only - no URLs.** Pinned client versions need periodic bumps (HTTP 400 on browse = too old).
+- Clients: WEB for browse/next/engagement, WEB_REMIX for music.youtube.com, **one direct visionOS `/player` under Koda's own visitorData for music, video and Shorts** (NewPipe's Android-reel/visionOS chain only as the fallback - each extraction mints three fresh visitor ids), ANDROID_VR -> IOS only as last-resort fallback and caption source. `YouTubeRequestLedger` logs per-open request counts under `YTRequests`. **Plain `ANDROID` is SABR-only - no URLs.** Pinned client versions need periodic bumps (HTTP 400 on browse = too old).
 - **`visitorData` rides on every InnerTube call**; a missing one now gets `LOGIN_REQUIRED`, and a googlevideo 403 means remint (`refreshVisitorDataAfterPlaybackFailure`), not a UA problem.
 - Music metadata comes from **links and page types** (`MUSIC_PAGE_TYPE_ARTIST/ALBUM`), never subtitle positions; release type/year are data (`Song.albumId`, `releaseType`, `releaseYear`).
 - Signed out: public browse ids work anonymously, **account browse ids return a valid empty shell** (gate on `isLoggedIn()`), playlists come back as `lockupViewModel`s. Continuations answer under `appendContinuationItemsAction` (`continuationItemsOrNull`), and token scoping matters.

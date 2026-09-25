@@ -941,7 +941,7 @@ private fun ArtistHero(
     modifier: Modifier = Modifier,
 ) {
     val background = MaterialTheme.colorScheme.background
-    val windowHeight = LocalWindowInfo.current.containerDpSize.height
+    val windowHeight = com.ivor.ivormusic.ui.theme.windowDpSize().height
     val density = LocalDensity.current
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {

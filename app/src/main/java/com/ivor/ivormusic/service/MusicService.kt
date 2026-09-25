@@ -190,12 +190,14 @@ class MusicService : MediaLibraryService() {
     // volatile field fed by the preference flow instead of a prefs read.
     @Volatile private var isCacheEnabled = true
     private var fadeVolumeJob: Job? = null
+    private var sleepFadeJob: Job? = null
     private var progressJob: Job? = null
     private var transitionJob: Job? = null
     private var playbackShuffleEnabled = false
     private var playbackShuffleSeed = 0L
     private var playbackRepeatMode = Player.REPEAT_MODE_OFF
-    private var lastShuffleOrderItemCount = -1
+    /** A restored session's play order, applied once its queue is in place. */
+    private var pendingRestoredPlayOrder: IntArray? = null
 
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
@@ -241,16 +243,16 @@ class MusicService : MediaLibraryService() {
         private const val PREFETCH_AHEAD_COUNT = 3
         private const val MAX_RESOLVED_URI_ENTRIES = 128
         private const val MAX_WARMED_IDS = 256
-        // Covers the maintained NewPipe extraction and the direct InnerTube
-        // fallback; their individual requests are also bounded by OkHttp.
+        // Covers the direct visionOS call and the NewPipe fallback behind it;
+        // their individual requests are also bounded by OkHttp.
         //
         // This timeout does not itself interrupt anything - both paths block
         // inside OkHttp, so it can only discard a late result, and a discarded
         // result is a skipped song. The budgets underneath are what keep the
-        // arithmetic inside it: YouTubeRepository gives NewPipe
-        // NEWPIPE_STREAM_BUDGET_MS (8s) before handing over, and each direct
-        // /player call is capped at 8s by streamResolveClient, so the ordinary
-        // failing case is one budget plus one client and lands well inside 20s.
+        // arithmetic inside it: each direct /player call is capped at 8s by
+        // streamResolveClient, and YouTubeRepository gives NewPipe
+        // NEWPIPE_STREAM_BUDGET_MS (8s), so the ordinary failing case is one
+        // client plus one budget and lands inside 20s.
         // Lowering either one without the other reintroduces the case where a
         // working fallback exists and is never reached.
         private const val RESOLVE_TIMEOUT_MS = 20_000L
@@ -403,7 +405,7 @@ class MusicService : MediaLibraryService() {
          * as drifting off rather than as a glitch, short enough that the last
          * thing heard is not a minute of near-silence.
          */
-        private const val SLEEP_TIMER_FADE_MS = 5_000L
+        private const val SLEEP_TIMER_FADE_MS = 30_000L
 
         /**
          * Longest a single slice of the countdown sleeps for. Bounded so the
@@ -887,20 +889,13 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-            val itemCount = player.mediaItemCount
-            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED &&
-                playbackShuffleEnabled &&
-                itemCount != lastShuffleOrderItemCount
-            ) {
-                // Set before applying: setShuffleOrder itself publishes a
-                // timeline change with the same count.
-                lastShuffleOrderItemCount = itemCount
-                engine.refreshActiveShuffleOrder()
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                pendingRestoredPlayOrder?.let { order ->
+                    pendingRestoredPlayOrder = null
+                    applyPlayOrder(order)
+                }
             }
             // The queue changed, so the order the screens draw changed with it.
-            // Unconditional, and after any reorder above: a removal or an
-            // insertion rewrites the permutation even when the count check
-            // above declines to rebuild it.
             publishSessionState()
         }
 
@@ -911,7 +906,6 @@ class MusicService : MediaLibraryService() {
                 themePreferences.setPlaybackShuffleSeed(playbackShuffleSeed)
             }
             playbackShuffleEnabled = shuffleModeEnabled
-            lastShuffleOrderItemCount = player.mediaItemCount
             themePreferences.setPlaybackShuffle(shuffleModeEnabled)
             engine.setShuffleState(shuffleModeEnabled, playbackShuffleSeed)
             // After the engine has applied the new order, never before: this
@@ -931,6 +925,9 @@ class MusicService : MediaLibraryService() {
             super.onMediaItemTransition(mediaItem, reason)
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) lastFmTracker?.reset()
             automaticTransitionAttempt = null
+            mediaItem?.mediaId?.let {
+                com.ivor.ivormusic.data.YouTubeRequestLedger.begin("song $it")
+            }
 
             // 1. Loudness correction for the new track, before anything sets a
             // volume. It may still be unknown here - an unresolved song has not
@@ -1310,7 +1307,7 @@ class MusicService : MediaLibraryService() {
         }
 
         // 4. Network with Retry
-        // YouTubeRepository owns the NewPipe-first client fallback. This layer
+        // YouTubeRepository owns the visionOS-first client fallback. This layer
         // bounds the whole resolution and handles playback-time re-resolution.
         return try {
             val result = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
@@ -1553,7 +1550,7 @@ class MusicService : MediaLibraryService() {
     // --- Media Library Session Callback ---
 
     /** Read the last playable queue without touching a Player from the IO thread. */
-    private fun loadPlaybackResumption(): MediaSession.MediaItemsWithStartPosition? {
+    private fun loadPlaybackResumption(): Pair<MediaSession.MediaItemsWithStartPosition, IntArray?>? {
         val saved = PlaybackSessionRepository(this).load()
         val queue: List<MusicQueueItem>
         val startIndex: Int
@@ -1574,7 +1571,7 @@ class MusicService : MediaLibraryService() {
             queue.map { it.toPlaybackMediaItem() },
             startIndex,
             startPositionMs,
-        )
+        ) to saved?.playOrder?.takeIf { it.isNotEmpty() }?.toIntArray()
     }
     
     private inner class LibrarySessionCallback : MediaLibrarySession.Callback {
@@ -1688,7 +1685,7 @@ class MusicService : MediaLibraryService() {
             // System UI also asks for resume-card metadata without applying
             // a queue. That read remains independent of current playback.
             if (!isForPlayback) return resolveScope.future {
-                loadPlaybackResumption()
+                loadPlaybackResumption()?.first
                     ?: throw IllegalStateException("No saved playback session")
             }
             val requestedPlayer = mediaSession.player
@@ -1701,6 +1698,8 @@ class MusicService : MediaLibraryService() {
                 // Refuse on the application thread before returning stale data.
                 check(queueStillEmpty()) { "Playback queue changed during resumption" }
                 restored ?: throw IllegalStateException("No saved playback session")
+                pendingRestoredPlayOrder = restored.second
+                restored.first
             }
         }
 
@@ -1749,10 +1748,11 @@ class MusicService : MediaLibraryService() {
                     // suspended. Do not replace a queue that became live in
                     // the meantime (or reset its freshly changed position).
                     if (session.player.mediaItemCount == 0) {
+                        pendingRestoredPlayOrder = restored.second
                         session.player.setMediaItems(
-                            restored.mediaItems,
-                            restored.startIndex,
-                            restored.startPositionMs,
+                            restored.first.mediaItems,
+                            restored.first.startIndex,
+                            restored.first.startPositionMs,
                         )
                         session.player.prepare()
                     }
@@ -2345,10 +2345,14 @@ class MusicService : MediaLibraryService() {
         sleepTimerJob = serviceScope.launch {
             while (true) {
                 val remaining = sleepTimerEndsAt - System.currentTimeMillis()
-                if (remaining <= 0L) break
-                delay(remaining.coerceAtMost(SLEEP_TIMER_TICK_MS))
+                if (remaining <= SLEEP_TIMER_FADE_MS) break
+                delay((remaining - SLEEP_TIMER_FADE_MS).coerceAtMost(SLEEP_TIMER_TICK_MS))
             }
-            fadeOutAndPause()
+            // Fade ends on the deadline. A skip's fade-in can pre-empt it, so the pause is also enforced here.
+            fadeOutAndPause((sleepTimerEndsAt - System.currentTimeMillis()).coerceAtLeast(0L)).join()
+            val left = sleepTimerEndsAt - System.currentTimeMillis()
+            if (left > 0L) delay(left)
+            if (player.playWhenReady) player.pause()
             clearSleepTimer()
         }
     }
@@ -2378,22 +2382,26 @@ class MusicService : MediaLibraryService() {
      * fire: the silence is what wakes people. Runs on [fadeVolumeJob] so it and
      * the crossfade fade-in can never drive the volume at the same time.
      */
-    private fun fadeOutAndPause() {
+    private fun fadeOutAndPause(durationMs: Long): Job {
         launchVolumeFade {
-            val steps = 20
+            val steps = 60
             for (i in steps - 1 downTo 0) {
-                player.volume = trackGain * (i / steps.toFloat())
-                delay(SLEEP_TIMER_FADE_MS / steps)
+                player.volume = trackGain * engine.duckGain * (i / steps.toFloat())
+                delay(durationMs / steps)
             }
             player.pause()
             // launchVolumeFade restores the current gain, including ducking.
         }
+        return fadeVolumeJob!!.also { sleepFadeJob = it }
     }
 
     /** Disarm, whether it fired or the user cancelled it. */
     private fun clearSleepTimer(publish: Boolean = true) {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
+        // Cancelling mid-fade restores full volume (launchVolumeFade's completion).
+        sleepFadeJob?.takeIf { it.isActive }?.cancel()
+        sleepFadeJob = null
         sleepTimerEndsAt = 0L
         sleepTimerEndOfTrack = false
         // Both engines matter. The standby becomes audible at the next

@@ -152,7 +152,7 @@ fun MorphPlayerSheetContent(
         onNext = { playerHaptics.skip(); viewModel.skipToNext() },
         onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
     )
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // Morph runs on the theme's own roles, so the picker needs no overrides.
     val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)

@@ -145,6 +145,8 @@ fun SubscriptionsContent(
     val isFeedLoading by viewModel.isSubscriptionFeedLoading.collectAsState()
     val feedProgress by viewModel.subscriptionFeedProgress.collectAsState()
     val feedError by viewModel.subscriptionFeedError.collectAsState()
+    val feedUpdatedAt by viewModel.subscriptionFeedUpdatedAt.collectAsState()
+    val listLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
     val selectedChannelFeed by viewModel.selectedChannelFeed.collectAsState()
     val isSelectedChannelFeedLoading by viewModel.isSelectedChannelFeedLoading.collectAsState()
     val selectedChannelFeedError by viewModel.selectedChannelFeedError.collectAsState()
@@ -731,13 +733,28 @@ fun SubscriptionsContent(
                             )
                         }
                     } else {
-                        items(visibleFeed, key = { it.videoId }) { video ->
+                        feedUpdatedAt?.let { at ->
+                            item(key = "feed_updated") {
+                                Text(
+                                    text = stringResource(
+                                        R.string.subs_feed_updated,
+                                        android.text.format.DateUtils.getRelativeTimeSpanString(
+                                            at, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS
+                                        ).toString()
+                                    ),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                        videoListItems(visibleFeed, listLayout) { video, cell ->
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },
                                 onLongClick = { onVideoLongPress(video) },
                                 onOpenChannel = onOpenChannel,
-                                modifier = Modifier.padding(horizontal = 16.dp)
+                                modifier = cell
                             )
                         }
                     }

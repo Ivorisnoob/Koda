@@ -198,8 +198,13 @@ fun VideoOptionsSheet(
     onCreatePlaylist: ((name: String, onCreated: (String?) -> Unit) -> Unit)? = null,
     /** Queue this video, either straight after what is playing or at the end. */
     onEnqueue: ((playNext: Boolean) -> Unit)? = null,
-    /** Playlist ids that already contain this video; device playlists only. */
+    /** Playlist ids that already contain this video, device and account. */
     alreadyIn: Set<String> = emptySet(),
+    /**
+     * Take the video out of a playlist it is in. Null keeps the picker
+     * add-only; set, a checked row unticks on tap.
+     */
+    onRemove: ((playlistId: String, onResult: (Boolean) -> Unit) -> Unit)? = null,
     /**
      * Open this video's creator. Null hides the row, which is right where the
      * item carried no channel id, and where the channel is the page the sheet
@@ -219,6 +224,8 @@ fun VideoOptionsSheet(
     var savingIds by remember { mutableStateOf(emptySet<String>()) }
     var savedIds by remember { mutableStateOf(emptySet<String>()) }
     var failedIds by remember { mutableStateOf(emptySet<String>()) }
+    // Removed in this sheet: wins over [alreadyIn], which can lag the write.
+    var removedIds by remember { mutableStateOf(emptySet<String>()) }
     var showCreateDialog by remember { mutableStateOf(false) }
 
     // Only a terminal action closes the sheet behind its check. A save made in
@@ -234,20 +241,44 @@ fun VideoOptionsSheet(
 
     fun rowState(id: String): SaveRowState = when {
         id in savingIds -> SaveRowState.SAVING
-        id in savedIds || id in alreadyIn -> SaveRowState.SAVED
+        id in savedIds || (id in alreadyIn && id !in removedIds) -> SaveRowState.SAVED
         id in failedIds -> SaveRowState.FAILED
         else -> SaveRowState.IDLE
     }
 
     /** @param terminal whether a successful save should close the sheet. */
+    fun remove(id: String) {
+        val removeFrom = onRemove ?: return
+        if (id in savingIds) return
+        haptics.performHapticFeedback(HapticFeedbackType.ToggleOff)
+        failedIds = failedIds - id
+        savingIds = savingIds + id
+        removeFrom(id) { ok ->
+            savingIds = savingIds - id
+            if (ok) {
+                savedIds = savedIds - id
+                removedIds = removedIds + id
+            } else {
+                failedIds = failedIds + id
+            }
+        }
+    }
+
     fun save(id: String, terminal: Boolean) {
-        if (id in savingIds || id in savedIds || id in alreadyIn) return
+        if (rowState(id) == SaveRowState.SAVED) {
+            // Only the picker unticks; a terminal row (Watch later in the
+            // action list) stays add-only.
+            if (!terminal) remove(id)
+            return
+        }
+        if (id in savingIds) return
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         failedIds = failedIds - id
         savingIds = savingIds + id
         onSave(id) { ok ->
             savingIds = savingIds - id
             if (ok) {
+                removedIds = removedIds - id
                 savedIds = savedIds + id
                 if (terminal) confirmedTerminal = id
             } else {
@@ -371,6 +402,7 @@ fun VideoOptionsSheet(
                     isSignedOut = isSignedOut,
                     stateOf = { id -> rowState(id) },
                     onPick = { id -> save(id, terminal = false) },
+                    removable = onRemove != null,
                     onBack = { pane = OptionsPane.ACTIONS },
                     onCreatePlaylist = if (onCreatePlaylist != null) {
                         { showCreateDialog = true }
@@ -608,7 +640,9 @@ private fun PlaylistPickerPane(
     onPick: (String) -> Unit,
     onBack: () -> Unit,
     onCreatePlaylist: (() -> Unit)?,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    /** A checked row unticks on tap. */
+    removable: Boolean = false,
 ) {
     var query by remember { mutableStateOf("") }
 
@@ -710,6 +744,7 @@ private fun PlaylistPickerPane(
                         PlaylistPickRow(
                             playlist = playlist,
                             state = stateOf(playlist.playlistId),
+                            removable = removable,
                             onClick = { onPick(playlist.playlistId) }
                         )
                     }
@@ -919,16 +954,16 @@ private fun OptionRow(
  * One playlist in the picker: artwork, title, count, and the same
  * idle/spinner/check walk the action rows use.
  *
- * A checked row stays tappable-looking but is inert - saving is add-only, so a
- * second tap has nothing to do. Removing a video from a playlist belongs on
- * that playlist's own page, where the row being removed is visible.
+ * With [removable] a checked row unticks on tap, as YouTube's own save sheet
+ * does; without it a checked row is inert.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun PlaylistPickRow(
     playlist: VideoPlaylist,
     state: SaveRowState,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    removable: Boolean = false,
 ) {
     val saved = state == SaveRowState.SAVED
 
@@ -936,7 +971,10 @@ private fun PlaylistPickRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = state == SaveRowState.IDLE || state == SaveRowState.FAILED) {
+            .clickable(
+                enabled = state == SaveRowState.IDLE || state == SaveRowState.FAILED ||
+                    (removable && state == SaveRowState.SAVED)
+            ) {
                 onClick()
             },
         shape = RoundedCornerShape(16.dp),
@@ -1157,9 +1195,11 @@ fun VideoOptionsSheetHost(
     // account's half waits on a session.
     LaunchedEffect(video.videoId, isConnected) {
         if (isConnected) viewModel.loadVideoPlaylists()
+        if (isConnected && !isDeviceVideo) viewModel.loadVideoPlaylistMembership(video.videoId)
     }
+    val accountContaining by viewModel.accountPlaylistsContainingVideo.collectAsState()
 
-    val alreadyIn = remember(localPlaylists, video.videoId, isConnected) {
+    val alreadyIn = remember(localPlaylists, video.videoId, isConnected, accountContaining) {
         val ids = localPlaylists
             .filter { list -> list.videos.any { it.videoId == video.videoId } }
             .map { it.id }
@@ -1168,6 +1208,8 @@ fun VideoOptionsSheetHost(
         // that is what tells it whether the video is already there.
         if (!isConnected && LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids) {
             ids + WATCH_LATER_ID
+        } else if (isConnected) {
+            ids + accountContaining
         } else {
             ids
         }
@@ -1190,6 +1232,9 @@ fun VideoOptionsSheetHost(
         isLoading = isLoading,
         onSave = { playlistId, onResult ->
             viewModel.addVideoToPlaylist(playlistId, video, onResult)
+        },
+        onRemove = { playlistId, onResult ->
+            viewModel.removeVideoFromPlaylist(playlistId, video, onResult)
         },
         onDownload = { showDownload = true },
         onDismiss = onDismiss,

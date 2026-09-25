@@ -193,10 +193,12 @@ fun VideoPlayerContent(
     val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
     val isAutoplayEnabled by viewModel.isAutoplayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
+    val dislikeCount by viewModel.dislikeCount.collectAsState()
     val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
     val sleepTimerEndOfVideo by viewModel.sleepTimerEndOfVideo.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
+    val connectionAdvice by viewModel.connectionAdvice.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     // Account subscription OR device subscription - engagement only knows the
     // first, and read alone it showed "Subscribe" for locally followed channels.
@@ -301,9 +303,12 @@ fun VideoPlayerContent(
 
     // Landscape chat column: about a third of the screen, bounded so it stays
     // readable on a small phone and does not eat a tablet.
+    // Measured in the scaled dp (windowDpSize), not Configuration's: at any
+    // interface scale but 100% the platform figure is a different unit.
     val configuration = LocalConfiguration.current
-    val landscapeChatWidth = remember(configuration.screenWidthDp) {
-        (configuration.screenWidthDp * 0.34f).dp.coerceIn(260.dp, 360.dp)
+    val windowWidth = com.ivor.ivormusic.ui.theme.windowDpSize().width
+    val landscapeChatWidth = remember(windowWidth) {
+        (windowWidth * 0.34f).coerceIn(260.dp, 360.dp)
     }
 
     /**
@@ -670,6 +675,7 @@ fun VideoPlayerContent(
                 onToggleControls = { showControls = !showControls },
                 hasError = playbackError != null,
                 errorMessage = playbackError?.message ?: "",
+                connectionAdvice = connectionAdvice,
                 isLoading = isLoading,
                 isBuffering = isBuffering,
                 isPlaying = isPlaying,
@@ -887,6 +893,7 @@ fun VideoPlayerContent(
                     isBuffering = isBuffering,
                     hasError = playbackError != null,
                     errorMessage = playbackError?.message ?: "",
+                    connectionAdvice = connectionAdvice,
                     progress = progress,
                     bufferedProgress = bufferedProgress,
                     duration = duration,
@@ -1005,6 +1012,7 @@ fun VideoPlayerContent(
                         onToggleControls = { showControls = !showControls },
                         hasError = playbackError != null,
                         errorMessage = playbackError?.message ?: "",
+                        connectionAdvice = connectionAdvice,
                         isLoading = isLoading,
                         isBuffering = isBuffering,
                         isPlaying = isPlaying,
@@ -1130,6 +1138,7 @@ fun VideoPlayerContent(
                         isSubscribed = isSubscribedToChannel,
                         onLikeClick = { requireLogin { viewModel.toggleLike() } },
                         onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
+                        dislikeCount = dislikeCount,
                         onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                         onCommentsClick = {
                             viewModel.ensureCommentsLoaded()
@@ -1248,12 +1257,19 @@ fun VideoPlayerContent(
     // Long-press options sheet, and the "save" action in the info area
     saveTargetVideo?.let { target ->
         val localVideoPlaylists by viewModel.localVideoPlaylists.collectAsState()
+        val accountContaining by viewModel.accountPlaylistsContainingVideo.collectAsState()
+        LaunchedEffect(target.videoId, isLoggedIn) {
+            if (isLoggedIn && !isLocalPlayback) viewModel.loadVideoPlaylistMembership(target.videoId)
+        }
         VideoOptionsSheet(
             video = target,
             playlists = videoPlaylists,
             isLoading = isVideoPlaylistsLoading,
             onSave = { playlistId, onResult ->
                 viewModel.addVideoToPlaylist(playlistId, target, onResult)
+            },
+            onRemove = { playlistId, onResult ->
+                viewModel.removeVideoFromPlaylist(playlistId, target, onResult)
             },
             onDownload = {
                 saveTargetVideo = null
@@ -1287,9 +1303,12 @@ fun VideoPlayerContent(
                     .toSet()
                 // Signed out the pinned Watch later row saves into the device
                 // list, so that is what says whether it is already there.
-                if (!isLoggedIn &&
-                    com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids
-                ) ids + "WL" else ids
+                when {
+                    !isLoggedIn &&
+                        com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids -> ids + "WL"
+                    isLoggedIn -> ids + accountContaining
+                    else -> ids
+                }
             }
         )
     }

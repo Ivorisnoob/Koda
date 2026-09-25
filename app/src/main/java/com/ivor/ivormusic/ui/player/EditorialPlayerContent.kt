@@ -171,7 +171,7 @@ fun EditorialPlayerSheetContent(
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // The two-tone contract: field + accent, nothing else.
     val field = MaterialTheme.colorScheme.primaryContainer
@@ -882,7 +882,7 @@ internal fun EditorialQueueView(
                 Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(26.dp))
             }
             Text(
-                text = "Up Next",
+                text = stringResource(R.string.ps_up_next),
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontFamily = FontFamily.Serif,
                     fontStyle = FontStyle.Italic,
