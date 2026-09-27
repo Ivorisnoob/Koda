@@ -36,7 +36,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Audiotrack
+import com.ivor.ivormusic.service.FrameInterpolationStatus
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MusicNote
@@ -1417,6 +1419,8 @@ fun VideoPlayerContent(
     // One settings body serves the portrait sheet and fullscreen side panel.
     // Keeping the action wiring here prevents the two surfaces from drifting
     // back into different feature sets.
+    val smoothMotionStatus by viewModel.frameInterpolationStatus.collectAsState()
+    val smoothMotionText = smoothMotionStatusText(smoothMotionStatus)
     val playbackSettingsContent: @Composable () -> Unit = {
         PlayerSettingsSections(
             isLoading = isLoading,
@@ -1491,7 +1495,8 @@ fun VideoPlayerContent(
             onListenAsMusic = {
                 showPlaybackSettings = false
                 onListenAsMusic()
-            }
+            },
+            smoothMotionStatus = smoothMotionText
         )
     }
 
@@ -1636,7 +1641,9 @@ private fun PlayerSettingsSections(
     zoomToFillActive: Boolean,
     onZoomToFillChanged: (Boolean) -> Unit,
     showListenAsMusic: Boolean,
-    onListenAsMusic: () -> Unit
+    onListenAsMusic: () -> Unit,
+    /** What Smooth motion is doing for this video; null hides the row (setting off). */
+    smoothMotionStatus: String?
 ) {
     val optionColors = ToggleButtonDefaults.colors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -1957,7 +1964,8 @@ private fun PlayerSettingsSections(
     }
 
     val hasSecondaryActions = showPip || showComments || showQueue ||
-        showTimedComments || showLiveChat || showVerticalLive || showZoomToFill
+        showTimedComments || showLiveChat || showVerticalLive || showZoomToFill ||
+        smoothMotionStatus != null
     if (hasSecondaryActions) {
         Spacer(modifier = Modifier.height(16.dp))
         SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "More controls")
@@ -1967,6 +1975,23 @@ private fun PlayerSettingsSections(
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Column {
+                // A read-out rather than a switch: turning Smooth motion on
+                // goes through its warning in Settings, and this row exists
+                // to answer "is it doing anything right now?".
+                if (smoothMotionStatus != null) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.vpc_smooth_motion)) },
+                        supportingContent = { Text(smoothMotionStatus) },
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.Rounded.Animation,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
                 if (showZoomToFill) {
                     SettingsToggleRow(
                         icon = Icons.Rounded.ZoomIn,
@@ -2092,6 +2117,25 @@ private fun SettingsActionRow(
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.clickable(onClick = onClick)
     ) { Text(title) }
+}
+
+/** The Smooth motion read-out for the playback settings panel, or null when the setting is off. */
+@Composable
+private fun smoothMotionStatusText(status: FrameInterpolationStatus): String? = when (status) {
+    FrameInterpolationStatus.Disabled -> null
+    FrameInterpolationStatus.NeedsRestart -> stringResource(R.string.vpc_smooth_motion_restart)
+    FrameInterpolationStatus.Measuring -> stringResource(R.string.vpc_smooth_motion_measuring)
+    is FrameInterpolationStatus.Active ->
+        stringResource(R.string.vpc_smooth_motion_active, status.sourceFps, status.outputFps)
+    is FrameInterpolationStatus.NotNeeded ->
+        stringResource(R.string.vpc_smooth_motion_not_needed, status.sourceFps)
+    FrameInterpolationStatus.Live -> stringResource(R.string.vpc_smooth_motion_live)
+    FrameInterpolationStatus.Hdr -> stringResource(R.string.vpc_smooth_motion_hdr)
+    FrameInterpolationStatus.SpedUp -> stringResource(R.string.vpc_smooth_motion_sped_up)
+    FrameInterpolationStatus.Hot -> stringResource(R.string.vpc_smooth_motion_hot)
+    FrameInterpolationStatus.BatterySaver -> stringResource(R.string.vpc_smooth_motion_battery)
+    FrameInterpolationStatus.CannotKeepUp -> stringResource(R.string.vpc_smooth_motion_cannot_keep_up)
+    FrameInterpolationStatus.Unsupported -> stringResource(R.string.vpc_smooth_motion_unsupported)
 }
 
 /** Which inline picker is open in playback settings; accordion, at most one. */

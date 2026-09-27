@@ -22,7 +22,6 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -150,6 +149,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val frameInterpolation =
         com.ivor.ivormusic.service.FrameInterpolationGovernor(context)
     private var playerHasInterpolation = false
+
+    /** What Smooth motion is doing for the video on screen, for the player's settings panel. */
+    val frameInterpolationStatus: StateFlow<com.ivor.ivormusic.service.FrameInterpolationStatus> =
+        frameInterpolation.status
 
     // State
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
@@ -982,15 +985,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         player.setVideoEffects(
             listOf(com.ivor.ivormusic.service.FrameInterpolationEffect(frameInterpolation.control))
         )
-        player.addAnalyticsListener(object : AnalyticsListener {
-            override fun onDroppedVideoFrames(
-                eventTime: AnalyticsListener.EventTime,
-                droppedFrames: Int,
-                elapsedMs: Long
-            ) {
-                frameInterpolation.onDroppedFrames(droppedFrames, elapsedMs)
-            }
-        })
     }
 
     /**
@@ -1425,17 +1419,30 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
-                    if (playerHasInterpolation) {
-                        // Fresh read: turning the setting off takes effect
-                        // within a tick, without rebuilding the player.
-                        frameInterpolation.update(
-                            enabledByUser = themePreferences.isFrameInterpolationEnabled(),
-                            currentVideoId = _currentVideo.value?.videoId,
-                            isLive = _isLive.value,
-                            isHdr = _currentQuality.value?.isHdr == true,
-                            speed = player.playbackParameters.speed
-                        )
-                    }
+                    // Fresh read: turning the setting off takes effect within a
+                    // tick, without rebuilding the player. The renderer's
+                    // frame counters are how the governor learns whether this
+                    // phone keeps up; they only mean anything with the effect
+                    // graph installed.
+                    val counters = if (playerHasInterpolation) {
+                        player.videoDecoderCounters?.also { it.ensureUpdated() }
+                    } else null
+                    val quality = _currentQuality.value
+                    frameInterpolation.update(
+                        enabledByUser = themePreferences.isFrameInterpolationEnabled(),
+                        pipelineInstalled = playerHasInterpolation,
+                        currentVideoId = _currentVideo.value?.videoId,
+                        qualityKey = quality?.let {
+                            "${it.resolution}|${it.width}x${it.height}@${it.frameRate}|${it.dynamicRange}"
+                        },
+                        isLive = _isLive.value,
+                        isHdr = quality?.isHdr == true,
+                        speed = player.playbackParameters.speed,
+                        isPlaying = player.isPlaying,
+                        positionMs = player.currentPosition,
+                        droppedFrames = counters?.droppedBufferCount,
+                        renderedFrames = counters?.renderedOutputBufferCount,
+                    )
                     // A non-positive duration means "not known yet" (and is the
                     // normal case for a live stream), so leave the last good
                     // values alone rather than dividing by it.
@@ -3356,6 +3363,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isExpanded.value = false
         // Nothing is playing any more, so nothing should be on the lock screen.
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
+        // Whatever opens next - even this same video - gets a fresh chance.
+        frameInterpolation.reset()
         // Smooth motion can only be added or removed by building a new player,
         // and this is the one moment nothing holds the old one: the session is
         // gone (just above) and the overlay disposes its views with the video.
