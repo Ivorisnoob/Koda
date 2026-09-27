@@ -50,11 +50,76 @@ class FrameInterpolationPolicyTest {
         assertFalse(gate(drops = true))
     }
 
-    @Test fun `a batch of 50 drops is over budget only when it came quickly`() {
-        assertTrue(FrameInterpolationPolicy.dropsExceedBudget(50, 10_000L))
-        assertFalse(FrameInterpolationPolicy.dropsExceedBudget(50, 60_000L))
-        assertFalse(FrameInterpolationPolicy.dropsExceedBudget(0, 0L))
-        assertTrue(FrameInterpolationPolicy.dropsExceedBudget(3, 0L))
+    /** Polls a watch at 500ms like the player does; returns the first poll that judged overload. */
+    private class Playback(val watch: FrameDropWatch = FrameDropWatch()) {
+        var now = 10_000L
+        var position = 0L
+        var dropped = 0
+        var rendered = 0
+        var midpoints = 0L
+
+        /** [seconds] of playback at 30 fps, [dropsPerSecond] of them late, interpolating or not. */
+        fun play(seconds: Int, dropsPerSecond: Int, interpolating: Boolean = true, playing: Boolean = true): Boolean {
+            var overloaded = false
+            repeat(seconds * 2) {
+                now += 500L
+                if (playing) {
+                    position += 500L
+                    rendered += 15 - dropsPerSecond / 2
+                    dropped += dropsPerSecond / 2
+                    if (interpolating) midpoints += 15
+                }
+                if (watch.onPoll(now, playing, position, 1f, dropped, rendered, midpoints)) overloaded = true
+            }
+            return overloaded
+        }
+    }
+
+    @Test fun `steady interpolation within budget is kept`() {
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        assertFalse(playback.play(seconds = 30, dropsPerSecond = 0))
+    }
+
+    @Test fun `sustained drops while interpolating are judged overload`() {
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        // 4 of 30 frames a second late is 13%, well past 5%.
+        assertTrue(playback.play(seconds = 12, dropsPerSecond = 4))
+    }
+
+    @Test fun `drops while only passing frames through are never counted`() {
+        // The 1080p60 case: nothing interpolated, so nothing to blame.
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        assertFalse(playback.play(seconds = 20, dropsPerSecond = 8, interpolating = false))
+        // And they do not carry over into interpolation afterwards.
+        assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
+    }
+
+    @Test fun `startup drops inside the grace period are forgiven`() {
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        assertFalse(playback.play(seconds = 3, dropsPerSecond = 10))
+        assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
+    }
+
+    @Test fun `a resume after pause starts a new grace period`() {
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        assertFalse(playback.play(seconds = 10, dropsPerSecond = 0))
+        assertFalse(playback.play(seconds = 5, dropsPerSecond = 0, playing = false))
+        assertFalse(playback.play(seconds = 2, dropsPerSecond = 10))
+        assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
+    }
+
+    @Test fun `a seek starts a new grace period`() {
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        assertFalse(playback.play(seconds = 10, dropsPerSecond = 0))
+        playback.position += 60_000L
+        assertFalse(playback.play(seconds = 2, dropsPerSecond = 10))
+        assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
     }
 
     @Test fun `levels halve from a 320 texel long side`() {

@@ -119,6 +119,11 @@ internal class FrameInterpolationShaderProgram(
                 presentationTimeUs - lastInputTimeUs
             }
             lastInputTimeUs = presentationTimeUs
+            if (intervalUs != C.TIME_UNSET && intervalUs in 1..MAX_MEASURED_INTERVAL_US) {
+                val fps = 1_000_000f / intervalUs
+                val previous = control.sourceFps
+                control.sourceFps = if (previous <= 0f) fps else previous * 0.9f + fps * 0.1f
+            }
             val wanted = interpolationUsable && control.active
             currentLevelsBuilt = false
 
@@ -171,6 +176,7 @@ internal class FrameInterpolationShaderProgram(
         // The next stream may be a different video or size; never blend across.
         hasReference = false
         lastInputTimeUs = C.TIME_UNSET
+        control.sourceFps = 0f
         outputListener.onCurrentOutputStreamEnded()
     }
 
@@ -226,6 +232,7 @@ internal class FrameInterpolationShaderProgram(
             return
         }
         emit(output, FrameInterpolationPolicy.midpointUs(referenceTimeUs, presentationTimeUs))
+        control.midpoints++
     }
 
     private fun keepAsReference(input: GlTextureInfo, presentationTimeUs: Long) {
@@ -279,6 +286,7 @@ internal class FrameInterpolationShaderProgram(
         KLog.e(TAG, "Interpolation failed on this GPU; passing frames through", cause)
         interpolationUsable = false
         hasReference = false
+        control.unsupported = true
     }
 
     private fun reportError(cause: Exception, presentationTimeUs: Long) {
@@ -451,6 +459,9 @@ internal class FrameInterpolationShaderProgram(
         const val POOL_CAPACITY = 6
         const val POOL_CAPACITY_LARGE = 4
         const val LARGE_FRAME_PIXELS = 2_500_000L
+
+        /** Gaps longer than this (under 5 fps) are pauses or cuts, not a frame rate. */
+        const val MAX_MEASURED_INTERVAL_US = 200_000L
 
         const val VERTEX_SHADER = """
 attribute vec4 aFramePosition;
