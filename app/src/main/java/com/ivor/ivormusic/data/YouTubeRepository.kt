@@ -6866,6 +6866,7 @@ class YouTubeRepository(private val context: Context) {
             links = content.links,
             author = author?.optString("displayName").orEmpty(),
             authorAvatarUrl = author?.optString("avatarThumbnailUrl")?.takeIf { it.isNotBlank() },
+            authorChannelId = author?.optString("channelId")?.takeIf { it.startsWith("UC") },
             publishedTime = props?.optString("publishedTime").orEmpty(),
             likeCount = toolbar?.optString("likeCountNotliked").orEmpty().trim(),
             replyCount = toolbar?.optString("replyCount").orEmpty().trim(),

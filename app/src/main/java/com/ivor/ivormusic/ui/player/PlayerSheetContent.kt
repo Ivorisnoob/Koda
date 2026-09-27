@@ -756,7 +756,7 @@ private fun ExpressiveNowPlayingView(
             // 🌟 Favorite / Download / Sleep Timer - connected button group
             val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
             val sleepTimerActive = sleepTimer.active
-            val groupButtonColors = ToggleButtonDefaults.toggleButtonColors(
+            val groupButtonColors = ToggleButtonDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = onSurfaceVariantColor
             )

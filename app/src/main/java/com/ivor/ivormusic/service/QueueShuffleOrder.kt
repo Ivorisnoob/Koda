@@ -95,6 +95,37 @@ internal class QueueShuffleOrder private constructor(
             return QueueShuffleOrder(order, random)
         }
 
+        /**
+         * A fresh shuffle that plays what has not been heard lately first.
+         *
+         * Each press of Shuffle used to be an independent draw, so the songs
+         * from yesterday's shuffle of the same playlist came round again just
+         * as often as the ones never reached - the complaint was "the same
+         * songs repeat too frequently". Here the queue is split by [isRecent]
+         * and each side shuffled on its own, not-recent first, so repeated
+         * shuffles rotate through a playlist rather than resampling it. Every
+         * index still appears exactly once, and a queue that is all one kind
+         * shuffles exactly as before. [startIndex], when in range, opens the
+         * order whichever side it is on: it is already playing.
+         */
+        fun freshFirst(
+            length: Int,
+            startIndex: Int,
+            random: Random,
+            isRecent: (Int) -> Boolean,
+        ): IntArray {
+            val fresh = ArrayList<Int>(length)
+            val recent = ArrayList<Int>()
+            for (index in 0 until length) {
+                if (index == startIndex) continue
+                if (isRecent(index)) recent += index else fresh += index
+            }
+            val freshOrder = fresh.toIntArray().also { shuffleInPlace(it, random) }
+            val recentOrder = recent.toIntArray().also { shuffleInPlace(it, random) }
+            val opening = if (startIndex in 0 until length) intArrayOf(startIndex) else IntArray(0)
+            return opening + freshOrder + recentOrder
+        }
+
         /** [order] as given; the caller has checked it addresses every index once. */
         fun of(order: IntArray, random: Random): QueueShuffleOrder =
             QueueShuffleOrder(order.copyOf(), random)

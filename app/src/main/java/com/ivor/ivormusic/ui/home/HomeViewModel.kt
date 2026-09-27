@@ -9,6 +9,7 @@ import com.ivor.ivormusic.ui.theme.playlistCoverSeeds
 import androidx.lifecycle.viewModelScope
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.toVideoItem
 import com.ivor.ivormusic.data.SongRepository
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.SubscriptionTransfer
@@ -475,6 +476,56 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun unhidePlaylist(playlistId: String) = hiddenPlaylistsRepository.unhide(playlistId)
     
+    /**
+     * Video mode's device playlists, shown in the music Library's own section
+     * (feedback, September 2026: local playlists should be visible in both
+     * modes). A separate list rather than merged into [userPlaylists] on
+     * purpose: that list also feeds the add-to-playlist sheet and the
+     * rename/delete paths, which would treat an unfamiliar id as an account
+     * playlist. Here they open read-only and play as songs; they are edited in
+     * the mode that owns them.
+     */
+    val videoPlaylistsForMusic: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
+        localVideoPlaylistsRepository.playlists,
+        hiddenPlaylistsRepository.hiddenPlaylists
+    ) { local, hidden ->
+        val hiddenIds = hidden.map { it.playlistId }.toSet()
+        local.filter { it.videos.isNotEmpty() && it.id !in hiddenIds }.map { playlist ->
+            com.ivor.ivormusic.data.PlaylistDisplayItem(
+                name = playlist.name,
+                url = playlist.id,
+                uploaderName = CROSS_MODE_VIDEO_SUBTITLE,
+                itemCount = playlist.videos.size,
+                thumbnailUrl = playlist.videos.first().thumbnailUrl
+            )
+        }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Music mode's device playlists for video mode's Library, the other half
+     * of [videoPlaylistsForMusic]. Only the songs that are YouTube videos come
+     * across (a device audio file has no video), and a playlist with none is
+     * left out rather than shown empty.
+     */
+    val musicPlaylistsForVideo: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = combine(
+        playlistRepository.userPlaylists,
+        hiddenPlaylistsRepository.hiddenPlaylists
+    ) { local, hidden ->
+        val hiddenIds = hidden.map { it.playlistId }.toSet()
+        local.mapNotNull { playlist ->
+            if (playlist.id in hiddenIds) return@mapNotNull null
+            val watchable = playlist.songs.filter { it.source == SongSource.YOUTUBE }
+            if (watchable.isEmpty()) return@mapNotNull null
+            com.ivor.ivormusic.data.VideoPlaylist(
+                playlistId = playlist.id,
+                title = playlist.name,
+                thumbnailUrl = watchable.first().thumbnailUrl,
+                videoCountText = if (watchable.size == 1) "1 video" else "${watchable.size} videos",
+                subtitle = CROSS_MODE_MUSIC_SUBTITLE
+            )
+        }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
     val localPlaylistIds: StateFlow<Set<String>> = playlistRepository.userPlaylists
         .map { playlists -> playlists.map { it.id }.toSet() }
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptySet())
@@ -2024,6 +2075,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _playlistVideos.value = localVideoPlaylistsRepository.videosOf(playlistId)
             return
         }
+        // A music-mode device playlist opened from the video Library; see
+        // musicPlaylistsForVideo.
+        playlistRepository.userPlaylists.value.firstOrNull { it.id == playlistId }?.let { playlist ->
+            _playlistVideos.value = playlist.songs
+                .filter { it.source == SongSource.YOUTUBE }
+                .map { it.toVideoItem() }
+            return
+        }
         val request = playlistPagination.first()
         _isPlaylistVideosLoading.value = true
         fetchVideoPlaylistPage(playlistId, request)
@@ -2128,6 +2187,114 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    /**
+     * Show [videos] as the open local playlist's order and keep it: a sort or
+     * the undo of one. [persist] false is a drag in progress, which only
+     * moves the rows on screen until [persistLocalVideoOrder] when it settles.
+     */
+    fun setLocalVideoPlaylistOrder(playlistId: String, videos: List<VideoItem>, persist: Boolean = true) {
+        if (!com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlistId)) return
+        _playlistVideos.value = videos
+        if (persist) viewModelScope.launch { localVideoPlaylistsRepository.setVideos(playlistId, videos) }
+    }
+
+    /** Move one row of the open local playlist on screen; see [persistLocalVideoOrder]. */
+    fun moveLocalVideo(playlistId: String, from: Int, to: Int) {
+        val current = _playlistVideos.value
+        if (from !in current.indices || to !in current.indices || from == to) return
+        setLocalVideoPlaylistOrder(
+            playlistId,
+            current.toMutableList().apply { add(to, removeAt(from)) },
+            persist = false
+        )
+    }
+
+    /** Keep the open local playlist's on-screen order, at the end of a drag. */
+    fun persistLocalVideoOrder(playlistId: String) {
+        if (!com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlistId)) return
+        val videos = _playlistVideos.value
+        viewModelScope.launch { localVideoPlaylistsRepository.setVideos(playlistId, videos) }
+    }
+
+    /** Write a local video playlist out as m3u8. */
+    suspend fun exportLocalVideoPlaylist(videos: List<VideoItem>, uri: android.net.Uri): Boolean =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use {
+                    it.write(com.ivor.ivormusic.data.PlaylistTransfer.buildVideoM3u(videos).toByteArray(Charsets.UTF_8))
+                } != null
+            }.getOrDefault(false)
+        }
+
+    /**
+     * Import playlists into video mode: m3u/m3u8 and NewPipe/PipePipe backups
+     * become local video playlists, and bookmarked YouTube playlists are saved
+     * to the library both modes share. The video counterpart of
+     * [importPlaylists]; entries with no YouTube id (device files, other
+     * services) are counted as missing, since a video playlist cannot hold them.
+     */
+    suspend fun importVideoPlaylists(uri: android.net.Uri): PlaylistImportResult? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val source = java.io.File(app.cacheDir, "video_playlist_import.src")
+            val scratch = java.io.File(app.cacheDir, "video_playlist_import.db")
+            try {
+                app.contentResolver.openInputStream(uri)?.use { SubscriptionTransfer.copyImport(it, source) }
+                    ?: return@withContext null
+                val fallbackName = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.')
+                    ?.ifBlank { null } ?: "Imported playlist"
+                val file = com.ivor.ivormusic.data.PlaylistTransfer.read(source, scratch, fallbackName)
+                if (file.playlists.isEmpty() && file.remote.isEmpty()) return@withContext null
+                var videos = 0
+                var missing = 0
+                var created = 0
+                file.playlists.forEach { playlist ->
+                    val items = playlist.tracks.mapNotNull { t ->
+                        val id = t.videoId ?: run { missing++; return@mapNotNull null }
+                        VideoItem(
+                            videoId = id,
+                            title = t.title,
+                            channelName = t.artist,
+                            thumbnailUrl = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+                            duration = t.durationMs / 1000,
+                            viewCount = ""
+                        )
+                    }
+                    val saved = localVideoPlaylistsRepository.createWithVideos(playlist.name, items)
+                    if (saved != null && saved.second > 0) {
+                        created++
+                        videos += saved.second
+                    } else if (saved != null) {
+                        localVideoPlaylistsRepository.delete(saved.first)
+                    }
+                }
+                var savedRemote = 0
+                file.remote.forEach { r ->
+                    if (savedPlaylistsRepository.savedPlaylists.value.none { it.id == r.playlistId }) {
+                        savedPlaylistsRepository.save(
+                            com.ivor.ivormusic.data.SavedPlaylist(
+                                id = r.playlistId,
+                                url = "https://www.youtube.com/playlist?list=${r.playlistId}",
+                                name = r.name,
+                                uploaderName = r.uploader,
+                                thumbnailUrl = r.thumbnailUrl,
+                                itemCount = r.itemCount,
+                            )
+                        )
+                        savedRemote++
+                    }
+                }
+                PlaylistImportResult(created, videos, savedRemote, missing, file.foreignServiceEntries)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                KLog.w("HomeViewModel", "Video playlist import failed", e)
+                null
+            } finally {
+                source.delete()
+                scratch.delete()
+            }
+        }
 
     /** Rename a playlist held on this device. */
     fun renameLocalVideoPlaylist(playlistId: String, name: String) {
@@ -2497,6 +2664,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val localPlaylist = playlistRepository.userPlaylists.value.find { it.id == playlistId }
         if (localPlaylist != null) {
             return localPlaylist.songs
+        }
+        // A video-mode device playlist opened from the music Library: its
+        // videos play as songs. There is nothing upstream to fetch.
+        if (com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlistId)) {
+            return localVideoPlaylistsRepository.videosOf(playlistId).map { video ->
+                Song.fromYouTube(
+                    video.videoId, video.title, video.channelName.ifBlank { UNKNOWN_ARTIST }, "",
+                    video.duration * 1000L, video.thumbnailUrl
+                )
+            }
         }
         // Fallback to the explicit download snapshot when the live list is unavailable.
         return try {
@@ -3815,5 +3992,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         /** Consecutive empty channel batches one page will try before giving up. */
         const val MIX_EMPTY_BATCH_LIMIT = 3
+
+        /** Byline of a video-mode playlist shown in the music Library. */
+        const val CROSS_MODE_VIDEO_SUBTITLE = "Video playlist · On this device"
+
+        /** Byline of a music-mode playlist shown in the video Library. */
+        const val CROSS_MODE_MUSIC_SUBTITLE = "Music playlist · On this device"
     }
 }

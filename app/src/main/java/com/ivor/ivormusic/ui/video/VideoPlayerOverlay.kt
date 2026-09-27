@@ -8,6 +8,7 @@ import android.util.Rational
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -165,7 +166,8 @@ fun enterPipMode(
                 pipActions(
                     activity = activity,
                     packageName = activity.packageName,
-                    isPlaying = viewModel.isPlaying.value
+                    isPlaying = viewModel.isPlaying.value,
+                    transport = viewModel.currentPipTransport()
                 )
             )
             .apply { bounds?.let(::setSourceRectHint) }
@@ -538,19 +540,27 @@ fun VideoPlayerOverlay(
             }
         }
 
-        // Collapsed-bar gestures: up expands, down dismisses.
+        // Collapsed-bar gestures: up expands; a sideways throw or a downward
+        // pull dismisses.
         //
-        // The axis differs from the music pill on purpose:
-        // this bar sits directly above the music pill when both are alive, and
-        // a sideways throw there would be ambiguous about which it meant.
-        //
-        // The bar carries no close button, so this gesture is the only way to
-        // dismiss it. It is the same downward pull that already dismisses the
-        // expanded player, one size down.
+        // Sideways is the music pill's dismiss, and the two bars used to
+        // disagree (#299): people learned one and tried it on the other. The
+        // worry that kept this bar vertical - it sits right above the pill, so
+        // a sideways throw might be ambiguous - does not hold up, since a touch
+        // lands on one bar or the other. The downward pull stays as well: it
+        // was the only dismiss for a while, and the same pull closes the
+        // expanded player. The Close button stays too (990db55) - a gesture is
+        // a shortcut, never the only way to stop a persistent player.
         var miniDragY by remember { mutableFloatStateOf(0f) }
         var isMiniDragging by remember { mutableStateOf(false) }
         var isDismissingMini by remember { mutableStateOf(false) }
         val miniSettleOffset = remember { Animatable(0f) }
+        var miniDragX by remember { mutableFloatStateOf(0f) }
+        var isMiniDraggingX by remember { mutableStateOf(false) }
+        val miniSettleOffsetX = remember { Animatable(0f) }
+        // The music pill's own distance, so both bars commit at the same point.
+        val miniSideDismissThresholdPx = with(density) { 100.dp.toPx() }
+        val miniWindowWidthPx = constraints.maxWidth.toFloat()
         val miniExpandThresholdPx = with(density) { 48.dp.toPx() }
         val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
         val miniFlingVelocityPx = with(density) { 700.dp.toPx() }
@@ -597,6 +607,10 @@ fun VideoPlayerOverlay(
                     gestureOffset.coerceAtLeast(0f) /
                         (miniDismissThresholdPx * 2f)
                     ).coerceIn(0f, fadeLimit)
+                val sideOffset = if (isMiniDraggingX) miniDragX else miniSettleOffsetX.value
+                translationX = sideOffset
+                alpha *= 1f - (kotlin.math.abs(sideOffset) / (miniSideDismissThresholdPx * 2f))
+                    .coerceIn(0f, fadeLimit)
             }
         }
 
@@ -804,6 +818,71 @@ fun VideoPlayerOverlay(
                     }
                 )
             }
+            // The sideways dismiss. Its own detector: each locks to its axis at
+            // touch slop and consumes, which cancels the other, the same pairing
+            // the music pill uses.
+            .pointerInput(showExpandedSurface, miniSideDismissThresholdPx, miniFlingVelocityPx) {
+                if (showExpandedSurface) return@pointerInput
+                var thresholdFeedbackSent = false
+                val velocityTracker = VelocityTracker()
+                val settleBack: () -> Unit = {
+                    val releasedOffset = miniDragX
+                    scope.launch {
+                        miniSettleOffsetX.snapTo(releasedOffset)
+                        isMiniDraggingX = false
+                        miniSettleOffsetX.animateTo(0f, miniOffsetAnimationSpec)
+                    }
+                }
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        thresholdFeedbackSent = false
+                        velocityTracker.resetTracking()
+                        miniDragX = miniSettleOffsetX.value
+                        isMiniDraggingX = true
+                        scope.launch { miniSettleOffsetX.stop() }
+                    },
+                    onDragEnd = {
+                        val velocityX = velocityTracker.calculateVelocity().x
+                        val travel = miniDragX
+                        val dismiss = kotlin.math.abs(travel) > miniSideDismissThresholdPx ||
+                            (kotlin.math.abs(velocityX) > miniFlingVelocityPx &&
+                                (velocityX > 0f) == (travel > 0f) && travel != 0f)
+                        if (!dismiss) {
+                            settleBack()
+                            return@detectHorizontalDragGestures
+                        }
+                        if (!thresholdFeedbackSent) {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        }
+                        isDismissingMini = true
+                        scope.launch {
+                            miniSettleOffsetX.snapTo(travel)
+                            isMiniDraggingX = false
+                            miniSettleOffsetX.animateTo(
+                                if (travel > 0f) miniWindowWidthPx else -miniWindowWidthPx,
+                                miniOffsetAnimationSpec
+                            )
+                            viewModel.closePlayer()
+                            isDismissingMini = false
+                            miniDragX = 0f
+                            miniSettleOffsetX.snapTo(0f)
+                        }
+                    },
+                    onDragCancel = { settleBack() },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        miniDragX += dragAmount
+                        velocityTracker.addPosition(change.uptimeMillis, Offset(miniDragX, 0f))
+                        val crossed = kotlin.math.abs(miniDragX) >= miniSideDismissThresholdPx
+                        if (crossed && !thresholdFeedbackSent) {
+                            thresholdFeedbackSent = true
+                            haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                        } else if (!crossed) {
+                            thresholdFeedbackSent = false
+                        }
+                    }
+                )
+            }
 
         // Offset and fade live on a wrapper rather than on the Surface itself.
         // A graphicsLayer on an elevated Surface makes its shadow render
@@ -939,8 +1018,13 @@ fun VideoPlayerOverlay(
                         val entrance = if (hasExpanded || showExpandedSurface) 1f else miniEntrance.value
                         translationY = gestureOffset + (1f - entrance) * miniEnterOffsetPx
                         val fadeLimit = if (isDismissingMini) 1f else 0.5f
+                        val sideOffset = if (isMiniDraggingX) miniDragX else miniSettleOffsetX.value
+                        translationX = sideOffset
                         alpha = entrance * (
                             1f - (gestureOffset.coerceAtLeast(0f) / (miniDismissThresholdPx * 2f))
+                                .coerceIn(0f, fadeLimit)
+                            ) * (
+                            1f - (kotlin.math.abs(sideOffset) / (miniSideDismissThresholdPx * 2f))
                                 .coerceIn(0f, fadeLimit)
                             )
                     }

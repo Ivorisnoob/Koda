@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Kitaplığın boş</string>
     <string name="library_empty_subtitle">İndirdiğin veya beğendiğin şarkılar burada görünür</string>
-    <string name="library_create_playlist_hint">Aşağıdaki + düğmesiyle oluştur</string>
     <string name="fab_downloads">İndirilenler</string>
     <string name="fab_listening_history">Dinleme geçmişi</string>
     <string name="fab_statistics">İstatistikler</string>

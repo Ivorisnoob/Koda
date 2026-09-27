@@ -77,6 +77,35 @@ class QueueShuffleOrderTest {
     }
 
     @Test
+    fun `fresh-first plays unheard songs before recently heard ones`() {
+        val recent = setOf(1, 4, 5, 8)
+        for (seed in 0L until 20L) {
+            val order = QueueShuffleOrder.freshFirst(10, 2, Random(seed)) { it in recent }
+            assertPermutation(order, 10)
+            assertEquals(2, order[0])
+            // Everything after the opener: six fresh, then the four recent.
+            assertEquals((0 until 10).toSet() - recent - 2, order.copyOfRange(1, 6).toSet())
+            assertEquals(recent, order.copyOfRange(6, 10).toSet())
+        }
+    }
+
+    @Test
+    fun `fresh-first opens with a recent start song and still covers the queue`() {
+        val order = QueueShuffleOrder.freshFirst(6, 3, Random(9)) { it == 3 || it == 0 }
+        assertEquals(3, order[0])
+        assertEquals(0, order.last())
+        assertPermutation(order, 6)
+    }
+
+    @Test
+    fun `fresh-first with nothing recent is an ordinary shuffle`() {
+        val order = QueueShuffleOrder.freshFirst(15, C.INDEX_UNSET, Random(3)) { false }
+        assertPermutation(order, 15)
+        val empty = QueueShuffleOrder.freshFirst(0, C.INDEX_UNSET, Random(3)) { true }
+        assertEquals(0, empty.size)
+    }
+
+    @Test
     fun `copying a foreign order keeps its sequence`() {
         val source = ShuffleOrder.DefaultShuffleOrder(9, 7L)
         val copied = QueueShuffleOrder.copyOf(source, Random(1))

@@ -65,20 +65,24 @@ import com.ivor.ivormusic.ui.components.SongArtwork
  * sheets cannot drift into two different-looking menus.
  */
 
-/** One rounded container holding a run of [OptionRow]s. */
+/**
+ * A run of [OptionRow]s as a Material 3 Expressive segmented group, each row
+ * its own container with its ripple clipped to it. The height is the rows'
+ * own, so a sheet holding groups still scrolls as it did.
+ */
 @Composable
 internal fun OptionGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
+    com.ivor.ivormusic.ui.components.SegmentedColumn(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
-        Column(content = content)
-    }
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        content = content
+    )
 }
 
 @Composable
 internal fun OptionRowDivider() {
+    // The segment gaps separate rows inside a group.
+    if (com.ivor.ivormusic.ui.components.LocalInSegmentedColumn.current) return
     HorizontalDivider(
         // Indented past the icon column, so the divider separates the labels
         // rather than cutting the row in half.

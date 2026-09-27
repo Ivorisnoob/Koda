@@ -92,7 +92,9 @@ fun CommentsPanel(
      * Seek the player, in seconds, when a comment's timestamp is tapped.
      * Null (the Shorts sheet) renders timestamps as ordinary text.
      */
-    onSeekTo: ((seconds: Long) -> Unit)? = null
+    onSeekTo: ((seconds: Long) -> Unit)? = null,
+    /** Open a commenter's channel (their avatar or name). Null leaves them inert. */
+    onOpenAuthor: ((channelId: String) -> Unit)? = null
 ) {
     val listState = rememberLazyListState()
 
@@ -193,7 +195,8 @@ fun CommentsPanel(
                                         onDeleteClick = if (comment.deleteParams != null) {
                                             { commentPendingDelete = comment }
                                         } else null,
-                                        onSeekTo = onSeekTo
+                                        onSeekTo = onSeekTo,
+                                        onOpenAuthor = onOpenAuthor
                                     )
 
                                     // Reply affordance (needs login + reply params)
@@ -245,7 +248,8 @@ fun CommentsPanel(
                                                         onDeleteClick = if (reply.deleteParams != null) {
                                                             { commentPendingDelete = reply }
                                                         } else null,
-                                                        onSeekTo = onSeekTo
+                                                        onSeekTo = onSeekTo,
+                                                        onOpenAuthor = onOpenAuthor
                                                     )
                                                     // Replying to a reply posts into the
                                                     // same thread, addressed to its author
@@ -364,7 +368,8 @@ fun CommentsSheet(
     onPostReply: (CommentItem, CommentItem, String) -> Unit,
     onLikeComment: (CommentItem) -> Unit,
     onDeleteComment: (CommentItem) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenAuthor: ((channelId: String) -> Unit)? = null
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -388,6 +393,7 @@ fun CommentsSheet(
             onLikeComment = onLikeComment,
             onDeleteComment = onDeleteComment,
             onDismiss = onDismiss,
+            onOpenAuthor = onOpenAuthor,
             modifier = Modifier
                 .fillMaxHeight(0.65f)
                 .navigationBarsPadding()
@@ -507,8 +513,15 @@ private fun CommentRow(
     onLikeClick: (() -> Unit)? = null,
     onDeleteClick: (() -> Unit)? = null,
     /** Seek the player, in seconds. Null leaves timestamps as plain text. */
-    onSeekTo: ((seconds: Long) -> Unit)? = null
+    onSeekTo: ((seconds: Long) -> Unit)? = null,
+    onOpenAuthor: ((channelId: String) -> Unit)? = null
 ) {
+    // Avatar and name open the commenter's channel, as on YouTube (#298).
+    val openAuthor = comment.authorChannelId?.let { id -> onOpenAuthor?.let { open -> { open(id) } } }
+    val authorLabel = stringResource(R.string.cd_open_commenter_channel, comment.author)
+    val authorTap = if (openAuthor != null) {
+        Modifier.clickable(onClickLabel = authorLabel, onClick = openAuthor)
+    } else Modifier
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         // Avatar
         val avatarSize = if (isReply) 28.dp else 36.dp
@@ -518,7 +531,8 @@ private fun CommentRow(
                 contentDescription = null,
                 modifier = Modifier
                     .size(avatarSize)
-                    .clip(CircleShape),
+                    .clip(CircleShape)
+                    .then(authorTap),
                 contentScale = ContentScale.Crop
             )
         } else {
@@ -526,6 +540,7 @@ private fun CommentRow(
                 modifier = Modifier
                     .size(avatarSize)
                     .clip(CircleShape)
+                    .then(authorTap)
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
@@ -555,7 +570,8 @@ private fun CommentRow(
                 if (comment.isCreator) {
                     Surface(
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.clip(CircleShape).then(authorTap)
                     ) {
                         Text(
                             text = comment.author,
@@ -570,7 +586,8 @@ private fun CommentRow(
                         text = comment.author,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp)).then(authorTap)
                     )
                 }
                 if (comment.isVerified) {

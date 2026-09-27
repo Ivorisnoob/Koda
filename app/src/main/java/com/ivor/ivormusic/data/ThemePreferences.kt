@@ -299,6 +299,12 @@ class ThemePreferences(context: Context) {
     private val _libraryTab = MutableStateFlow(getLibraryTabPreference())
     val libraryTab: StateFlow<String> = _libraryTab.asStateFlow()
 
+    // The Artists and Albums tabs' own sort orders, LibraryGroupSort names.
+    private val _libraryArtistSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_ARTIST_SORT, null))
+    val libraryArtistSort: StateFlow<String?> = _libraryArtistSort.asStateFlow()
+    private val _libraryAlbumSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_ALBUM_SORT, null))
+    val libraryAlbumSort: StateFlow<String?> = _libraryAlbumSort.asStateFlow()
+
     // The Subscriptions feed's own controls. Persisted for the reason the
     // Library sort is: they were held in composition state, and the tab lives
     // inside Home's AnimatedContent, so leaving the tab disposed the state and
@@ -434,6 +440,8 @@ class ThemePreferences(context: Context) {
             KEY_TIME_LIMIT_BUDGETS -> _timeLimitBudgets.value = getTimeLimitBudgetsPreference()
             KEY_LIBRARY_SORT_OPTION -> _librarySortOption.value = getLibrarySortOptionPreference()
             KEY_LIBRARY_TAB -> _libraryTab.value = getLibraryTabPreference()
+            KEY_LIBRARY_ARTIST_SORT -> _libraryArtistSort.value = prefs.getString(KEY_LIBRARY_ARTIST_SORT, null)
+            KEY_LIBRARY_ALBUM_SORT -> _libraryAlbumSort.value = prefs.getString(KEY_LIBRARY_ALBUM_SORT, null)
             KEY_SUBSCRIPTION_FEED_PERIOD ->
                 _subscriptionFeedPeriod.value = getSubscriptionFeedPeriodPreference()
             KEY_SUBSCRIPTION_FEED_ORDER ->
@@ -877,6 +885,8 @@ class ThemePreferences(context: Context) {
 
         private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
         private const val KEY_LIBRARY_TAB = "library_tab"
+        private const val KEY_LIBRARY_ARTIST_SORT = "library_artist_sort"
+        private const val KEY_LIBRARY_ALBUM_SORT = "library_album_sort"
         private const val KEY_SUBSCRIPTION_FEED_PERIOD = "subscription_feed_period"
         private const val KEY_SUBSCRIPTION_FEED_ORDER = "subscription_feed_order"
         private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
@@ -2215,6 +2225,17 @@ class ThemePreferences(context: Context) {
     fun setLibraryTab(tabName: String) {
         prefs.edit().putString(KEY_LIBRARY_TAB, tabName).apply()
         _libraryTab.value = tabName
+    }
+
+    /** Pass a LibraryGroupSort name; the constants are frozen like the other sorts. */
+    fun setLibraryArtistSort(sortName: String) {
+        prefs.edit().putString(KEY_LIBRARY_ARTIST_SORT, sortName).apply()
+        _libraryArtistSort.value = sortName
+    }
+
+    fun setLibraryAlbumSort(sortName: String) {
+        prefs.edit().putString(KEY_LIBRARY_ALBUM_SORT, sortName).apply()
+        _libraryAlbumSort.value = sortName
     }
 
     private fun getSubscriptionFeedPeriodPreference(): String =

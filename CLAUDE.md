@@ -113,6 +113,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | Trap | Symptom | Doc |
 |---|---|---|
 | Bottom sheet content that does not scroll | Rows clipped away, nothing logged, identical at 0 and 300 items | `screens.md`, `player-ui.md` |
+| Segmented rows as separate items of a list with its own `spacedBy` | The group falls apart into loose cards; nothing logged | `ui-conventions.md` |
 | Widget content overrunning its size bucket | Silent clipping; `LocalSize.current` reports the bucket, not the cell | `widgets.md` |
 | `LazyGridScope.items` member shadows the list extension | Fails on argument names rather than falling through | `channels.md` |
 | A setting missing from `buildSettingsSearchIndex` | Unfindable by search, no compile error | `settings.md` |

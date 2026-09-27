@@ -1797,6 +1797,28 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the listener did not come back to this video, they were already inside
      * it.
      */
+    /**
+     * [playVideoAt] for a handover that brings its list along: the music
+     * queue moving to video mode. [queue]'s current video starts at
+     * [startPositionMs] and the rest play after it as an ordinary queue.
+     */
+    fun playQueueAt(queue: com.ivor.ivormusic.data.VideoQueue, startPositionMs: Long) {
+        val target = queue.current ?: return
+        if (queue.videos.size < 2) {
+            playVideoAt(target, startPositionMs)
+            return
+        }
+        leaveLocalPlayback()
+        _queue.value = queue.at(queue.index)
+        lastQueueRemoval = null
+        queueErrorSkipCount = 0
+        startVideo(
+            target,
+            forceRestart = true,
+            resumePositionMs = startPositionMs.coerceAtLeast(0L),
+        )
+    }
+
     fun playVideoAt(video: VideoItem, startPositionMs: Long) {
         if (LocalVideo.isDeviceVideoId(video.videoId)) {
             playDeviceVideoItem(video)
@@ -2285,6 +2307,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * one ends, so the order is only ever consulted at that moment. Moving the
      * playing entry therefore cannot interrupt it.
      */
+    /**
+     * Keep the playing queue as a local video playlist, the video side of
+     * music's "Save queue as playlist". [onSaved] gets the name and how many
+     * videos were kept (repeats are dropped; see createWithVideos).
+     */
+    fun saveQueueAsPlaylist(name: String, onSaved: (savedName: String, count: Int) -> Unit = { _, _ -> }) {
+        val videos = _queue.value?.videos.orEmpty()
+            .filterNot { com.ivor.ivormusic.data.LocalVideo.isDeviceVideoId(it.videoId) || it.videoId.startsWith("external:") }
+        if (videos.isEmpty()) return
+        viewModelScope.launch {
+            val saved = localVideoPlaylistsRepository.createWithVideos(name, videos) ?: return@launch
+            onSaved(name.trim(), saved.second)
+        }
+    }
+
     fun moveQueueItem(from: Int, to: Int) {
         val active = _queue.value ?: return
         _queue.value = active.moved(from, to)
@@ -2346,6 +2383,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun playNextInQueue() {
         val active = _queue.value ?: return
         if (active.hasNext) playQueueIndex(active.index + 1)
+    }
+
+    /**
+     * Next for a surface with a single Next button and no room to explain it -
+     * the PiP window: the playlist's next video, or else the related video
+     * autoplay would pick (the filtered list, so nothing marked not interested).
+     * PiP never autoplays into a related video on its own; a tap is a request.
+     */
+    fun playNextOrRelated() {
+        val active = _queue.value
+        if (active != null) {
+            if (active.hasNext) playQueueIndex(active.index + 1)
+            return
+        }
+        relatedVideos.value.firstOrNull()?.let { playVideo(it) }
     }
 
     /** Previous video in the playlist. No-op at the start of it. */

@@ -82,9 +82,9 @@ internal val MINI_VIDEO_BAR_SHADOW = 12.dp
  * The video player's collapsed bar: the video still playing, what it is, and
  * the two controls worth reaching for without opening the player.
  *
- * Play/pause and Close are the durable actions here. The downward dismiss
- * gesture remains as a shortcut, but is no longer the only way to stop and
- * remove a persistent player. Queue transport remains in the expanded player,
+ * Play/pause and Close are the durable actions here. A sideways throw (the
+ * music pill's dismiss) and a downward pull remain as shortcuts, but are no
+ * longer the only way to stop and remove a persistent player. Queue transport remains in the expanded player,
  * where previous and next can stay together and keep their positions.
  *
  * Nothing here polls. Position comes off [VideoPlayerViewModel.progress], which

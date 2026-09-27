@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -738,14 +739,18 @@ private fun PlaylistPickerPane(
                         .weight(1f, fill = false)
                         .fillMaxWidth(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(
+                        androidx.compose.material3.ListItemDefaults.SegmentedGap
+                    )
                 ) {
-                    items(filtered, key = { it.playlistId }) { playlist ->
+                    itemsIndexed(filtered, key = { _, it -> it.playlistId }) { index, playlist ->
                         PlaylistPickRow(
                             playlist = playlist,
                             state = stateOf(playlist.playlistId),
                             removable = removable,
-                            onClick = { onPick(playlist.playlistId) }
+                            onClick = { onPick(playlist.playlistId) },
+                            index = index,
+                            count = filtered.size
                         )
                     }
                 }
@@ -828,20 +833,19 @@ private fun VideoOptionsHeader(video: VideoItem) {
     }
 }
 
-/** One rounded container holding a run of [OptionRow]s. */
+/** A run of [OptionRow]s as a segmented group; the music sheets' twin. */
 @Composable
 private fun OptionGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
+    com.ivor.ivormusic.ui.components.SegmentedColumn(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
-        Column(content = content)
-    }
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        content = content
+    )
 }
 
 @Composable
 private fun OptionRowDivider() {
+    if (com.ivor.ivormusic.ui.components.LocalInSegmentedColumn.current) return
     HorizontalDivider(
         modifier = Modifier.padding(start = 56.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
@@ -963,33 +967,25 @@ private fun PlaylistPickRow(
     playlist: VideoPlaylist,
     state: SaveRowState,
     onClick: () -> Unit,
+    index: Int,
+    count: Int,
     removable: Boolean = false,
 ) {
     val saved = state == SaveRowState.SAVED
+    val tappable = state == SaveRowState.IDLE || state == SaveRowState.FAILED ||
+        (removable && state == SaveRowState.SAVED)
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(
-                enabled = state == SaveRowState.IDLE || state == SaveRowState.FAILED ||
-                    (removable && state == SaveRowState.SAVED)
-            ) {
-                onClick()
-            },
-        shape = RoundedCornerShape(16.dp),
-        color = if (saved) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    // A segmented row whose "selected" state is "already in this playlist":
+    // filled, fully rounded and ticked, like the music sheet. Taps during a
+    // save are ignored rather than disabling the row, which would grey it out
+    // mid-spinner.
+    androidx.compose.material3.SegmentedListItem(
+        selected = saved,
+        onClick = { if (tappable) onClick() },
+        shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(index, count),
+        colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.surfaceContainer),
+        modifier = Modifier.fillMaxWidth(),
+        leadingContent = {
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -1013,40 +1009,16 @@ private fun PlaylistPickRow(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = playlist.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (saved) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                // The count and "On this device" are the two things that tell
-                // one playlist from another of the same name, so both show.
-                listOfNotNull(
-                    playlist.videoCountText?.takeIf { it.isNotBlank() },
-                    playlist.subtitle?.takeIf { it.isNotBlank() }
-                ).joinToString(" · ").takeIf { it.isNotBlank() }?.let { line ->
-                    Text(
-                        text = line,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
+        },
+        // The count and "On this device" are the two things that tell one
+        // playlist from another of the same name, so both show.
+        supportingContent = listOfNotNull(
+            playlist.videoCountText?.takeIf { it.isNotBlank() },
+            playlist.subtitle?.takeIf { it.isNotBlank() }
+        ).joinToString(" · ").takeIf { it.isNotBlank() }?.let { line ->
+            { Text(text = line, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        },
+        trailingContent = {
             when (state) {
                 SaveRowState.SAVING -> LoadingIndicator(
                     modifier = Modifier.size(22.dp),
@@ -1056,7 +1028,6 @@ private fun PlaylistPickRow(
                 SaveRowState.SAVED -> Icon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = stringResource(R.string.cd_in_this_playlist),
-                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(22.dp)
                 )
 
@@ -1075,6 +1046,13 @@ private fun PlaylistPickRow(
                 )
             }
         }
+    ) {
+        Text(
+            text = playlist.title,
+            fontWeight = if (saved) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

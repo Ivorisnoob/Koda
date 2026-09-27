@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">보관함이 비어 있어요</string>
     <string name="library_empty_subtitle">다운로드하거나 좋아요 표시한 곡이 여기에 표시돼요</string>
-    <string name="library_create_playlist_hint">아래 + 버튼으로 만들어 보세요</string>
     <string name="fab_downloads">다운로드</string>
     <string name="fab_listening_history">청취 기록</string>
     <string name="fab_statistics">통계</string>

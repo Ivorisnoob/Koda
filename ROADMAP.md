@@ -34,6 +34,9 @@ Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor a
 
 - **With captions on, each video still makes one extra `/player`.** `ensureCaptionsLoaded` runs in parallel with stream resolution, so `getCaptionTracks` finds the caption cache empty and asks `ANDROID_VR` (plus a `timedtext`) for tracks the visionOS response is about to deliver. Seen in `YTRequests`, September 2026. Fix by loading tracks after the stream phase or awaiting the in-flight resolution.
 - **Classic, Morph and Gesture draw a flat background for device songs.** `ChromaticMistBackground` answers a null model with a flat rectangle, and every caller passes `highResThumbnailUrl`, which is null for local files (their art is a content URI).
+- **Video watch history does not reach YouTube for some users ([#287](https://github.com/Ivorisnoob/Koda/issues/287)).** Not reproduced: Koda's exact ping sequence reached FEhistory at 10 s when probed (September 2026), so the failure is device-side; the `Video history:` log lines from `3b38e44` in a current-beta bug report will say which way.
+- **`MusicServiceBrowserTest` "root fits car tabs" fails on the JVM.** `AutoArtwork.uriFor` chains `Uri.Builder`, which `isReturnDefaultValues` stubs to null. Present since `8d2d942`, unnoticed because CI does not run unit tests; fix in the test.
+- **Music below 1x reportedly hisses ([#290](https://github.com/Ivorisnoob/Koda/issues/290)); a Nothing Glyph visualizer stops after wired USB-C audio ([#270](https://github.com/Ivorisnoob/Koda/issues/270)).** Neither reproduced; both need the device.
 
 ---
 
@@ -103,6 +106,7 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 
 ### September 2026
 
+- Late September feedback ([#298](https://github.com/Ivorisnoob/Koda/issues/298) [#299](https://github.com/Ivorisnoob/Koda/issues/299)): Material 3 alpha29 and Kotlin 2.4.20; segmented lists across the app (`SegmentedColumn`, `segmentedColorsOver`); Home tab flick past a shelf's end and nav-bar scrub; sideways video mini-bar dismiss; Library FAB removed; brightness to the true minimum; watched Shorts skipped; calmer dark Hero; fresh-first shuffle; playing row highlighted on playlist pages; commenter opens channel; PiP previous/next; launcher shortcuts; Artists/Albums sort; video queue saved as a playlist, music queue carried to video, local video playlist tools and import, cross-mode device playlists; open-source licences screen.
 - One visionOS `/player` per song, video or Short under Koda's own visitorData (8 requests and 3 new ids down to 1-2 and 0); refused connections explain what to do per network and resume on reconnect.
 - Content region (`gl`), fully block Shorts, sleep-timer fade, Return YouTube Dislike, Save also likes into the account library ([#139](https://github.com/Ivorisnoob/Koda/issues/139)), subscription refresh interval, Cards/Compact/Grid video lists, Spotlight Home/Explore/Charts/New tabs ([#291](https://github.com/Ivorisnoob/Koda/issues/291) [#285](https://github.com/Ivorisnoob/Koda/issues/285) [#277](https://github.com/Ivorisnoob/Koda/issues/277) [#240](https://github.com/Ivorisnoob/Koda/issues/240) [#242](https://github.com/Ivorisnoob/Koda/issues/242) [#276](https://github.com/Ivorisnoob/Koda/issues/276) [#266](https://github.com/Ivorisnoob/Koda/issues/266) [#274](https://github.com/Ivorisnoob/Koda/issues/274)).
 - Classic Home: Your playlists, Liked tile, top artists, mixes, Ready offline and real Recent albums.

@@ -199,6 +199,20 @@ class MusicService : MediaLibraryService() {
     /** A restored session's play order, applied once its queue is in place. */
     private var pendingRestoredPlayOrder: IntArray? = null
 
+    /**
+     * Songs heard in the last [RECENT_PLAY_WINDOW_MS], plus every song this
+     * service has played since. A shuffle built while this is known plays the
+     * rest first (see [QueueShuffleOrder.freshFirst]). Seeded from play history
+     * off the main thread; read on it, synchronously, when a shuffle is built.
+     */
+    private val recentSongIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * A controller replaced the whole queue, and the shuffle Media3 builds for
+     * it (`cloneAndSet`) sees only a length. Re-ordered once that queue lands.
+     */
+    private var freshShufflePending = false
+
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
 
@@ -240,6 +254,13 @@ class MusicService : MediaLibraryService() {
 
     companion object {
         private const val TAG = "MusicService"
+
+        /**
+         * How long a play keeps a song at the back of new shuffles. Three days
+         * so someone shuffling the same playlist daily works through all of it
+         * rather than re-hearing yesterday's first half. [judgement]
+         */
+        private const val RECENT_PLAY_WINDOW_MS = 3L * 24 * 60 * 60 * 1000
         private const val PREFETCH_AHEAD_COUNT = 3
         private const val MAX_RESOLVED_URI_ENTRIES = 128
         private const val MAX_WARMED_IDS = 256
@@ -467,6 +488,7 @@ class MusicService : MediaLibraryService() {
         initializePlayer()
         restorePlaybackModes()
         restoreSleepTimer()
+        seedRecentSongs()
 
         // 5. Initialize Session
         initializeSession()
@@ -761,6 +783,17 @@ class MusicService : MediaLibraryService() {
             .build()
     }
 
+    /** Fill [recentSongIds] from play history, newest first, back to the window's edge. */
+    private fun seedRecentSongs() {
+        serviceScope.launch {
+            val cutoff = System.currentTimeMillis() - RECENT_PLAY_WINDOW_MS
+            runCatching { statsRepository.loadHistory() }.getOrNull()
+                ?.asSequence()
+                ?.takeWhile { it.timestamp >= cutoff }
+                ?.forEach { recentSongIds += it.songId }
+        }
+    }
+
     private fun restorePlaybackModes() {
         applyPlaybackSpeed(themePreferences.getPlaybackSpeed(), persist = false)
         playbackShuffleEnabled = themePreferences.isPlaybackShuffleEnabled()
@@ -890,10 +923,15 @@ class MusicService : MediaLibraryService() {
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
-                pendingRestoredPlayOrder?.let { order ->
-                    pendingRestoredPlayOrder = null
-                    applyPlayOrder(order)
-                }
+                // A restored order is the user's own listening, so it wins over
+                // a fresh-first reshuffle. Both flags clear before applying:
+                // setShuffleOrder raises this callback again.
+                val restored = pendingRestoredPlayOrder
+                val reshuffle = freshShufflePending
+                pendingRestoredPlayOrder = null
+                freshShufflePending = false
+                if (restored != null) applyPlayOrder(restored)
+                else if (reshuffle) applyFreshFirstShuffle()
             }
             // The queue changed, so the order the screens draw changed with it.
             publishSessionState()
@@ -905,9 +943,11 @@ class MusicService : MediaLibraryService() {
                 playbackShuffleSeed = kotlin.random.Random.nextLong()
                 themePreferences.setPlaybackShuffleSeed(playbackShuffleSeed)
             }
+            val turnedOn = shuffleModeEnabled && !playbackShuffleEnabled
             playbackShuffleEnabled = shuffleModeEnabled
             themePreferences.setPlaybackShuffle(shuffleModeEnabled)
             engine.setShuffleState(shuffleModeEnabled, playbackShuffleSeed)
+            if (turnedOn) applyFreshFirstShuffle()
             // After the engine has applied the new order, never before: this
             // reads the permutation back off the player, so publishing first
             // would send the outgoing one.
@@ -927,6 +967,10 @@ class MusicService : MediaLibraryService() {
             automaticTransitionAttempt = null
             mediaItem?.mediaId?.let {
                 com.ivor.ivormusic.data.YouTubeRequestLedger.begin("song $it")
+                // Heard now, so a shuffle built later in this session puts it
+                // back. Not gated on incognito: nothing is recorded, it only
+                // steers this process's own shuffles.
+                if (it.isNotBlank()) recentSongIds += it
             }
 
             // 1. Loudness correction for the new track, before anything sets a
@@ -1677,6 +1721,18 @@ class MusicService : MediaLibraryService() {
          * has its persisted picture, but a newly created ExoPlayer has no
          * timeline until Media3 is given the saved session here.
          */
+        /** A whole queue arriving from a controller; see [freshShufflePending]. */
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            freshShufflePending = true
+            return super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
+        }
+
         override fun onPlaybackResumption(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -2470,6 +2526,24 @@ class MusicService : MediaLibraryService() {
      * than a wrong-looking queue. Ignored when shuffle is off, where the
      * permutation is not in use and the drag was an ordinary `moveMediaItem`.
      */
+    /**
+     * Re-order the shuffle so songs not heard lately come first, keeping the
+     * current song at the front. A no-op with shuffle off, nothing known to be
+     * recent, or a queue too short to reorder.
+     */
+    private fun applyFreshFirstShuffle() {
+        if (!playbackShuffleEnabled || recentSongIds.isEmpty()) return
+        val count = player.mediaItemCount
+        if (count < 3) return
+        val ids = Array(count) { player.getMediaItemAt(it).mediaId }
+        if (ids.none { it in recentSongIds }) return
+        applyPlayOrder(
+            QueueShuffleOrder.freshFirst(count, player.currentMediaItemIndex, java.util.Random()) {
+                ids[it] in recentSongIds
+            }
+        )
+    }
+
     private fun applyPlayOrder(order: IntArray?) {
         if (order == null || !playbackShuffleEnabled) return
         val count = player.mediaItemCount

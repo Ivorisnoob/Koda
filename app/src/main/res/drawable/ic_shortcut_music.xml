@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Launcher shortcut icon for "Music" (ModeShortcuts). An adaptive icon so the
+    launcher masks it to its own shape. Colours come from shortcut_* in
+    colors.xml: the launcher draws this outside the app theme, like a
+    notification, so it cannot use the Compose ColorScheme; on Android 12+ they
+    resolve to the wallpaper palette.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/shortcut_background" />
+    <foreground>
+        <inset
+            android:drawable="@drawable/ic_shortcut_music_glyph"
+            android:inset="33%" />
+    </foreground>
+</adaptive-icon>

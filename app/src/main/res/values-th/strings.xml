@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">คลังของคุณว่างเปล่า</string>
     <string name="library_empty_subtitle">เพลงที่คุณดาวน์โหลดหรือถูกใจจะแสดงที่นี่</string>
-    <string name="library_create_playlist_hint">สร้างด้วยปุ่ม + ด้านล่าง</string>
     <string name="fab_downloads">ดาวน์โหลด</string>
     <string name="fab_listening_history">ประวัติการฟัง</string>
     <string name="fab_statistics">สถิติ</string>

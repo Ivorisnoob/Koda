@@ -144,6 +144,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         takeSharedLink(intent)
+        // Off the main thread: publishing is a binder call into the launcher.
+        Thread { com.ivor.ivormusic.util.ModeShortcuts.publish(applicationContext) }.start()
 
         // Remove splash instantly when ready — the AVD entrance animation is the show
         splashScreen.setOnExitAnimationListener { it.remove() }
@@ -556,6 +558,16 @@ class MainActivity : ComponentActivity() {
      */
     private fun takeSharedLink(intent: Intent?) {
         if (intent == null) return
+        // A launcher shortcut (ModeShortcuts): open in music or video mode.
+        when (intent.action) {
+            com.ivor.ivormusic.util.ModeShortcuts.ACTION_OPEN_MUSIC,
+            com.ivor.ivormusic.util.ModeShortcuts.ACTION_OPEN_VIDEOS -> {
+                val videos = intent.action == com.ivor.ivormusic.util.ModeShortcuts.ACTION_OPEN_VIDEOS
+                neutralize(intent)
+                pendingModeRequest.value = videos
+                return
+            }
+        }
         val navTarget = intent.getStringExtra("navigate_to")
         if (navTarget != null) {
             neutralize(intent)
@@ -605,6 +617,9 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         var pendingNavigation = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+        /** Video mode (true) or music mode (false) asked for by a launcher shortcut. */
+        var pendingModeRequest = androidx.compose.runtime.mutableStateOf<Boolean?>(null)
     }
 }
 
@@ -845,6 +860,19 @@ fun MusicApp(
         changePlaybackMode(nextVideoMode, true)
     }
 
+    // A launcher shortcut lands on Home in the mode it names, through the same
+    // switch as the toggle: pausing the other player, never dismantling it.
+    val pendingMode by MainActivity.pendingModeRequest
+    LaunchedEffect(pendingMode) {
+        val target = pendingMode ?: return@LaunchedEffect
+        MainActivity.pendingModeRequest.value = null
+        switchPlaybackMode(target)
+        // By route, so onboarding (a different start) is left alone. Guarded:
+        // on a cold start from the shortcut this can run before the NavHost
+        // has set its graph, and there is no deeper screen to leave anyway.
+        runCatching { navController.popBackStack("home", inclusive = false) }
+    }
+
     // "Listen as music" from video playback settings: a real migration into
     // MusicService, so the track joins the music queue, notification and
     // player styles. An opened VideoQueue migrates whole (the one case where
@@ -895,15 +923,29 @@ fun MusicApp(
     // a video, which is why the control is conditional (see
     // Song.hasWatchableVideo) rather than always offered and often broken.
     //
-    // The music queue is not carried over. A video queue is an explicit
-    // ordered list the user chose, and a music queue is frequently a radio -
-    // an endless generated stream of songs, which is not a playlist and would
-    // arrive in the video player as one. The song moves; what plays next
-    // becomes video mode's ordinary related-videos behaviour, the same answer
-    // the other direction gives when it migrates a lone video.
+    // What is still to play of the music queue comes along (asked for,
+    // September 2026: the other direction already carried its queue). Not the
+    // whole thing: a music queue is often a radio that tops itself up forever,
+    // and would arrive as an endless "playlist". So it is the songs from this
+    // one on, in play order, that have a video to watch, capped at
+    // MUSIC_TO_VIDEO_QUEUE_MAX; past its end video mode's ordinary related
+    // videos take over, as they did before.
+    // Resolved in composition, so a locale change reaches it.
+    val musicQueueTitle = androidx.compose.ui.res.stringResource(R.string.vq_from_music_queue)
     val moveMusicToVideo: () -> Unit = move@{
         val song = playerViewModel.currentSong.value ?: return@move
         if (!song.hasWatchableVideo(context)) return@move
+        val playOrder = playerViewModel.playOrderQueue.value
+        val currentAt = playOrder.indexOfFirst { it.id == playerViewModel.currentQueueItemId.value }
+        val carried = (if (currentAt >= 0) playOrder.drop(currentAt + 1) else emptyList())
+            .map { it.song }
+            .filter { it.hasWatchableVideo(context) }
+            .take(MUSIC_TO_VIDEO_QUEUE_MAX - 1)
+        val videoQueue = com.ivor.ivormusic.data.VideoQueue(
+            videos = listOf(song.toVideoItem()) + carried.map { it.toVideoItem() },
+            index = 0,
+            title = musicQueueTitle
+        )
         val positionMs = playerViewModel.progress.value.coerceAtLeast(0L)
         val startPositionMs = song.duration.takeIf { it > 0L }
             ?.let { positionMs.coerceIn(0L, it) }
@@ -920,7 +962,7 @@ fun MusicApp(
         // content in the other player is still only paused by a mode switch.
         playerViewModel.setPlayerExpanded(false)
         playerViewModel.clearPlayer()
-        videoPlayerViewModel.playVideoAt(song.toVideoItem(), startPositionMs)
+        videoPlayerViewModel.playQueueAt(videoQueue, startPositionMs)
     }
 
     // A live broadcast that turned up in the Shorts feed. The Shorts player
@@ -1358,6 +1400,7 @@ fun MusicApp(
                     privateDownloadsEnabled = privateDownloadsEnabled,
                     onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
                     onNavigateToUpdate = { navController.navigate("update") },
+                    onNavigateToLicenses = { navController.navigate("licenses") },
                     localOnlyMode = localOnlyMode,
                     onLocalOnlyModeToggle = onLocalOnlyModeToggle,
                     uiScale = uiScale,
@@ -1569,6 +1612,15 @@ fun MusicApp(
                     onBack = { navController.popBackStack() },
                     localOnlyMode = localOnlyMode
                 )
+            }
+            composable(
+                route = "licenses",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.settings.LicensesScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = "report",
@@ -1833,3 +1885,6 @@ private fun VideoItem.toSong(): Song = Song.fromYouTube(
     thumbnailUrl = thumbnailUrl
 )
 
+
+/** How many songs of the music queue a move to video mode carries along. */
+private const val MUSIC_TO_VIDEO_QUEUE_MAX = 50

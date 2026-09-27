@@ -134,6 +134,8 @@ import com.ivor.ivormusic.ui.components.AvatarImage
 import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.ui.components.SEARCH_FIELD_MIN_ITEMS
 import com.ivor.ivormusic.ui.components.SearchField
+import com.ivor.ivormusic.ui.components.SegmentedFooterShape
+import com.ivor.ivormusic.ui.components.segmentedRowShape
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.ui.components.releaseCaption
@@ -230,7 +232,7 @@ private fun ArtistSortRow(
                     entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-                colors = ToggleButtonDefaults.toggleButtonColors(
+                colors = ToggleButtonDefaults.colors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     checkedContainerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onSurface,
@@ -240,19 +242,6 @@ private fun ArtistSortRow(
                 Text(artistSortLabel(entry))
             }
         }
-    }
-}
-
-/**
- * Segmented list shape helper for Expressive design
- */
-@Composable
-private fun getSegmentedShape(index: Int, count: Int, cornerSize: androidx.compose.ui.unit.Dp = 28.dp): Shape {
-    return when {
-        count == 1 -> RoundedCornerShape(cornerSize)
-        index == 0 -> RoundedCornerShape(topStart = cornerSize, topEnd = cornerSize)
-        index == count - 1 -> RoundedCornerShape(bottomStart = cornerSize, bottomEnd = cornerSize)
-        else -> RectangleShape
     }
 }
 
@@ -1754,37 +1743,27 @@ private fun ArtistAllSongsPage(
                     textColor = textColor,
                     secondaryTextColor = secondaryTextColor,
                     primaryColor = primaryColor,
-                    shape = if (index == displayedSongs.size - 1 && !hasMoreSongs) {
-                        getSegmentedShape(index, displayedSongs.size)
-                    } else if (index == 0) {
-                        RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-                    } else {
-                        RectangleShape
-                    },
+                    // Segmented, continuing into the Show more segment below
+                    // when there is one.
+                    shape = segmentedRowShape(index, displayedSongs.size, continues = hasMoreSongs),
                     modifier = Modifier.padding(horizontal = ARTIST_GUTTER),
                     onLongClick = onSongLongPress?.let { press -> { press(song) } }
                 )
                 if (index < displayedSongs.size - 1) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 44.dp),
-                        color = textColor.copy(alpha = 0.06f)
-                    )
+                    Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                 }
             }
 
             if (hasMoreSongs && displayedSongs.isNotEmpty()) {
                 item {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 44.dp),
-                        color = textColor.copy(alpha = 0.06f)
-                    )
+                    Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = ARTIST_GUTTER)
-                            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+                            .clip(SegmentedFooterShape)
                             .clickable(enabled = !isLoadingMore, onClick = onShowMore),
-                        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+                        shape = SegmentedFooterShape,
                         color = cardColor,
                         tonalElevation = 1.dp
                     ) {

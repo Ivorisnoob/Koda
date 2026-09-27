@@ -135,6 +135,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
@@ -145,6 +146,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -1311,9 +1313,16 @@ internal fun PlayerSeekBar(
     // Keep the control's measured height identical before and during a drag.
     // The preview is an overlay: its negative offset changes where it draws,
     // not the space the bottom controls reserve for this seek bar.
+    // Material 3 1.5.0-alpha29 removed the value-based Slider that takes a
+    // custom track, so the thumb position now lives in a SliderState. With an
+    // onValueChange passed, the state stops moving itself; it is mirrored from
+    // displayedProgress after every composition and set directly while dragging.
+    val sliderState = remember(mediaId) { SliderState(value = displayedProgress) }
+    SideEffect { sliderState.value = displayedProgress }
+
     BoxWithConstraints(modifier = modifier.height(48.dp)) {
         Slider(
-            value = displayedProgress,
+            state = sliderState,
             onValueChange = {
                 if (!isScrubbing) {
                     isScrubbing = true
@@ -1321,6 +1330,7 @@ internal fun PlayerSeekBar(
                     onScrubbingChanged(true)
                 }
                 scrubValue = it
+                sliderState.value = it
             },
             onValueChangeFinished = {
                 if (isScrubbing) {
@@ -2004,7 +2014,7 @@ internal fun PlayerGestureSurface(
                 if (themePreferences.getRememberVideoBrightness() &&
                     saved != ThemePreferences.VIDEO_BRIGHTNESS_UNSET
                 ) {
-                    setWindowBrightness(act, saved.coerceAtLeast(0.01f))
+                    setWindowBrightness(act, saved.coerceIn(0f, 1f))
                 }
             }
             onDispose {
@@ -2278,7 +2288,12 @@ internal fun PlayerGestureSurface(
                                         val previousLevel = level
                                         level = (level - dy / (size.height * 0.7f)).coerceIn(0f, 1f)
                                         if (leftSide) {
-                                            activity?.let { setWindowBrightness(it, level.coerceAtLeast(0.01f)) }
+                                            // 0 is BRIGHTNESS_OVERRIDE_OFF, which the
+                                            // platform defines as the panel's lowest
+                                            // level, not a dark screen. The 0.01 floor
+                                            // this used to apply stopped visibly short
+                                            // of the system's own minimum.
+                                            activity?.let { setWindowBrightness(it, level) }
                                             adjustment = LevelAdjustment.Brightness
                                         } else {
                                             setVolumeFraction(audioManager, level)
@@ -2398,10 +2413,13 @@ private fun currentWindowBrightness(activity: Activity): Float {
     val fromWindow = activity.window.attributes.screenBrightness
     if (fromWindow >= 0f) return fromWindow
     return try {
-        android.provider.Settings.System.getInt(
+        // Clamped because some OEMs (Xiaomi's 0-2047, for one) store this on a
+        // wider scale than the documented 0-255, which read as over 100% and
+        // made the first drag jump to full brightness.
+        (android.provider.Settings.System.getInt(
             activity.contentResolver,
             android.provider.Settings.System.SCREEN_BRIGHTNESS
-        ) / 255f
+        ) / 255f).coerceIn(0f, 1f)
     } catch (e: Exception) {
         0.5f
     }
@@ -3407,7 +3425,7 @@ private fun ExpressiveLikeDislikeGroup(
 ) {
     val likeStatus = engagement?.likeStatus ?: LikeStatus.INDIFFERENT
     val enabled = engagement != null
-    val groupColors = ToggleButtonDefaults.toggleButtonColors(
+    val groupColors = ToggleButtonDefaults.colors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         checkedContainerColor = MaterialTheme.colorScheme.primary,
