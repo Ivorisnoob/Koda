@@ -97,6 +97,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
     val normalizeVolume: StateFlow<Boolean> = themePreferences.normalizeVolume
     val rememberVideoBrightness: StateFlow<Boolean> = themePreferences.rememberVideoBrightness
+    val pipButtons: StateFlow<String> = themePreferences.pipButtons
     val hapticsLevel: StateFlow<String> = themePreferences.hapticsLevel
     val uploadNotificationsEnabled: StateFlow<Boolean> = themePreferences.uploadNotificationsEnabled
 
@@ -373,6 +374,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setRememberVideoBrightness(enabled: Boolean) {
         themePreferences.setRememberVideoBrightness(enabled)
+    }
+
+    fun setPipButtons(value: String) {
+        themePreferences.setPipButtons(value)
     }
 
     fun setHapticsLevel(value: String) {

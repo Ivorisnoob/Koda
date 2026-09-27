@@ -293,7 +293,11 @@ fun VideoLibraryContent(
                     viewModel.loadYouTubeHistory()
                     if (isYouTubeConnected) viewModel.loadVideoPlaylists(force = true)
                 },
-                contentPadding = contentPadding
+                contentPadding = contentPadding,
+                importAction = {
+                    com.ivor.ivormusic.ui.library.PlaylistImportButton(viewModel, videos = true)
+                },
+                fromMusicMode = viewModel.musicPlaylistsForVideo.collectAsState().value
             )
 
             // Undo for a removal taken from the root's history row. Hosted here
@@ -472,7 +476,11 @@ private fun LibraryRoot(
     onRemoveSavedPlaylist: (VideoPlaylist) -> Unit,
     onRefresh: () -> Unit,
     contentPadding: PaddingValues,
-    listState: LazyListState = rememberLazyListState()
+    listState: LazyListState = rememberLazyListState(),
+    /** The playlist import button; supplied by the caller, which holds the ViewModel. */
+    importAction: @Composable () -> Unit = {},
+    /** Music mode's device playlists, as videos. */
+    fromMusicMode: List<VideoPlaylist> = emptyList()
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
 
@@ -643,6 +651,14 @@ private fun LibraryRoot(
                     onAction = { showCreateDialog = true }
                 )
             }
+            // m3u/m3u8 and NewPipe or PipePipe backups in, as local video
+            // playlists; the same button music's Library has.
+            item(key = "playlist_import") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.End
+                ) { importAction() }
+            }
             // Saved ones lead, the way they do in the music Library grid: not
             // the user's own, but deliberately kept, so they belong above the
             // account's list rather than lost at the end of it. They are also
@@ -697,6 +713,31 @@ private fun LibraryRoot(
                             onRename = if (isLocal) {
                                 { name -> onRenamePlaylist(playlist, name) }
                             } else null,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        PlaylistRowDivider()
+                    }
+                }
+            }
+
+            // Music mode's device playlists, playable here as videos. Read-only
+            // in this mode (no delete or rename): they are edited where they
+            // live. See HomeViewModel.musicPlaylistsForVideo.
+            if (fromMusicMode.isNotEmpty()) {
+                item(key = "from_music_header") {
+                    Text(
+                        text = stringResource(R.string.vl_from_music_mode),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp)
+                    )
+                }
+                items(fromMusicMode, key = { "from_music_${it.playlistId}" }) { playlist ->
+                    Column {
+                        PlaylistRow(
+                            playlist = playlist,
+                            onClick = { onOpenPlaylist(playlist) },
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
                         PlaylistRowDivider()
@@ -867,7 +908,7 @@ private fun CreateVideoPlaylistDialog(
                                         ButtonGroupDefaults.connectedTrailingButtonShapes()
                                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                 },
-                                colors = ToggleButtonDefaults.toggleButtonColors(
+                                colors = ToggleButtonDefaults.colors(
                                     containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                                     checkedContainerColor = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onSurface,

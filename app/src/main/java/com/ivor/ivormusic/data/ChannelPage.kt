@@ -190,7 +190,12 @@ data class ChannelPost(
     /** A shared video. Tapping the card plays it. */
     val video: VideoItem? = null,
     val pollChoices: List<ChannelPollChoice> = emptyList(),
-    val pollTotalText: String? = null
+    val pollTotalText: String? = null,
+    /**
+     * `params` of the post's `FEpost_detail` browse, the page its comments
+     * hang off. Null when the response carried no detail link.
+     */
+    val detailParams: String? = null
 )
 
 /**

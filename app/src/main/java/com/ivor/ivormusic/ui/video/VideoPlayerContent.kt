@@ -790,6 +790,7 @@ fun VideoPlayerContent(
                         .fillMaxHeight()
                 ) {
                     CommentsPanel(
+                        onOpenAuthor = onOpenChannel,
                         comments = comments,
                         replies = commentReplies,
                         loadingReplyIds = loadingReplyIds,
@@ -1185,6 +1186,7 @@ fun VideoPlayerContent(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         CommentsPanel(
+                            onOpenAuthor = onOpenChannel,
                             comments = comments,
                             replies = commentReplies,
                             loadingReplyIds = loadingReplyIds,
@@ -1335,7 +1337,8 @@ fun VideoPlayerContent(
                 keepSystemBarsHidden = isFullscreen,
                 onMove = { from, to -> viewModel.moveQueueItem(from, to) },
                 onRemove = { index -> viewModel.removeQueueItem(index) },
-                onUndoRemove = { viewModel.undoQueueRemoval() }
+                onUndoRemove = { viewModel.undoQueueRemoval() },
+                onSaveAsPlaylist = { name, onSaved -> viewModel.saveQueueAsPlaylist(name, onSaved) }
             )
         }
     }
@@ -1633,7 +1636,7 @@ private fun PlayerSettingsSections(
     showListenAsMusic: Boolean,
     onListenAsMusic: () -> Unit
 ) {
-    val optionColors = ToggleButtonDefaults.toggleButtonColors(
+    val optionColors = ToggleButtonDefaults.colors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )

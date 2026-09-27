@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Tu biblioteca está vacía</string>
     <string name="library_empty_subtitle">Las canciones que descargues o te gusten aparecerán aquí</string>
-    <string name="library_create_playlist_hint">Crea una con el botón + de abajo</string>
     <string name="fab_downloads">Descargas</string>
     <string name="fab_listening_history">Historial de reproducción</string>
     <string name="fab_statistics">Estadísticas</string>

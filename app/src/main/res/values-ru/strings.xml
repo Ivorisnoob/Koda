@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Ваша медиатека пуста</string>
     <string name="library_empty_subtitle">Скачанные и понравившиеся песни появятся здесь</string>
-    <string name="library_create_playlist_hint">Создайте его кнопкой «+» ниже</string>
     <string name="fab_downloads">Загрузки</string>
     <string name="fab_listening_history">История прослушиваний</string>
     <string name="fab_statistics">Статистика</string>

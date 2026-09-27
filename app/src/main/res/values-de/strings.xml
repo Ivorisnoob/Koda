@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Deine Mediathek ist leer</string>
     <string name="library_empty_subtitle">Songs, die du herunterlädst oder denen du „Gefällt mir“ gibst, erscheinen hier</string>
-    <string name="library_create_playlist_hint">Erstelle eine mit der +-Taste unten</string>
     <string name="fab_downloads">Downloads</string>
     <string name="fab_listening_history">Hörverlauf</string>
     <string name="fab_statistics">Statistiken</string>

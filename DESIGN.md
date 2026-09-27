@@ -29,7 +29,7 @@ These are counts from the current source tree, not aspirations.
 | `animate*AsState` call sites | 81 |
 | Built-in color palettes | 28, in 6 families |
 | Player styles | 9, each a full independent layout |
-| Material 3 version | `1.5.0-alpha24` (Expressive APIs) |
+| Material 3 version | `1.5.0-alpha29` (Expressive APIs) |
 
 There is no fallback path, no "classic mode", and no abstraction layer between the app and Material 3. `ExperimentalMaterial3ExpressiveApi` is opted into **globally** at the compiler level in `app/build.gradle.kts`, because the Expressive surface is used widely enough that per-file annotations would be noise:
 

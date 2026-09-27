@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Twoja biblioteka jest pusta</string>
     <string name="library_empty_subtitle">Pobrane i polubione utwory pojawią się tutaj</string>
-    <string name="library_create_playlist_hint">Utwórz ją przyciskiem + poniżej</string>
     <string name="fab_downloads">Pobrane</string>
     <string name="fab_listening_history">Historia słuchania</string>
     <string name="fab_statistics">Statystyki</string>

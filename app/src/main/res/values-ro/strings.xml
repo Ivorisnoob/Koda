@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Biblioteca ta e goală</string>
     <string name="library_empty_subtitle">Melodiile descărcate sau cele cu plăcere vor apărea aici</string>
-    <string name="library_create_playlist_hint">Creează unul cu butonul + de mai jos</string>
     <string name="fab_downloads">Descărcări</string>
     <string name="fab_listening_history">Istoricul ascultării</string>
     <string name="fab_statistics">Statistici</string>

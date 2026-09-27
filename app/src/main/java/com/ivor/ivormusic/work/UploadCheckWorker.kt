@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -63,6 +64,16 @@ class UploadCheckWorker(
             .filter { !uploadCheck.isMuted(it.channelId) }
         if (channels.isEmpty()) return Result.success()
 
+        // Blocked notifications used to be discovered per post, after the round
+        // had fetched every feed, and the uploads were then marked seen anyway -
+        // so granting the permission later brought none of them back. Standing
+        // down here defers them instead, and spends no requests on a round
+        // nobody can be told about.
+        if (!canPostNotifications(applicationContext)) {
+            KLog.w(TAG, "Upload check skipped: notifications blocked")
+            return Result.success()
+        }
+
         // Nobody asked for this round. Standing down during a hold and letting
         // WorkManager's own backoff reschedule is strictly better than spending
         // one request per channel against a limit that is already tripped.
@@ -98,8 +109,11 @@ class UploadCheckWorker(
                         if (newest <= seenUpTo) return@async
 
                         val fresh = feed.filter { (it.publishedAtMs ?: 0L) > seenUpTo }
-                        notifyNewUploads(channel.name, channel.channelId, fresh.take(MAX_PER_CHANNEL))
-                        uploadCheck.markSeen(channel.channelId, newest)
+                        // Seen means told: an upload that could not be posted
+                        // stays pending for the next round.
+                        if (notifyNewUploads(channel.name, channel.channelId, fresh.take(MAX_PER_CHANNEL))) {
+                            uploadCheck.markSeen(channel.channelId, newest)
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -115,15 +129,16 @@ class UploadCheckWorker(
         return Result.success()
     }
 
-    private fun notifyNewUploads(channelName: String, channelId: String, uploads: List<com.ivor.ivormusic.data.VideoItem>) {
+    /** Returns whether the notification was handed to the system. */
+    private fun notifyNewUploads(
+        channelName: String,
+        channelId: String,
+        uploads: List<com.ivor.ivormusic.data.VideoItem>,
+    ): Boolean {
         val context = applicationContext
         ensureChannel(context)
 
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+        if (!canPostNotifications(context)) return false
 
         val openApp = android.content.Intent(context, com.ivor.ivormusic.MainActivity::class.java)
         val pending = android.app.PendingIntent.getActivity(
@@ -153,7 +168,14 @@ class UploadCheckWorker(
             .setCategory(NotificationCompat.CATEGORY_SOCIAL)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_TAG, channelId.hashCode(), builder.build())
+        return try {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_TAG, channelId.hashCode(), builder.build())
+            true
+        } catch (e: SecurityException) {
+            // Revoked between the check above and this binder call.
+            KLog.w(TAG, "Notification permission changed before post: ${e.message}")
+            false
+        }
     }
 
     private fun ensureChannel(context: Context) {
@@ -182,6 +204,21 @@ class UploadCheckWorker(
          * visibility for a background job that has the same reason to want it.
          */
         private const val FEED_CONCURRENCY = 6
+
+        /**
+         * Whether a post would reach the shade: the runtime permission on API
+         * 33+, and on every level the app-wide switch in system settings.
+         * Settings uses it to say the bell is blocked rather than quietly on.
+         */
+        fun canPostNotifications(context: Context): Boolean {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                return false
+            }
+            return NotificationManagerCompat.from(context).areNotificationsEnabled()
+        }
 
         /** Keep exactly one periodic check while the user has opted in. */
         fun sync(context: Context) {

@@ -93,6 +93,58 @@ fun parseRichText(node: JSONObject?): RichText {
     return RichText(content, disjoint)
 }
 
+/**
+ * Find the links in text YouTube serves without any: web addresses, email
+ * addresses and `@handle` mentions.
+ *
+ * The channel About panel's `description` is a bare string with no
+ * `commandRuns` [verified September 2026], unlike video descriptions and post
+ * bodies, so the addresses a creator types into their bio were drawn as text
+ * nobody could tap. A handle opens the channel it names (through the in-app
+ * link path); an email opens the mail app. Deliberately conservative: a web
+ * address needs a scheme, `www.` or a YouTube host, so prose like "v2.0" or
+ * "e.g." never lights up.
+ */
+fun linkifyPlainText(text: String): RichText {
+    if (text.isBlank()) return RichText(text)
+    val found = mutableListOf<RichLink>()
+
+    fun add(start: Int, rawEnd: Int, target: (String) -> RichLinkTarget) {
+        var end = rawEnd
+        while (end > start && text[end - 1] in LINK_TRAILING_PUNCTUATION) end--
+        if (end > start) found.add(RichLink(start, end, target(text.substring(start, end))))
+    }
+
+    PLAIN_URL.findAll(text).forEach { m ->
+        add(m.range.first, m.range.last + 1) { url ->
+            RichLinkTarget.Url(if (url.startsWith("http", ignoreCase = true)) url else "https://$url")
+        }
+    }
+    PLAIN_EMAIL.findAll(text).forEach { m ->
+        add(m.range.first, m.range.last + 1) { RichLinkTarget.Url("mailto:$it") }
+    }
+    PLAIN_HANDLE.findAll(text).forEach { m ->
+        add(m.range.first, m.range.last + 1) { RichLinkTarget.Url("https://www.youtube.com/$it") }
+    }
+
+    // First match wins an overlap, in document order - the same rule as
+    // parseRichText, and what keeps an email's domain from also being a URL.
+    found.sortWith(compareBy<RichLink> { it.start }.thenByDescending { it.endExclusive })
+    val disjoint = mutableListOf<RichLink>()
+    for (link in found) {
+        if (disjoint.isEmpty() || link.start >= disjoint.last().endExclusive) disjoint.add(link)
+    }
+    return RichText(text, disjoint)
+}
+
+private val PLAIN_URL = Regex(
+    """(?<![\w@.])(?:https?://|www\.|(?:m\.|music\.)?youtube\.com/|youtu\.be/)[^\s<>"]+""",
+    RegexOption.IGNORE_CASE
+)
+private val PLAIN_EMAIL = Regex("""(?<![\w.])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}""")
+private val PLAIN_HANDLE = Regex("""(?<![\w@./])@[A-Za-z0-9][A-Za-z0-9._-]{2,29}""")
+private val LINK_TRAILING_PUNCTUATION = setOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '"')
+
 private fun parseLinkTarget(command: JSONObject): RichLinkTarget? {
     command.optJSONObject("watchEndpoint")?.let { watch ->
         // startTimeSeconds is absent for a plain video link, which is not a

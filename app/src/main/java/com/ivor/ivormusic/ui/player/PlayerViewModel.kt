@@ -190,6 +190,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     // Stats Repository
     private val statsRepository = com.ivor.ivormusic.data.StatsRepository(context)
 
+    /**
+     * Songs played in the last three days, for picking where a Shuffle opens.
+     * The service orders the rest of the shuffle the same way; this only
+     * decides the first song, which it cannot move without a skip.
+     */
+    private val recentSongIds: MutableSet<String> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     // Playback session snapshots for resume-on-reopen
     private val playbackSessionRepository = com.ivor.ivormusic.data.PlaybackSessionRepository(context)
 
@@ -308,6 +316,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         initializeController()
         startProgressUpdates()
         startBufferingWatchdog()
+        viewModelScope.launch {
+            val cutoff = System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1000
+            runCatching { statsRepository.loadHistory() }.getOrNull()
+                ?.asSequence()
+                ?.takeWhile { it.timestamp >= cutoff }
+                ?.forEach { recentSongIds += it.songId }
+        }
     }
 
     /**
@@ -604,6 +619,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                                 // never plays; only count it once playback actually ran.
                                 if (isActive && (_isPlaying.value || controller?.playWhenReady == true)) {
                                     lastRecordedSongId = currentSongId
+                                    recentSongIds += currentSongId
                                     youTubeRepository.reportPlayback(currentSongId)
                                     // Fresh pref read: the toggle is flipped
                                     // from the settings screen and from the
@@ -1385,12 +1401,16 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      *
      * The start song is picked at random rather than taken from the top:
      * the shuffle order opens with the song playback starts on, so starting
-     * at 0 would open every shuffle of an album with track one.
+     * at 0 would open every shuffle of an album with track one. And from the
+     * songs not heard lately where there are any, so pressing Shuffle twice in
+     * a day does not open on the same few songs (the service puts those at
+     * the back of the order for the same reason).
      */
     fun playQueueShuffled(songs: List<Song>) {
         if (songs.isEmpty()) return
         setShuffleEnabled(true)
-        playQueueAtPosition(songs, songs.random(), 0L)
+        val start = songs.filterNot { it.id in recentSongIds }.randomOrNull() ?: songs.random()
+        playQueueAtPosition(songs, start, 0L)
     }
 
     fun toggleRepeat() {

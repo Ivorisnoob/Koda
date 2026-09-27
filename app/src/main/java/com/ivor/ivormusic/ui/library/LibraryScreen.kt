@@ -68,7 +68,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -568,6 +567,100 @@ enum class PlaylistSortAction(val label: Int) {
     Shuffle(R.string.lib_sort_shuffle),
 }
 
+/**
+ * Sort orders for the Artists and Albums tabs, which had none (feedback,
+ * September 2026: "organize them by the number of songs"). Persisted by name,
+ * so the constants are frozen.
+ */
+enum class LibraryGroupSort(val label: Int, val icon: ImageVector) {
+    Name(R.string.lib_group_sort_name, Icons.Rounded.SortByAlpha),
+    MostSongs(R.string.lib_group_sort_songs, Icons.Rounded.LibraryMusic),
+    MostPlayed(R.string.lib_group_sort_played, Icons.Rounded.TrendingUp);
+
+    /** [groups] (a name and its songs) in this order; ties fall back to the name. */
+    fun <T> apply(groups: List<Pair<String, List<T>>>, plays: (T) -> Int): List<Pair<String, List<T>>> {
+        val byName = compareBy<Pair<String, List<T>>> { it.first.lowercase() }
+        return when (this) {
+            Name -> groups.sortedWith(byName)
+            MostSongs -> groups.sortedWith(compareByDescending<Pair<String, List<T>>> { it.second.size }.then(byName))
+            MostPlayed -> groups.sortedWith(
+                compareByDescending<Pair<String, List<T>>> { g -> g.second.sumOf(plays) }.then(byName)
+            )
+        }
+    }
+
+    companion object {
+        fun from(name: String?): LibraryGroupSort = entries.firstOrNull { it.name == name } ?: Name
+    }
+}
+
+/** The count and sort button above the Artists and Albums grids. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun GroupSortHeader(
+    countLabel: String,
+    sort: LibraryGroupSort,
+    onSortChange: (LibraryGroupSort) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            countLabel,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Box {
+            var open by remember { mutableStateOf(false) }
+            val sortLabel = stringResource(sort.label)
+            FilledTonalIconButton(
+                onClick = { open = true },
+                modifier = Modifier.size(40.dp),
+                shapes = IconButtonDefaults.shapes()
+            ) {
+                Icon(
+                    Icons.Rounded.SwapVert,
+                    contentDescription = stringResource(R.string.lib_group_sort_cd, sortLabel),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                LibraryGroupSort.entries.forEach { option ->
+                    val selected = option == sort
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(option.label),
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        onClick = {
+                            onSortChange(option)
+                            open = false
+                        },
+                        leadingIcon = {
+                            Icon(
+                                option.icon,
+                                contentDescription = null,
+                                tint = if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingIcon = {
+                            if (selected) {
+                                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
 enum class LibrarySortOption(val label: String, val icon: ImageVector) {
     Title("Title", Icons.Rounded.SortByAlpha),
     Artist("Artist", Icons.Rounded.Person),
@@ -674,8 +767,6 @@ fun LibraryMainScreen(
         }
     }
 
-    var fabMenuExpanded by rememberSaveable { mutableStateOf(false) }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -709,12 +800,27 @@ fun LibraryMainScreen(
                     modifier = Modifier.weight(1f, fill = false)
                 )
 
-                FilledTonalIconButton(
-                    onClick = onNavigateToStats,
-                    modifier = Modifier.size(56.dp),
-                    shapes = IconButtonDefaults.shapes()
-                ) {
-                    Icon(Icons.Rounded.Insights, contentDescription = stringResource(R.string.cd_listening_stats), modifier = Modifier.size(24.dp))
+                // New playlist sits in the header, not in a floating button.
+                // A FAB anchored above the nav pill and both mini players rode
+                // halfway up the screen whenever music and a video were both
+                // loaded (#299), over the very rows it was meant to sit below.
+                // Downloads and History, the menu's other entries, already have
+                // rows of their own in the All tab's shortcuts card.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalIconButton(
+                        onClick = onCreatePlaylist,
+                        modifier = Modifier.size(56.dp),
+                        shapes = IconButtonDefaults.shapes()
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.action_new_playlist), modifier = Modifier.size(24.dp))
+                    }
+                    FilledTonalIconButton(
+                        onClick = onNavigateToStats,
+                        modifier = Modifier.size(56.dp),
+                        shapes = IconButtonDefaults.shapes()
+                    ) {
+                        Icon(Icons.Rounded.Insights, contentDescription = stringResource(R.string.cd_listening_stats), modifier = Modifier.size(24.dp))
+                    }
                 }
             }
 
@@ -852,103 +958,36 @@ fun LibraryMainScreen(
                             onUnhidePlaylist = { id -> viewModel.unhidePlaylist(id) },
                             contentPadding = contentPadding,
                             isLoggedIn = isYouTubeConnected,
-                            importAction = { PlaylistImportButton(viewModel) }
+                            importAction = { PlaylistImportButton(viewModel) },
+                            onCreatePlaylist = onCreatePlaylist,
+                            fromVideoMode = viewModel.videoPlaylistsForMusic.collectAsState().value
                         )
                     }
                     LibraryTab.Artists -> {
+                        val artistSort by themePreferences.libraryArtistSort.collectAsState()
                         ArtistsGrid(
                             songs = librarySongs,
                             onArtistClick = onNavigateToArtist,
-                            contentPadding = contentPadding
+                            contentPadding = contentPadding,
+                            sort = LibraryGroupSort.from(artistSort),
+                            onSortChange = { themePreferences.setLibraryArtistSort(it.name) },
+                            playCounts = playCounts
                         )
                     }
                     LibraryTab.Albums -> {
+                        val albumSort by themePreferences.libraryAlbumSort.collectAsState()
                         AlbumsGrid(
                             songs = librarySongs,
                             onAlbumClick = onNavigateToAlbum,
-                            contentPadding = contentPadding
+                            contentPadding = contentPadding,
+                            sort = LibraryGroupSort.from(albumSort),
+                            onSortChange = { themePreferences.setLibraryAlbumSort(it.name) },
+                            playCounts = playCounts
                         )
                     }
                 }
             }
         }
-    }
-
-    // --- M3E FAB menu: quick library actions ---
-    // Lifted above the floating nav pill and the mini player(s) via the
-    // overlay inset HomeScreen provides, so the button is never covered.
-    FloatingActionButtonMenu(
-        expanded = fabMenuExpanded,
-        modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .navigationBarsPadding()
-            .padding(
-                end = 4.dp,
-                bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current + 8.dp
-            ),
-        button = {
-            ToggleFloatingActionButton(
-                checked = fabMenuExpanded,
-                onCheckedChange = { fabMenuExpanded = it },
-                containerColor = ToggleFloatingActionButtonDefaults.containerColor(
-                    initialColor = MaterialTheme.colorScheme.primaryContainer,
-                    finalColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Icon(
-                    Icons.Rounded.Add,
-                    contentDescription = if (fabMenuExpanded) stringResource(R.string.cd_close_menu) else stringResource(R.string.cd_library_actions),
-                    // + rotates into × as the menu blossoms open
-                    tint = lerp(
-                        MaterialTheme.colorScheme.onPrimaryContainer,
-                        MaterialTheme.colorScheme.onPrimary,
-                        checkedProgress
-                    ),
-                    modifier = Modifier.graphicsLayer { rotationZ = checkedProgress * 45f }
-                )
-            }
-        }
-    ) {
-        FloatingActionButtonMenuItem(
-            onClick = {
-                fabMenuExpanded = false
-                onCreatePlaylist()
-            },
-            icon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
-            text = { Text(stringResource(R.string.action_new_playlist)) },
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-        FloatingActionButtonMenuItem(
-            onClick = {
-                fabMenuExpanded = false
-                onDownloadsClick()
-            },
-            icon = { Icon(Icons.Rounded.DownloadDone, null) },
-            text = { Text(stringResource(R.string.fab_downloads)) },
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-        FloatingActionButtonMenuItem(
-            onClick = {
-                fabMenuExpanded = false
-                onNavigateToHistory()
-            },
-            icon = { Icon(Icons.Rounded.History, null) },
-            text = { Text(stringResource(R.string.fab_listening_history)) },
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-        FloatingActionButtonMenuItem(
-            onClick = {
-                fabMenuExpanded = false
-                onNavigateToStats()
-            },
-            icon = { Icon(Icons.Rounded.Insights, null) },
-            text = { Text(stringResource(R.string.fab_statistics)) },
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        )
     }
 
     }
@@ -993,7 +1032,7 @@ fun AllSongsList(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
             top = 8.dp,
-            bottom = contentPadding.calculateBottomPadding() + 80.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp,
             start = 16.dp,
             end = 16.dp
         ),
@@ -1233,25 +1272,28 @@ private fun LibraryShortcutsCard(
     // and a row that opens an empty screen is worse than one that does not move.
     val readyOfflineClickable = readyOfflineCount > 0
 
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth()
+    // Segmented, like Settings: each shortcut its own container.
+    com.ivor.ivormusic.ui.components.SegmentedColumn(
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        Column(modifier = Modifier.padding(vertical = 8.dp)) {
-            var needsDivider = false
-            if (downloadCount != null) {
-                LibraryShortcutRow(
-                    icon = Icons.Rounded.DownloadDone,
-                    iconContainerColor = MaterialTheme.colorScheme.secondary,
-                    iconContentColor = MaterialTheme.colorScheme.onSecondary,
-                    title = stringResource(R.string.fab_downloads),
-                    subtitle = "$downloadCount songs available offline",
-                    onClick = onDownloadsClick
-                )
-                needsDivider = true
-            }
+        run {
+            // Always listed, even with nothing finished: Downloads is also where
+            // a download in progress is watched and paused, and this row is
+            // now the Library's only way there.
+            LibraryShortcutRow(
+                icon = Icons.Rounded.DownloadDone,
+                iconContainerColor = MaterialTheme.colorScheme.secondary,
+                iconContentColor = MaterialTheme.colorScheme.onSecondary,
+                title = stringResource(R.string.fab_downloads),
+                subtitle = if (downloadCount != null) {
+                    "$downloadCount songs available offline"
+                } else {
+                    stringResource(R.string.library_downloads_none)
+                },
+                onClick = onDownloadsClick
+            )
+            var needsDivider = true
             if (showReadyOffline) {
                 if (needsDivider) LibraryShortcutDivider()
                 LibraryShortcutRow(
@@ -1371,7 +1413,9 @@ private fun formatCacheSize(bytes: Long): String {
 }
 
 @Composable
-private fun LibraryShortcutDivider() {    Box(
+private fun LibraryShortcutDivider() {
+    if (com.ivor.ivormusic.ui.components.LocalInSegmentedColumn.current) return
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 4.dp)
@@ -1453,7 +1497,11 @@ fun PlaylistsGrid(
     onUnhidePlaylist: (String) -> Unit = {},
     /** Signed in, so the account's own playlists live on YouTube for real. */
     isLoggedIn: Boolean = false,
-    importAction: @Composable () -> Unit
+    importAction: @Composable () -> Unit,
+    /** The empty state's own way out: it tells the user to make a playlist. */
+    onCreatePlaylist: () -> Unit,
+    /** Video mode's device playlists; see HomeViewModel.videoPlaylistsForMusic. */
+    fromVideoMode: List<PlaylistDisplayItem> = emptyList()
 ) {
     var showHiddenSheet by remember { mutableStateOf(false) }
 
@@ -1461,7 +1509,7 @@ fun PlaylistsGrid(
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(
             top = 8.dp,
-            bottom = contentPadding.calculateBottomPadding() + 80.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp,
             start = 16.dp,
             end = 16.dp
         ),
@@ -1522,7 +1570,14 @@ fun PlaylistsGrid(
                 EmptyLibraryState(
                     icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
                     title = stringResource(R.string.spotlight_empty_no_playlists),
-                    subtitle = stringResource(R.string.library_create_playlist_hint)
+                    subtitle = stringResource(R.string.library_start_playlist_hint),
+                    action = {
+                        Button(onClick = onCreatePlaylist, shapes = ButtonDefaults.shapes()) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                            Text(stringResource(R.string.action_new_playlist))
+                        }
+                    }
                 )
             }
         }
@@ -1558,6 +1613,30 @@ fun PlaylistsGrid(
                 onHide = { onHidePlaylist(playlist) },
                 onClick = { onPlaylistClick(playlist) }
             )
+        }
+
+        // Video mode's own device playlists, playable here as songs. Read-only
+        // in this mode (no edit menu): they are edited where they live.
+        if (fromVideoMode.isNotEmpty()) {
+            item(key = "from_video_header", span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    text = stringResource(R.string.lib_from_video_mode),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            items(fromVideoMode, key = { "from_video_${it.id}" }) { playlist ->
+                ExpressivePlaylistCard(
+                    name = playlist.name ?: stringResource(R.string.untitled_song),
+                    count = playlist.itemCount,
+                    subtitle = playlist.displaySubtitle(),
+                    thumbnailUrl = playlist.thumbnailUrl,
+                    onHide = { onHidePlaylist(playlist) },
+                    onClick = { onPlaylistClick(playlist) }
+                )
+            }
         }
     }
 
@@ -1698,11 +1777,15 @@ private fun HiddenPlaylistsSheet(
 fun ArtistsGrid(
     songs: List<Song>,
     onArtistClick: (String) -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    sort: LibraryGroupSort = LibraryGroupSort.Name,
+    onSortChange: (LibraryGroupSort) -> Unit = {},
+    playCounts: Map<String, Int> = emptyMap()
 ) {
-    val artists = remember(songs) {
-        songs.filterNot { isUnknownArtist(it.artist) }
-            .groupSongsByArtist()
+    val artists = remember(songs, sort, playCounts) {
+        sort.apply(
+            songs.filterNot { isUnknownArtist(it.artist) }.groupSongsByArtist()
+        ) { song -> playCounts[song.id] ?: 0 }
     }
 
     if (artists.isEmpty()) {
@@ -1718,7 +1801,7 @@ fun ArtistsGrid(
         columns = GridCells.Adaptive(minSize = 140.dp), // Slightly smaller for artists
         contentPadding = PaddingValues(
             top = 8.dp,
-            bottom = contentPadding.calculateBottomPadding() + 80.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp,
             start = 16.dp,
             end = 16.dp
         ),
@@ -1726,6 +1809,13 @@ fun ArtistsGrid(
         verticalArrangement = Arrangement.spacedBy(24.dp),
         modifier = Modifier.fillMaxSize()
     ) {
+        item(key = "artists_sort", span = { GridItemSpan(maxLineSpan) }) {
+            GroupSortHeader(
+                countLabel = pluralStringResource(R.plurals.lib_artist_count, artists.size, artists.size),
+                sort = sort,
+                onSortChange = onSortChange
+            )
+        }
         items(artists, key = { (name, _) -> name }) { (artist, artistSongs) ->
              Column(
                  horizontalAlignment = Alignment.CenterHorizontally,
@@ -1765,13 +1855,17 @@ fun ArtistsGrid(
 fun AlbumsGrid(
     songs: List<Song>,
     onAlbumClick: (String, List<Song>) -> Unit,
-    contentPadding: PaddingValues
+    contentPadding: PaddingValues,
+    sort: LibraryGroupSort = LibraryGroupSort.Name,
+    onSortChange: (LibraryGroupSort) -> Unit = {},
+    playCounts: Map<String, Int> = emptyMap()
 ) {
     // Filter BEFORE building grid items — filtering inside the item lambda
     // leaves blank holes in the grid for skipped albums.
-    val albums = remember(songs) {
-        songs.filterNot { isUnknownAlbum(it.album) }
-            .groupSongsByAlbum()
+    val albums = remember(songs, sort, playCounts) {
+        sort.apply(
+            songs.filterNot { isUnknownAlbum(it.album) }.groupSongsByAlbum()
+        ) { song -> playCounts[song.id] ?: 0 }
     }
 
     if (albums.isEmpty()) {
@@ -1787,7 +1881,7 @@ fun AlbumsGrid(
         columns = GridCells.Adaptive(minSize = 160.dp),
         contentPadding = PaddingValues(
             top = 8.dp,
-            bottom = contentPadding.calculateBottomPadding() + 80.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp,
             start = 16.dp,
             end = 16.dp
         ),
@@ -1795,6 +1889,13 @@ fun AlbumsGrid(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize()
     ) {
+        item(key = "albums_sort", span = { GridItemSpan(maxLineSpan) }) {
+            GroupSortHeader(
+                countLabel = pluralStringResource(R.plurals.lib_album_count, albums.size, albums.size),
+                sort = sort,
+                onSortChange = onSortChange
+            )
+        }
         items(albums, key = { (name, _) -> name }) { (album, albumSongs) ->
             val art = albumSongs.firstOrNull { it.albumArtUri != null }?.albumArtUri?.toString()
                 ?: albumSongs.firstOrNull { it.thumbnailUrl != null }?.thumbnailUrl
@@ -2523,6 +2624,9 @@ internal fun TrackSkeletonList(rows: Int = 6) {
 @Composable
 private fun PlaylistTrackRow(
     song: Song,
+    /** The music player is on this song: the row stands out (see below). */
+    isCurrent: Boolean = false,
+    isPlaying: Boolean = false,
     manageEnabled: Boolean,
     reorderEnabled: Boolean,
     isDragging: Boolean,
@@ -2547,22 +2651,43 @@ private fun PlaylistTrackRow(
     // Rows stand on the page's own ground rather than on a neutral surface
     // role - see [playlistRaisedSurface] for why a `surfaceContainerLow` card
     // lands on the wrong side of a colored ground in a dark theme.
+    // The playing row is the segmented list's "selected" state: a solid
+    // `primary` fill and a fully rounded segment, so it stands out of the group
+    // at a glance and moves when playback moves on. Not primaryContainer: this
+    // page's ground *is* that colour (see playlistPageGround), so a container
+    // fill vanished into it. `primary` is the cover's colour at the opposite
+    // tone - bright on the dark ground, deep on the light one - which is the
+    // contrast that survives every cover.
+    val highlighted = isCurrent && !isDragging
     val containerColor by animateColorAsState(
-        targetValue = if (isDragging) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            playlistRaisedSurface()
+        targetValue = when {
+            isDragging -> MaterialTheme.colorScheme.secondaryContainer
+            highlighted -> MaterialTheme.colorScheme.primary
+            else -> playlistRaisedSurface()
         },
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "trackContainer"
     )
+    val contentColor by animateColorAsState(
+        targetValue = if (highlighted) MaterialTheme.colorScheme.onPrimary else playlistOnGround(),
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "trackContent"
+    )
     val topRadius by animateDpAsState(
-        targetValue = if (isDragging) 24.dp else topCorner,
+        targetValue = when {
+            isDragging -> 24.dp
+            highlighted -> 16.dp
+            else -> topCorner
+        },
         animationSpec = liftSpec,
         label = "trackTopCorner"
     )
     val bottomRadius by animateDpAsState(
-        targetValue = if (isDragging) 24.dp else bottomCorner,
+        targetValue = when {
+            isDragging -> 24.dp
+            highlighted -> 16.dp
+            else -> bottomCorner
+        },
         animationSpec = liftSpec,
         label = "trackBottomCorner"
     )
@@ -2609,19 +2734,42 @@ private fun PlaylistTrackRow(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.size(48.dp)
             ) {
-                if (song.albumArtUri != null || song.thumbnailUrl != null) {
-                    AsyncImage(
-                        model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Box(contentAlignment = Alignment.Center) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (song.albumArtUri != null || song.thumbnailUrl != null) {
+                        AsyncImage(
+                            model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
                         Icon(
                             Icons.Rounded.MusicNote,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    // Playing: the bars over a scrim on the artwork, moving
+                    // while it plays and resting while paused.
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = highlighted,
+                        enter = androidx.compose.animation.fadeIn() +
+                            androidx.compose.animation.scaleIn(initialScale = 0.6f),
+                        exit = androidx.compose.animation.fadeOut() +
+                            androidx.compose.animation.scaleOut(targetScale = 0.6f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            com.ivor.ivormusic.ui.components.PlayingBars(
+                                playing = isPlaying,
+                                color = MaterialTheme.colorScheme.inverseOnSurface,
+                                size = 20.dp
+                            )
+                        }
                     }
                 }
             }
@@ -2633,15 +2781,15 @@ private fun PlaylistTrackRow(
                 Text(
                     song.title,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = playlistOnGround(),
+                    color = contentColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = if (highlighted) FontWeight.Bold else FontWeight.SemiBold
                 )
                 Text(
                     song.artist,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = playlistOnGround().copy(alpha = 0.78f),
+                    color = contentColor.copy(alpha = 0.78f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -2676,7 +2824,7 @@ private fun PlaylistTrackRow(
                 Text(
                     formatSongDuration(song.duration),
                     style = MaterialTheme.typography.labelMedium,
-                    color = playlistOnGround().copy(alpha = 0.7f),
+                    color = contentColor.copy(alpha = 0.7f),
                     maxLines = 1,
                     softWrap = false
                 )
@@ -2914,6 +3062,10 @@ fun PlaylistDetailScreen(
         !isAlbum && localPlaylistIds.contains(playlist.id)
     }
     val isSavedPlaylist = savedPlaylistIds.contains(playlist.id)
+    // A video-mode device playlist opened from the music Library's "From video
+    // mode" section: a device list with nothing on YouTube behind it, so it is
+    // neither savable nor a YouTube playlist, and it is edited in video mode.
+    val isVideoModePlaylist = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.isLocal(playlist.id)
     /**
      * Whether this page can be kept.
      *
@@ -2923,14 +3075,14 @@ fun PlaylistDetailScreen(
      * playlist behind them to keep at all.
      */
     val canSavePlaylist = remember(playlist.id, userPlaylists, isLocalPlaylist, isSavedPlaylist) {
-        !isLocalPlaylist &&
+        !isLocalPlaylist && !isVideoModePlaylist &&
             playlist.id !in NON_SAVABLE_PLAYLIST_IDS &&
             (isSavedPlaylist || userPlaylists.none { it.id == playlist.id })
     }
     // YouTube playlists can be edited through InnerTube. "LM" (Your Likes) only
     // supports song removal (= removing the like), not rename/delete, and the
     // synthesized Supermix ("RTM") and radio mixes are not editable at all.
-    val isYouTubePlaylist = !isAlbum && !isLocalPlaylist
+    val isYouTubePlaylist = !isAlbum && !isLocalPlaylist && !isVideoModePlaylist
     // Whether the library actually holds this playlist. A "PL" prefix says an
     // id is a real YouTube playlist, not that it is yours: every editing
     // affordance below is a write, and this page is reached from search and
@@ -2953,6 +3105,9 @@ fun PlaylistDetailScreen(
     val canEditSongs = isLocalPlaylist || canEditYouTubeSongs
 
     val trackKeyPrefix = "playlist_${resolvedPlaylist.id}"
+    // Which row is playing. By song id: the page cannot tell which occurrence
+    // the queue is on, so a song listed twice marks both.
+    val nowPlaying = com.ivor.ivormusic.ui.components.LocalNowPlaying.current
     var songRows by remember(resolvedPlaylist.id) {
         val initialSongs = preloadedSongs
             ?.let { if (isAlbum) it.sortedInAlbumOrder() else it }
@@ -3390,7 +3545,7 @@ fun PlaylistDetailScreen(
                             // bar keeps to the 1-2 visible actions M3E asks for,
                             // and Delete is not a peer of Rename on the page.
                             val hasRename = isLocalPlaylist || canRenameDeleteYouTube
-                            val hasShare = !isLocalPlaylist &&
+                            val hasShare = !isLocalPlaylist && !isVideoModePlaylist &&
                                 resolvedPlaylist.id !in NON_SHAREABLE_PLAYLIST_IDS
                             // Anything that is not already the user's own local
                             // playlist can be copied into one, once its tracks
@@ -4233,8 +4388,10 @@ fun PlaylistDetailScreen(
                     // no extra lazy items are added (reorder math relies on that).
                     val isFirstTrack = index == 0
                     val isLastTrack = index == filteredRows.lastIndex
-                    val trackTopCorner = if (isFirstTrack) 24.dp else 8.dp
-                    val trackBottomCorner = if (isLastTrack) 24.dp else 8.dp
+                    // Segmented list geometry (16dp outer, 4dp inner, 2dp gaps),
+                    // the same tokens as every other grouped list in the app.
+                    val trackTopCorner = if (isFirstTrack) 16.dp else 4.dp
+                    val trackBottomCorner = if (isLastTrack) 16.dp else 4.dp
                     val trackShape = RoundedCornerShape(
                         topStart = trackTopCorner,
                         topEnd = trackTopCorner,
@@ -4259,20 +4416,9 @@ fun PlaylistDetailScreen(
                                 start = 20.dp,
                                 end = 20.dp,
                                 top = if (isFirstTrack) 12.dp else 0.dp,
-                                bottom = if (isLastTrack) 16.dp else 0.dp
+                                bottom = if (isLastTrack) 16.dp else ListItemDefaults.SegmentedGap
                             )
                     ) {
-                        if (!isFirstTrack) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp)
-                                    .height(1.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                                    )
-                            )
-                        }
                     PlaylistTrackSwipeContainer(
                         startAction = if (swipeArmed) resolveSwipeSetting(swipeStartSetting) else null,
                         endAction = if (swipeArmed) resolveSwipeSetting(swipeEndSetting) else null,
@@ -4297,6 +4443,8 @@ fun PlaylistDetailScreen(
                     ) {
                         PlaylistTrackRow(
                             song = song,
+                            isCurrent = nowPlaying.songId == song.id,
+                            isPlaying = nowPlaying.isPlaying,
                             manageEnabled = manageEnabled,
                             reorderEnabled = reorderEnabled,
                             isDragging = isDragging,

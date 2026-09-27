@@ -1167,7 +1167,7 @@ private fun <T> ConnectedChoiceGroup(
                 onCheckedChange = { onSelect(value) },
                 modifier = Modifier.weight(1f),
                 shapes = shapes,
-                colors = ToggleButtonDefaults.toggleButtonColors(
+                colors = ToggleButtonDefaults.colors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     checkedContainerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onSurface,

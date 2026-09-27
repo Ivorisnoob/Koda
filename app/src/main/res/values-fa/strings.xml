@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">کتابخانه شما خالی است</string>
     <string name="library_empty_subtitle">آهنگ‌هایی که دانلود یا لایک کنید اینجا نمایش داده می‌شوند</string>
-    <string name="library_create_playlist_hint">با دکمه + پایین بسازید</string>
     <string name="fab_downloads">دانلودها</string>
     <string name="fab_listening_history">تاریخچه شنیدار</string>
     <string name="fab_statistics">آمار</string>

@@ -787,7 +787,11 @@ fun ShortsPlayerOverlay(
             },
             onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
             onDeleteComment = { comment -> viewModel.deleteComment(comment) },
-            onDismiss = { showCommentsSheet = false }
+            onDismiss = { showCommentsSheet = false },
+            onOpenAuthor = { channelId ->
+                showCommentsSheet = false
+                onOpenChannel(channelId)
+            }
         )
     }
 

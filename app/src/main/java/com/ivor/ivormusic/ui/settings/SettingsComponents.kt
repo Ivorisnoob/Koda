@@ -49,6 +49,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.ivor.ivormusic.ui.components.LocalInSegmentedColumn
+import com.ivor.ivormusic.ui.components.SegmentedColumn
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -181,19 +183,25 @@ internal fun SettingsSection(
     }
 }
 
+/**
+ * A card of settings rows, drawn as a Material 3 Expressive segmented list -
+ * the Android 16 Settings look (see [SegmentedColumn]). Done here rather than
+ * by giving every row its index and count, because the cards take arbitrary
+ * content across a dozen pages.
+ */
 @Composable
 internal fun SettingsCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Surface(
+    // The card used to pad everything 6dp; each segment keeps that inset
+    // horizontally, so rows and the custom choosers, sliders and info blocks
+    // inside cards sit exactly where they did.
+    SegmentedColumn(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 2.dp,
-        shadowElevation = 0.dp
-    ) {
-        Column(modifier = Modifier.padding(6.dp), content = content)
-    }
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentInset = 6.dp,
+        content = content
+    )
 }
 
 /**
@@ -387,6 +395,9 @@ private fun SettingsRowIcon(
 
 @Composable
 internal fun SettingsDivider() {
+    // Inside a segmented card the gap is the separator; drawing nothing also
+    // measures to nothing, so the card skips this child entirely.
+    if (LocalInSegmentedColumn.current) return
     Box(
         modifier = Modifier
             .fillMaxWidth()

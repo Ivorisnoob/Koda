@@ -4,12 +4,10 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -34,13 +32,13 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
+import com.ivor.ivormusic.ui.components.miniSkipGesture
 import com.ivor.ivormusic.ui.components.PLAYER_CONTAINER_SPRING
 import com.ivor.ivormusic.ui.components.containerBackdropAlpha
 import com.ivor.ivormusic.ui.components.containerFullAlpha
 import com.ivor.ivormusic.ui.components.containerMiniAlpha
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 /**
@@ -59,8 +57,10 @@ private const val PLAYER_BACK_PEEK = 0.72f
  * 
  * Swipe gestures:
  * - Swipe UP on mini player: Expand to full player
+ * - Swipe DOWN on mini player: Dismiss/clear player
+ * - Swipe LEFT/RIGHT on mini player: the pill stays put and the song inside it
+ *   moves to the next or previous one in the play order (MiniSkipCarousel)
  * - Swipe DOWN on full player: Collapse to mini player
- * - Swipe LEFT/RIGHT on mini player: Dismiss/clear player
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -115,6 +115,9 @@ fun ExpandablePlayer(
     // and publishes it here, which is what the visual under it reads to bloom its thumb.
     val playerWaveform = rememberPlayerWaveform(currentSong?.id)
     val scrubInteraction = remember { MutableInteractionSource() }
+    // Where a scrub started, shared by the same route: each style's Slider snaps its drag
+    // through it and the bar under it draws the marker.
+    val scrubReturnPoint = remember { ScrubReturnPoint() }
     // The user's playback rate, for the same reason and by the same route: a bar
     // that interpolates between samples has to know how fast the clock is
     // running. It changes only when somebody moves the speed slider.
@@ -254,34 +257,44 @@ fun ExpandablePlayer(
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     LaunchedEffect(isExpanded) { if (!isExpanded) nowPlayingOptionsOpen.value = false }
     
-    // Swipe Logic for dismiss (horizontal) - only when collapsed
-    var horizontalDragOffset by remember { mutableFloatStateOf(0f) }
+    // The collapsed pill's gestures, the same set the video bar answers to:
+    // up expands, down dismisses, and sideways moves the song inside the pill
+    // while the pill itself stays put. Sideways used to be the dismiss, and the
+    // two bars disagreed about it; a sideways swipe on something showing a
+    // song reads as "another song", the way it does on the artwork of every
+    // expanded style.
+    //
+    // The downward drag is a plain state while the finger is on the pill and
+    // an Animatable only for the release, as the video bar does: retargeting an
+    // Animatable on every drag delta lags behind the finger on slower devices.
+    var miniDragY by remember { mutableFloatStateOf(0f) }
+    var isMiniDraggingY by remember { mutableStateOf(false) }
     var isDismissing by remember { mutableStateOf(false) }
-    val horizontalDismissThreshold = with(density) { 100.dp.toPx() }
-    
-    // Dismiss animation - slides out and fades
-    val dismissOffsetTarget = if (isDismissing) {
-        // Slide out in the direction of the swipe
-        if (horizontalDragOffset > 0) with(density) { screenWidth.toPx() } else with(density) { -screenWidth.toPx() }
-    } else {
-        horizontalDragOffset
-    }
-    
-    val animatedHorizontalOffset by animateFloatAsState(
-        targetValue = if (!isExpanded) dismissOffsetTarget else 0f,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        finishedListener = { 
-            if (isDismissing) {
-                viewModel.clearPlayer()
-                isDismissing = false
-                horizontalDragOffset = 0f
-            }
-        },
-        label = "horizontalOffset"
+    val miniSettleY = remember { Animatable(0f) }
+    val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
+    val miniFlingVelocityPx = with(density) { 700.dp.toPx() }
+    val miniOffsetY: () -> Float = { if (isMiniDraggingY) miniDragY else miniSettleY.value }
+    val miniOffsetSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+
+    // The songs either side of this one in the order they will play - the
+    // play order, not the queue as added, so a shuffled queue peeks at what
+    // actually comes next. A swipe jumps to that exact occurrence rather than
+    // sending "previous", which past three seconds restarts the song instead.
+    val playOrder by viewModel.playOrderQueue.collectAsState()
+    val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
+    val queuePosition = playOrder.indexOfFirst { it.id == currentQueueItemId }
+    val previousItem = if (queuePosition > 0) playOrder[queuePosition - 1] else null
+    val nextItem = if (queuePosition >= 0) playOrder.getOrNull(queuePosition + 1) else null
+    // Keyed on the song the pill draws, not the queue occurrence: the
+    // occurrence id can move a moment before the song does, and snapping back
+    // on it drew the outgoing song again for a frame after the swipe.
+    val miniSkip = com.ivor.ivormusic.ui.components.rememberMiniSkipState(
+        contentKey = currentSong.id,
+        nextKey = nextItem?.song?.id,
+        previousKey = previousItem?.song?.id,
+        onNext = { nextItem?.let { viewModel.skipToQueueItem(it.id) } },
+        onPrevious = { previousItem?.let { viewModel.skipToQueueItem(it.id) } },
     )
-    
-    // Alpha based on swipe distance
-    val dismissAlpha = if (isDismissing) 0f else 1f - (animatedHorizontalOffset.absoluteValue / (horizontalDismissThreshold * 2)).coerceIn(0f, 0.5f)
 
     // Container
     Box(
@@ -296,11 +309,17 @@ fun ExpandablePlayer(
                 // player has no navigation bar to sit above.
                 .offset {
                     IntOffset(
-                        animatedHorizontalOffset.roundToInt(),
-                        (collapsedFollowOffsetPx() * (1f - expandProgress)).roundToInt()
+                        0,
+                        (collapsedFollowOffsetPx() * (1f - expandProgress) + miniOffsetY()).roundToInt()
                     )
                 }
-                .graphicsLayer { alpha = dismissAlpha }
+                .graphicsLayer {
+                    // Fades with the downward pull, at most halfway until the
+                    // release commits, then all the way as it leaves.
+                    val fadeLimit = if (isDismissing) 1f else 0.5f
+                    alpha = 1f - (miniOffsetY().coerceAtLeast(0f) / (miniDismissThresholdPx * 2f))
+                        .coerceIn(0f, fadeLimit)
+                }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
                 .pointerInput(isExpanded) {
@@ -326,40 +345,92 @@ fun ExpandablePlayer(
                                 verticalDragOffset += dragAmount
                             }
                         )
-                    } else {
-                        // Collapsed: Handle horizontal drag for dismiss
-                        detectHorizontalDragGestures(
-                            onDragStart = { horizontalDragOffset = 0f },
-                            onDragEnd = {
-                                if (horizontalDragOffset.absoluteValue > horizontalDismissThreshold) {
-                                    // Trigger dismiss animation - don't reset offset yet
-                                    isDismissing = true
-                                } else {
-                                    // Snap back
-                                    horizontalDragOffset = 0f
-                                }
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                horizontalDragOffset += dragAmount
-                            }
-                        )
                     }
                 }
-                .pointerInput(isExpanded) {
+                // Collapsed: sideways moves the song inside the pill.
+                .miniSkipGesture(miniSkip, enabled = !isExpanded)
+                .pointerInput(isExpanded, miniDismissThresholdPx, miniFlingVelocityPx) {
                     if (!isExpanded) {
-                        // Collapsed: Also handle vertical drag for expand
+                        // Collapsed: up expands, down dismisses. Only the
+                        // downward pull moves the pill: an expansion is its own
+                        // animation, so following the finger up would promise
+                        // a movement that never continues.
+                        val velocityTracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                        var thresholdFeedbackSent = false
+                        val settleHome: () -> Unit = {
+                            val released = miniDragY
+                            playerScope.launch {
+                                miniSettleY.snapTo(released)
+                                isMiniDraggingY = false
+                                miniSettleY.animateTo(0f, miniOffsetSpec)
+                            }
+                        }
                         detectVerticalDragGestures(
-                            onDragStart = { verticalDragOffset = 0f },
+                            onDragStart = {
+                                verticalDragOffset = 0f
+                                thresholdFeedbackSent = false
+                                velocityTracker.resetTracking()
+                                miniDragY = 0f
+                                isMiniDraggingY = true
+                                playerScope.launch { miniSettleY.stop() }
+                            },
                             onDragEnd = {
-                                if (verticalDragOffset < verticalSwipeThreshold) {
-                                    onExpandChange(true)
+                                val velocityY = velocityTracker.calculateVelocity().y
+                                val travel = verticalDragOffset
+                                val dismiss = travel > miniDismissThresholdPx ||
+                                    (travel > 0f && velocityY > miniFlingVelocityPx)
+                                when {
+                                    travel < verticalSwipeThreshold -> {
+                                        settleHome()
+                                        onExpandChange(true)
+                                    }
+                                    dismiss -> {
+                                        if (!thresholdFeedbackSent) haptics.confirm()
+                                        isDismissing = true
+                                        val released = miniDragY
+                                        playerScope.launch {
+                                            miniSettleY.snapTo(released)
+                                            isMiniDraggingY = false
+                                            // Below the screen's edge from wherever it is.
+                                            miniSettleY.animateTo(
+                                                with(density) { (collapsedHeight + collapsedBottomPadding).toPx() } +
+                                                    miniDismissThresholdPx,
+                                                miniOffsetSpec
+                                            )
+                                            viewModel.clearPlayer()
+                                            isDismissing = false
+                                            miniDragY = 0f
+                                            miniSettleY.snapTo(0f)
+                                        }
+                                    }
+                                    else -> settleHome()
                                 }
                                 verticalDragOffset = 0f
+                            },
+                            onDragCancel = {
+                                verticalDragOffset = 0f
+                                settleHome()
                             },
                             onVerticalDrag = { change, dragAmount ->
                                 change.consume()
                                 verticalDragOffset += dragAmount
+                                // Deltas, not pointer positions: the pill moves
+                                // under the finger, so positions relative to it
+                                // under-report the speed.
+                                velocityTracker.addPosition(
+                                    change.uptimeMillis,
+                                    androidx.compose.ui.geometry.Offset(0f, verticalDragOffset)
+                                )
+                                miniDragY = verticalDragOffset.coerceAtLeast(0f)
+                                // Only the dismiss edge ticks, and it re-arms if
+                                // the finger comes back inside it.
+                                val crossed = verticalDragOffset >= miniDismissThresholdPx
+                                if (crossed && !thresholdFeedbackSent) {
+                                    thresholdFeedbackSent = true
+                                    haptics.threshold()
+                                } else if (!crossed) {
+                                    thresholdFeedbackSent = false
+                                }
                             }
                         )
                     }
@@ -400,7 +471,10 @@ fun ExpandablePlayer(
                             progress = progress,
                             onPlayPauseClick = onPlayPauseClick,
                             onNextClick = onNextClick,
-                            onClick = { onExpandChange(true) }
+                            onClick = { onExpandChange(true) },
+                            skipState = miniSkip,
+                            previousSong = previousItem?.song,
+                            nextSong = nextItem?.song
                         )
                     }
                 }
@@ -466,6 +540,7 @@ fun ExpandablePlayer(
                             LocalMotionArtworkPlaying provides isPlaying,
                             LocalPlayerWaveform provides playerWaveform,
                             LocalPlayerScrubInteraction provides scrubInteraction,
+                            LocalScrubReturnPoint provides scrubReturnPoint,
                             // The rate every style's bar extrapolates at between
                             // the service's once-a-second samples.
                             LocalPlaybackSpeed provides playbackSpeed,

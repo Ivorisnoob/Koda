@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Ваша медіатека порожня</string>
     <string name="library_empty_subtitle">Завантажені та сподобані пісні з\'являться тут</string>
-    <string name="library_create_playlist_hint">Створіть його кнопкою «+» нижче</string>
     <string name="fab_downloads">Завантаження</string>
     <string name="fab_listening_history">Історія прослуховувань</string>
     <string name="fab_statistics">Статистика</string>

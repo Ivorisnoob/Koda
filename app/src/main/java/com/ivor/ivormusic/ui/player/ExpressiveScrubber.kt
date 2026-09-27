@@ -18,6 +18,7 @@ import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -224,7 +225,17 @@ internal fun ExpressiveScrubber(
 
     // How wide the style made this row, which is what turns a fraction into a bar index.
     var trackWidthPx by remember { mutableStateOf(0) }
-    val detentPx = with(LocalDensity.current) { (BAR_WIDTH + BAR_GAP).toPx() } * TICK_EVERY_BARS
+    val density = LocalDensity.current
+    val detentPx = with(density) { (BAR_WIDTH + BAR_GAP).toPx() } * TICK_EVERY_BARS
+
+    // Where this drag started. The style's Slider resolves every drag value through it; this
+    // bar is the one thing that knows its own width, so it supplies the geometry the snap is
+    // measured in and draws the marker.
+    val returnPoint = LocalScrubReturnPoint.current
+    val snapEnterPx = with(density) { RETURN_SNAP_ENTER.toPx() }
+    val snapExitPx = with(density) { RETURN_SNAP_EXIT.toPx() }
+    SideEffect { returnPoint.updateGeometry(trackWidthPx, snapEnterPx, snapExitPx) }
+    val returnMarker = rememberScrubReturnMarker(returnPoint, interacting, haptics)
     ScrubDetentTicks(
         active = interacting,
         trackWidthPx = trackWidthPx,
@@ -253,6 +264,7 @@ internal fun ExpressiveScrubber(
             )
         }
         Canvas(modifier = Modifier.matchParentSize()) {
+            drawScrubReturnMarker(returnPoint.markerOrigin, returnMarker, color, trackColor)
             drawThumb(progress(), bloom, color)
         }
     }

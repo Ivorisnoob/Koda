@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.aboutlibraries.android)
 }
 
 // Release signing credentials: CI supplies them as env vars, local builds read
@@ -206,6 +207,7 @@ dependencies {
     implementation(libs.androidx.glance.material3)
     // The background upload check over the local subscriptions feed.
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.aboutlibraries.compose.m3)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
     implementation(libs.androidx.palette)

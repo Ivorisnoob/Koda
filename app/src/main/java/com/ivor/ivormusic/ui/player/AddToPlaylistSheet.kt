@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -116,75 +118,59 @@ fun AddToPlaylistSheet(
                     modifier = Modifier.weight(1f)
                 )
                 if (membershipLoading) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
+                    androidx.compose.material3.LoadingIndicator(modifier = Modifier.size(28.dp))
                 }
             }
 
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
+            // New playlist stands on its own as a tonal pill; the playlists
+            // follow as one segmented group. A playlist that already holds the
+            // item is the group's selected state - filled, fully rounded and
+            // ticked - the way OpenStream marks the chosen quality or track.
             LazyColumn(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
             ) {
-                // Create New Item
-                item {
-                    ListItem(
-                        headlineContent = {
-                            Text(stringResource(R.string.new_playlist_label), fontWeight = FontWeight.SemiBold)
-                        },
+                item(key = "new_playlist") {
+                    androidx.compose.material3.SegmentedListItem(
+                        onClick = { showCreateDialog = true },
+                        shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                        colors = ListItemDefaults.segmentedColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            leadingContentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
                         leadingContent = {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(56.dp)
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(48.dp)
                             ) {
-                                AccessIcon(Icons.Rounded.Add, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                AccessIcon(Icons.Rounded.Add, tint = MaterialTheme.colorScheme.onSecondary)
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showCreateDialog = true }
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    ) {
+                        Text(stringResource(R.string.new_playlist_label), fontWeight = FontWeight.SemiBold)
+                    }
                 }
 
-                items(playlists, key = { it.id }) { playlist ->
-                    val isIn = playlist.id in containing
-                    ListItem(
-                        trailingContent = onToggle?.let { toggle ->
-                            {
-                                androidx.compose.material3.Checkbox(
-                                    checked = isIn,
-                                    onCheckedChange = { toggle(playlist, it) }
-                                )
-                            }
-                        },
-                        headlineContent = {
-                            Text(
-                                playlist.name,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                if (playlist.itemCount >= 0) pluralStringResource(R.plurals.n_songs, playlist.itemCount, playlist.itemCount)
-                                else playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) }
-                            )
-                        },
+                itemsIndexed(playlists, key = { _, it -> it.id }) { index, playlist ->
+                    val isIn = onToggle != null && playlist.id in containing
+                    val onRowClick = {
+                        if (onToggle != null) onToggle(playlist, !isIn) else onPlaylistClick(playlist)
+                    }
+                    androidx.compose.material3.SegmentedListItem(
+                        selected = isIn,
+                        onClick = onRowClick,
+                        shapes = ListItemDefaults.segmentedShapes(index = index, count = playlists.size),
+                        colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.surface),
+                        modifier = Modifier.animateItem(),
                         leadingContent = {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.size(56.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 if (playlist.thumbnailUrl != null) {
                                     AsyncImage(
@@ -201,15 +187,36 @@ fun AddToPlaylistSheet(
                                 }
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (onToggle != null) onToggle(playlist, !isIn) else onPlaylistClick(playlist)
+                        supportingContent = {
+                            Text(
+                                if (playlist.itemCount >= 0) pluralStringResource(R.plurals.n_songs, playlist.itemCount, playlist.itemCount)
+                                else playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        trailingContent = if (onToggle != null) {
+                            {
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = isIn,
+                                    enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
+                                    exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut()
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Check,
+                                        contentDescription = stringResource(R.string.cd_in_playlist)
+                                    )
+                                }
                             }
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
+                        } else null
+                    ) {
+                        Text(
+                            playlist.name,
+                            fontWeight = if (isIn) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -278,7 +285,9 @@ fun CreatePlaylistDialog(
      * Empty by default, which keeps the existing create flows untouched: no
      * pre-fill means no selection and no autofocus change.
      */
-    initialName: String = ""
+    initialName: String = "",
+    /** False for a store with no description (local video playlists). */
+    withDescription: Boolean = true
 ) {
     var nameField by remember(initialName) {
         mutableStateOf(TextFieldValue(initialName, selection = TextRange(0, initialName.length)))
@@ -304,13 +313,15 @@ fun CreatePlaylistDialog(
                         .fillMaxWidth()
                         .focusRequester(nameFocus)
                 )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text(stringResource(R.string.description_optional_label)) },
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (withDescription) {
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text(stringResource(R.string.description_optional_label)) },
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {

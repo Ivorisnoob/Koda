@@ -1003,7 +1003,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
     }
 
-    /** Extend the feed when the pager nears its end. Dedupes repeated ids. */
+    /** Extend the feed when the pager nears its end. Dedupes repeated and already-watched ids. */
     private fun maybeLoadMore(index: Int) {
         if (!_isActive.value || sequenceLoadJob?.isActive == true ||
             index < _shorts.value.size - STREAM_PREFETCH_AHEAD - 2) return
@@ -1034,7 +1034,17 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                         (if (session != null) sessions.currentSession(session) == null
                          else sessions.captureSession() != null)) return@launch
                     val known = _shorts.value.mapTo(HashSet()) { it.videoId }
-                    val fresh = withoutHidden(page.items.distinctBy { it.videoId }.filter { it.videoId !in known })
+                    // Shorts already watched in Koda are skipped too. The feed
+                    // kept serving the same ones back across sessions, and a
+                    // Short is not something people come back to on purpose -
+                    // unlike the shelf they tapped, which is left as it was.
+                    // An all-watched page falls through to the next one below,
+                    // the same as an all-duplicate page.
+                    val fresh = withoutHidden(
+                        page.items.distinctBy { it.videoId }.filter {
+                            it.videoId !in known && !videoHistoryRepository.isWatched(it.videoId)
+                        }
+                    )
                     refreshSequenceForProfile = false
                     nextSequenceParams = page.continuation?.takeUnless { it == previous }
                     if (fresh.isNotEmpty()) {

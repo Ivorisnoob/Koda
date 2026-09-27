@@ -48,6 +48,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.ui.components.BindMiniSkip
+import com.ivor.ivormusic.ui.components.MiniSkipCarousel
+import com.ivor.ivormusic.ui.components.MiniSkipState
+import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.ui.player.rememberPlayerHaptics
 
 /** Height of the collapsed bar. Shared with the overlay that sizes it. */
@@ -82,10 +87,13 @@ internal val MINI_VIDEO_BAR_SHADOW = 12.dp
  * The video player's collapsed bar: the video still playing, what it is, and
  * the two controls worth reaching for without opening the player.
  *
- * Play/pause and Close are the durable actions here. The downward dismiss
- * gesture remains as a shortcut, but is no longer the only way to stop and
- * remove a persistent player. Queue transport remains in the expanded player,
- * where previous and next can stay together and keep their positions.
+ * Play/pause and Close are the durable actions here. A downward pull is the
+ * dismiss shortcut, never the only way to stop a persistent player. A sideways
+ * swipe moves to the next or previous video inside the bar - the bar stays put,
+ * the video slides, and the one it would move to peeks in from the edge - the
+ * same gesture the music pill answers to. Next is the playlist's next video, or
+ * the related one autoplay would pick when there is no playlist; previous
+ * exists only inside a playlist.
  *
  * Nothing here polls. Position comes off [VideoPlayerViewModel.progress], which
  * the expanded player's scrubber already drives, replacing a one-second loop
@@ -103,6 +111,8 @@ fun MiniVideoPlayerContent(
      * (see bindVideoSurface). Anywhere else the bar always holds it.
      */
     holdsSurface: () -> Boolean = { true },
+    /** The bar's sideways swipe, owned by the overlay's gesture and bound here. */
+    skipState: MiniSkipState,
 ) {
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -110,6 +120,30 @@ fun MiniVideoPlayerContent(
     val progress by viewModel.progress.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
     val isPortrait by viewModel.isPortraitVideo.collectAsState()
+    val queue by viewModel.queue.collectAsState()
+    val relatedVideos by viewModel.relatedVideos.collectAsState()
+
+    // What playNextOrRelated and playPreviousInQueue would each play, so the
+    // item that peeks in is the item a release lands on. A playlist at its end
+    // has no next, even with related videos loaded: that is the rule the
+    // ViewModel's own next follows.
+    val activeQueue = queue
+    val nextVideo = if (activeQueue != null) {
+        activeQueue.videos.getOrNull(activeQueue.index + 1)
+    } else {
+        relatedVideos.firstOrNull()
+    }
+    val previousVideo = activeQueue?.let { it.videos.getOrNull(it.index - 1) }
+    BindMiniSkip(
+        state = skipState,
+        contentKey = currentVideo?.videoId,
+        nextKey = nextVideo?.videoId,
+        previousKey = previousVideo?.videoId,
+        // Collapsed stays collapsed: the swipe changes what is in the bar, it
+        // is not a request to watch.
+        onNext = { viewModel.playNextOrRelated(expand = false) },
+        onPrevious = { viewModel.playPreviousInQueue(expand = false) },
+    )
 
     val video = currentVideo ?: return
     val haptics = rememberPlayerHaptics()
@@ -123,50 +157,66 @@ fun MiniVideoPlayerContent(
             .padding(horizontal = MINI_VIDEO_BAR_PADDING),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MiniVideoSurface(
-            viewModel = viewModel,
-            isBuffering = isBuffering,
-            isPortrait = isPortrait,
-            isLive = isLive,
-            progress = progress,
-            holdsSurface = holdsSurface
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.Center
+        MiniSkipCarousel(
+            state = skipState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            previousLabel = stringResource(R.string.cd_previous),
+            nextLabel = stringResource(R.string.cd_next),
+            previous = previousVideo?.let { neighbour -> { MiniVideoNeighbour(neighbour) } },
+            next = nextVideo?.let { neighbour -> { MiniVideoNeighbour(neighbour) } },
         ) {
-            Text(
-                text = video.title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                // A live broadcast has no position to report, so the line
-                // that would carry one says what it is instead, in the
-                // accent rather than the red every other app uses: a
-                // hardcoded red is what the palette system exists to
-                // prevent, and the word already reads as live on its own.
-                text = when {
-                    isLive ->
-                        listOf(liveLabel, video.channelName)
-                            .filter { it.isNotBlank() }
-                            .joinToString("  •  ")
-                    else -> video.channelName
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isLive) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MiniVideoSurface(
+                    viewModel = viewModel,
+                    isBuffering = isBuffering,
+                    isPortrait = isPortrait,
+                    isLive = isLive,
+                    progress = progress,
+                    holdsSurface = holdsSurface
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = video.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        // A live broadcast has no position to report, so the line
+                        // that would carry one says what it is instead, in the
+                        // accent rather than the red every other app uses: a
+                        // hardcoded red is what the palette system exists to
+                        // prevent, and the word already reads as live on its own.
+                        text = when {
+                            isLive ->
+                                listOf(liveLabel, video.channelName)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString("  •  ")
+                            else -> video.channelName
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isLive) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.width(6.dp))
@@ -214,6 +264,48 @@ fun MiniVideoPlayerContent(
         }
     }
 
+}
+
+/**
+ * A neighbouring video as it peeks in during a swipe: its thumbnail in the
+ * frame the playing video occupies, then its title and channel, laid out
+ * exactly like the bar so the one sliding in lands where the other was.
+ */
+@Composable
+private fun MiniVideoNeighbour(video: VideoItem) {
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        VideoThumbnail(
+            video = video,
+            modifier = Modifier
+                .width(MINI_VIDEO_THUMB_WIDTH)
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(MINI_VIDEO_THUMB_CORNER)),
+            showProgress = false,
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = video.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = video.channelName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }
 
 /**

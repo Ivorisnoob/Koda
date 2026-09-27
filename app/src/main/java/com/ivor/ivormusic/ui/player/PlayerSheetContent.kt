@@ -506,6 +506,7 @@ private fun ExpressiveNowPlayingView(
             // rebuffering storms on streamed tracks.
             var scrubPosition by remember { mutableStateOf<Float?>(null) }
             val displayedProgress = scrubPosition?.toLong() ?: progress
+            val scrubReturnPoint = LocalScrubReturnPoint.current
             // The position advances every frame from the clock rather than a
             // spring chasing a once-a-second sample, which is what made the
             // thumb step. See rememberSmoothProgress.
@@ -531,9 +532,18 @@ private fun ExpressiveNowPlayingView(
                 Slider(
                     interactionSource = LocalPlayerScrubInteraction.current,
                     value = scrubPosition ?: progress.toFloat(),
-                    onValueChange = { scrubPosition = it },
+                    // Through the return point: the drag leaves a marker where it
+                    // started and snaps back onto it, and letting go on the marker
+                    // is "never mind" rather than a seek. See ScrubReturnPoint.
+                    onValueChange = {
+                        scrubPosition = scrubReturnPoint.follow(
+                            value = it,
+                            rangeEnd = duration.toFloat().coerceAtLeast(1f)
+                        ) { smoothProgress.value }
+                    },
                     onValueChangeFinished = {
-                        scrubPosition?.let { onSeekTo(it.toLong()) }
+                        val cancelled = scrubReturnPoint.release()
+                        if (!cancelled) scrubPosition?.let { onSeekTo(it.toLong()) }
                         scrubPosition = null
                     },
                     valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
@@ -756,7 +766,7 @@ private fun ExpressiveNowPlayingView(
             // 🌟 Favorite / Download / Sleep Timer - connected button group
             val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
             val sleepTimerActive = sleepTimer.active
-            val groupButtonColors = ToggleButtonDefaults.toggleButtonColors(
+            val groupButtonColors = ToggleButtonDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = onSurfaceVariantColor
             )

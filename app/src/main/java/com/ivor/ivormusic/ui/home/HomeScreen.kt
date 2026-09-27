@@ -114,6 +114,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -126,6 +131,8 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MusicVideoToggle
+import com.ivor.ivormusic.ui.components.navBarScrub
+import com.ivor.ivormusic.ui.components.navBarScrubItem
 import com.ivor.ivormusic.ui.components.MusicVideoToggleState
 import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
 import com.ivor.ivormusic.ui.components.rememberPermissionState
@@ -671,7 +678,9 @@ fun HomeScreen(
 
     // Use Box overlay instead of Scaffold for truly floating navbar
     androidx.compose.runtime.CompositionLocalProvider(
-        com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset
+        com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset,
+        com.ivor.ivormusic.ui.components.LocalNowPlaying provides
+            com.ivor.ivormusic.ui.components.NowPlayingState(currentSong?.id, isPlaying)
     ) {
     // Experiment: flick between the main tabs with a swipe, same contract as
     // the channel page - a fast horizontal flick moves to the next/previous
@@ -682,12 +691,68 @@ fun HomeScreen(
     // mini player's swipes from tripping it, so a gesture any child consumed
     // is never a tab flick. Uses the nav bar's own destination order, so hidden
     // destinations are never landed on.
+    //
+    // That alone made the gesture close to dead on music Home, which is mostly
+    // shelves: nearly every swipe starts on one. So a shelf hands the flick on
+    // the way a carousel inside a pager does - it scrolls first, and only a
+    // flick it had nowhere to go with (already at its end in that direction)
+    // reaches the tabs. That arrives through nested scroll as delta the shelf
+    // left unconsumed; the mini player's swipes are not scrollables and never
+    // dispatch it, so they stay excluded.
     val gestureHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val gestureDensity = LocalDensity.current
     val gestureTabIds = if (videoMode) {
         videoHomeConfiguration.orderedVisibleDestinations.map { it.tabId }
     } else {
         listOf(0, 1, 2)
+    }
+    val flickToTab: (towardNext: Boolean) -> Unit = { towardNext ->
+        val index = gestureTabIds.indexOf(selectedTab)
+        val target = if (towardNext) gestureTabIds.getOrNull(index + 1)
+        else gestureTabIds.getOrNull(index - 1)
+        if (target != null && target != selectedTab) {
+            gestureHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+            selectedTab = target
+        }
+    }
+    val currentFlickToTab by rememberUpdatedState(flickToTab)
+    val shelfEdgeFlick = remember(gestureDensity) {
+        object : NestedScrollConnection {
+            val minDistancePx = with(gestureDensity) { 72.dp.toPx() }
+            val minVelocityPx = with(gestureDensity) { 600.dp.toPx() }
+            // Any real movement of the shelf means the swipe was browsing it.
+            val slackPx = with(gestureDensity) { 2.dp.toPx() }
+            var shelfMovedX = 0f
+            var leftoverX = 0f
+
+            fun reset() {
+                shelfMovedX = 0f
+                leftoverX = 0f
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    shelfMovedX += kotlin.math.abs(consumed.x)
+                    leftoverX += available.x
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val edgeFlick = shelfMovedX <= slackPx &&
+                    kotlin.math.abs(leftoverX) >= minDistancePx &&
+                    kotlin.math.abs(available.x) >= minVelocityPx &&
+                    (available.x < 0f) == (leftoverX < 0f)
+                val towardNext = leftoverX < 0f
+                reset()
+                if (edgeFlick) currentFlickToTab(towardNext)
+                return Velocity.Zero
+            }
+        }
     }
     Box(
         modifier = Modifier
@@ -697,10 +762,14 @@ fun HomeScreen(
                 if (nonExpressiveNavigationBar) Modifier
                 else Modifier.nestedScroll(floatingToolbarScrollBehavior)
             )
+            .nestedScroll(shelfEdgeFlick)
             .pointerInput(selectedTab, videoMode, gestureTabIds) {
                 val minDistancePx = with(gestureDensity) { 96.dp.toPx() }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    // A drag that ended without a fling never reaches
+                    // onPostFling, so each gesture starts from a clean slate.
+                    shelfEdgeFlick.reset()
                     var totalX = 0f
                     var totalY = 0f
                     val startTime = down.uptimeMillis
@@ -735,13 +804,7 @@ fun HomeScreen(
                         kotlin.math.abs(totalX) >= minDistancePx &&
                         kotlin.math.abs(totalX) >= 1.5f * kotlin.math.abs(totalY)
                     ) {
-                        val index = gestureTabIds.indexOf(selectedTab)
-                        val target = if (totalX < 0f) gestureTabIds.getOrNull(index + 1)
-                        else gestureTabIds.getOrNull(index - 1)
-                        if (target != null && target != selectedTab) {
-                            gestureHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                            selectedTab = target
-                        }
+                        flickToTab(totalX < 0f)
                     }
                 }
             }
@@ -1401,18 +1464,34 @@ fun HomeScreen(
                 selectedTab = index
             }
         }
+        // Slide a thumb along the bar to pick a tab; the highlight follows the
+        // finger and the tab opens on release. A release on the tab already
+        // open does nothing - unlike a tap, it is not a scroll-to-top request.
+        val navScrub = com.ivor.ivormusic.ui.components.rememberNavBarScrubState(
+            tabIds = navTabs.map { it.first },
+            onHoverChange = { navBarHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick) },
+            onCommit = { target ->
+                if (target != selectedTab) {
+                    navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    selectedTab = target
+                }
+            }
+        )
 
         if (nonExpressiveNavigationBar) {
             NavigationBar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    .navBarScrub(navScrub)
             ) {
                 navTabs.forEach { (index, label, icons) ->
-                    val selected = selectedTab == index
+                    val selected = (navScrub.hoveredTab ?: selectedTab) == index
                     val (filledIcon, outlinedIcon) = icons
                     NavigationBarItem(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .navBarScrubItem(navScrub, index),
                         selected = selected,
                         onClick = { selectNavTab(index) },
                         icon = {
@@ -1432,10 +1511,11 @@ fun HomeScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 20.dp),
+                    .padding(bottom = 20.dp)
+                    .navBarScrub(navScrub),
                 content = {
                     navTabs.forEach { (index, label, icons) ->
-                        val selected = selectedTab == index
+                        val selected = (navScrub.hoveredTab ?: selectedTab) == index
                         val (filledIcon, outlinedIcon) = icons
 
                         // fastSpatialSpec: snappy expressive motion — StiffnessLow
@@ -1464,7 +1544,9 @@ fun HomeScreen(
                             shape = CircleShape,
                             color = animatedContainerColor,
                             contentColor = animatedContentColor,
-                            modifier = Modifier.height(48.dp)
+                            modifier = Modifier
+                                .height(48.dp)
+                                .navBarScrubItem(navScrub, index)
                         ) {
                             Row(
                                 modifier = Modifier

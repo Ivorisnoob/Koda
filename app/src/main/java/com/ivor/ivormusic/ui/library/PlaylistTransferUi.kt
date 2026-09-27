@@ -29,7 +29,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun PlaylistImportButton(viewModel: HomeViewModel) {
+fun PlaylistImportButton(
+    viewModel: HomeViewModel,
+    /** Import into video mode's local playlists instead of music's. */
+    videos: Boolean = false
+) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<HomeViewModel.PlaylistImportResult?>(null) }
@@ -38,7 +42,7 @@ fun PlaylistImportButton(viewModel: HomeViewModel) {
         if (uri == null) return@rememberLauncherForActivityResult
         busy = true
         scope.launch {
-            val r = viewModel.importPlaylists(uri)
+            val r = if (videos) viewModel.importVideoPlaylists(uri) else viewModel.importPlaylists(uri)
             busy = false
             if (r == null) failed = true else result = r
         }
@@ -56,7 +60,12 @@ fun PlaylistImportButton(viewModel: HomeViewModel) {
             title = { Text(stringResource(R.string.pl_import_done_title)) },
             text = {
                 val lines = buildList {
-                    if (r.playlists > 0) add(pluralStringResource(R.plurals.pl_import_playlists, r.playlists, r.playlists, r.songs))
+                    if (r.playlists > 0) add(
+                        pluralStringResource(
+                            if (videos) R.plurals.pl_import_video_playlists else R.plurals.pl_import_playlists,
+                            r.playlists, r.playlists, r.songs
+                        )
+                    )
                     if (r.saved > 0) add(pluralStringResource(R.plurals.pl_import_saved, r.saved, r.saved))
                     if (r.missing > 0) add(pluralStringResource(R.plurals.pl_import_missing, r.missing, r.missing))
                     if (r.foreign > 0) add(pluralStringResource(R.plurals.pl_import_foreign, r.foreign, r.foreign))

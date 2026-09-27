@@ -124,6 +124,23 @@ object PlaylistTransfer {
         }
     }
 
+    /**
+     * A local video playlist as m3u8, on www.youtube.com rather than music's
+     * music.youtube.com so another app opens each entry as a video. Device
+     * files and anything without a YouTube id are skipped: they have no
+     * address another app could open.
+     */
+    fun buildVideoM3u(videos: List<VideoItem>): String = buildString {
+        append("#EXTM3U\n")
+        videos.forEach { video ->
+            if (!VIDEO_ID.matches(video.videoId)) return@forEach
+            val seconds = if (video.duration > 0) video.duration else -1
+            val label = listOf(video.channelName, video.title).filter { it.isNotBlank() }.joinToString(" - ")
+            append("#EXTINF:").append(seconds).append(',').append(label.replace('\n', ' ')).append('\n')
+            append("https://www.youtube.com/watch?v=").append(video.videoId).append('\n')
+        }
+    }
+
     private val VIDEO_ID = Regex("^[A-Za-z0-9_-]{11}$")
 
     fun videoIdFrom(url: String): String? {

@@ -43,6 +43,8 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItemDefaults
+import com.ivor.ivormusic.ui.components.segmentedRowShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -100,19 +102,12 @@ private enum class DownloadsTab(val label: String) {
 internal val SEGMENT_CORNER = 28.dp
 
 /**
- * Shape for one row of a connected list: only the group's outer corners are
- * rounded, so consecutive rows read as a single container rather than a stack
- * of separate cards. A lone item is rounded on all four.
+ * Shape for one row of a flat list (in progress, downloaded songs, videos):
+ * Material 3 Expressive segmented rows, [ListItemDefaults.SegmentedGap] apart.
+ * A downloaded playlist's own group keeps [SEGMENT_CORNER] and dividers, since
+ * its card owns the group's top and animates it.
  */
-private fun segmentedShape(index: Int, count: Int): Shape = when {
-    count == 1 -> RoundedCornerShape(SEGMENT_CORNER)
-    index == 0 -> RoundedCornerShape(topStart = SEGMENT_CORNER, topEnd = SEGMENT_CORNER)
-    index == count - 1 -> RoundedCornerShape(
-        bottomStart = SEGMENT_CORNER,
-        bottomEnd = SEGMENT_CORNER
-    )
-    else -> RectangleShape
-}
+private fun segmentedShape(index: Int, count: Int): Shape = segmentedRowShape(index, count)
 
 /**
  * Shape for a row inside a group whose top is already drawn by a header - an
@@ -436,7 +431,7 @@ private fun MusicTab(
                     onPause = onPause,
                     onResume = onResume
                 )
-                if (index < progress.lastIndex) SegmentDivider(inset = 46.dp)
+                if (index < progress.lastIndex) Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
             }
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
@@ -453,7 +448,7 @@ private fun MusicTab(
                     onPlay = { onPlayQueue(songs, song) },
                     onDelete = { onDelete(song.id) }
                 )
-                if (index < songs.lastIndex) SegmentDivider(inset = 74.dp)
+                if (index < songs.lastIndex) Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
             }
         }
 
@@ -489,7 +484,7 @@ private fun VideoTab(
                     onPause = onPause,
                     onResume = onResume
                 )
-                if (index < progress.lastIndex) SegmentDivider(inset = 46.dp)
+                if (index < progress.lastIndex) Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
             }
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
@@ -509,7 +504,7 @@ private fun VideoTab(
                     onPlay = { onPlay(video) },
                     onDelete = { onDelete(video.id) }
                 )
-                if (index < videos.lastIndex) SegmentDivider(inset = 110.dp)
+                if (index < videos.lastIndex) Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
             }
         }
 

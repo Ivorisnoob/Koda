@@ -24,7 +24,17 @@ import com.ivor.ivormusic.ui.video.VideoPlayerViewModel
  * indistinguishable to the effect that acts on them - sharing the same video
  * twice in a row must open it twice.
  */
-data class PendingSharedLink(val text: String, val token: Long)
+data class PendingSharedLink(
+    val text: String,
+    val token: Long,
+    /**
+     * Tapped inside Koda (a description, a post, a channel's links) rather
+     * than handed over by another app. Such a link opens where the user is:
+     * a channel pushes onto the current screen so back returns to it, and a
+     * video plays in the overlay without first dropping the user on Home.
+     */
+    val fromApp: Boolean = false
+)
 
 /**
  * The link carried by an incoming intent, if any: the shared text for a share
@@ -104,18 +114,21 @@ fun SharedLinkHandler(
             return@LaunchedEffect
         }
 
-        // The music player lives inside the Home screen, so it has nothing to
-        // draw on top of Settings or Downloads.
-        onNavigateHome()
-
         val videoId = link.videoId
         val playlistId = link.playlistId
         val channelRef = link.channelRef
 
+        // The music player and playlist pages live inside the Home screen, so
+        // they have nothing to draw on top of Settings or Downloads. A channel
+        // or a video tapped inside the app does not need Home: the channel
+        // route pushes over wherever the user is, and the video overlay sits
+        // above every route, so leaving the screen would only lose their place.
+        val staysInPlace = pending.fromApp && !link.isMusicLink &&
+            (channelRef != null || (videoId != null && playlistId == null))
+        if (!staysInPlace) onNavigateHome()
+
         when {
-            // A channel link, in any of its four shapes. The manifest has
-            // always claimed these; until there was a channel screen to land
-            // on, Koda accepted the tap and did nothing with it.
+            // A channel link, in any of its four shapes.
             channelRef != null -> onOpenChannel(channelRef)
 
             // A music playlist with no track named: open the playlist's page.

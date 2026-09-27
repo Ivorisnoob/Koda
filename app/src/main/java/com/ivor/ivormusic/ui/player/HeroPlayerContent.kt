@@ -67,6 +67,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -88,6 +90,9 @@ import kotlin.math.roundToInt
 
 /** Share of the deck's width the play disc takes; the pills get the rest. */
 private const val HERO_DISC_FRACTION = 0.48f
+
+/** How far the dark-theme field is taken from primaryContainer toward surface. */
+private const val HERO_DARK_FIELD_DEPTH = 0.5f
 
 /** The deck stops growing here, so a wide phone gives the room to the art. */
 private val HERO_DECK_MAX = 184.dp
@@ -154,7 +159,17 @@ fun HeroPlayerSheetContent(
         onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
     )
 
-    val field = MaterialTheme.colorScheme.primaryContainer
+    // In a dark scheme primaryContainer is a saturated tone-30 fill, and as
+    // the whole screen it read loud (feedback, September 2026). The field is
+    // taken halfway down to the surface there: still the cover's colour, but a
+    // ground the play disc stands up out of rather than one it competes with.
+    // The ink roles only gain contrast from it. Light schemes keep the pastel.
+    val scheme = MaterialTheme.colorScheme
+    val field = if (scheme.surface.luminance() < 0.5f) {
+        lerp(scheme.primaryContainer, scheme.surface, HERO_DARK_FIELD_DEPTH)
+    } else {
+        scheme.primaryContainer
+    }
     val ink = MaterialTheme.colorScheme.onPrimaryContainer
     val accent = MaterialTheme.colorScheme.primary
     val onAccent = MaterialTheme.colorScheme.onPrimary
@@ -393,6 +408,7 @@ fun HeroPlayerSheetContent(
                     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                         var scrubPosition by remember { mutableStateOf<Float?>(null) }
                         val displayedProgress = scrubPosition?.toLong() ?: progress
+                        val scrubReturnPoint = LocalScrubReturnPoint.current
                         // Advanced from the clock each frame rather than sprung
                         // toward a once-a-second sample - see
                         // rememberSmoothProgress.
@@ -421,9 +437,18 @@ fun HeroPlayerSheetContent(
                             Slider(
                                 interactionSource = LocalPlayerScrubInteraction.current,
                                 value = scrubPosition ?: progress.toFloat(),
-                                onValueChange = { scrubPosition = it },
+                                // Through the return point: the drag leaves a marker where it
+                                // started and snaps back onto it, and letting go on the marker
+                                // is "never mind" rather than a seek. See ScrubReturnPoint.
+                                onValueChange = {
+                                    scrubPosition = scrubReturnPoint.follow(
+                                        value = it,
+                                        rangeEnd = duration.toFloat().coerceAtLeast(1f)
+                                    ) { smoothProgress.value }
+                                },
                                 onValueChangeFinished = {
-                                    scrubPosition?.let { viewModel.seekTo(it.toLong()) }
+                                    val cancelled = scrubReturnPoint.release()
+                                    if (!cancelled) scrubPosition?.let { viewModel.seekTo(it.toLong()) }
                                     scrubPosition = null
                                 },
                                 valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),

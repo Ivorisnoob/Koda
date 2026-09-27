@@ -160,23 +160,21 @@ import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material3.SegmentedListItem
 import com.ivor.ivormusic.ui.video.VideoCard
+import com.ivor.ivormusic.ui.components.SegmentedFooterShape
+import com.ivor.ivormusic.ui.components.SegmentedGroup
+import com.ivor.ivormusic.ui.components.segmentedRowShape
 import com.ivor.ivormusic.ui.video.VideoOptionsSheetHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Segmented list shape helper for Expressive design
+ * A result row's place in its segmented group. [hasMore] means a closing
+ * footer segment is drawn below the last row.
  */
-@Composable
-private fun getSegmentedShape(index: Int, count: Int, hasMore: Boolean = false, cornerSize: androidx.compose.ui.unit.Dp = 28.dp): Shape {
-    return when {
-        count == 1 && !hasMore -> RoundedCornerShape(cornerSize)
-        index == 0 -> RoundedCornerShape(topStart = cornerSize, topEnd = cornerSize)
-        index == count - 1 && !hasMore -> RoundedCornerShape(bottomStart = cornerSize, bottomEnd = cornerSize)
-        else -> RectangleShape
-    }
-}
+private fun getSegmentedShape(index: Int, count: Int, hasMore: Boolean = false): Shape =
+    segmentedRowShape(index, count, continues = hasMore)
 
 /**
  * 🌟 Material 3 Expressive Search Screen
@@ -708,10 +706,7 @@ fun SearchScreen(
                                     modifier = Modifier.padding(horizontal = 20.dp)
                                 )
                                 if (index < state.songs.size - 1) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 44.dp),
-                                        color = textColor.copy(alpha = 0.06f)
-                                    )
+                                    Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                                 }
                             }
                         }
@@ -884,20 +879,14 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
                         if (index < displaySongs.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         }
                     }
 
                     // Show more button for local browse
                     if (hasMoreLocal) {
                         item {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                             ShowMoreButton(
                                 onClick = { visibleLocalCount += 20 },
                                 cardColor = cardColor,
@@ -975,7 +964,7 @@ fun SearchScreen(
                             ) {
                                 Surface(
                                     shape = CircleShape,
-                                    color = Color(0xFFFF0000).copy(alpha = 0.15f),
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Box(
@@ -985,7 +974,7 @@ fun SearchScreen(
                                         Icon(
                                             Icons.Rounded.TravelExplore,
                                             contentDescription = null,
-                                            tint = Color(0xFFFF0000),
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -1156,14 +1145,11 @@ fun SearchScreen(
                             secondaryTextColor = secondaryTextColor,
                             accentColor = primaryColor,
                             isYouTube = true,
-                            shape = getSegmentedShape(index, videoSongResults.size, hasMore = true),
+                            shape = getSegmentedShape(index, videoSongResults.size, hasMore = isLoadingMore || videoResultsExhausted),
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
                         if (index < videoSongResults.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         }
                     }
                     item {
@@ -1186,7 +1172,7 @@ fun SearchScreen(
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0xFFFF0000).copy(alpha = 0.15f),
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Box(
@@ -1196,7 +1182,7 @@ fun SearchScreen(
                                     Icon(
                                         Icons.Rounded.TravelExplore,
                                         contentDescription = null,
-                                        tint = Color(0xFFFF0000),
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -1229,23 +1215,17 @@ fun SearchScreen(
                             secondaryTextColor = secondaryTextColor,
                             accentColor = primaryColor,
                             isYouTube = true,
-                            shape = getSegmentedShape(index, youtubeResults.size, hasMore = true),
+                            shape = getSegmentedShape(index, youtubeResults.size, hasMore = isLoadingMore || songResultsExhausted),
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
                         if (index < youtubeResults.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         }
                     }
                     
                     // Pages now arrive on scroll; this footer only reports state.
                     item {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 44.dp),
-                            color = textColor.copy(alpha = 0.06f)
-                        )
+                        Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         SearchPagingFooter(
                             isLoadingMore = isLoadingMore,
                             isExhausted = songResultsExhausted,
@@ -1312,19 +1292,13 @@ fun SearchScreen(
                                 modifier = Modifier.padding(horizontal = 20.dp)
                             )
                             if (index < localDisplayed.size - 1) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 44.dp),
-                                    color = textColor.copy(alpha = 0.06f)
-                                )
+                                Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                             }
                         }
                         
                         if (hasMoreLocalMatches) {
                             item {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 44.dp),
-                                    color = textColor.copy(alpha = 0.06f)
-                                )
+                                Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                                 ShowMoreButton(
                                     onClick = { visibleLocalCount += 20 },
                                     cardColor = cardColor,
@@ -1408,19 +1382,13 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
                         if (index < displayedLocal.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         }
                     }
                     
                     if (hasMoreLocal) {
                         item {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                             ShowMoreButton(
                                 onClick = { visibleLocalCount += 20 },
                                 cardColor = cardColor,
@@ -1709,9 +1677,9 @@ private fun ShowMoreButton(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            .clip(SegmentedFooterShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+        shape = SegmentedFooterShape,
         color = cardColor,
         tonalElevation = 1.dp
     ) {
@@ -1804,7 +1772,7 @@ private fun SearchSongCard(
                         Surface(
                             modifier = Modifier.fillMaxSize(),
                             shape = RoundedCornerShape(14.dp),
-                            color = if (isYouTube) Color(0xFFFF0000).copy(alpha = 0.15f) else accentColor.copy(alpha = 0.15f)
+                            color = if (isYouTube) MaterialTheme.colorScheme.tertiaryContainer else accentColor.copy(alpha = 0.15f)
                         ) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
@@ -1813,7 +1781,7 @@ private fun SearchSongCard(
                                 Icon(
                                     Icons.Rounded.MusicNote,
                                     contentDescription = null,
-                                    tint = if (isYouTube) Color(0xFFFF0000) else accentColor,
+                                    tint = if (isYouTube) MaterialTheme.colorScheme.onTertiaryContainer else accentColor,
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
@@ -2274,48 +2242,21 @@ fun SearchHistoryList(
             }
         }
         
-        history.forEachIndexed { index, query ->
-            val rowShape = getSegmentedShape(index, history.size, cornerSize = 22.dp)
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 1.dp)
-                    .clip(rowShape)
-                    .clickable { onHistoryClick(query) },
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                shape = rowShape
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Rounded.History,
-                        contentDescription = null,
-                        tint = secondaryTextColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.size(16.dp))
-                    Text(
-                        text = query,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = textColor,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = { onRemoveClick(query) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.cd_remove),
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(18.dp)
-                        )
+        // Real segmented rows: the press morph, the group's own gap, and a
+        // full-size remove target (it was a 32dp button).
+        SegmentedGroup(history) { index, count, query ->
+            SegmentedListItem(
+                onClick = { onHistoryClick(query) },
+                shapes = ListItemDefaults.segmentedShapes(index, count),
+                colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.background),
+                leadingContent = { Icon(Icons.Rounded.History, contentDescription = null) },
+                trailingContent = {
+                    IconButton(onClick = { onRemoveClick(query) }) {
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.cd_remove))
                     }
                 }
+            ) {
+                Text(query, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -3076,8 +3017,8 @@ private fun SearchPagingFooter(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
-        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+            .clip(SegmentedFooterShape),
+        shape = SegmentedFooterShape,
         color = cardColor,
         tonalElevation = 1.dp
     ) {

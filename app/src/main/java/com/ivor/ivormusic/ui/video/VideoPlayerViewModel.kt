@@ -1797,6 +1797,28 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the listener did not come back to this video, they were already inside
      * it.
      */
+    /**
+     * [playVideoAt] for a handover that brings its list along: the music
+     * queue moving to video mode. [queue]'s current video starts at
+     * [startPositionMs] and the rest play after it as an ordinary queue.
+     */
+    fun playQueueAt(queue: com.ivor.ivormusic.data.VideoQueue, startPositionMs: Long) {
+        val target = queue.current ?: return
+        if (queue.videos.size < 2) {
+            playVideoAt(target, startPositionMs)
+            return
+        }
+        leaveLocalPlayback()
+        _queue.value = queue.at(queue.index)
+        lastQueueRemoval = null
+        queueErrorSkipCount = 0
+        startVideo(
+            target,
+            forceRestart = true,
+            resumePositionMs = startPositionMs.coerceAtLeast(0L),
+        )
+    }
+
     fun playVideoAt(video: VideoItem, startPositionMs: Long) {
         if (LocalVideo.isDeviceVideoId(video.videoId)) {
             playDeviceVideoItem(video)
@@ -1812,7 +1834,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         )
     }
 
-    fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
+    /**
+     * @param expand false keeps a collapsed player collapsed - the mini bar's
+     * sideways skip, which changes the video inside the bar and must not
+     * throw the viewer into the watch page.
+     */
+    fun playVideo(video: VideoItem, forceRestart: Boolean = false, expand: Boolean = true) {
         // A device video reaching the ordinary entry point is a watch-history
         // row being replayed: history stores VideoItems and nothing else, so a
         // file on this phone comes back through the same door a YouTube video
@@ -1828,7 +1855,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // The queue this belonged to is gone, so restoring into the next one
         // would drop a video into a list it was never part of.
         lastQueueRemoval = null
-        startVideo(video, forceRestart)
+        startVideo(video, forceRestart, expand = expand)
     }
 
     /**
@@ -2268,11 +2295,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * otherwise swallow the jump and leave the queue pointing somewhere the
      * player is not.
      */
-    fun playQueueIndex(index: Int) {
+    fun playQueueIndex(index: Int, expand: Boolean = true) {
         val active = _queue.value ?: return
         val target = active.videos.getOrNull(index) ?: return
         _queue.value = active.copy(index = index)
-        startVideo(target, forceRestart = true)
+        startVideo(target, forceRestart = true, expand = expand)
     }
 
     // ---------------- Editing the queue ----------------
@@ -2285,6 +2312,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * one ends, so the order is only ever consulted at that moment. Moving the
      * playing entry therefore cannot interrupt it.
      */
+    /**
+     * Keep the playing queue as a local video playlist, the video side of
+     * music's "Save queue as playlist". [onSaved] gets the name and how many
+     * videos were kept (repeats are dropped; see createWithVideos).
+     */
+    fun saveQueueAsPlaylist(name: String, onSaved: (savedName: String, count: Int) -> Unit = { _, _ -> }) {
+        val videos = _queue.value?.videos.orEmpty()
+            .filterNot { com.ivor.ivormusic.data.LocalVideo.isDeviceVideoId(it.videoId) || it.videoId.startsWith("external:") }
+        if (videos.isEmpty()) return
+        viewModelScope.launch {
+            val saved = localVideoPlaylistsRepository.createWithVideos(name, videos) ?: return@launch
+            onSaved(name.trim(), saved.second)
+        }
+    }
+
     fun moveQueueItem(from: Int, to: Int) {
         val active = _queue.value ?: return
         _queue.value = active.moved(from, to)
@@ -2348,10 +2390,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (active.hasNext) playQueueIndex(active.index + 1)
     }
 
+    /**
+     * Next for a surface with a single Next button and no room to explain it -
+     * the PiP window: the playlist's next video, or else the related video
+     * autoplay would pick (the filtered list, so nothing marked not interested).
+     * PiP never autoplays into a related video on its own; a tap is a request.
+     */
+    fun playNextOrRelated(expand: Boolean = true) {
+        val active = _queue.value
+        if (active != null) {
+            if (active.hasNext) playQueueIndex(active.index + 1, expand)
+            return
+        }
+        relatedVideos.value.firstOrNull()?.let { playVideo(it, expand = expand) }
+    }
+
     /** Previous video in the playlist. No-op at the start of it. */
-    fun playPreviousInQueue() {
+    fun playPreviousInQueue(expand: Boolean = true) {
         val active = _queue.value ?: return
-        if (active.hasPrevious) playQueueIndex(active.index - 1)
+        if (active.hasPrevious) playQueueIndex(active.index - 1, expand)
     }
 
     /**
@@ -2359,9 +2416,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the stream is ready instead of starting from zero.
      * @param resumePaused whether a [resumePositionMs] seek lands paused. True
      * for the cold-process restore - the user decides when to jump back in.
-     * @param expand false only for a cold-process restore, where popping
-     * straight into a fullscreen player would be a jump-scare rather than the
-     * "you left this running" cue a mini player gives.
+     * @param expand false for a cold-process restore, where popping straight
+     * into a fullscreen player would be a jump-scare rather than the "you left
+     * this running" cue a mini player gives, and for the mini bar's sideways
+     * skip, which changes the video inside the bar and nothing else.
      * @param deferStreamLoad cold-restore-only path which reconstructs player
      * chrome without resolving or preparing media until the user presses Play.
      */

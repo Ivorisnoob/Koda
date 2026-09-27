@@ -1026,44 +1026,20 @@ private fun FrequencyDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                ScheduledBackupRepository.FREQUENCY_OPTIONS.forEach { option ->
-                    val selected = option.hours == currentHours
-                    Surface(
+                com.ivor.ivormusic.ui.components.SegmentedGroup(
+                    ScheduledBackupRepository.FREQUENCY_OPTIONS
+                ) { index, count, option ->
+                    SegmentedChoiceRow(
+                        selected = option.hours == currentHours,
                         onClick = {
                             haptics.confirm()
                             onSelect(option.hours)
                             onDismiss()
                         },
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                        } else {
-                            androidx.compose.ui.graphics.Color.Transparent
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selected,
-                                onClick = null,
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = MaterialTheme.colorScheme.primary
-                                )
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                text = stringResource(option.labelRes),
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
+                        index = index,
+                        count = count,
+                        label = stringResource(option.labelRes)
+                    )
                 }
             }
         },
@@ -1125,51 +1101,26 @@ private fun RetentionDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
-                ScheduledBackupRepository.RETENTION_OPTIONS.forEach { count ->
-                    val selected = count == currentLimit
-                    val label = when (count) {
-                        3 -> stringResource(R.string.bk_retention_keep_3)
-                        5 -> stringResource(R.string.bk_retention_keep_5)
-                        10 -> stringResource(R.string.bk_retention_keep_10)
-                        20 -> stringResource(R.string.bk_retention_keep_20)
-                        else -> stringResource(R.string.bk_retention_format, count)
-                    }
-                    Surface(
+                com.ivor.ivormusic.ui.components.SegmentedGroup(
+                    ScheduledBackupRepository.RETENTION_OPTIONS
+                ) { index, rowCount, count ->
+                    SegmentedChoiceRow(
+                        selected = count == currentLimit,
                         onClick = {
                             haptics.confirm()
                             onSelect(count)
                             onDismiss()
                         },
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                        } else {
-                            androidx.compose.ui.graphics.Color.Transparent
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selected,
-                                onClick = null,
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = MaterialTheme.colorScheme.primary
-                                )
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                            )
+                        index = index,
+                        count = rowCount,
+                        label = when (count) {
+                            3 -> stringResource(R.string.bk_retention_keep_3)
+                            5 -> stringResource(R.string.bk_retention_keep_5)
+                            10 -> stringResource(R.string.bk_retention_keep_10)
+                            20 -> stringResource(R.string.bk_retention_keep_20)
+                            else -> stringResource(R.string.bk_retention_format, count)
                         }
-                    }
+                    )
                 }
             }
         },

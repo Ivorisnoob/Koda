@@ -255,6 +255,34 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * The community post whose comments are open, and that thread. Posts
+     * answer every comment continuation on `/browse` rather than `/next`.
+     */
+    private val _commentsPost = MutableStateFlow<com.ivor.ivormusic.data.ChannelPost?>(null)
+    val commentsPost: StateFlow<com.ivor.ivormusic.data.ChannelPost?> = _commentsPost.asStateFlow()
+    val postComments = com.ivor.ivormusic.ui.video.CommentThreadController(
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        viaBrowse = true
+    )
+
+    fun openPostComments(post: com.ivor.ivormusic.data.ChannelPost) {
+        val params = post.detailParams ?: return
+        _commentsPost.value = post
+        postComments.load { youtubeRepository.getPostCommentsToken(params) }
+    }
+
+    /** Reload the open thread, e.g. after signing in, so its composer appears. */
+    fun reloadPostComments() {
+        _commentsPost.value?.let { openPostComments(it) }
+    }
+
+    fun closePostComments() {
+        _commentsPost.value = null
+        postComments.clear()
+    }
+
     /** Fetches the About panel, once. */
     fun loadAbout() {
         if (_about.value != null || _isAboutLoading.value) return
@@ -456,6 +484,9 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
                     _accountSubscribed.value = false
                     _remotelySubscribed.value = false
                     _about.value = null
+                    // Like and delete state in an open thread is the old
+                    // identity's; close it rather than show it as the new one's.
+                    closePostComments()
                     val id = loadedChannelId ?: return@collect
                     load(id, force = true)
                 }

@@ -36,6 +36,8 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -60,6 +62,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.ui.components.SegmentedGroup
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import java.util.Calendar
 
@@ -246,66 +249,59 @@ fun StatsScreen(
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
-                itemsIndexed(globalStats.topSongs) { index, songStats ->
-                    val shape = segmentShape(index, globalStats.topSongs.size)
-                    Surface(
-                        shape = shape,
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = if (index == globalStats.topSongs.lastIndex) 0.dp else 2.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RankBadge(rank = index + 1)
-                            Spacer(Modifier.width(12.dp))
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.size(44.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh
-                            ) {
-                                if (songStats.thumbnailUrl != null) {
-                                    AsyncImage(
-                                        model = songStats.thumbnailUrl,
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Rounded.MusicNote, null,
-                                            modifier = Modifier.padding(10.dp),
-                                            tint = secondaryText
-                                        )
+                // Each ranked list is one item holding a segmented group. As
+                // separate lazy items they inherited the column's 16dp spacing,
+                // so the "grouped" rows stood 18dp apart as loose cards and the
+                // inner corners said group while the gaps said otherwise.
+                item {
+                    SegmentedGroup(globalStats.topSongs) { index, count, songStats ->
+                        SegmentedListItem(
+                            shapes = ListItemDefaults.segmentedShapes(index, count),
+                            colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.background),
+                            leadingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RankBadge(rank = index + 1)
+                                    Spacer(Modifier.width(12.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.size(44.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                    ) {
+                                        if (songStats.thumbnailUrl != null) {
+                                            AsyncImage(
+                                                model = songStats.thumbnailUrl,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    Icons.Rounded.MusicNote, null,
+                                                    modifier = Modifier.padding(10.dp),
+                                                    tint = secondaryText
+                                                )
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                            },
+                            supportingContent = {
+                                Text(songStats.artist, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            trailingContent = {
                                 Text(
-                                    songStats.title,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    songStats.artist,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = secondaryText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    "${songStats.playCount}×",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
-                            Spacer(Modifier.width(8.dp))
+                        ) {
                             Text(
-                                "${songStats.playCount}×",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                songStats.title,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -323,41 +319,27 @@ fun StatsScreen(
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
-                val topArtists = globalStats.topArtists.take(5)
-                itemsIndexed(topArtists) { index, artistStats ->
-                    Surface(
-                        shape = segmentShape(index, topArtists.size),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = if (index == topArtists.lastIndex) 0.dp else 2.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RankBadge(rank = index + 1)
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                item {
+                    SegmentedGroup(globalStats.topArtists.take(5)) { index, count, artistStats ->
+                        SegmentedListItem(
+                            shapes = ListItemDefaults.segmentedShapes(index, count),
+                            colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.background),
+                            leadingContent = { RankBadge(rank = index + 1) },
+                            supportingContent = { Text("${artistStats.songCount} songs") },
+                            trailingContent = {
                                 Text(
-                                    artistStats.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    "${artistStats.songCount} songs",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = secondaryText
+                                    "${artistStats.playCount} plays",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.tertiary
                                 )
                             }
+                        ) {
                             Text(
-                                "${artistStats.playCount} plays",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.tertiary
+                                artistStats.name,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -414,32 +396,19 @@ fun StatsScreen(
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
-                val historyList = searchHistory
-                itemsIndexed(historyList) { index, query ->
-                    Surface(
-                        shape = segmentShape(index, historyList.size),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = if (index == historyList.lastIndex) 0.dp else 2.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.History, null, tint = secondaryText)
-                            Spacer(Modifier.width(14.dp))
-                            Text(
-                                query,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = { viewModel.removeFromSearchHistory(query) }) {
-                                Icon(Icons.Rounded.Close, "Remove", tint = secondaryText)
+                item {
+                    SegmentedGroup(searchHistory) { index, count, query ->
+                        SegmentedListItem(
+                            shapes = ListItemDefaults.segmentedShapes(index, count),
+                            colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.background),
+                            leadingContent = { Icon(Icons.Rounded.History, null) },
+                            trailingContent = {
+                                IconButton(onClick = { viewModel.removeFromSearchHistory(query) }) {
+                                    Icon(Icons.Rounded.Close, stringResource(R.string.remove))
+                                }
                             }
+                        ) {
+                            Text(query, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -449,19 +418,6 @@ fun StatsScreen(
         }
     }
 }
-
-/** Segmented container shape: rounded on the outside edges of the group. */
-private fun segmentShape(index: Int, count: Int): Shape {
-    val big = 20.dp
-    val small = 6.dp
-    return when {
-        count == 1 -> RoundedCornerShape(big)
-        index == 0 -> RoundedCornerShape(topStart = big, topEnd = big, bottomStart = small, bottomEnd = small)
-        index == count - 1 -> RoundedCornerShape(topStart = small, topEnd = small, bottomStart = big, bottomEnd = big)
-        else -> RoundedCornerShape(small)
-    }
-}
-
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun RankBadge(rank: Int) {

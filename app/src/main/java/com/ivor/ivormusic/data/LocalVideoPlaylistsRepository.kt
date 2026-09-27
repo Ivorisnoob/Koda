@@ -117,6 +117,29 @@ class LocalVideoPlaylistsRepository(context: Context) {
     }
 
     /**
+     * A new playlist holding [videos] in order, in one write - the video
+     * queue saved as a playlist. Repeats are dropped (first occurrence kept):
+     * this store removes by video id, so a duplicate could never be taken out
+     * on its own.
+     *
+     * @return the new playlist's id and how many videos went in, or null when
+     * [name] was blank.
+     */
+    suspend fun createWithVideos(name: String, videos: List<VideoItem>): Pair<String, Int>? =
+        withContext(Dispatchers.IO) {
+            val trimmed = name.trim()
+            if (trimmed.isEmpty()) return@withContext null
+            val unique = videos.distinctBy { it.videoId }
+            val playlist = LocalVideoPlaylist(
+                id = LOCAL_ID_PREFIX + UUID.randomUUID(),
+                name = trimmed,
+                videos = unique
+            )
+            persist(playlist)
+            playlist.id to unique.size
+        }
+
+    /**
      * The device's own Watch Later, created the first time something is saved
      * to it.
      *
@@ -150,6 +173,16 @@ class LocalVideoPlaylistsRepository(context: Context) {
         val remaining = playlist.videos.filterNot { it.videoId == videoId }
         if (remaining.size == playlist.videos.size) return@withContext
         persist(playlist.copy(videos = remaining))
+    }
+
+    /**
+     * Replace [playlistId]'s videos with [videos], in that order: a sort, a
+     * drag-rearrange, or the undo of either. Repeats are dropped as they are
+     * everywhere in this store.
+     */
+    suspend fun setVideos(playlistId: String, videos: List<VideoItem>) = withContext(Dispatchers.IO) {
+        val playlist = find(playlistId) ?: return@withContext
+        persist(playlist.copy(videos = videos.distinctBy { it.videoId }))
     }
 
     suspend fun rename(playlistId: String, name: String) = withContext(Dispatchers.IO) {

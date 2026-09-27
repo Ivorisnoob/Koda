@@ -30,11 +30,10 @@ data class ParsedYouTubeLink(
  * and every channel form - `/channel/UC…`, `/@handle`, and the legacy `/c/` and
  * `/user/` paths - with or without an explicit scheme.
  *
- * Channels matter more than they look. The manifest already claims every
- * `youtube.com` host, so Koda appears in the share sheet for a channel link
- * whether or not it can do anything with one; before these forms were parsed it
- * accepted the tap and then silently did nothing, which is worse than not being
- * offered at all.
+ * This is also the gate for links tapped inside Koda: `MainActivity`'s
+ * `LocalUriHandler` keeps a URL in the app exactly when this parses it, and
+ * the manifest's "open with" filter claims the same path shapes. A form added
+ * here needs its path prefix added there, or Android never offers Koda for it.
  */
 object YouTubeLinkParser {
 

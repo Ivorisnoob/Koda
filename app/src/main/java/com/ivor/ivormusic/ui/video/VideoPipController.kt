@@ -49,6 +49,22 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     val isExpanded by viewModel.isExpanded.collectAsState()
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
     val videoBounds by viewModel.videoSurfaceBounds.collectAsState()
+    val queue by viewModel.queue.collectAsState()
+    val relatedVideos by viewModel.relatedVideos.collectAsState()
+    val isLive by viewModel.isLive.collectAsState()
+    // The Settings row writes through another ThemePreferences instance; this
+    // one's change listener carries the write here, so the published params
+    // follow a change without waiting for the next play/pause.
+    val themePreferences = androidx.compose.runtime.remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }
+    val pipButtons by themePreferences.pipButtons.collectAsState()
+    val transport = pipTransport(
+        queue = queue,
+        hasRelated = relatedVideos.isNotEmpty(),
+        isLive = isLive,
+        seekOnly = pipButtons == com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_SEEK
+    )
 
     val packageName = context.packageName
 
@@ -65,6 +81,8 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
                         viewModel.seekBy(-VideoPlayerViewModel.SEEK_STEP_MS)
                     "$packageName.$ACTION_FORWARD" ->
                         viewModel.seekBy(VideoPlayerViewModel.SEEK_STEP_MS)
+                    "$packageName.$ACTION_NEXT" -> viewModel.playNextOrRelated()
+                    "$packageName.$ACTION_PREVIOUS" -> viewModel.playPreviousInQueue()
                 }
             }
         }
@@ -73,6 +91,8 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
             addAction("$packageName.$ACTION_PAUSE")
             addAction("$packageName.$ACTION_REWIND")
             addAction("$packageName.$ACTION_FORWARD")
+            addAction("$packageName.$ACTION_NEXT")
+            addAction("$packageName.$ACTION_PREVIOUS")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(
@@ -96,7 +116,8 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         isPlaying,
         isExpanded,
         videoAspectRatio,
-        videoBounds
+        videoBounds,
+        transport
     ) {
         val builder = PictureInPictureParams.Builder()
         val validBounds = videoBounds?.takeIf { !it.isEmpty }
@@ -112,7 +133,7 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
             builder.setActions(emptyList<RemoteAction>())
         } else {
             builder.setAspectRatio(pipAspectRatio(videoAspectRatio))
-            builder.setActions(pipActions(activity, packageName, isPlaying))
+            builder.setActions(pipActions(activity, packageName, isPlaying, transport))
 
             // Animate the PiP window out of the video rather than out of the
             // whole activity window. Without a source rect the system scales
@@ -143,8 +164,54 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     }
 }
 
+/** Which three-button row the PiP window shows around play/pause. */
+internal sealed interface PipTransport {
+    /** In a playlist: previous and next video, disabled at either end. */
+    data class Playlist(val hasPrevious: Boolean, val hasNext: Boolean) : PipTransport
+    /** A lone video with something related lined up: back 10s, and next. */
+    data object Related : PipTransport
+    /** Nothing to move to: back and forward 10s. */
+    data object Seek : PipTransport
+}
+
 /**
- * The transport row inside the PiP window: back 10s, play/pause, forward 10s.
+ * One rule for both the published params and an explicit PiP entry.
+ *
+ * [seekOnly] is the "Skip 10s" choice in Settings (feedback, September 2026):
+ * some viewers use the window to rewatch and skip within one video and never
+ * to move on, and for them a Next button is one mis-tap from losing the video.
+ */
+internal fun pipTransport(
+    queue: com.ivor.ivormusic.data.VideoQueue?,
+    hasRelated: Boolean,
+    isLive: Boolean,
+    seekOnly: Boolean,
+): PipTransport = when {
+    seekOnly -> PipTransport.Seek
+    queue != null -> PipTransport.Playlist(hasPrevious = queue.hasPrevious, hasNext = queue.hasNext)
+    hasRelated && !isLive -> PipTransport.Related
+    else -> PipTransport.Seek
+}
+
+/**
+ * [pipTransport] from the ViewModel's current values, for non-composable
+ * callers. The setting is a fresh read: the ViewModel holds no preferences
+ * instance of its own.
+ */
+internal fun VideoPlayerViewModel.currentPipTransport(): PipTransport =
+    pipTransport(
+        queue = queue.value,
+        hasRelated = relatedVideos.value.isNotEmpty(),
+        isLive = isLive.value,
+        seekOnly = com.ivor.ivormusic.data.ThemePreferences.pipButtonsSeekOnly(getApplication())
+    )
+
+/**
+ * The transport row inside the PiP window: play/pause between two buttons
+ * chosen by [transport] - previous/next in a playlist, back 10s and next when
+ * a related video is lined up, back/forward 10s otherwise. Next was asked for
+ * (feedback, September 2026): the window only ever offered seeking, so moving
+ * on meant leaving PiP.
  *
  * A PiP window never receives touch events - the system owns every gesture on
  * it, so an in-window double-tap-to-seek is not something an app can implement.
@@ -152,39 +219,63 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
  * skips live here as buttons rather than as the gesture they are on the full
  * player.
  *
- * Always publish the complete row. The connected OnePlus Android 12 build
- * reports fewer than three available actions while its PiP menu can render the
- * normal three slots; trusting that value leaves only play/pause visible. The
- * window manager can truncate the row itself on a genuinely smaller surface.
+ * Always publish the complete row of three. The connected OnePlus Android 12
+ * build reports fewer than three available actions while its PiP menu can
+ * render the normal three slots; trusting that value leaves only play/pause
+ * visible. Three is also the most phones show, which is why a fourth button
+ * is never added - a five-button row (previous, back 10s, play, forward 10s,
+ * next) was asked for in September 2026 and is not something the window can
+ * draw, hence the "Picture-in-picture buttons" setting choosing the two side
+ * slots instead. The window manager can truncate the row itself on a
+ * genuinely smaller surface.
  */
 internal fun pipActions(
     activity: androidx.activity.ComponentActivity,
     packageName: String,
-    isPlaying: Boolean
+    isPlaying: Boolean,
+    transport: PipTransport = PipTransport.Seek
 ): List<RemoteAction> {
     val playPause = if (isPlaying) {
         remoteAction(
             activity, packageName, ACTION_PAUSE,
-            R.drawable.ic_media_pause, "Pause"
+            R.drawable.ic_media_pause, activity.getString(R.string.cd_pause)
         )
     } else {
         remoteAction(
             activity, packageName, ACTION_PLAY,
-            R.drawable.ic_media_play, "Play"
+            R.drawable.ic_media_play, activity.getString(R.string.cd_play)
         )
     }
 
-    return listOf(
-        remoteAction(
-            activity, packageName, ACTION_REWIND,
-            R.drawable.ic_media_replay_10, "Back 10 seconds"
-        ),
-        playPause,
-        remoteAction(
-            activity, packageName, ACTION_FORWARD,
-            R.drawable.ic_media_forward_10, "Forward 10 seconds"
-        )
+    val rewind = remoteAction(
+        activity, packageName, ACTION_REWIND,
+        R.drawable.ic_media_replay_10, activity.getString(R.string.pip_back_10)
     )
+    val next = { enabled: Boolean ->
+        remoteAction(
+            activity, packageName, ACTION_NEXT,
+            R.drawable.ic_media_next, activity.getString(R.string.pip_next)
+        ).apply { isEnabled = enabled }
+    }
+    return when (transport) {
+        is PipTransport.Playlist -> listOf(
+            remoteAction(
+                activity, packageName, ACTION_PREVIOUS,
+                R.drawable.ic_media_previous, activity.getString(R.string.pip_previous)
+            ).apply { isEnabled = transport.hasPrevious },
+            playPause,
+            next(transport.hasNext)
+        )
+        PipTransport.Related -> listOf(rewind, playPause, next(true))
+        PipTransport.Seek -> listOf(
+            rewind,
+            playPause,
+            remoteAction(
+                activity, packageName, ACTION_FORWARD,
+                R.drawable.ic_media_forward_10, activity.getString(R.string.pip_forward_10)
+            )
+        )
+    }
 }
 
 private fun remoteAction(
@@ -208,3 +299,5 @@ private const val ACTION_PLAY = "PIP_PLAY"
 private const val ACTION_PAUSE = "PIP_PAUSE"
 private const val ACTION_REWIND = "PIP_REWIND"
 private const val ACTION_FORWARD = "PIP_FORWARD"
+private const val ACTION_NEXT = "PIP_NEXT"
+private const val ACTION_PREVIOUS = "PIP_PREVIOUS"

@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.ui.components.miniSkipGesture
 import com.ivor.ivormusic.util.KLog
 
 import android.app.PictureInPictureParams
@@ -165,7 +166,8 @@ fun enterPipMode(
                 pipActions(
                     activity = activity,
                     packageName = activity.packageName,
-                    isPlaying = viewModel.isPlaying.value
+                    isPlaying = viewModel.isPlaying.value,
+                    transport = viewModel.currentPipTransport()
                 )
             )
             .apply { bounds?.let(::setSourceRectHint) }
@@ -538,19 +540,23 @@ fun VideoPlayerOverlay(
             }
         }
 
-        // Collapsed-bar gestures: up expands, down dismisses.
+        // Collapsed-bar gestures, the same set as the music pill: up expands,
+        // a downward pull dismisses, and sideways moves to the next or previous
+        // video inside the bar while the bar itself stays put.
         //
-        // The axis differs from the music pill on purpose:
-        // this bar sits directly above the music pill when both are alive, and
-        // a sideways throw there would be ambiguous about which it meant.
-        //
-        // The bar carries no close button, so this gesture is the only way to
-        // dismiss it. It is the same downward pull that already dismisses the
-        // expanded player, one size down.
+        // Sideways was a dismiss on both bars for a while (#299 made them
+        // agree). It is a skip on both now (September 2026): a sideways swipe on
+        // something showing a video reads as "another one", the way it does on
+        // every expanded music style's artwork, and down already dismissed. The
+        // Close button stays (990db55) - a gesture is a shortcut, never the only
+        // way to stop a persistent player.
         var miniDragY by remember { mutableFloatStateOf(0f) }
         var isMiniDragging by remember { mutableStateOf(false) }
         var isDismissingMini by remember { mutableStateOf(false) }
         val miniSettleOffset = remember { Animatable(0f) }
+        // Bound inside the bar's content, which already collects the queue and
+        // the related list; this overlay only owns the drag.
+        val miniSkip = com.ivor.ivormusic.ui.components.rememberMiniSkipState()
         val miniExpandThresholdPx = with(density) { 48.dp.toPx() }
         val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
         val miniFlingVelocityPx = with(density) { 700.dp.toPx() }
@@ -804,6 +810,10 @@ fun VideoPlayerOverlay(
                     }
                 )
             }
+            // Sideways moves the video inside the bar. Its own detector: each
+            // locks to its axis at touch slop and consumes, which cancels the
+            // other, the same pairing the music pill uses.
+            .miniSkipGesture(miniSkip, enabled = !showExpandedSurface)
 
         // Offset and fade live on a wrapper rather than on the Surface itself.
         // A graphicsLayer on an elevated Surface makes its shadow render
@@ -849,7 +859,7 @@ fun VideoPlayerOverlay(
                  // Mini Player Content. Tap and both drags are handled by the
                  // Surface above, so the bar itself only draws and offers its
                  // two controls.
-                 MiniVideoPlayerContent(viewModel = viewModel)
+                 MiniVideoPlayerContent(viewModel = viewModel, skipState = miniSkip)
              }
         }
         if (showExpandedSurface) {
@@ -962,6 +972,7 @@ fun VideoPlayerOverlay(
                 ) {
                     ContainerMiniLayer(
                         viewModel = viewModel,
+                        skipState = miniSkip,
                         width = fullWidth - MINI_VIDEO_MARGIN * 2,
                         progress = transformProgress,
                         holdsSurface = barHoldsSurfaceNow,
@@ -1002,6 +1013,7 @@ fun VideoPlayerOverlay(
 @Composable
 private fun BoxScope.ContainerMiniLayer(
     viewModel: VideoPlayerViewModel,
+    skipState: com.ivor.ivormusic.ui.components.MiniSkipState,
     width: Dp,
     progress: () -> Float,
     holdsSurface: () -> Boolean,
@@ -1019,6 +1031,6 @@ private fun BoxScope.ContainerMiniLayer(
             .height(MINI_VIDEO_HEIGHT)
             .graphicsLayer { alpha = containerMiniAlpha(progress()) }
     ) {
-        MiniVideoPlayerContent(viewModel = viewModel, holdsSurface = holdsSurface)
+        MiniVideoPlayerContent(viewModel = viewModel, holdsSurface = holdsSurface, skipState = skipState)
     }
 }

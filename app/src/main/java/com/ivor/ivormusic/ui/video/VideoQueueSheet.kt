@@ -41,6 +41,11 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.ui.components.QueueRowContainer
@@ -71,9 +76,16 @@ fun VideoQueueSheet(
     keepSystemBarsHidden: Boolean = false,
     onMove: (from: Int, to: Int) -> Unit = { _, _ -> },
     onRemove: (index: Int) -> Unit = {},
-    onUndoRemove: () -> Unit = {}
+    onUndoRemove: () -> Unit = {},
+    /**
+     * Keep this queue as a local video playlist - music's "Save queue as
+     * playlist", asked for in video mode too. Null hides the button.
+     */
+    onSaveAsPlaylist: ((name: String, onSaved: (String, Int) -> Unit) -> Unit)? = null
 ) {
     val listState = rememberLazyListState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var showSaveDialog by rememberSaveable { mutableStateOf(false) }
     val rowKeys = remember(queue.videos) {
         queueRowKeys(queue.videos.map { it.videoId }, "video_queue")
     }
@@ -105,24 +117,42 @@ fun VideoQueueSheet(
     ) {
         KeepSystemBarsHidden(keepSystemBarsHidden)
 
-        Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {
-            Text(
-                text = stringResource(R.string.vq_playing_from),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = queue.title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = queue.positionLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Row(
+            modifier = Modifier.padding(start = 24.dp, end = 16.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.vq_playing_from),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = queue.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = queue.positionLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (onSaveAsPlaylist != null) {
+                androidx.compose.material3.FilledTonalIconButton(
+                    onClick = { showSaveDialog = true },
+                    enabled = queue.videos.isNotEmpty(),
+                    shapes = androidx.compose.material3.IconButtonDefaults.shapes(),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.PlaylistAdd,
+                        contentDescription = stringResource(R.string.queue_save_as_playlist)
+                    )
+                }
+            }
         }
 
         Box {
@@ -179,6 +209,27 @@ fun VideoQueueSheet(
                     .padding(16.dp)
             )
         }
+    }
+
+    if (showSaveDialog && onSaveAsPlaylist != null) {
+        com.ivor.ivormusic.ui.player.CreatePlaylistDialog(
+            initialName = stringResource(
+                R.string.queue_save_default_name,
+                remember { com.ivor.ivormusic.data.queuePlaylistDateText() }
+            ),
+            withDescription = false,
+            onDismiss = { showSaveDialog = false },
+            onCreate = { name, _ ->
+                showSaveDialog = false
+                onSaveAsPlaylist(name) { savedName, count ->
+                    removal.announce(
+                        context.resources.getQuantityString(
+                            R.plurals.queue_saved_videos_to_playlist, count, count, savedName
+                        )
+                    )
+                }
+            }
+        )
     }
 }
 

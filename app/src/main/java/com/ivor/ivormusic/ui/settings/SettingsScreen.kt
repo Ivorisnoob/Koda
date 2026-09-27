@@ -202,6 +202,11 @@ import com.ivor.ivormusic.data.YouTubeAuthUtils
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.ui.components.coveredBy
+import com.ivor.ivormusic.ui.components.SegmentedGroup
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material.icons.automirrored.rounded.LibraryBooks
+import androidx.compose.material.icons.rounded.Check
 import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.theme.ThemeMode
@@ -404,6 +409,8 @@ fun SettingsScreen(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    pipButtons: String,
+    onPipButtonsChange: (String) -> Unit,
     hapticsLevel: String,
     onHapticsLevelChange: (String) -> Unit,
     uploadNotificationsEnabled: Boolean,
@@ -432,7 +439,9 @@ fun SettingsScreen(
     onSponsorBlockNoticeToggle: (Boolean) -> Unit = {},
     sponsorBlockMinDurationMs: Long = 0L,
     onSponsorBlockMinDurationChange: (Long) -> Unit = {},
-    contentPadding: PaddingValues = PaddingValues()
+    contentPadding: PaddingValues = PaddingValues(),
+    /** Opens the open-source licences screen, from the About dialog. */
+    onNavigateToLicenses: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -457,16 +466,28 @@ fun SettingsScreen(
     // leave for system settings and come back.
     val notificationHelper = remember { DownloadNotificationHelper(context) }
     var canPostPromoted by remember { mutableStateOf(notificationHelper.canPostLiveUpdates()) }
+    // Same idea for plain notifications: the upload bell can be on while the
+    // system drops every post, and the page has to say so.
+    var canPostNotifications by remember {
+        mutableStateOf(com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context))
+    }
     val settingsActivity = context as? androidx.activity.ComponentActivity
     DisposableEffect(settingsActivity) {
         val lifecycle = settingsActivity?.lifecycle
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 canPostPromoted = notificationHelper.canPostLiveUpdates()
+                canPostNotifications =
+                    com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context)
             }
         }
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
+    }
+    val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) {
+        canPostNotifications = com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context)
     }
 
     // Which category page is open, and what is typed in the hub's search box.
@@ -880,6 +901,8 @@ fun SettingsScreen(
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     rememberVideoBrightness = rememberVideoBrightness,
                     onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+                    pipButtons = pipButtons,
+                    onPipButtonsChange = onPipButtonsChange,
                     autoLoadQueue = autoLoadQueue,
                     onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     saveMusicHistory = saveMusicHistory,
@@ -975,7 +998,27 @@ fun SettingsScreen(
                     onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
                     canPostPromoted = canPostPromoted,
                     uploadNotificationsEnabled = uploadNotificationsEnabled,
-                    onUploadNotificationsToggle = onUploadNotificationsToggle,
+                    onUploadNotificationsToggle = { enabled ->
+                        onUploadNotificationsToggle(enabled)
+                        // Turning the bell on is the moment the permission
+                        // means something; onboarding may have been skipped.
+                        // A permanent denial returns at once without a
+                        // dialog, which the blocked row below then covers.
+                        if (enabled &&
+                            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                            !canPostNotifications
+                        ) {
+                            notificationPermissionLauncher.launch(
+                                android.Manifest.permission.POST_NOTIFICATIONS
+                            )
+                        }
+                    },
+                    canPostNotifications = canPostNotifications,
+                    onOpenAppNotificationSettings = {
+                        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        runCatching { context.startActivity(intent) }
+                    },
                     followedChannels = followedChannels,
                     mutedChannelIds = mutedChannelIds,
                     onChannelMutedChange = { channelId, muted ->
@@ -1056,7 +1099,8 @@ fun SettingsScreen(
     if (showAboutDialog) {
         ExpressiveAboutDialog(
             onDismiss = { showAboutDialog = false },
-            onNavigateToUpdate = onNavigateToUpdate
+            onNavigateToUpdate = onNavigateToUpdate,
+            onNavigateToLicenses = onNavigateToLicenses
         )
     }
 
@@ -1600,7 +1644,7 @@ internal fun ExpressiveThemeSelectGroup(
                     onCheckedChange = { onModeSelected(mode) },
                     modifier = Modifier.weight(1f),
                     shapes = shapes,
-                    colors = ToggleButtonDefaults.toggleButtonColors(
+                    colors = ToggleButtonDefaults.colors(
                         containerColor = accentColor.copy(alpha = 0.1f),
                         checkedContainerColor = accentColor,
                         contentColor = textColor,
@@ -1781,7 +1825,7 @@ internal fun ExpressiveVideoModeToggleItem(
                             ButtonGroupDefaults.connectedTrailingButtonShapes()
                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                     },
-                    colors = ToggleButtonDefaults.toggleButtonColors(
+                    colors = ToggleButtonDefaults.colors(
                         containerColor = accentColor.copy(alpha = 0.1f),
                         checkedContainerColor = accentColor,
                         contentColor = textColor,
@@ -1942,43 +1986,19 @@ private fun SubscriptionRoutingDialog(
                         SubscriptionDialogTarget.SOURCE -> ThemePreferences.SUBSCRIPTION_SOURCE_OPTIONS
                         SubscriptionDialogTarget.TARGET -> ThemePreferences.SUBSCRIBE_TARGET_OPTIONS
                     }
-                    options.forEach { option ->
-                        val selected = option == currentValue
+                    SegmentedGroup(options) { index, count, option ->
                         val (label, description) = when (target) {
                             SubscriptionDialogTarget.SOURCE -> subscriptionSourceOptionLabel(option)
                             SubscriptionDialogTarget.TARGET -> subscribeTargetOptionLabel(option)
                         }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (selected) primaryColor.copy(alpha = 0.12f)
-                                    else Color.Transparent
-                                )
-                                .clickable { onValueSelected(option) }
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selected,
-                                onClick = { onValueSelected(option) }
-                            )
-                            Column(modifier = Modifier.padding(start = 4.dp)) {
-                                Text(
-                                    text = label,
-                                    color = if (selected) primaryColor else textColor,
-                                    fontSize = 15.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                                )
-                                Text(
-                                    text = description,
-                                    color = secondaryTextColor,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp
-                                )
-                            }
-                        }
+                        SegmentedChoiceRow(
+                            selected = option == currentValue,
+                            onClick = { onValueSelected(option) },
+                            index = index,
+                            count = count,
+                            label = label,
+                            description = description
+                        )
                     }
                 }
             },
@@ -1992,6 +2012,35 @@ private fun SubscriptionRoutingDialog(
                 }
             }
         )
+    }
+}
+
+/**
+ * One option of a single-choice picker: a selectable Material 3 Expressive
+ * segmented row, the chosen one filled and ticked. Shared by the pickers in
+ * these dialogs so they cannot drift into different treatments again.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun SegmentedChoiceRow(
+    selected: Boolean,
+    onClick: () -> Unit,
+    index: Int,
+    count: Int,
+    label: String,
+    description: String? = null
+) {
+    SegmentedListItem(
+        selected = selected,
+        onClick = onClick,
+        shapes = ListItemDefaults.segmentedShapes(index, count),
+        colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.surfaceContainerHigh),
+        supportingContent = description?.let { { Text(it) } },
+        trailingContent = if (selected) {
+            { Icon(Icons.Rounded.Check, contentDescription = null) }
+        } else null
+    ) {
+        Text(label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
     }
 }
 
@@ -2095,32 +2144,15 @@ private fun StreamQualityDialog(
                     )
                     val options = if (target.isMusic) ThemePreferences.MUSIC_QUALITY_OPTIONS
                         else ThemePreferences.VIDEO_QUALITY_OPTIONS
-                    options.forEach { option ->
-                        val selected = option == currentQuality
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (selected) primaryColor.copy(alpha = 0.12f)
-                                    else Color.Transparent
-                                )
-                                .clickable { onQualitySelected(option) }
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selected,
-                                onClick = { onQualitySelected(option) }
-                            )
-                            Text(
-                                text = if (target.isMusic) musicQualityOptionLabel(option)
-                                    else videoQualityLabel(option),
-                                color = if (selected) primaryColor else textColor,
-                                fontSize = 15.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                            )
-                        }
+                    SegmentedGroup(options) { index, count, option ->
+                        SegmentedChoiceRow(
+                            selected = option == currentQuality,
+                            onClick = { onQualitySelected(option) },
+                            index = index,
+                            count = count,
+                            label = if (target.isMusic) musicQualityOptionLabel(option)
+                                else videoQualityLabel(option)
+                        )
                     }
                 }
             },
@@ -2144,7 +2176,8 @@ private fun StreamQualityDialog(
 @Composable
 private fun ExpressiveAboutDialog(
     onDismiss: () -> Unit,
-    onNavigateToUpdate: () -> Unit
+    onNavigateToUpdate: () -> Unit,
+    onNavigateToLicenses: () -> Unit
 ) {
     val context = LocalContext.current
     val githubUrl = "https://github.com/${BuildConfig.GITHUB_REPO}"
@@ -2398,6 +2431,17 @@ private fun ExpressiveAboutDialog(
                                     title = stringResource(R.string.about_license),
                                     subtitle = stringResource(R.string.about_license_subtitle),
                                     onClick = { context.openAboutLink("$githubUrl/blob/main/LICENSE") },
+                                    showChevron = true,
+                                )
+                                SettingsDivider()
+                                SettingsRow(
+                                    icon = Icons.AutoMirrored.Rounded.LibraryBooks,
+                                    title = stringResource(R.string.about_licenses),
+                                    subtitle = stringResource(R.string.about_licenses_subtitle),
+                                    onClick = {
+                                        onDismiss()
+                                        onNavigateToLicenses()
+                                    },
                                     showChevron = true,
                                 )
                                 SettingsDivider()

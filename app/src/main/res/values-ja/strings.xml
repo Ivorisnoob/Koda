@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">ライブラリは空です</string>
     <string name="library_empty_subtitle">ダウンロードやお気に入りに追加した曲がここに表示されます</string>
-    <string name="library_create_playlist_hint">下の + ボタンで作成できます</string>
     <string name="fab_downloads">ダウンロード</string>
     <string name="fab_listening_history">再生履歴</string>
     <string name="fab_statistics">統計情報</string>

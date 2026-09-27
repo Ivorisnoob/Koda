@@ -31,6 +31,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -344,7 +347,10 @@ fun ListeningHistoryScreen(
                     top = 8.dp,
                     bottom = contentPadding.calculateBottomPadding() + 24.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                // The segmented gap between every item, so a day's plays read
+                // as one group; the sections above them carry their own larger
+                // gap below, and each DayHeader pads itself.
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
             ) {
                 item(key = "hero") {
                     HistoryHeroCard(
@@ -353,18 +359,21 @@ fun ListeningHistoryScreen(
                         songs = visibleSongs,
                         rangeLabel = historyRangeLabel(range),
                         streakDays = globalStats.currentStreakDays,
-                        isFiltered = query.isNotBlank()
+                        isFiltered = query.isNotBlank(),
+                        modifier = Modifier.padding(bottom = HISTORY_SECTION_GAP)
                     )
                 }
 
                 item(key = "ranges") {
-                    RangeSelector(
-                        selected = range,
-                        onSelect = {
-                            range = it
-                            scope.launch { listState.scrollToItem(0) }
-                        }
-                    )
+                    Box(Modifier.padding(bottom = HISTORY_SECTION_GAP)) {
+                        RangeSelector(
+                            selected = range,
+                            onSelect = {
+                                range = it
+                                scope.launch { listState.scrollToItem(0) }
+                            }
+                        )
+                    }
                 }
 
                 item(key = "paused_banner") {
@@ -375,7 +384,9 @@ fun ListeningHistoryScreen(
                         enter = expandVertically() + fadeIn(),
                         exit = shrinkVertically() + fadeOut()
                     ) {
-                        PausedBanner(onResume = { themePreferences.setSaveMusicHistory(true) })
+                        Box(Modifier.padding(bottom = HISTORY_SECTION_GAP)) {
+                            PausedBanner(onResume = { themePreferences.setSaveMusicHistory(true) })
+                        }
                     }
                 }
 
@@ -404,10 +415,12 @@ fun ListeningHistoryScreen(
                         stickyHeader(key = "header_${day.epochDay}") {
                             DayHeader(day = day)
                         }
-                        items(day.runs, key = { it.key }) { run ->
+                        itemsIndexed(day.runs, key = { _, run -> run.key }) { runIndex, run ->
                             HistoryRunRow(
                                 run = run,
                                 timeLabel = timeFormat.format(Date(run.entry.timestamp)),
+                                index = runIndex,
+                                count = day.runs.size,
                                 onPlay = {
                                     run.song?.let { song -> onPlayQueue(queue, song) }
                                 },
@@ -618,6 +631,9 @@ private fun formatListened(ms: Long): String {
 /* Pieces                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Space below the sections above the day groups; the groups themselves use SegmentedGap. */
+private val HISTORY_SECTION_GAP = 12.dp
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun HistoryHeroCard(
@@ -626,12 +642,13 @@ private fun HistoryHeroCard(
     songs: Int,
     rangeLabel: String,
     streakDays: Int,
-    isFiltered: Boolean
+    isFiltered: Boolean,
+    modifier: Modifier = Modifier
 ) {
     Surface(
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier.padding(20.dp),
@@ -793,10 +810,16 @@ private fun DayHeader(day: HistoryDay) {
 private fun HistoryRunRow(
     run: HistoryRun,
     timeLabel: String,
+    /** Position within its day, for the segmented shape. */
+    index: Int,
+    count: Int,
     onPlay: () -> Unit,
     onRemove: (allPlays: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // One day's plays are one segmented group. Animated, because removing a
+    // play hands its outer corners to the neighbour that becomes first or last.
+    val shapes = com.ivor.ivormusic.ui.components.animatedSegmentedShapes(index, count)
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -832,8 +855,10 @@ private fun HistoryRunRow(
         state = dismissState,
         modifier = modifier,
         backgroundContent = {
+            // The row's own shape, or square group corners would show behind
+            // a rounded row mid-swipe.
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = shapes.shape,
                 color = MaterialTheme.colorScheme.errorContainer,
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -861,50 +886,31 @@ private fun HistoryRunRow(
         }
     ) {
         Box {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        enabled = true,
-                        onClick = { if (run.song != null) onPlay() else menuOpen = true },
-                        onLongClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            menuOpen = true
+            SegmentedListItem(
+                onClick = { if (run.song != null) onPlay() else menuOpen = true },
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    menuOpen = true
+                },
+                shapes = shapes,
+                colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.background),
+                modifier = Modifier.fillMaxWidth(),
+                leadingContent = { HistoryArtwork(run = run) },
+                supportingContent = {
+                    Text(
+                        // A local file that is no longer on the device says
+                        // so instead of silently doing nothing when tapped.
+                        if (run.song == null) stringResource(R.string.lh_not_on_device) else run.entry.artist,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        color = if (run.song == null) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
-            ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HistoryArtwork(run = run)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            run.entry.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            // A local file that is no longer on the device says
-                            // so instead of silently doing nothing when tapped.
-                            if (run.song == null) stringResource(R.string.lh_not_on_device) else run.entry.artist,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            color = if (run.song == null) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
+                },
+                trailingContent = {
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             timeLabel,
@@ -928,6 +934,13 @@ private fun HistoryRunRow(
                         }
                     }
                 }
+            ) {
+                Text(
+                    run.entry.title,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
             }
 
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {

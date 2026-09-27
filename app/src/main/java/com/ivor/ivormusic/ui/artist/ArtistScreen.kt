@@ -134,6 +134,8 @@ import com.ivor.ivormusic.ui.components.AvatarImage
 import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.ui.components.SEARCH_FIELD_MIN_ITEMS
 import com.ivor.ivormusic.ui.components.SearchField
+import com.ivor.ivormusic.ui.components.SegmentedFooterShape
+import com.ivor.ivormusic.ui.components.segmentedRowShape
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.ui.components.releaseCaption
@@ -230,7 +232,7 @@ private fun ArtistSortRow(
                     entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-                colors = ToggleButtonDefaults.toggleButtonColors(
+                colors = ToggleButtonDefaults.colors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     checkedContainerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onSurface,
@@ -240,19 +242,6 @@ private fun ArtistSortRow(
                 Text(artistSortLabel(entry))
             }
         }
-    }
-}
-
-/**
- * Segmented list shape helper for Expressive design
- */
-@Composable
-private fun getSegmentedShape(index: Int, count: Int, cornerSize: androidx.compose.ui.unit.Dp = 28.dp): Shape {
-    return when {
-        count == 1 -> RoundedCornerShape(cornerSize)
-        index == 0 -> RoundedCornerShape(topStart = cornerSize, topEnd = cornerSize)
-        index == count - 1 -> RoundedCornerShape(bottomStart = cornerSize, bottomEnd = cornerSize)
-        else -> RectangleShape
     }
 }
 
@@ -351,6 +340,10 @@ fun ArtistScreen(
     // any of the list's tools. Closed by a change of artist, like the sort.
     var showAllSongs by remember(artistName, artistId) { mutableStateOf(false) }
     var hasLocalSongs by remember { mutableStateOf(false) }
+    // This artist's files on the device, kept alongside the streamed page when
+    // one resolved, so opening an artist from a local song still shows them.
+    var deviceSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var showAllDeviceSongs by remember(artistName, artistId) { mutableStateOf(false) }
     // The canonical UC id behind this artist, once something has resolved one.
     // Local-only artists never get one, which is why every use of it is guarded
     // rather than assumed.
@@ -378,10 +371,41 @@ fun ArtistScreen(
 
         channelHeader = null
         resolvedChannelId = null
+        deviceSongs = localArtistSongs
 
-        if (localArtistSongs.isNotEmpty()) {
-            // Use local songs if available
+        // A file tagged with an artist used to pin the page to the device: a
+        // single local track by a famous artist hid their whole streamed page.
+        // The streamed page is now tried first and the files ride along on it.
+        // Only an exact name match counts - a device tag is often an obscure
+        // or misspelt credit, and the first search hit for it is somebody
+        // else - and offline goes straight to the files, because the search
+        // blocks and cannot be cut short.
+        val streamedForLocal = if (
+            localArtistSongs.isNotEmpty() &&
+            viewModel != null &&
+            !isUnknownArtist(artistName) &&
+            viewModel.hasNetworkConnection()
+        ) {
+            val exactId = artistId?.takeIf { it.startsWith("UC") }
+                ?: viewModel.searchArtists(artistName)
+                    .firstOrNull { it.name.equals(artistName, ignoreCase = true) }?.id
+            exactId?.let { id -> viewModel.getArtistPage(id)?.let { id to it } }
+                ?.takeIf { (_, page) -> page.songs.isNotEmpty() }
+        } else null
+
+        if (streamedForLocal != null) {
+            val (id, page) = streamedForLocal
+            resolvedChannelId = id
+            artistPage = page
+            artistSongs = page.songs
+            fetchedAlbums = page.albums
+            fetchedSingles = page.singles
+            hasLocalSongs = false
+            isLoading = false
+        } else if (localArtistSongs.isNotEmpty()) {
+            // Offline, unmatched or unknown: the device page, as before.
             artistSongs = localArtistSongs
+            deviceSongs = emptyList()
             hasLocalSongs = true
             // Local albums are derived automatically below
             isLoading = false
@@ -669,6 +693,38 @@ fun ArtistScreen(
                                 PopularSongRow(
                                     song = song,
                                     onClick = { onPlayQueue(artistSongs, song) },
+                                    onMore = onSongLongPress?.let { press -> { press(song) } }
+                                )
+                            }
+                        }
+
+                        // ========== ON THIS DEVICE ==========
+                        // The user's own files by this artist, on the streamed
+                        // page. A tap plays the files, not the stream list: the
+                        // start song has to be in the list it plays from.
+                        if (!hasLocalSongs && deviceSongs.isNotEmpty()) {
+                            val canExpand = deviceSongs.size > POPULAR_SONG_COUNT
+                            item(key = "device_header") {
+                                ArtistSectionHeader(
+                                    title = stringResource(R.string.ar_section_on_device),
+                                    actionLabel = if (canExpand) {
+                                        stringResource(
+                                            if (showAllDeviceSongs) R.string.action_show_less
+                                            else R.string.action_see_all
+                                        )
+                                    } else null,
+                                    onAction = { showAllDeviceSongs = !showAllDeviceSongs }
+                                )
+                            }
+                            val shownDeviceSongs = if (showAllDeviceSongs) {
+                                deviceSongs
+                            } else {
+                                deviceSongs.take(POPULAR_SONG_COUNT)
+                            }
+                            items(shownDeviceSongs, key = { "device_${it.id}" }) { song ->
+                                PopularSongRow(
+                                    song = song,
+                                    onClick = { onPlayQueue(deviceSongs, song) },
                                     onMore = onSongLongPress?.let { press -> { press(song) } }
                                 )
                             }
@@ -1754,37 +1810,27 @@ private fun ArtistAllSongsPage(
                     textColor = textColor,
                     secondaryTextColor = secondaryTextColor,
                     primaryColor = primaryColor,
-                    shape = if (index == displayedSongs.size - 1 && !hasMoreSongs) {
-                        getSegmentedShape(index, displayedSongs.size)
-                    } else if (index == 0) {
-                        RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-                    } else {
-                        RectangleShape
-                    },
+                    // Segmented, continuing into the Show more segment below
+                    // when there is one.
+                    shape = segmentedRowShape(index, displayedSongs.size, continues = hasMoreSongs),
                     modifier = Modifier.padding(horizontal = ARTIST_GUTTER),
                     onLongClick = onSongLongPress?.let { press -> { press(song) } }
                 )
                 if (index < displayedSongs.size - 1) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 44.dp),
-                        color = textColor.copy(alpha = 0.06f)
-                    )
+                    Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                 }
             }
 
             if (hasMoreSongs && displayedSongs.isNotEmpty()) {
                 item {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 44.dp),
-                        color = textColor.copy(alpha = 0.06f)
-                    )
+                    Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = ARTIST_GUTTER)
-                            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+                            .clip(SegmentedFooterShape)
                             .clickable(enabled = !isLoadingMore, onClick = onShowMore),
-                        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+                        shape = SegmentedFooterShape,
                         color = cardColor,
                         tonalElevation = 1.dp
                     ) {

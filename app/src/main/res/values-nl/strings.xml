@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Je bibliotheek is leeg</string>
     <string name="library_empty_subtitle">Nummers die je downloadt of leuk vindt, verschijnen hier</string>
-    <string name="library_create_playlist_hint">Maak er een met de +-knop hieronder</string>
     <string name="fab_downloads">Downloads</string>
     <string name="fab_listening_history">Luistergeschiedenis</string>
     <string name="fab_statistics">Statistieken</string>

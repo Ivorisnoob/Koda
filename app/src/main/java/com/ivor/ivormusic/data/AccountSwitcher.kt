@@ -101,6 +101,7 @@ class AccountSwitcher(context: Context) {
         LocalSubscriptionsRepository.reloadForActiveProfile(appContext)
         NotInterestedRepository.reloadForActiveProfile(appContext)
         VideoHistoryRepository.reloadForActiveProfile(appContext)
+        UploadCheckRepository.reloadForActiveProfile(appContext)
         sessionManager.refreshExpiredFromProfile()
     }
 
