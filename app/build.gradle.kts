@@ -195,6 +195,9 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
+    // The GL pipeline behind ExoPlayer.setVideoEffects, which the opt-in
+    // frame interpolation runs in. ExoPlayer finds it reflectively.
+    implementation(libs.androidx.media3.effect)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.material.icons.extended)

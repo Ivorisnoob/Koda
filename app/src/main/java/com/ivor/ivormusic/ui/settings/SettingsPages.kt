@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ThumbDown
@@ -994,6 +995,8 @@ internal fun PlaybackSettingsPage(
     videoQualityMobile: String,
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
+    frameInterpolation: Boolean,
+    onFrameInterpolationToggle: (Boolean) -> Unit,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
     onBack: () -> Unit
 ) {
@@ -1276,10 +1279,31 @@ internal fun PlaybackSettingsPage(
                     SettingsToggleRow(
                         icon = Icons.Rounded.HdrOn,
                         title = stringResource(R.string.sp_prefer_hdr),
-                        subtitle = stringResource(R.string.sp_prefer_hdr_sub),
+                        // The HDR ladder is withheld while Smooth motion is on,
+                        // so the row says why an enabled switch does nothing.
+                        subtitle = stringResource(
+                            if (frameInterpolation && preferHdr) R.string.sp_prefer_hdr_sub_blocked
+                            else R.string.sp_prefer_hdr_sub
+                        ),
                         enabled = preferHdr,
                         onToggle = onPreferHdrToggle,
                         explanation = stringResource(R.string.si_hdr)
+                    )
+
+                    SettingsDivider()
+
+                    // Turning it on goes through a warning dialog hosted by
+                    // SettingsScreen; turning it off is immediate.
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Animation,
+                        title = stringResource(R.string.sp_frame_interpolation),
+                        subtitle = stringResource(
+                            if (frameInterpolation) R.string.sp_frame_interpolation_sub_on
+                            else R.string.sp_frame_interpolation_sub_off
+                        ),
+                        enabled = frameInterpolation,
+                        onToggle = onFrameInterpolationToggle,
+                        explanation = stringResource(R.string.si_frame_interpolation)
                     )
                 }
             }

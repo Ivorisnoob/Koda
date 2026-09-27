@@ -205,6 +205,7 @@ class MainActivity : ComponentActivity() {
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
             val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
             val preferHdr by themeViewModel.preferHdr.collectAsState()
+            val frameInterpolation by themeViewModel.frameInterpolation.collectAsState()
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
@@ -404,6 +405,8 @@ class MainActivity : ComponentActivity() {
                         onVideoQualityMobileChange = { themeViewModel.setVideoQualityMobile(it) },
                         preferHdr = preferHdr,
                         onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
+                        frameInterpolation = frameInterpolation,
+                        onFrameInterpolationToggle = { themeViewModel.setFrameInterpolation(it) },
                         musicQualityWifi = musicQualityWifi,
                         onMusicQualityWifiChange = { themeViewModel.setMusicQualityWifi(it) },
                         musicQualityMobile = musicQualityMobile,
@@ -762,6 +765,8 @@ fun MusicApp(
     onVideoQualityMobileChange: (String) -> Unit,
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
+    frameInterpolation: Boolean,
+    onFrameInterpolationToggle: (Boolean) -> Unit,
     musicQualityWifi: String,
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
@@ -1373,6 +1378,8 @@ fun MusicApp(
                     onVideoQualityMobileChange = onVideoQualityMobileChange,
                     preferHdr = preferHdr,
                     onPreferHdrToggle = onPreferHdrToggle,
+                    frameInterpolation = frameInterpolation,
+                    onFrameInterpolationToggle = onFrameInterpolationToggle,
                     musicQualityWifi = musicQualityWifi,
                     onMusicQualityWifiChange = onMusicQualityWifiChange,
                     musicQualityMobile = musicQualityMobile,
