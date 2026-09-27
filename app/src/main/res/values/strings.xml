@@ -402,6 +402,19 @@
     <string name="sp_video_quality">Video quality</string>
     <string name="sp_prefer_hdr">Prefer HDR video</string>
     <string name="sp_prefer_hdr_sub">Use HDR only when the display and decoder support it</string>
+    <string name="sp_prefer_hdr_sub_blocked">Paused while Smooth motion is on</string>
+    <string name="sp_frame_interpolation">Smooth motion</string>
+    <string name="sp_frame_interpolation_sub_off">Experimental. Adds in-between frames so 24-30 fps videos play at up to 60 fps</string>
+    <string name="sp_frame_interpolation_sub_on">Doubling 24-30 fps videos. Pauses when the phone is hot, on battery saver or above 1.2x</string>
+    <string name="fi_warning_title">Turn on smooth motion?</string>
+    <string name="fi_warning_subtitle">Experimental video frame interpolation</string>
+    <string name="fi_warning_intro">Koda will draw a new frame between each pair of real ones, so 24-30 fps videos play at 48-60 fps. It has costs:</string>
+    <string name="fi_warning_battery">It runs on the GPU for as long as a video plays. Expect more battery use and a warmer phone.</string>
+    <string name="fi_warning_artifacts">Fast motion, the edges of moving objects and on-screen text can warp or shimmer.</string>
+    <string name="fi_warning_hdr">HDR videos play in SDR while it is on. Live streams, Shorts and videos already at 50-60 fps are left as they are.</string>
+    <string name="fi_warning_auto">It pauses by itself when the phone gets hot, on battery saver, above 1.2x speed, or when your phone cannot keep up.</string>
+    <string name="fi_warning_note">If a video is open now, smooth motion starts once you close the player and open a video again.</string>
+    <string name="fi_warning_confirm">Turn on</string>
     <string name="vpc_quality_hdr">HDR</string>
     <string name="vpc_quality_standard">Standard</string>
     <string name="sp_mode">Mode</string>
@@ -1583,6 +1596,7 @@
     <string name="si_normalize">Evens out loudness between songs, so a quiet acoustic track and a loudly mastered one play at a similar level.</string>
     <string name="si_auto_queue">When your queue runs out, Koda keeps the music going with similar songs instead of stopping.</string>
     <string name="si_music_history">Keeps a log on this device of the songs you play. It powers your stats and recently played. Separate from your YouTube account\'s history.</string>
+    <string name="si_frame_interpolation">Video frame interpolation. For each pair of frames Koda works out how things moved and draws the frame in between, on the GPU. Where it cannot find a good match, such as at a scene cut, it repeats the earlier frame rather than inventing one.</string>
     <string name="si_hdr">When a video has an HDR version and your screen supports it, Koda plays the HDR one. Richer colors, but more data and battery.</string>
     <string name="si_pip_buttons">Android shows three buttons in the picture-in-picture window, so this picks what sits either side of play and pause.</string>
     <string name="si_brightness">Koda remembers the brightness you drag to in fullscreen video and reapplies it next time, instead of resetting to the system level.</string>

@@ -155,6 +155,9 @@ class ThemePreferences(context: Context) {
     private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
     val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
 
+    private val _frameInterpolation = MutableStateFlow(isFrameInterpolationEnabled())
+    val frameInterpolation: StateFlow<Boolean> = _frameInterpolation.asStateFlow()
+
     private val _captionTextSize = MutableStateFlow(getCaptionTextSizePreference())
     val captionTextSize: StateFlow<Float> = _captionTextSize.asStateFlow()
 
@@ -397,6 +400,7 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_QUALITY_WIFI -> _videoQualityWifi.value = getVideoQualityWifiPreference()
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
             KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
+            KEY_FRAME_INTERPOLATION -> _frameInterpolation.value = isFrameInterpolationEnabled()
             KEY_CAPTION_TEXT_SIZE -> _captionTextSize.value = getCaptionTextSizePreference()
             KEY_CAPTION_TEXT_COLOR -> _captionTextColor.value = getCaptionTextColorPreference()
             KEY_CAPTION_BACKGROUND -> _captionBackground.value = getCaptionBackgroundPreference()
@@ -634,6 +638,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_QUALITY_WIFI = "video_quality_wifi"
         private const val KEY_VIDEO_QUALITY_MOBILE = "video_quality_mobile"
         private const val KEY_PREFER_HDR = "prefer_hdr_video"
+        private const val KEY_FRAME_INTERPOLATION = "video_frame_interpolation"
         private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
         private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
         private const val KEY_CAPTION_BACKGROUND = "caption_background"
@@ -1549,6 +1554,18 @@ class ThemePreferences(context: Context) {
     fun setPreferHdr(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_PREFER_HDR, enabled).apply()
         _preferHdr.value = enabled
+    }
+
+    /**
+     * Smooth motion (video frame interpolation). Off by default and only ever
+     * turned on through its warning dialog; read fresh by the video player.
+     */
+    fun isFrameInterpolationEnabled(): Boolean =
+        prefs.getBoolean(KEY_FRAME_INTERPOLATION, false)
+
+    fun setFrameInterpolation(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_FRAME_INTERPOLATION, enabled).apply()
+        _frameInterpolation.value = enabled
     }
 
     private fun getCaptionTextSizePreference(): Float =

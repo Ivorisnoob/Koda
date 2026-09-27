@@ -22,6 +22,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -140,6 +141,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // Player Instance
     private var _exoPlayer: ExoPlayer? = null
     val exoPlayer: ExoPlayer? get() = _exoPlayer
+
+    /**
+     * Smooth motion. Whether the current player was built with the effect
+     * graph is fixed for its lifetime (see [FrameInterpolationEffect]), so it
+     * is remembered here and compared with the setting when the player closes.
+     */
+    private val frameInterpolation =
+        com.ivor.ivormusic.service.FrameInterpolationGovernor(context)
+    private var playerHasInterpolation = false
 
     // State
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
@@ -956,8 +966,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // process restart rebuilds the player at 1x while the sheet
             // still shows the remembered rate.
             player.setPlaybackSpeed(_playbackSpeed.value)
+            installFrameInterpolation(player)
         }
     }
+
+    /**
+     * Before the first prepare or never: the video renderer decides on its
+     * first enable whether it renders through the effect graph, and does not
+     * revisit it. Everything after this is the per-frame gate the progress
+     * poll sets.
+     */
+    private fun installFrameInterpolation(player: ExoPlayer) {
+        playerHasInterpolation = themePreferences.isFrameInterpolationEnabled()
+        if (!playerHasInterpolation) return
+        player.setVideoEffects(
+            listOf(com.ivor.ivormusic.service.FrameInterpolationEffect(frameInterpolation.control))
+        )
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onDroppedVideoFrames(
+                eventTime: AnalyticsListener.EventTime,
+                droppedFrames: Int,
+                elapsedMs: Long
+            ) {
+                frameInterpolation.onDroppedFrames(droppedFrames, elapsedMs)
+            }
+        })
+    }
+
+    /**
+     * HDR stays out of the ladder while Smooth motion is on, and while the
+     * player still carries the effect graph after it was turned off: an HDR
+     * rendition through that graph is tone-mapped or not, depending on the
+     * device's GL extensions, which is a worse answer than SDR on purpose.
+     */
+    private fun frameInterpolationBlocksHdr(): Boolean =
+        playerHasInterpolation || themePreferences.isFrameInterpolationEnabled()
 
     /**
      * The playback listener the local ExoPlayer carries: buffering spinner,
@@ -1382,6 +1425,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
+                    if (playerHasInterpolation) {
+                        // Fresh read: turning the setting off takes effect
+                        // within a tick, without rebuilding the player.
+                        frameInterpolation.update(
+                            enabledByUser = themePreferences.isFrameInterpolationEnabled(),
+                            currentVideoId = _currentVideo.value?.videoId,
+                            isLive = _isLive.value,
+                            isHdr = _currentQuality.value?.isHdr == true,
+                            speed = player.playbackParameters.speed
+                        )
+                    }
                     // A non-positive duration means "not known yet" (and is the
                     // normal case for a live stream), so leave the last good
                     // values alone rather than dividing by it.
@@ -3133,7 +3187,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // The preference is intent; the display capability decides whether
         // HDR can produce a visible benefit. This also handles an enabled
         // value restored onto an SDR-only phone.
-        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context)
+        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context) &&
+            !frameInterpolationBlocksHdr()
         val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
         val qualities = if (includeHdr) {
             result.qualities
@@ -3301,6 +3356,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isExpanded.value = false
         // Nothing is playing any more, so nothing should be on the lock screen.
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
+        // Smooth motion can only be added or removed by building a new player,
+        // and this is the one moment nothing holds the old one: the session is
+        // gone (just above) and the overlay disposes its views with the video.
+        if (_exoPlayer != null &&
+            playerHasInterpolation != themePreferences.isFrameInterpolationEnabled()
+        ) {
+            _exoPlayer?.release()
+            _exoPlayer = null
+            playerHasInterpolation = false
+        }
         // An explicit close means "I'm done with this video" - the opposite
         // of what the resume snapshot is for, so it must not reappear next
         // launch.

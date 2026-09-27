@@ -65,6 +65,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
@@ -363,6 +364,8 @@ fun SettingsScreen(
     onVideoQualityMobileChange: (String) -> Unit,
     preferHdr: Boolean = false,
     onPreferHdrToggle: (Boolean) -> Unit = {},
+    frameInterpolation: Boolean,
+    onFrameInterpolationToggle: (Boolean) -> Unit,
     musicQualityWifi: String,
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
@@ -661,6 +664,9 @@ fun SettingsScreen(
     // Which per-network quality picker is open, if any
     var qualityDialogTarget by remember { mutableStateOf<QualityDialogTarget?>(null) }
 
+    // Smooth motion is only ever turned on through its warning.
+    var showFrameInterpolationWarning by remember { mutableStateOf(false) }
+
     // Which subscription-routing picker is open, if any
     var subscriptionDialogTarget by remember { mutableStateOf<SubscriptionDialogTarget?>(null) }
 
@@ -824,6 +830,11 @@ fun SettingsScreen(
             videoQualityMobile = videoQualityMobile,
             preferHdr = preferHdr,
             onPreferHdrToggle = onPreferHdrToggle,
+            frameInterpolation = frameInterpolation,
+            onFrameInterpolationToggle = { enabled ->
+                if (enabled) showFrameInterpolationWarning = true
+                else onFrameInterpolationToggle(false)
+            },
             onOpenQualityPicker = { qualityDialogTarget = it },
             onBack = { page = SettingsPage.HUB }
         )
@@ -1289,6 +1300,16 @@ fun SettingsScreen(
     if (showAutoHelpDialog) {
         AndroidAutoHelpDialog(
             onDismiss = { showAutoHelpDialog = false }
+        )
+    }
+
+    if (showFrameInterpolationWarning) {
+        FrameInterpolationWarningDialog(
+            onConfirm = {
+                showFrameInterpolationWarning = false
+                onFrameInterpolationToggle(true)
+            },
+            onDismiss = { showFrameInterpolationWarning = false }
         )
     }
 }
@@ -2773,6 +2794,152 @@ private fun AndroidAutoHelpDialog(
                         text = stringResource(R.string.action_got_it),
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+            }
+        )
+    }
+}
+
+/**
+ * The only way Smooth motion turns on. It costs battery and heat for as long
+ * as a video plays and can visibly warp motion, so the switch alone is not
+ * consent; dismissing leaves it off.
+ */
+@Composable
+private fun FrameInterpolationWarningDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    var dialogVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { dialogVisible = true }
+
+    AnimatedVisibility(
+        visible = dialogVisible,
+        enter = scaleIn(
+            initialScale = 0.8f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        ) + fadeIn(tween(200)),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(tween(150))
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = backgroundColor,
+            shape = RoundedCornerShape(32.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(primaryColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Animation,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.fi_warning_title),
+                        color = textColor,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.fi_warning_subtitle),
+                        color = secondaryTextColor,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                // Scrolls: at a large font or display size the points outgrow
+                // a landscape phone's height.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = stringResource(R.string.fi_warning_intro),
+                        color = textColor,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val points = listOf(
+                        stringResource(R.string.fi_warning_battery),
+                        stringResource(R.string.fi_warning_artifacts),
+                        stringResource(R.string.fi_warning_hdr),
+                        stringResource(R.string.fi_warning_auto)
+                    )
+                    points.forEachIndexed { index, point ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = primaryColor.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    color = primaryColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = point,
+                                color = secondaryTextColor,
+                                fontSize = 13.sp
+                            )
+                        }
+                        if (index < points.lastIndex) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.fi_warning_note),
+                        color = secondaryTextColor,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onConfirm,
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.fi_warning_confirm),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(text = stringResource(R.string.action_cancel))
                 }
             }
         )
