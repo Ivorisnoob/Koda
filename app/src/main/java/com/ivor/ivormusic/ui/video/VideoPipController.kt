@@ -52,7 +52,19 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
     val queue by viewModel.queue.collectAsState()
     val relatedVideos by viewModel.relatedVideos.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
-    val transport = pipTransport(queue, relatedVideos.isNotEmpty(), isLive)
+    // The Settings row writes through another ThemePreferences instance; this
+    // one's change listener carries the write here, so the published params
+    // follow a change without waiting for the next play/pause.
+    val themePreferences = androidx.compose.runtime.remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }
+    val pipButtons by themePreferences.pipButtons.collectAsState()
+    val transport = pipTransport(
+        queue = queue,
+        hasRelated = relatedVideos.isNotEmpty(),
+        isLive = isLive,
+        seekOnly = pipButtons == com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_SEEK
+    )
 
     val packageName = context.packageName
 
@@ -162,20 +174,37 @@ internal sealed interface PipTransport {
     data object Seek : PipTransport
 }
 
-/** One rule for both the published params and an explicit PiP entry. */
+/**
+ * One rule for both the published params and an explicit PiP entry.
+ *
+ * [seekOnly] is the "Skip 10s" choice in Settings (feedback, September 2026):
+ * some viewers use the window to rewatch and skip within one video and never
+ * to move on, and for them a Next button is one mis-tap from losing the video.
+ */
 internal fun pipTransport(
     queue: com.ivor.ivormusic.data.VideoQueue?,
     hasRelated: Boolean,
     isLive: Boolean,
+    seekOnly: Boolean,
 ): PipTransport = when {
+    seekOnly -> PipTransport.Seek
     queue != null -> PipTransport.Playlist(hasPrevious = queue.hasPrevious, hasNext = queue.hasNext)
     hasRelated && !isLive -> PipTransport.Related
     else -> PipTransport.Seek
 }
 
-/** [pipTransport] from the ViewModel's current values, for non-composable callers. */
+/**
+ * [pipTransport] from the ViewModel's current values, for non-composable
+ * callers. The setting is a fresh read: the ViewModel holds no preferences
+ * instance of its own.
+ */
 internal fun VideoPlayerViewModel.currentPipTransport(): PipTransport =
-    pipTransport(queue.value, relatedVideos.value.isNotEmpty(), isLive.value)
+    pipTransport(
+        queue = queue.value,
+        hasRelated = relatedVideos.value.isNotEmpty(),
+        isLive = isLive.value,
+        seekOnly = com.ivor.ivormusic.data.ThemePreferences.pipButtonsSeekOnly(getApplication())
+    )
 
 /**
  * The transport row inside the PiP window: play/pause between two buttons
@@ -194,7 +223,10 @@ internal fun VideoPlayerViewModel.currentPipTransport(): PipTransport =
  * build reports fewer than three available actions while its PiP menu can
  * render the normal three slots; trusting that value leaves only play/pause
  * visible. Three is also the most phones show, which is why a fourth button
- * is never added. The window manager can truncate the row itself on a
+ * is never added - a five-button row (previous, back 10s, play, forward 10s,
+ * next) was asked for in September 2026 and is not something the window can
+ * draw, hence the "Picture-in-picture buttons" setting choosing the two side
+ * slots instead. The window manager can truncate the row itself on a
  * genuinely smaller surface.
  */
 internal fun pipActions(

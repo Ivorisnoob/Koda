@@ -1382,7 +1382,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * connection is a real empty feed, not something the user can fix by
      * checking their wifi.
      */
-    private fun hasNetworkConnection(): Boolean = try {
+    fun hasNetworkConnection(): Boolean = try {
         val cm = getApplication<Application>()
             .getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
                 as android.net.ConnectivityManager

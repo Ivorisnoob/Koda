@@ -243,6 +243,7 @@ class MainActivity : ComponentActivity() {
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
             val normalizeVolume by themeViewModel.normalizeVolume.collectAsState()
             val rememberVideoBrightness by themeViewModel.rememberVideoBrightness.collectAsState()
+            val pipButtons by themeViewModel.pipButtons.collectAsState()
             val hapticsLevel by themeViewModel.hapticsLevel.collectAsState()
             val uploadNotificationsEnabled by themeViewModel.uploadNotificationsEnabled.collectAsState()
             
@@ -263,8 +264,28 @@ class MainActivity : ComponentActivity() {
                 paletteStyle = paletteStyle
             ) {
                 val videoListLayout by themeViewModel.videoListLayout.collectAsState()
+                // Every link Koda draws goes through LocalUriHandler, so this
+                // is the one place a YouTube URL is kept in the app rather than
+                // handed to the browser or the YouTube app. Anything the link
+                // parser cannot act on still leaves, as before.
+                val platformUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                val inAppUriHandler = androidx.compose.runtime.remember(platformUriHandler) {
+                    object : androidx.compose.ui.platform.UriHandler {
+                        override fun openUri(uri: String) {
+                            if (com.ivor.ivormusic.data.YouTubeLinkParser.parse(uri) != null) {
+                                openLinkInApp(uri)
+                            } else {
+                                runCatching { platformUriHandler.openUri(uri) }
+                                    .onFailure {
+                                        com.ivor.ivormusic.util.KLog.w("MainActivity", "No handler for $uri", it)
+                                    }
+                            }
+                        }
+                    }
+                }
                 androidx.compose.runtime.CompositionLocalProvider(
-                    com.ivor.ivormusic.ui.video.LocalVideoListLayout provides videoListLayout
+                    com.ivor.ivormusic.ui.video.LocalVideoListLayout provides videoListLayout,
+                    androidx.compose.ui.platform.LocalUriHandler provides inAppUriHandler
                 ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
@@ -441,6 +462,8 @@ class MainActivity : ComponentActivity() {
                         rememberVideoBrightness = rememberVideoBrightness,
                         onRememberVideoBrightnessToggle =
                             { themeViewModel.setRememberVideoBrightness(it) },
+                        pipButtons = pipButtons,
+                        onPipButtonsChange = { themeViewModel.setPipButtons(it) },
                         hapticsLevel = hapticsLevel,
                         onHapticsLevelChange = { themeViewModel.setHapticsLevel(it) },
                         uploadNotificationsEnabled = uploadNotificationsEnabled,
@@ -599,6 +622,11 @@ class MainActivity : ComponentActivity() {
         val text = intent.sharedLinkText() ?: return
         neutralize(intent)
         pendingSharedLink = PendingSharedLink(text, ++sharedLinkCounter)
+    }
+
+    /** A YouTube link tapped inside Koda, opened through the shared-link path. */
+    private fun openLinkInApp(url: String) {
+        pendingSharedLink = PendingSharedLink(url, ++sharedLinkCounter, fromApp = true)
     }
 
     /**
@@ -775,6 +803,8 @@ fun MusicApp(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    pipButtons: String,
+    onPipButtonsChange: (String) -> Unit,
     hapticsLevel: String,
     onHapticsLevelChange: (String) -> Unit,
     uploadNotificationsEnabled: Boolean,
@@ -1389,6 +1419,8 @@ fun MusicApp(
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     rememberVideoBrightness = rememberVideoBrightness,
                     onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+                    pipButtons = pipButtons,
+                    onPipButtonsChange = onPipButtonsChange,
                     hapticsLevel = hapticsLevel,
                     onHapticsLevelChange = onHapticsLevelChange,
                     uploadNotificationsEnabled = uploadNotificationsEnabled,

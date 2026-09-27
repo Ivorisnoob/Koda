@@ -1834,7 +1834,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         )
     }
 
-    fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
+    /**
+     * @param expand false keeps a collapsed player collapsed - the mini bar's
+     * sideways skip, which changes the video inside the bar and must not
+     * throw the viewer into the watch page.
+     */
+    fun playVideo(video: VideoItem, forceRestart: Boolean = false, expand: Boolean = true) {
         // A device video reaching the ordinary entry point is a watch-history
         // row being replayed: history stores VideoItems and nothing else, so a
         // file on this phone comes back through the same door a YouTube video
@@ -1850,7 +1855,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // The queue this belonged to is gone, so restoring into the next one
         // would drop a video into a list it was never part of.
         lastQueueRemoval = null
-        startVideo(video, forceRestart)
+        startVideo(video, forceRestart, expand = expand)
     }
 
     /**
@@ -2290,11 +2295,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * otherwise swallow the jump and leave the queue pointing somewhere the
      * player is not.
      */
-    fun playQueueIndex(index: Int) {
+    fun playQueueIndex(index: Int, expand: Boolean = true) {
         val active = _queue.value ?: return
         val target = active.videos.getOrNull(index) ?: return
         _queue.value = active.copy(index = index)
-        startVideo(target, forceRestart = true)
+        startVideo(target, forceRestart = true, expand = expand)
     }
 
     // ---------------- Editing the queue ----------------
@@ -2391,19 +2396,19 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * autoplay would pick (the filtered list, so nothing marked not interested).
      * PiP never autoplays into a related video on its own; a tap is a request.
      */
-    fun playNextOrRelated() {
+    fun playNextOrRelated(expand: Boolean = true) {
         val active = _queue.value
         if (active != null) {
-            if (active.hasNext) playQueueIndex(active.index + 1)
+            if (active.hasNext) playQueueIndex(active.index + 1, expand)
             return
         }
-        relatedVideos.value.firstOrNull()?.let { playVideo(it) }
+        relatedVideos.value.firstOrNull()?.let { playVideo(it, expand = expand) }
     }
 
     /** Previous video in the playlist. No-op at the start of it. */
-    fun playPreviousInQueue() {
+    fun playPreviousInQueue(expand: Boolean = true) {
         val active = _queue.value ?: return
-        if (active.hasPrevious) playQueueIndex(active.index - 1)
+        if (active.hasPrevious) playQueueIndex(active.index - 1, expand)
     }
 
     /**
@@ -2411,9 +2416,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the stream is ready instead of starting from zero.
      * @param resumePaused whether a [resumePositionMs] seek lands paused. True
      * for the cold-process restore - the user decides when to jump back in.
-     * @param expand false only for a cold-process restore, where popping
-     * straight into a fullscreen player would be a jump-scare rather than the
-     * "you left this running" cue a mini player gives.
+     * @param expand false for a cold-process restore, where popping straight
+     * into a fullscreen player would be a jump-scare rather than the "you left
+     * this running" cue a mini player gives, and for the mini bar's sideways
+     * skip, which changes the video inside the bar and nothing else.
      * @param deferStreamLoad cold-restore-only path which reconstructs player
      * chrome without resolving or preparing media until the user presses Play.
      */

@@ -263,6 +263,10 @@ class ThemePreferences(context: Context) {
         MutableStateFlow(getRememberVideoBrightness())
     val rememberVideoBrightness: StateFlow<Boolean> = _rememberVideoBrightness.asStateFlow()
 
+    private val _pipButtons = MutableStateFlow(getPipButtons())
+    /** [PIP_BUTTONS_VIDEOS] or [PIP_BUTTONS_SEEK]: what flanks play/pause in PiP. */
+    val pipButtons: StateFlow<String> = _pipButtons.asStateFlow()
+
     private val _hapticsLevel = MutableStateFlow(getHapticsLevelPreference())
     val hapticsLevel: StateFlow<String> = _hapticsLevel.asStateFlow()
 
@@ -427,6 +431,7 @@ class ThemePreferences(context: Context) {
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
             KEY_REMEMBER_VIDEO_BRIGHTNESS ->
                 _rememberVideoBrightness.value = getRememberVideoBrightness()
+            KEY_PIP_BUTTONS -> _pipButtons.value = getPipButtons()
             KEY_HAPTICS_LEVEL -> _hapticsLevel.value = getHapticsLevelPreference()
             KEY_UPLOAD_NOTIFICATIONS_ENABLED ->
                 _uploadNotificationsEnabled.value = getUploadNotificationsEnabledPreference()
@@ -867,6 +872,20 @@ class ThemePreferences(context: Context) {
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
         private const val KEY_REMEMBER_VIDEO_BRIGHTNESS = "remember_video_brightness"
+        private const val KEY_PIP_BUTTONS = "pip_buttons"
+
+        /**
+         * PiP side buttons. Stored values are frozen: "videos" is previous and
+         * next in a playlist, back 10s and next otherwise (the behaviour
+         * before the setting existed); "seek" is back and forward 10s always.
+         */
+        const val PIP_BUTTONS_VIDEOS = "videos"
+        const val PIP_BUTTONS_SEEK = "seek"
+
+        /** Fresh read for callers outside the settings flows (an explicit PiP entry). */
+        fun pipButtonsSeekOnly(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_PIP_BUTTONS, PIP_BUTTONS_VIDEOS) == PIP_BUTTONS_SEEK
         private const val KEY_HAPTICS_LEVEL = "haptics_level"
         private const val KEY_UPLOAD_NOTIFICATIONS_ENABLED = "upload_notifications_enabled"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
@@ -1847,6 +1866,17 @@ class ThemePreferences(context: Context) {
     fun setRememberVideoBrightness(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_REMEMBER_VIDEO_BRIGHTNESS, enabled).apply()
         _rememberVideoBrightness.value = enabled
+    }
+
+    fun getPipButtons(): String =
+        prefs.getString(KEY_PIP_BUTTONS, PIP_BUTTONS_VIDEOS)
+            ?.takeIf { it == PIP_BUTTONS_VIDEOS || it == PIP_BUTTONS_SEEK }
+            ?: PIP_BUTTONS_VIDEOS
+
+    fun setPipButtons(value: String) {
+        if (value != PIP_BUTTONS_VIDEOS && value != PIP_BUTTONS_SEEK) return
+        prefs.edit().putString(KEY_PIP_BUTTONS, value).apply()
+        _pipButtons.value = value
     }
 
     /**

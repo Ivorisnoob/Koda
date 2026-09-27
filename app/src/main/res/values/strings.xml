@@ -539,6 +539,8 @@
     <string name="sp_notify_new_uploads">Notify about new uploads</string>
     <string name="sp_notify_new_uploads_on">Checks channels you follow on this device</string>
     <string name="sp_notify_new_uploads_off">Off: Koda only checks while you are using it</string>
+    <string name="sp_notifications_blocked">Notifications are blocked</string>
+    <string name="sp_notifications_blocked_sub">Allow notifications for Koda in Android settings. New uploads wait until you do.</string>
     <string name="sp_channels">Channels</string>
     <string name="sp_choose_notifiers">Choose who may notify you</string>
     <string name="sp_muted">Muted</string>
@@ -1206,6 +1208,8 @@
     <string name="sm_exported">Exported %1$d channels</string>
     <string name="wifi">Wi-Fi</string>
     <string name="mobile_data">Mobile data</string>
+    <string name="ch_post_open_comments">Open comments on this post</string>
+    <string name="ch_post_comments_unavailable">Comments aren\'t available for this post</string>
     <string name="cm_delete_q">Delete comment?</string>
     <string name="cm_delete_body">Your comment will be permanently deleted.</string>
     <string name="ob_off_hint">Off keeps a cleaner, music-first layout. The video player stays available either way.</string>
@@ -1394,6 +1398,7 @@
     <string name="section_albums">Albums</string>
     <!-- Artist page sections backed by the YouTube Music artist browse -->
     <string name="ar_section_popular">Popular songs</string>
+    <string name="ar_section_on_device">On this device</string>
     <string name="ar_section_about">About</string>
     <string name="ar_section_singles_eps">Singles &amp; EPs</string>
     <string name="ar_section_similar">Fans also like</string>
@@ -1527,6 +1532,11 @@
     <string name="sp_home_and_navigation">Home and navigation</string>
     <string name="sp_video_section">Video</string>
     <string name="sp_remember_brightness">Remember fullscreen brightness</string>
+    <string name="sp_pip_buttons">Picture-in-picture buttons</string>
+    <string name="sp_pip_buttons_videos">Next video</string>
+    <string name="sp_pip_buttons_seek">Skip 10s</string>
+    <string name="sp_pip_buttons_videos_sub">Previous and next in a playlist, back 10s and next otherwise</string>
+    <string name="sp_pip_buttons_seek_sub">Back 10s and forward 10s around play and pause</string>
     <string name="sp_home_classic">Classic</string>
     <string name="sp_home_spotlight">Spotlight</string>
     <string name="sp_nav_floating">Floating</string>
@@ -1560,6 +1570,7 @@
     <string name="si_auto_queue">When your queue runs out, Koda keeps the music going with similar songs instead of stopping.</string>
     <string name="si_music_history">Keeps a log on this device of the songs you play. It powers your stats and recently played. Separate from your YouTube account\'s history.</string>
     <string name="si_hdr">When a video has an HDR version and your screen supports it, Koda plays the HDR one. Richer colors, but more data and battery.</string>
+    <string name="si_pip_buttons">Android shows three buttons in the picture-in-picture window, so this picks what sits either side of play and pause.</string>
     <string name="si_brightness">Koda remembers the brightness you drag to in fullscreen video and reapplies it next time, instead of resetting to the system level.</string>
     <string name="si_local_only">Cuts all internet use. Only downloads and files on this device play; search, streaming and every YouTube surface stay off until you switch back.</string>
     <string name="si_home_mode_toggle">Shows a music/video switch in the Home header so you can change modes without opening Settings.</string>

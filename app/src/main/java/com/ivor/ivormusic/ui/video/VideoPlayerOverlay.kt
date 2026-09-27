@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.ui.components.miniSkipGesture
 import com.ivor.ivormusic.util.KLog
 
 import android.app.PictureInPictureParams
@@ -8,7 +9,6 @@ import android.util.Rational
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -540,27 +540,23 @@ fun VideoPlayerOverlay(
             }
         }
 
-        // Collapsed-bar gestures: up expands; a sideways throw or a downward
-        // pull dismisses.
+        // Collapsed-bar gestures, the same set as the music pill: up expands,
+        // a downward pull dismisses, and sideways moves to the next or previous
+        // video inside the bar while the bar itself stays put.
         //
-        // Sideways is the music pill's dismiss, and the two bars used to
-        // disagree (#299): people learned one and tried it on the other. The
-        // worry that kept this bar vertical - it sits right above the pill, so
-        // a sideways throw might be ambiguous - does not hold up, since a touch
-        // lands on one bar or the other. The downward pull stays as well: it
-        // was the only dismiss for a while, and the same pull closes the
-        // expanded player. The Close button stays too (990db55) - a gesture is
-        // a shortcut, never the only way to stop a persistent player.
+        // Sideways was a dismiss on both bars for a while (#299 made them
+        // agree). It is a skip on both now (September 2026): a sideways swipe on
+        // something showing a video reads as "another one", the way it does on
+        // every expanded music style's artwork, and down already dismissed. The
+        // Close button stays (990db55) - a gesture is a shortcut, never the only
+        // way to stop a persistent player.
         var miniDragY by remember { mutableFloatStateOf(0f) }
         var isMiniDragging by remember { mutableStateOf(false) }
         var isDismissingMini by remember { mutableStateOf(false) }
         val miniSettleOffset = remember { Animatable(0f) }
-        var miniDragX by remember { mutableFloatStateOf(0f) }
-        var isMiniDraggingX by remember { mutableStateOf(false) }
-        val miniSettleOffsetX = remember { Animatable(0f) }
-        // The music pill's own distance, so both bars commit at the same point.
-        val miniSideDismissThresholdPx = with(density) { 100.dp.toPx() }
-        val miniWindowWidthPx = constraints.maxWidth.toFloat()
+        // Bound inside the bar's content, which already collects the queue and
+        // the related list; this overlay only owns the drag.
+        val miniSkip = com.ivor.ivormusic.ui.components.rememberMiniSkipState()
         val miniExpandThresholdPx = with(density) { 48.dp.toPx() }
         val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
         val miniFlingVelocityPx = with(density) { 700.dp.toPx() }
@@ -607,10 +603,6 @@ fun VideoPlayerOverlay(
                     gestureOffset.coerceAtLeast(0f) /
                         (miniDismissThresholdPx * 2f)
                     ).coerceIn(0f, fadeLimit)
-                val sideOffset = if (isMiniDraggingX) miniDragX else miniSettleOffsetX.value
-                translationX = sideOffset
-                alpha *= 1f - (kotlin.math.abs(sideOffset) / (miniSideDismissThresholdPx * 2f))
-                    .coerceIn(0f, fadeLimit)
             }
         }
 
@@ -818,71 +810,10 @@ fun VideoPlayerOverlay(
                     }
                 )
             }
-            // The sideways dismiss. Its own detector: each locks to its axis at
-            // touch slop and consumes, which cancels the other, the same pairing
-            // the music pill uses.
-            .pointerInput(showExpandedSurface, miniSideDismissThresholdPx, miniFlingVelocityPx) {
-                if (showExpandedSurface) return@pointerInput
-                var thresholdFeedbackSent = false
-                val velocityTracker = VelocityTracker()
-                val settleBack: () -> Unit = {
-                    val releasedOffset = miniDragX
-                    scope.launch {
-                        miniSettleOffsetX.snapTo(releasedOffset)
-                        isMiniDraggingX = false
-                        miniSettleOffsetX.animateTo(0f, miniOffsetAnimationSpec)
-                    }
-                }
-                detectHorizontalDragGestures(
-                    onDragStart = {
-                        thresholdFeedbackSent = false
-                        velocityTracker.resetTracking()
-                        miniDragX = miniSettleOffsetX.value
-                        isMiniDraggingX = true
-                        scope.launch { miniSettleOffsetX.stop() }
-                    },
-                    onDragEnd = {
-                        val velocityX = velocityTracker.calculateVelocity().x
-                        val travel = miniDragX
-                        val dismiss = kotlin.math.abs(travel) > miniSideDismissThresholdPx ||
-                            (kotlin.math.abs(velocityX) > miniFlingVelocityPx &&
-                                (velocityX > 0f) == (travel > 0f) && travel != 0f)
-                        if (!dismiss) {
-                            settleBack()
-                            return@detectHorizontalDragGestures
-                        }
-                        if (!thresholdFeedbackSent) {
-                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        }
-                        isDismissingMini = true
-                        scope.launch {
-                            miniSettleOffsetX.snapTo(travel)
-                            isMiniDraggingX = false
-                            miniSettleOffsetX.animateTo(
-                                if (travel > 0f) miniWindowWidthPx else -miniWindowWidthPx,
-                                miniOffsetAnimationSpec
-                            )
-                            viewModel.closePlayer()
-                            isDismissingMini = false
-                            miniDragX = 0f
-                            miniSettleOffsetX.snapTo(0f)
-                        }
-                    },
-                    onDragCancel = { settleBack() },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        miniDragX += dragAmount
-                        velocityTracker.addPosition(change.uptimeMillis, Offset(miniDragX, 0f))
-                        val crossed = kotlin.math.abs(miniDragX) >= miniSideDismissThresholdPx
-                        if (crossed && !thresholdFeedbackSent) {
-                            thresholdFeedbackSent = true
-                            haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                        } else if (!crossed) {
-                            thresholdFeedbackSent = false
-                        }
-                    }
-                )
-            }
+            // Sideways moves the video inside the bar. Its own detector: each
+            // locks to its axis at touch slop and consumes, which cancels the
+            // other, the same pairing the music pill uses.
+            .miniSkipGesture(miniSkip, enabled = !showExpandedSurface)
 
         // Offset and fade live on a wrapper rather than on the Surface itself.
         // A graphicsLayer on an elevated Surface makes its shadow render
@@ -928,7 +859,7 @@ fun VideoPlayerOverlay(
                  // Mini Player Content. Tap and both drags are handled by the
                  // Surface above, so the bar itself only draws and offers its
                  // two controls.
-                 MiniVideoPlayerContent(viewModel = viewModel)
+                 MiniVideoPlayerContent(viewModel = viewModel, skipState = miniSkip)
              }
         }
         if (showExpandedSurface) {
@@ -1018,13 +949,8 @@ fun VideoPlayerOverlay(
                         val entrance = if (hasExpanded || showExpandedSurface) 1f else miniEntrance.value
                         translationY = gestureOffset + (1f - entrance) * miniEnterOffsetPx
                         val fadeLimit = if (isDismissingMini) 1f else 0.5f
-                        val sideOffset = if (isMiniDraggingX) miniDragX else miniSettleOffsetX.value
-                        translationX = sideOffset
                         alpha = entrance * (
                             1f - (gestureOffset.coerceAtLeast(0f) / (miniDismissThresholdPx * 2f))
-                                .coerceIn(0f, fadeLimit)
-                            ) * (
-                            1f - (kotlin.math.abs(sideOffset) / (miniSideDismissThresholdPx * 2f))
                                 .coerceIn(0f, fadeLimit)
                             )
                     }
@@ -1046,6 +972,7 @@ fun VideoPlayerOverlay(
                 ) {
                     ContainerMiniLayer(
                         viewModel = viewModel,
+                        skipState = miniSkip,
                         width = fullWidth - MINI_VIDEO_MARGIN * 2,
                         progress = transformProgress,
                         holdsSurface = barHoldsSurfaceNow,
@@ -1086,6 +1013,7 @@ fun VideoPlayerOverlay(
 @Composable
 private fun BoxScope.ContainerMiniLayer(
     viewModel: VideoPlayerViewModel,
+    skipState: com.ivor.ivormusic.ui.components.MiniSkipState,
     width: Dp,
     progress: () -> Float,
     holdsSurface: () -> Boolean,
@@ -1103,6 +1031,6 @@ private fun BoxScope.ContainerMiniLayer(
             .height(MINI_VIDEO_HEIGHT)
             .graphicsLayer { alpha = containerMiniAlpha(progress()) }
     ) {
-        MiniVideoPlayerContent(viewModel = viewModel, holdsSurface = holdsSurface)
+        MiniVideoPlayerContent(viewModel = viewModel, holdsSurface = holdsSurface, skipState = skipState)
     }
 }

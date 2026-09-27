@@ -93,5 +93,18 @@ class UploadCheckRepository(context: Context) {
 
         @Volatile
         private var sharedMutedChannels: MutableStateFlow<Set<String>>? = null
+
+        /**
+         * Re-point the process-wide mute set at the newly active profile.
+         * Without this the set loaded at first use outlived every switch: the
+         * worker applied the old profile's mutes, and the next toggle wrote
+         * the old profile's whole set under the new profile's key.
+         */
+        fun reloadForActiveProfile(context: Context) {
+            val repo = UploadCheckRepository(context)
+            synchronized(LOCK) {
+                sharedMutedChannels?.value = repo.loadMuted()
+            }
+        }
     }
 }

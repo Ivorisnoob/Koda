@@ -5,6 +5,7 @@ import com.ivor.ivormusic.ui.components.ConnectionAdviceCard
 import com.ivor.ivormusic.data.ConnectionAdvice
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
+import com.ivor.ivormusic.ui.player.drawScrubReturnMarker
 
 import android.app.Activity
 import android.content.Context
@@ -1320,20 +1321,48 @@ internal fun PlayerSeekBar(
     val sliderState = remember(mediaId) { SliderState(value = displayedProgress) }
     SideEffect { sliderState.value = displayedProgress }
 
+    // The music scrubber's return point, on this bar too: a drag leaves a marker
+    // where it started, snaps back onto it, and letting go there cancels the seek
+    // - which on a stream is a rebuffer not spent. See ScrubReturnPoint.
+    val returnPoint = remember(mediaId) { com.ivor.ivormusic.ui.player.ScrubReturnPoint() }
+    val returnMarker = com.ivor.ivormusic.ui.player.rememberScrubReturnMarker(
+        returnPoint = returnPoint,
+        active = isScrubbing,
+        haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    )
+    val markerRing = MaterialTheme.colorScheme.primary
+    val markerCenter = MaterialTheme.colorScheme.onPrimary
+    val density = androidx.compose.ui.platform.LocalDensity.current
+
     BoxWithConstraints(modifier = modifier.height(48.dp)) {
+        val trackWidthPx = constraints.maxWidth
+        SideEffect {
+            with(density) {
+                returnPoint.updateGeometry(
+                    trackWidthPx,
+                    com.ivor.ivormusic.ui.player.RETURN_SNAP_ENTER.toPx(),
+                    com.ivor.ivormusic.ui.player.RETURN_SNAP_EXIT.toPx()
+                )
+            }
+        }
         Slider(
             state = sliderState,
             onValueChange = {
+                // Read before isScrubbing flips: this is still the position
+                // the drag is leaving from.
+                val startedFrom = displayedProgress
                 if (!isScrubbing) {
                     isScrubbing = true
                     committedSeekValue = null
                     onScrubbingChanged(true)
                 }
-                scrubValue = it
-                sliderState.value = it
+                val resolved = returnPoint.follow(it, rangeEnd = 1f) { startedFrom }
+                scrubValue = resolved
+                sliderState.value = resolved
             },
             onValueChangeFinished = {
-                if (isScrubbing) {
+                val cancelled = returnPoint.release()
+                if (isScrubbing && !cancelled) {
                     val target = scrubValue.coerceIn(0f, 1f)
                     committedSeekValue = target
                     onSeek(target)
@@ -1419,6 +1448,12 @@ internal fun PlayerSeekBar(
                                 }
                             }
                         }
+
+                        // Last, so the marker sits over buffer, segments and
+                        // chapter ticks; the Slider's thumb still draws above it.
+                        drawScrubReturnMarker(
+                            returnPoint.markerOrigin, returnMarker, markerRing, markerCenter
+                        )
                     }
                 }
             },

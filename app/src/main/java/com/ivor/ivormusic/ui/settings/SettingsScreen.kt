@@ -409,6 +409,8 @@ fun SettingsScreen(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    pipButtons: String,
+    onPipButtonsChange: (String) -> Unit,
     hapticsLevel: String,
     onHapticsLevelChange: (String) -> Unit,
     uploadNotificationsEnabled: Boolean,
@@ -464,16 +466,28 @@ fun SettingsScreen(
     // leave for system settings and come back.
     val notificationHelper = remember { DownloadNotificationHelper(context) }
     var canPostPromoted by remember { mutableStateOf(notificationHelper.canPostLiveUpdates()) }
+    // Same idea for plain notifications: the upload bell can be on while the
+    // system drops every post, and the page has to say so.
+    var canPostNotifications by remember {
+        mutableStateOf(com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context))
+    }
     val settingsActivity = context as? androidx.activity.ComponentActivity
     DisposableEffect(settingsActivity) {
         val lifecycle = settingsActivity?.lifecycle
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 canPostPromoted = notificationHelper.canPostLiveUpdates()
+                canPostNotifications =
+                    com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context)
             }
         }
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
+    }
+    val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) {
+        canPostNotifications = com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context)
     }
 
     // Which category page is open, and what is typed in the hub's search box.
@@ -887,6 +901,8 @@ fun SettingsScreen(
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     rememberVideoBrightness = rememberVideoBrightness,
                     onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+                    pipButtons = pipButtons,
+                    onPipButtonsChange = onPipButtonsChange,
                     autoLoadQueue = autoLoadQueue,
                     onAutoLoadQueueToggle = onAutoLoadQueueToggle,
                     saveMusicHistory = saveMusicHistory,
@@ -982,7 +998,27 @@ fun SettingsScreen(
                     onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
                     canPostPromoted = canPostPromoted,
                     uploadNotificationsEnabled = uploadNotificationsEnabled,
-                    onUploadNotificationsToggle = onUploadNotificationsToggle,
+                    onUploadNotificationsToggle = { enabled ->
+                        onUploadNotificationsToggle(enabled)
+                        // Turning the bell on is the moment the permission
+                        // means something; onboarding may have been skipped.
+                        // A permanent denial returns at once without a
+                        // dialog, which the blocked row below then covers.
+                        if (enabled &&
+                            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                            !canPostNotifications
+                        ) {
+                            notificationPermissionLauncher.launch(
+                                android.Manifest.permission.POST_NOTIFICATIONS
+                            )
+                        }
+                    },
+                    canPostNotifications = canPostNotifications,
+                    onOpenAppNotificationSettings = {
+                        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        runCatching { context.startActivity(intent) }
+                    },
                     followedChannels = followedChannels,
                     mutedChannelIds = mutedChannelIds,
                     onChannelMutedChange = { channelId, muted ->

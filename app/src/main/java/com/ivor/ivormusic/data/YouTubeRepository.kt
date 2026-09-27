@@ -47,6 +47,8 @@ class YouTubeRepository(private val context: Context) {
     private val videoHistoryPreferences by lazy { ThemePreferences(context) }
 
     companion object {
+        /** The browse id of a community post's own page. */
+        private const val POST_DETAIL_BROWSE_ID = "FEpost_detail"
         private const val UPLOAD_CREATE_BATCH = 100
         private const val UPLOAD_ADD_BATCH = 50
         private const val UPLOAD_BATCH_PAUSE_MS = 400L
@@ -6697,15 +6699,58 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * The continuation token for a community post's comments, from the post's
+     * own `FEpost_detail` page ([ChannelPost.detailParams]). Null when the post
+     * has comments turned off - the page then carries no comment section - or
+     * when the request fails.
+     *
+     * Verified September 2026: the page holds a `backstage-item-section` (the
+     * post) and a `comment-item-section` whose continuation opens the thread.
+     */
+    suspend fun getPostCommentsToken(detailParams: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", POST_DETAIL_BROWSE_ID)
+                    .put("params", detailParams)
+            ) ?: return@withContext null
+            val sections = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(org.json.JSONObject(raw), "itemSectionRenderer", sections)
+            val comments = sections.firstOrNull {
+                it.optString("sectionIdentifier") == "comment-item-section"
+            } ?: return@withContext null
+            val tokens = mutableListOf<String>()
+            findContinuationTokens(comments, tokens)
+            tokens.firstOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e("YouTubeRepo", "getPostCommentsToken failed", e)
+            null
+        }
+    }
+
+    /**
      * Fetch one page of comments (top-level or replies) from a continuation token.
      * Parses the modern commentEntityPayload format (frameworkUpdates mutations).
+     *
+     * [viaBrowse] is for a community post's thread: its first page, next pages
+     * and reply threads all answer on `/browse` in the same entity shape and
+     * come back empty from `/next` [verified September 2026]. A video's thread
+     * is the other way round.
      */
-    suspend fun getCommentsPage(token: String): CommentsPage? = withContext(Dispatchers.IO) {
+    suspend fun getCommentsPage(
+        token: String,
+        viaBrowse: Boolean = false
+    ): CommentsPage? = withContext(Dispatchers.IO) {
         try {
             val body = org.json.JSONObject()
                 .put("context", webContext())
                 .put("continuation", token)
-            val raw = postWatchApi("next", body) ?: return@withContext null
+            val raw = postWatchApi(if (viaBrowse) "browse" else "next", body)
+                ?: return@withContext null
             val root = org.json.JSONObject(raw)
 
             // 1. Collect entity payloads: commentId -> payload, toolbar states and
@@ -8338,19 +8383,33 @@ class YouTubeRepository(private val context: Context) {
             }
         }.orEmpty()
 
+        // The reply button and the timestamp both link to the post's own page
+        // [verified September 2026]; the reply button is the one a comments-off
+        // post may lack, so the timestamp is the backstop.
+        val replyButton = renderer.optJSONObject("actionButtons")
+            ?.optJSONObject("commentActionButtonsRenderer")
+            ?.optJSONObject("replyButton")
+            ?.optJSONObject("buttonRenderer")
+        val detailParams = listOfNotNull(
+            replyButton?.optJSONObject("navigationEndpoint"),
+            renderer.optJSONObject("publishedTimeText")?.optJSONArray("runs")
+                ?.optJSONObject(0)?.optJSONObject("navigationEndpoint")
+        ).firstNotNullOfOrNull { endpoint ->
+            endpoint.optJSONObject("browseEndpoint")
+                ?.takeIf { it.optString("browseId") == POST_DETAIL_BROWSE_ID }
+                ?.optString("params")?.takeIf { it.isNotBlank() }
+        }
+
         return ChannelPost(
             postId = postId,
             authorName = authorName,
             authorAvatarUrl = authorAvatarUrl,
             text = text,
+            detailParams = detailParams,
             publishedText = getRunText(renderer.optJSONObject("publishedTimeText")),
             voteCountText = renderer.optJSONObject("voteCount")?.optString("simpleText")
                 ?.takeIf { it.isNotBlank() },
-            replyCountText = renderer.optJSONObject("actionButtons")
-                ?.optJSONObject("commentActionButtonsRenderer")
-                ?.optJSONObject("replyButton")
-                ?.optJSONObject("buttonRenderer")
-                ?.let { getRunText(it.optJSONObject("text")) },
+            replyCountText = replyButton?.let { getRunText(it.optJSONObject("text")) },
             images = images,
             video = video,
             pollChoices = pollChoices,

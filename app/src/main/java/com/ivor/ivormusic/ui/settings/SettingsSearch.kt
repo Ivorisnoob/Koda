@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Bolt
@@ -387,6 +388,14 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "brightness", "dim", "slider", "fullscreen", "gesture", "reset",
             "system brightness"
+        )
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "pip_buttons", stringResource(R.string.sp_pip_buttons), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.PictureInPictureAlt,
+        listOf(
+            "pip", "picture in picture", "floating", "mini window", "buttons", "controls",
+            "skip", "seek", "forward", "rewind", "10 seconds", "next", "previous"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     // Lives on Appearance now: haptics answer every touch in the app, not

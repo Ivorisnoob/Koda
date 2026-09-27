@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
@@ -981,6 +982,8 @@ internal fun PlaybackSettingsPage(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    pipButtons: String,
+    onPipButtonsChange: (String) -> Unit,
     autoLoadQueue: Boolean,
     onAutoLoadQueueToggle: (Boolean) -> Unit,
     saveMusicHistory: Boolean,
@@ -1300,7 +1303,69 @@ internal fun PlaybackSettingsPage(
                         onToggle = onRememberVideoBrightnessToggle,
                         explanation = stringResource(R.string.si_brightness)
                     )
+
+                    SettingsDivider()
+
+                    PipButtonsSetting(value = pipButtons, onChange = onPipButtonsChange)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * What flanks play/pause in the picture-in-picture window. Android lays out
+ * three actions on a phone, so the choice is what the two side slots do, not
+ * how many there are. Drawn like the song-transitions control: a row that
+ * says what the window will show, over a connected button group.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun PipButtonsSetting(value: String, onChange: (String) -> Unit) {
+    val seek = value == com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_SEEK
+    SettingsRow(
+        icon = Icons.Rounded.PictureInPictureAlt,
+        title = stringResource(R.string.sp_pip_buttons),
+        subtitle = stringResource(
+            if (seek) R.string.sp_pip_buttons_seek_sub else R.string.sp_pip_buttons_videos_sub
+        ),
+        onClick = {
+            onChange(
+                if (seek) com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_VIDEOS
+                else com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_SEEK
+            )
+        },
+        explanation = stringResource(R.string.si_pip_buttons),
+    )
+    val options = listOf(
+        com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_VIDEOS to
+            stringResource(R.string.sp_pip_buttons_videos),
+        com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_SEEK to
+            stringResource(R.string.sp_pip_buttons_seek)
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+    ) {
+        options.forEachIndexed { index, (key, label) ->
+            ToggleButton(
+                checked = value == key,
+                onCheckedChange = { onChange(key) },
+                modifier = Modifier.weight(1f),
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                },
+                colors = ToggleButtonDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                    checkedContainerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Text(label)
             }
         }
     }
@@ -2178,6 +2243,8 @@ internal fun NotificationsSettingsPage(
     canPostPromoted: Boolean,
     uploadNotificationsEnabled: Boolean,
     onUploadNotificationsToggle: (Boolean) -> Unit,
+    canPostNotifications: Boolean,
+    onOpenAppNotificationSettings: () -> Unit,
     followedChannels: List<com.ivor.ivormusic.data.LocalSubscription>,
     mutedChannelIds: Set<String>,
     onChannelMutedChange: (String, Boolean) -> Unit,
@@ -2202,6 +2269,22 @@ internal fun NotificationsSettingsPage(
                         onToggle = onUploadNotificationsToggle,
                         explanation = stringResource(R.string.si_upload_notifications)
                     )
+
+                    // On but unable to post is worse than off: it looks like a
+                    // quiet week. Uploads wait for the permission rather than
+                    // being skipped, so this row is the whole fix.
+                    if (uploadNotificationsEnabled && !canPostNotifications) {
+                        SettingsDivider()
+                        SettingsRow(
+                            icon = Icons.Rounded.Security,
+                            title = stringResource(R.string.sp_notifications_blocked),
+                            subtitle = stringResource(R.string.sp_notifications_blocked_sub),
+                            onClick = onOpenAppNotificationSettings,
+                            tint = SettingsRowDefaults.destructiveTint,
+                            titleColor = SettingsRowDefaults.destructiveTint,
+                            showChevron = true
+                        )
+                    }
                 }
             }
         }
