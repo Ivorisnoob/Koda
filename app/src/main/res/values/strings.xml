@@ -195,6 +195,10 @@
     <string name="song_options_go_to_artist">Go to %1$s</string>
     <string name="song_options_not_interested">Not interested</string>
     <string name="song_options_not_interested_subtitle">Stop recommending this song</string>
+    <string name="music_failed_skipped">Couldn\'t play %1$s. Skipped to the next song.</string>
+    <string name="music_failed_stopped">Couldn\'t play %1$s.</string>
+    <string name="music_failed_refused">YouTube is refusing playback on this network right now. Try again in a few minutes.</string>
+    <string name="music_failed_untitled">this song</string>
     <string name="song_options_block_artist">Don\'t recommend %1$s</string>
 
     <!-- Playback speed control in the now-playing overflow sheet -->

@@ -137,8 +137,8 @@ class BackupRepository(context: Context) {
          * of the audio itself, not of this device: they cost a download and an
          * analysis pass to reacquire, and they are correct anywhere.
          *
-         * Deliberately absent: `playback_session.json` and
-         * `video_playback_session.json`, which are where you were in a queue
+         * Deliberately absent: `playback_session.json`, `playback_position.json`
+         * and `video_playback_session.json`, which are where you were in a queue
          * and belong to a session; and `downloaded_songs_metadata.json` /
          * `downloaded_videos_metadata.json`, because the media they point at
          * is not in the file and a restored index of downloads that are not

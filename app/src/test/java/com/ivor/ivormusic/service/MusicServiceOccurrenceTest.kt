@@ -68,6 +68,7 @@ class MusicServiceOccurrenceTest {
                 "getPreviousMediaItemIndex" -> previousIndex ?: index - 1
                 "hasNextMediaItem" -> index + 1 < items.size
                 "getRepeatMode" -> repeatMode
+                "getShuffleModeEnabled" -> false
                 "getCurrentPosition" -> position
                 "getDuration" -> 10_000L
                 "getPlaybackState" -> Player.STATE_READY

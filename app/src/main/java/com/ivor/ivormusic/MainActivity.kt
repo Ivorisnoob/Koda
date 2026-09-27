@@ -59,6 +59,7 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
+import kotlinx.coroutines.flow.collectLatest
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 import com.ivor.ivormusic.ui.theme.PaletteStyle
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
@@ -1718,15 +1719,18 @@ fun MusicApp(
             )
         }
 
-        // Undo for "don't recommend", app-wide and last in the stack.
+        // Undo for "don't recommend", and word of a song that could not be
+        // played, app-wide and last in the stack.
         //
         // One host for the whole app rather than one per screen: the action can
         // be taken from the home grid, the subscriptions feed, search, the
         // player's Up Next list and Shorts, and two of those are overlays
         // drawn above the NavHost. A per-screen snackbar would be hidden behind
         // the Shorts overlay exactly when it is needed most, and could show
-        // twice when a screen and an overlay are both alive.
-        NotInterestedUndoHost(
+        // twice when a screen and an overlay are both alive. The playback
+        // messages share it so the two can never draw over each other.
+        AppSnackbarHost(
+            playbackFailures = playerViewModel.playbackFailures,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
@@ -1789,14 +1793,18 @@ fun MusicApp(
 }
 
 /**
- * Shows "Video hidden - Undo" whenever something is dismissed.
+ * Shows "Video hidden - Undo" whenever something is dismissed, and says so
+ * when a song could not be played.
  *
  * Keyed on the action's id rather than the action itself so two identical
  * dismissals in a row still re-show the snackbar instead of the second one
  * silently doing nothing.
  */
 @Composable
-private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
+private fun AppSnackbarHost(
+    playbackFailures: kotlinx.coroutines.flow.Flow<PlayerViewModel.PlaybackFailure>,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val repository = remember(context) {
         com.ivor.ivormusic.data.NotInterestedRepository(context)
@@ -1837,6 +1845,29 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
             // Timed out or was replaced. The hide stands; just stop offering
             // an undo for something the user has moved on from.
             repository.clearLastAction()
+        }
+    }
+
+    // Latest only: a newer failure replaces the one on screen, so a run of
+    // them - no connection, a whole queue refusing - reads as one message
+    // rather than a queue of snackbars to sit through.
+    LaunchedEffect(playbackFailures) {
+        playbackFailures.collectLatest { failure ->
+            val title = failure.title?.takeIf { it.isNotBlank() }
+                ?: context.getString(R.string.music_failed_untitled)
+            val message = when (failure.outcome) {
+                PlayerViewModel.PlaybackFailure.Outcome.SKIPPED ->
+                    context.getString(R.string.music_failed_skipped, title)
+                PlayerViewModel.PlaybackFailure.Outcome.STOPPED ->
+                    context.getString(R.string.music_failed_stopped, title)
+                PlayerViewModel.PlaybackFailure.Outcome.REFUSED ->
+                    context.getString(R.string.music_failed_refused)
+            }
+            snackbarHostState.showSnackbar(
+                message = message,
+                withDismissAction = false,
+                duration = SnackbarDuration.Short,
+            )
         }
     }
 
