@@ -46,12 +46,28 @@ data class ArtistStats(
     val songCount: Int
 )
 
+/**
+ * The listening history: every qualifying play, newest first.
+ *
+ * **Scoped per profile** (September 2026), with the search history and liked
+ * songs. It is what Stats, Recently played, Top artists, Recent albums, Spin
+ * and the signed-out recommendations are built from, so while it was
+ * device-wide every profile was shown, and recommended from, every other
+ * profile's listening. The profile that was active when this shipped kept the
+ * existing file (see [ProfileManager.historyOwnerProfileId]); everyone else
+ * has their own `play_history_<id>.json`.
+ *
+ * The file is resolved on every call rather than captured, because an
+ * instance outlives a profile switch - and resolved once per locked operation,
+ * so a read-modify-write cannot read one profile's file and write another's.
+ */
 class StatsRepository(private val context: Context) {
-    private val historyFile = File(context.filesDir, "play_history.json")
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val TAG = "StatsRepository"
     private val MAX_HISTORY_ENTRIES = 5000
-    private val mutex = Mutex()
+
+    private fun historyFile(): File =
+        historyFileFor(context, ProfileManager.requireActiveProfileId(context))
 
     suspend fun addPlayEvent(song: Song) = withContext(Dispatchers.IO) {
         // Incognito leaves no listening record, which is what makes the stats
@@ -59,7 +75,8 @@ class StatsRepository(private val context: Context) {
         if (IncognitoMode.isEnabled(context)) return@withContext
         mutex.withLock {
             try {
-                val history = loadHistory().toMutableList()
+                val historyFile = historyFile()
+                val history = readHistory(historyFile).toMutableList()
                 
                 // DEBOUNCE: Don't add the same song if it was added less than 10 seconds ago
                 // This prevents duplicate entries from media item resolution loops.
@@ -92,8 +109,12 @@ class StatsRepository(private val context: Context) {
     }
 
     suspend fun loadHistory(): List<PlayHistoryEntry> = withContext(Dispatchers.IO) {
-        if (!historyFile.exists()) return@withContext emptyList()
-        try {
+        readHistory(historyFile())
+    }
+
+    private fun readHistory(historyFile: File): List<PlayHistoryEntry> {
+        if (!historyFile.exists()) return emptyList()
+        return try {
             json.decodeFromString<List<PlayHistoryEntry>>(historyFile.readText())
         } catch (e: Exception) {
             KLog.e(TAG, "Error loading history", e)
@@ -196,10 +217,11 @@ class StatsRepository(private val context: Context) {
     suspend fun removeEntry(songId: String, timestamp: Long): List<PlayHistoryEntry> =
         withContext(Dispatchers.IO) {
             mutex.withLock {
-                val remaining = loadHistory().filterNot {
+                val historyFile = historyFile()
+                val remaining = readHistory(historyFile).filterNot {
                     it.songId == songId && it.timestamp == timestamp
                 }
-                writeHistory(remaining)
+                writeHistory(historyFile, remaining)
                 remaining
             }
         }
@@ -211,8 +233,9 @@ class StatsRepository(private val context: Context) {
     suspend fun removeAllPlaysOf(songId: String): List<PlayHistoryEntry> =
         withContext(Dispatchers.IO) {
             mutex.withLock {
-                val remaining = loadHistory().filterNot { it.songId == songId }
-                writeHistory(remaining)
+                val historyFile = historyFile()
+                val remaining = readHistory(historyFile).filterNot { it.songId == songId }
+                writeHistory(historyFile, remaining)
                 remaining
             }
         }
@@ -225,11 +248,11 @@ class StatsRepository(private val context: Context) {
      * unchanged. Callers hold the pre-removal list; this only writes it.
      */
     suspend fun restoreHistory(entries: List<PlayHistoryEntry>) = withContext(Dispatchers.IO) {
-        mutex.withLock { writeHistory(entries) }
+        mutex.withLock { writeHistory(historyFile(), entries) }
     }
 
     /** Caller must hold [mutex]. */
-    private fun writeHistory(entries: List<PlayHistoryEntry>) {
+    private fun writeHistory(historyFile: File, entries: List<PlayHistoryEntry>) {
         try {
             if (entries.isEmpty()) {
                 if (historyFile.exists()) historyFile.delete()
@@ -242,7 +265,35 @@ class StatsRepository(private val context: Context) {
     }
 
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
-        if (historyFile.exists()) historyFile.delete()
+        mutex.withLock {
+            val historyFile = historyFile()
+            if (historyFile.exists()) historyFile.delete()
+        }
+    }
+
+    companion object {
+        internal const val HISTORY_FILE_BASE = "play_history"
+
+        /**
+         * One lock for every instance. Five classes each build their own
+         * repository over the same file, and a lock per instance let the
+         * player's write and the history screen's removal interleave.
+         */
+        private val mutex = Mutex()
+
+        /** [profileId]'s history file, for backups and a new profile's copy. */
+        internal fun historyFileFor(context: Context, profileId: String): File = File(
+            context.applicationContext.filesDir,
+            ProfileManager.historyScopedFileName(HISTORY_FILE_BASE, "json", profileId, context)
+        )
+
+        /** Give [toProfileId] a copy of [fromProfileId]'s history, if it has none. */
+        internal fun copyProfileData(context: Context, fromProfileId: String, toProfileId: String) {
+            ProfileManager.copyScopedFile(
+                historyFileFor(context, fromProfileId),
+                historyFileFor(context, toProfileId)
+            )
+        }
     }
 }
 

@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -325,12 +327,40 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         initializeController()
         startProgressUpdates()
         startBufferingWatchdog()
+        seedRecentSongs()
+        observeProfileSwitches()
+    }
+
+    private fun seedRecentSongs() {
         viewModelScope.launch {
             val cutoff = System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1000
             runCatching { statsRepository.loadHistory() }.getOrNull()
                 ?.asSequence()
                 ?.takeWhile { it.timestamp >= cutoff }
                 ?.forEach { recentSongIds += it.songId }
+        }
+    }
+
+    /**
+     * Follow a profile switch. Playback carries on - the queue is the
+     * listener's, not the account's - but what this ViewModel holds of the
+     * account does not: the add-to-playlist sheet's YouTube playlists (adding
+     * to the last account's playlist would fail), the heart on the playing
+     * song (likes are per profile), and the recently heard songs a fresh-first
+     * shuffle plays last (listening history is per profile).
+     */
+    private fun observeProfileSwitches() {
+        viewModelScope.launch {
+            com.ivor.ivormusic.data.ProfileManager(context)
+                .activeProfileId
+                .drop(1)
+                .distinctUntilChanged()
+                .collect {
+                    _youtubeAddablePlaylists.value = emptyList()
+                    updateCurrentSongLikedStatus()
+                    recentSongIds.clear()
+                    seedRecentSongs()
+                }
         }
     }
 

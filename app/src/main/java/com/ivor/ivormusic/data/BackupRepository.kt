@@ -82,19 +82,20 @@ class BackupRepository(context: Context) {
          *  - `koda_download_migration` is a one-time "already migrated" flag.
          *    Restoring a true onto an install that never ran the migration
          *    would skip it permanently.
-         *  - `local_subscriptions`, `not_interested` and `video_history` are
-         *    profile-scoped and travel structurally instead (see
-         *    [collectProfileData]).
+         *  - `local_subscriptions`, `not_interested`, `video_history`,
+         *    `ivor_music_liked_songs`, `search_history` and the mute lists in
+         *    `upload_check` are profile-scoped and travel structurally instead
+         *    (see [collectProfileData]). A profile-scoped store left in this
+         *    list restores onto whichever profile owns the un-suffixed keys on
+         *    the receiving device, and nothing compile-fails when one is.
          *  - `koda_incognito` describes a session rather than a preference,
          *    and restoring one onto another device would silently stop it
          *    recording history for reasons its owner never asked for.
          */
         private val PREFERENCE_FILES = listOf(
             "ivor_music_theme_prefs",   // every setting, palette and player style
-            "ivor_music_liked_songs",   // liked song ids
             "saved_playlists",          // playlists kept as references, both modes
             "hidden_playlists",         // playlists the user told Koda not to show
-            "search_history",
             "ivor_track_loudness",      // measured per-track gain
             "koda_icon_styles"          // icon looks the user mixed themselves
         )
@@ -139,14 +140,14 @@ class BackupRepository(context: Context) {
          *
          * Deliberately absent: `playback_session.json`, `playback_position.json`
          * and `video_playback_session.json`, which are where you were in a queue
-         * and belong to a session; and `downloaded_songs_metadata.json` /
+         * and belong to a session; `downloaded_songs_metadata.json` /
          * `downloaded_videos_metadata.json`, because the media they point at
          * is not in the file and a restored index of downloads that are not
-         * there is worse than no index.
+         * there is worse than no index; and `play_history*.json` /
+         * `liked_songs_meta*.json`, which are one file per profile and travel
+         * in [collectProfileData].
          */
         private val BACKED_UP_FILES = listOf(
-            "liked_songs_meta.json",  // liked song metadata, so likes survive signed out
-            "play_history.json",      // listening stats
             "audio_profiles.json"     // measured envelopes, for AutoMix
         )
 
@@ -285,8 +286,18 @@ class BackupRepository(context: Context) {
             Context.MODE_PRIVATE
         )
 
+        val liked = appContext.getSharedPreferences(LikedSongsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+        val searches = appContext.getSharedPreferences(SearchHistoryRepository.PREFS_NAME, Context.MODE_PRIVATE)
+        val uploads = appContext.getSharedPreferences(UploadCheckRepository.PREFS_NAME, Context.MODE_PRIVATE)
+
         fun scoped(base: String, profileId: String) =
             ProfileManager.profileScopedKey(base, profileId, legacyId)
+
+        fun readText(file: File): String? =
+            runCatching { file.takeIf { it.isFile }?.readText() }
+                .onFailure { KLog.w(TAG, "Skipped ${file.name}", it) }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() }
 
         return profiles.associate { profile ->
             profile.id to BackupProfileData(
@@ -305,7 +316,21 @@ class BackupRepository(context: Context) {
                 resumePositions = history.getString(
                     scoped(VideoHistoryRepository.KEY_RESUME_POSITIONS, profile.id),
                     null
-                )
+                ),
+                playHistory = readText(StatsRepository.historyFileFor(appContext, profile.id)),
+                likedSongIds = liked.getStringSet(
+                    LikedSongsRepository.idsKeyFor(appContext, profile.id),
+                    null
+                )?.takeIf { it.isNotEmpty() }?.toSet(),
+                likedSongs = readText(LikedSongsRepository.songsFileFor(appContext, profile.id)),
+                searchHistory = searches.getString(
+                    SearchHistoryRepository.keyFor(appContext, profile.id),
+                    null
+                )?.takeIf { it.isNotBlank() },
+                uploadMutes = uploads.getStringSet(
+                    UploadCheckRepository.mutedKeyFor(appContext, profile.id),
+                    null
+                )?.takeIf { it.isNotEmpty() }?.toSet()
             )
         }.filterValues { !it.isEmpty }
     }
@@ -348,18 +373,16 @@ class BackupRepository(context: Context) {
             runCatching { org.json.JSONArray(it).length() }.getOrDefault(0)
         } ?: 0
 
-        val likedIds = preferences["ivor_music_liked_songs"]?.get("liked_song_ids")
         return mapOf(
             COUNT_PLAYLISTS to files.count { it.path.startsWith("playlists/") },
             COUNT_VIDEO_PLAYLISTS to files.count { it.path.startsWith("video_playlists/") },
             COUNT_SAVED_PLAYLISTS to arrayLength(
                 (preferences["saved_playlists"]?.get("playlists") as? PreferenceValue.Text)?.value
             ),
-            COUNT_LIKED_SONGS to ((likedIds as? PreferenceValue.StringSet)?.value?.size ?: 0),
-            COUNT_PLAY_HISTORY to arrayLength(
-                files.firstOrNull { it.path == "play_history.json" }
-                    ?.bytes?.toString(Charsets.UTF_8)
-            ),
+            // Summed across profiles, like watch history below: both moved
+            // into the per-profile section in format 2.
+            COUNT_LIKED_SONGS to profileData.values.sumOf { it.likedSongIds?.size ?: 0 },
+            COUNT_PLAY_HISTORY to profileData.values.sumOf { arrayLength(it.playHistory) },
             // Summed across profiles now that history is per-profile, the same
             // way subscriptions and the blocklist already were. Reading it out
             // of the raw preference map would silently report zero.
@@ -529,9 +552,11 @@ class BackupRepository(context: Context) {
      *
      * The suffix cannot be carried across from the backup, because the profile
      * migrated from a pre-profiles install keeps the un-suffixed key and which
-     * profile that is differs per device.
+     * profile that is differs per device. The same goes for the stores keyed
+     * by [ProfileManager.historyOwnerProfileId].
      */
     private fun restoreProfileData(snapshot: BackupSnapshot, profileMap: Map<String, String>) {
+        restoreProfileHistory(snapshot, profileMap)
         val legacyId = ProfileManager.legacyProfileId(appContext)
         val subs = appContext.getSharedPreferences("local_subscriptions", Context.MODE_PRIVATE)
         val blocklist = appContext.getSharedPreferences("not_interested", Context.MODE_PRIVATE)
@@ -568,6 +593,82 @@ class BackupRepository(context: Context) {
     }
 
     /**
+     * Listening history, likes and search history for every profile, and the
+     * upload mute lists.
+     *
+     * Replaces, like everything else here: every profile's copy is cleared
+     * first, files included, so nothing the backup did not have survives.
+     *
+     * A version-1 file carries the first three device-wide, from before they
+     * were per-profile. That copy goes to the profile the restore lands on -
+     * the one the backup was being used under - which is the rule the upgrade
+     * itself followed. It carries no mute lists at all, so for one of those the
+     * mutes already here are left alone rather than replaced with nothing.
+     */
+    private fun restoreProfileHistory(snapshot: BackupSnapshot, profileMap: Map<String, String>) {
+        val perProfile = snapshot.manifest.formatVersion >= BackupTransfer.FORMAT_PROFILE_HISTORY
+        val liked = appContext.getSharedPreferences(LikedSongsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+        val searches = appContext.getSharedPreferences(SearchHistoryRepository.PREFS_NAME, Context.MODE_PRIVATE)
+        val uploads = appContext.getSharedPreferences(UploadCheckRepository.PREFS_NAME, Context.MODE_PRIVATE)
+
+        val likedEditor = liked.edit().clear()
+        val searchEditor = searches.edit().clear()
+        val uploadEditor = uploads.edit()
+        if (perProfile) {
+            uploads.all.keys.filter(UploadCheckRepository::isMutedKey).forEach(uploadEditor::remove)
+        }
+        filesDir.listFiles()?.forEach { file ->
+            if (ProfileManager.isHistoryScopedFileName(file.name, StatsRepository.HISTORY_FILE_BASE, "json") ||
+                ProfileManager.isHistoryScopedFileName(file.name, LikedSongsRepository.SONGS_FILE_BASE, "json")
+            ) {
+                file.delete()
+            }
+        }
+
+        fun writeFile(target: File, text: String) {
+            runCatching { target.writeText(text) }
+                .onFailure { KLog.w(TAG, "Could not write ${target.name}", it) }
+        }
+
+        if (perProfile) {
+            for ((backupId, data) in snapshot.profileData) {
+                val localId = profileMap[backupId] ?: continue
+                data.playHistory?.let { writeFile(StatsRepository.historyFileFor(appContext, localId), it) }
+                data.likedSongs?.let { writeFile(LikedSongsRepository.songsFileFor(appContext, localId), it) }
+                data.likedSongIds?.let {
+                    likedEditor.putStringSet(LikedSongsRepository.idsKeyFor(appContext, localId), it)
+                }
+                data.searchHistory?.let {
+                    searchEditor.putString(SearchHistoryRepository.keyFor(appContext, localId), it)
+                }
+                data.uploadMutes?.let {
+                    uploadEditor.putStringSet(UploadCheckRepository.mutedKeyFor(appContext, localId), it)
+                }
+            }
+        } else {
+            val landedOn = ProfileManager.requireActiveProfileId(appContext)
+            fun legacyFile(name: String) =
+                snapshot.files.firstOrNull { it.path == name }?.bytes?.toString(Charsets.UTF_8)
+            legacyFile("play_history.json")?.let {
+                writeFile(StatsRepository.historyFileFor(appContext, landedOn), it)
+            }
+            legacyFile("liked_songs_meta.json")?.let {
+                writeFile(LikedSongsRepository.songsFileFor(appContext, landedOn), it)
+            }
+            (snapshot.preferences[LikedSongsRepository.PREFS_NAME]
+                ?.get(LikedSongsRepository.KEY_LIKED_SONGS) as? PreferenceValue.StringSet)
+                ?.let { likedEditor.putStringSet(LikedSongsRepository.idsKeyFor(appContext, landedOn), it.value) }
+            (snapshot.preferences[SearchHistoryRepository.PREFS_NAME]
+                ?.get(SearchHistoryRepository.KEY_HISTORY) as? PreferenceValue.Text)
+                ?.let { searchEditor.putString(SearchHistoryRepository.keyFor(appContext, landedOn), it.value) }
+        }
+
+        likedEditor.commit()
+        searchEditor.commit()
+        uploadEditor.commit()
+    }
+
+    /**
      * Clears the backed-up directories and writes the file set back.
      *
      * Directories are emptied rather than deleted so a playlist the backup
@@ -585,6 +686,13 @@ class BackupRepository(context: Context) {
             File(filesDir, name).delete()
         }
         for (file in snapshot.files) {
+            // Only what this build backs up. A version-1 file also holds the
+            // listening history and like metadata, which are per-profile now
+            // and restored by restoreProfileHistory; written here as well they
+            // would land on whichever profile owns the un-suffixed names.
+            val allowlisted = file.path in BACKED_UP_FILES ||
+                BACKED_UP_DIRECTORIES.any { file.path.startsWith("$it/") }
+            if (!allowlisted) continue
             val target = File(filesDir, file.path)
             // Second line of defence behind the path check in the reader: a
             // resolved path outside filesDir is never written, whatever the

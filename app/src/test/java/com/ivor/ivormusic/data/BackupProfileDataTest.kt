@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -38,6 +39,11 @@ class BackupProfileDataTest {
             watchHistory = """[{"videoId":"def"}]""",
             removedFromHistory = setOf("ghi"),
             resumePositions = """[{"videoId":"def","positionMs":120000,"durationMs":600000}]""",
+            playHistory = """[{"songId":"s1","title":"T","artist":"A","album":"B","timestamp":1,"duration":2}]""",
+            likedSongIds = setOf("s1", "s2"),
+            likedSongs = """[{"id":"s1","title":"T"}]""",
+            searchHistory = "first|second",
+            uploadMutes = setOf("UC3"),
         )
 
         val restored = roundTrip(
@@ -46,6 +52,32 @@ class BackupProfileDataTest {
 
         assertNotNull(restored)
         assertEquals(data, restored!!.profileData["p1"])
+    }
+
+    @Test
+    fun `each per-profile history store alone makes a profile worth carrying`() {
+        listOf(
+            BackupProfileData(playHistory = "[]"),
+            BackupProfileData(likedSongIds = setOf("s1")),
+            BackupProfileData(likedSongs = "[]"),
+            BackupProfileData(searchHistory = "q"),
+            BackupProfileData(uploadMutes = setOf("UC1")),
+        ).forEach { assertEquals(false, it.isEmpty) }
+    }
+
+    @Test
+    fun `a version-1 backup still reads, and one from a newer format is refused`() {
+        val old = roundTrip(
+            BackupSnapshot(manifest = manifest().copy(formatVersion = 1))
+        )
+        assertNotNull(old)
+        assertEquals(1, old!!.manifest.formatVersion)
+        assertTrue(old.manifest.formatVersion < BackupTransfer.FORMAT_PROFILE_HISTORY)
+
+        val newer = runCatching {
+            roundTrip(BackupSnapshot(manifest = manifest().copy(formatVersion = BackupTransfer.FORMAT_VERSION + 1)))
+        }
+        assertTrue(newer.exceptionOrNull() is UnsupportedBackupException)
     }
 
     @Test

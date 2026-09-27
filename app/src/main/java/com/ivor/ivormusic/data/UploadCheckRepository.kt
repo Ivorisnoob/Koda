@@ -38,11 +38,7 @@ class UploadCheckRepository(context: Context) {
     }
 
     /** Which profile's mute list this is; read fresh, never captured. */
-    private fun mutedKey() = ProfileManager.profileScopedKey(
-        KEY_MUTED_CHANNELS,
-        ProfileManager.activeProfileId(appContext),
-        ProfileManager.legacyProfileId(appContext)
-    )
+    private fun mutedKey() = mutedKeyFor(appContext, ProfileManager.activeProfileId(appContext))
 
     private fun loadMuted(): Set<String> =
         prefs.getStringSet(mutedKey(), emptySet()) ?: emptySet()
@@ -85,9 +81,32 @@ class UploadCheckRepository(context: Context) {
 
     companion object {
         private const val TAG = "UploadCheckRepository"
-        private const val PREFS_NAME = "upload_check"
+        internal const val PREFS_NAME = "upload_check"
         private const val KEY_MUTED_CHANNELS = "upload_muted_channels"
         private const val KEY_LAST_SEEN = "upload_last_seen"
+
+        /** [profileId]'s mute-list key, for backups and a new profile's copy. */
+        internal fun mutedKeyFor(context: Context, profileId: String): String =
+            ProfileManager.profileScopedKey(
+                KEY_MUTED_CHANNELS, profileId, ProfileManager.legacyProfileId(context)
+            )
+
+        /**
+         * Whether [key] is some profile's mute list, as opposed to the
+         * device-wide last-seen marks that share the file. A restore replaces
+         * the former and leaves the latter, which describe what this phone
+         * has already processed.
+         */
+        internal fun isMutedKey(key: String): Boolean =
+            key == KEY_MUTED_CHANNELS || key.startsWith("${KEY_MUTED_CHANNELS}_")
+
+        /** Give [toProfileId] a copy of [fromProfileId]'s mutes, if it has none. */
+        internal fun copyProfileData(context: Context, fromProfileId: String, toProfileId: String) {
+            ProfileManager.copyScopedPreferences(
+                context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+                listOf(KEY_MUTED_CHANNELS), fromProfileId, toProfileId
+            ) { _, profileId -> mutedKeyFor(context, profileId) }
+        }
 
         private val LOCK = Any()
 

@@ -273,6 +273,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val musicBrowse: StateFlow<Map<String, MusicBrowseState>> = _musicBrowse.asStateFlow()
     private var moodRequest: com.ivor.ivormusic.data.MusicShelfItem.Mood? = null
 
+    /**
+     * Bumped on a profile switch. These tabs are fetched signed in and so are
+     * the account's own, and a page requested for one profile that answers
+     * after the switch must not be shown to the next.
+     */
+    private var musicBrowseGeneration = 0
+
     private fun updateBrowse(key: String, block: (MusicBrowseState) -> MusicBrowseState) {
         _musicBrowse.value = _musicBrowse.value + (key to block(_musicBrowse.value[key] ?: MusicBrowseState()))
     }
@@ -290,8 +297,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (themePreferences.isLocalOnlyModeEnabled()) return
         val mood = if (key == BROWSE_MOOD) moodRequest ?: return else null
         updateBrowse(key) { it.copy(loading = true, failed = false) }
+        val generation = musicBrowseGeneration
         viewModelScope.launch {
             val page = youtubeRepository.getMusicShelves(mood?.browseId ?: key, mood?.params)
+            if (generation != musicBrowseGeneration) return@launch
             updateBrowse(key) {
                 if (page == null) it.copy(loading = false, failed = it.shelves.isEmpty())
                 else MusicBrowseState(withoutDismissed(page.shelves), false, false, page.continuation, mood?.title)
@@ -304,8 +313,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val token = current.continuation ?: return
         if (current.loading) return
         updateBrowse(key) { it.copy(loading = true) }
+        val generation = musicBrowseGeneration
         viewModelScope.launch {
             val page = youtubeRepository.getMusicShelvesContinuation(token)
+            if (generation != musicBrowseGeneration) return@launch
             updateBrowse(key) {
                 it.copy(
                     loading = false,
@@ -729,7 +740,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun refreshRecentlyPlayed(limit: Int = 15) {
+    fun refreshRecentlyPlayed(limit: Int = 15): kotlinx.coroutines.Job =
         viewModelScope.launch {
             val history = statsRepository.loadHistory() // newest first
             _playCounts.value = history.groupingBy { it.songId }.eachCount()
@@ -762,7 +773,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
             _recentlyPlayed.value = recents
         }
-    }
 
     // Video Mode State
     /**
@@ -1322,11 +1332,57 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         clearShortsFeed()
         clearSubscriptionMix()
         _historyVideos.value = emptyList()
+        _lastHistoryRemoval.value = null
         forgetHomeLoadTimes()
+
+        // Account-only lists the reloads below do not cover. Each is cleared
+        // and its in-flight fetch cancelled, since a response for the previous
+        // account landing afterwards would put it straight back. Groups are
+        // per profile, so a selection from the last one names nothing here.
+        videoPlaylistsJob?.cancel()
+        _isVideoPlaylistsLoading.value = false
+        _videoPlaylists.value = emptyList()
+        notificationsJob?.cancel()
+        _isNotificationsLoading.value = false
+        _notifications.value = emptyList()
+        _selectedGroupId.value = null
+
+        // Spotlight's YouTube Music tabs are the account's own when signed in.
+        // Whatever was open is fetched again for the new profile.
+        val openBrowseTabs = _musicBrowse.value.keys.toList()
+        musicBrowseGeneration++
+        _musicBrowse.value = emptyMap()
+        openBrowseTabs.forEach { loadMusicBrowse(it, force = true) }
+
+        // Listening history, likes and searches are per profile, and so is
+        // everything built from them: the recents rail, top artists, recent
+        // albums, Most played, stats, Ready offline and the discovery shelf.
+        _searchHistory.value = searchHistoryRepository.getHistory()
+        val hadPlayHistory = playHistoryProfileId != null
+        playHistoryProfileId = null
+        _playHistory.value = emptyList()
+        if (hadPlayHistory) loadPlayHistory()
+        refreshStats()
+        refreshReadyOffline()
+        val hadDiscovery = _discoverySongs.value.isNotEmpty() ||
+            !_discoveryCollections.value.isEmpty()
+        discoveryJob?.cancel()
+        _isDiscoveryLoading.value = false
+        _discoverySongs.value = emptyList()
+        _discoveryCollections.value = com.ivor.ivormusic.data.RecommendationEngine.DiscoveryCollections()
+        viewModelScope.launch {
+            // Discovery excludes what the recents rail holds, so the rail is
+            // rebuilt for the new profile before the shelf asks.
+            refreshRecentlyPlayed().join()
+            if (hadDiscovery) loadDiscovery(force = true)
+        }
 
         checkYouTubeConnection(force = true)
         loadSubscriptions(force = true)
         loadSubscriptionFeed(force = true)
+        // The video Library only asks when its sign-in state changes, which an
+        // account-to-account switch does not do.
+        if (videoPlaylistsRequested && sessionManager.isLoggedIn()) loadVideoPlaylists(force = true)
 
         // Refresh whichever home the user is actually on. Same split the
         // sign-in handler uses, so a switch and a fresh login behave alike.
@@ -2041,11 +2097,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         loadSubscriptionFeed(force = true)
     }
 
+    private var videoPlaylistsJob: kotlinx.coroutines.Job? = null
+
+    /** Whether anything has asked for [videoPlaylists] yet, so a profile switch knows to ask again. */
+    private var videoPlaylistsRequested = false
+
     /** Load the user's YouTube playlists for the video Library tab. Requires login. */
     fun loadVideoPlaylists(force: Boolean = false) {
+        videoPlaylistsRequested = true
         if (_isVideoPlaylistsLoading.value) return
         if (_videoPlaylists.value.isNotEmpty() && !force) return
-        viewModelScope.launch {
+        videoPlaylistsJob = viewModelScope.launch {
             _isVideoPlaylistsLoading.value = true
             try {
                 _videoPlaylists.value = youtubeRepository.getVideoPlaylists()
@@ -2389,11 +2451,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var notificationsJob: kotlinx.coroutines.Job? = null
+
     /** Load the notification inbox. Requires login. */
     fun loadNotifications(force: Boolean = false) {
         if (_isNotificationsLoading.value) return
         if (_notifications.value.isNotEmpty() && !force) return
-        viewModelScope.launch {
+        notificationsJob = viewModelScope.launch {
             _isNotificationsLoading.value = true
             try {
                 _notifications.value = youtubeRepository.getNotifications()
@@ -3865,9 +3929,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPlayHistoryLoading = MutableStateFlow(false)
     val isPlayHistoryLoading: StateFlow<Boolean> = _isPlayHistoryLoading.asStateFlow()
 
+    /**
+     * The profile [_playHistory] was read for. Undo writes a whole list back,
+     * so a list read for one profile must never be restored into another's.
+     */
+    private var playHistoryProfileId: String? = null
+
+    private fun activeProfileIdNow(): String =
+        com.ivor.ivormusic.data.ProfileManager.requireActiveProfileId(getApplication())
+
     fun loadPlayHistory() {
         viewModelScope.launch {
             _isPlayHistoryLoading.value = true
+            playHistoryProfileId = activeProfileIdNow()
             _playHistory.value = statsRepository.loadHistory()
             _isPlayHistoryLoading.value = false
         }
@@ -3904,6 +3978,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restorePlayHistory(entries: List<com.ivor.ivormusic.data.PlayHistoryEntry>) {
+        if (playHistoryProfileId != activeProfileIdNow()) return
         viewModelScope.launch {
             statsRepository.restoreHistory(entries)
             _playHistory.value = entries

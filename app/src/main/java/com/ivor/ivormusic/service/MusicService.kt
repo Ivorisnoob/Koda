@@ -602,11 +602,19 @@ class MusicService : MediaLibraryService() {
                             session.connectedControllers.forEach { controller ->
                                 session.notifyChildrenChanged(controller, "RECOMMENDED", 0, null)
                                 session.notifyChildrenChanged(controller, "PLAYLISTS", 0, null)
+                                // Likes and listening history are per profile too.
+                                session.notifyChildrenChanged(controller, "LIKED", 0, null)
+                                session.notifyChildrenChanged(controller, "RECENT", 0, null)
                             }
                         }
                     }.onFailure { KLog.w(TAG, "notifyChildrenChanged after profile switch failed", it) }
 
                     resolveScope.launch { youtubeRepository.prefetchVisitorData() }
+
+                    // Listening history is per profile, and a fresh-first
+                    // shuffle plays last what this profile heard recently.
+                    recentSongIds.clear()
+                    seedRecentSongs()
                 }
         }
     }
