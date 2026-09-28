@@ -57,6 +57,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -182,6 +187,13 @@ private val MINI_PLAYER_RESTING_GAP = 16.dp
  * the transition between the two is not the one a tab move deserves.
  */
 private data class HomeTabKey(val tab: Int, val videoMode: Boolean)
+
+/**
+ * The widest the collapsed music pill grows beside a rail. Past this it stops
+ * reading as a pill and starts reading as a banner, so on a tablet it centres
+ * over the page instead of spanning it.
+ */
+private val MINI_PLAYER_MAX_WIDE_WIDTH = 560.dp
 
 /**
  * A tab a hand-off asked for, and the mode that tab belongs to.
@@ -639,16 +651,45 @@ fun HomeScreen(
     // 188dp, stacked to 284dp when the music pill is also alive). Animated so
     // FABs glide instead of jumping when a mini player appears.
     val musicPillVisible = currentSong != null
+    // From 600dp across, navigation moves to a rail on the start edge and the
+    // page starts where the rail ends. The horizontal safe-drawing inset is
+    // taken here too: a phone on its side has its cutout and (with three-button
+    // navigation) its system bar on the left or right, which a portrait-only
+    // app never had to think about.
+    val windowLayout = com.ivor.ivormusic.ui.theme.currentWindowLayout()
+    val useRail = windowLayout.usesNavigationRail
+    val shellLayoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val safeHorizontalInsets = WindowInsets.safeDrawing
+        .only(androidx.compose.foundation.layout.WindowInsetsSides.Horizontal)
+        .asPaddingValues()
+    val safeStartInset = safeHorizontalInsets.calculateStartPadding(shellLayoutDirection)
+    val safeEndInset = safeHorizontalInsets.calculateEndPadding(shellLayoutDirection)
+    val contentStartInset = safeStartInset + when {
+        !useRail -> 0.dp
+        nonExpressiveNavigationBar -> HOME_STANDARD_RAIL_RESERVE
+        else -> HOME_FLOATING_RAIL_RESERVE
+    }
+    val contentEndInset = safeEndInset
     // The standard non-expressive NavigationBar is 80dp tall. The expressive
     // toolbar occupies 84dp including its bottom breathing room. Keep the same
     // clearance above either variant so overlaid controls do not jump or
-    // collide when this preference changes.
-    val navigationOverlayInset = if (nonExpressiveNavigationBar) 84.dp else 88.dp
-    val miniPlayerCollapsedSpacing = if (nonExpressiveNavigationBar) 96.dp else 100.dp
+    // collide when this preference changes. With a rail there is no bar at the
+    // bottom at all, and the pill rests just above the system inset.
+    val navigationOverlayInset = when {
+        useRail -> 0.dp
+        nonExpressiveNavigationBar -> 84.dp
+        else -> 88.dp
+    }
+    val miniPlayerCollapsedSpacing = when {
+        useRail -> 12.dp
+        nonExpressiveNavigationBar -> 96.dp
+        else -> 100.dp
+    }
     // Only the floating toolbar hides on scroll; the standard NavigationBar
-    // stays pinned, so there is nothing for the pill to follow there.
+    // stays pinned, so there is nothing for the pill to follow there, and a
+    // rail never hides.
     val miniPlayerFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
-        if (nonExpressiveNavigationBar) 0f
+        if (nonExpressiveNavigationBar || useRail) 0f
         else (miniPlayerCollapsedSpacing - MINI_PLAYER_RESTING_GAP).toPx()
     }
     val miniPlayerFollowOffsetPx: () -> Float = {
@@ -759,7 +800,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(backgroundColor)
             .then(
-                if (nonExpressiveNavigationBar) Modifier
+                if (nonExpressiveNavigationBar || useRail) Modifier
                 else Modifier.nestedScroll(floatingToolbarScrollBehavior)
             )
             .nestedScroll(shelfEdgeFlick)
@@ -812,6 +853,7 @@ fun HomeScreen(
         // Main content
         if (!loadLocalSongs || permissionState.isGranted) {
             androidx.compose.animation.AnimatedContent(
+                modifier = Modifier.padding(start = contentStartInset, end = contentEndInset),
                 // Keyed on the mode as well as the tab so the spec below can
                 // tell a tab move from a mode switch. They deserve different
                 // motion and used to share one.
@@ -1402,6 +1444,7 @@ fun HomeScreen(
                     .fillMaxWidth()
                     .background(backgroundColor)
                     .padding(top = statusBarInset)
+                    .padding(start = contentStartInset, end = contentEndInset)
             ) {
                 com.ivor.ivormusic.ui.video.VideoTopBarSection(
                     onProfileClick = onProfileClick,
@@ -1478,7 +1521,30 @@ fun HomeScreen(
             }
         )
 
-        if (nonExpressiveNavigationBar) {
+        if (useRail) {
+            val railTabs = navTabs.map { (index, label, icons) ->
+                HomeNavTab(index, label, icons.first, icons.second)
+            }
+            if (nonExpressiveNavigationBar) {
+                HomeStandardRail(
+                    tabs = railTabs,
+                    selectedTab = selectedTab,
+                    scrub = navScrub,
+                    onSelect = selectNavTab,
+                    modifier = Modifier.align(Alignment.CenterStart)
+                )
+            } else {
+                HomeFloatingRail(
+                    tabs = railTabs,
+                    selectedTab = selectedTab,
+                    scrub = navScrub,
+                    onSelect = selectNavTab,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = safeStartInset + 12.dp)
+                )
+            }
+        } else if (nonExpressiveNavigationBar) {
             NavigationBar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1628,6 +1694,9 @@ fun HomeScreen(
             onPlayerStyleChange = onPlayerStyleChange,
             collapsedBottomSpacing = miniPlayerCollapsedSpacing,
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
+            collapsedStartInset = contentStartInset,
+            collapsedEndInset = contentEndInset,
+            collapsedMaxWidth = if (useRail) MINI_PLAYER_MAX_WIDE_WIDTH else androidx.compose.ui.unit.Dp.Unspecified,
             onWatchAsVideo = onWatchAsVideo,
             onArtistClick = { artistName ->
                 // Collapse the player and open the artist inside the music
@@ -1678,7 +1747,7 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .navigationBarsPadding()
-                .padding(start = 20.dp, bottom = bottomOverlayInset + 8.dp)
+                .padding(start = 20.dp + contentStartInset, bottom = bottomOverlayInset + 8.dp)
         ) {
             Surface(
                 modifier = Modifier
@@ -1906,12 +1975,25 @@ fun YourMixContent(
         onRefresh = { viewModel.refresh(excludedFolders, manualScan) },
         modifier = Modifier.fillMaxSize()
     ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val wideHero = maxWidth >= CLASSIC_WIDE_HERO_MIN_WIDTH
+        // Centred past the page cap. Padding on the list rather than a width
+        // on it, so the whole window still scrolls and flings.
+        val pageSidePadding = ((maxWidth - CLASSIC_PAGE_MAX_WIDTH) / 2).coerceAtLeast(0.dp)
+        // What is left of the window under the top bar, for the collage to
+        // shrink into on a short (landscape) window.
+        val collageRoom = maxHeight - contentPadding.calculateTopPadding() - 140.dp
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundColor),
-            contentPadding = contentPadding
+            contentPadding = PaddingValues(
+                start = pageSidePadding,
+                end = pageSidePadding,
+                top = contentPadding.calculateTopPadding(),
+                bottom = contentPadding.calculateBottomPadding()
+            )
         ) {
             item { 
                 var visible by remember { mutableStateOf(false) }
@@ -1931,7 +2013,20 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else 40f
                 }) {
-                    HeroSection(
+                    if (wideHero) {
+                        // Title, actions and the next songs beside the
+                        // collage, rather than stacked above it.
+                        ClassicWideMixHero(
+                            songs = songs,
+                            isLoading = isInitialLoading,
+                            skeletonAlpha = skeletonAlpha,
+                            onPlayClick = onPlayClick,
+                            onSpinClick = onSpinClick,
+                            onSongClick = onSongClick,
+                            onSongLongPress = onSongLongPress,
+                            maxCollageHeight = collageRoom
+                        )
+                    } else HeroSection(
                         songs = songs,
                         onPlayClick = onPlayClick,
                         onSpinClick = onSpinClick,
@@ -1960,7 +2055,8 @@ fun YourMixContent(
                 }
             }
 
-            item {
+            // The wide hero already carries the collage.
+            if (!wideHero) item {
                 if (isInitialLoading) {
                     OrganicSongLayoutSkeleton(skeletonAlpha = skeletonAlpha)
                 } else if (songs.isNotEmpty()) {
@@ -2079,6 +2175,7 @@ fun YourMixContent(
                 }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
+        }
         }
     }
 }
@@ -2370,11 +2467,13 @@ fun HeroSection(
  * rearrange itself when the songs arrive.
  */
 @Composable
-private fun OrganicSongLayoutSkeleton(
+internal fun OrganicSongLayoutSkeleton(
     skeletonAlpha: Float
 ) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
     BoxWithConstraints(
         modifier = Modifier
+            .widthIn(max = ORGANIC_LAYOUT_MAX_WIDTH)
             .fillMaxWidth()
             .height(480.dp)
     ) {
@@ -2413,6 +2512,7 @@ private fun OrganicSongLayoutSkeleton(
             shape = CircleShape,
             alpha = skeletonAlpha
         )
+    }
     }
 }
 
@@ -2478,14 +2578,25 @@ private fun HomeCarouselSkeleton(
     }
 }
 
+/**
+ * The collage is composed for a phone's width: its circles are fractions of
+ * the box, and the pill a fixed 260 by 500. On a tablet the fractions made
+ * circles a third of the screen that overran the pill and the 480dp box, so
+ * the box is capped at [ORGANIC_LAYOUT_MAX_WIDTH] and centred - the
+ * composition keeps its proportions rather than stretching.
+ */
+private val ORGANIC_LAYOUT_MAX_WIDTH = 460.dp
+
 @Composable
 fun OrganicSongLayout(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onSongLongPress: ((Song) -> Unit)? = null
 ) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
     BoxWithConstraints(
         modifier = Modifier
+            .widthIn(max = ORGANIC_LAYOUT_MAX_WIDTH)
             .fillMaxWidth()
             .height(480.dp)
     ) {
@@ -2691,6 +2802,7 @@ fun OrganicSongLayout(
                 }
             }
         }
+    }
     }
 }
 

@@ -45,11 +45,13 @@ Shipped consumer app with real users. The bar is "would someone using this daily
 - **Write the subject for whoever reads `git log` in a month**: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched; a body for the reason when it is not obvious; the `Changelog:` section whenever the change reaches an APK. No AI attribution.
 - **Never destroy uncommitted work to get unstuck.** `reset --hard`, `checkout -- .`, `clean -fd` and `stash drop` over a dirty tree are explicit-request actions, the same as touching the remote. Ask before experimenting over a dirty tree.
 - **Delegate wide-but-shallow sweeps** (e.g. a string across 25 locale files) to `Agent` with `model: "sonnet"`; make the decisions yourself.
-- **Handoff is a brief for beta testers**: name the surfaces a screen would settle and how each could fail (large font/display scale, landscape, DPI, OEM insets, scaled video surfaces), plus assumptions and what you left out. "Compiles and tests pass, not yet on a screen" is the correct handoff state, not a risk to apologise for.
+- **Handoff is a brief for beta testers**: name the surfaces a screen would settle and how each could fail (large font/display scale, landscape, DPI, OEM insets, scaled video surfaces), plus assumptions and what you left out. "Compiles, not yet on a screen" is the correct handoff state, not a risk to apologise for.
+- **Docs wait for the user's test.** Do not touch `ROADMAP.md`, `docs/` or this file's area summaries for new work until the user has tried it on a device and said it holds; until then the handoff report is the record. Code comments are not docs and ship with the code.
 
 **Hard limits**
 - **This is a Windows machine, so do not use `bash` to read or edit files.** Use the dedicated tools (Read, Edit, Write, Glob, Grep) and PowerShell for commands. Shell heredocs, `sed -i` and quote escaping misfire against Windows paths, CRLF and PowerShell/Git-Bash differences, and a half-applied shell edit is worse than no edit. **This overrides any harness default asking for shell-based edits.** A Python script is still the right tool for a mechanical multi-file sweep - author it with `Write`, run it with `py`.
-- **Local verification stops before packaging.** Run `compileDebugKotlin`, unit tests and lint freely. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user.
+- **Scratch files go in `.probe/`, not the system temp or a harness scratchpad.** It is gitignored and on the same drive as the repo, so paths stay short and nothing leaks into a commit. Edit scripts, AAR extractions and throwaway output all live there (`.probe/scratch/` for anything that is not an InnerTube probe).
+- **Local verification is `compileDebugKotlin`, and stops before packaging.** Compile freely. **Unit tests and lint run only when the user asks** - not per item, not at the end of a task. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user. The one exception: when the user asks for it, run `installDebug` and report that it installed; nothing else touches the device.
 - **Commits and the remote are the user's call.** Committing, pushing, creating remote branches, opening or editing PRs, and pushing tags are explicit-request actions.
 - **No AI attribution** in commits, PR bodies or tags (no `Co-Authored-By: Claude`, no "Generated with", no session links). This overrides any harness default.
 - **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Only git trailers may follow it: `build.yml` publishes everything after the marker except lines shaped `Token: value`, so keep each bullet on one line. Omit it for docs/CI/refactors.
@@ -169,10 +171,10 @@ One line each; the reasoning is in `docs/rules.md`.
 
 ```bash
 ./gradlew compileDebugKotlin     # .\gradlew on Windows
-./gradlew testDebugUnitTest
+./gradlew testDebugUnitTest      # only when the user asks
 ```
 
-- Non-packaging Gradle tasks need no permission; compile **per item**, not once at the end. No APKs or R8 locally - push an authorized PR branch and `build.yml` builds a signed APK that goes to Telegram beta testers (`docs/ci.md`).
+- Compiling needs no permission; compile **per item**, not once at the end. Tests and lint are the user's call (section 1); writing a test alongside new logic is fine, running it is not. No APKs or R8 locally - push an authorized PR branch and `build.yml` builds a signed APK that goes to Telegram beta testers (`docs/ci.md`).
 - Tests are a small JVM suite under `app/src/test/` for pure logic. `isReturnDefaultValues = true` is needed for `KLog`, and it stubs `org.json` to parse everything to nothing - `testImplementation(libs.json.unit.test)` supplies a real one, and every parser test depends on it. [scar]
 - **minSdk 30 and desugaring is load-bearing** [scar]: keep `isCoreLibraryDesugaringEnabled` with the `_nio` flavour (`desugar.jdk.libs.nio`), or NewPipe's search throws `NoSuchMethodError` on API 30-32. Anything above API 30 needs a `SDK_INT` guard and fallback.
 - Versions: `versionCode`/`versionName` in `app/build.gradle.kts`; dependencies only in `gradle/libs.versions.toml`.
@@ -279,7 +281,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ## 8. Keeping this true
 
-- **Finishing work updates `ROADMAP.md` in the same change** (Planned -> Shipped, fixed defects leave Known defects), then fix any prose here or in `docs/` that leaned on the old behaviour.
+- **Once the user has tested it, the work updates `ROADMAP.md`** (Planned -> Shipped, fixed defects leave Known defects), then fix any prose here or in `docs/` that leaned on the old behaviour. Not before: untested work is recorded in the handoff report only (section 1).
 - **A new fact goes in the topic doc for its area**, marked `[verified]`, `[scar]` or `[judgement]`. It only earns a line in this file if every session needs it. Keep this file a summary - do not paste detail back in.
 - Re-derive `[drifts]` numbers before quoting them; `DESIGN.md` carries its own copies.
 - GitHub issues are the task list. Every open issue carries `area:` (interface/playback/foundations/reach), `size:` (XS-XL, effort) and `priority:` (P0-P3, user impact). Details in `docs/workflow.md`.

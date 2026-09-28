@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.MoneyOff
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
@@ -286,6 +287,16 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "navigation", "navbar", "nav bar", "short navigation bar", "compact",
             "classic", "floating", "expressive"
+        )
+    ) { onOpenPage(SettingsPage.APPEARANCE) }
+    entry(
+        "rotate_with_device",
+        stringResource(R.string.sp_rotate_with_device),
+        stringResource(R.string.settings_appearance),
+        Icons.Rounded.ScreenRotation,
+        listOf(
+            "rotate", "rotation", "landscape", "portrait", "orientation",
+            "sideways", "turn", "auto rotate", "lock"
         )
     ) { onOpenPage(SettingsPage.APPEARANCE) }
 

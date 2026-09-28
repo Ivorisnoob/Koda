@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.components
 
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,15 +49,16 @@ class NavBarScrubState {
     }
 
     /**
-     * The item whose centre is nearest [x], in the bar's coordinates. Nearest
-     * rather than contains, so the gaps between pills and the bar's own end
-     * padding still resolve to something.
+     * The item whose centre is nearest [position] along the bar's axis, in the
+     * bar's coordinates. Nearest rather than contains, so the gaps between
+     * pills and the bar's own end padding still resolve to something.
      */
-    internal fun tabAt(x: Float): Int? {
+    internal fun tabAt(position: Float, vertical: Boolean = false): Int? {
         val bar = bar?.takeIf { it.isAttached } ?: return null
         return tabIds.mapNotNull { id ->
             val item = items[id]?.takeIf { it.isAttached } ?: return@mapNotNull null
-            id to abs(bar.localBoundingBoxOf(item).center.x - x)
+            val centre = bar.localBoundingBoxOf(item).center
+            id to abs((if (vertical) centre.y else centre.x) - position)
         }.minByOrNull { it.second }?.first
     }
 
@@ -84,9 +86,32 @@ fun rememberNavBarScrubState(
 fun Modifier.navBarScrubItem(state: NavBarScrubState, tabId: Int): Modifier =
     onGloballyPositioned { state.registerItem(tabId, it) }
 
-fun Modifier.navBarScrub(state: NavBarScrubState): Modifier = this
+/**
+ * [vertical] is for a navigation rail: the same scrub, along the other axis.
+ */
+fun Modifier.navBarScrub(state: NavBarScrubState, vertical: Boolean = false): Modifier = this
     .onGloballyPositioned { state.registerBar(it) }
-    .pointerInput(state) {
+    .pointerInput(state, vertical) {
+        if (vertical) {
+            detectVerticalDragGestures(
+                onDragStart = { offset -> state.hover(state.tabAt(offset.y, vertical = true)) },
+                onDragEnd = {
+                    val target = state.hoveredTab
+                    state.hover(null)
+                    if (target != null) state.onCommit(target)
+                },
+                onDragCancel = { state.hover(null) },
+                onVerticalDrag = { change, _ ->
+                    change.consume()
+                    val target = state.tabAt(change.position.y, vertical = true)
+                    if (target != null && target != state.hoveredTab) {
+                        state.hover(target)
+                        state.onHoverChange()
+                    }
+                },
+            )
+            return@pointerInput
+        }
         detectHorizontalDragGestures(
             onDragStart = { offset -> state.hover(state.tabAt(offset.x)) },
             onDragEnd = {

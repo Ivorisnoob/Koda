@@ -117,6 +117,7 @@
     <string name="home_offline_subtitle">You\'re offline. These play without a connection.</string>
     <string name="your_mix_line1">Your</string>
     <string name="your_mix_line2">Mix</string>
+    <string name="home_mix_up_next">Up next in your mix</string>
     <string name="update_badge_version">v%1$s</string>
     <string name="artists_joined">%1$s, %2$s</string>
     <string name="cd_profile">Profile</string>
@@ -322,6 +323,9 @@
     <string name="sp_non_expressive_nav">Non-expressive navigation bar</string>
     <string name="sp_spotlight_home">Spotlight Home</string>
     <string name="sp_display_size">Display size</string>
+    <string name="sp_rotate_with_device">Rotate with device</string>
+    <string name="sp_rotate_with_device_on">Turns to landscape when you do</string>
+    <string name="sp_rotate_with_device_off">Stays upright</string>
 
     <!-- SponsorBlock -->
     <string name="sb_title">SponsorBlock</string>
@@ -736,6 +740,8 @@
     <string name="cd_playing">Playing</string>
     <string name="cd_remove_from_queue">Remove from queue</string>
     <string name="queue_save_as_playlist">Save queue as playlist</string>
+    <string name="player_collapse">Collapse player</string>
+    <string name="player_more_songs">More songs</string>
     <string name="queue_save_default_name">Queue · %1$s</string>
     <plurals name="queue_saved_to_playlist">
         <item quantity="one">Saved %1$d song to %2$s</item>
@@ -1265,6 +1271,8 @@
     <string name="lib_change_cover">Change cover</string>
     <string name="lib_reset_cover">Reset cover</string>
     <string name="lib_change_cover_art">Change cover art</string>
+    <string name="lib_detail_placeholder_title">Pick something to open</string>
+    <string name="lib_detail_placeholder_body">Playlists, artists and albums open here, beside your library.</string>
     <string name="lib_drag_hint">Drag a handle to reorder</string>
     <string name="lib_tap_remove_hint">Tap to remove tracks</string>
     <string name="label_album">Album</string>
@@ -1421,6 +1429,7 @@
     <string name="source_youtube_music">YouTube Music</string>
     <string name="source_local_library">Local Library</string>
     <string name="search_no_results">No results found</string>
+    <string name="search_top_result">Top result</string>
     <string name="search_no_results_hint">Try different keywords or filters</string>
     <string name="thats_everything">That\'s everything</string>
     <string name="cd_clear">Clear</string>
@@ -1565,6 +1574,7 @@
     <string name="si_ambient">Tints the app background with soft colors pulled from the album art of whatever is playing.</string>
     <string name="si_app_icon">Pick a different look for Koda\'s icon on your home screen from a set of shape and color presets.</string>
     <string name="si_display_size">Scales the whole interface up or down without touching your system font size. You preview the change before it applies.</string>
+    <string name="si_rotate_with_device">Lets Koda turn sideways with your phone, with a layout made for landscape: navigation on the side and a player that puts the artwork beside its controls. Your system rotation lock still applies. Tablets and unfolded foldables always rotate.</string>
     <string name="si_spotlight">Two Home designs showing the same content. Classic leads with a large hero and carousels; Spotlight is a denser grid of shortcuts, quick picks and artwork shelves.</string>
     <string name="si_nav_bar">The floating toolbar hides while you scroll down and returns when you scroll up. The standard bar is a fixed Material 3 navigation bar with labels.</string>
     <string name="si_haptics">How strongly Koda vibrates in response to touch: drags, toggles, skips and taps. Rich uses the full vocabulary; Subtle keeps only the moments that matter.</string>

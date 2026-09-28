@@ -423,7 +423,12 @@ internal fun SettingsHubRow(
     tint: Color = MaterialTheme.colorScheme.primary,
     iconShape: Shape = RoundedCornerShape(14.dp),
     /** Long press explains what the category holds without opening it. */
-    explanation: String? = null
+    explanation: String? = null,
+    /**
+     * The category open in the detail pane beside the hub, on a window wide
+     * enough for both. Never true on a phone, where the page covers the hub.
+     */
+    selected: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -431,6 +436,11 @@ internal fun SettingsHubRow(
         targetValue = if (isPressed) 0.97f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "hubScale"
+    )
+    val selectedFill by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "hubSelected"
     )
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val infoSink = LocalSettingsInfoSink.current
@@ -440,6 +450,7 @@ internal fun SettingsHubRow(
             .fillMaxWidth()
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
+            .background(selectedFill)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -461,9 +472,10 @@ internal fun SettingsHubRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                else MaterialTheme.colorScheme.onBackground,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
@@ -483,6 +495,14 @@ internal fun SettingsHubRow(
         )
     }
 }
+
+/**
+ * False while a top-level page is drawn in the detail pane beside the hub:
+ * there is nothing to go back to when the list is on screen next to it, and an
+ * arrow that only re-selects the first category reads as broken. Nested pages
+ * (Display size, App icon) keep theirs, which returns to Appearance.
+ */
+internal val LocalSettingsDetailShowsBack = androidx.compose.runtime.compositionLocalOf { true }
 
 /**
  * Chrome shared by every settings detail page: the back-to-hub bar plus the
@@ -524,7 +544,7 @@ internal fun SettingsDetailScaffold(
                 )
             },
             navigationIcon = {
-                IconButton(
+                if (LocalSettingsDetailShowsBack.current) IconButton(
                     onClick = onBack,
                     shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.iconButtonColors(

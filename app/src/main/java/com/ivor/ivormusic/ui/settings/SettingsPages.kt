@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.Public
@@ -261,6 +262,8 @@ internal fun AppearanceSettingsPage(
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
     uiScale: Float,
     onNavigateToDisplaySize: () -> Unit,
+    rotateWithDevice: Boolean,
+    onRotateWithDeviceToggle: (Boolean) -> Unit,
     appIcon: String = ThemePreferences.DEFAULT_APP_ICON,
     onNavigateToAppIcon: () -> Unit = {},
     onBack: () -> Unit
@@ -336,6 +339,23 @@ internal fun AppearanceSettingsPage(
                         explanation = stringResource(R.string.si_display_size)
                     )
                     SettingsDivider()
+                    // Phones only. A large screen always follows the device
+                    // (AppOrientation), so the switch would do nothing there.
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    if (!com.ivor.ivormusic.ui.theme.AppOrientation.isLargeScreen(context)) {
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.ScreenRotation,
+                            title = stringResource(R.string.sp_rotate_with_device),
+                            subtitle = stringResource(
+                                if (rotateWithDevice) R.string.sp_rotate_with_device_on
+                                else R.string.sp_rotate_with_device_off
+                            ),
+                            enabled = rotateWithDevice,
+                            onToggle = onRotateWithDeviceToggle,
+                            explanation = stringResource(R.string.si_rotate_with_device)
+                        )
+                        SettingsDivider()
+                    }
                     SettingsToggleRow(
                         icon = Icons.Rounded.Palette,
                         title = stringResource(R.string.sp_ambient_background),

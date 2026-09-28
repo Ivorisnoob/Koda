@@ -69,6 +69,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val sponsorBlockMinDurationMs: StateFlow<Long> = themePreferences.sponsorBlockMinDurationMs
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
         themePreferences.nonExpressiveNavigationBar
+    val rotateWithDevice: StateFlow<Boolean> = themePreferences.rotateWithDevice
     val subscriptionSource: StateFlow<String> = themePreferences.subscriptionSource
     val subscribeTarget: StateFlow<String> = themePreferences.subscribeTarget
     val fastSubscriptionFeed: StateFlow<Boolean> = themePreferences.fastSubscriptionFeed
@@ -277,6 +278,8 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setSponsorBlockMinDurationMs(durationMs: Long) {
         themePreferences.setSponsorBlockMinDurationMs(durationMs)
     }
+
+    fun setRotateWithDevice(enabled: Boolean) = themePreferences.setRotateWithDevice(enabled)
 
     fun setNonExpressiveNavigationBar(enabled: Boolean) {
         themePreferences.setNonExpressiveNavigationBar(enabled)

@@ -452,10 +452,12 @@ fun VideoPlayerContent(
         }
     }
     
-    // Fullscreen / Immersive. The app is portrait-locked (MainActivity), so
-    // fullscreen temporarily requests sensor landscape and every exit path
-    // restores PORTRAIT — never UNSPECIFIED, which used to leave the whole
-    // app free-rotating in broken half-landscape states.
+    // Fullscreen / Immersive. The watch page holds portrait while it is open
+    // and fullscreen temporarily requests sensor landscape. Leaving the page
+    // hands back to the app's own policy (AppOrientation) - never
+    // UNSPECIFIED, which used to leave the app free-rotating in broken
+    // half-landscape states, and no longer a hardcoded PORTRAIT, which would
+    // re-lock a tablet or a phone set to rotate with the device.
     DisposableEffect(isFullscreen, fullscreenIsPortrait) {
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
@@ -482,7 +484,7 @@ fun VideoPlayerContent(
         }
 
         onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            activity?.let { com.ivor.ivormusic.ui.theme.AppOrientation.apply(it) }
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
             // The app is edge-to-edge (enableEdgeToEdge in MainActivity), so
             // keep decorFits false — restoring true here used to break the

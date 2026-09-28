@@ -210,6 +210,8 @@ class ThemePreferences(context: Context) {
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
         _nonExpressiveNavigationBar.asStateFlow()
 
+    private val _rotateWithDevice = MutableStateFlow(getRotateWithDevicePreference())
+    val rotateWithDevice: StateFlow<Boolean> = _rotateWithDevice.asStateFlow()
 
     private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
     val subscriptionSource: StateFlow<String> = _subscriptionSource.asStateFlow()
@@ -414,6 +416,7 @@ class ThemePreferences(context: Context) {
                 _sponsorBlockMinDurationMs.value = getSponsorBlockMinDurationPreference()
             KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
                 _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
+            KEY_ROTATE_WITH_DEVICE -> _rotateWithDevice.value = getRotateWithDevicePreference()
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
@@ -755,6 +758,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_SPONSORBLOCK_MIN_DURATION = "sponsorblock_min_duration"
         private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
             "non_expressive_navigation_bar"
+        private const val KEY_ROTATE_WITH_DEVICE = "rotate_with_device"
 
         /**
          * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
@@ -945,6 +949,15 @@ class ThemePreferences(context: Context) {
         fun isLocalOnly(context: Context): Boolean =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .getBoolean(KEY_LOCAL_ONLY_MODE, false)
+
+        /**
+         * Static fresh read for the orientation policy, which is applied from
+         * the video watch page as well as MainActivity and must not trust a
+         * flow held by some other instance.
+         */
+        fun isRotateWithDevice(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_ROTATE_WITH_DEVICE, false)
 
         private const val KEY_LAST_SONG_ID = "last_song_id"
         private const val KEY_LAST_SONG_TITLE = "last_song_title"
@@ -1779,6 +1792,21 @@ class ThemePreferences(context: Context) {
     fun setNonExpressiveNavigationBar(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_NON_EXPRESSIVE_NAVIGATION_BAR, enabled).apply()
         _nonExpressiveNavigationBar.value = enabled
+    }
+
+    /**
+     * Whether a phone turns the app with the device. Off by default so an
+     * upgrading install stays portrait as it always was; large screens rotate
+     * regardless (see `ui/theme/WindowLayout.kt`), because Android 16 ignores
+     * orientation locks there anyway and a tablet held sideways is its normal
+     * posture rather than an accident. The system rotation lock still wins.
+     */
+    private fun getRotateWithDevicePreference(): Boolean =
+        prefs.getBoolean(KEY_ROTATE_WITH_DEVICE, false)
+
+    fun setRotateWithDevice(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ROTATE_WITH_DEVICE, enabled).apply()
+        _rotateWithDevice.value = enabled
     }
 
     /**

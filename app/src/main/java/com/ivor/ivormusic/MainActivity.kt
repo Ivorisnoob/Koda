@@ -151,11 +151,12 @@ class MainActivity : ComponentActivity() {
         // Remove splash instantly when ready — the AVD entrance animation is the show
         splashScreen.setOnExitAnimationListener { it.remove() }
 
-        // The app is portrait-only, like YouTube: rotating the device must not
-        // rotate the app UI. The only exception is fullscreen video playback,
-        // which temporarily requests landscape from VideoPlayerContent and
-        // restores portrait when it exits.
-        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // Large screens follow the device; phones stay portrait unless
+        // Settings, Appearance, "Rotate with device" is on (AppOrientation).
+        // The video watch page still holds portrait while it is open and
+        // requests landscape for fullscreen; every exit hands back to this
+        // policy rather than to a hardcoded portrait.
+        com.ivor.ivormusic.ui.theme.AppOrientation.apply(this)
 
         enableEdgeToEdge()
         // Treat camera cutouts as usable edge-to-edge space everywhere. The
@@ -220,6 +221,15 @@ class MainActivity : ComponentActivity() {
                 themeViewModel.sponsorBlockMinDurationMs.collectAsState()
             val nonExpressiveNavigationBar by
                 themeViewModel.nonExpressiveNavigationBar.collectAsState()
+            val rotateWithDevice by themeViewModel.rotateWithDevice.collectAsState()
+            // Re-applied when the switch moves and when the device changes
+            // class under the activity (a foldable opening), which does not
+            // recreate it because smallestScreenSize is in configChanges.
+            val smallestWidthDp = androidx.compose.ui.platform.LocalConfiguration.current
+                .smallestScreenWidthDp
+            LaunchedEffect(rotateWithDevice, smallestWidthDp) {
+                com.ivor.ivormusic.ui.theme.AppOrientation.apply(this@MainActivity)
+            }
             val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
             val subscribeTarget by themeViewModel.subscribeTarget.collectAsState()
             val fastSubscriptionFeed by themeViewModel.fastSubscriptionFeed.collectAsState()
@@ -363,6 +373,8 @@ class MainActivity : ComponentActivity() {
                         onNonExpressiveNavigationBarToggle = {
                             themeViewModel.setNonExpressiveNavigationBar(it)
                         },
+                        rotateWithDevice = rotateWithDevice,
+                        onRotateWithDeviceToggle = themeViewModel::setRotateWithDevice,
                         playerStyle = playerStyle,
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
@@ -721,6 +733,8 @@ fun MusicApp(
     onSpotlightHomeToggle: (Boolean) -> Unit,
     nonExpressiveNavigationBar: Boolean,
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
+    rotateWithDevice: Boolean,
+    onRotateWithDeviceToggle: (Boolean) -> Unit,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -1092,10 +1106,14 @@ fun MusicApp(
     val currentRoute = navController.currentBackStackEntryAsState()
         .value?.destination?.route
     val onHomeRoute = currentRoute == "home"
-    val navBarReserve = if (nonExpressiveNavigationBar) {
-        NON_EXPRESSIVE_NAV_BAR_RESERVE
-    } else {
-        EXPRESSIVE_NAV_BAR_RESERVE
+    // From 600dp across Home navigates from a rail on the start edge
+    // (HomeScreen), so the bottom holds only the music pill, which rests just
+    // above the system inset there.
+    val homeUsesRail = com.ivor.ivormusic.ui.theme.currentWindowLayout().usesNavigationRail
+    val navBarReserve = when {
+        homeUsesRail -> VIDEO_MINI_RESTING_GAP
+        nonExpressiveNavigationBar -> NON_EXPRESSIVE_NAV_BAR_RESERVE
+        else -> EXPRESSIVE_NAV_BAR_RESERVE
     }
     val videoMiniBottomChrome = when {
         !onHomeRoute -> 0.dp
@@ -1114,7 +1132,7 @@ fun MusicApp(
     // toolbar at all.
     val floatingToolbarState = androidx.compose.material3.rememberFloatingToolbarState()
     val videoMiniFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
-        if (!onHomeRoute || nonExpressiveNavigationBar) 0f
+        if (!onHomeRoute || nonExpressiveNavigationBar || homeUsesRail) 0f
         else (videoMiniBottomChrome - VIDEO_MINI_RESTING_GAP)
             .coerceAtLeast(0.dp).toPx()
     }
@@ -1332,6 +1350,8 @@ fun MusicApp(
                     nonExpressiveNavigationBar = nonExpressiveNavigationBar,
                     onNonExpressiveNavigationBarToggle =
                         onNonExpressiveNavigationBarToggle,
+                    rotateWithDevice = rotateWithDevice,
+                    onRotateWithDeviceToggle = onRotateWithDeviceToggle,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,
