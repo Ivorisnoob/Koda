@@ -158,6 +158,9 @@ class ThemePreferences(context: Context) {
     private val _frameInterpolation = MutableStateFlow(isFrameInterpolationEnabled())
     val frameInterpolation: StateFlow<Boolean> = _frameInterpolation.asStateFlow()
 
+    private val _frameInterpolationMaxFps = MutableStateFlow(getFrameInterpolationMaxFps())
+    val frameInterpolationMaxFps: StateFlow<Int> = _frameInterpolationMaxFps.asStateFlow()
+
     private val _captionTextSize = MutableStateFlow(getCaptionTextSizePreference())
     val captionTextSize: StateFlow<Float> = _captionTextSize.asStateFlow()
 
@@ -401,6 +404,7 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
             KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
             KEY_FRAME_INTERPOLATION -> _frameInterpolation.value = isFrameInterpolationEnabled()
+            KEY_FRAME_INTERPOLATION_MAX_FPS -> _frameInterpolationMaxFps.value = getFrameInterpolationMaxFps()
             KEY_CAPTION_TEXT_SIZE -> _captionTextSize.value = getCaptionTextSizePreference()
             KEY_CAPTION_TEXT_COLOR -> _captionTextColor.value = getCaptionTextColorPreference()
             KEY_CAPTION_BACKGROUND -> _captionBackground.value = getCaptionBackgroundPreference()
@@ -639,6 +643,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_QUALITY_MOBILE = "video_quality_mobile"
         private const val KEY_PREFER_HDR = "prefer_hdr_video"
         private const val KEY_FRAME_INTERPOLATION = "video_frame_interpolation"
+        private const val KEY_FRAME_INTERPOLATION_MAX_FPS = "video_frame_interpolation_max_fps"
         private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
         private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
         private const val KEY_CAPTION_BACKGROUND = "caption_background"
@@ -647,6 +652,10 @@ class ThemePreferences(context: Context) {
 
         /** Sentinel meaning "highest available quality". */
         const val VIDEO_QUALITY_AUTO = "auto"
+
+        /** Smooth motion's output caps. Frozen: stored as they are. */
+        const val FRAME_INTERPOLATION_FPS_LOW = 60
+        const val FRAME_INTERPOLATION_FPS_HIGH = 120
 
         /** Quality labels offered in Settings, best first. */
         val VIDEO_QUALITY_OPTIONS = listOf(
@@ -1566,6 +1575,24 @@ class ThemePreferences(context: Context) {
     fun setFrameInterpolation(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_FRAME_INTERPOLATION, enabled).apply()
         _frameInterpolation.value = enabled
+    }
+
+    /**
+     * The most Smooth motion may output: 60 or 120 (frozen stored values).
+     * The screen's own fastest mode caps it further, so 120 on a 90 Hz phone
+     * means 90. Read fresh by the video player.
+     */
+    fun getFrameInterpolationMaxFps(): Int =
+        if (prefs.getInt(KEY_FRAME_INTERPOLATION_MAX_FPS, FRAME_INTERPOLATION_FPS_HIGH) <= FRAME_INTERPOLATION_FPS_LOW) {
+            FRAME_INTERPOLATION_FPS_LOW
+        } else {
+            FRAME_INTERPOLATION_FPS_HIGH
+        }
+
+    fun setFrameInterpolationMaxFps(fps: Int) {
+        val stored = if (fps <= FRAME_INTERPOLATION_FPS_LOW) FRAME_INTERPOLATION_FPS_LOW else FRAME_INTERPOLATION_FPS_HIGH
+        prefs.edit().putInt(KEY_FRAME_INTERPOLATION_MAX_FPS, stored).apply()
+        _frameInterpolationMaxFps.value = stored
     }
 
     private fun getCaptionTextSizePreference(): Float =

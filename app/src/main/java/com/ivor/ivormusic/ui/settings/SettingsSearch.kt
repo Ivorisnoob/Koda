@@ -399,6 +399,7 @@ internal fun buildSettingsSearchIndex(
         Icons.Rounded.Animation,
         listOf(
             "frame interpolation", "motion smoothing", "smooth", "60fps", "60 fps", "fps",
+            "90fps", "90 fps", "120fps", "120 fps", "high refresh rate", "hz",
             "frame rate", "memc", "judder", "soap opera"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }

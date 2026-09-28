@@ -58,6 +58,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val videoQualityMobile: StateFlow<String> = themePreferences.videoQualityMobile
     val preferHdr: StateFlow<Boolean> = themePreferences.preferHdr
     val frameInterpolation: StateFlow<Boolean> = themePreferences.frameInterpolation
+    val frameInterpolationMaxFps: StateFlow<Int> = themePreferences.frameInterpolationMaxFps
     val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
     val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
     val spotlightHome: StateFlow<Boolean> = themePreferences.spotlightHome
@@ -239,6 +240,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setFrameInterpolation(enabled: Boolean) {
         themePreferences.setFrameInterpolation(enabled)
+    }
+
+    fun setFrameInterpolationMaxFps(fps: Int) {
+        themePreferences.setFrameInterpolationMaxFps(fps)
     }
 
     fun setMusicQualityWifi(quality: String) {

@@ -208,6 +208,7 @@ class MainActivity : ComponentActivity() {
             val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
             val preferHdr by themeViewModel.preferHdr.collectAsState()
             val frameInterpolation by themeViewModel.frameInterpolation.collectAsState()
+            val frameInterpolationMaxFps by themeViewModel.frameInterpolationMaxFps.collectAsState()
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
@@ -420,6 +421,8 @@ class MainActivity : ComponentActivity() {
                         onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
                         frameInterpolation = frameInterpolation,
                         onFrameInterpolationToggle = { themeViewModel.setFrameInterpolation(it) },
+                        frameInterpolationMaxFps = frameInterpolationMaxFps,
+                        onFrameInterpolationMaxFpsChange = { themeViewModel.setFrameInterpolationMaxFps(it) },
                         musicQualityWifi = musicQualityWifi,
                         onMusicQualityWifiChange = { themeViewModel.setMusicQualityWifi(it) },
                         musicQualityMobile = musicQualityMobile,
@@ -782,6 +785,8 @@ fun MusicApp(
     onPreferHdrToggle: (Boolean) -> Unit,
     frameInterpolation: Boolean,
     onFrameInterpolationToggle: (Boolean) -> Unit,
+    frameInterpolationMaxFps: Int,
+    onFrameInterpolationMaxFpsChange: (Int) -> Unit,
     musicQualityWifi: String,
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
@@ -1401,6 +1406,8 @@ fun MusicApp(
                     onPreferHdrToggle = onPreferHdrToggle,
                     frameInterpolation = frameInterpolation,
                     onFrameInterpolationToggle = onFrameInterpolationToggle,
+                    frameInterpolationMaxFps = frameInterpolationMaxFps,
+                    onFrameInterpolationMaxFpsChange = onFrameInterpolationMaxFpsChange,
                     musicQualityWifi = musicQualityWifi,
                     onMusicQualityWifiChange = onMusicQualityWifiChange,
                     musicQualityMobile = musicQualityMobile,

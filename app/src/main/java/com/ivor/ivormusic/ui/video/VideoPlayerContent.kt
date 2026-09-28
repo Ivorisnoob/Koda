@@ -2125,13 +2125,19 @@ private fun smoothMotionStatusText(status: FrameInterpolationStatus): String? = 
     FrameInterpolationStatus.Disabled -> null
     FrameInterpolationStatus.NeedsRestart -> stringResource(R.string.vpc_smooth_motion_restart)
     FrameInterpolationStatus.Measuring -> stringResource(R.string.vpc_smooth_motion_measuring)
-    is FrameInterpolationStatus.Active ->
-        stringResource(R.string.vpc_smooth_motion_active, status.sourceFps, status.outputFps)
+    is FrameInterpolationStatus.Active -> when (status.limit) {
+        FrameInterpolationStatus.RateLimit.NONE ->
+            stringResource(R.string.vpc_smooth_motion_active, status.sourceFps, status.outputFps)
+        FrameInterpolationStatus.RateLimit.RESOLUTION -> stringResource(
+            R.string.vpc_smooth_motion_active_resolution, status.sourceFps, status.outputFps, status.targetFps
+        )
+        FrameInterpolationStatus.RateLimit.SCREEN ->
+            stringResource(R.string.vpc_smooth_motion_active_screen, status.sourceFps, status.outputFps)
+    }
     is FrameInterpolationStatus.NotNeeded ->
-        stringResource(R.string.vpc_smooth_motion_not_needed, status.sourceFps)
+        stringResource(R.string.vpc_smooth_motion_not_needed, status.playingFps)
     FrameInterpolationStatus.Live -> stringResource(R.string.vpc_smooth_motion_live)
     FrameInterpolationStatus.Hdr -> stringResource(R.string.vpc_smooth_motion_hdr)
-    FrameInterpolationStatus.SpedUp -> stringResource(R.string.vpc_smooth_motion_sped_up)
     FrameInterpolationStatus.Hot -> stringResource(R.string.vpc_smooth_motion_hot)
     FrameInterpolationStatus.BatterySaver -> stringResource(R.string.vpc_smooth_motion_battery)
     FrameInterpolationStatus.CannotKeepUp -> stringResource(R.string.vpc_smooth_motion_cannot_keep_up)

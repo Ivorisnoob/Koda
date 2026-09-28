@@ -1419,17 +1419,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
-                    // Fresh read: turning the setting off takes effect within a
-                    // tick, without rebuilding the player. The renderer's
-                    // frame counters are how the governor learns whether this
-                    // phone keeps up; they only mean anything with the effect
-                    // graph installed.
+                    // Fresh reads: turning the setting off or changing its rate
+                    // takes effect within a tick, without rebuilding the
+                    // player. The renderer's drop counter is how the governor
+                    // learns whether this phone keeps up; it only means
+                    // anything with the effect graph installed.
                     val counters = if (playerHasInterpolation) {
                         player.videoDecoderCounters?.also { it.ensureUpdated() }
                     } else null
                     val quality = _currentQuality.value
                     frameInterpolation.update(
                         enabledByUser = themePreferences.isFrameInterpolationEnabled(),
+                        userMaxFps = themePreferences.getFrameInterpolationMaxFps(),
                         pipelineInstalled = playerHasInterpolation,
                         currentVideoId = _currentVideo.value?.videoId,
                         qualityKey = quality?.let {
@@ -1441,7 +1442,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         isPlaying = player.isPlaying,
                         positionMs = player.currentPosition,
                         droppedFrames = counters?.droppedBufferCount,
-                        renderedFrames = counters?.renderedOutputBufferCount,
                     )
                     // A non-positive duration means "not known yet" (and is the
                     // normal case for a live stream), so leave the last good

@@ -3,28 +3,87 @@ package com.ivor.ivormusic.service
 import android.os.PowerManager
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.abs
+import kotlin.math.roundToLong
 
 class FrameInterpolationPolicyTest {
 
-    @Test fun `24 25 and 30 fps are interpolated`() {
-        assertTrue(FrameInterpolationPolicy.shouldInterpolate(41_708L))
-        assertTrue(FrameInterpolationPolicy.shouldInterpolate(40_000L))
-        assertTrue(FrameInterpolationPolicy.shouldInterpolate(33_366L))
+    private val step120 = 1_000_000.0 / 120
+    private val step60 = 1_000_000.0 / 60
+
+    @Test fun `24 25 30 and 60 fps are interpolated towards 120`() {
+        assertTrue(FrameInterpolationPolicy.shouldInterpolate(41_708L, step120))
+        assertTrue(FrameInterpolationPolicy.shouldInterpolate(40_000L, step120))
+        assertTrue(FrameInterpolationPolicy.shouldInterpolate(33_366L, step120))
+        assertTrue(FrameInterpolationPolicy.shouldInterpolate(16_683L, step120))
     }
 
-    @Test fun `50 and 60 fps pass through`() {
-        assertFalse(FrameInterpolationPolicy.shouldInterpolate(20_000L))
-        assertFalse(FrameInterpolationPolicy.shouldInterpolate(16_683L))
+    @Test fun `a source already at the output rate passes through`() {
+        assertFalse(FrameInterpolationPolicy.shouldInterpolate(16_683L, step60))
+        assertFalse(FrameInterpolationPolicy.shouldInterpolate(8_333L, step120))
+        // 50 fps on a 60 Hz screen is lifted to 60.
+        assertTrue(FrameInterpolationPolicy.shouldInterpolate(20_000L, step60))
     }
 
     @Test fun `gaps and reordered timestamps pass through`() {
-        assertFalse(FrameInterpolationPolicy.shouldInterpolate(100_000L))
-        assertFalse(FrameInterpolationPolicy.shouldInterpolate(0L))
-        assertFalse(FrameInterpolationPolicy.shouldInterpolate(-33_366L))
+        assertFalse(FrameInterpolationPolicy.shouldInterpolate(100_000L, step60))
+        assertFalse(FrameInterpolationPolicy.shouldInterpolate(0L, step60))
+        assertFalse(FrameInterpolationPolicy.shouldInterpolate(-33_366L, step60))
     }
 
-    @Test fun `midpoint sits between the two frames`() {
-        assertEquals(1_016_683L, FrameInterpolationPolicy.midpointUs(1_000_000L, 1_033_366L))
+    @Test fun `target is the lower of the user cap and the screen`() {
+        assertEquals(120, FrameInterpolationPolicy.targetFps(120, 120f))
+        assertEquals(90, FrameInterpolationPolicy.targetFps(120, 90f))
+        assertEquals(60, FrameInterpolationPolicy.targetFps(60, 120f))
+        assertEquals(120, FrameInterpolationPolicy.targetFps(120, 144f))
+        assertEquals(60, FrameInterpolationPolicy.targetFps(120, 59.94f))
+        assertEquals(60, FrameInterpolationPolicy.targetFps(120, 30f))
+    }
+
+    @Test fun `large frames step down to 90 then 60 but never below`() {
+        assertEquals(120, FrameInterpolationPolicy.affordableFps(120, 1920, 1080))
+        assertEquals(120, FrameInterpolationPolicy.affordableFps(120, 1920, 1088))
+        assertEquals(120, FrameInterpolationPolicy.affordableFps(120, 1080, 1920))
+        assertEquals(90, FrameInterpolationPolicy.affordableFps(120, 2560, 1080))
+        assertEquals(60, FrameInterpolationPolicy.affordableFps(120, 2560, 1440))
+        assertEquals(60, FrameInterpolationPolicy.affordableFps(120, 3840, 2160))
+        assertEquals(60, FrameInterpolationPolicy.affordableFps(60, 854, 480))
+    }
+
+    @Test fun `the step snaps to whole divisions of the source`() {
+        // 30 into 120: every fourth output is a decoded frame.
+        assertEquals(33_366.0 / 4, FrameInterpolationPolicy.outputStepUs(120, 1f, 33_366.0), 0.01)
+        // 23.976 into 120: five.
+        assertEquals(41_708.0 / 5, FrameInterpolationPolicy.outputStepUs(120, 1f, 41_708.0), 0.01)
+        // 25 into 120 does not divide; the clock keeps the screen's rate.
+        assertEquals(step120, FrameInterpolationPolicy.outputStepUs(120, 1f, 40_000.0), 0.01)
+        // Unknown source: the screen's rate.
+        assertEquals(step60, FrameInterpolationPolicy.outputStepUs(60, 1f, 0.0), 0.01)
+    }
+
+    @Test fun `the clock runs in real time at other speeds`() {
+        assertEquals(1.5 * step120, FrameInterpolationPolicy.outputStepUs(120, 1.5f, 0.0), 0.01)
+        // Half speed of 30 fps at 120 is eight outputs a decoded frame: allowed.
+        assertEquals(33_333.0 / 8, FrameInterpolationPolicy.outputStepUs(120, 0.5f, 33_333.0), 0.01)
+        // Quarter speed would be sixteen, so the rate halves to 60.
+        assertEquals(33_333.0 / 8, FrameInterpolationPolicy.outputStepUs(120, 0.25f, 33_333.0), 0.01)
+        // Unmeasured, the floor assumes the slowest source worth interpolating.
+        assertEquals(0.5 * step60, FrameInterpolationPolicy.outputStepUs(120, 0.5f, 0.0), 0.01)
+    }
+
+    @Test fun `pool fits one input with room and keeps a lead within budget`() {
+        assertEquals(6, FrameInterpolationPolicy.poolCapacity(1, 1920, 1080, 4))
+        assertEquals(15, FrameInterpolationPolicy.poolCapacity(5, 854, 480, 4))
+        assertEquals(12, FrameInterpolationPolicy.poolCapacity(5, 1920, 1080, 4))
+        assertEquals(4, FrameInterpolationPolicy.poolCapacity(2, 3840, 2160, 4))
+        assertTrue(FrameInterpolationPolicy.poolCapacity(9, 3840, 2160, 4) >= 11)
+    }
+
+    @Test fun `outputs per input count the ticks in one source interval`() {
+        assertEquals(4, FrameInterpolationPolicy.outputsPerInput(33_366.0, 33_366.0 / 4))
+        assertEquals(2, FrameInterpolationPolicy.outputsPerInput(33_333.0, step60))
+        assertEquals(5, FrameInterpolationPolicy.outputsPerInput(40_000.0, step120))
+        assertEquals(1, FrameInterpolationPolicy.outputsPerInput(0.0, step120))
     }
 
     @Test fun `gate opens only when nothing argues against it`() {
@@ -32,44 +91,98 @@ class FrameInterpolationPolicyTest {
             enabled: Boolean = true,
             live: Boolean = false,
             hdr: Boolean = false,
-            speed: Float = 1f,
             thermal: Int = PowerManager.THERMAL_STATUS_NONE,
             powerSave: Boolean = false,
             drops: Boolean = false
-        ) = FrameInterpolationPolicy.isGateOpen(enabled, live, hdr, speed, thermal, powerSave, drops)
+        ) = FrameInterpolationPolicy.isGateOpen(enabled, live, hdr, thermal, powerSave, drops)
 
         assertTrue(gate())
         assertTrue(gate(thermal = PowerManager.THERMAL_STATUS_LIGHT))
-        assertTrue(gate(speed = 1.2f))
         assertFalse(gate(enabled = false))
         assertFalse(gate(live = true))
         assertFalse(gate(hdr = true))
-        assertFalse(gate(speed = 1.5f))
         assertFalse(gate(thermal = PowerManager.THERMAL_STATUS_MODERATE))
         assertFalse(gate(powerSave = true))
         assertFalse(gate(drops = true))
     }
 
-    /** Polls a watch at 500ms like the player does; returns the first poll that judged overload. */
+    /**
+     * Runs frames at [sourceUs] intervals through an [OutputClock] the way
+     * the shader program does, and returns every emitted timestamp with
+     * whether it was drawn.
+     */
+    private fun clockOutputs(sourceUs: Long, stepUs: Double, frames: Int): List<Pair<Long, Boolean>> {
+        val clock = OutputClock()
+        val out = ArrayList<Pair<Long, Boolean>>()
+        var previous = 0L
+        out += 0L to false
+        clock.start(0L, stepUs)
+        val tolerance = minOf(1_000L, (stepUs / 4).toLong())
+        for (i in 1..frames) {
+            val t = i * sourceUs
+            while (clock.nextTickUs() < t - tolerance) {
+                val tick = clock.nextTickUs()
+                assertTrue(tick > previous)
+                out += tick to true
+                clock.advance()
+            }
+            if (clock.nextTickUs() <= t + tolerance) {
+                out += clock.nextTickUs() to false
+                clock.advance()
+            }
+            previous = t
+        }
+        return out
+    }
+
+    @Test fun `30 into 120 is four evenly spaced outputs per frame, one of them real`() {
+        val out = clockOutputs(33_333L, FrameInterpolationPolicy.outputStepUs(120, 1f, 33_333.0), 30)
+        assertEquals(30 * 4 + 1, out.size)
+        assertEquals(31, out.count { !it.second })
+        out.zipWithNext().forEach { (a, b) -> assertTrue(abs((b.first - a.first) - 8_333) <= 1) }
+    }
+
+    @Test fun `25 into 120 keeps an even 120 fps cadence`() {
+        val out = clockOutputs(40_000L, FrameInterpolationPolicy.outputStepUs(120, 1f, 40_000.0), 25)
+        // One second of source is 120 outputs, give or take the tick on the last frame.
+        assertTrue(out.size in 120..122)
+        out.zipWithNext().forEach { (a, b) -> assertTrue(abs((b.first - a.first) - 8_333) <= 1) }
+    }
+
+    @Test fun `24 into 60 alternates without drift`() {
+        val step = FrameInterpolationPolicy.outputStepUs(60, 1f, 41_667.0)
+        val out = clockOutputs(41_667L, step, 240)
+        out.zipWithNext().forEach { (a, b) -> assertTrue(abs((b.first - a.first) - step.roundToLong()) <= 1) }
+        // Ten seconds later the clock still lands on decoded frames.
+        assertFalse(out.last().second)
+    }
+
+    /** Polls a watch at 500ms like the player does; returns whether any poll judged overload. */
     private class Playback(val watch: FrameDropWatch = FrameDropWatch()) {
         var now = 10_000L
         var position = 0L
         var dropped = 0
-        var rendered = 0
-        var midpoints = 0L
+        var emitted = 0L
+        var synthesized = 0L
 
-        /** [seconds] of playback at 30 fps, [dropsPerSecond] of them late, interpolating or not. */
-        fun play(seconds: Int, dropsPerSecond: Int, interpolating: Boolean = true, playing: Boolean = true): Boolean {
+        /** [seconds] at [outputFps], [dropsPerSecond] of the outputs late, interpolating or not. */
+        fun play(
+            seconds: Int,
+            dropsPerSecond: Int,
+            interpolating: Boolean = true,
+            playing: Boolean = true,
+            outputFps: Int = 120,
+        ): Boolean {
             var overloaded = false
             repeat(seconds * 2) {
                 now += 500L
                 if (playing) {
                     position += 500L
-                    rendered += 15 - dropsPerSecond / 2
+                    emitted += outputFps / 2
                     dropped += dropsPerSecond / 2
-                    if (interpolating) midpoints += 15
+                    if (interpolating) synthesized += outputFps / 2 * 3 / 4
                 }
-                if (watch.onPoll(now, playing, position, 1f, dropped, rendered, midpoints)) overloaded = true
+                if (watch.onPoll(now, playing, position, 1f, dropped, emitted, synthesized)) overloaded = true
             }
             return overloaded
         }
@@ -81,18 +194,26 @@ class FrameInterpolationPolicyTest {
         assertFalse(playback.play(seconds = 30, dropsPerSecond = 0))
     }
 
+    @Test fun `a few late frames at 120 fps stay inside the budget`() {
+        // 4 a second is 3% of 120. Against the 30 decoded frames it would
+        // have read as 13% and switched the feature off.
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        assertFalse(playback.play(seconds = 30, dropsPerSecond = 4))
+    }
+
     @Test fun `sustained drops while interpolating are judged overload`() {
         val playback = Playback()
         playback.watch.restart(playback.now)
-        // 4 of 30 frames a second late is 13%, well past 5%.
-        assertTrue(playback.play(seconds = 12, dropsPerSecond = 4))
+        // 12 of 120 frames a second late is 10%, well past 5%.
+        assertTrue(playback.play(seconds = 12, dropsPerSecond = 12))
     }
 
     @Test fun `drops while only passing frames through are never counted`() {
-        // The 1080p60 case: nothing interpolated, so nothing to blame.
+        // The 1080p60 on a 60 Hz screen case: nothing drawn, nothing to blame.
         val playback = Playback()
         playback.watch.restart(playback.now)
-        assertFalse(playback.play(seconds = 20, dropsPerSecond = 8, interpolating = false))
+        assertFalse(playback.play(seconds = 20, dropsPerSecond = 8, interpolating = false, outputFps = 60))
         // And they do not carry over into interpolation afterwards.
         assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
     }
@@ -100,7 +221,7 @@ class FrameInterpolationPolicyTest {
     @Test fun `startup drops inside the grace period are forgiven`() {
         val playback = Playback()
         playback.watch.restart(playback.now)
-        assertFalse(playback.play(seconds = 3, dropsPerSecond = 10))
+        assertFalse(playback.play(seconds = 3, dropsPerSecond = 40))
         assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
     }
 
@@ -109,7 +230,7 @@ class FrameInterpolationPolicyTest {
         playback.watch.restart(playback.now)
         assertFalse(playback.play(seconds = 10, dropsPerSecond = 0))
         assertFalse(playback.play(seconds = 5, dropsPerSecond = 0, playing = false))
-        assertFalse(playback.play(seconds = 2, dropsPerSecond = 10))
+        assertFalse(playback.play(seconds = 2, dropsPerSecond = 40))
         assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
     }
 
@@ -118,8 +239,44 @@ class FrameInterpolationPolicyTest {
         playback.watch.restart(playback.now)
         assertFalse(playback.play(seconds = 10, dropsPerSecond = 0))
         playback.position += 60_000L
-        assertFalse(playback.play(seconds = 2, dropsPerSecond = 10))
+        assertFalse(playback.play(seconds = 2, dropsPerSecond = 40))
         assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
+    }
+
+    @Test fun `a screen that stays at 60 limits the output after a while`() {
+        val watch = ScreenRateWatch(patienceMs = 5_000L)
+        var now = 0L
+        repeat(8) {
+            now += 500L
+            watch.onPoll(now, emitting = true, outputFps = 120, displayHz = 60f)
+        }
+        assertEquals(0, watch.limitFps)
+        repeat(4) {
+            now += 500L
+            watch.onPoll(now, emitting = true, outputFps = 120, displayHz = 60f)
+        }
+        assertEquals(60, watch.limitFps)
+    }
+
+    @Test fun `a screen that follows the output is never limited`() {
+        val watch = ScreenRateWatch(patienceMs = 5_000L)
+        var now = 0L
+        repeat(40) {
+            now += 500L
+            // Starts at 60 while Media3's estimator syncs, then switches.
+            watch.onPoll(now, emitting = true, outputFps = 120, displayHz = if (it < 6) 60f else 120f)
+        }
+        assertEquals(0, watch.limitFps)
+    }
+
+    @Test fun `a paused or backgrounded video says nothing about the screen`() {
+        val watch = ScreenRateWatch(patienceMs = 5_000L)
+        var now = 0L
+        repeat(40) {
+            now += 500L
+            watch.onPoll(now, emitting = false, outputFps = 120, displayHz = 60f)
+        }
+        assertEquals(0, watch.limitFps)
     }
 
     @Test fun `levels halve from a 320 texel long side`() {
