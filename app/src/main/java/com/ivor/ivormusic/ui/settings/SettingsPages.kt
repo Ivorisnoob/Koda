@@ -1298,14 +1298,25 @@ internal fun PlaybackSettingsPage(
 
                     SettingsDivider()
 
+                    // Only GLES 3.2 GPUs run Smooth motion's engine, and there is
+                    // no lesser one, so on any other phone it is off whatever the
+                    // stored setting says (a backup from another phone).
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val interpolationSupported = remember(context) {
+                        com.ivor.ivormusic.service.FrameInterpolationSupport.isSupported(context)
+                    }
+
                     SettingsToggleRow(
                         icon = Icons.Rounded.HdrOn,
                         title = stringResource(R.string.sp_prefer_hdr),
                         // The HDR ladder is withheld while Smooth motion is on,
                         // so the row says why an enabled switch does nothing.
                         subtitle = stringResource(
-                            if (frameInterpolation && preferHdr) R.string.sp_prefer_hdr_sub_blocked
-                            else R.string.sp_prefer_hdr_sub
+                            if (frameInterpolation && interpolationSupported && preferHdr) {
+                                R.string.sp_prefer_hdr_sub_blocked
+                            } else {
+                                R.string.sp_prefer_hdr_sub
+                            }
                         ),
                         enabled = preferHdr,
                         onToggle = onPreferHdrToggle,
@@ -1315,21 +1326,26 @@ internal fun PlaybackSettingsPage(
                     SettingsDivider()
 
                     // Turning it on goes through a warning dialog hosted by
-                    // SettingsScreen; turning it off is immediate.
+                    // SettingsScreen; turning it off is immediate. Unsupported
+                    // phones get the row disabled, saying why.
                     SettingsToggleRow(
                         icon = Icons.Rounded.Animation,
                         title = stringResource(R.string.sp_frame_interpolation),
                         subtitle = stringResource(
-                            if (frameInterpolation) R.string.sp_frame_interpolation_sub_on
-                            else R.string.sp_frame_interpolation_sub_off
+                            when {
+                                !interpolationSupported -> R.string.sp_frame_interpolation_sub_unsupported
+                                frameInterpolation -> R.string.sp_frame_interpolation_sub_on
+                                else -> R.string.sp_frame_interpolation_sub_off
+                            }
                         ),
-                        enabled = frameInterpolation,
+                        enabled = frameInterpolation && interpolationSupported,
                         onToggle = onFrameInterpolationToggle,
-                        explanation = stringResource(R.string.si_frame_interpolation)
+                        explanation = stringResource(R.string.si_frame_interpolation),
+                        available = interpolationSupported
                     )
 
                     AnimatedVisibility(
-                        visible = frameInterpolation,
+                        visible = frameInterpolation && interpolationSupported,
                         enter = fadeIn(tween(200)) + slideInVertically(
                             initialOffsetY = { -it / 4 },
                             animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)

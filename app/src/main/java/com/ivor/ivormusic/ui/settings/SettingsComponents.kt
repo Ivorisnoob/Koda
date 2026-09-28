@@ -286,7 +286,9 @@ internal fun SettingsRow(
 
 /**
  * Icon + title/subtitle row with a switch. The whole row is the hit target, not
- * just the switch.
+ * just the switch. An unavailable row (the phone cannot do it) is drawn
+ * disabled and ignores taps; its long-press explanation still works, and the
+ * subtitle is where it should say why.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -298,7 +300,8 @@ internal fun SettingsToggleRow(
     onToggle: (Boolean) -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
     /** Long-press explanation. Null keeps the row a plain toggle. */
-    explanation: String? = null
+    explanation: String? = null,
+    available: Boolean = true
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -319,8 +322,10 @@ internal fun SettingsToggleRow(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = {
-                    haptics.toggle(!enabled)
-                    onToggle(!enabled)
+                    if (available) {
+                        haptics.toggle(!enabled)
+                        onToggle(!enabled)
+                    }
                 },
                 onLongClick = if (explanation != null && infoSink != null) {
                     {
@@ -332,21 +337,23 @@ internal fun SettingsToggleRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        SettingsRowIcon(icon = icon, tint = tint)
+        // Material's disabled content: 38% of the colour it would have had.
+        val contentAlpha = if (available) 1f else 0.38f
+        SettingsRowIcon(icon = icon, tint = tint.copy(alpha = tint.alpha * contentAlpha))
 
         Spacer(modifier = Modifier.width(16.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = contentAlpha),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
                 fontSize = 13.sp
             )
         }
@@ -354,6 +361,7 @@ internal fun SettingsToggleRow(
         Switch(
             checked = enabled,
             onCheckedChange = onToggle,
+            enabled = available,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = tint,

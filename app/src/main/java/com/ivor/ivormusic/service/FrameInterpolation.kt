@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.service
 
+import android.app.ActivityManager
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.PowerManager
@@ -46,6 +47,24 @@ import kotlin.math.roundToLong
  * synthesized ones off the clock) would lose that sync - which is why the
  * output is a clock and not "midpoints plus the real frames".
  */
+/**
+ * Whether this phone's GPU runs Smooth motion: OpenGL ES 3.2 or newer, as the
+ * system declares it (`reqGlEsVersion`), so it is known before any player or
+ * GL context exists. Below that the setting is not offered and the effect is
+ * never installed; there is no lesser engine to fall back to.
+ */
+object FrameInterpolationSupport {
+    /** The GLES version the engine needs, as major * 10 + minor ([MotionGl.glesVersion]). */
+    const val MIN_GLES = 32
+
+    private const val GLES_3_2 = 0x30002
+
+    fun isSupported(context: Context): Boolean {
+        val activityManager = context.getSystemService(ActivityManager::class.java) ?: return false
+        return activityManager.deviceConfigurationInfo.reqGlEsVersion >= GLES_3_2
+    }
+}
+
 @UnstableApi
 class FrameInterpolationEffect(
     private val control: FrameInterpolationControl
@@ -189,9 +208,6 @@ object FrameInterpolationPolicy {
     /** A step within this fraction of a whole division of the source interval snaps to it. */
     const val SNAP_TOLERANCE = 0.015
 
-    /** The long side of the finest motion level, in texels. */
-    const val FINE_LEVEL_LONG_SIDE = 320
-
     /** Output textures may take this much memory before the lead shortens. */
     const val POOL_BUDGET_BYTES = 100L * 1024 * 1024
 
@@ -290,26 +306,6 @@ object FrameInterpolationPolicy {
         thermalStatus < PowerManager.THERMAL_STATUS_MODERATE &&
         !powerSave &&
         !cannotKeepUp
-
-    /**
-     * Sizes of the three motion-search levels for a [width] x [height] frame,
-     * finest first, each half the one before. Scaled by the long side so a
-     * portrait video costs what the same video in landscape does.
-     */
-    fun levelSizes(width: Int, height: Int): List<Pair<Int, Int>> {
-        val longSide = max(width, height).coerceAtLeast(1)
-        val fineLong = minOf(FINE_LEVEL_LONG_SIDE, max(16, longSide / 2))
-        val scale = fineLong.toFloat() / longSide
-        var w = max(4, (width * scale).roundToInt())
-        var h = max(4, (height * scale).roundToInt())
-        val sizes = ArrayList<Pair<Int, Int>>(3)
-        repeat(3) {
-            sizes += w to h
-            w = max(4, (w + 1) / 2)
-            h = max(4, (h + 1) / 2)
-        }
-        return sizes
-    }
 }
 
 /**

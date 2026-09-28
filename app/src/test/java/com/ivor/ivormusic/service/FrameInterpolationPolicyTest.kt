@@ -278,25 +278,4 @@ class FrameInterpolationPolicyTest {
         }
         assertEquals(0, watch.limitFps)
     }
-
-    @Test fun `levels halve from a 320 texel long side`() {
-        val sizes = FrameInterpolationPolicy.levelSizes(1920, 1080)
-        assertEquals(listOf(320 to 180, 160 to 90, 80 to 45), sizes)
-    }
-
-    @Test fun `portrait costs what landscape does`() {
-        val sizes = FrameInterpolationPolicy.levelSizes(1080, 1920)
-        assertEquals(listOf(180 to 320, 90 to 160, 45 to 80), sizes)
-    }
-
-    @Test fun `small and degenerate frames never produce an empty level`() {
-        val small = FrameInterpolationPolicy.levelSizes(256, 144)
-        assertEquals(128 to 72, small.first())
-        FrameInterpolationPolicy.levelSizes(1, 1).forEach { (w, h) ->
-            assertTrue(w >= 4 && h >= 4)
-        }
-        FrameInterpolationPolicy.levelSizes(4000, 2).forEach { (w, h) ->
-            assertTrue(w >= 4 && h >= 4)
-        }
-    }
 }

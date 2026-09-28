@@ -148,6 +148,19 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private val frameInterpolation =
         com.ivor.ivormusic.service.FrameInterpolationGovernor(context)
+
+    /** Whether this GPU runs Smooth motion at all (GLES 3.2); fixed for the device. */
+    private val frameInterpolationSupported by lazy {
+        com.ivor.ivormusic.service.FrameInterpolationSupport.isSupported(context)
+    }
+
+    /**
+     * Smooth motion as set and as this phone can run it: a setting carried
+     * over from another phone (a restored backup) must not install the graph
+     * where the engine cannot run.
+     */
+    private fun frameInterpolationWanted(): Boolean =
+        frameInterpolationSupported && themePreferences.isFrameInterpolationEnabled()
     private var playerHasInterpolation = false
 
     /** What Smooth motion is doing for the video on screen, for the player's settings panel. */
@@ -980,7 +993,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * poll sets.
      */
     private fun installFrameInterpolation(player: ExoPlayer) {
-        playerHasInterpolation = themePreferences.isFrameInterpolationEnabled()
+        playerHasInterpolation = frameInterpolationWanted()
         if (!playerHasInterpolation) return
         player.setVideoEffects(
             listOf(com.ivor.ivormusic.service.FrameInterpolationEffect(frameInterpolation.control))
@@ -994,7 +1007,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * device's GL extensions, which is a worse answer than SDR on purpose.
      */
     private fun frameInterpolationBlocksHdr(): Boolean =
-        playerHasInterpolation || themePreferences.isFrameInterpolationEnabled()
+        playerHasInterpolation || frameInterpolationWanted()
 
     /**
      * The playback listener the local ExoPlayer carries: buffering spinner,
@@ -1429,7 +1442,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     } else null
                     val quality = _currentQuality.value
                     frameInterpolation.update(
-                        enabledByUser = themePreferences.isFrameInterpolationEnabled(),
+                        enabledByUser = frameInterpolationWanted(),
                         userMaxFps = themePreferences.getFrameInterpolationMaxFps(),
                         pipelineInstalled = playerHasInterpolation,
                         currentVideoId = _currentVideo.value?.videoId,
@@ -3369,7 +3382,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // and this is the one moment nothing holds the old one: the session is
         // gone (just above) and the overlay disposes its views with the video.
         if (_exoPlayer != null &&
-            playerHasInterpolation != themePreferences.isFrameInterpolationEnabled()
+            playerHasInterpolation != frameInterpolationWanted()
         ) {
             _exoPlayer?.release()
             _exoPlayer = null

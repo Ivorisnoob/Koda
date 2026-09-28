@@ -419,6 +419,7 @@
     <string name="sp_frame_interpolation">Smooth motion</string>
     <string name="sp_frame_interpolation_sub_off">Experimental. Adds in-between frames so videos play at up to 120 fps</string>
     <string name="sp_frame_interpolation_sub_on">Smoothing videos up to your screen\'s refresh rate. Pauses when the phone is hot or on battery saver</string>
+    <string name="sp_frame_interpolation_sub_unsupported">Not supported on this phone. Needs a graphics chip with OpenGL ES 3.2</string>
     <string name="sp_frame_interpolation_rate_60">Up to 60 fps</string>
     <string name="sp_frame_interpolation_rate_120">Up to 120 fps</string>
     <string name="sp_frame_interpolation_rate_hint">Your screen refreshes up to %1$d times a second, so videos play at up to %2$d fps. Higher rates use more battery.</string>

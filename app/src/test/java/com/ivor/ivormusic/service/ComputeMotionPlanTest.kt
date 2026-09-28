@@ -41,16 +41,14 @@ class ComputeMotionPlanTest {
         assertEquals(8, ComputeMotionPlan.radius(3, 5, Size(1920, 1080)))
     }
 
-    @Test fun `splat texels always fit an 18-bit index`() {
-        for (size in listOf(Size(1920, 1080), Size(1080, 1920), Size(1920, 1920), Size(854, 480))) {
-            val step = ComputeMotionPlan.splatStep(size)
-            val splat = ComputeMotionPlan.splatSize(size, step)
-            assertTrue("$size", splat.w * splat.h <= ComputeMotionPlan.MAX_SPLAT_TEXELS)
+    @Test fun `the rounded-up 8 px grid already covers the frame, so the motion grid is the block grid`() {
+        for (level in listOf(Size(854, 480), Size(1920, 1080), Size(1080, 1920), Size(853, 355))) {
+            val grid = ComputeMotionPlan.fieldSize(level)
+            assertEquals("$level", grid, ComputeMotionPlan.motionGrid(level, grid))
         }
-        // Level 0 is capped at a 1920 long side, so even a square frame fits
-        // at the finest step: 480 x 480 texels.
-        assertEquals(4, ComputeMotionPlan.splatStep(Size(1920, 1080)))
-        assertEquals(4, ComputeMotionPlan.splatStep(Size(1920, 1920)))
-        assertEquals(8, ComputeMotionPlan.splatStep(Size(4000, 4000)))
+    }
+
+    @Test fun `a grid short of the frame gains SVP's extra column and row`() {
+        assertEquals(Size(11, 6), ComputeMotionPlan.motionGrid(Size(84, 44), Size(10, 5)))
     }
 }

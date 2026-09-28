@@ -9,13 +9,13 @@ import com.ivor.ivormusic.util.KLog
 /**
  * The motion half of Smooth motion: everything between "here are two decoded
  * frames" and "here is the frame at phase t". [FrameInterpolationShaderProgram]
- * owns the clock, the output pool and the reference copy, and asks an engine
- * for the drawn frames, so the two engines ([ComputeMotionEngine] on GLES 3.1+,
- * [FragmentMotionEngine] everywhere else) share all of that.
+ * owns the clock, the output pool and the reference copy, and asks the engine
+ * ([ComputeMotionEngine], GLES 3.2) for the drawn frames.
  *
  * Every call runs on Media3's GL thread with the pipeline's context current.
- * Any exception means "this engine cannot run here": the host drops to the
- * next engine down, and only when the last one fails does interpolation stop.
+ * Any exception means "this engine cannot run here": the host stops
+ * interpolating and passes frames through. There is no lesser engine to fall
+ * back to, on purpose.
  */
 internal interface MotionEngine {
     /** For the log and the player's read-out. */
@@ -36,15 +36,20 @@ internal interface MotionEngine {
     /** After a pair: B's prepared data becomes the next pair's A. */
     fun promoteCurrent()
 
-    /** Draws the frame [phase] of the way from [reference] (A) to [current] (B) into [target]. */
-    fun compose(reference: GlTextureInfo, current: GlTextureInfo, target: GlTextureInfo, phase: Float)
+    /**
+     * Draws the frame [phase] of the way from [reference] (A) to [current] (B)
+     * into [target]. [step] is the distance between output ticks in the same
+     * units (a 24 fps pair drawn at 60 fps: 0.4), which the engine's cadence
+     * and re-timing rules are written in.
+     */
+    fun compose(reference: GlTextureInfo, current: GlTextureInfo, target: GlTextureInfo, phase: Float, step: Float)
 
     /** The next pair does not follow this one (a seek, a gap): drop temporal hints. */
     fun forgetHistory()
 
     /**
-     * The share of the last pair that found no good match, 0 to 1, or -1 when
-     * unknown. May wait for the GPU, so the host calls it rarely.
+     * How hard the last pair was, 0 to 1 (1 a scene cut), or -1 when unknown.
+     * May wait for the GPU, so the host calls it rarely.
      */
     fun sampleUnmatched(): Float
 

@@ -21,12 +21,12 @@ import kotlin.math.roundToLong
  * predecessor A and B is drawn at its phase t in (0, 1) between them by a
  * [MotionEngine].
  *
- * **The strongest engine the GPU has.** On a GLES 3.1+ context (every recent
- * phone; Media3 asks for ES 3 and gets the driver's highest) it runs
- * [ComputeMotionEngine], the bidirectional block matcher with occlusion-aware
- * splatting; anywhere else, or if that engine fails to build or throws while
- * running, [FragmentMotionEngine]. Only when the last engine fails does
- * interpolation stop - never playback.
+ * **One engine, GLES 3.2 only.** [ComputeMotionEngine] (SVP's method) runs on
+ * a GLES 3.2 context (Media3 asks for ES 3 and drivers give their highest);
+ * below that, or if the engine fails to build or throws while running,
+ * interpolation stops and frames pass through - never playback. There is no
+ * weaker fallback engine by design: the setting is only offered on GPUs that
+ * run this one ([FrameInterpolationSupport]).
  *
  * **Capacity: one input at a time, and only with room for all its outputs.**
  * The final stage holds each output texture until its display time, so the
@@ -51,11 +51,10 @@ internal class FrameInterpolationShaderProgram(
 
     private var copyProgram: GlProgram? = null
 
-    /** The engine in use, and the ones still to fall back to, strongest first. */
+    /** The engine, null before it is built and after it failed. */
     private var engine: MotionEngine? = null
-    private val fallbacks = ArrayDeque<MotionEngine>()
 
-    /** False once every engine failed; frames still pass through. */
+    /** False once the engine failed or cannot run here; frames still pass through. */
     private var interpolationUsable = !useHdr
     private var programsBuilt = false
 
@@ -185,8 +184,6 @@ internal class FrameInterpolationShaderProgram(
         try {
             copyProgram?.delete()
             engine?.release()
-            fallbacks.forEach { it.release() }
-            fallbacks.clear()
             engine = null
             MotionGl.releaseQuietly(reference)
             reference = null
@@ -298,7 +295,11 @@ internal class FrameInterpolationShaderProgram(
                     }
                     val output = takeOutput()
                     try {
-                        motion.compose(reference!!, input, output, (tickUs - previousUs) / spanUs)
+                        motion.compose(
+                            reference!!, input, output,
+                            phase = (tickUs - previousUs) / spanUs,
+                            step = (clock.stepUs / spanUs).toFloat()
+                        )
                     } catch (e: Exception) {
                         recycle(output)
                         throw e
@@ -338,16 +339,16 @@ internal class FrameInterpolationShaderProgram(
     }
 
     /**
-     * Reads the engine's match quality back for the log. A readback waits for
-     * the GPU to finish, so it happens once every [READBACK_EVERY_PAIRS] pairs
-     * (about two seconds), never per frame.
+     * Reads how hard the engine judged a pair, for the log. A readback waits
+     * for the GPU to finish, so it happens once every [READBACK_EVERY_PAIRS]
+     * pairs (about two seconds), never per frame.
      */
     private fun sampleMatchQuality() {
         try {
-            val unmatched = engine?.sampleUnmatched() ?: return
-            if (unmatched < 0f) return
-            control.unmatchedPercent = (unmatched * 100).roundToInt()
-            if (unmatched > CUT_FRACTION) control.sampledCuts++
+            val hardness = engine?.sampleUnmatched() ?: return
+            if (hardness < 0f) return
+            control.unmatchedPercent = (hardness * 100).roundToInt()
+            if (hardness >= CUT_HARDNESS) control.sampledCuts++
         } catch (e: Exception) {
             KLog.w(TAG, "Could not sample match quality: ${e.message}")
         }
@@ -389,14 +390,10 @@ internal class FrameInterpolationShaderProgram(
         }
     }
 
-    /**
-     * The engine in use cannot run here: drop to the next one down, set up
-     * for the current size, starting a fresh pair. With none left,
-     * interpolation stops and frames pass through.
-     */
+    /** The engine cannot run here: interpolation stops for this player and frames pass through. */
     private fun engineFailed(cause: Exception) {
         val failed = engine
-        KLog.e(TAG, "Engine ${failed?.name} failed on this GPU", cause)
+        KLog.e(TAG, "Engine ${failed?.name} failed on this GPU; passing frames through", cause)
         try {
             failed?.release()
         } catch (e: Exception) {
@@ -406,23 +403,6 @@ internal class FrameInterpolationShaderProgram(
         hasReference = false
         currentPrepared = false
         clock.stop()
-        while (fallbacks.isNotEmpty()) {
-            val next = fallbacks.removeFirst()
-            try {
-                if (frameWidth > 0) next.configure(frameWidth, frameHeight)
-                engine = next
-                control.engine = next.name
-                KLog.w(TAG, "Falling back to ${next.name}")
-                return
-            } catch (e: Exception) {
-                KLog.e(TAG, "Engine ${next.name} could not start either", e)
-                try {
-                    next.release()
-                } catch (ignored: Exception) {
-                }
-            }
-        }
-        KLog.e(TAG, "No interpolation engine runs on this GPU; passing frames through")
         interpolationUsable = false
         control.unsupported = true
         control.engine = ""
@@ -462,11 +442,7 @@ internal class FrameInterpolationShaderProgram(
         }
     }
 
-    /**
-     * The copy program, then the strongest engine this context can build:
-     * compute on GLES 3.1+, fragment passes otherwise, each falling back to
-     * the next.
-     */
+    /** The copy program, then the engine - on a GLES 3.2 context only. */
     private fun buildPrograms() {
         programsBuilt = true
         copyProgram = GlProgram(VERTEX_SHADER, COPY_FRAGMENT).apply {
@@ -482,30 +458,27 @@ internal class FrameInterpolationShaderProgram(
             TAG,
             "GPU ${GLES20.glGetString(GLES20.GL_RENDERER)} | ${GLES20.glGetString(GLES20.GL_VERSION)}"
         )
-        val candidates = buildList {
-            if (gles >= 31) add(ComputeMotionEngine(control))
-            add(FragmentMotionEngine(control))
+        if (gles < FrameInterpolationSupport.MIN_GLES) {
+            KLog.w(TAG, "GLES ${gles / 10}.${gles % 10} context; Smooth motion needs 3.2. Passing frames through")
+            interpolationUsable = false
+            control.unsupported = true
+            return
         }
-        for ((index, candidate) in candidates.withIndex()) {
+        val candidate = ComputeMotionEngine(control)
+        try {
+            candidate.build()
+            engine = candidate
+            control.engine = candidate.name
+            KLog.i(TAG, "Motion engine: ${candidate.name}")
+        } catch (e: Exception) {
+            KLog.e(TAG, "Engine ${candidate.name} could not build here; passing frames through", e)
             try {
-                candidate.build()
-                engine = candidate
-                fallbacks.clear()
-                fallbacks.addAll(candidates.drop(index + 1))
-                control.engine = candidate.name
-                KLog.i(TAG, "Motion engine: ${candidate.name}")
-                return
-            } catch (e: Exception) {
-                KLog.e(TAG, "Engine ${candidate.name} could not build here", e)
-                try {
-                    candidate.release()
-                } catch (ignored: Exception) {
-                }
+                candidate.release()
+            } catch (ignored: Exception) {
             }
+            interpolationUsable = false
+            control.unsupported = true
         }
-        KLog.e(TAG, "No interpolation engine builds on this GPU; passing frames through")
-        interpolationUsable = false
-        control.unsupported = true
     }
 
     private fun drawCopy(source: GlTextureInfo, target: GlTextureInfo) {
@@ -533,8 +506,8 @@ internal class FrameInterpolationShaderProgram(
         /** One match-quality readback per this many pairs, for the log. */
         const val READBACK_EVERY_PAIRS = 60L
 
-        /** The share of a pair left unmatched past which the log counts a scene cut. */
-        const val CUT_FRACTION = 0.5f
+        /** [MotionEngine.sampleUnmatched] at a scene cut (SVP's class 3 of 3). */
+        const val CUT_HARDNESS = 0.99f
 
         const val VERTEX_SHADER = """
 attribute vec4 aFramePosition;
