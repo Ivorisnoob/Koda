@@ -51,8 +51,11 @@ import kotlin.math.roundToInt
  * normalised luma, 8x8 blocks matched over 12x12 windows, coarse to fine,
  * both directions, 3x3 vector median); its output is restated in SVP's terms
  * by FIELD, so a search that works like SVP's (svpflow1) can replace it
- * without touching the rest. Only the coarsest level searches wide; the
- * finer ones refine around their best candidate ([ComputeMotionPlan.radius]).
+ * without touching the rest. The finest level is at most 320 px on its long
+ * side whatever the video's size ([ComputeMotionPlan.LEVEL0_LONG_SIDE]), so
+ * the search costs the same at 480p and 4K; only the coarsest level searches
+ * wide, and the finer ones refine around their best candidate
+ * ([ComputeMotionPlan.radius]).
  *
  * **Scheduling.** Dispatches that do not read each other's output are queued
  * together (the two search directions, FIELD's two fields, PREP with SCENE,
@@ -292,6 +295,12 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
             p.sampler("uTex", 0, if (k == 0) source.texId else pyramid[k - 1].id)
             p.int("uFromLuma", if (k == 0) 0 else 1)
             p.vec2("uDstTexel", 1f / scratch.size.w, 1f / scratch.size.h)
+            val ratio = if (k == 0) {
+                max(source.width.toFloat() / scratch.size.w, source.height.toFloat() / scratch.size.h)
+            } else {
+                2f
+            }
+            p.int("uTaps", ComputeMotionPlan.lumaTaps(ratio))
             drawQuad(p)
 
             val n = normalizeProgram
@@ -726,13 +735,16 @@ void main() {
 """
 
         /**
-         * Luma at the target size from four bilinear taps a quarter texel
-         * out: a 2x2 box for a halving, a light filter at the same size.
+         * Luma at the target size as the mean of uTaps x uTaps bilinear taps
+         * spread evenly over the target texel ([ComputeMotionPlan.lumaTaps]):
+         * with 2, taps a quarter texel out, a 2x2 box for a halving; more for
+         * the first level's larger step down from the frame.
          */
         const val LUMA = HEADER + FRAGMENT_PRECISION + """
 uniform sampler2D uTex;
 uniform int uFromLuma;
 uniform vec2 uDstTexel;
+uniform int uTaps;
 in vec2 vTexCoord;
 out vec4 outColor;
 
@@ -742,10 +754,15 @@ float lumaAt(vec2 uv) {
 }
 
 void main() {
-  vec2 o = 0.25 * uDstTexel;
-  float s = lumaAt(vTexCoord + vec2(-o.x, -o.y)) + lumaAt(vTexCoord + vec2(o.x, -o.y))
-      + lumaAt(vTexCoord + vec2(-o.x, o.y)) + lumaAt(vTexCoord + vec2(o.x, o.y));
-  outColor = vec4(s * 0.25, 0.0, 0.0, 1.0);
+  float n = float(uTaps);
+  float s = 0.0;
+  for (int j = 0; j < uTaps; j++) {
+    for (int i = 0; i < uTaps; i++) {
+      vec2 o = (vec2(float(i), float(j)) + 0.5) / n - 0.5;
+      s += lumaAt(vTexCoord + o * uDstTexel);
+    }
+  }
+  outColor = vec4(s / (n * n), 0.0, 0.0, 1.0);
 }
 """
 
@@ -1548,11 +1565,22 @@ void main() {
 
 /** Sizes for [ComputeMotionEngine], kept pure for tests. */
 internal object ComputeMotionPlan {
-    /** The long side of the full-resolution level; 4K is matched at half size. */
-    const val LEVEL0_LONG_SIDE = 1920
+    /**
+     * The long side of the finest level the motion is searched at, whatever
+     * the video's size: the search's cost follows this level, not the frame,
+     * and the renderer scales its vectors up to the frame. [measured September
+     * 2026] On an Adreno 613 a full-size search took ~310 ms per 480p pair
+     * against a 33 ms budget (about 2.6 ms per million pixel comparisons), and
+     * ~1.4 s at 1080p; at 320 px it is a few million comparisons.
+     */
+    const val LEVEL0_LONG_SIDE = 320
 
-    /** Levels stop once the long side is at or under this, or at six. */
-    const val COARSEST_LONG_SIDE = 120
+    /**
+     * Levels stop once the long side is at or under this, or at six. At 40 px
+     * the coarsest level's +-8 reaches a fifth of the frame per source frame,
+     * and its handful of blocks makes that wide search cheap.
+     */
+    const val COARSEST_LONG_SIDE = 40
 
     fun levels(width: Int, height: Int): List<ComputeMotionEngine.Size> {
         val longSide = max(width, height).coerceAtLeast(1)
@@ -1585,29 +1613,40 @@ internal object ComputeMotionPlan {
 
     /**
      * The coarsest level's radius, the widest the SEARCH shader's window holds
-     * (its MAX_RADIUS): at a 120 px long side, +-8 px there is +-128 px of 1080p.
+     * (its MAX_RADIUS): at a 40 px long side, +-8 px there is +-384 px of 1080p.
      */
     const val COARSE_RADIUS = 8
 
-    /** The two levels under the coarsest re-search this far, for small, fast objects it averaged away. */
-    const val MIDDLE_RADIUS = 4
+    /** The level under the coarsest re-searches this far, for small, fast objects it averaged away. */
+    const val MIDDLE_RADIUS = 2
 
-    /** The finer levels only refine, around a best candidate already within a pixel or two. */
-    const val FINE_RADIUS = 2
+    /** The finer levels only refine, around a best candidate already within a pixel. */
+    const val FINE_RADIUS = 1
 
     /**
-     * Search radius in px at [level] of [levelCount] (0 the full-resolution
-     * level). Only the coarsest level searches wide. Every finer level starts
-     * from the best of its parent's vector, the parent's four neighbours', the
-     * previous pair's and zero, which already lands within a pixel or two, so
-     * a wide window there mostly costs time and finds wrong matches in
-     * repeating texture that the coarser levels had ruled out. The cost grows
-     * with the square of the radius, and the full-resolution level holds three
-     * quarters of all blocks. [judgement September 2026]
+     * Search radius in px at [level] of [levelCount] (0 the finest level).
+     * Only the coarsest level searches wide. Every finer level first picks
+     * the best of seven predictions - its parent's vector, the parent's four
+     * neighbours', the previous pair's and zero - and only refines around it:
+     * 9 positions at +-1, against 81 at +-4, and the sub-pixel fit finishes
+     * the job. A wide window there mostly costs time and finds wrong matches
+     * in repeating texture that the coarser levels had ruled out.
+     * [judgement September 2026]
      */
     fun radius(level: Int, levelCount: Int): Int = when (levelCount - 1 - level) {
         0 -> COARSE_RADIUS
-        1, 2 -> MIDDLE_RADIUS
+        1 -> MIDDLE_RADIUS
         else -> FINE_RADIUS
     }
+
+    /**
+     * Bilinear taps per side the LUMA pass takes for one texel of a level
+     * [ratio] times smaller than its source: each tap already averages 2x2
+     * source texels, so ceil(ratio / 2) of them cover the texel's footprint
+     * (2, the plain 2x2 box, for a halving) and a big first step does not
+     * alias. Capped so a 4K frame costs a bounded pass.
+     */
+    fun lumaTaps(ratio: Float): Int = kotlin.math.ceil(ratio / 2f).toInt().coerceIn(2, MAX_LUMA_TAPS)
+
+    const val MAX_LUMA_TAPS = 8
 }

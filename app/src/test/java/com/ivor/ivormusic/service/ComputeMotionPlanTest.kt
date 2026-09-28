@@ -7,24 +7,31 @@ import org.junit.Test
 
 class ComputeMotionPlanTest {
 
-    @Test fun `1080p is matched at full size down to about 120 px`() {
-        val levels = ComputeMotionPlan.levels(1920, 1080)
-        assertEquals(Size(1920, 1080), levels.first())
-        assertEquals(listOf(1920, 960, 480, 240, 120), levels.map { it.w })
+    @Test fun `every size is searched at 320 px down to about 40 px`() {
+        for ((w, h) in listOf(854 to 480, 1280 to 720, 1920 to 1080, 3840 to 2160)) {
+            val levels = ComputeMotionPlan.levels(w, h)
+            assertEquals("${w}x$h", Size(320, 180), levels.first())
+            assertEquals("${w}x$h", listOf(320, 160, 80, 40), levels.map { it.w })
+        }
     }
 
-    @Test fun `720p is matched at full size over five levels`() {
-        assertEquals(listOf(1280, 640, 320, 160, 80), ComputeMotionPlan.levels(1280, 720).map { it.w })
+    @Test fun `a portrait video is searched at 320 px on its long side`() {
+        assertEquals(Size(180, 320), ComputeMotionPlan.levels(1080, 1920).first())
     }
 
-    @Test fun `4K is matched at half size`() {
-        assertEquals(Size(1920, 1080), ComputeMotionPlan.levels(3840, 2160).first())
-    }
-
-    @Test fun `480p keeps its own size`() {
-        val levels = ComputeMotionPlan.levels(854, 480)
-        assertEquals(Size(854, 480), levels.first())
+    @Test fun `a video smaller than the search size keeps its own size`() {
+        val levels = ComputeMotionPlan.levels(256, 144)
+        assertEquals(Size(256, 144), levels.first())
         assertTrue(maxOf(levels.last().w, levels.last().h) <= ComputeMotionPlan.COARSEST_LONG_SIDE)
+    }
+
+    @Test fun `the first luma step covers its footprint, and a halving is a 2x2 box`() {
+        assertEquals(2, ComputeMotionPlan.lumaTaps(2f))
+        assertEquals(2, ComputeMotionPlan.lumaTaps(0.5f))
+        assertEquals(2, ComputeMotionPlan.lumaTaps(3.5f))
+        assertEquals(3, ComputeMotionPlan.lumaTaps(6f)) // 1080p to 320
+        assertEquals(6, ComputeMotionPlan.lumaTaps(12f)) // 4K to 320
+        assertEquals(ComputeMotionPlan.MAX_LUMA_TAPS, ComputeMotionPlan.lumaTaps(100f))
     }
 
     @Test fun `tiny and degenerate frames still give a usable level`() {
@@ -38,10 +45,10 @@ class ComputeMotionPlanTest {
         assertEquals(Size(240, 135), ComputeMotionPlan.fieldSize(Size(1920, 1080)))
     }
 
-    @Test fun `only the coarsest level searches wide, the two under it re-search and the rest refine`() {
-        // 720p and 1080p both have five levels, so both search alike.
-        assertEquals(listOf(2, 2, 4, 4, 8), (0 until 5).map { ComputeMotionPlan.radius(it, 5) })
-        assertEquals(listOf(2, 4, 4, 8), (0 until 4).map { ComputeMotionPlan.radius(it, 4) })
+    @Test fun `only the coarsest level searches wide, the one under it re-searches and the rest refine`() {
+        // Every video from 480p up has these four levels.
+        assertEquals(listOf(1, 1, 2, 8), (0 until 4).map { ComputeMotionPlan.radius(it, 4) })
+        assertEquals(listOf(1, 1, 1, 2, 8), (0 until 5).map { ComputeMotionPlan.radius(it, 5) })
         // A frame already at the coarsest size is its own coarsest level.
         assertEquals(8, ComputeMotionPlan.radius(0, 1))
     }
