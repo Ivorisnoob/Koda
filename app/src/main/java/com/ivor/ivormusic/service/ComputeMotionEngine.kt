@@ -133,6 +133,12 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
     private var motionGrid = Size(1, 1)
     private var hasPrevious = false
 
+    /** Diagnostic: milliseconds per stage of the pair being profiled, null when not profiling. */
+    private var profile: LinkedHashMap<String, Double>? = null
+    private var profileTicks = 0
+    private var profileMarkNs = 0L
+    private var profileReport: String? = null
+
     private val quad: FloatBuffer = ByteBuffer
         .allocateDirect(QUAD.size * 4)
         .order(ByteOrder.nativeOrder())
@@ -190,7 +196,9 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
     }
 
     override fun estimate(current: GlTextureInfo) {
+        profileStart()
         buildPyramid(current, pyramidCur)
+        profileMark("pyramid")
         // Last pair's level-0 fields become this pair's temporal candidates.
         prevFieldF = filtF[0].also { filtF[0] = prevFieldF!! }
         prevFieldB = filtB[0].also { filtB[0] = prevFieldB!! }
@@ -199,15 +207,48 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         svpField(filtF[0], pyramidRef[0], pyramidCur[0], svpForward!!)
         svpField(filtB[0], pyramidCur[0], pyramidRef[0], svpBackward!!)
         barrier()
+        profileMark("field")
         prep()
         scene()
         barrier()
+        profileMark("prep+scene")
         GlUtil.checkGlError()
         hasPrevious = true
     }
 
     override fun promoteCurrent() {
         pyramidRef = pyramidCur.also { pyramidCur = pyramidRef }
+        val stages = profile ?: return
+        profile = null
+        val l0 = levels.firstOrNull()
+        profileReport = buildString {
+            append("GPU ms, level 0 ").append(l0?.w).append('x').append(l0?.h)
+            append(", tick stages summed over ").append(profileTicks).append(" ticks:")
+            for ((stage, ms) in stages) append(' ').append(stage).append('=').append("%.2f".format(ms))
+        }
+    }
+
+    override fun startProfile() {
+        profile = LinkedHashMap()
+        profileTicks = 0
+    }
+
+    override fun takeProfile(): String? = profileReport.also { profileReport = null }
+
+    /** Profiling only: waits for the GPU, then starts timing the next stage. */
+    private fun profileStart() {
+        if (profile == null) return
+        GLES20.glFinish()
+        profileMarkNs = System.nanoTime()
+    }
+
+    /** Profiling only: waits for the GPU and charges the time since the last mark to [stage]. */
+    private fun profileMark(stage: String) {
+        val stages = profile ?: return
+        GLES20.glFinish()
+        val now = System.nanoTime()
+        stages[stage] = (stages[stage] ?: 0.0) + (now - profileMarkNs) / 1_000_000.0
+        profileMarkNs = now
     }
 
     override fun compose(
@@ -217,16 +258,22 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         phase: Float,
         step: Float
     ) {
+        profileStart()
         stateIndex = 1 - stateIndex
         val tickState = states[stateIndex]
         phase(phase.coerceIn(0f, 1f), step, tickState)
         clearCover()
         barrier()
+        profileMark("tick phase+clear")
         splatCover()
         barrier()
+        profileMark("tick splat")
         finishCover()
         barrier()
+        profileMark("tick finish")
         drawRender(reference, current, target, tickState)
+        profileMark("tick render")
+        if (profile != null) profileTicks++
         GlUtil.checkGlError()
     }
 
@@ -321,6 +368,7 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
             median(rawF[k], filtF[k], fieldSizes[k])
             median(rawB[k], filtB[k], fieldSizes[k])
             barrier()
+            profileMark("search L$k")
         }
     }
 

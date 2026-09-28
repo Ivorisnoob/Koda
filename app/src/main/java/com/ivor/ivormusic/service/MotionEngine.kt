@@ -60,6 +60,16 @@ internal interface MotionEngine {
      */
     fun takeHardness(): Float
 
+    /**
+     * Diagnostic: the next pair and its ticks wait for the GPU after every
+     * stage and record how long each took. Stalls that pair, so the host asks
+     * for it rarely.
+     */
+    fun startProfile()
+
+    /** The report of the last profiled pair, once, or null. */
+    fun takeProfile(): String?
+
     fun release()
 }
 

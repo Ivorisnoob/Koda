@@ -83,6 +83,12 @@ internal class FrameInterpolationShaderProgram(
     /** Timestamps handed downstream must strictly increase. */
     private var lastEmittedUs = Long.MIN_VALUE
 
+    /** Diagnostic: GL-thread time per input, and how often decoding had to wait for output room. */
+    private var windowInputs = 0
+    private var windowBusyNs = 0L
+    private var windowMaxNs = 0L
+    private var windowCapacityWaits = 0
+
     override fun setInputListener(inputListener: GlShaderProgram.InputListener) {
         this.inputListener = inputListener
         if (freeCapacity() >= inputDemand) {
@@ -106,6 +112,7 @@ internal class FrameInterpolationShaderProgram(
         inputTexture: GlTextureInfo,
         presentationTimeUs: Long
     ) {
+        val startNs = System.nanoTime()
         try {
             ensureConfigured(inputTexture.width, inputTexture.height)
             measureSource(presentationTimeUs)
@@ -130,7 +137,29 @@ internal class FrameInterpolationShaderProgram(
             inputListener.onReadyToAcceptInputFrame()
         } else {
             awaitingCapacity = true
+            windowCapacityWaits++
         }
+        noteInputTime(System.nanoTime() - startNs)
+    }
+
+    /** Diagnostic: every [HOST_REPORT_EVERY_INPUTS] inputs, logs the GL-thread time they took. */
+    private fun noteInputTime(ns: Long) {
+        windowInputs++
+        windowBusyNs += ns
+        windowMaxNs = maxOf(windowMaxNs, ns)
+        if (windowInputs < HOST_REPORT_EVERY_INPUTS) return
+        KLog.d(
+            TAG,
+            "host: ${frameWidth}x$frameHeight per input avg=%.2fms max=%.2fms, waited for output room %d of %d, pool %d/%d"
+                .format(
+                    windowBusyNs / 1_000_000.0 / windowInputs, windowMaxNs / 1_000_000.0,
+                    windowCapacityWaits, windowInputs, usedOutputs.size, poolCapacity
+                )
+        )
+        windowInputs = 0
+        windowBusyNs = 0L
+        windowMaxNs = 0L
+        windowCapacityWaits = 0
     }
 
     override fun releaseOutputFrame(outputTexture: GlTextureInfo) {
@@ -287,6 +316,7 @@ internal class FrameInterpolationShaderProgram(
                 if (tickUs > lastEmittedUs && tickUs > previousUs) {
                     val motion = engine!!
                     if (!motionReady) {
+                        if ((control.pairs + 1) % PROFILE_EVERY_PAIRS == PROFILE_OFFSET) motion.startProfile()
                         motion.estimate(input)
                         currentPrepared = true
                         motionReady = true
@@ -329,6 +359,7 @@ internal class FrameInterpolationShaderProgram(
             drawCopy(input, reference!!)
             val motion = engine ?: return
             if (currentPrepared) motion.promoteCurrent() else motion.prepareReference(input)
+            motion.takeProfile()?.let { KLog.d(TAG, it) }
             hasReference = true
             referenceTimeUs = presentationTimeUs
         } catch (e: Exception) {
@@ -510,6 +541,13 @@ internal class FrameInterpolationShaderProgram(
 
         /** [MotionEngine.takeHardness] at a scene cut (SVP's class 3 of 3). */
         const val CUT_HARDNESS = 0.99f
+
+        /** Diagnostic: one pair in this many is timed stage by stage, off the read-back's pair. */
+        const val PROFILE_EVERY_PAIRS = 60L
+        const val PROFILE_OFFSET = 30L
+
+        /** Diagnostic: GL-thread time is logged once per this many inputs. */
+        const val HOST_REPORT_EVERY_INPUTS = 120
 
         const val VERTEX_SHADER = """
 attribute vec4 aFramePosition;
