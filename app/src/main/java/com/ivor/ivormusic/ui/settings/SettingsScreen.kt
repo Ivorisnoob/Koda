@@ -363,6 +363,8 @@ fun SettingsScreen(
     onPreferHdrToggle: (Boolean) -> Unit = {},
     frameInterpolation: Boolean,
     onFrameInterpolationToggle: (Boolean) -> Unit,
+    frameInterpolationMaxFps: Int,
+    onFrameInterpolationMaxFpsChange: (Int) -> Unit,
     musicQualityWifi: String,
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
@@ -924,6 +926,8 @@ fun SettingsScreen(
                         if (enabled) showFrameInterpolationWarning = true
                         else onFrameInterpolationToggle(false)
                     },
+                    frameInterpolationMaxFps = frameInterpolationMaxFps,
+                    onFrameInterpolationMaxFpsChange = onFrameInterpolationMaxFpsChange,
                     onOpenQualityPicker = { qualityDialogTarget = it },
                     onBack = { page = SettingsPage.HUB }
                 )

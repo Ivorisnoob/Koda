@@ -997,6 +997,8 @@ internal fun PlaybackSettingsPage(
     onPreferHdrToggle: (Boolean) -> Unit,
     frameInterpolation: Boolean,
     onFrameInterpolationToggle: (Boolean) -> Unit,
+    frameInterpolationMaxFps: Int,
+    onFrameInterpolationMaxFpsChange: (Int) -> Unit,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
     onBack: () -> Unit
 ) {
@@ -1305,6 +1307,20 @@ internal fun PlaybackSettingsPage(
                         onToggle = onFrameInterpolationToggle,
                         explanation = stringResource(R.string.si_frame_interpolation)
                     )
+
+                    AnimatedVisibility(
+                        visible = frameInterpolation,
+                        enter = fadeIn(tween(200)) + slideInVertically(
+                            initialOffsetY = { -it / 4 },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                        ),
+                        exit = fadeOut(tween(150))
+                    ) {
+                        FrameInterpolationRateChoice(
+                            maxFps = frameInterpolationMaxFps,
+                            onMaxFpsChange = onFrameInterpolationMaxFpsChange
+                        )
+                    }
                 }
             }
         }
@@ -2768,6 +2784,76 @@ private fun SettingsFootnote(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             lineHeight = 17.sp
+        )
+    }
+}
+
+/**
+ * Smooth motion's output cap, shown only while it is on. The screen's own
+ * fastest mode caps it further, so the caption names that rate: a 90 Hz
+ * phone on "Up to 120" plays at 90, and saying so beats a choice that
+ * silently does nothing.
+ */
+@Composable
+private fun FrameInterpolationRateChoice(
+    maxFps: Int,
+    onMaxFpsChange: (Int) -> Unit
+) {
+    val context = LocalContext.current
+    val screenHz = remember(context) {
+        val display = runCatching { context.display }.getOrNull()
+        val mode = display?.mode
+        display?.supportedModes
+            ?.filter { mode == null || (it.physicalWidth == mode.physicalWidth && it.physicalHeight == mode.physicalHeight) }
+            ?.maxOfOrNull { it.refreshRate }
+            ?.let { kotlin.math.round(it).toInt() }
+    }
+    val options = listOf(
+        ThemePreferences.FRAME_INTERPOLATION_FPS_LOW to stringResource(R.string.sp_frame_interpolation_rate_60),
+        ThemePreferences.FRAME_INTERPOLATION_FPS_HIGH to stringResource(R.string.sp_frame_interpolation_rate_120),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+        ) {
+            options.forEachIndexed { index, (fps, label) ->
+                ToggleButton(
+                    checked = maxFps == fps,
+                    onCheckedChange = { onMaxFpsChange(fps) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) {
+                    Text(label)
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = if (screenHz != null && screenHz > 0) {
+                stringResource(
+                    R.string.sp_frame_interpolation_rate_hint,
+                    screenHz,
+                    minOf(maxFps, screenHz).coerceAtLeast(ThemePreferences.FRAME_INTERPOLATION_FPS_LOW)
+                )
+            } else {
+                stringResource(R.string.sp_frame_interpolation_rate_hint_unknown)
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
         )
     }
 }
