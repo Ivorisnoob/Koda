@@ -383,10 +383,10 @@ class OutputClock {
  * and up to [maxDropRatio] of frames dropped over a sustained window.
  */
 class FrameDropWatch(
-    private val graceMs: Long = 3_000L,
-    private val windowPolls: Int = 16,
-    private val minimumPolls: Int = 12,
-    private val maxDropRatio: Float = 0.05f,
+    private val graceMs: Long = 6_000L,
+    private val windowPolls: Int = 24,
+    private val minimumPolls: Int = 20,
+    private val maxDropRatio: Float = 0.10f,
     /** Position movement off the expected pace beyond this is a seek. */
     private val seekToleranceMs: Long = 1_500L,
 ) {
@@ -530,6 +530,9 @@ class FrameInterpolationGovernor(context: Context) {
     ) {
         if (!enabledByUser || !pipelineInstalled) {
             setActive(false)
+            // Switched off in the player: switching it back on is a deliberate
+            // retry, so the video gets a fresh chance and a fresh grace period.
+            if (!enabledByUser) playbackKey = null
             _status.value = if (!enabledByUser) {
                 FrameInterpolationStatus.Disabled
             } else {

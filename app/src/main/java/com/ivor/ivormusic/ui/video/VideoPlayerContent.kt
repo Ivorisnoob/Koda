@@ -1420,7 +1420,14 @@ fun VideoPlayerContent(
     // Keeping the action wiring here prevents the two surfaces from drifting
     // back into different feature sets.
     val smoothMotionStatus by viewModel.frameInterpolationStatus.collectAsState()
-    val smoothMotionText = smoothMotionStatusText(smoothMotionStatus)
+    val smoothMotionAvailable by viewModel.smoothMotionAvailable.collectAsState()
+    val smoothMotionOn by viewModel.smoothMotionOn.collectAsState()
+    val smoothMotionText = when {
+        !smoothMotionOn -> stringResource(R.string.vpc_smooth_motion_off)
+        // Switched on a moment ago: the next progress poll reports what it is doing.
+        else -> smoothMotionStatusText(smoothMotionStatus)
+            ?: stringResource(R.string.vpc_smooth_motion_measuring)
+    }
     val playbackSettingsContent: @Composable () -> Unit = {
         PlayerSettingsSections(
             isLoading = isLoading,
@@ -1496,6 +1503,9 @@ fun VideoPlayerContent(
                 showPlaybackSettings = false
                 onListenAsMusic()
             },
+            showSmoothMotion = smoothMotionAvailable,
+            smoothMotionOn = smoothMotionOn,
+            onSmoothMotionChanged = viewModel::setSmoothMotionOn,
             smoothMotionStatus = smoothMotionText
         )
     }
@@ -1642,8 +1652,12 @@ private fun PlayerSettingsSections(
     onZoomToFillChanged: (Boolean) -> Unit,
     showListenAsMusic: Boolean,
     onListenAsMusic: () -> Unit,
-    /** What Smooth motion is doing for this video; null hides the row (setting off). */
-    smoothMotionStatus: String?
+    /** Smooth motion is turned on in Settings (and this GPU runs it), so the panel offers its switch. */
+    showSmoothMotion: Boolean,
+    smoothMotionOn: Boolean,
+    onSmoothMotionChanged: (Boolean) -> Unit,
+    /** What Smooth motion is doing for this video, or that it is switched off. */
+    smoothMotionStatus: String
 ) {
     val optionColors = ToggleButtonDefaults.colors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -1965,7 +1979,7 @@ private fun PlayerSettingsSections(
 
     val hasSecondaryActions = showPip || showComments || showQueue ||
         showTimedComments || showLiveChat || showVerticalLive || showZoomToFill ||
-        smoothMotionStatus != null
+        showSmoothMotion
     if (hasSecondaryActions) {
         Spacer(modifier = Modifier.height(16.dp))
         SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "More controls")
@@ -1975,21 +1989,17 @@ private fun PlayerSettingsSections(
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Column {
-                // A read-out rather than a switch: turning Smooth motion on
-                // goes through its warning in Settings, and this row exists
-                // to answer "is it doing anything right now?".
-                if (smoothMotionStatus != null) {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.vpc_smooth_motion)) },
-                        supportingContent = { Text(smoothMotionStatus) },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Rounded.Animation,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                // Settings makes Smooth motion available (behind its warning);
+                // this switch turns it on and off from the video itself and is
+                // remembered. Its supporting line answers "is it doing anything
+                // right now?". Kept open like zoom: the change shows at once.
+                if (showSmoothMotion) {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Animation,
+                        title = stringResource(R.string.vpc_smooth_motion),
+                        supportingText = smoothMotionStatus,
+                        checked = smoothMotionOn,
+                        onCheckedChange = onSmoothMotionChanged
                     )
                 }
                 if (showZoomToFill) {

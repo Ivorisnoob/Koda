@@ -163,6 +163,22 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         frameInterpolationSupported && themePreferences.isFrameInterpolationEnabled()
     private var playerHasInterpolation = false
 
+    /** Available and switched on in the player's settings panel: whether frames are drawn. */
+    private fun frameInterpolationOn(): Boolean =
+        frameInterpolationWanted() && themePreferences.isFrameInterpolationPlayerOn()
+
+    /** Whether the player's settings panel offers the Smooth motion switch. */
+    val smoothMotionAvailable: StateFlow<Boolean> = themePreferences.frameInterpolation
+        .map { it && frameInterpolationSupported }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, frameInterpolationWanted())
+
+    /** The player's Smooth motion switch, remembered across videos and launches. */
+    val smoothMotionOn: StateFlow<Boolean> = themePreferences.frameInterpolationPlayerOn
+
+    fun setSmoothMotionOn(on: Boolean) {
+        themePreferences.setFrameInterpolationPlayerOn(on)
+    }
+
     /** What Smooth motion is doing for the video on screen, for the player's settings panel. */
     val frameInterpolationStatus: StateFlow<com.ivor.ivormusic.service.FrameInterpolationStatus> =
         frameInterpolation.status
@@ -1442,7 +1458,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     } else null
                     val quality = _currentQuality.value
                     frameInterpolation.update(
-                        enabledByUser = frameInterpolationWanted(),
+                        enabledByUser = frameInterpolationOn(),
                         userMaxFps = themePreferences.getFrameInterpolationMaxFps(),
                         pipelineInstalled = playerHasInterpolation,
                         currentVideoId = _currentVideo.value?.videoId,

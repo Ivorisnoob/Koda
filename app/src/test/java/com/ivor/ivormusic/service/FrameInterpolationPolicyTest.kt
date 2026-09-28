@@ -205,8 +205,23 @@ class FrameInterpolationPolicyTest {
     @Test fun `sustained drops while interpolating are judged overload`() {
         val playback = Playback()
         playback.watch.restart(playback.now)
-        // 12 of 120 frames a second late is 10%, well past 5%.
-        assertTrue(playback.play(seconds = 12, dropsPerSecond = 12))
+        // 24 of 120 frames a second late is 20%, well past 10%.
+        assertTrue(playback.play(seconds = 20, dropsPerSecond = 24))
+    }
+
+    @Test fun `a phone slightly behind keeps trying`() {
+        // 10 of 120 a second is 8%: over the old 5% line, inside the 10% one.
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        assertFalse(playback.play(seconds = 60, dropsPerSecond = 10))
+    }
+
+    @Test fun `overload is judged only after ten seconds past the grace period`() {
+        val playback = Playback()
+        playback.watch.restart(playback.now)
+        // Six seconds of grace, then under ten seconds of heavy drops: not yet.
+        assertFalse(playback.play(seconds = 15, dropsPerSecond = 60))
+        assertTrue(playback.play(seconds = 2, dropsPerSecond = 60))
     }
 
     @Test fun `drops while only passing frames through are never counted`() {
@@ -221,7 +236,7 @@ class FrameInterpolationPolicyTest {
     @Test fun `startup drops inside the grace period are forgiven`() {
         val playback = Playback()
         playback.watch.restart(playback.now)
-        assertFalse(playback.play(seconds = 3, dropsPerSecond = 40))
+        assertFalse(playback.play(seconds = 6, dropsPerSecond = 40))
         assertFalse(playback.play(seconds = 20, dropsPerSecond = 0))
     }
 

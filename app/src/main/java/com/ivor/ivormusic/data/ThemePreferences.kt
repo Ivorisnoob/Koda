@@ -158,6 +158,9 @@ class ThemePreferences(context: Context) {
     private val _frameInterpolation = MutableStateFlow(isFrameInterpolationEnabled())
     val frameInterpolation: StateFlow<Boolean> = _frameInterpolation.asStateFlow()
 
+    private val _frameInterpolationPlayerOn = MutableStateFlow(isFrameInterpolationPlayerOn())
+    val frameInterpolationPlayerOn: StateFlow<Boolean> = _frameInterpolationPlayerOn.asStateFlow()
+
     private val _frameInterpolationMaxFps = MutableStateFlow(getFrameInterpolationMaxFps())
     val frameInterpolationMaxFps: StateFlow<Int> = _frameInterpolationMaxFps.asStateFlow()
 
@@ -404,6 +407,7 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
             KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
             KEY_FRAME_INTERPOLATION -> _frameInterpolation.value = isFrameInterpolationEnabled()
+            KEY_FRAME_INTERPOLATION_PLAYER_ON -> _frameInterpolationPlayerOn.value = isFrameInterpolationPlayerOn()
             KEY_FRAME_INTERPOLATION_MAX_FPS -> _frameInterpolationMaxFps.value = getFrameInterpolationMaxFps()
             KEY_CAPTION_TEXT_SIZE -> _captionTextSize.value = getCaptionTextSizePreference()
             KEY_CAPTION_TEXT_COLOR -> _captionTextColor.value = getCaptionTextColorPreference()
@@ -644,6 +648,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_PREFER_HDR = "prefer_hdr_video"
         private const val KEY_FRAME_INTERPOLATION = "video_frame_interpolation"
         private const val KEY_FRAME_INTERPOLATION_MAX_FPS = "video_frame_interpolation_max_fps"
+        private const val KEY_FRAME_INTERPOLATION_PLAYER_ON = "video_frame_interpolation_player_on"
         private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
         private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
         private const val KEY_CAPTION_BACKGROUND = "caption_background"
@@ -1566,15 +1571,35 @@ class ThemePreferences(context: Context) {
     }
 
     /**
-     * Smooth motion (video frame interpolation). Off by default and only ever
-     * turned on through its warning dialog; read fresh by the video player.
+     * Smooth motion (video frame interpolation) is available: the player is
+     * built with its effect graph and its settings panel shows the switch
+     * ([isFrameInterpolationPlayerOn]). Off by default and only ever turned on
+     * through its warning dialog; read fresh by the video player.
      */
     fun isFrameInterpolationEnabled(): Boolean =
         prefs.getBoolean(KEY_FRAME_INTERPOLATION, false)
 
+    /** Turning it on here also turns the player's switch on, so it starts working at once. */
     fun setFrameInterpolation(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_FRAME_INTERPOLATION, enabled).apply()
+        prefs.edit().apply {
+            putBoolean(KEY_FRAME_INTERPOLATION, enabled)
+            if (enabled) putBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, true)
+        }.apply()
         _frameInterpolation.value = enabled
+        if (enabled) _frameInterpolationPlayerOn.value = true
+    }
+
+    /**
+     * The switch in the video player's settings panel: whether an available
+     * Smooth motion draws frames. Changes take effect within a poll, without
+     * rebuilding the player; read fresh by the video player.
+     */
+    fun isFrameInterpolationPlayerOn(): Boolean =
+        prefs.getBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, true)
+
+    fun setFrameInterpolationPlayerOn(on: Boolean) {
+        prefs.edit().putBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, on).apply()
+        _frameInterpolationPlayerOn.value = on
     }
 
     /**
