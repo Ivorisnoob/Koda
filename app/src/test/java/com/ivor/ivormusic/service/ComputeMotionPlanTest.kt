@@ -13,6 +13,10 @@ class ComputeMotionPlanTest {
         assertEquals(listOf(1920, 960, 480, 240, 120), levels.map { it.w })
     }
 
+    @Test fun `720p is matched at full size over five levels`() {
+        assertEquals(listOf(1280, 640, 320, 160, 80), ComputeMotionPlan.levels(1280, 720).map { it.w })
+    }
+
     @Test fun `4K is matched at half size`() {
         assertEquals(Size(1920, 1080), ComputeMotionPlan.levels(3840, 2160).first())
     }
@@ -34,11 +38,34 @@ class ComputeMotionPlanTest {
         assertEquals(Size(240, 135), ComputeMotionPlan.fieldSize(Size(1920, 1080)))
     }
 
-    @Test fun `full resolution search is wide up to 720p and narrow above`() {
-        assertEquals(8, ComputeMotionPlan.radius(0, 4, Size(854, 480)))
-        assertEquals(8, ComputeMotionPlan.radius(0, 5, Size(1280, 720)))
-        assertEquals(4, ComputeMotionPlan.radius(0, 5, Size(1920, 1080)))
-        assertEquals(8, ComputeMotionPlan.radius(3, 5, Size(1920, 1080)))
+    @Test fun `only the coarsest level searches wide, the two under it re-search and the rest refine`() {
+        // 720p and 1080p both have five levels, so both search alike.
+        assertEquals(listOf(2, 2, 4, 4, 8), (0 until 5).map { ComputeMotionPlan.radius(it, 5) })
+        assertEquals(listOf(2, 4, 4, 8), (0 until 4).map { ComputeMotionPlan.radius(it, 4) })
+        // A frame already at the coarsest size is its own coarsest level.
+        assertEquals(8, ComputeMotionPlan.radius(0, 1))
+    }
+
+    @Test fun `a finer level never searches wider than the one above it`() {
+        for (count in 1..6) {
+            for (level in 0 until count - 1) {
+                assertTrue(
+                    "level $level of $count",
+                    ComputeMotionPlan.radius(level, count) <= ComputeMotionPlan.radius(level + 1, count)
+                )
+            }
+        }
+    }
+
+    @Test fun `no level searches past the window the search shader loads`() {
+        for (count in 1..6) {
+            for (level in 0 until count) {
+                val radius = ComputeMotionPlan.radius(level, count)
+                // The SEARCH shader's MAX_RADIUS, which sizes its shared window and cost table.
+                assertTrue("level $level of $count: $radius", radius in 1..8)
+            }
+        }
+        assertEquals(8, ComputeMotionPlan.COARSE_RADIUS)
     }
 
     @Test fun `the rounded-up 8 px grid already covers the frame, so the motion grid is the block grid`() {

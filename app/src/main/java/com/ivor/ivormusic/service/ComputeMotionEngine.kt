@@ -40,17 +40,27 @@ import kotlin.math.roundToInt
  * 1-2 hard, 3 a cut) by the share of blocks whose brightness-weighted SAD
  * passes SVP's limits.
  *
- * **Per drawn tick:** PHASE applies SVP's cadence and class rules (a cut shows
- * the nearer frame, hard pairs switch to algorithm 13 and are re-timed toward
- * real frames); COVER splats each field's blocks to the output moment and
- * counts how much of every block cell is covered (SVP's `coverage_mask`);
- * RENDER is the kernel.
+ * **Per drawn tick:** PHASE applies the timing and class rules (every tick
+ * of an easy pair is drawn at its own phase, a cut shows the nearer frame,
+ * hard pairs switch to algorithm 13 and are re-timed toward real frames);
+ * COVER splats each field's blocks to the output moment and counts how much
+ * of every block cell is covered (SVP's `coverage_mask`); RENDER is the
+ * kernel.
  *
  * **The motion search** is this engine's own for now (a luma pyramid of
  * normalised luma, 8x8 blocks matched over 12x12 windows, coarse to fine,
  * both directions, 3x3 vector median); its output is restated in SVP's terms
  * by FIELD, so a search that works like SVP's (svpflow1) can replace it
- * without touching the rest.
+ * without touching the rest. Only the coarsest level searches wide; the
+ * finer ones refine around their best candidate ([ComputeMotionPlan.radius]).
+ *
+ * **Scheduling.** Dispatches that do not read each other's output are queued
+ * together (the two search directions, FIELD's two fields, PREP with SCENE,
+ * PHASE with the coverage clear, the two coverage planes), and each stage
+ * ends in one memory barrier carrying only the bits the next stage needs
+ * ([STAGE_BARRIER_BITS]). GL errors are checked once per call from the host,
+ * not per dispatch, and the scene class the log reports is read back behind a
+ * fence ([takeHardness]), never by waiting for the GPU.
  *
  * GLSL ES 3.10, checked with glslangValidator (`.probe/interp/fi/validate.py`)
  * and run against open-svpflow's own output by `.probe/scratch/sm/render.py`.
@@ -101,14 +111,24 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
     private var motion: Tex? = null
     /** Per motion cell: bad-area mask of the forward and backward vectors, 0-255. */
     private var magnitude: Tex? = null
-    /** Per motion cell, per tick: (forward bad-area, coverage for A's sample, coverage for B's sample, backward bad-area), 0-255. */
+    /** Per motion cell, per tick: (bad-area, coverage for A's sample, coverage for B's sample, 0), 0-255. */
     private var masks: Tex? = null
-    /** 1x1, per tick: (phase / 256, algorithm, show, 1). */
-    private var state: Tex? = null
+    /**
+     * 1x1, per tick: (phase / 256, algorithm, show, class / 3). Two that
+     * alternate, so a tick never overwrites the one the previous tick's RENDER
+     * may still be reading: nothing orders that read before the next PHASE's
+     * store except the barriers of the tick in between.
+     */
+    private var states: Array<Tex> = emptyArray()
+    private var stateIndex = 0
     /** { int class; int show; int algorithm; int phase; } */
     private var stateBuffer = 0
     /** Two coverage accumulators of (motion + 2)^2 ints each. */
     private var coverBuffer = 0
+    /** A copy of the scene class the CPU maps once [readbackFence] has signalled. */
+    private var readbackBuffer = 0
+    /** Behind the copy into [readbackBuffer]; 0 when no reading is in flight. */
+    private var readbackFence = 0L
     private var grid = Size(1, 1)
     private var motionGrid = Size(1, 1)
     private var hasPrevious = false
@@ -156,26 +176,33 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         motion = storage(motionGrid, GLES30.GL_RGBA32F, linear = false, withFbo = false)
         magnitude = storage(motionGrid, GLES30.GL_RGBA16F, linear = false, withFbo = false)
         masks = storage(motionGrid, GLES30.GL_RGBA16F, linear = false, withFbo = false)
-        state = storage(Size(1, 1), GLES30.GL_RGBA16F, linear = false, withFbo = false)
+        states = Array(2) { storage(Size(1, 1), GLES30.GL_RGBA16F, linear = false, withFbo = false) }
+        stateIndex = 0
         stateBuffer = storageBuffer(4)
         coverBuffer = storageBuffer(2 * (motionGrid.w + 2) * (motionGrid.h + 2))
+        readbackBuffer = newReadbackBuffer()
         GlUtil.checkGlError()
     }
 
-    override fun prepareReference(input: GlTextureInfo) = buildPyramid(input, pyramidRef)
+    override fun prepareReference(input: GlTextureInfo) {
+        buildPyramid(input, pyramidRef)
+        GlUtil.checkGlError()
+    }
 
     override fun estimate(current: GlTextureInfo) {
         buildPyramid(current, pyramidCur)
         // Last pair's level-0 fields become this pair's temporal candidates.
         prevFieldF = filtF[0].also { filtF[0] = prevFieldF!! }
         prevFieldB = filtB[0].also { filtB[0] = prevFieldB!! }
-        searchDirection(pyramidRef, pyramidCur, rawF, filtF, prevFieldF!!)
-        searchDirection(pyramidCur, pyramidRef, rawB, filtB, prevFieldB!!)
+        search()
         // Forward vectors belong to A's blocks, backward to B's.
         svpField(filtF[0], pyramidRef[0], pyramidCur[0], svpForward!!)
         svpField(filtB[0], pyramidCur[0], pyramidRef[0], svpBackward!!)
+        barrier()
         prep()
         scene()
+        barrier()
+        GlUtil.checkGlError()
         hasPrevious = true
     }
 
@@ -190,23 +217,59 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         phase: Float,
         step: Float
     ) {
-        phase(phase.coerceIn(0f, 1f), step)
-        cover()
-        drawRender(reference, current, target)
+        stateIndex = 1 - stateIndex
+        val tickState = states[stateIndex]
+        phase(phase.coerceIn(0f, 1f), step, tickState)
+        clearCover()
+        barrier()
+        splatCover()
+        barrier()
+        finishCover()
+        barrier()
+        drawRender(reference, current, target, tickState)
+        GlUtil.checkGlError()
     }
 
     override fun forgetHistory() {
         hasPrevious = false
     }
 
-    /** The last pair's SVP scene class over 3: 0 fine, 0.33 and 0.67 hard, 1 a cut. Waits for the GPU. */
-    override fun sampleUnmatched(): Float {
-        if (stateBuffer == 0) return -1f
-        GLES20.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, stateBuffer)
-        val mapped = GLES30.glMapBufferRange(GLES31.GL_SHADER_STORAGE_BUFFER, 0, 4, GLES30.GL_MAP_READ_BIT)
+    /**
+     * Copies the scene class SCENE just stored into [readbackBuffer] and fences
+     * the copy; [takeHardness] maps it once the fence has signalled, so neither
+     * call waits for the GPU. Nothing is started while a reading is in flight.
+     */
+    override fun requestHardness() {
+        if (stateBuffer == 0 || readbackBuffer == 0 || readbackFence != 0L) return
+        // The copy reads what a shader stored, which only this bit orders.
+        GLES31.glMemoryBarrier(GLES31.GL_BUFFER_UPDATE_BARRIER_BIT)
+        GLES20.glBindBuffer(GLES30.GL_COPY_READ_BUFFER, stateBuffer)
+        GLES20.glBindBuffer(GLES30.GL_COPY_WRITE_BUFFER, readbackBuffer)
+        GLES30.glCopyBufferSubData(GLES30.GL_COPY_READ_BUFFER, GLES30.GL_COPY_WRITE_BUFFER, 0, 0, 4)
+        GLES20.glBindBuffer(GLES30.GL_COPY_READ_BUFFER, 0)
+        GLES20.glBindBuffer(GLES30.GL_COPY_WRITE_BUFFER, 0)
+        readbackFence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
+        GlUtil.checkGlError()
+    }
+
+    /** The requested pair's SVP scene class over 3: 0 fine, 0.33 and 0.67 hard, 1 a cut; -1 until the GPU has got there. */
+    override fun takeHardness(): Float {
+        val fence = readbackFence
+        if (fence == 0L) return -1f
+        // A zero timeout asks and returns; the flush makes sure the fence is on its way.
+        val status = GLES30.glClientWaitSync(fence, GLES30.GL_SYNC_FLUSH_COMMANDS_BIT, 0L)
+        if (status == GLES30.GL_TIMEOUT_EXPIRED) return -1f
+        GLES30.glDeleteSync(fence)
+        readbackFence = 0L
+        if (status == GLES30.GL_WAIT_FAILED) {
+            GlUtil.checkGlError()
+            return -1f
+        }
+        GLES20.glBindBuffer(GLES30.GL_COPY_WRITE_BUFFER, readbackBuffer)
+        val mapped = GLES30.glMapBufferRange(GLES30.GL_COPY_WRITE_BUFFER, 0, 4, GLES30.GL_MAP_READ_BIT)
         val sceneClass = (mapped as? ByteBuffer)?.order(ByteOrder.nativeOrder())?.getInt(0) ?: -3
-        GLES30.glUnmapBuffer(GLES31.GL_SHADER_STORAGE_BUFFER)
-        GLES20.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, 0)
+        if (mapped != null) GLES30.glUnmapBuffer(GLES30.GL_COPY_WRITE_BUFFER)
+        GLES20.glBindBuffer(GLES30.GL_COPY_WRITE_BUFFER, 0)
         GlUtil.checkGlError()
         return sceneClass / 3f
     }
@@ -241,8 +304,29 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         }
     }
 
-    /** Coarsest level first; each level searches around its parent's vectors, then is median-filtered. */
-    private fun searchDirection(
+    /**
+     * Both directions, coarsest level first: each level searches around its
+     * parent's vectors, then is median-filtered. The directions never read
+     * each other's fields, so each stage queues both and waits once, which
+     * also keeps the GPU busy on the coarse levels, where one direction is
+     * only a few dozen workgroups.
+     */
+    private fun search() {
+        val forwardTemporal = prevFieldF!!
+        val backwardTemporal = prevFieldB!!
+        for (k in levels.indices.reversed()) {
+            searchLevel(k, pyramidRef, pyramidCur, rawF, filtF, forwardTemporal)
+            searchLevel(k, pyramidCur, pyramidRef, rawB, filtB, backwardTemporal)
+            barrier()
+            median(rawF[k], filtF[k], fieldSizes[k])
+            median(rawB[k], filtB[k], fieldSizes[k])
+            barrier()
+        }
+    }
+
+    /** Level [k] of one direction: [src]'s 8x8 blocks matched in [dst], one workgroup per block. */
+    private fun searchLevel(
+        k: Int,
         src: Array<Tex>,
         dst: Array<Tex>,
         raw: Array<Tex>,
@@ -250,30 +334,29 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         temporal: Tex
     ) {
         val l0 = levels[0]
-        val temporalPx = fieldSizes[0].let { floatArrayOf(it.w * 8f, it.h * 8f) }
-        for (k in levels.indices.reversed()) {
-            val hasCoarse = k + 1 < levels.size
-            val p = searchProgram
-            p.use()
-            p.sampler("uSrc", 0, src[k].id)
-            p.sampler("uDst", 1, dst[k].id)
-            p.sampler("uCoarse", 2, if (hasCoarse) filtered[k + 1].id else temporal.id)
-            p.sampler("uTemporal", 3, temporal.id)
-            p.int("uHasCoarse", if (hasCoarse) 1 else 0)
-            p.int("uHasTemporal", if (hasPrevious) 1 else 0)
-            p.int("uRadius", ComputeMotionPlan.radius(k, levels.size, l0))
-            p.float("uTemporalScale", levels[k].w.toFloat() / l0.w)
-            p.vec2("uTemporalPx", temporalPx[0], temporalPx[1])
-            p.float("uLambda", LAMBDA)
-            p.image(0, raw[k], GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
-            dispatch(fieldSizes[k].w, fieldSizes[k].h)
+        val hasCoarse = k + 1 < levels.size
+        val p = searchProgram
+        p.use()
+        p.sampler("uSrc", 0, src[k].id)
+        p.sampler("uDst", 1, dst[k].id)
+        p.sampler("uCoarse", 2, if (hasCoarse) filtered[k + 1].id else temporal.id)
+        p.sampler("uTemporal", 3, temporal.id)
+        p.int("uHasCoarse", if (hasCoarse) 1 else 0)
+        p.int("uHasTemporal", if (hasPrevious) 1 else 0)
+        p.int("uRadius", ComputeMotionPlan.radius(k, levels.size))
+        p.float("uTemporalScale", levels[k].w.toFloat() / l0.w)
+        p.vec2("uTemporalPx", fieldSizes[0].w * 8f, fieldSizes[0].h * 8f)
+        p.float("uLambda", LAMBDA)
+        p.image(0, raw[k], GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
+        dispatch(fieldSizes[k].w, fieldSizes[k].h)
+    }
 
-            val m = medianProgram
-            m.use()
-            m.sampler("uField", 0, raw[k].id)
-            m.image(0, filtered[k], GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
-            dispatch(groups(fieldSizes[k].w), groups(fieldSizes[k].h))
-        }
+    private fun median(raw: Tex, filtered: Tex, size: Size) {
+        val m = medianProgram
+        m.use()
+        m.sampler("uField", 0, raw.id)
+        m.image(0, filtered, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
+        dispatch(groups(size.w), groups(size.h))
     }
 
     // ------------------------------------------------------------ SVP, per pair
@@ -324,30 +407,33 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
 
     /**
      * [phase] is this tick's place between A and B, [step] the distance between
-     * ticks in the same units: SVP's `frame_den / frame_num`, which its cadence
-     * and re-timing rules are written in.
+     * ticks in the same units: SVP's `frame_den / frame_num`, which its
+     * re-timing rules are written in. Writes the tick's state into [out].
      */
-    private fun phase(phase: Float, step: Float) {
+    private fun phase(phase: Float, step: Float, out: Tex) {
         val p = phaseProgram
         p.use()
         p.float("uRawPhase", phase * 256f)
         p.float("uStep256", step * 256f)
-        p.int("uCadence", if (SVP_CADENCE) 1 else 0)
-        // SVP's adaptive scene mode needs two or more output frames per source frame.
+        // SVP re-times hard pairs only when two or more output frames fall on each source frame.
         p.int("uAdaptive", if (step <= 0.5f + 1e-4f) 1 else 0)
         GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 0, stateBuffer)
-        p.image(0, state!!, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
+        p.image(0, out, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
         dispatch(1, 1)
     }
 
-    private fun cover() {
+    /** Touches only the coverage buffer, so it runs beside PHASE. */
+    private fun clearCover() {
         val cells = 2 * (motionGrid.w + 2) * (motionGrid.h + 2)
         val clear = coverClearProgram
         clear.use()
         clear.int("uCount", cells)
         GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, 1, coverBuffer)
         dispatch((cells + 63) / 64, 1)
+    }
 
+    /** Each plane adds into its own half of the accumulators, so the two run side by side. */
+    private fun splatCover() {
         val splat = coverSplatProgram
         splat.use()
         splat.sampler("uForward", 0, svpForward!!.id)
@@ -363,7 +449,9 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
             splat.int("uPlane", plane)
             dispatch(groups(grid.w), groups(grid.h))
         }
+    }
 
+    private fun finishCover() {
         val finish = coverFinishProgram
         finish.use()
         finish.sampler("uMagnitude", 0, magnitude!!.id)
@@ -376,7 +464,7 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         dispatch(groups(motionGrid.w), groups(motionGrid.h))
     }
 
-    private fun drawRender(reference: GlTextureInfo, current: GlTextureInfo, target: GlTextureInfo) {
+    private fun drawRender(reference: GlTextureInfo, current: GlTextureInfo, target: GlTextureInfo, tickState: Tex) {
         val l0 = levels[0]
         val p = renderProgram
         GlUtil.focusFramebufferUsingCurrentContext(target.fboId, target.width, target.height)
@@ -385,7 +473,7 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         p.sampler("uCur", 1, current.texId)
         p.sampler("uMotion", 2, motion!!.id)
         p.sampler("uMasks", 3, masks!!.id)
-        p.sampler("uState", 4, state!!.id)
+        p.sampler("uState", 4, tickState.id)
         p.vec2("uFramePx", target.width.toFloat(), target.height.toFloat())
         p.vec2("uLevel0Px", l0.w.toFloat(), l0.h.toFloat())
         p.float("uBlock", BLOCK.toFloat())
@@ -394,10 +482,14 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         drawQuad(p)
     }
 
+    /** Queues a dispatch; whatever reads what it writes waits behind the next [barrier]. */
     private fun dispatch(x: Int, y: Int) {
         GLES31.glDispatchCompute(max(1, x), max(1, y), 1)
-        GLES31.glMemoryBarrier(GLES31.GL_ALL_BARRIER_BITS)
-        GlUtil.checkGlError()
+    }
+
+    /** The end of a stage: its image and storage-buffer writes become visible to what follows. */
+    private fun barrier() {
+        GLES31.glMemoryBarrier(STAGE_BARRIER_BITS)
     }
 
     private fun drawQuad(program: EsProgram) {
@@ -408,10 +500,9 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         GLES20.glEnableVertexAttribArray(location)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         GLES20.glDisableVertexAttribArray(location)
-        GlUtil.checkGlError()
     }
 
-    // ----------------------------------------------------------------- textures
+    // ---------------------------------------------------------------- textures
 
     private fun field(size: Size) = storage(size, GLES30.GL_RGBA16F, linear = true, withFbo = false)
 
@@ -454,17 +545,34 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         return ids[0]
     }
 
+    /** A zeroed one-word buffer the GPU copies into and the CPU maps. */
+    private fun newReadbackBuffer(): Int {
+        val ids = IntArray(1)
+        GLES20.glGenBuffers(1, ids, 0)
+        GLES20.glBindBuffer(GLES30.GL_COPY_WRITE_BUFFER, ids[0])
+        val zeros = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+        GLES20.glBufferData(GLES30.GL_COPY_WRITE_BUFFER, 4, zeros, GLES30.GL_STREAM_READ)
+        GLES20.glBindBuffer(GLES30.GL_COPY_WRITE_BUFFER, 0)
+        GlUtil.checkGlError()
+        return ids[0]
+    }
+
     private fun releaseTextures() {
         for (tex in textures) {
             if (tex.fbo != 0) GLES20.glDeleteFramebuffers(1, intArrayOf(tex.fbo), 0)
             GLES20.glDeleteTextures(1, intArrayOf(tex.id), 0)
         }
         textures.clear()
-        for (buffer in intArrayOf(stateBuffer, coverBuffer)) {
+        if (readbackFence != 0L) {
+            GLES30.glDeleteSync(readbackFence)
+            readbackFence = 0L
+        }
+        for (buffer in intArrayOf(stateBuffer, coverBuffer, readbackBuffer)) {
             if (buffer != 0) GLES20.glDeleteBuffers(1, intArrayOf(buffer), 0)
         }
         stateBuffer = 0
         coverBuffer = 0
+        readbackBuffer = 0
         lumaScratch = emptyArray()
         pyramidRef = emptyArray()
         pyramidCur = emptyArray()
@@ -479,7 +587,7 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         motion = null
         magnitude = null
         masks = null
-        state = null
+        states = emptyArray()
     }
 
     private fun groups(n: Int) = (n + 7) / 8
@@ -492,6 +600,7 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
     private class EsProgram(vertex: String?, source: String) {
         private val id = GLES20.glCreateProgram()
         private val uniforms = HashMap<String, Int>()
+        private val attributes = HashMap<String, Int>()
 
         init {
             val shaders = if (vertex == null) {
@@ -512,10 +621,10 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         /** -1 for a uniform the driver optimised away, which GL then ignores. */
         private fun location(name: String) = uniforms.getOrPut(name) { GLES20.glGetUniformLocation(id, name) }
 
-        fun attribute(name: String): Int {
+        fun attribute(name: String): Int = attributes.getOrPut(name) {
             val location = GLES20.glGetAttribLocation(id, name)
             check(location >= 0) { "Missing attribute $name" }
-            return location
+            location
         }
 
         fun int(name: String, value: Int) = GLES20.glUniform1i(location(name), value)
@@ -560,14 +669,6 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
         const val BLOCK = 8
         const val STEP = 8
 
-        /**
-         * SVP's cadence in its default adaptive scene mode: a tick is drawn only
-         * while it is nearer the frame before it; past the midpoint the next
-         * real frame is shown. [verified September 2026] open-svpflow at 24 to
-         * 60 fps draws 2 of every 5 output frames this way. False draws every tick.
-         */
-        const val SVP_CADENCE = true
-
         /** SVP's `mask.cover`: coverage mask strength, percent. */
         const val COVER_STRENGTH = 100
 
@@ -580,6 +681,18 @@ internal class ComputeMotionEngine(private val control: FrameInterpolationContro
          * `denom = scale_shift_base << 8`); its references were made at pel 2.
          */
         const val COVER_DIVISOR = 2f
+
+        /**
+         * What one stage's writes need before the next stage reads them:
+         * texture fetches, image access and storage-buffer access see the
+         * writes, and later stores wait for earlier reads. The full
+         * `GL_ALL_BARRIER_BITS` also orders framebuffer, pixel-transfer,
+         * command and vertex traffic that no shader here writes for, which
+         * drivers may pay for with extra cache flushes.
+         */
+        const val STAGE_BARRIER_BITS = GLES31.GL_TEXTURE_FETCH_BARRIER_BIT or
+            GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or
+            GLES31.GL_SHADER_STORAGE_BARRIER_BIT
 
         val QUAD = floatArrayOf(
             -1f, -1f, 0f, 1f,
@@ -674,6 +787,16 @@ void main() {
          * around it in uDst, on the normalised channel. Output: xy the vector
          * in this level's px (uSrc position + v = uDst position), z the best
          * match's mean absolute difference, w 1.
+         *
+         * Up to seven candidates (zero, the parent's vector, the previous
+         * pair's, the parent's four neighbours; a repeat is measured once)
+         * pick a centre, and every offset within uRadius of it is measured.
+         * All 64 invocations share every phase: a block's difference is split
+         * into its twelve rows, and rows are added into shared memory as fixed
+         * point, so the total does not depend on the order they land in. The
+         * sub-pixel fit reads its neighbours from that table and measures
+         * only the ones past the radius. Only the part of uDst the radius
+         * (plus one for the fit) reaches is loaded.
          */
         const val SEARCH = HEADER + COMPUTE_PRECISION + """
 layout(local_size_x = 8, local_size_y = 8) in;
@@ -695,11 +818,17 @@ const int MATCH = BLOCK + 2 * MARGIN;
 const int AREA = MATCH * MATCH;
 const int MAX_RADIUS = 8;
 const int WIN = MATCH + 2 * MAX_RADIUS;
+const int MAX_SIDE = 2 * MAX_RADIUS + 1;
+const int CANDIDATES = 7;
+const int THREADS = 64;
+const float FIXED = 65536.0;
 
 shared float sBlock[AREA];
 shared float sWin[WIN * WIN];
-shared vec2 sCand[7];
-shared float sCandCost[7];
+shared vec2 sCand[CANDIDATES];
+shared uint sCandSad[CANDIDATES];
+shared uint sSad[MAX_SIDE * MAX_SIDE];
+shared uint sEdgeSad[4];
 shared uint sBest;
 
 float structureAt(sampler2D tex, ivec2 p) {
@@ -707,28 +836,52 @@ float structureAt(sampler2D tex, ivec2 p) {
   return texelFetch(tex, clamp(p, ivec2(0), size - 1), 0).g;
 }
 
-float sadDirect(ivec2 corner, ivec2 d) {
-  float sad = 0.0;
-  for (int i = 0; i < AREA; i++) {
-    sad += abs(sBlock[i] - structureAt(uDst, corner + ivec2(i % MATCH, i / MATCH) + d));
-  }
-  return sad;
-}
-
-float sadWindow(ivec2 d) {
-  float sad = 0.0;
-  for (int y = 0; y < MATCH; y++) {
-    int row = (y + MAX_RADIUS + d.y) * WIN + MAX_RADIUS + d.x;
-    for (int x = 0; x < MATCH; x++) {
-      sad += abs(sBlock[y * MATCH + x] - sWin[row + x]);
-    }
-  }
-  return sad;
-}
-
 vec2 coarseVector(ivec2 parent, ivec2 offset) {
   ivec2 size = textureSize(uCoarse, 0);
   return texelFetch(uCoarse, clamp(parent + offset, ivec2(0), size - 1), 0).xy * 2.0;
+}
+
+uint fixedSum(float sad) {
+  return uint(sad * FIXED + 0.5);
+}
+
+float windowRow(int y, ivec2 d) {
+  int own = y * MATCH;
+  int row = (y + MAX_RADIUS + d.y) * WIN + MAX_RADIUS + d.x;
+  float sad = 0.0;
+  for (int x = 0; x < MATCH; x++) {
+    sad += abs(sBlock[own + x] - sWin[row + x]);
+  }
+  return sad;
+}
+
+bool repeats(int c) {
+  for (int j = 0; j < c; j++) {
+    if (sCand[j] == sCand[c]) return true;
+  }
+  return false;
+}
+
+ivec2 edgeOffset(int e) {
+  return e == 0 ? ivec2(-1, 0) : (e == 1 ? ivec2(1, 0) : (e == 2 ? ivec2(0, -1) : ivec2(0, 1)));
+}
+
+bool inTable(ivec2 d, int radius) {
+  return abs(d.x) <= radius && abs(d.y) <= radius;
+}
+
+bool needsEdge(ivec2 d, int e, int radius) {
+  int along = e < 2 ? d.x : d.y;
+  return abs(along) < MAX_RADIUS && !inTable(d + edgeOffset(e), radius);
+}
+
+float sadNear(ivec2 d, int e, int radius) {
+  ivec2 n = d + edgeOffset(e);
+  if (inTable(n, radius)) {
+    ivec2 i = n + ivec2(radius);
+    return float(sSad[i.y * (2 * radius + 1) + i.x]) / FIXED;
+  }
+  return float(sEdgeSad[e]) / FIXED;
 }
 
 void main() {
@@ -736,12 +889,17 @@ void main() {
   int li = int(gl_LocalInvocationIndex);
   ivec2 origin = block * BLOCK;
   ivec2 corner = origin - ivec2(MARGIN);
-  for (int k = li; k < AREA; k += 64) {
+  int radius = clamp(uRadius, 0, MAX_RADIUS);
+  int side = 2 * radius + 1;
+  int count = side * side;
+  for (int k = li; k < AREA; k += THREADS) {
     sBlock[k] = structureAt(uSrc, corner + ivec2(k % MATCH, k / MATCH));
   }
+  for (int k = li; k < count; k += THREADS) {
+    sSad[k] = 0u;
+  }
+  if (li < 4) sEdgeSad[li] = 0u;
   if (li == 0) sBest = 0xFFFFFFFFu;
-  memoryBarrierShared();
-  barrier();
 
   vec2 centerPx = vec2(origin) + 4.0;
   ivec2 parent = block / 2;
@@ -751,7 +909,7 @@ void main() {
   }
   vec2 prediction = uHasCoarse == 1 ? coarseVector(parent, ivec2(0)) : temporal;
 
-  if (li < 7) {
+  if (li < CANDIDATES) {
     vec2 candidate = vec2(0.0);
     if (li == 1) {
       candidate = prediction;
@@ -761,55 +919,93 @@ void main() {
       ivec2 offset = li == 3 ? ivec2(1, 0) : (li == 4 ? ivec2(-1, 0) : (li == 5 ? ivec2(0, 1) : ivec2(0, -1)));
       candidate = coarseVector(parent, offset);
     }
-    candidate = floor(candidate + 0.5);
-    sCand[li] = candidate;
-    sCandCost[li] = sadDirect(corner, ivec2(candidate)) / float(AREA) + uLambda * length(candidate - prediction);
+    sCand[li] = floor(candidate + 0.5);
+    sCandSad[li] = 0u;
+  }
+  memoryBarrierShared();
+  barrier();
+
+  ivec2 dstSize = textureSize(uDst, 0);
+  for (int t = li; t < CANDIDATES * MATCH; t += THREADS) {
+    int c = t / MATCH;
+    if (repeats(c)) continue;
+    int y = t - c * MATCH;
+    ivec2 at = corner + ivec2(sCand[c]) + ivec2(0, y);
+    float sad = 0.0;
+    for (int x = 0; x < MATCH; x++) {
+      sad += abs(sBlock[y * MATCH + x] - texelFetch(uDst, clamp(at + ivec2(x, 0), ivec2(0), dstSize - 1), 0).g);
+    }
+    atomicAdd(sCandSad[c], fixedSum(sad));
   }
   memoryBarrierShared();
   barrier();
 
   int bestCandidate = 0;
-  for (int k = 1; k < 7; k++) {
-    if (sCandCost[k] < sCandCost[bestCandidate]) bestCandidate = k;
+  float bestCost = float(sCandSad[0]) / FIXED / float(AREA) + uLambda * length(sCand[0] - prediction);
+  for (int c = 1; c < CANDIDATES; c++) {
+    if (repeats(c)) continue;
+    float cost = float(sCandSad[c]) / FIXED / float(AREA) + uLambda * length(sCand[c] - prediction);
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestCandidate = c;
+    }
   }
   ivec2 center = ivec2(sCand[bestCandidate]);
 
+  int pad = min(radius + 1, MAX_RADIUS);
+  int span = MATCH + 2 * pad;
+  int skip = MAX_RADIUS - pad;
   ivec2 windowOrigin = corner + center - ivec2(MAX_RADIUS);
-  for (int k = li; k < WIN * WIN; k += 64) {
-    sWin[k] = structureAt(uDst, windowOrigin + ivec2(k % WIN, k / WIN));
+  for (int k = li; k < span * span; k += THREADS) {
+    ivec2 q = ivec2(k % span, k / span) + ivec2(skip);
+    sWin[q.y * WIN + q.x] = structureAt(uDst, windowOrigin + q);
   }
   memoryBarrierShared();
   barrier();
 
-  int side = 2 * uRadius + 1;
-  int count = side * side;
-  for (int k = li; k < count; k += 64) {
-    ivec2 d = ivec2(k % side, k / side) - ivec2(uRadius);
-    float cost = sadWindow(d) / float(AREA) + uLambda * length(vec2(center + d) - prediction);
+  for (int t = li; t < count * MATCH; t += THREADS) {
+    int k = t / MATCH;
+    ivec2 d = ivec2(k % side, k / side) - ivec2(radius);
+    atomicAdd(sSad[k], fixedSum(windowRow(t - k * MATCH, d)));
+  }
+  memoryBarrierShared();
+  barrier();
+
+  for (int k = li; k < count; k += THREADS) {
+    ivec2 d = ivec2(k % side, k / side) - ivec2(radius);
+    float cost = float(sSad[k]) / FIXED / float(AREA) + uLambda * length(vec2(center + d) - prediction);
     uint key = (uint(min(cost * 65536.0, 4194303.0)) << 10) | uint(k);
     atomicMin(sBest, key);
   }
   memoryBarrierShared();
   barrier();
 
+  int best = int(sBest & 1023u);
+  ivec2 found = ivec2(best % side, best / side) - ivec2(radius);
+  for (int t = li; t < 4 * MATCH; t += THREADS) {
+    int e = t / MATCH;
+    if (!needsEdge(found, e, radius)) continue;
+    atomicAdd(sEdgeSad[e], fixedSum(windowRow(t - e * MATCH, found + edgeOffset(e))));
+  }
+  memoryBarrierShared();
+  barrier();
+
   if (li == 0) {
-    int k = int(sBest & 1023u);
-    ivec2 d = ivec2(k % side, k / side) - ivec2(uRadius);
-    float s0 = sadWindow(d);
+    float s0 = float(sSad[best]) / FIXED;
     vec2 sub = vec2(0.0);
-    if (abs(d.x) < MAX_RADIUS) {
-      float l = sadWindow(d - ivec2(1, 0));
-      float r = sadWindow(d + ivec2(1, 0));
+    if (abs(found.x) < MAX_RADIUS) {
+      float l = sadNear(found, 0, radius);
+      float r = sadNear(found, 1, radius);
       float den = l - 2.0 * s0 + r;
       if (den > 0.0001) sub.x = clamp(0.5 * (l - r) / den, -0.5, 0.5);
     }
-    if (abs(d.y) < MAX_RADIUS) {
-      float u = sadWindow(d - ivec2(0, 1));
-      float w = sadWindow(d + ivec2(0, 1));
+    if (abs(found.y) < MAX_RADIUS) {
+      float u = sadNear(found, 2, radius);
+      float w = sadNear(found, 3, radius);
       float den = u - 2.0 * s0 + w;
       if (den > 0.0001) sub.y = clamp(0.5 * (u - w) / den, -0.5, 0.5);
     }
-    imageStore(uOut, block, vec4(vec2(center + d) + sub, s0 / float(AREA), 1.0));
+    imageStore(uOut, block, vec4(vec2(center + found) + sub, s0 / float(AREA), 1.0));
   }
 }
 """
@@ -966,7 +1162,8 @@ void main() {
          * ignored and up to two thirds of near-still blocks do not count.
          * 3 when a fifth of the counted blocks pass the scene limit, 2 when
          * they pass m2, 1 when they pass m1, else 0. Written to the state
-         * buffer; w of the state image (read by [sampleUnmatched]) follows.
+         * buffer (and copied back for the log by [requestHardness]); w of the
+         * state image follows.
          */
         const val SCENE = HEADER + COMPUTE_PRECISION + """
 layout(local_size_x = 16, local_size_y = 16) in;
@@ -1051,19 +1248,26 @@ void main() {
 """
 
         /**
-         * One tick: SVP's cadence, cut and class rules. With SVP's cadence
-         * (its default adaptive scene mode) a tick at or past the pair's
-         * midpoint is the next real frame. A cut shows the nearer frame. A
-         * hard pair (class 1, 2) is re-timed toward the real frames
-         * (frame_math `scene_phase_256`, modes 0 and 1 - SVP's adaptive digits
-         * "210") and drawn with algorithm 13; an easy one with 21. A phase that
-         * lands on 0 or 256 shows that real frame.
+         * One tick: the cut and class rules. Every tick of an easy pair (class
+         * 0) is drawn at its own phase with algorithm 21, so motion advances
+         * evenly. A cut shows the nearer frame. A hard pair (class 1, 2) is
+         * drawn with algorithm 13 and, when two or more ticks fall on each
+         * source frame, re-timed toward the real frames (frame_math
+         * `scene_phase_256`, modes 0 and 1 - SVP's adaptive digits "210"),
+         * where a wrong vector shows least. A phase that lands on 0 or 256
+         * shows that real frame.
+         *
+         * [scar, September 2026] The port first carried SVP's cadence rule for
+         * its minimal-artifact mode as well: any tick at or past the pair's
+         * midpoint showed the next real frame. At 30 fps into 60 the only tick
+         * is the midpoint, so no frame was ever drawn while the whole search
+         * still ran; into 120 one frame was drawn and the next real frame
+         * repeated three times, which read as stutter rather than smoothness.
          */
         const val PHASE = HEADER + COMPUTE_PRECISION + """
 layout(local_size_x = 1) in;
 uniform float uRawPhase;
 uniform float uStep256;
-uniform int uCadence;
 uniform int uAdaptive;
 layout(std430, binding = 0) buffer State {
   int sceneClass;
@@ -1101,16 +1305,13 @@ int scenePhase(float raw, int mode, float step) {
 void main() {
   int cls = sceneClass;
   int p = int(floor(uRawPhase + 0.5));
-  bool svp = uCadence == 1 && uAdaptive == 1;
   int s = 0;
   int effective = p;
-  if (svp && uRawPhase >= 128.0) {
-    s = 2;
-  } else if (cls >= 3) {
+  if (cls >= 3) {
     s = p < 128 ? 1 : 2;
   } else {
-    if (svp && cls == 1) effective = scenePhase(uRawPhase, 0, uStep256);
-    if (svp && cls == 2) effective = scenePhase(uRawPhase, 1, uStep256);
+    if (uAdaptive == 1 && cls == 1) effective = scenePhase(uRawPhase, 0, uStep256);
+    if (uAdaptive == 1 && cls == 2) effective = scenePhase(uRawPhase, 1, uStep256);
     if (effective <= 0) s = 1;
     else if (effective >= 256) s = 2;
   }
@@ -1382,16 +1583,31 @@ internal object ComputeMotionPlan {
             grid.h + if (8 * grid.h < level0.h) 1 else 0,
         )
 
-    /** Full-resolution frames up to this many pixels (720p) get the wide search there too. */
-    const val WIDE_LEVEL0_PIXELS = 1_000_000
+    /**
+     * The coarsest level's radius, the widest the SEARCH shader's window holds
+     * (its MAX_RADIUS): at a 120 px long side, +-8 px there is +-128 px of 1080p.
+     */
+    const val COARSE_RADIUS = 8
+
+    /** The two levels under the coarsest re-search this far, for small, fast objects it averaged away. */
+    const val MIDDLE_RADIUS = 4
+
+    /** The finer levels only refine, around a best candidate already within a pixel or two. */
+    const val FINE_RADIUS = 2
 
     /**
-     * Search radius in px. Coarse levels, where motion is found, always get
-     * +-8. At full resolution the search is the most expensive pass (its cost
-     * grows with the frame and the square of the radius), so +-8 up to 720p
-     * and +-4 above, where the parent's vector is already within a few
-     * pixels.
+     * Search radius in px at [level] of [levelCount] (0 the full-resolution
+     * level). Only the coarsest level searches wide. Every finer level starts
+     * from the best of its parent's vector, the parent's four neighbours', the
+     * previous pair's and zero, which already lands within a pixel or two, so
+     * a wide window there mostly costs time and finds wrong matches in
+     * repeating texture that the coarser levels had ruled out. The cost grows
+     * with the square of the radius, and the full-resolution level holds three
+     * quarters of all blocks. [judgement September 2026]
      */
-    fun radius(level: Int, levelCount: Int, level0: ComputeMotionEngine.Size): Int =
-        if (level == 0 && levelCount > 1 && level0.w.toLong() * level0.h > WIDE_LEVEL0_PIXELS) 4 else 8
+    fun radius(level: Int, levelCount: Int): Int = when (levelCount - 1 - level) {
+        0 -> COARSE_RADIUS
+        1, 2 -> MIDDLE_RADIUS
+        else -> FINE_RADIUS
+    }
 }

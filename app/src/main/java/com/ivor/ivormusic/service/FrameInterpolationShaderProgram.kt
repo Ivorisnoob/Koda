@@ -290,8 +290,7 @@ internal class FrameInterpolationShaderProgram(
                         motion.estimate(input)
                         currentPrepared = true
                         motionReady = true
-                        val pairs = ++control.pairs
-                        if (pairs % READBACK_EVERY_PAIRS == 1L) sampleMatchQuality()
+                        sampleMatchQuality(motion, ++control.pairs)
                     }
                     val output = takeOutput()
                     try {
@@ -339,16 +338,19 @@ internal class FrameInterpolationShaderProgram(
     }
 
     /**
-     * Reads how hard the engine judged a pair, for the log. A readback waits
-     * for the GPU to finish, so it happens once every [READBACK_EVERY_PAIRS]
-     * pairs (about two seconds), never per frame.
+     * How hard the engine judged a pair, for the log, without ever waiting for
+     * the GPU: a reading asked for every [READBACK_EVERY_PAIRS] pairs (about
+     * two seconds) is picked up by the first later pair that finds the GPU done
+     * with it, usually the next one.
      */
-    private fun sampleMatchQuality() {
+    private fun sampleMatchQuality(motion: MotionEngine, pairs: Long) {
         try {
-            val hardness = engine?.sampleUnmatched() ?: return
-            if (hardness < 0f) return
-            control.unmatchedPercent = (hardness * 100).roundToInt()
-            if (hardness >= CUT_HARDNESS) control.sampledCuts++
+            val hardness = motion.takeHardness()
+            if (hardness >= 0f) {
+                control.unmatchedPercent = (hardness * 100).roundToInt()
+                if (hardness >= CUT_HARDNESS) control.sampledCuts++
+            }
+            if (pairs % READBACK_EVERY_PAIRS == 1L) motion.requestHardness()
         } catch (e: Exception) {
             KLog.w(TAG, "Could not sample match quality: ${e.message}")
         }
@@ -503,10 +505,10 @@ internal class FrameInterpolationShaderProgram(
         /** Gaps longer than this (under 5 fps) are pauses or cuts, not a frame rate. */
         const val MAX_MEASURED_INTERVAL_US = 200_000L
 
-        /** One match-quality readback per this many pairs, for the log. */
+        /** One match-quality reading per this many pairs, for the log. */
         const val READBACK_EVERY_PAIRS = 60L
 
-        /** [MotionEngine.sampleUnmatched] at a scene cut (SVP's class 3 of 3). */
+        /** [MotionEngine.takeHardness] at a scene cut (SVP's class 3 of 3). */
         const val CUT_HARDNESS = 0.99f
 
         const val VERTEX_SHADER = """
