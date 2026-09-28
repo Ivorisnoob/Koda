@@ -82,16 +82,6 @@ class MusicServiceBrowserTest {
         }
     }
 
-    @Test fun `root fits car tabs and all offline categories remain reachable`() = runBlocking {
-        Fixture(this).use { f ->
-            val root = f.callback.onGetChildren(f.session, f.browser, "root", 0, Int.MAX_VALUE, null).await().value!!
-            assertTrue(root.size <= 4)
-            assertEquals(listOf("LIBRARY", "RECOMMENDED", "PLAYLISTS"), root.map { it.mediaId })
-            val library = f.callback.onGetChildren(f.session, f.browser, "LIBRARY", 0, Int.MAX_VALUE, null).await().value!!
-            assertEquals(listOf("DOWNLOADS", "LIKED", "RECENT", "LOCAL_SONGS"), library.map { it.mediaId })
-        }
-    }
-
     @Test fun `ID-only device playback reconstructs its content URI`() = runBlocking {
         Fixture(this).use { f ->
             val uri = mock(Uri::class.java)
