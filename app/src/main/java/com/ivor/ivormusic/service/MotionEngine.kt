@@ -39,8 +39,8 @@ internal interface MotionEngine {
     /**
      * Draws the frame [phase] of the way from [reference] (A) to [current] (B)
      * into [target]. [step] is the distance between output ticks in the same
-     * units (a 24 fps pair drawn at 60 fps: 0.4), which the engine's cadence
-     * and re-timing rules are written in.
+     * units (a 24 fps pair drawn at 60 fps: 0.4), which the engine's re-timing
+     * rules are written in.
      */
     fun compose(reference: GlTextureInfo, current: GlTextureInfo, target: GlTextureInfo, phase: Float, step: Float)
 
@@ -48,15 +48,22 @@ internal interface MotionEngine {
     fun forgetHistory()
 
     /**
-     * How hard the last pair was, 0 to 1 (1 a scene cut), or -1 when unknown.
-     * May wait for the GPU, so the host calls it rarely.
+     * Starts reading how hard the pair just estimated was, without waiting for
+     * the GPU; does nothing while an earlier reading is still in flight.
      */
-    fun sampleUnmatched(): Float
+    fun requestHardness()
+
+    /**
+     * The reading [requestHardness] started, 0 to 1 (1 a scene cut), once the
+     * GPU has got that far; -1 while it is still in flight or when none was
+     * asked for. Never waits for the GPU, so the host may call it every pair.
+     */
+    fun takeHardness(): Float
 
     fun release()
 }
 
-/** GL helpers both engines use. */
+/** GL helpers the engine and its host share. */
 internal object MotionGl {
     const val TAG = "FrameInterpolation"
 
