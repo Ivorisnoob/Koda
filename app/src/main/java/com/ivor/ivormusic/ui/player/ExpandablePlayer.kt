@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.lerp
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
@@ -88,6 +89,16 @@ fun ExpandablePlayer(
      * recompose the whole player instead.
      */
     collapsedFollowOffsetPx: () -> Float = { 0f },
+    /**
+     * Where the page the pill floats over begins and ends: a navigation rail
+     * on the start edge, and a phone on its side's cutout or system bar. The
+     * pill centres between them, and the expanded player still fills the
+     * whole window.
+     */
+    collapsedStartInset: androidx.compose.ui.unit.Dp = 0.dp,
+    collapsedEndInset: androidx.compose.ui.unit.Dp = 0.dp,
+    /** The widest the collapsed pill may grow; unspecified is the full page. */
+    collapsedMaxWidth: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified,
     onArtistClick: (String) -> Unit = {},
     /** Hand the playing song to the video player; null where there is none. */
     onWatchAsVideo: (() -> Unit)? = null,
@@ -162,6 +173,10 @@ fun ExpandablePlayer(
     val windowSize = com.ivor.ivormusic.ui.theme.windowDpSize()
     val screenHeight = windowSize.height
     val screenWidth = windowSize.width
+    // What the expanded player does with a window that is not a phone held
+    // upright: the style as ever, the style beside a companion panel, or one
+    // shared landscape layout. See AdaptivePlayer.kt.
+    val playerFrame = playerFrameFor(com.ivor.ivormusic.ui.theme.currentWindowLayout())
     val density = LocalDensity.current
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
@@ -220,6 +235,17 @@ fun ExpandablePlayer(
     // Derive all properties from the single progress value
     val collapsedHeight = 80.dp
     val collapsedWidthPadding = 16.dp
+    // The pill's resting width and where it starts, inside the page area. A
+    // cap only ever narrows it, and the leftover is split either side so the
+    // pill centres over the page rather than hugging the rail.
+    val collapsedPageWidth = (screenWidth - collapsedStartInset - collapsedEndInset)
+        .coerceAtLeast(0.dp)
+    val collapsedPillWidth = (collapsedPageWidth - collapsedWidthPadding * 2)
+        .let { if (collapsedMaxWidth.isSpecified) it.coerceAtMost(collapsedMaxWidth) else it }
+        .coerceAtLeast(0.dp)
+    val collapsedStartPadding = collapsedStartInset + (collapsedPageWidth - collapsedPillWidth) / 2
+    val collapsedEndPadding = (screenWidth - collapsedStartPadding - collapsedPillWidth)
+        .coerceAtLeast(0.dp)
     val collapsedBottomPadding = collapsedBottomSpacing + bottomInset
     // Exactly half the collapsed height: a radius larger than that (the old
     // 50.dp) is illegal for the shape and rendered visibly distorted corners.
@@ -234,7 +260,8 @@ fun ExpandablePlayer(
 
     // Interpolated values based on progress
     val height = lerp(collapsedHeight, expandedHeight, expandProgress)
-    val widthPadding = lerp(collapsedWidthPadding, expandedWidthPadding, expandProgress)
+    val startPadding = lerp(collapsedStartPadding, expandedWidthPadding, expandProgress)
+    val endPadding = lerp(collapsedEndPadding, expandedWidthPadding, expandProgress)
     val bottomPadding = lerp(collapsedBottomPadding, expandedBottomPadding, expandProgress)
     val cornerRadius = lerp(collapsedCornerRadius, expandedCornerRadius, expandProgress)
         .coerceAtMost(height / 2)
@@ -304,7 +331,10 @@ fun ExpandablePlayer(
         Surface(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
-                .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
+                .padding(
+                    start = startPadding.coerceAtLeast(0.dp),
+                    end = endPadding.coerceAtLeast(0.dp)
+                )
                 // The follow fades out as the player expands: a fullscreen
                 // player has no navigation bar to sit above.
                 .offset {
@@ -459,7 +489,7 @@ fun ExpandablePlayer(
                             // bar's artwork, marquee title and progress track
                             // against new constraints on every frame of the
                             // expansion, for a layer that is fading out.
-                            .requiredWidth(screenWidth - collapsedWidthPadding * 2)
+                            .requiredWidth(collapsedPillWidth)
                             .height(collapsedHeight)
                             .graphicsLayer { alpha = miniAlpha }
                     ) {
@@ -527,6 +557,46 @@ fun ExpandablePlayer(
                         // through this local, without per-style plumbing.
                         CompositionLocalProvider(
                             LocalPlayerStyleWheelController provides styleWheel
+                        ) {
+                        if (playerFrame.kind == PlayerFrameKind.LANDSCAPE) {
+                            // Every style shares this one layout on its side,
+                            // so there is no style swap to crossfade. The
+                            // locals are the ones each style receives below.
+                            CompositionLocalProvider(
+                                LocalMotionArtwork provides motionArtworkSession,
+                                LocalMotionArtworkPlaying provides isPlaying,
+                                LocalPlayerWaveform provides playerWaveform,
+                                LocalPlayerScrubInteraction provides scrubInteraction,
+                                LocalScrubReturnPoint provides scrubReturnPoint,
+                                LocalPlaybackSpeed provides playbackSpeed,
+                                LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
+                            ) {
+                                LandscapeNowPlaying(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = { viewModel.loadMoreRecommendations() },
+                                    onArtistClick = onArtistClick,
+                                    onWatchAsVideo = onWatchAsVideo,
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
+                                )
+                            }
+                        } else
+                        Row(modifier = Modifier.fillMaxSize()) {
+                        // FULL: the style is the window. STAGE: the style keeps
+                        // a phone-shaped column and the companion panel takes
+                        // the rest of the width.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .then(
+                                    if (playerFrame.kind == PlayerFrameKind.STAGE) {
+                                        Modifier.width(playerFrame.stageWidth)
+                                    } else {
+                                        Modifier.weight(1f)
+                                    }
+                                )
                         ) {
                         // Crossfade makes a live style swap (from the style
                         // wheel or Settings) a soft morph instead of a cut.
@@ -674,6 +744,22 @@ fun ExpandablePlayer(
                                 )
                             }
                         }
+                        }
+                        }
+                        }
+                        if (playerFrame.kind == PlayerFrameKind.STAGE) {
+                            PlayerCompanionPanel(
+                                viewModel = viewModel,
+                                onLoadMore = { viewModel.loadMoreRecommendations() },
+                                ambientBackground = ambientBackground,
+                                // The stage already keeps the start edge clear.
+                                insets = WindowInsets.safeDrawing.only(
+                                    WindowInsetsSides.Vertical + WindowInsetsSides.End
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                            )
                         }
                         }
                         }

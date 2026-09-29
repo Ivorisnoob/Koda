@@ -439,6 +439,15 @@ class NotInterestedRepository(context: Context) {
             }
         }
 
+        /** Give [toProfileId] a copy of [fromProfileId]'s blocklist, where it has none. */
+        internal fun copyProfileData(context: Context, fromProfileId: String, toProfileId: String) {
+            val legacyId = ProfileManager.legacyProfileId(context)
+            ProfileManager.copyScopedPreferences(
+                context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+                listOf(KEY_HIDDEN_VIDEOS, KEY_BLOCKED_CHANNELS), fromProfileId, toProfileId
+            ) { base, profileId -> ProfileManager.profileScopedKey(base, profileId, legacyId) }
+        }
+
         @Volatile
         private var sharedHiddenVideos: MutableStateFlow<List<HiddenVideo>>? = null
 

@@ -286,7 +286,9 @@ internal fun SettingsRow(
 
 /**
  * Icon + title/subtitle row with a switch. The whole row is the hit target, not
- * just the switch.
+ * just the switch. An unavailable row (the phone cannot do it) is drawn
+ * disabled and ignores taps; its long-press explanation still works, and the
+ * subtitle is where it should say why.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -298,7 +300,8 @@ internal fun SettingsToggleRow(
     onToggle: (Boolean) -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
     /** Long-press explanation. Null keeps the row a plain toggle. */
-    explanation: String? = null
+    explanation: String? = null,
+    available: Boolean = true
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -319,8 +322,10 @@ internal fun SettingsToggleRow(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = {
-                    haptics.toggle(!enabled)
-                    onToggle(!enabled)
+                    if (available) {
+                        haptics.toggle(!enabled)
+                        onToggle(!enabled)
+                    }
                 },
                 onLongClick = if (explanation != null && infoSink != null) {
                     {
@@ -332,21 +337,23 @@ internal fun SettingsToggleRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        SettingsRowIcon(icon = icon, tint = tint)
+        // Material's disabled content: 38% of the colour it would have had.
+        val contentAlpha = if (available) 1f else 0.38f
+        SettingsRowIcon(icon = icon, tint = tint.copy(alpha = tint.alpha * contentAlpha))
 
         Spacer(modifier = Modifier.width(16.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = contentAlpha),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
                 fontSize = 13.sp
             )
         }
@@ -354,6 +361,7 @@ internal fun SettingsToggleRow(
         Switch(
             checked = enabled,
             onCheckedChange = onToggle,
+            enabled = available,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = tint,
@@ -423,7 +431,12 @@ internal fun SettingsHubRow(
     tint: Color = MaterialTheme.colorScheme.primary,
     iconShape: Shape = RoundedCornerShape(14.dp),
     /** Long press explains what the category holds without opening it. */
-    explanation: String? = null
+    explanation: String? = null,
+    /**
+     * The category open in the detail pane beside the hub, on a window wide
+     * enough for both. Never true on a phone, where the page covers the hub.
+     */
+    selected: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -431,6 +444,11 @@ internal fun SettingsHubRow(
         targetValue = if (isPressed) 0.97f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "hubScale"
+    )
+    val selectedFill by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "hubSelected"
     )
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val infoSink = LocalSettingsInfoSink.current
@@ -440,6 +458,7 @@ internal fun SettingsHubRow(
             .fillMaxWidth()
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
+            .background(selectedFill)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -461,9 +480,10 @@ internal fun SettingsHubRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                else MaterialTheme.colorScheme.onBackground,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
@@ -483,6 +503,14 @@ internal fun SettingsHubRow(
         )
     }
 }
+
+/**
+ * False while a top-level page is drawn in the detail pane beside the hub:
+ * there is nothing to go back to when the list is on screen next to it, and an
+ * arrow that only re-selects the first category reads as broken. Nested pages
+ * (Display size, App icon) keep theirs, which returns to Appearance.
+ */
+internal val LocalSettingsDetailShowsBack = androidx.compose.runtime.compositionLocalOf { true }
 
 /**
  * Chrome shared by every settings detail page: the back-to-hub bar plus the
@@ -524,7 +552,7 @@ internal fun SettingsDetailScaffold(
                 )
             },
             navigationIcon = {
-                IconButton(
+                if (LocalSettingsDetailShowsBack.current) IconButton(
                     onClick = onBack,
                     shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.iconButtonColors(

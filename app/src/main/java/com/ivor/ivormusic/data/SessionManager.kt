@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class SessionManager(context: Context) {
 
+    private val appContext = context.applicationContext
     private val profileManager = ProfileManager(context)
 
     fun saveUserAvatar(url: String) {
@@ -54,13 +55,24 @@ class SessionManager(context: Context) {
      *
      * When a local profile is active this promotes the sign-in into a new
      * YouTube profile and switches to it, so the existing login flow keeps
-     * working unchanged and simply produces a profile as a side effect.
+     * working unchanged and simply produces a profile as a side effect. The new
+     * profile starts with a copy of the local one's history, likes and feed
+     * data, since to the person signing in nothing should have gone anywhere
+     * ([AccountSwitcher.copyProfileScopedData]).
+     *
+     * [scar] This switch used to skip [AccountSwitcher]'s invalidation, so the
+     * process-wide stores kept the local profile's data in memory and their
+     * next write stored it under the new profile's keys.
      */
     fun startSession(cookies: String) {
         val active = profileManager.active()
         if (active.isLocal) {
+            val known = profileManager.profiles.value.mapTo(HashSet()) { it.id }
             val profile = profileManager.addYouTubeProfile(cookies)
-            profileManager.setActive(profile.id)
+            if (profile.id !in known) {
+                AccountSwitcher.copyProfileScopedData(appContext, active.id, profile.id)
+            }
+            profileManager.setActive(profile.id) { AccountSwitcher.prepareForActiveProfile(appContext) }
         } else {
             profileManager.saveCookiesFor(active.id, cookies)
         }
@@ -104,10 +116,14 @@ class SessionManager(context: Context) {
      */
     fun clearSession() {
         val active = profileManager.active()
-        if (!profileManager.remove(active.id)) {
+        // Both branches change who the app is: another profile, or this one
+        // without its account. Same invalidation as a switch, which this used
+        // to skip (see startSession).
+        if (!profileManager.remove(active.id) { AccountSwitcher.prepareForActiveProfile(appContext) }) {
             profileManager.replaceWithFreshLocal(active.id)
+            AccountSwitcher.prepareForActiveProfile(appContext)
         }
-        _sessionExpired.value = false
+        refreshExpiredFromProfile()
     }
 
     /**

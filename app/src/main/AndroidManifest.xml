@@ -60,12 +60,10 @@
             android:exported="true"
             android:label="${appLabel}"
             android:launchMode="singleTask"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
-            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize"
             android:windowSoftInputMode="adjustResize"
             android:supportsPictureInPicture="true"
-            android:theme="@style/Theme.App.Starting"
-            tools:ignore="LockedOrientationActivity">
+            android:theme="@style/Theme.App.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
             </intent-filter>

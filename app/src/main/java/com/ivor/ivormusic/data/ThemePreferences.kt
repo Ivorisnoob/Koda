@@ -155,6 +155,15 @@ class ThemePreferences(context: Context) {
     private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
     val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
 
+    private val _frameInterpolation = MutableStateFlow(isFrameInterpolationEnabled())
+    val frameInterpolation: StateFlow<Boolean> = _frameInterpolation.asStateFlow()
+
+    private val _frameInterpolationPlayerOn = MutableStateFlow(isFrameInterpolationPlayerOn())
+    val frameInterpolationPlayerOn: StateFlow<Boolean> = _frameInterpolationPlayerOn.asStateFlow()
+
+    private val _frameInterpolationMaxFps = MutableStateFlow(getFrameInterpolationMaxFps())
+    val frameInterpolationMaxFps: StateFlow<Int> = _frameInterpolationMaxFps.asStateFlow()
+
     private val _captionTextSize = MutableStateFlow(getCaptionTextSizePreference())
     val captionTextSize: StateFlow<Float> = _captionTextSize.asStateFlow()
 
@@ -210,6 +219,8 @@ class ThemePreferences(context: Context) {
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
         _nonExpressiveNavigationBar.asStateFlow()
 
+    private val _rotateWithDevice = MutableStateFlow(getRotateWithDevicePreference())
+    val rotateWithDevice: StateFlow<Boolean> = _rotateWithDevice.asStateFlow()
 
     private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
     val subscriptionSource: StateFlow<String> = _subscriptionSource.asStateFlow()
@@ -395,6 +406,9 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_QUALITY_WIFI -> _videoQualityWifi.value = getVideoQualityWifiPreference()
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
             KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
+            KEY_FRAME_INTERPOLATION -> _frameInterpolation.value = isFrameInterpolationEnabled()
+            KEY_FRAME_INTERPOLATION_PLAYER_ON -> _frameInterpolationPlayerOn.value = isFrameInterpolationPlayerOn()
+            KEY_FRAME_INTERPOLATION_MAX_FPS -> _frameInterpolationMaxFps.value = getFrameInterpolationMaxFps()
             KEY_CAPTION_TEXT_SIZE -> _captionTextSize.value = getCaptionTextSizePreference()
             KEY_CAPTION_TEXT_COLOR -> _captionTextColor.value = getCaptionTextColorPreference()
             KEY_CAPTION_BACKGROUND -> _captionBackground.value = getCaptionBackgroundPreference()
@@ -414,6 +428,7 @@ class ThemePreferences(context: Context) {
                 _sponsorBlockMinDurationMs.value = getSponsorBlockMinDurationPreference()
             KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
                 _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
+            KEY_ROTATE_WITH_DEVICE -> _rotateWithDevice.value = getRotateWithDevicePreference()
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
@@ -631,6 +646,9 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_QUALITY_WIFI = "video_quality_wifi"
         private const val KEY_VIDEO_QUALITY_MOBILE = "video_quality_mobile"
         private const val KEY_PREFER_HDR = "prefer_hdr_video"
+        private const val KEY_FRAME_INTERPOLATION = "video_frame_interpolation"
+        private const val KEY_FRAME_INTERPOLATION_MAX_FPS = "video_frame_interpolation_max_fps"
+        private const val KEY_FRAME_INTERPOLATION_PLAYER_ON = "video_frame_interpolation_player_on"
         private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
         private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
         private const val KEY_CAPTION_BACKGROUND = "caption_background"
@@ -639,6 +657,10 @@ class ThemePreferences(context: Context) {
 
         /** Sentinel meaning "highest available quality". */
         const val VIDEO_QUALITY_AUTO = "auto"
+
+        /** Smooth motion's output caps. Frozen: stored as they are. */
+        const val FRAME_INTERPOLATION_FPS_LOW = 60
+        const val FRAME_INTERPOLATION_FPS_HIGH = 120
 
         /** Quality labels offered in Settings, best first. */
         val VIDEO_QUALITY_OPTIONS = listOf(
@@ -755,6 +777,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_SPONSORBLOCK_MIN_DURATION = "sponsorblock_min_duration"
         private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
             "non_expressive_navigation_bar"
+        private const val KEY_ROTATE_WITH_DEVICE = "rotate_with_device"
 
         /**
          * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
@@ -945,6 +968,15 @@ class ThemePreferences(context: Context) {
         fun isLocalOnly(context: Context): Boolean =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .getBoolean(KEY_LOCAL_ONLY_MODE, false)
+
+        /**
+         * Static fresh read for the orientation policy, which is applied from
+         * the video watch page as well as MainActivity and must not trust a
+         * flow held by some other instance.
+         */
+        fun isRotateWithDevice(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_ROTATE_WITH_DEVICE, false)
 
         private const val KEY_LAST_SONG_ID = "last_song_id"
         private const val KEY_LAST_SONG_TITLE = "last_song_title"
@@ -1538,6 +1570,56 @@ class ThemePreferences(context: Context) {
         _preferHdr.value = enabled
     }
 
+    /**
+     * Smooth motion (video frame interpolation) is available: the player is
+     * built with its effect graph and its settings panel shows the switch
+     * ([isFrameInterpolationPlayerOn]). Off by default and only ever turned on
+     * through its warning dialog; read fresh by the video player.
+     */
+    fun isFrameInterpolationEnabled(): Boolean =
+        prefs.getBoolean(KEY_FRAME_INTERPOLATION, false)
+
+    /** Turning it on here also turns the player's switch on, so it starts working at once. */
+    fun setFrameInterpolation(enabled: Boolean) {
+        prefs.edit().apply {
+            putBoolean(KEY_FRAME_INTERPOLATION, enabled)
+            if (enabled) putBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, true)
+        }.apply()
+        _frameInterpolation.value = enabled
+        if (enabled) _frameInterpolationPlayerOn.value = true
+    }
+
+    /**
+     * The switch in the video player's settings panel: whether an available
+     * Smooth motion draws frames. Changes take effect within a poll, without
+     * rebuilding the player; read fresh by the video player.
+     */
+    fun isFrameInterpolationPlayerOn(): Boolean =
+        prefs.getBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, true)
+
+    fun setFrameInterpolationPlayerOn(on: Boolean) {
+        prefs.edit().putBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, on).apply()
+        _frameInterpolationPlayerOn.value = on
+    }
+
+    /**
+     * The most Smooth motion may output: 60 or 120 (frozen stored values).
+     * The screen's own fastest mode caps it further, so 120 on a 90 Hz phone
+     * means 90. Read fresh by the video player.
+     */
+    fun getFrameInterpolationMaxFps(): Int =
+        if (prefs.getInt(KEY_FRAME_INTERPOLATION_MAX_FPS, FRAME_INTERPOLATION_FPS_HIGH) <= FRAME_INTERPOLATION_FPS_LOW) {
+            FRAME_INTERPOLATION_FPS_LOW
+        } else {
+            FRAME_INTERPOLATION_FPS_HIGH
+        }
+
+    fun setFrameInterpolationMaxFps(fps: Int) {
+        val stored = if (fps <= FRAME_INTERPOLATION_FPS_LOW) FRAME_INTERPOLATION_FPS_LOW else FRAME_INTERPOLATION_FPS_HIGH
+        prefs.edit().putInt(KEY_FRAME_INTERPOLATION_MAX_FPS, stored).apply()
+        _frameInterpolationMaxFps.value = stored
+    }
+
     private fun getCaptionTextSizePreference(): Float =
         captionTextScaleFromStored(prefs.all[KEY_CAPTION_TEXT_SIZE])
 
@@ -1779,6 +1861,21 @@ class ThemePreferences(context: Context) {
     fun setNonExpressiveNavigationBar(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_NON_EXPRESSIVE_NAVIGATION_BAR, enabled).apply()
         _nonExpressiveNavigationBar.value = enabled
+    }
+
+    /**
+     * Whether a phone turns the app with the device. Off by default so an
+     * upgrading install stays portrait as it always was; large screens rotate
+     * regardless (see `ui/theme/WindowLayout.kt`), because Android 16 ignores
+     * orientation locks there anyway and a tablet held sideways is its normal
+     * posture rather than an accident. The system rotation lock still wins.
+     */
+    private fun getRotateWithDevicePreference(): Boolean =
+        prefs.getBoolean(KEY_ROTATE_WITH_DEVICE, false)
+
+    fun setRotateWithDevice(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ROTATE_WITH_DEVICE, enabled).apply()
+        _rotateWithDevice.value = enabled
     }
 
     /**

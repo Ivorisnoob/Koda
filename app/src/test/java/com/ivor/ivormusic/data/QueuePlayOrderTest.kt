@@ -54,4 +54,35 @@ class QueuePlayOrderTest {
         // Out of range rather than crashing the drag: the queue moved under it.
         assertEquals(9, queueIndexForPlayOrder(intArrayOf(2, 0, 3, 1), 4, 9))
     }
+
+    @Test fun queuedSongsPlayRightAfterTheCurrentSong() {
+        // Queue of 5, shuffled 3 -> 0 -> 4 -> 1 -> 2, playing index 0.
+        val order = intArrayOf(3, 0, 4, 1, 2)
+        assertEquals(
+            listOf(3, 0, 5, 4, 1, 2),
+            playOrderQueuingUpNext(order, currentIndex = 0, addedCount = 1) { false }?.toList()
+        )
+    }
+
+    @Test fun laterQueuedSongsLineUpBehindEarlierOnes() {
+        // Index 5 was queued earlier and sits right after the current song.
+        val order = intArrayOf(3, 0, 5, 4, 1, 2)
+        assertEquals(
+            listOf(3, 0, 5, 6, 7, 4, 1, 2),
+            playOrderQueuingUpNext(order, currentIndex = 0, addedCount = 2) { it == 5 }?.toList()
+        )
+    }
+
+    @Test fun queuingAfterTheLastSongAppends() {
+        val order = intArrayOf(2, 0, 1)
+        assertEquals(
+            listOf(2, 0, 1, 3),
+            playOrderQueuingUpNext(order, currentIndex = 1, addedCount = 1) { false }?.toList()
+        )
+    }
+
+    @Test fun queuingWithTheCurrentSongOutsideTheOrderIsRefused() {
+        assertEquals(null, playOrderQueuingUpNext(intArrayOf(1, 0), currentIndex = 5, addedCount = 1) { false })
+        assertEquals(null, playOrderQueuingUpNext(intArrayOf(1, 0), currentIndex = 0, addedCount = 0) { false })
+    }
 }

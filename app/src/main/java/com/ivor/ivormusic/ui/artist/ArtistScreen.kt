@@ -274,6 +274,9 @@ private const val HERO_MAX_WINDOW_FRACTION = 0.6f
 /** Page gutter for everything below the hero. */
 private val ARTIST_GUTTER = 20.dp
 
+/** From this pane width Popular and About sit side by side. */
+private val ARTIST_WIDE_MIN_WIDTH = 900.dp
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistScreen(
@@ -596,7 +599,13 @@ fun ArtistScreen(
                             color = primaryColor
                         )
                     }
-                } else {
+                } else androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                    // A wide pane (the Library's detail side on a tablet) sets
+                    // Popular and About side by side: full-width rows across
+                    // 1000dp put a title a screen away from its options, and
+                    // the space beside a five-song list is where the story of
+                    // the artist reads best.
+                    val artistWide = maxWidth >= ARTIST_WIDE_MIN_WIDTH
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
@@ -677,7 +686,48 @@ fun ArtistScreen(
                         // The top of the discography, open rows as the
                         // reference draws them. "See all" opens the whole list
                         // with its sort and filter.
-                        if (popularSongs.isNotEmpty()) {
+                        val wideBio = artistPage?.bio?.takeIf { !hasLocalSongs && it.isNotBlank() }
+                        if (artistWide && popularSongs.isNotEmpty()) {
+                            item(key = "popular_about") {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(0.58f)) {
+                                        ArtistSectionHeader(
+                                            title = stringResource(
+                                                if (hasLocalSongs) R.string.cat_songs else R.string.ar_section_popular
+                                            ),
+                                            actionLabel = if (canSeeAllSongs) {
+                                                stringResource(R.string.action_see_all)
+                                            } else null,
+                                            onAction = { showAllSongs = true }
+                                        )
+                                        popularSongs.forEach { song ->
+                                            PopularSongRow(
+                                                song = song,
+                                                onClick = { onPlayQueue(artistSongs, song) },
+                                                onMore = onSongLongPress?.let { press -> { press(song) } }
+                                            )
+                                        }
+                                    }
+                                    if (wideBio != null) {
+                                        Column(modifier = Modifier.weight(0.42f)) {
+                                            ArtistSectionHeader(title = stringResource(R.string.ar_section_about))
+                                            ArtistBioCard(
+                                                bio = wideBio,
+                                                cardColor = cardColor,
+                                                textColor = textColor,
+                                                primaryColor = primaryColor,
+                                                modifier = Modifier.padding(end = ARTIST_GUTTER)
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(Modifier.weight(0.42f))
+                                    }
+                                }
+                            }
+                        } else if (popularSongs.isNotEmpty()) {
                             item(key = "popular_header") {
                                 ArtistSectionHeader(
                                     title = stringResource(
@@ -858,7 +908,9 @@ fun ArtistScreen(
                         // thousand-plus character bio open by default would
                         // bury the music it describes.
                         val artistBio = artistPage?.bio
-                        if (!hasLocalSongs && !artistBio.isNullOrBlank()) {
+                        // Already beside Popular on a wide pane.
+                        val bioShownBeside = artistWide && popularSongs.isNotEmpty()
+                        if (!hasLocalSongs && !artistBio.isNullOrBlank() && !bioShownBeside) {
                             item(key = "about_header") {
                                 ArtistSectionHeader(title = stringResource(R.string.ar_section_about))
                             }

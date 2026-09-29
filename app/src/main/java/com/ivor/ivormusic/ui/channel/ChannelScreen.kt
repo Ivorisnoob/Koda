@@ -205,6 +205,8 @@ private fun ChannelRoot(
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val loadFailed by viewModel.loadFailed.collectAsState()
     val isSubscribed by viewModel.isSubscribed.collectAsState()
+    val bell by viewModel.bell.collectAsState()
+    val bellBusy by viewModel.bellBusy.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
     val about by viewModel.about.collectAsState()
     val isAboutLoading by viewModel.isAboutLoading.collectAsState()
@@ -472,6 +474,10 @@ private fun ChannelRoot(
                                         if (viewModel.subscribeNeedsLogin()) onLoginClick()
                                         else viewModel.toggleSubscribe()
                                     },
+                                    bell = bell,
+                                    bellBusy = bellBusy,
+                                    channelName = currentHeader.name,
+                                    onBellChosen = viewModel::setBell,
                                     onShareClick = { shareChannel(context, currentHeader.shareUrl) },
                                     onSearchClick = { searchMode = true },
                                     onBlockClick = { viewModel.toggleBlocked() },
@@ -657,6 +663,11 @@ private fun ChannelHeaderActions(
     isBlocked: Boolean,
     canSearch: Boolean,
     onSubscribeClick: () -> Unit,
+    /** The account bell; null hides it (signed out, device-only follow, or none served). */
+    bell: com.ivor.ivormusic.data.ChannelBell?,
+    bellBusy: Boolean,
+    channelName: String,
+    onBellChosen: (com.ivor.ivormusic.data.BellLevel) -> Unit,
     onShareClick: () -> Unit,
     onSearchClick: () -> Unit,
     onBlockClick: () -> Unit,
@@ -674,6 +685,16 @@ private fun ChannelHeaderActions(
             onClick = onSubscribeClick,
             modifier = Modifier.weight(1f)
         )
+        // Beside Subscribe rather than among the icons: it is the second half
+        // of the subscribed state, and arrives and leaves with it.
+        if (bell != null) {
+            ChannelBellButton(
+                bell = bell,
+                channelName = channelName,
+                onLevelChosen = onBellChosen,
+                busy = bellBusy
+            )
+        }
         if (canSearch) {
             ChannelIconAction(
                 icon = Icons.Rounded.Search,

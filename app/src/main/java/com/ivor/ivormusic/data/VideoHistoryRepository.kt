@@ -420,6 +420,15 @@ class VideoHistoryRepository(context: Context) {
                 sharedHistory?.value = repository.load()
             }
         }
+
+        /** Give [toProfileId] a copy of [fromProfileId]'s history, removals and resume points, where it has none. */
+        internal fun copyProfileData(context: Context, fromProfileId: String, toProfileId: String) {
+            val legacyId = ProfileManager.legacyProfileId(context)
+            ProfileManager.copyScopedPreferences(
+                context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+                listOf(KEY_HISTORY, KEY_HIDDEN, KEY_RESUME_POSITIONS), fromProfileId, toProfileId
+            ) { base, profileId -> ProfileManager.profileScopedKey(base, profileId, legacyId) }
+        }
     }
 }
 

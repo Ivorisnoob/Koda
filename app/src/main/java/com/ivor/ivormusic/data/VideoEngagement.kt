@@ -20,7 +20,13 @@ data class VideoEngagement(
      * majority of videos, which have one owner and describe it the ordinary
      * way; see [VideoCollaborator] for why a collab describes none.
      */
-    val collaborators: List<VideoCollaborator> = emptyList()
+    val collaborators: List<VideoCollaborator> = emptyList(),
+    /**
+     * The account bell of each channel the response drew a Subscribe button
+     * for, keyed by channel id - one on an ordinary video, one per channel on a
+     * collaboration. Empty signed out.
+     */
+    val bells: Map<String, ChannelBell> = emptyMap()
 )
 
 enum class LikeStatus { LIKE, DISLIKE, INDIFFERENT }

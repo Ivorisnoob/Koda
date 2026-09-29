@@ -57,6 +57,8 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val videoQualityWifi: StateFlow<String> = themePreferences.videoQualityWifi
     val videoQualityMobile: StateFlow<String> = themePreferences.videoQualityMobile
     val preferHdr: StateFlow<Boolean> = themePreferences.preferHdr
+    val frameInterpolation: StateFlow<Boolean> = themePreferences.frameInterpolation
+    val frameInterpolationMaxFps: StateFlow<Int> = themePreferences.frameInterpolationMaxFps
     val musicQualityWifi: StateFlow<String> = themePreferences.musicQualityWifi
     val musicQualityMobile: StateFlow<String> = themePreferences.musicQualityMobile
     val spotlightHome: StateFlow<Boolean> = themePreferences.spotlightHome
@@ -69,6 +71,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val sponsorBlockMinDurationMs: StateFlow<Long> = themePreferences.sponsorBlockMinDurationMs
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
         themePreferences.nonExpressiveNavigationBar
+    val rotateWithDevice: StateFlow<Boolean> = themePreferences.rotateWithDevice
     val subscriptionSource: StateFlow<String> = themePreferences.subscriptionSource
     val subscribeTarget: StateFlow<String> = themePreferences.subscribeTarget
     val fastSubscriptionFeed: StateFlow<Boolean> = themePreferences.fastSubscriptionFeed
@@ -235,6 +238,14 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
         themePreferences.setPreferHdr(enabled)
     }
 
+    fun setFrameInterpolation(enabled: Boolean) {
+        themePreferences.setFrameInterpolation(enabled)
+    }
+
+    fun setFrameInterpolationMaxFps(fps: Int) {
+        themePreferences.setFrameInterpolationMaxFps(fps)
+    }
+
     fun setMusicQualityWifi(quality: String) {
         themePreferences.setMusicQualityWifi(quality)
     }
@@ -277,6 +288,8 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setSponsorBlockMinDurationMs(durationMs: Long) {
         themePreferences.setSponsorBlockMinDurationMs(durationMs)
     }
+
+    fun setRotateWithDevice(enabled: Boolean) = themePreferences.setRotateWithDevice(enabled)
 
     fun setNonExpressiveNavigationBar(enabled: Boolean) {
         themePreferences.setNonExpressiveNavigationBar(enabled)

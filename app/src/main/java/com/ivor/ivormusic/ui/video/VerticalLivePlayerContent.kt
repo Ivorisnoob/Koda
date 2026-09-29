@@ -265,10 +265,14 @@ fun VerticalLivePlayerContent(
                 update = { playerView ->
                     playerView.player = exoPlayer
                     playerView.resizeMode = resizeMode
+                    playerView.keepKnownAspectRatio(videoAspectRatio)
                 },
                 // Hand the surface back before this view is destroyed - the same
                 // ExoPlayer is also rendered by the mini and PiP PlayerViews.
-                onRelease = { playerView -> playerView.player = null },
+                onRelease = { playerView ->
+                    playerView.player = null
+                    playerView.releaseKnownAspectRatio()
+                },
                 modifier = Modifier.fillMaxSize()
             )
 

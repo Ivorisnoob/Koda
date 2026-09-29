@@ -372,6 +372,64 @@ class CrossfadeEngineTest {
         } finally { pair.engine.release() }
     }
 
+    @Test fun `a pause past the midpoint lands on the incoming track, paused`() = runBlocking {
+        var swaps = 0
+        val pair = Pairing(this) { swaps++ }
+        pair.outgoing.items += listOf(item("a"), item("b"))
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 1_500L, targetIndex = 1))
+            // sin(t * pi/2) > 0.8 is t past about 0.59.
+            awaitCondition { pair.incoming.volume > 0.8f }
+            pair.outgoing.playWhenReady = false
+            pair.engine.settleForPause()
+
+            assertSame(pair.incoming.player, pair.engine.active)
+            assertEquals(1, swaps)
+            assertFalse(pair.engine.isFading)
+            assertFalse(pair.incoming.playWhenReady)
+            assertEquals(listOf("a", "b"), pair.incoming.items.map { it.mediaId })
+            assertEquals(1, pair.incoming.index)
+            assertTrue(pair.outgoing.items.isEmpty())
+            val heldAt = pair.incoming.position
+            delay(100L)
+            assertEquals("the handed-over track stays paused", heldAt, pair.incoming.position)
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `a pause before the midpoint keeps the outgoing track`() = runBlocking {
+        var swaps = 0
+        val pair = Pairing(this) { swaps++ }
+        pair.outgoing.items += listOf(item("a"), item("b"))
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 1_500L, targetIndex = 1))
+            awaitCondition { pair.incoming.volume in 0.05f..0.4f }
+            pair.outgoing.playWhenReady = false
+            pair.engine.settleForPause()
+
+            assertSame(pair.outgoing.player, pair.engine.active)
+            assertEquals(0, swaps)
+            assertFalse(pair.engine.isFading)
+            assertTrue(pair.incoming.items.isEmpty())
+        } finally { pair.engine.release() }
+    }
+
+    @Test fun `a pause before the overlap has a curve drops it`() = runBlocking {
+        var swaps = 0
+        val pair = Pairing(this) { swaps++ }
+        pair.outgoing.items += listOf(item("a"), item("b"))
+        pair.incoming.readyOnPrepare = false
+        try {
+            assertTrue(pair.engine.startTransition(pair.outgoing.items[1], 1_500L, targetIndex = 1))
+            pair.outgoing.playWhenReady = false
+            pair.engine.settleForPause()
+
+            assertSame(pair.outgoing.player, pair.engine.active)
+            assertEquals(0, swaps)
+            assertFalse(pair.engine.isFading)
+            assertTrue(pair.incoming.items.isEmpty())
+        } finally { pair.engine.release() }
+    }
+
     /** A queue and advancing playback clock, with no decoder or Android looper. */
     private class ClockPlayer {
         val items = mutableListOf<MediaItem>()

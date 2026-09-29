@@ -240,13 +240,19 @@ class ProfileManager(context: Context) {
     }
 
     /**
-     * Remove a profile, its cookies and its feed-shaping data.
+     * Remove a profile and its cookies.
+     *
+     * Its profile-scoped data (history, likes, subscriptions, blocklist) is
+     * left where it is rather than deleted: the id is never reissued, so the
+     * data is unreachable either way, and nothing a slip of the finger can do
+     * should be able to destroy it.
      *
      * The last remaining profile cannot be removed - there is always an
      * identity, even if it is only the default local one - and removing the
      * active profile falls back to another rather than leaving nothing active.
+     * [beforePublish] is passed to [setActive] when that fallback happens.
      */
-    fun remove(id: String): Boolean {
+    fun remove(id: String, beforePublish: (() -> Unit)? = null): Boolean {
         val list = sharedProfiles!!.value
         if (list.size <= 1) return false
         val target = list.firstOrNull { it.id == id } ?: return false
@@ -254,7 +260,7 @@ class ProfileManager(context: Context) {
         val next = list.filterNot { it.id == id }
         saveProfiles(next)
         if (sharedActiveId!!.value == target.id) {
-            setActive(next.first().id)
+            setActive(next.first().id, beforePublish = beforePublish)
         }
         return true
     }
@@ -323,13 +329,23 @@ class ProfileManager(context: Context) {
      * restore needs: it kills the process on purpose, and an `apply()` still
      * queued when it does is lost, leaving the restored data scoped to a
      * profile the app comes back on the wrong side of.
+     *
+     * [beforePublish] runs after the stored id has changed and before
+     * [activeProfileId] emits. [scar] ViewModels collect that flow on
+     * `Dispatchers.Main.immediate`, so a switch made on the main thread runs
+     * their reset handlers inline, inside this call: anything re-pointed only
+     * afterwards (the process-wide profile-scoped stores) was still holding the
+     * previous profile's data while those handlers read it. It must resolve the
+     * profile from the stored id ([activeProfileId] with a context), never
+     * from this instance, whose flow still names the profile being left.
      */
-    fun setActive(id: String, commitNow: Boolean = false) {
+    fun setActive(id: String, commitNow: Boolean = false, beforePublish: (() -> Unit)? = null) {
         if (get(id) == null) return
         val leaving = sharedActiveId!!.value
         if (leaving.isNotBlank() && leaving != id) sharedPreviousId.value = leaving
         val editor = prefs.edit().putString(KEY_ACTIVE_PROFILE, id)
         if (commitNow) editor.commit() else editor.apply()
+        beforePublish?.invoke()
         sharedActiveId!!.value = id
     }
 
@@ -563,6 +579,126 @@ class ProfileManager(context: Context) {
          */
         fun profileScopedKey(base: String, profileId: String, legacyProfileId: String?): String =
             if (profileId == legacyProfileId) base else "${base}_$profileId"
+
+        /**
+         * [activeProfileId], building the roster first on the one path where
+         * nothing has yet: a fresh install whose first read comes from a store
+         * rather than from a screen. A blank id would otherwise scope that
+         * store's data to a key no profile ever reads again.
+         */
+        fun requireActiveProfileId(context: Context): String =
+            activeProfileId(context).ifBlank { ProfileManager(context).active().id }
+
+        /**
+         * The profile that kept the device's listening history, likes and
+         * search history when those became per-profile (September 2026).
+         *
+         * They were device-wide until then, so on the first run of that build
+         * the data on disk had to belong to somebody, and it went to whoever
+         * was active - the profile the person was actually using. [scar] It
+         * could not follow [legacyProfileId] the way local subscriptions did:
+         * signing in from "No account" creates a new profile and switches to
+         * it, so on most signed-in installs the legacy profile is a "No
+         * account" row nobody opens, and keying on it would have made
+         * everyone's history and likes vanish from the account they use.
+         *
+         * Recorded once, on first use, in the credential store - which no
+         * backup carries, so a restore can never rewrite it - and never
+         * changed afterwards. That profile keeps the un-suffixed keys and file
+         * names, which is also what an older build reads after a downgrade.
+         */
+        fun historyOwnerProfileId(context: Context): String {
+            cachedHistoryOwner?.let { return it }
+            return synchronized(LOCK) {
+                cachedHistoryOwner ?: run {
+                    val prefs = sharedPrefs(context)
+                    val owner = prefs.getString(KEY_HISTORY_OWNER, null)?.takeIf { it.isNotBlank() }
+                        ?: requireActiveProfileId(context).also { id ->
+                            prefs.edit().putString(KEY_HISTORY_OWNER, id).commit()
+                        }
+                    cachedHistoryOwner = owner
+                    owner
+                }
+            }
+        }
+
+        /** [profileScopedKey] for the stores [historyOwnerProfileId] owns. */
+        fun historyScopedKey(base: String, profileId: String, context: Context): String =
+            profileScopedKey(base, profileId, historyOwnerProfileId(context))
+
+        /**
+         * A file name under `filesDir` for one profile's copy of a
+         * [historyOwnerProfileId] store: `play_history.json` for the owner,
+         * `play_history_<id>.json` for everyone else.
+         *
+         * The id is restricted to UUID characters before it becomes part of a
+         * path. Ids are UUIDs, but a restored profile keeps the id its backup
+         * file claimed, and that file is whatever the user picked.
+         */
+        fun historyScopedFileName(base: String, extension: String, profileId: String, context: Context): String =
+            historyScopedFileName(base, extension, profileId, historyOwnerProfileId(context))
+
+        /** [historyScopedFileName] with the owner given, for tests. */
+        internal fun historyScopedFileName(base: String, extension: String, profileId: String, ownerId: String): String =
+            if (profileId == ownerId) "$base.$extension"
+            else "${base}_${profileId.replace(UNSAFE_FILE_CHARS, "_")}.$extension"
+
+        /** Whether [name] is [base]'s file for some profile, the owner's included. */
+        fun isHistoryScopedFileName(name: String, base: String, extension: String): Boolean =
+            Regex("^${Regex.escape(base)}(_[A-Za-z0-9_-]+)?\\.${Regex.escape(extension)}$").matches(name)
+
+        /**
+         * Copy one store's values from [fromProfileId]'s keys to
+         * [toProfileId]'s, for a profile that should start with another's
+         * data. Never overwrites: a key the destination already holds is left
+         * alone, so a copy can only ever add.
+         */
+        internal fun copyScopedPreferences(
+            prefs: android.content.SharedPreferences,
+            bases: List<String>,
+            fromProfileId: String,
+            toProfileId: String,
+            key: (base: String, profileId: String) -> String,
+        ) {
+            val all = prefs.all
+            val editor = prefs.edit()
+            var changed = false
+            for (base in bases) {
+                val from = key(base, fromProfileId)
+                val to = key(base, toProfileId)
+                if (from == to || all.containsKey(to)) continue
+                when (val value = all[from]) {
+                    is String -> editor.putString(to, value)
+                    is Set<*> -> editor.putStringSet(to, value.filterIsInstance<String>().toSet())
+                    else -> continue
+                }
+                changed = true
+            }
+            if (changed) editor.apply()
+        }
+
+        /**
+         * [copyScopedPreferences] for a file store. Written beside the target
+         * and renamed into place, so a copy cut short leaves nothing rather
+         * than half a JSON file that would read as an empty history.
+         */
+        internal fun copyScopedFile(from: java.io.File, to: java.io.File) {
+            if (from == to || !from.isFile || to.exists()) return
+            val partial = java.io.File(to.parentFile, "${to.name}.partial")
+            runCatching {
+                from.copyTo(partial, overwrite = true)
+                if (!partial.renameTo(to)) partial.delete()
+            }.onFailure {
+                partial.delete()
+                KLog.w(TAG, "Could not copy ${from.name} to a new profile", it)
+            }
+        }
+
+        private const val KEY_HISTORY_OWNER = "history_owner_profile"
+        private val UNSAFE_FILE_CHARS = Regex("[^A-Za-z0-9-]")
+
+        @Volatile
+        private var cachedHistoryOwner: String? = null
 
         private val LOCK = Any()
 

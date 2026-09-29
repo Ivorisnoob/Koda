@@ -24,9 +24,15 @@ import kotlinx.coroutines.flow.asStateFlow
  *   memory and disk and re-minted.
  * - **Search extractor/page caches**, which hold personalised results.
  * - **The expired verdict**, which is per-profile and has to be re-read.
- * - **Watch history**, whose stored key is per-profile but whose flow is
- *   process-wide, so the new profile would otherwise be shown the previous
- *   one's watches until something happened to reload it.
+ * - **The process-wide profile-scoped stores** - watch history, local
+ *   subscriptions, the blocklist, upload mutes and liked songs - whose stored
+ *   keys are per-profile but whose flows are shared, so the new profile would
+ *   otherwise be shown the previous one's until something reloaded them, and
+ *   the next write would store the previous one's data under the new key.
+ *
+ * All of that runs before [activeProfileId] emits ([prepareForActiveProfile]);
+ * see [ProfileManager.setActive] for why the order matters. Listening and
+ * search history need nothing: they are read from disk on every call.
  *
  * Everything else follows automatically, because every consumer resolves the
  * session fresh on each call.
@@ -82,8 +88,8 @@ class AccountSwitcher(context: Context) {
 
         sharedSwitching.value = true
         try {
-            profileManager.setActive(target.id)
-            invalidateForProfileChange()
+            profileManager.setActive(target.id) { prepareForActiveProfile(appContext) }
+            sessionManager.refreshExpiredFromProfile()
         } finally {
             sharedSwitching.value = false
         }
@@ -91,17 +97,15 @@ class AccountSwitcher(context: Context) {
     }
 
     /**
-     * Drop everything in the process that belonged to the previous profile.
+     * Drop everything in the process that belonged to the previous profile,
+     * after the fact.
      *
-     * Also called after adding or removing a profile, since both can change
-     * which one is active.
+     * For the paths that change the active profile's identity without
+     * changing its id (signing out of the last account) or that may not have
+     * switched at all; a switch itself goes through [switchTo].
      */
     fun invalidateForProfileChange() {
-        YouTubeRepository.invalidateSessionScopedCaches(appContext)
-        LocalSubscriptionsRepository.reloadForActiveProfile(appContext)
-        NotInterestedRepository.reloadForActiveProfile(appContext)
-        VideoHistoryRepository.reloadForActiveProfile(appContext)
-        UploadCheckRepository.reloadForActiveProfile(appContext)
+        prepareForActiveProfile(appContext)
         sessionManager.refreshExpiredFromProfile()
     }
 
@@ -117,6 +121,11 @@ class AccountSwitcher(context: Context) {
      *
      * [datasyncId] recognises an account already in the roster, so signing back
      * into one repairs that profile rather than adding a duplicate row.
+     *
+     * Signing in from a device-only profile is signing in, not adding a
+     * stranger: a brand-new profile made from there starts with a copy of that
+     * profile's data ([copyProfileScopedData]). From a YouTube profile it is a
+     * second account and starts empty.
      */
     fun addYouTubeProfileAndSwitch(
         cookies: String,
@@ -125,7 +134,12 @@ class AccountSwitcher(context: Context) {
         avatarUrl: String? = null,
         datasyncId: String? = null
     ): Profile {
+        val signingInFrom = profileManager.active()
+        val known = profileManager.profiles.value.mapTo(HashSet()) { it.id }
         val profile = profileManager.addYouTubeProfile(cookies, name, handle, avatarUrl, datasyncId)
+        if (signingInFrom.isLocal && profile.id !in known) {
+            copyProfileScopedData(appContext, signingInFrom.id, profile.id)
+        }
         if (!switchTo(profile.id)) invalidateForProfileChange()
         return profile
     }
@@ -171,8 +185,8 @@ class AccountSwitcher(context: Context) {
     /** Remove a profile. Returns false when it is the only one left. */
     fun remove(profileId: String): Boolean {
         val wasActive = profileManager.activeProfileId.value == profileId
-        if (!profileManager.remove(profileId)) return false
-        if (wasActive) invalidateForProfileChange()
+        if (!profileManager.remove(profileId) { prepareForActiveProfile(appContext) }) return false
+        if (wasActive) sessionManager.refreshExpiredFromProfile()
         return true
     }
 
@@ -182,5 +196,48 @@ class AccountSwitcher(context: Context) {
 
     companion object {
         private val sharedSwitching = MutableStateFlow(false)
+
+        /**
+         * Re-point everything process-wide at the profile now stored as
+         * active. Passed to [ProfileManager.setActive] as its `beforePublish`,
+         * so it resolves the profile from the stored id and never from a
+         * [ProfileManager] flow, which still names the profile being left.
+         *
+         * Keep this list and [copyProfileScopedData]'s in step: a
+         * process-wide store missing here shows the previous profile's data
+         * and then writes it into the new one's.
+         */
+        internal fun prepareForActiveProfile(context: Context) {
+            val appContext = context.applicationContext
+            YouTubeRepository.invalidateSessionScopedCaches(appContext)
+            LocalSubscriptionsRepository.reloadForActiveProfile(appContext)
+            NotInterestedRepository.reloadForActiveProfile(appContext)
+            VideoHistoryRepository.reloadForActiveProfile(appContext)
+            UploadCheckRepository.reloadForActiveProfile(appContext)
+            LikedSongsRepository.reloadForActiveProfile(appContext)
+        }
+
+        /**
+         * Give a brand-new profile a copy of everything that belongs to
+         * [fromProfileId]: listening, search and watch history, likes, local
+         * subscriptions, the blocklist and upload mutes.
+         *
+         * Used when signing in from a device-only profile, which creates a
+         * new YouTube profile rather than converting the local one. Without
+         * it, signing in read as losing everything built up signed out. Each
+         * store copies only into keys the target does not have yet, so this
+         * can add data but never replace any.
+         */
+        internal fun copyProfileScopedData(context: Context, fromProfileId: String, toProfileId: String) {
+            if (fromProfileId.isBlank() || toProfileId.isBlank() || fromProfileId == toProfileId) return
+            val appContext = context.applicationContext
+            StatsRepository.copyProfileData(appContext, fromProfileId, toProfileId)
+            SearchHistoryRepository.copyProfileData(appContext, fromProfileId, toProfileId)
+            LikedSongsRepository.copyProfileData(appContext, fromProfileId, toProfileId)
+            VideoHistoryRepository.copyProfileData(appContext, fromProfileId, toProfileId)
+            LocalSubscriptionsRepository.copyProfileData(appContext, fromProfileId, toProfileId)
+            NotInterestedRepository.copyProfileData(appContext, fromProfileId, toProfileId)
+            UploadCheckRepository.copyProfileData(appContext, fromProfileId, toProfileId)
+        }
     }
 }

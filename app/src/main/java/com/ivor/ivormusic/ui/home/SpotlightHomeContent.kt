@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -456,6 +457,21 @@ internal fun isAutoMix(name: String): Boolean {
 }
 
 private const val QUICK_PICK_ROWS = 4
+
+/**
+ * One quick-picks page per 360dp of width, at most three: a phone shows one
+ * page of four rows as it always has, a tablet shows two or three columns of
+ * them instead of one row stretched across the whole screen.
+ */
+private object QuickPickPageSize : PageSize {
+    override fun androidx.compose.ui.unit.Density.calculateMainAxisPageSize(
+        availableSpace: Int,
+        pageSpacing: Int,
+    ): Int {
+        val columns = (availableSpace / 360.dp.roundToPx()).coerceIn(1, 3)
+        return (availableSpace - pageSpacing * (columns - 1)) / columns
+    }
+}
 private const val QUICK_PICK_PAGES = 3
 private const val SHELF_ITEMS = 12
 private const val SHORTCUT_COUNT = 6
@@ -626,32 +642,36 @@ private fun buildShortcuts(
 }.take(SHORTCUT_COUNT)
 
 /**
- * Two columns of wide, short tiles. Built from Rows rather than a LazyGrid,
- * because a lazy grid nested in this LazyColumn has unbounded height - the same
- * constraint PlayerStylePicker works around.
+ * Two columns of wide, short tiles on a phone, three from 600dp of page, so
+ * the six shortcuts are two rows rather than three across a tablet and each
+ * tile stays a readable shape instead of a 500dp-wide bar. Built from Rows
+ * rather than a LazyGrid, because a lazy grid nested in this LazyColumn has
+ * unbounded height - the same constraint PlayerStylePicker works around.
  */
 @Composable
 private fun SpotlightShortcutGrid(
     shortcuts: List<Shortcut>,
     onClick: (Shortcut) -> Unit,
 ) {
-    Column(
+    androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        shortcuts.chunked(2).forEach { pair ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                pair.forEach { shortcut ->
-                    SpotlightShortcutTile(
-                        shortcut = shortcut,
-                        onClick = { onClick(shortcut) },
-                        modifier = Modifier.weight(1f),
-                    )
+        val columns = if (maxWidth >= 600.dp) 3 else 2
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            shortcuts.chunked(columns).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { shortcut ->
+                        SpotlightShortcutTile(
+                            shortcut = shortcut,
+                            onClick = { onClick(shortcut) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // A short last row must not stretch its tiles across it.
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
-                // An odd count must not stretch the last tile across the row.
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -761,6 +781,9 @@ private fun SpotlightQuickPicks(
             state = pagerState,
             contentPadding = PaddingValues(horizontal = 16.dp),
             pageSpacing = 8.dp,
+            // Several pages side by side on a wide page, still snapping one
+            // page at a time.
+            pageSize = QuickPickPageSize,
             modifier = Modifier.fillMaxWidth(),
         ) { page ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

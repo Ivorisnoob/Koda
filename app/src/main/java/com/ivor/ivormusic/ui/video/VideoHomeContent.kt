@@ -120,6 +120,12 @@ fun VideoHomeContent(
     shortsEnabled: Boolean = false,
     shorts: List<ShortsItem> = emptyList(),
     onShortClick: (Int) -> Unit = {},
+    /**
+     * Open Shorts that are not the Home shelf's - a Short from the
+     * notification inbox. Required, so the inbox cannot ship with Shorts
+     * that do nothing on a tap.
+     */
+    onOpenShorts: (List<ShortsItem>, Int) -> Unit,
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
@@ -178,6 +184,7 @@ fun VideoHomeContent(
 
     // Notifications sheet state
     var showNotificationsSheet by remember { mutableStateOf(false) }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val notifications by viewModel.notifications.collectAsState()
     val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
 
@@ -199,20 +206,36 @@ fun VideoHomeContent(
             notifications = notifications,
             isLoading = isNotificationsLoading,
             onNotificationClick = { notification ->
-                val videoId = notification.videoId
-                if (videoId != null) {
-                    showNotificationsSheet = false
-                    onVideoClick(
-                        VideoItem(
-                            videoId = videoId,
-                            title = notification.message,
-                            channelName = "",
-                            channelIconUrl = notification.channelAvatarUrl,
-                            thumbnailUrl = notification.videoThumbnailUrl,
-                            duration = 0L,
-                            viewCount = ""
+                when (val target = notification.target) {
+                    is com.ivor.ivormusic.data.NotificationTarget.Video -> {
+                        showNotificationsSheet = false
+                        openVideo(
+                            VideoItem(
+                                videoId = target.videoId,
+                                title = notification.message,
+                                channelName = "",
+                                channelIconUrl = notification.channelAvatarUrl,
+                                thumbnailUrl = notification.videoThumbnailUrl,
+                                duration = 0L,
+                                viewCount = ""
+                            )
                         )
-                    )
+                    }
+                    // A Short opens in the Shorts player on its own, the way a
+                    // Short does everywhere else in the app.
+                    is com.ivor.ivormusic.data.NotificationTarget.Short -> {
+                        showNotificationsSheet = false
+                        previewController?.release()
+                        onOpenShorts(listOf(com.ivor.ivormusic.data.ShortsItem(videoId = target.videoId)), 0)
+                    }
+                    // Through the in-app link handler, which keeps anything Koda
+                    // can open and hands the rest (a community post) to the
+                    // YouTube app or the browser.
+                    is com.ivor.ivormusic.data.NotificationTarget.Link -> {
+                        showNotificationsSheet = false
+                        uriHandler.openUri(target.url)
+                    }
+                    null -> Unit
                 }
             },
             onDismiss = { showNotificationsSheet = false }

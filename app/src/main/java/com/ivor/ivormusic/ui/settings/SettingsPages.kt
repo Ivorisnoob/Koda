@@ -33,7 +33,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.Public
@@ -261,6 +263,8 @@ internal fun AppearanceSettingsPage(
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
     uiScale: Float,
     onNavigateToDisplaySize: () -> Unit,
+    rotateWithDevice: Boolean,
+    onRotateWithDeviceToggle: (Boolean) -> Unit,
     appIcon: String = ThemePreferences.DEFAULT_APP_ICON,
     onNavigateToAppIcon: () -> Unit = {},
     onBack: () -> Unit
@@ -336,6 +340,23 @@ internal fun AppearanceSettingsPage(
                         explanation = stringResource(R.string.si_display_size)
                     )
                     SettingsDivider()
+                    // Phones only. A large screen always follows the device
+                    // (AppOrientation), so the switch would do nothing there.
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    if (!com.ivor.ivormusic.ui.theme.AppOrientation.isLargeScreen(context)) {
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.ScreenRotation,
+                            title = stringResource(R.string.sp_rotate_with_device),
+                            subtitle = stringResource(
+                                if (rotateWithDevice) R.string.sp_rotate_with_device_on
+                                else R.string.sp_rotate_with_device_off
+                            ),
+                            enabled = rotateWithDevice,
+                            onToggle = onRotateWithDeviceToggle,
+                            explanation = stringResource(R.string.si_rotate_with_device)
+                        )
+                        SettingsDivider()
+                    }
                     SettingsToggleRow(
                         icon = Icons.Rounded.Palette,
                         title = stringResource(R.string.sp_ambient_background),
@@ -994,6 +1015,10 @@ internal fun PlaybackSettingsPage(
     videoQualityMobile: String,
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
+    frameInterpolation: Boolean,
+    onFrameInterpolationToggle: (Boolean) -> Unit,
+    frameInterpolationMaxFps: Int,
+    onFrameInterpolationMaxFpsChange: (Int) -> Unit,
     onOpenQualityPicker: (QualityDialogTarget) -> Unit,
     onBack: () -> Unit
 ) {
@@ -1273,14 +1298,65 @@ internal fun PlaybackSettingsPage(
 
                     SettingsDivider()
 
+                    // Only GLES 3.2 GPUs run Smooth motion's engine, and there is
+                    // no lesser one, so on any other phone it is off whatever the
+                    // stored setting says (a backup from another phone).
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val interpolationSupported = remember(context) {
+                        com.ivor.ivormusic.service.FrameInterpolationSupport.isSupported(context)
+                    }
+
                     SettingsToggleRow(
                         icon = Icons.Rounded.HdrOn,
                         title = stringResource(R.string.sp_prefer_hdr),
-                        subtitle = stringResource(R.string.sp_prefer_hdr_sub),
+                        // The HDR ladder is withheld while Smooth motion is on,
+                        // so the row says why an enabled switch does nothing.
+                        subtitle = stringResource(
+                            if (frameInterpolation && interpolationSupported && preferHdr) {
+                                R.string.sp_prefer_hdr_sub_blocked
+                            } else {
+                                R.string.sp_prefer_hdr_sub
+                            }
+                        ),
                         enabled = preferHdr,
                         onToggle = onPreferHdrToggle,
                         explanation = stringResource(R.string.si_hdr)
                     )
+
+                    SettingsDivider()
+
+                    // Turning it on goes through a warning dialog hosted by
+                    // SettingsScreen; turning it off is immediate. Unsupported
+                    // phones get the row disabled, saying why.
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Animation,
+                        title = stringResource(R.string.sp_frame_interpolation),
+                        subtitle = stringResource(
+                            when {
+                                !interpolationSupported -> R.string.sp_frame_interpolation_sub_unsupported
+                                frameInterpolation -> R.string.sp_frame_interpolation_sub_on
+                                else -> R.string.sp_frame_interpolation_sub_off
+                            }
+                        ),
+                        enabled = frameInterpolation && interpolationSupported,
+                        onToggle = onFrameInterpolationToggle,
+                        explanation = stringResource(R.string.si_frame_interpolation),
+                        available = interpolationSupported
+                    )
+
+                    AnimatedVisibility(
+                        visible = frameInterpolation && interpolationSupported,
+                        enter = fadeIn(tween(200)) + slideInVertically(
+                            initialOffsetY = { -it / 4 },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                        ),
+                        exit = fadeOut(tween(150))
+                    ) {
+                        FrameInterpolationRateChoice(
+                            maxFps = frameInterpolationMaxFps,
+                            onMaxFpsChange = onFrameInterpolationMaxFpsChange
+                        )
+                    }
                 }
             }
         }
@@ -2744,6 +2820,76 @@ private fun SettingsFootnote(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             lineHeight = 17.sp
+        )
+    }
+}
+
+/**
+ * Smooth motion's output cap, shown only while it is on. The screen's own
+ * fastest mode caps it further, so the caption names that rate: a 90 Hz
+ * phone on "Up to 120" plays at 90, and saying so beats a choice that
+ * silently does nothing.
+ */
+@Composable
+private fun FrameInterpolationRateChoice(
+    maxFps: Int,
+    onMaxFpsChange: (Int) -> Unit
+) {
+    val context = LocalContext.current
+    val screenHz = remember(context) {
+        val display = runCatching { context.display }.getOrNull()
+        val mode = display?.mode
+        display?.supportedModes
+            ?.filter { mode == null || (it.physicalWidth == mode.physicalWidth && it.physicalHeight == mode.physicalHeight) }
+            ?.maxOfOrNull { it.refreshRate }
+            ?.let { kotlin.math.round(it).toInt() }
+    }
+    val options = listOf(
+        ThemePreferences.FRAME_INTERPOLATION_FPS_LOW to stringResource(R.string.sp_frame_interpolation_rate_60),
+        ThemePreferences.FRAME_INTERPOLATION_FPS_HIGH to stringResource(R.string.sp_frame_interpolation_rate_120),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+        ) {
+            options.forEachIndexed { index, (fps, label) ->
+                ToggleButton(
+                    checked = maxFps == fps,
+                    onCheckedChange = { onMaxFpsChange(fps) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    },
+                    colors = ToggleButtonDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        checkedContainerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) {
+                    Text(label)
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = if (screenHz != null && screenHz > 0) {
+                stringResource(
+                    R.string.sp_frame_interpolation_rate_hint,
+                    screenHz,
+                    minOf(maxFps, screenHz).coerceAtLeast(ThemePreferences.FRAME_INTERPOLATION_FPS_LOW)
+                )
+            } else {
+                stringResource(R.string.sp_frame_interpolation_rate_hint_unknown)
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
         )
     }
 }

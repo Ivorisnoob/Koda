@@ -53,7 +53,7 @@
 
     <!-- Background upload check (#137): its notification channel and grouped title. -->
     <string name="upload_check_channel_name">New uploads</string>
-    <string name="upload_check_channel_description">Tells you when a channel you follow on this device uploads</string>
+    <string name="upload_check_channel_description">Tells you when a channel you follow uploads</string>
     <string name="upload_notification_title">%1$s: %2$d new uploads</string>
 
     <!-- ============ Common actions ============ -->
@@ -117,6 +117,7 @@
     <string name="home_offline_subtitle">You\'re offline. These play without a connection.</string>
     <string name="your_mix_line1">Your</string>
     <string name="your_mix_line2">Mix</string>
+    <string name="home_mix_up_next">Up next in your mix</string>
     <string name="update_badge_version">v%1$s</string>
     <string name="artists_joined">%1$s, %2$s</string>
     <string name="cd_profile">Profile</string>
@@ -195,6 +196,10 @@
     <string name="song_options_go_to_artist">Go to %1$s</string>
     <string name="song_options_not_interested">Not interested</string>
     <string name="song_options_not_interested_subtitle">Stop recommending this song</string>
+    <string name="music_failed_skipped">Couldn\'t play %1$s. Skipped to the next song.</string>
+    <string name="music_failed_stopped">Couldn\'t play %1$s.</string>
+    <string name="music_failed_refused">YouTube is refusing playback on this network right now. Try again in a few minutes.</string>
+    <string name="music_failed_untitled">this song</string>
     <string name="song_options_block_artist">Don\'t recommend %1$s</string>
 
     <!-- Playback speed control in the now-playing overflow sheet -->
@@ -318,6 +323,9 @@
     <string name="sp_non_expressive_nav">Non-expressive navigation bar</string>
     <string name="sp_spotlight_home">Spotlight Home</string>
     <string name="sp_display_size">Display size</string>
+    <string name="sp_rotate_with_device">Rotate with device</string>
+    <string name="sp_rotate_with_device_on">Turns to landscape when you do</string>
+    <string name="sp_rotate_with_device_off">Stays upright</string>
 
     <!-- SponsorBlock -->
     <string name="sb_title">SponsorBlock</string>
@@ -394,6 +402,38 @@
     <string name="sp_video_quality">Video quality</string>
     <string name="sp_prefer_hdr">Prefer HDR video</string>
     <string name="sp_prefer_hdr_sub">Use HDR only when the display and decoder support it</string>
+    <string name="vpc_smooth_motion">Smooth motion</string>
+    <string name="vpc_smooth_motion_off">Off. Turn on to smooth out 24 and 30 fps video</string>
+    <string name="vpc_smooth_motion_restart">Turns on after you close the player and open a video again</string>
+    <string name="vpc_smooth_motion_measuring">Checking this video\'s frame rate</string>
+    <string name="vpc_smooth_motion_active">On: %1$d fps shown as %2$d fps</string>
+    <string name="vpc_smooth_motion_active_resolution">On: %1$d fps shown as %2$d fps. Pick 1080p or lower for %3$d fps</string>
+    <string name="vpc_smooth_motion_active_screen">On: %1$d fps shown as %2$d fps, as fast as your screen went</string>
+    <string name="vpc_smooth_motion_not_needed">Not needed: this video already plays at %1$d fps</string>
+    <string name="vpc_smooth_motion_live">Off for live streams</string>
+    <string name="vpc_smooth_motion_hdr">Off for HDR video</string>
+    <string name="vpc_smooth_motion_hot">Paused while the phone is hot</string>
+    <string name="vpc_smooth_motion_battery">Paused by battery saver</string>
+    <string name="vpc_smooth_motion_cannot_keep_up">Off for this video: your phone couldn\'t keep up. A lower quality may work.</string>
+    <string name="vpc_smooth_motion_unsupported">Not supported on this phone\'s graphics chip</string>
+    <string name="sp_prefer_hdr_sub_blocked">Paused while Smooth motion is on</string>
+    <string name="sp_frame_interpolation">Smooth motion</string>
+    <string name="sp_frame_interpolation_sub_off">Experimental. Adds in-between frames so videos play at up to 120 fps</string>
+    <string name="sp_frame_interpolation_sub_on">Turn it on or off from the video player\'s settings. Pauses when the phone is hot or on battery saver</string>
+    <string name="sp_frame_interpolation_sub_unsupported">Not supported on this phone. Needs a graphics chip with OpenGL ES 3.2</string>
+    <string name="sp_frame_interpolation_rate_60">Up to 60 fps</string>
+    <string name="sp_frame_interpolation_rate_120">Up to 120 fps</string>
+    <string name="sp_frame_interpolation_rate_hint">Your screen refreshes up to %1$d times a second, so videos play at up to %2$d fps. Higher rates use more battery.</string>
+    <string name="sp_frame_interpolation_rate_hint_unknown">Videos play at up to this rate, or your screen\'s refresh rate if that is lower. Higher rates use more battery.</string>
+    <string name="fi_warning_title">Turn on smooth motion?</string>
+    <string name="fi_warning_subtitle">Experimental video frame interpolation</string>
+    <string name="fi_warning_intro">Koda will draw new frames between the real ones, so videos play at up to your screen\'s refresh rate: 60, 90 or 120 fps. It has costs:</string>
+    <string name="fi_warning_battery">It runs on the GPU for as long as a video plays. Expect more battery use and a warmer phone, more so at 120 fps.</string>
+    <string name="fi_warning_artifacts">Fast motion, the edges of moving objects and on-screen text can warp or shimmer.</string>
+    <string name="fi_warning_hdr">HDR videos play in SDR while it is on. Live streams, Shorts and videos already as smooth as your screen are left as they are.</string>
+    <string name="fi_warning_auto">It pauses by itself when the phone gets hot, on battery saver, or when your phone cannot keep up.</string>
+    <string name="fi_warning_note">If a video is open now, smooth motion starts once you close the player and open a video again.</string>
+    <string name="fi_warning_confirm">Turn on</string>
     <string name="vpc_quality_hdr">HDR</string>
     <string name="vpc_quality_standard">Standard</string>
     <string name="sp_mode">Mode</string>
@@ -537,7 +577,7 @@
     <string name="sp_blocked_by_system_sub">Allow live updates for Koda in Android settings</string>
     <string name="sp_new_uploads">New uploads</string>
     <string name="sp_notify_new_uploads">Notify about new uploads</string>
-    <string name="sp_notify_new_uploads_on">Checks channels you follow on this device</string>
+    <string name="sp_notify_new_uploads_on">Checks channels you follow on this device, and account subscriptions with the bell on All</string>
     <string name="sp_notify_new_uploads_off">Off: Koda only checks while you are using it</string>
     <string name="sp_notifications_blocked">Notifications are blocked</string>
     <string name="sp_notifications_blocked_sub">Allow notifications for Koda in Android settings. New uploads wait until you do.</string>
@@ -732,6 +772,8 @@
     <string name="cd_playing">Playing</string>
     <string name="cd_remove_from_queue">Remove from queue</string>
     <string name="queue_save_as_playlist">Save queue as playlist</string>
+    <string name="player_collapse">Collapse player</string>
+    <string name="player_more_songs">More songs</string>
     <string name="queue_save_default_name">Queue · %1$s</string>
     <plurals name="queue_saved_to_playlist">
         <item quantity="one">Saved %1$d song to %2$s</item>
@@ -759,6 +801,14 @@
     <string name="cd_close_shorts">Close Shorts</string>
     <string name="subscribed">Subscribed</string>
     <string name="subscribe">Subscribe</string>
+    <string name="bell_level_all">All</string>
+    <string name="bell_level_personalized">Personalized</string>
+    <string name="bell_level_none">None</string>
+    <string name="bell_level_unknown">not known</string>
+    <string name="bell_content_description">Notifications for %1$s: %2$s. Change</string>
+    <string name="bell_changed">Notifications set to %1$s</string>
+    <string name="bell_change_failed">Couldn\'t change notifications for %1$s</string>
+    <string name="bell_koda_uploads_off">Koda will notify about these uploads once New uploads is on in Settings</string>
     <string name="like">Like</string>
     <string name="cd_dislike">Dislike</string>
     <string name="cd_comments">Comments</string>
@@ -1261,6 +1311,8 @@
     <string name="lib_change_cover">Change cover</string>
     <string name="lib_reset_cover">Reset cover</string>
     <string name="lib_change_cover_art">Change cover art</string>
+    <string name="lib_detail_placeholder_title">Pick something to open</string>
+    <string name="lib_detail_placeholder_body">Playlists, artists and albums open here, beside your library.</string>
     <string name="lib_drag_hint">Drag a handle to reorder</string>
     <string name="lib_tap_remove_hint">Tap to remove tracks</string>
     <string name="label_album">Album</string>
@@ -1417,6 +1469,7 @@
     <string name="source_youtube_music">YouTube Music</string>
     <string name="source_local_library">Local Library</string>
     <string name="search_no_results">No results found</string>
+    <string name="search_top_result">Top result</string>
     <string name="search_no_results_hint">Try different keywords or filters</string>
     <string name="thats_everything">That\'s everything</string>
     <string name="cd_clear">Clear</string>
@@ -1561,6 +1614,7 @@
     <string name="si_ambient">Tints the app background with soft colors pulled from the album art of whatever is playing.</string>
     <string name="si_app_icon">Pick a different look for Koda\'s icon on your home screen from a set of shape and color presets.</string>
     <string name="si_display_size">Scales the whole interface up or down without touching your system font size. You preview the change before it applies.</string>
+    <string name="si_rotate_with_device">Lets Koda turn sideways with your phone, with a layout made for landscape: navigation on the side and a player that puts the artwork beside its controls. Your system rotation lock still applies. Tablets and unfolded foldables always rotate.</string>
     <string name="si_spotlight">Two Home designs showing the same content. Classic leads with a large hero and carousels; Spotlight is a denser grid of shortcuts, quick picks and artwork shelves.</string>
     <string name="si_nav_bar">The floating toolbar hides while you scroll down and returns when you scroll up. The standard bar is a fixed Material 3 navigation bar with labels.</string>
     <string name="si_haptics">How strongly Koda vibrates in response to touch: drags, toggles, skips and taps. Rich uses the full vocabulary; Subtle keeps only the moments that matter.</string>
@@ -1569,6 +1623,7 @@
     <string name="si_normalize">Evens out loudness between songs, so a quiet acoustic track and a loudly mastered one play at a similar level.</string>
     <string name="si_auto_queue">When your queue runs out, Koda keeps the music going with similar songs instead of stopping.</string>
     <string name="si_music_history">Keeps a log on this device of the songs you play. It powers your stats and recently played. Separate from your YouTube account\'s history.</string>
+    <string name="si_frame_interpolation">Video frame interpolation. For each pair of frames Koda works out how things moved and draws the frames in between on the GPU, so a 24, 30 or 60 fps video reaches the screen at a steady 60, 90 or 120 fps. Where it cannot find a good match, such as at a scene cut, it repeats the nearer real frame rather than inventing one. Turning it on here adds a Smooth motion switch to the video player\'s settings, which starts on and remembers what you last chose.</string>
     <string name="si_hdr">When a video has an HDR version and your screen supports it, Koda plays the HDR one. Richer colors, but more data and battery.</string>
     <string name="si_pip_buttons">Android shows three buttons in the picture-in-picture window, so this picks what sits either side of play and pause.</string>
     <string name="si_brightness">Koda remembers the brightness you drag to in fullscreen video and reapplies it next time, instead of resetting to the system level.</string>

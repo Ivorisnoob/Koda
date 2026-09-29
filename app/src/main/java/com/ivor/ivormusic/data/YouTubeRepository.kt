@@ -166,6 +166,12 @@ class YouTubeRepository(private val context: Context) {
         private val LOGGED_IN_TRACKING_PARAM =
             Regex("\"logged_in\"\\s*,\\s*\"value\"\\s*:\\s*\"([01])\"")
 
+        // Where a music history ping may carry the account's cookies. WEB_REMIX
+        // /player returns its tracking URLs on s.youtube.com, with no cpn, c or
+        // ver of their own [verified September 2026, signed-in probe]; the
+        // video path's www.youtube.com is allowed as well.
+        private val MUSIC_HISTORY_TRACKING_HOSTS = setOf("s.youtube.com", "www.youtube.com")
+
         // ANDROID_VR is the client for audio extraction in 2026: it returns
         // direct, unobfuscated stream URLs (no signatureCipher to decrypt) and
         // needs no player JS.
@@ -3110,18 +3116,24 @@ class YouTubeRepository(private val context: Context) {
         if (!sessionManager.isLoggedIn()) return@withContext
         // Incognito covers the account's own history too, not only Koda's.
         // Gated here rather than at the call sites so nothing that starts
-        // playback later has to remember.
+        // playback later has to remember. The music history switch does not:
+        // it is the on-device log, and its setting says it is separate from
+        // the account's history (si_music_history).
         if (IncognitoMode.isEnabled(context)) return@withContext
 
         try {
             val session = sessionManager.captureSession() ?: return@withContext
             val cpn = generateCpn()
 
-            // This install's own minted token, which every other InnerTube call
-            // already rides on. The literal is the last resort it was always
-            // documented to be: a hardcoded visitor id identifies a stranger's
-            // session, and a missing one now answers LOGIN_REQUIRED.
-            val visitorData = cachedVisitorDataOrNull() ?: "Cgt6SUNYVzB2VkJDbyjGrrSmBg%3D%3D"
+            // This install's own token, which every other InnerTube call rides
+            // on, minted here if none is cached yet (a fresh install's first
+            // play). Never a fallback literal: a hardcoded visitor id is a
+            // stranger's session, and without a token the play is skipped
+            // rather than filed under one.
+            val visitorData = getVisitorData().ifEmpty {
+                KLog.w("YouTubeRepo", "History sync: no visitorData, skipped $videoId")
+                return@withContext
+            }
 
             // Client constants - using WEB_REMIX (web player)
             val clientName = "WEB_REMIX"
@@ -3136,19 +3148,17 @@ class YouTubeRepository(private val context: Context) {
                             "clientName": "$clientName",
                             "clientVersion": "$clientVersion",
                             "hl": "en",
-                            "gl": "US",
+                            "gl": "${contentRegion()}",
                             "visitorData": "$visitorData"
                         }
                     },
                     "videoId": "$videoId",
-                    "cpn": "$cpn",
-                    "playbackContext": {
-                        "contentPlaybackContext": {
-                            "signatureTimestamp": ${System.currentTimeMillis() / 1000}
-                        }
-                    }
+                    "cpn": "$cpn"
                 }
             """.trimIndent()
+            // No playbackContext.signatureTimestamp: that field is the
+            // player-JS version, not a clock, and the tracking URLs do not need
+            // it - the video history /player sends none either.
 
             val playerRequest = okhttp3.Request.Builder()
                 .url(playerUrl)
@@ -3196,17 +3206,22 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext
             }
 
-            // Step 3: Call the tracking URL to register the play
-            // Append required parameters
-            val trackingUrl = buildString {
-                append(videostatsPlaybackUrl)
-                if (!videostatsPlaybackUrl.contains("cpn=")) {
-                    append(if (videostatsPlaybackUrl.contains("?")) "&" else "?")
-                    append("cpn=$cpn")
-                }
-                append("&ver=2")
-                append("&c=$clientName")
+            // Step 3: Call the tracking URL to register the play. Credentials
+            // only go to the YouTube tracking hosts /player returns, and each
+            // parameter is set rather than appended, so one the URL already
+            // carries is replaced instead of sent twice.
+            val baseTrackingUrl = videostatsPlaybackUrl.toHttpUrlOrNull()
+            if (baseTrackingUrl == null || baseTrackingUrl.scheme != "https" ||
+                baseTrackingUrl.host !in MUSIC_HISTORY_TRACKING_HOSTS
+            ) {
+                KLog.w("YouTubeRepo", "History sync: refused a tracking URL on ${baseTrackingUrl?.host}")
+                return@withContext
             }
+            val trackingUrl = baseTrackingUrl.newBuilder()
+                .setQueryParameter("cpn", cpn)
+                .setQueryParameter("ver", "2")
+                .setQueryParameter("c", clientName)
+                .build()
 
             // The /player call above blocks, and the switch can be flipped or
             // the account changed while it does. This ping is the write that
@@ -3237,6 +3252,9 @@ class YouTubeRepository(private val context: Context) {
             }
             trackingResponse.close()
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // The token mint above suspends; never swallow a cancellation.
+            throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error in reportPlayback", e)
         }
@@ -6539,8 +6557,27 @@ class YouTubeRepository(private val context: Context) {
                 isSubscribed = isSubscribed,
                 subscriberCountText = subscriberCountText,
                 commentsToken = commentsToken,
-                collaborators = parseCollaborators(owner)
+                collaborators = parseCollaborators(owner),
+                bells = ChannelBellParser.fromSubscribeButtons(root).let { bells ->
+                    // Not every watch page has moved to the view-model button.
+                    val legacy = channelId?.takeIf { it !in bells }?.let { legacyBell(subButton, it) }
+                    if (legacy != null) bells + (legacy.channelId to legacy) else bells
+                }
             )
+    }
+
+    /**
+     * The bell inside a legacy `subscribeButtonRenderer`, at
+     * `notificationPreferenceButton.subscriptionNotificationToggleButtonRenderer`.
+     * [verified September 2026, signed in] Some watch pages still draw their
+     * Subscribe button this way (`videoSecondaryInfoRenderer.subscribeButton`)
+     * while others use `subscribeButtonViewModel`, so both are read.
+     */
+    private fun legacyBell(subscribeButton: org.json.JSONObject?, channelId: String): ChannelBell? {
+        if (subscribeButton == null) return null
+        val toggles = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(subscribeButton, "subscriptionNotificationToggleButtonRenderer", toggles)
+        return ChannelBellParser.fromToggle(toggles.firstOrNull(), channelId)
     }
 
     /**
@@ -6958,6 +6995,52 @@ class YouTubeRepository(private val context: Context) {
             .put("channelIds", org.json.JSONArray().put(channelId))
         postWatchApi(endpoint, body) != null
     }
+
+    /**
+     * Move [bell]'s channel to [level] on the account, with the params YouTube
+     * served for that level.
+     *
+     * [verified September 2026, signed in] `notification/modify_channel_preference`
+     * answers with the channel's fresh bell (`newNotificationButton`, the toggle
+     * shape) and a toast (`notificationActionRenderer.responseText`, "You'll get
+     * personalized notifications"). Success is that bell standing at [level], not
+     * the HTTP code: account writes on this API answer 200 to requests they did
+     * not act on. Null means the level did not change; the caller keeps what it
+     * had.
+     */
+    suspend fun setChannelBell(bell: ChannelBell, level: BellLevel): ChannelBellChange? =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext null
+            val params = bell.choices[level] ?: return@withContext null
+            try {
+                val raw = postWatchApi(
+                    "notification/modify_channel_preference",
+                    org.json.JSONObject().put("context", webContext()).put("params", params)
+                ) ?: return@withContext null
+                val root = org.json.JSONObject(raw)
+                val updated = ChannelBellParser.fromToggle(
+                    root.optJSONObject("newNotificationButton"), bell.channelId
+                )
+                if (updated?.level != level) {
+                    KLog.w("YouTubeRepo", "Bell for ${bell.channelId} did not move to $level (reply: ${updated?.level})")
+                    return@withContext null
+                }
+                val toasts = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "notificationActionRenderer", toasts)
+                ChannelBellChange(
+                    // The level is the reply's; the params stay the ones the
+                    // calling surface was served, which were minted for it.
+                    bell = bell.withLevel(level),
+                    message = getRunText(toasts.firstOrNull()?.optJSONObject("responseText"))
+                        ?.takeIf { it.isNotBlank() }
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w("YouTubeRepo", "setChannelBell failed", e)
+                null
+            }
+        }
 
     // ============================================================
     // Playlist editing: playlist/create, playlist/delete and
@@ -7511,7 +7594,10 @@ class YouTubeRepository(private val context: Context) {
         positionMs: Long,
         final: Boolean,
     ): HistoryPingResult {
-        if (!mayWriteVideoHistory()) return HistoryPingResult.FAILED
+        if (!mayWriteVideoHistory()) {
+            KLog.d("YouTubeRepo", "Video history: not sent for ${session.videoId}, history off or incognito")
+            return HistoryPingResult.FAILED
+        }
         // Deliberately not a comparison of cookie strings. Google rotates the
         // session cookies mid-video, and a string compare read every rotation
         // as a different login and silently stopped reporting for the rest of
@@ -7545,8 +7631,17 @@ class YouTubeRepository(private val context: Context) {
             .header("Referer", "https://www.youtube.com/watch?v=${session.videoId}")
             .authenticate(live, "https://www.youtube.com")
             .build()
+        // "playback" is the one that files the video in history; "watchtime"
+        // pings carry how far it was watched.
+        val kind = url.pathSegments.lastOrNull() ?: url.encodedPath
         return okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) KLog.w("YouTubeRepo", "Video history ping failed: ${response.code}")
+            val detail = "$kind ping for ${session.videoId} at ${position}s " +
+                "(from ${trackingUrl.queryParameter("st")}s, final=$final): HTTP ${response.code}"
+            if (response.isSuccessful) {
+                KLog.d("YouTubeRepo", "Video history: $detail")
+            } else {
+                KLog.w("YouTubeRepo", "Video history ping failed: $detail")
+            }
             if (response.isSuccessful) HistoryPingResult.SENT else HistoryPingResult.FAILED
         }
     }
@@ -7603,8 +7698,13 @@ class YouTubeRepository(private val context: Context) {
                         ?.takeIf { it.isNotBlank() }
                     val handle = getRunText(renderer.optJSONObject("subscriberCountText"))
                         ?.takeIf { it.startsWith("@") }
+                    // Every row carries its bell, so the list knows each level
+                    // without a request per channel (ChannelBellParser).
+                    val toggles = mutableListOf<org.json.JSONObject>()
+                    findObjectsByKey(renderer, "subscriptionNotificationToggleButtonRenderer", toggles)
+                    val bell = ChannelBellParser.fromToggle(toggles.firstOrNull(), channelId)
                     channels.add(
-                        SubscribedChannel(channelId, name, avatarUrl, subscriberCount, handle)
+                        SubscribedChannel(channelId, name, avatarUrl, subscriberCount, handle, bell)
                     )
                 }
                 val token = if (renderers.isNotEmpty()) extractContinuationToken(response) else null
@@ -8028,7 +8128,13 @@ class YouTubeRepository(private val context: Context) {
             attributionText = attributionText,
             attributionUrl = attributionUrl,
             aboutToken = aboutToken,
-            accountSubscribed = parseChannelSubscribedState(root)
+            accountSubscribed = parseChannelSubscribedState(root),
+            bell = ChannelBellParser.fromSubscribeButtons(root)[channelId] ?: run {
+                // The legacy button, as some watch pages still serve it.
+                val legacy = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "subscribeButtonRenderer", legacy)
+                legacyBell(legacy.firstOrNull { it.optString("channelId") == channelId }, channelId)
+            }
         )
     }
 
@@ -9210,14 +9316,21 @@ class YouTubeRepository(private val context: Context) {
                     if (url?.startsWith("//") == true) url = "https:$url"
                     return url
                 }
+                val navigation = renderer.optJSONObject("navigationEndpoint")
+                fun endpointVideoId(key: String): String? =
+                    navigation?.optJSONObject(key)?.optString("videoId")?.takeIf { it.isNotBlank() }
+                val target = endpointVideoId("watchEndpoint")?.let { NotificationTarget.Video(it) }
+                    ?: endpointVideoId("reelWatchEndpoint")?.let { NotificationTarget.Short(it) }
+                    ?: navigation?.optJSONObject("commandMetadata")
+                        ?.optJSONObject("webCommandMetadata")?.optString("url")
+                        ?.takeIf { it.startsWith("/") }
+                        ?.let { NotificationTarget.Link("https://www.youtube.com$it") }
                 NotificationItem(
                     message = message,
                     sentTime = renderer.optJSONObject("sentTimeText")?.optString("simpleText").orEmpty(),
                     channelAvatarUrl = lastThumb("thumbnail"),
                     videoThumbnailUrl = lastThumb("videoThumbnail"),
-                    videoId = renderer.optJSONObject("navigationEndpoint")
-                        ?.optJSONObject("watchEndpoint")?.optString("videoId")
-                        ?.takeIf { it.isNotBlank() },
+                    target = target,
                     isRead = renderer.optBoolean("read", false)
                 )
             }

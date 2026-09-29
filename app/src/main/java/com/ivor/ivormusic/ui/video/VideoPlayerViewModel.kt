@@ -46,6 +46,8 @@ import com.ivor.ivormusic.data.SponsorSegment
 import com.ivor.ivormusic.data.activeCategories
 import com.ivor.ivormusic.data.segmentAt
 import com.ivor.ivormusic.data.LocalSubscription
+import com.ivor.ivormusic.data.BellLevel
+import com.ivor.ivormusic.data.ChannelBellActions
 import com.ivor.ivormusic.data.SubscriptionActions
 import com.ivor.ivormusic.data.SubscriptionStore
 import com.ivor.ivormusic.data.LiveChatBanner
@@ -140,6 +142,49 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // Player Instance
     private var _exoPlayer: ExoPlayer? = null
     val exoPlayer: ExoPlayer? get() = _exoPlayer
+
+    /**
+     * Smooth motion. Whether the current player was built with the effect
+     * graph is fixed for its lifetime (see [FrameInterpolationEffect]), so it
+     * is remembered here and compared with the setting when the player closes.
+     */
+    private val frameInterpolation =
+        com.ivor.ivormusic.service.FrameInterpolationGovernor(context)
+
+    /** Whether this GPU runs Smooth motion at all (GLES 3.2); fixed for the device. */
+    private val frameInterpolationSupported by lazy {
+        com.ivor.ivormusic.service.FrameInterpolationSupport.isSupported(context)
+    }
+
+    /**
+     * Smooth motion as set and as this phone can run it: a setting carried
+     * over from another phone (a restored backup) must not install the graph
+     * where the engine cannot run.
+     */
+    private fun frameInterpolationWanted(): Boolean =
+        frameInterpolationSupported && themePreferences.isFrameInterpolationEnabled()
+    private var playerHasInterpolation = false
+    private var graphRedrawJob: Job? = null
+
+    /** Available and switched on in the player's settings panel: whether frames are drawn. */
+    private fun frameInterpolationOn(): Boolean =
+        frameInterpolationWanted() && themePreferences.isFrameInterpolationPlayerOn()
+
+    /** Whether the player's settings panel offers the Smooth motion switch. */
+    val smoothMotionAvailable: StateFlow<Boolean> = themePreferences.frameInterpolation
+        .map { it && frameInterpolationSupported }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, frameInterpolationWanted())
+
+    /** The player's Smooth motion switch, remembered across videos and launches. */
+    val smoothMotionOn: StateFlow<Boolean> = themePreferences.frameInterpolationPlayerOn
+
+    fun setSmoothMotionOn(on: Boolean) {
+        themePreferences.setFrameInterpolationPlayerOn(on)
+    }
+
+    /** What Smooth motion is doing for the video on screen, for the player's settings panel. */
+    val frameInterpolationStatus: StateFlow<com.ivor.ivormusic.service.FrameInterpolationStatus> =
+        frameInterpolation.status
 
     // State
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
@@ -646,6 +691,36 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** True when the subscribe button has to send the user to sign in first. */
     fun subscribeNeedsLogin(): Boolean = subscriptionActions.subscribeNeedsLogin()
 
+    private val bellActions = ChannelBellActions(context, youtubeRepository)
+
+    private val _bellWrites = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Channels whose bell write is in flight; their bell is disabled until it lands. */
+    val bellWrites: StateFlow<Set<String>> = _bellWrites.asStateFlow()
+
+    /**
+     * Move [channelId]'s account bell to [level] (see [ChannelBellActions]).
+     * Optimistic, with the old level put back when the write does not land.
+     */
+    fun setChannelBell(channelId: String, level: BellLevel, channelName: String) {
+        val current = _engagement.value ?: return
+        val bell = current.bells[channelId] ?: return
+        if (channelId in _bellWrites.value) return
+        _bellWrites.value = _bellWrites.value + channelId
+        _engagement.value = current.copy(bells = current.bells + (channelId to bell.withLevel(level)))
+        viewModelScope.launch {
+            try {
+                val landed = bellActions.change(bell, level, channelName)
+                val now = _engagement.value
+                if (now?.videoId == current.videoId) {
+                    _engagement.value = now.copy(bells = now.bells + (channelId to (landed ?: bell)))
+                }
+            } finally {
+                _bellWrites.value = _bellWrites.value - channelId
+            }
+        }
+    }
+
     // ---------------- Live broadcast ----------------
 
     /**
@@ -956,8 +1031,32 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // process restart rebuilds the player at 1x while the sheet
             // still shows the remembered rate.
             player.setPlaybackSpeed(_playbackSpeed.value)
+            installFrameInterpolation(player)
         }
     }
+
+    /**
+     * Before the first prepare or never: the video renderer decides on its
+     * first enable whether it renders through the effect graph, and does not
+     * revisit it. Everything after this is the per-frame gate the progress
+     * poll sets.
+     */
+    private fun installFrameInterpolation(player: ExoPlayer) {
+        playerHasInterpolation = frameInterpolationWanted()
+        if (!playerHasInterpolation) return
+        player.setVideoEffects(
+            listOf(com.ivor.ivormusic.service.FrameInterpolationEffect(frameInterpolation.control))
+        )
+    }
+
+    /**
+     * HDR stays out of the ladder while Smooth motion is on, and while the
+     * player still carries the effect graph after it was turned off: an HDR
+     * rendition through that graph is tone-mapped or not, depending on the
+     * device's GL extensions, which is a worse answer than SDR on purpose.
+     */
+    private fun frameInterpolationBlocksHdr(): Boolean =
+        playerHasInterpolation || frameInterpolationWanted()
 
     /**
      * The playback listener the local ExoPlayer carries: buffering spinner,
@@ -1016,6 +1115,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // only available once a frame has decoded.
                     _isPortraitVideo.value = ratio < 1f
                 }
+            }
+
+            override fun onSurfaceSizeChanged(width: Int, height: Int) {
+                if (width > 0 && height > 0) redrawPausedFrameThroughGraph()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -1382,6 +1485,30 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
+                    // Fresh reads: turning the setting off or changing its rate
+                    // takes effect within a tick, without rebuilding the
+                    // player. The renderer's drop counter is how the governor
+                    // learns whether this phone keeps up; it only means
+                    // anything with the effect graph installed.
+                    val counters = if (playerHasInterpolation) {
+                        player.videoDecoderCounters?.also { it.ensureUpdated() }
+                    } else null
+                    val quality = _currentQuality.value
+                    frameInterpolation.update(
+                        enabledByUser = frameInterpolationOn(),
+                        userMaxFps = themePreferences.getFrameInterpolationMaxFps(),
+                        pipelineInstalled = playerHasInterpolation,
+                        currentVideoId = _currentVideo.value?.videoId,
+                        qualityKey = quality?.let {
+                            "${it.resolution}|${it.width}x${it.height}@${it.frameRate}|${it.dynamicRange}"
+                        },
+                        isLive = _isLive.value,
+                        isHdr = quality?.isHdr == true,
+                        speed = player.playbackParameters.speed,
+                        isPlaying = player.isPlaying,
+                        positionMs = player.currentPosition,
+                        droppedFrames = counters?.droppedBufferCount,
+                    )
                     // A non-positive duration means "not known yet" (and is the
                     // normal case for a live stream), so leave the last good
                     // values alone rather than dividing by it.
@@ -3133,7 +3260,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // The preference is intent; the display capability decides whether
         // HDR can produce a visible benefit. This also handles an enabled
         // value restored onto an SDR-only phone.
-        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context)
+        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context) &&
+            !frameInterpolationBlocksHdr()
         val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
         val qualities = if (includeHdr) {
             result.qualities
@@ -3301,6 +3429,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isExpanded.value = false
         // Nothing is playing any more, so nothing should be on the lock screen.
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
+        // Whatever opens next - even this same video - gets a fresh chance.
+        frameInterpolation.reset()
+        // Smooth motion can only be added or removed by building a new player,
+        // and this is the one moment nothing holds the old one: the session is
+        // gone (just above) and the overlay disposes its views with the video.
+        if (_exoPlayer != null &&
+            playerHasInterpolation != frameInterpolationWanted()
+        ) {
+            _exoPlayer?.release()
+            _exoPlayer = null
+            playerHasInterpolation = false
+        }
         // An explicit close means "I'm done with this video" - the opposite
         // of what the resume snapshot is for, so it must not reappear next
         // launch.
@@ -3378,6 +3518,37 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * session or a quality switch is being restored to - so those pass
      * [precise] and keep exact seeking.
      */
+    /**
+     * Draw the paused frame again once a new surface has its size, when
+     * Smooth motion's effect graph is installed.
+     *
+     * The graph draws at the output surface's size, and a view taking the
+     * surface over (the mini bar handing to the page, fullscreen back to
+     * portrait) reaches it before its size does: the paused frame is drawn at
+     * the size the last surface had, a small picture in the bottom-left corner
+     * (GL's origin), and nothing draws again until playback resumes. Media3's
+     * own redraw (`VideoFrameProcessor.REDRAW`) needs a replayable frame cache
+     * that playback never builds, and throws without one [verified September
+     * 2026 against the 1.11.0 bytecode], so an exact seek to where playback
+     * already is renders the frame afresh. Settled briefly, because a
+     * hand-off reports sizes in a burst. Playing needs nothing: the next frame
+     * is drawn at the new size.
+     */
+    private fun redrawPausedFrameThroughGraph() {
+        if (!playerHasInterpolation) return
+        graphRedrawJob?.cancel()
+        graphRedrawJob = viewModelScope.launch {
+            delay(GRAPH_REDRAW_SETTLE_MS)
+            val player = _exoPlayer ?: return@launch
+            if (player.isPlaying || player.playbackState != Player.STATE_READY ||
+                player.isCurrentMediaItemLive
+            ) {
+                return@launch
+            }
+            seekPlayerTo(player, player.currentPosition, precise = true)
+        }
+    }
+
     private fun seekPlayerTo(player: Player, positionMs: Long, precise: Boolean) {
         (player as? ExoPlayer)?.setSeekParameters(
             if (precise) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC
@@ -4080,6 +4251,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * media notification and the Picture-in-Picture controls.
          */
         const val SEEK_STEP_MS = 10_000L
+
+        /** How long a surface hand-off's size reports are left to settle before a paused redraw. */
+        private const val GRAPH_REDRAW_SETTLE_MS = 150L
 
         /** Silent re-prepare attempts before a renderer error reaches the UI. */
         private const val MAX_RENDERER_RETRIES = 2

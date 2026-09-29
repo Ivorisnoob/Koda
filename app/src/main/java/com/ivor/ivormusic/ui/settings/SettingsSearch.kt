@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.Public
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.rounded.MoneyOff
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
@@ -288,6 +290,16 @@ internal fun buildSettingsSearchIndex(
             "classic", "floating", "expressive"
         )
     ) { onOpenPage(SettingsPage.APPEARANCE) }
+    entry(
+        "rotate_with_device",
+        stringResource(R.string.sp_rotate_with_device),
+        stringResource(R.string.settings_appearance),
+        Icons.Rounded.ScreenRotation,
+        listOf(
+            "rotate", "rotation", "landscape", "portrait", "orientation",
+            "sideways", "turn", "auto rotate", "lock"
+        )
+    ) { onOpenPage(SettingsPage.APPEARANCE) }
 
     // Player
     entry(
@@ -381,6 +393,15 @@ internal fun buildSettingsSearchIndex(
         "prefer_hdr", stringResource(R.string.sp_prefer_hdr), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.HdrOn,
         listOf("hdr", "hdr10", "high dynamic range", "10 bit", "bt2020", "vp9 profile 2")
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "frame_interpolation", stringResource(R.string.sp_frame_interpolation), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.Animation,
+        listOf(
+            "frame interpolation", "motion smoothing", "smooth", "60fps", "60 fps", "fps",
+            "90fps", "90 fps", "120fps", "120 fps", "high refresh rate", "hz",
+            "frame rate", "memc", "judder", "soap opera"
+        )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
         "video_brightness", "Remember fullscreen brightness", "Playback and quality",

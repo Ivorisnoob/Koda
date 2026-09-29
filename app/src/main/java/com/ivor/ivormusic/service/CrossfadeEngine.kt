@@ -121,6 +121,13 @@ class CrossfadeEngine(
 
     private var pendingTransition: PendingTransition? = null
 
+    /**
+     * How far the running overlap has mixed, 0 to 1, or null while there is
+     * no curve yet (the standby still preparing or waiting for its cue).
+     * [settleForPause] reads it to decide which track a pause belongs to.
+     */
+    private var mixProgress: Float? = null
+
     /** A transport command can arrive before the fade's next validation tick. */
     val pendingTargetIndex: Int?
         get() = pendingTransition?.takeIf { pending ->
@@ -311,6 +318,7 @@ class CrossfadeEngine(
 
         return try {
             fadingIntoId = nextItem.mediaId
+            mixProgress = null
             pendingTransition = PendingTransition(outgoing, outgoingItem, nextItem, targetIndex)
             // One item only. The rest of the queue is spliced around it at swap
             // time, from the live timeline rather than a stale snapshot.
@@ -540,6 +548,7 @@ class CrossfadeEngine(
                 // the outgoing side never disappears ahead of incoming audio.
                 val elapsedMs = minOf(outgoingElapsedMs, incomingElapsedMs)
                 val t = (elapsedMs.toFloat() / fadeMs).coerceIn(0f, 1f)
+                mixProgress = t
 
                 // Equal power: cos^2 + sin^2 == 1, so the summed energy is flat
                 // across the transition instead of dipping in the middle.
@@ -689,6 +698,7 @@ class CrossfadeEngine(
         } finally {
             fadingIntoId = null
             pendingTransition = null
+            mixProgress = null
         }
     }
 
@@ -701,6 +711,7 @@ class CrossfadeEngine(
     private fun abortInto(outgoing: ExoPlayer, incoming: ExoPlayer) {
         fadingIntoId = null
         pendingTransition = null
+        mixProgress = null
         runCatching {
             incoming.stop()
             incoming.clearMediaItems()
@@ -727,6 +738,7 @@ class CrossfadeEngine(
         fadeJob = null
         fadingIntoId = null
         pendingTransition = null
+        mixProgress = null
         runCatching {
             standby.stop()
             standby.clearMediaItems()
@@ -736,6 +748,48 @@ class CrossfadeEngine(
             setFilterSweep(active, 0f)
             active.volume = gainFor(active) * duckGain
         }
+    }
+
+    /**
+     * Playback was paused - by the user, audio focus, unplugged headphones or
+     * the sleep timer - while an overlap was running.
+     *
+     * [cancelTransition] alone keeps the outgoing track, which is wrong once
+     * the mix is past halfway: by then the incoming track is what is being
+     * heard, and dropping it meant a resume went back to the last seconds of
+     * the old song and then played the new song's opening a second time. Past
+     * the equal-power midpoint the swap completes now instead, with the
+     * incoming player paused where it is, so the pause lands on the song the
+     * listener was actually hearing. Before the midpoint the overlap is
+     * dropped as before; the incoming track had been quieter than the one
+     * being paused, so hearing its opening again on resume is the lesser
+     * surprise.
+     *
+     * Call from the audible player's pause event, before the fade's own next
+     * tick sees the pause and abandons the overlap by itself.
+     */
+    fun settleForPause() {
+        val job = fadeJob
+        val pending = pendingTransition
+        val progress = mixProgress
+        if (job?.isActive != true || pending == null || progress == null ||
+            progress < PAUSE_HANDOVER_PROGRESS || active !== pending.outgoing
+        ) {
+            cancelTransition()
+            return
+        }
+        val incoming = standby
+        // Stop the fade first, so nothing writes volumes or swaps behind this.
+        job.cancel()
+        fadeJob = null
+        incoming.playWhenReady = false
+        completeSwap(
+            outgoing = pending.outgoing,
+            incoming = incoming,
+            inGain = gainFor(incoming),
+            targetIndex = pending.targetIndex,
+            outgoingItem = pending.outgoingItem,
+        )
     }
 
     /** Ease the small tempo correction back to the source tempo after mixing. */
@@ -797,6 +851,12 @@ class CrossfadeEngine(
         private const val INCOMING_CLOCK_TIMEOUT_MS = 750L
         private const val MIN_CLOCK_ADVANCE_MS = 8L
         private const val MAX_INCOMING_STALL_MS = 350L
+
+        /**
+         * The equal-power crossover: from here the incoming track is at least
+         * as loud as the outgoing one, so a pause belongs to it.
+         */
+        private const val PAUSE_HANDOVER_PROGRESS = 0.5f
 
         /**
          * A drift change this large between two 16ms ticks is a step, not the

@@ -1,9 +1,12 @@
 package com.ivor.ivormusic.service
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.ivor.ivormusic.data.MusicQueueItem
+import com.ivor.ivormusic.data.MusicReleaseType
+import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
 
 /** Stable identity for one occurrence of a song in the playback queue. */
@@ -11,6 +14,16 @@ internal const val EXTRA_QUEUE_ITEM_ID = "com.ivor.ivormusic.QUEUE_ITEM_ID"
 internal const val EXTRA_MUSIC_ALBUM_ID = "com.ivor.ivormusic.MUSIC_ALBUM_ID"
 internal const val EXTRA_MUSIC_RELEASE_TYPE = "com.ivor.ivormusic.MUSIC_RELEASE_TYPE"
 internal const val EXTRA_MUSIC_IS_UPLOAD = "com.ivor.ivormusic.MUSIC_IS_UPLOAD"
+
+/**
+ * Song fields the player itself has no slot for, carried so the service can
+ * write a queue back out as the songs it was built from (see
+ * [toMusicQueueItem]). The thumbnail is the original URL: the artwork URI is
+ * the high-resolution variant, which YouTube does not serve for every video.
+ */
+internal const val EXTRA_SONG_THUMBNAIL_URL = "com.ivor.ivormusic.SONG_THUMBNAIL_URL"
+internal const val EXTRA_SONG_FILE_PATH = "com.ivor.ivormusic.SONG_FILE_PATH"
+internal const val EXTRA_SONG_LYRICS_URI = "com.ivor.ivormusic.SONG_LYRICS_URI"
 
 /** A plain YouTube upload played as a song; see [com.ivor.ivormusic.data.Song.isUpload]. */
 internal val MediaItem.isUpload: Boolean
@@ -80,6 +93,9 @@ internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
         song.albumId?.let { putString(EXTRA_MUSIC_ALBUM_ID, it) }
         song.releaseType?.let { putString(EXTRA_MUSIC_RELEASE_TYPE, it.name) }
         if (song.isUpload) putBoolean(EXTRA_MUSIC_IS_UPLOAD, true)
+        song.thumbnailUrl?.let { putString(EXTRA_SONG_THUMBNAIL_URL, it) }
+        song.filePath?.let { putString(EXTRA_SONG_FILE_PATH, it) }
+        song.lyricsUri?.let { putString(EXTRA_SONG_LYRICS_URI, it.toString()) }
     }
     val metadata = MediaMetadata.Builder()
         .setTitle(song.title)
@@ -110,4 +126,51 @@ internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
         builder.setUri("https://placeholder.ivormusic/${song.id}")
     }
     return builder.build()
+}
+
+/**
+ * The song a queue row was built from, read back off the row itself.
+ *
+ * The inverse of [toPlaybackMediaItem], so the service - which only ever holds
+ * `MediaItem`s - can save the queue without the app's screen being alive. A
+ * row from an external controller carries none of Koda's extras and falls back
+ * to what the metadata says. Null only for a row with no media id.
+ */
+internal fun MediaItem.toQueueSong(): Song? {
+    if (mediaId.isEmpty()) return null
+    val metadata = mediaMetadata
+    val extras = metadata.extras
+    val localUri = localConfiguration?.uri?.takeIf { it.scheme == "content" || it.scheme == "file" }
+    val source = extras?.getString(MusicService.EXTRA_SONG_SOURCE)
+        ?.let { name -> SongSource.entries.firstOrNull { it.name == name } }
+        ?: if (localUri != null) SongSource.LOCAL else SongSource.YOUTUBE
+    val isLocal = source == SongSource.LOCAL
+    return Song(
+        id = mediaId,
+        title = metadata.title?.toString() ?: "Unknown",
+        artist = metadata.artist?.toString() ?: "Unknown Artist",
+        album = metadata.albumTitle?.toString() ?: "",
+        duration = metadata.durationMs ?: 0L,
+        uri = if (isLocal) localUri else null,
+        albumArtUri = if (isLocal) metadata.artworkUri else null,
+        thumbnailUrl = if (isLocal) null else {
+            extras?.getString(EXTRA_SONG_THUMBNAIL_URL) ?: metadata.artworkUri?.toString()
+        },
+        source = source,
+        filePath = extras?.getString(EXTRA_SONG_FILE_PATH),
+        lyricsUri = extras?.getString(EXTRA_SONG_LYRICS_URI)?.let(Uri::parse),
+        trackNumber = metadata.trackNumber,
+        discNumber = metadata.discNumber,
+        albumId = extras?.getString(EXTRA_MUSIC_ALBUM_ID),
+        releaseYear = metadata.releaseYear,
+        releaseType = extras?.getString(EXTRA_MUSIC_RELEASE_TYPE)
+            ?.let { name -> MusicReleaseType.entries.firstOrNull { it.name == name } },
+        isUpload = extras?.getBoolean(EXTRA_MUSIC_IS_UPLOAD, false) == true,
+    )
+}
+
+/** This row as a saved queue entry, keeping its occurrence id. */
+internal fun MediaItem.toMusicQueueItem(): MusicQueueItem? {
+    val song = toQueueSong() ?: return null
+    return queueItemId?.let { MusicQueueItem(id = it, song = song) } ?: MusicQueueItem(song = song)
 }

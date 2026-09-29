@@ -309,16 +309,8 @@ fun LibraryContent(
         }
     }
 
-    PredictiveBackStack(
-        childOpen = currentRoute != LibraryRoute.Main,
-        onBack = { back() },
-        // An excursion's back lands on another tab, not on the root the peel
-        // would reveal, so it is not previewed; the tab slide carries it.
-        // ImportSongs backs onto the playlist, not the root the peel shows,
-        // so it is not previewed either.
-        previewable = currentRoute != LibraryRoute.Main && !returnsToCaller &&
-            currentRoute != LibraryRoute.ImportSongs,
-        background = {
+    // The root and the routes, as blocks both layouts below draw from.
+    val mainScreen: @Composable () -> Unit = {
             LibraryMainScreen(
                 songs = songs,
                 isLocalLibrary = isLocalLibrary,
@@ -362,31 +354,9 @@ fun LibraryContent(
                 onSongLongPress = onSongLongPress,
                 allSongsListState = allSongsListState
             )
-        }
-    ) { committedByGesture ->
-    AnimatedContent(
-        targetState = currentRoute,
-        label = "LibraryNavigation",
-        transitionSpec = {
-            val content = when {
-                // The finger already performed this exit.
-                committedByGesture -> EnterTransition.None togetherWith ExitTransition.None
-                targetState == LibraryRoute.Main ->
-                    fadeIn(animationSpec = effectsSpec) togetherWith
-                        (slideOutHorizontally(animationSpec = spatialSpec) { it } +
-                            fadeOut(animationSpec = effectsSpec))
-                else ->
-                    (slideInHorizontally(animationSpec = spatialSpec) { it } +
-                        fadeIn(animationSpec = effectsSpec)) togetherWith
-                        (slideOutHorizontally(animationSpec = spatialSpec) { -it / 3 } +
-                            fadeOut(animationSpec = effectsSpec))
-            }
-            // Main is empty on this layer, so the default SizeTransform would
-            // animate the container between nothing and full screen and clip
-            // the route to it on the way.
-            content using SizeTransform(clip = false) { _, _ -> snap() }
-        }
-    ) { route ->
+    }
+
+    val routeContent: @Composable (LibraryRoute) -> Unit = { route ->
         when (route) {
             // Main lives underneath now; this layer is empty over it, and full
             // size so both states measure the same.
@@ -536,6 +506,94 @@ fun LibraryContent(
                 }
             }
         }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    if (maxWidth >= LIBRARY_TWO_PANE_MIN_WIDTH) {
+        // List and detail side by side: the library stays where it is and
+        // what it opens appears beside it, so moving between playlists is a
+        // tap each rather than a push and a pop. Back closes the detail in
+        // place; nothing departs the screen, so it is not a peel.
+        BackHandler(enabled = currentRoute != LibraryRoute.Main) { back() }
+        val listWidth = (maxWidth * 0.36f).coerceIn(340.dp, 440.dp)
+        Row(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .width(listWidth)
+                    .fillMaxHeight()
+            ) {
+                // The list marks what is open beside it.
+                val openItem = when (currentRoute) {
+                    LibraryRoute.Playlist, LibraryRoute.ImportSongs ->
+                        LibraryOpenItem(playlistId = selectedPlaylist?.id)
+                    LibraryRoute.Album -> LibraryOpenItem(albumName = selectedAlbumName)
+                    LibraryRoute.Artist -> LibraryOpenItem(artistName = selectedArtistName)
+                    else -> null
+                }
+                CompositionLocalProvider(LocalLibraryOpenItem provides openItem) {
+                    mainScreen()
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                AnimatedContent(
+                    targetState = currentRoute,
+                    label = "LibraryDetailPane",
+                    transitionSpec = {
+                        (fadeIn(animationSpec = effectsSpec) +
+                            slideInHorizontally(animationSpec = spatialSpec) { it / 12 }) togetherWith
+                            fadeOut(animationSpec = effectsSpec) using
+                            SizeTransform(clip = false) { _, _ -> snap() }
+                    }
+                ) { route ->
+                    if (route == LibraryRoute.Main) {
+                        LibraryDetailPlaceholder(contentPadding = contentPadding)
+                    } else {
+                        routeContent(route)
+                    }
+                }
+            }
+        }
+    } else
+    PredictiveBackStack(
+        childOpen = currentRoute != LibraryRoute.Main,
+        onBack = { back() },
+        // An excursion's back lands on another tab, not on the root the peel
+        // would reveal, so it is not previewed; the tab slide carries it.
+        // ImportSongs backs onto the playlist, not the root the peel shows,
+        // so it is not previewed either.
+        previewable = currentRoute != LibraryRoute.Main && !returnsToCaller &&
+            currentRoute != LibraryRoute.ImportSongs,
+        background = mainScreen
+    ) { committedByGesture ->
+    AnimatedContent(
+        targetState = currentRoute,
+        label = "LibraryNavigation",
+        transitionSpec = {
+            val content = when {
+                // The finger already performed this exit.
+                committedByGesture -> EnterTransition.None togetherWith ExitTransition.None
+                targetState == LibraryRoute.Main ->
+                    fadeIn(animationSpec = effectsSpec) togetherWith
+                        (slideOutHorizontally(animationSpec = spatialSpec) { it } +
+                            fadeOut(animationSpec = effectsSpec))
+                else ->
+                    (slideInHorizontally(animationSpec = spatialSpec) { it } +
+                        fadeIn(animationSpec = effectsSpec)) togetherWith
+                        (slideOutHorizontally(animationSpec = spatialSpec) { -it / 3 } +
+                            fadeOut(animationSpec = effectsSpec))
+            }
+            // Main is empty on this layer, so the default SizeTransform would
+            // animate the container between nothing and full screen and clip
+            // the route to it on the way.
+            content using SizeTransform(clip = false) { _, _ -> snap() }
+        }
+    ) { route ->
+        routeContent(route)
+    }
     }
     }
 }
@@ -1611,6 +1669,7 @@ fun PlaylistsGrid(
                 onDeleteConfirmed = { onDeletePlaylist(playlist) },
                 onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
                 onHide = { onHidePlaylist(playlist) },
+                selected = LocalLibraryOpenItem.current?.playlistId == playlist.id,
                 onClick = { onPlaylistClick(playlist) }
             )
         }
@@ -1634,6 +1693,7 @@ fun PlaylistsGrid(
                     subtitle = playlist.displaySubtitle(),
                     thumbnailUrl = playlist.thumbnailUrl,
                     onHide = { onHidePlaylist(playlist) },
+                    selected = LocalLibraryOpenItem.current?.playlistId == playlist.id,
                     onClick = { onPlaylistClick(playlist) }
                 )
             }
@@ -1827,7 +1887,8 @@ fun ArtistsGrid(
                      shape = CircleShape,
                      modifier = Modifier.size(140.dp),
                      color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                     shadowElevation = 6.dp
+                     shadowElevation = 6.dp,
+                     border = libraryOpenBorder(LocalLibraryOpenItem.current?.artistName == artist)
                  ) {
                      val art = artistSongs.firstOrNull { it.albumArtUri != null }?.albumArtUri
                          ?: artistSongs.firstOrNull { it.thumbnailUrl != null }?.thumbnailUrl
@@ -1907,6 +1968,7 @@ fun AlbumsGrid(
                     albumSongs,
                     stringResource(R.string.various_artists)
                 ),
+                selected = LocalLibraryOpenItem.current?.albumName == album,
                 onClick = { onAlbumClick(album, albumSongs) }
             )
         }
@@ -1938,7 +2000,8 @@ fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
                 scaleX = pressScale
                 scaleY = pressScale
             },
-        color = MaterialTheme.colorScheme.primaryContainer
+        color = MaterialTheme.colorScheme.primaryContainer,
+        border = libraryOpenBorder(LocalLibraryOpenItem.current?.playlistId == "LM")
     ) {
         Row(
             modifier = Modifier
@@ -1998,6 +2061,8 @@ fun ExpressivePlaylistCard(
     onEditConfirmed: (String, String?) -> Unit = { _, _ -> },
     onDeleteConfirmed: () -> Unit = {},
     onRemoveSaved: () -> Unit = {},
+    /** Open in the detail pane beside the Library list; see [LocalLibraryOpenItem]. */
+    selected: Boolean = false,
     onClick: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -2033,7 +2098,8 @@ fun ExpressivePlaylistCard(
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.fillMaxSize(),
                 color = if (isLiked) MaterialTheme.colorScheme.secondaryContainer
-                    else MaterialTheme.colorScheme.surfaceContainerHigh
+                    else MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = libraryOpenBorder(selected)
             ) {
                 if (thumbnailUrl != null && thumbnailUrl != "null") {
                     AsyncImage(model = thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
@@ -3138,7 +3204,13 @@ fun PlaylistDetailScreen(
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     var isUploading by remember(playlist.id) { mutableStateOf(false) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    val headerScrolledAway by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+    // Set by the layout below: the header sits in its own column beside the
+    // tracks on a wide pane, where it never scrolls away and the floating
+    // play button has nothing to stand in for.
+    var playlistWide by remember { mutableStateOf(false) }
+    val headerScrolledAway by remember {
+        derivedStateOf { !playlistWide && listState.firstVisibleItemIndex > 0 }
+    }
 
     val shareContext = LocalContext.current
 
@@ -3894,15 +3966,16 @@ fun PlaylistDetailScreen(
                 .fillMaxSize()
                 .background(playlistPageGround())
         ) {
-        LazyColumn(
-            state = listState,
-            // Enough scroll clearance for the floating overlays plus the FAB
-            contentPadding = PaddingValues(
-                bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current +
-                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
-            ),
-            modifier = Modifier.fillMaxSize()
-        ) {
+        // Enough scroll clearance for the floating overlays plus the FAB
+        val listBottomPadding = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current +
+            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
+        // The page's items, as one block both layouts draw from: a phone gets
+        // header and tracks in one list, a wide pane gets the header in a
+        // column of its own beside the tracks (see the layout at the end).
+        val pageItems: androidx.compose.foundation.lazy.LazyListScope.(
+            showHeader: Boolean,
+            showTracks: Boolean
+        ) -> Unit = { showHeader, showTracks ->
             // Hero: the cover fills the top of the page edge to edge under
             // the status bar, then dissolves into the page's own tint, with
             // the title, the facts and the controls stacked on that tint
@@ -3915,14 +3988,20 @@ fun PlaylistDetailScreen(
             // reliable across every cover. Below it, the title is drawn on
             // the page's own tint, so it reads in both themes on all of the
             // app's palettes.
-            item {
+            if (showHeader) item {
                 // The status-bar scrim is drawn in the page's ground rather
                 // than in the bare background, so the band the app bar fades
                 // in over is already the page's own color.
                 val ground = playlistPageGround()
                 val windowHeight = com.ivor.ivormusic.ui.theme.windowDpSize().height
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    // Beside the tracks the cover is an object in a column,
+                    // not a banner across the page: square, rounded, inset.
+                    if (!showTracks) PlaylistSideCover(
+                        heroArt = heroArt,
+                        isAlbum = isAlbum,
+                        onPickCover = if (isLocalPlaylist) pickCover else null
+                    ) else BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         // Near-square on a phone, but never more than a
                         // comfortable share of the window: the title, the
                         // controls and the first track all have to fit under
@@ -4247,6 +4326,7 @@ fun PlaylistDetailScreen(
                 }
             }
 
+            if (showTracks) {
             // Track section header. Hidden while searching - the search field
             // already labels what the list below it is.
             if (!isSearchActive && !isFetching.value && songs.isNotEmpty()) {
@@ -4461,6 +4541,41 @@ fun PlaylistDetailScreen(
                     }
                     }
                 }
+            }
+            } // showTracks
+        }
+
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val wide = maxWidth >= PLAYLIST_WIDE_MIN_WIDTH
+            SideEffect { playlistWide = wide }
+            if (wide) {
+                // Under the transparent top bar, which the tracks scroll
+                // beneath and which fades in over them as they do.
+                val topClearance = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp
+                val sideListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                val headerColumnWidth = (maxWidth * 0.4f).coerceIn(320.dp, 460.dp)
+                Row(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = sideListState,
+                        contentPadding = PaddingValues(top = topClearance, bottom = listBottomPadding),
+                        modifier = Modifier
+                            .width(headerColumnWidth)
+                            .fillMaxHeight()
+                    ) { pageItems(true, false) }
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = PaddingValues(top = topClearance, bottom = listBottomPadding),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) { pageItems(false, true) }
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = listBottomPadding),
+                    modifier = Modifier.fillMaxSize()
+                ) { pageItems(true, true) }
             }
         }
         }
