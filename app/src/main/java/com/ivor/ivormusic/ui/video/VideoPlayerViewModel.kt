@@ -46,6 +46,8 @@ import com.ivor.ivormusic.data.SponsorSegment
 import com.ivor.ivormusic.data.activeCategories
 import com.ivor.ivormusic.data.segmentAt
 import com.ivor.ivormusic.data.LocalSubscription
+import com.ivor.ivormusic.data.BellLevel
+import com.ivor.ivormusic.data.ChannelBellActions
 import com.ivor.ivormusic.data.SubscriptionActions
 import com.ivor.ivormusic.data.SubscriptionStore
 import com.ivor.ivormusic.data.LiveChatBanner
@@ -688,6 +690,36 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** True when the subscribe button has to send the user to sign in first. */
     fun subscribeNeedsLogin(): Boolean = subscriptionActions.subscribeNeedsLogin()
+
+    private val bellActions = ChannelBellActions(context, youtubeRepository)
+
+    private val _bellWrites = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Channels whose bell write is in flight; their bell is disabled until it lands. */
+    val bellWrites: StateFlow<Set<String>> = _bellWrites.asStateFlow()
+
+    /**
+     * Move [channelId]'s account bell to [level] (see [ChannelBellActions]).
+     * Optimistic, with the old level put back when the write does not land.
+     */
+    fun setChannelBell(channelId: String, level: BellLevel, channelName: String) {
+        val current = _engagement.value ?: return
+        val bell = current.bells[channelId] ?: return
+        if (channelId in _bellWrites.value) return
+        _bellWrites.value = _bellWrites.value + channelId
+        _engagement.value = current.copy(bells = current.bells + (channelId to bell.withLevel(level)))
+        viewModelScope.launch {
+            try {
+                val landed = bellActions.change(bell, level, channelName)
+                val now = _engagement.value
+                if (now?.videoId == current.videoId) {
+                    _engagement.value = now.copy(bells = now.bells + (channelId to (landed ?: bell)))
+                }
+            } finally {
+                _bellWrites.value = _bellWrites.value - channelId
+            }
+        }
+    }
 
     // ---------------- Live broadcast ----------------
 

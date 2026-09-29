@@ -233,6 +233,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Subscriptions and blocklist -> `docs/subscriptions.md`
 - Account and device subscription stores; `SubscriptionActions` alone decides what a tap means. Unsubscribe clears both; the button binds to `isSubscribedToChannel`.
+- The account bell (`ChannelBellActions`) shows only for account subscriptions, writes YouTube's served params back, and drives `UploadCheckWorker` for channels on All.
 - The local feed is per-channel Atom RSS with a browse fallback (never on 429), 6 at a time, namespace-unaware parser.
 - Imports are sniffed by content (NewPipe JSON, PipePipe/NewPipe zip, Takeout CSV, OPML); handles resolve to UC ids.
 - `NotInterestedRepository` is the engine, applied as a **derived filter, never a write into the fetch** (Shorts filter on ingestion). Signed-in dismissals also go to YouTube, fire-and-forget. Music shares the store; the device library is never filtered.

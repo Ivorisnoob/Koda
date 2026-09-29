@@ -986,13 +986,50 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             localSubscriptions,
             themePreferences.subscriptionSource
         ) { account, local, source ->
-            val localAsChannels = local.map { it.toSubscribedChannel() }
+            // The local entry wins the merge, but the account's bell rides
+            // along: a channel followed both ways still has an account bell.
+            val accountBells = account.mapNotNull { c -> c.bell?.let { c.channelId to it } }.toMap()
+            val localAsChannels = local.map { entry ->
+                val channel = entry.toSubscribedChannel()
+                accountBells[channel.channelId]?.let { channel.copy(bell = it) } ?: channel
+            }
             when (source) {
                 com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_LOCAL -> localAsChannels
                 com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_YOUTUBE -> account
                 else -> (localAsChannels + account).distinctBy { it.channelId }
             }.sortedBy { it.name.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val bellActions = com.ivor.ivormusic.data.ChannelBellActions(application, youtubeRepository)
+
+    private val _bellWrites = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Channels whose bell write is in flight; their bell is disabled until it lands. */
+    val bellWrites: StateFlow<Set<String>> = _bellWrites.asStateFlow()
+
+    /**
+     * Move an account channel's bell to [level] from the channel list.
+     * Optimistic over [_accountChannels], put back when the write does not land.
+     */
+    fun setChannelBell(channel: com.ivor.ivormusic.data.SubscribedChannel, level: com.ivor.ivormusic.data.BellLevel) {
+        val bell = channel.bell ?: return
+        val id = channel.channelId
+        if (id in _bellWrites.value) return
+        fun setBell(next: com.ivor.ivormusic.data.ChannelBell) {
+            _accountChannels.value = _accountChannels.value.map {
+                if (it.channelId == id) it.copy(bell = next) else it
+            }
+        }
+        _bellWrites.value = _bellWrites.value + id
+        setBell(bell.withLevel(level))
+        viewModelScope.launch {
+            try {
+                setBell(bellActions.change(bell, level, channel.name) ?: bell)
+            } finally {
+                _bellWrites.value = _bellWrites.value - id
+            }
+        }
+    }
 
     private val _isSubscriptionsLoading = MutableStateFlow(false)
     val isSubscriptionsLoading: StateFlow<Boolean> = _isSubscriptionsLoading.asStateFlow()

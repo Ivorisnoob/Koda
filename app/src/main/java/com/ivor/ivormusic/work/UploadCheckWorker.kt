@@ -16,7 +16,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.BellLevel
 import com.ivor.ivormusic.data.LocalSubscriptionsRepository
+import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.UploadCheckRepository
 import com.ivor.ivormusic.data.YouTubeRateLimit
@@ -43,6 +45,14 @@ import java.util.concurrent.TimeUnit
  *
  * First sight of a channel sets a baseline silently instead of notifying:
  * following someone should not greet you with their last forty uploads.
+ *
+ * **Account subscriptions notify when their bell is on All** (#86). YouTube only
+ * delivers its own notifications to the official app and to email, never to
+ * Koda, so the account bell would otherwise mean nothing here. The account list
+ * (`FEchannels`, which carries every row's bell) is fetched once per round when
+ * signed in; Personalized and None stay quiet, matching what the official app
+ * does with those levels as closely as a feed check can. A channel followed in
+ * both places is checked and notified once. The per-channel mutes apply to both.
  */
 class UploadCheckWorker(
     context: Context,
@@ -59,10 +69,12 @@ class UploadCheckWorker(
         val localSubscriptions = LocalSubscriptionsRepository(applicationContext)
         val uploadCheck = UploadCheckRepository(applicationContext)
         val repository = YouTubeRepository(applicationContext)
+        val signedIn = SessionManager(applicationContext).isLoggedIn()
 
-        val channels = localSubscriptions.getAll()
+        val local = localSubscriptions.getAll()
             .filter { !uploadCheck.isMuted(it.channelId) }
-        if (channels.isEmpty()) return Result.success()
+            .map { Followed(it.channelId, it.name, it.avatarUrl) }
+        if (local.isEmpty() && !signedIn) return Result.success()
 
         // Blocked notifications used to be discovered per post, after the round
         // had fetched every feed, and the uploads were then marked seen anyway -
@@ -81,6 +93,19 @@ class UploadCheckWorker(
             KLog.w(TAG, "Upload check skipped: rate limited")
             return Result.retry()
         }
+
+        // The account half: channels whose bell is on All. A failed or empty
+        // list only means none of them are checked this round - nothing is
+        // marked seen, so nothing is lost.
+        val account = if (signedIn) {
+            repository.getSubscribedChannels()
+                .filter { it.bell?.level == BellLevel.ALL && !uploadCheck.isMuted(it.channelId) }
+                .map { Followed(it.channelId, it.name, it.avatarUrl) }
+        } else {
+            emptyList()
+        }
+        val channels = (local + account).distinctBy { it.channelId }
+        if (channels.isEmpty()) return Result.success()
 
         // This used to launch one coroutine per channel with no ceiling, so a
         // 200-channel library opened 200 sockets at once - the shape the feed
@@ -189,6 +214,9 @@ class UploadCheckWorker(
         }
         manager.createNotificationChannel(channel)
     }
+
+    /** One channel this round checks, whichever store it came from. */
+    private data class Followed(val channelId: String, val name: String, val avatarUrl: String?)
 
     companion object {
         private const val TAG = "UploadCheckWorker"

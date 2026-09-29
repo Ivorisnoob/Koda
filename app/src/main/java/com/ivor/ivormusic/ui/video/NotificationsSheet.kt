@@ -43,8 +43,9 @@ import com.ivor.ivormusic.data.NotificationItem
 
 /**
  * Bottom sheet listing the user's notification inbox: new uploads from
- * subscribed channels, replies, mentions. Tapping a video notification
- * plays that video.
+ * subscribed channels, replies, mentions. A tap opens the item's
+ * [com.ivor.ivormusic.data.NotificationTarget]: a video in the player, a Short
+ * in the Shorts player, anything else as its YouTube link.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -134,7 +135,7 @@ private fun NotificationRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = notification.videoId != null, onClick = onClick)
+            .clickable(enabled = notification.target != null, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)

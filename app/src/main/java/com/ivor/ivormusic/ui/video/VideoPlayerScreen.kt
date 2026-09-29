@@ -2745,6 +2745,13 @@ fun VideoInfoSection(
     onDislikeClick: () -> Unit = {},
     dislikeCount: String?,
     onSubscribeClick: () -> Unit = {},
+    /**
+     * The account bell beside Subscribe: a level picked for a channel id, and
+     * the channels whose write is still in flight. Required, so a call site
+     * cannot draw the bell and forget to wire it.
+     */
+    onBellChosen: (channelId: String, level: com.ivor.ivormusic.data.BellLevel) -> Unit,
+    bellWrites: Set<String>,
     onCommentsClick: () -> Unit = {},
     onSaveClick: () -> Unit = {},
     onDownloadClick: () -> Unit = {},
@@ -2963,16 +2970,36 @@ fun VideoInfoSection(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
-                            Button(
-                                onClick = onSubscribeClick,
-                                enabled = engagement?.channelId != null,
-                                colors = if (isSubscribed) {
-                                    ButtonDefaults.filledTonalButtonColors()
-                                } else {
-                                    ButtonDefaults.buttonColors()
-                                }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
+                                // The account bell, only while the account itself
+                                // subscribes: a device-only follow has no bell to
+                                // set, and the Subscribe state it sits beside is
+                                // the account's or the device's alike.
+                                val channelId = engagement?.channelId
+                                val bell = channelId?.let { engagement.bells[it] }
+                                if (bell != null && engagement.isSubscribed) {
+                                    com.ivor.ivormusic.ui.channel.ChannelBellButton(
+                                        bell = bell,
+                                        channelName = video.channelName,
+                                        onLevelChosen = { onBellChosen(channelId, it) },
+                                        busy = channelId in bellWrites,
+                                        size = 40.dp
+                                    )
+                                }
+                                Button(
+                                    onClick = onSubscribeClick,
+                                    enabled = engagement?.channelId != null,
+                                    colors = if (isSubscribed) {
+                                        ButtonDefaults.filledTonalButtonColors()
+                                    } else {
+                                        ButtonDefaults.buttonColors()
+                                    }
+                                ) {
+                                    Text(if (isSubscribed) stringResource(R.string.subscribed) else stringResource(R.string.subscribe))
+                                }
                             }
                         }
                     },

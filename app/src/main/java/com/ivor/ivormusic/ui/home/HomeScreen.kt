@@ -951,6 +951,7 @@ fun HomeScreen(
                                     shortsEnabled = shortsEnabled,
                                     shorts = if (shortsEnabled) shortsFeed else emptyList(),
                                     onShortClick = { index -> onOpenShorts(shortsFeed, index) },
+                                    onOpenShorts = onOpenShorts,
                                     // Without this the long-press sheet loses
                                     // its whole queue section, on the one feed
                                     // people spend the most time in.

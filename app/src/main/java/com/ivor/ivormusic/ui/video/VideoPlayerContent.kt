@@ -205,6 +205,7 @@ fun VideoPlayerContent(
     // Account subscription OR device subscription - engagement only knows the
     // first, and read alone it showed "Subscribe" for locally followed channels.
     val isSubscribedToChannel by viewModel.isSubscribedToChannel.collectAsState()
+    val bellWrites by viewModel.bellWrites.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val comments by viewModel.comments.collectAsState()
     val isCommentsLoading by viewModel.isCommentsLoading.collectAsState()
@@ -1146,6 +1147,10 @@ fun VideoPlayerContent(
                         onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
                         dislikeCount = dislikeCount,
                         onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
+                        onBellChosen = { channelId, level ->
+                            viewModel.setChannelBell(channelId, level, currentVideo.channelName)
+                        },
+                        bellWrites = bellWrites,
                         onCommentsClick = {
                             viewModel.ensureCommentsLoaded()
                             showCommentsSheet = true

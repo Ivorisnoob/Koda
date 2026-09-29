@@ -53,7 +53,7 @@
 
     <!-- Background upload check (#137): its notification channel and grouped title. -->
     <string name="upload_check_channel_name">New uploads</string>
-    <string name="upload_check_channel_description">Tells you when a channel you follow on this device uploads</string>
+    <string name="upload_check_channel_description">Tells you when a channel you follow uploads</string>
     <string name="upload_notification_title">%1$s: %2$d new uploads</string>
 
     <!-- ============ Common actions ============ -->
@@ -577,7 +577,7 @@
     <string name="sp_blocked_by_system_sub">Allow live updates for Koda in Android settings</string>
     <string name="sp_new_uploads">New uploads</string>
     <string name="sp_notify_new_uploads">Notify about new uploads</string>
-    <string name="sp_notify_new_uploads_on">Checks channels you follow on this device</string>
+    <string name="sp_notify_new_uploads_on">Checks channels you follow on this device, and account subscriptions with the bell on All</string>
     <string name="sp_notify_new_uploads_off">Off: Koda only checks while you are using it</string>
     <string name="sp_notifications_blocked">Notifications are blocked</string>
     <string name="sp_notifications_blocked_sub">Allow notifications for Koda in Android settings. New uploads wait until you do.</string>
@@ -801,6 +801,14 @@
     <string name="cd_close_shorts">Close Shorts</string>
     <string name="subscribed">Subscribed</string>
     <string name="subscribe">Subscribe</string>
+    <string name="bell_level_all">All</string>
+    <string name="bell_level_personalized">Personalized</string>
+    <string name="bell_level_none">None</string>
+    <string name="bell_level_unknown">not known</string>
+    <string name="bell_content_description">Notifications for %1$s: %2$s. Change</string>
+    <string name="bell_changed">Notifications set to %1$s</string>
+    <string name="bell_change_failed">Couldn\'t change notifications for %1$s</string>
+    <string name="bell_koda_uploads_off">Koda will notify about these uploads once New uploads is on in Settings</string>
     <string name="like">Like</string>
     <string name="cd_dislike">Dislike</string>
     <string name="cd_comments">Comments</string>

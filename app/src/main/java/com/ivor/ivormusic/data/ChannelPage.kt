@@ -65,7 +65,9 @@ data class ChannelHeader(
      * subscribed channel into an unsubscribed-looking one, so the caller treats
      * null as a reason to go and ask rather than as an answer.
      */
-    val accountSubscribed: Boolean? = null
+    val accountSubscribed: Boolean? = null,
+    /** The account bell beside Subscribe, when the header drew one (signed in). */
+    val bell: ChannelBell? = null
 ) {
     fun toLocalSubscription(): LocalSubscription = LocalSubscription(
         channelId = channelId,

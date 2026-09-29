@@ -1827,8 +1827,8 @@ fun MusicApp(
 }
 
 /**
- * Shows "Video hidden - Undo" whenever something is dismissed, and says so
- * when a song could not be played.
+ * Shows "Video hidden - Undo" whenever something is dismissed, says so when a
+ * song could not be played, and confirms a channel's bell change.
  *
  * Keyed on the action's id rather than the action itself so two identical
  * dismissals in a row still re-show the snackbar instead of the second one
@@ -1897,6 +1897,18 @@ private fun AppSnackbarHost(
                 PlayerViewModel.PlaybackFailure.Outcome.REFUSED ->
                     context.getString(R.string.music_failed_refused)
             }
+            snackbarHostState.showSnackbar(
+                message = message,
+                withDismissAction = false,
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
+
+    // Bell changes from the watch page, the channel page and the channel list.
+    // Latest only, like the failures above: a second pick replaces the first.
+    LaunchedEffect(Unit) {
+        com.ivor.ivormusic.data.ChannelBellActions.messages.collectLatest { message ->
             snackbarHostState.showSnackbar(
                 message = message,
                 withDismissAction = false,

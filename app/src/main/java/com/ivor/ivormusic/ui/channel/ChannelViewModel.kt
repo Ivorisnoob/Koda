@@ -147,6 +147,41 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
         account || (id != null && local.any { it.channelId == id })
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    private val bellActions = com.ivor.ivormusic.data.ChannelBellActions(context, youtubeRepository)
+
+    private val _bell = MutableStateFlow<com.ivor.ivormusic.data.ChannelBell?>(null)
+
+    /**
+     * The account bell beside Subscribe, from the channel response. Offered
+     * only while the account itself subscribes: a device-only follow has no
+     * account bell, and an unsubscribe takes it away with the subscription.
+     */
+    val bell: StateFlow<com.ivor.ivormusic.data.ChannelBell?> =
+        combine(_bell, _accountSubscribed) { bell, account -> bell.takeIf { account } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _bellBusy = MutableStateFlow(false)
+
+    /** A bell write is in flight; the bell is disabled until it lands. */
+    val bellBusy: StateFlow<Boolean> = _bellBusy.asStateFlow()
+
+    /** Move the account bell to [level]; optimistic, put back when the write does not land. */
+    fun setBell(level: com.ivor.ivormusic.data.BellLevel) {
+        val bell = _bell.value ?: return
+        val name = _header.value?.name ?: bell.channelId
+        if (_bellBusy.value) return
+        _bellBusy.value = true
+        _bell.value = bell.withLevel(level)
+        viewModelScope.launch {
+            try {
+                val landed = bellActions.change(bell, level, name)
+                if (_bell.value?.channelId == bell.channelId) _bell.value = landed ?: bell
+            } finally {
+                _bellBusy.value = false
+            }
+        }
+    }
+
     val isBlocked: StateFlow<Boolean> = combine(
         notInterestedRepository.blockedChannels,
         _header
@@ -202,6 +237,7 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
             _header.value = page.header
+            _bell.value = page.header.bell
             _tabs.value = page.tabs
             _selectedTab.value = page.selectedTab
             _pages.value = mapOf(page.selectedTab to page.selectedContent)
