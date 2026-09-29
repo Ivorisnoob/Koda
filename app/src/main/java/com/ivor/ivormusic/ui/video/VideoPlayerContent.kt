@@ -736,6 +736,7 @@ fun VideoPlayerContent(
                 isZoomedToFill = isZoomedToFill,
                 onZoomedToFillChange = { isZoomedToFill = it },
                 zoomToFillAvailable = zoomToFillAvailable,
+                videoAspectRatio = videoAspectRatio,
                 onRetry = { viewModel.retryPlayback() }
             )
 

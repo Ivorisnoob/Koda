@@ -135,6 +135,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | An active-profile change without `AccountSwitcher.prepareForActiveProfile` as `setActive`'s `beforePublish` | Process-wide stores keep the last profile's likes and subscriptions, and their next write files them under the new one | `identity.md` |
 | An adaptive manifest or playlist served from the playback cache | Live stalls at the live edge; seeking behind it still works | `playback-streams.md` |
 | Behind-live measured from the window end rather than the target live offset | A live stream reads a permanent -0:15 and never says LIVE | `playback-video.md` |
+| A zooming `PlayerView` without `keepKnownAspectRatio` | With Smooth motion's graph the player reports no video size, so zoom-to-fill changes nothing | `playback-video.md` |
 | Removing core library desugaring | Every search throws `NoSuchMethodError` on API 30-32, compiles fine | section 6 below |
 | A queue index held across a suspension point | The queue is replaced under it; playback lands on the wrong track | `playback-music.md` |
 | A start song absent from the list it is played from | Clamped to index 0, so a tap on one song plays another | `playback-music.md` |

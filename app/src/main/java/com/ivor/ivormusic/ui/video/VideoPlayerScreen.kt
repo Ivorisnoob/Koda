@@ -419,6 +419,12 @@ fun FullscreenPlayerContent(
      * unknown shapes, where the common case is a landscape upload.
      */
     zoomToFillAvailable: Boolean = true,
+    /**
+     * The video's shape as the page knows it. Required, not defaulted: with
+     * Smooth motion's graph installed the player reports no size, and without
+     * this the frame has no shape to fit or zoom (keepKnownAspectRatio).
+     */
+    videoAspectRatio: Float?,
     onRetry: (() -> Unit)? = null
 ) {
     // Stable shapes to prevent "square flash"
@@ -565,10 +571,15 @@ fun FullscreenPlayerContent(
                 } else {
                     AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
+                // After the bind and the mode: setPlayer resets the frame's shape.
+                playerView.keepKnownAspectRatio(videoAspectRatio)
             },
             // Hand the surface back before this view is destroyed - the same
             // ExoPlayer is also rendered by the mini and PiP PlayerViews.
-            onRelease = { playerView -> playerView.player = null },
+            onRelease = { playerView ->
+                playerView.player = null
+                playerView.releaseKnownAspectRatio()
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(end = chatInsetAnimated)
@@ -1876,6 +1887,12 @@ private val ENTER_FULLSCREEN_SWIPE_TRAVEL = 56.dp
 private val EXIT_FULLSCREEN_SWIPE_TRAVEL = 72.dp
 
 /**
+ * How far down the exit-fullscreen swipe has to start: clear of the strip the
+ * notification shade is pulled from (a status bar is 24-52dp), and no more.
+ */
+private val EXIT_LANE_TOP_GUARD = 64.dp
+
+/**
  * Half-width of the centre column reserved for the exit-fullscreen swipe, as a
  * fraction of the surface.
  *
@@ -2258,17 +2275,25 @@ internal fun PlayerGestureSurface(
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val leftSide = down.position.x < size.width / 2f
-                            // Vertical drags only arm in the bottom 70% of the
+                            // The level drags only arm in the bottom 70% of the
                             // surface: a swipe from the top area is almost always
                             // the user reaching for the notification shade, and
                             // grabbing it as a brightness/volume drag was a
-                            // constant misfire - the same is true of a downward
-                            // swipe meant to leave fullscreen. Pinch-to-zoom stays
-                            // available everywhere.
+                            // constant misfire. Pinch-to-zoom stays available
+                            // everywhere.
                             val inDragZone = down.position.y >= size.height * 0.3f
                             // The exit-fullscreen lane, between the two level lanes.
                             val inCentreColumn = abs(down.position.x - size.width / 2f) <=
                                 size.width * FULLSCREEN_CENTRE_COLUMN_HALF_WIDTH
+                            // The exit lane keeps clear of the shade's own strip
+                            // only. A swipe out starts wherever the hand already
+                            // is, usually high: on the emulator (September 2026)
+                            // every attempt began between 21% and 28% of the
+                            // height, and the 30% line refused them all - which
+                            // is what "swiping down no longer leaves fullscreen"
+                            // was. A pull that does start on the shade's strip
+                            // stays the system's.
+                            val inExitZone = down.position.y >= EXIT_LANE_TOP_GUARD.toPx()
                             // 0 = undecided, 1 = vertical level drag, 2 = pinch,
                             // 3 = downward swipe out of fullscreen
                             var mode = 0
@@ -2301,13 +2326,14 @@ internal fun PlayerGestureSurface(
                                         val totalDx = change.position.x - down.position.x
                                         val totalDy = change.position.y - down.position.y
                                         if (!boostingRef &&
-                                            inDragZone &&
                                             abs(totalDy) > viewConfiguration.touchSlop &&
                                             abs(totalDy) > abs(totalDx)
                                         ) {
+                                            // The centre is never a level lane,
+                                            // even above the exit lane's guard.
                                             if (inCentreColumn && exitFullscreenEnabled) {
-                                                mode = 3
-                                            } else {
+                                                if (inExitZone) mode = 3
+                                            } else if (inDragZone) {
                                                 mode = 1
                                                 level = if (leftSide) {
                                                     activity?.let { currentWindowBrightness(it) } ?: 0.5f

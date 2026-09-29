@@ -341,6 +341,9 @@ private fun MiniVideoSurface(
         if (isPortrait) AspectRatioFrameLayout.RESIZE_MODE_FIT
         else AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     }
+    // Zoom needs the frame to know the video's shape, which the player does
+    // not report while Smooth motion's graph is installed (keepKnownAspectRatio).
+    val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
 
     Box(
         modifier = Modifier
@@ -380,11 +383,16 @@ private fun MiniVideoSurface(
                 // Reading holdsSurface here re-runs this block, not the bar,
                 // when the transition moves the picture.
                 pv.bindVideoSurface(viewModel.exoPlayer, holdsSurface())
+                // After the bind: setPlayer resets the frame's shape.
+                pv.keepKnownAspectRatio(videoAspectRatio)
             },
             // Release the shared player before this view's surface goes away,
             // so expanding and collapsing hand it over cleanly instead of
             // racing the full player's own view for it.
-            onRelease = { pv -> pv.player = null },
+            onRelease = { pv ->
+                pv.player = null
+                pv.releaseKnownAspectRatio()
+            },
             modifier = Modifier.fillMaxSize()
         )
 

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- PlayerView tag holding the video shape Koda supplies when the player reports none (PlayerViewAspect.kt). -->
+    <item name="known_video_aspect_ratio" type="id" />
+</resources>

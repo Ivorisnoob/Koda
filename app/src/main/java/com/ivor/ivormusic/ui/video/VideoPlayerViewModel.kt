@@ -162,6 +162,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private fun frameInterpolationWanted(): Boolean =
         frameInterpolationSupported && themePreferences.isFrameInterpolationEnabled()
     private var playerHasInterpolation = false
+    private var graphRedrawJob: Job? = null
 
     /** Available and switched on in the player's settings panel: whether frames are drawn. */
     private fun frameInterpolationOn(): Boolean =
@@ -1082,6 +1083,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // only available once a frame has decoded.
                     _isPortraitVideo.value = ratio < 1f
                 }
+            }
+
+            override fun onSurfaceSizeChanged(width: Int, height: Int) {
+                if (width > 0 && height > 0) redrawPausedFrameThroughGraph()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -3481,6 +3486,37 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * session or a quality switch is being restored to - so those pass
      * [precise] and keep exact seeking.
      */
+    /**
+     * Draw the paused frame again once a new surface has its size, when
+     * Smooth motion's effect graph is installed.
+     *
+     * The graph draws at the output surface's size, and a view taking the
+     * surface over (the mini bar handing to the page, fullscreen back to
+     * portrait) reaches it before its size does: the paused frame is drawn at
+     * the size the last surface had, a small picture in the bottom-left corner
+     * (GL's origin), and nothing draws again until playback resumes. Media3's
+     * own redraw (`VideoFrameProcessor.REDRAW`) needs a replayable frame cache
+     * that playback never builds, and throws without one [verified September
+     * 2026 against the 1.11.0 bytecode], so an exact seek to where playback
+     * already is renders the frame afresh. Settled briefly, because a
+     * hand-off reports sizes in a burst. Playing needs nothing: the next frame
+     * is drawn at the new size.
+     */
+    private fun redrawPausedFrameThroughGraph() {
+        if (!playerHasInterpolation) return
+        graphRedrawJob?.cancel()
+        graphRedrawJob = viewModelScope.launch {
+            delay(GRAPH_REDRAW_SETTLE_MS)
+            val player = _exoPlayer ?: return@launch
+            if (player.isPlaying || player.playbackState != Player.STATE_READY ||
+                player.isCurrentMediaItemLive
+            ) {
+                return@launch
+            }
+            seekPlayerTo(player, player.currentPosition, precise = true)
+        }
+    }
+
     private fun seekPlayerTo(player: Player, positionMs: Long, precise: Boolean) {
         (player as? ExoPlayer)?.setSeekParameters(
             if (precise) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC
@@ -4183,6 +4219,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * media notification and the Picture-in-Picture controls.
          */
         const val SEEK_STEP_MS = 10_000L
+
+        /** How long a surface hand-off's size reports are left to settle before a paused redraw. */
+        private const val GRAPH_REDRAW_SETTLE_MS = 150L
 
         /** Silent re-prepare attempts before a renderer error reaches the UI. */
         private const val MAX_RENDERER_RETRIES = 2
