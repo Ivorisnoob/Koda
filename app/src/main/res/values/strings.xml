@@ -1139,6 +1139,9 @@
     <string name="vpc_off">Off</string>
     <string name="vpc_no_embedded_subtitles">This video has no subtitle tracks</string>
     <string name="vpc_audio_track">Audio track</string>
+    <string name="vpc_audio_track_dubbed">Dubbed</string>
+    <string name="vpc_audio_track_auto_dubbed">Automatically dubbed</string>
+    <string name="vpc_audio_track_descriptive">Audio description</string>
 
     <!-- Device videos in the video-mode Library -->
     <string name="dv_on_this_device">On this device</string>

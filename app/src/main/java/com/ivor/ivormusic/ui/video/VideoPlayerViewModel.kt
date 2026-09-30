@@ -63,6 +63,9 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.VideoPlaybackCacheStream
 import com.ivor.ivormusic.data.VideoSeekPreview
+import com.ivor.ivormusic.data.YouTubeAudioTrack
+import com.ivor.ivormusic.data.YouTubeAudioTrackKind
+import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
@@ -229,15 +232,28 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private var localSourcesById: Map<String, LocalPlaybackSource> = emptyMap()
 
     /**
-     * Audio tracks the current media declares, when it declares more than one.
+     * Audio tracks the viewer can switch between, when there is more than one.
      *
-     * Empty for every ordinary YouTube stream - the app merges a single chosen
-     * audio rendition - so the control this drives simply never appears there.
-     * A device file with a dub track, a commentary or a second language is the
-     * case it exists for.
+     * Two sources feed it. A device file's tracks come from the container and
+     * switch by track-selection override. A YouTube video's come from the
+     * resolver ([youtubeAudioTracks]): each dub is a separate file, so
+     * switching rebuilds the split source with that file as its audio half.
+     * Empty for most YouTube videos, which have one soundtrack.
      */
     private val _audioTracks = MutableStateFlow<List<PlayerTrackOption>>(emptyList())
     val audioTracks: StateFlow<List<PlayerTrackOption>> = _audioTracks.asStateFlow()
+
+    /** The current YouTube video's soundtracks, from the same resolution as its ladder. */
+    private var youtubeAudioTracks: List<YouTubeAudioTrack> = emptyList()
+
+    /**
+     * The viewer's soundtrack for the current video, by YouTube's track id, or
+     * null for the original. An id rather than a URL so it survives a
+     * re-resolution that re-signs every URL, and a quality or HDR switch, all of
+     * which rebuild the source through [loadQuality]. Every video opens on the
+     * original: a dub is a per-video choice.
+     */
+    private var selectedAudioTrackId: String? = null
 
     /**
      * Subtitle tracks carried inside the media itself.
@@ -938,7 +954,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     if (fallback != null) reloadPreservingPosition(fallback)
                 } else if (enabled && !current.isHdr) {
                     val streamResult = resolvePlayableStreamResult(video.videoId)
+                    if (_currentVideo.value?.videoId != video.videoId) return@collect
                     _availableQualities.value = streamResult.qualities
+                    applyYouTubeAudioTracks(streamResult.audioTracks)
                 }
             }
         }
@@ -1762,8 +1780,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     ): Boolean {
         if (_exoPlayer == null) return false
         youtubeRepository.invalidateVideoStreamResult(video.videoId)
-        val qualities = try {
-            resolvePlayableQualities(video.videoId)
+        val streamResult = try {
+            resolvePlayableStreamResult(video.videoId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
             // that would let a dead recovery keep writing loading/error state
@@ -1771,8 +1789,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             throw e
         } catch (e: Exception) {
             KLog.w("VideoPlayerVM", "Re-resolve failed for ${video.videoId}", e)
-            emptyList()
+            VideoStreamResult(emptyList())
         }
+        val qualities = streamResult.qualities
         if (_currentVideo.value?.videoId != video.videoId) {
             _isLoading.value = false
             return true
@@ -1780,6 +1799,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (qualities.isEmpty()) return false
 
         _availableQualities.value = qualities
+        // The re-signed URLs replace the old ones; a chosen dub is kept by id,
+        // so a recovery from an expired URL does not drop the viewer back to
+        // the original language.
+        applyYouTubeAudioTracks(streamResult.audioTracks)
         val previousLabel = _currentQuality.value?.resolution
         val chosen = localVideoQualityOptions(qualities)
             .firstOrNull { it.resolution == previousLabel }
@@ -2184,10 +2207,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (_isLive.value) publishLiveQualityLadder(tracks)
         val local = localSourcesById[_currentVideo.value?.videoId]
         if (local?.allowsTrackSelection != true) {
-            // Nothing else in the app has tracks worth choosing between, and
-            // leaving a previous file's menus standing would offer overrides
-            // against a Tracks snapshot that no longer exists.
-            clearSelectableTracks()
+            // A YouTube source is one audio file chosen by the resolver, so its
+            // Tracks never hold a choice; its menu comes from the resolver's
+            // list instead. Leaving a previous file's menus standing would
+            // offer overrides against a Tracks snapshot that no longer exists.
+            _embeddedTextTracks.value = emptyList()
+            _embeddedCueText.value = null
+            publishYouTubeAudioTracks()
             return
         }
 
@@ -2335,7 +2361,98 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * produced it and this menu can outlive a queue advance by a frame.
      */
     fun setAudioTrack(option: PlayerTrackOption) {
+        if (option.id.startsWith(YOUTUBE_AUDIO_OPTION_PREFIX)) {
+            selectYouTubeAudioTrack(option.id.removePrefix(YOUTUBE_AUDIO_OPTION_PREFIX))
+            return
+        }
         applyTrackOverride(option, C.TRACK_TYPE_AUDIO)
+    }
+
+    // ---------------- YouTube soundtracks (dubs) ----------------
+
+    /**
+     * Take a freshly resolved soundtrack list for the current video, keeping
+     * the viewer's pick when the new list still has it, and redraw the menu.
+     */
+    private fun applyYouTubeAudioTracks(tracks: List<YouTubeAudioTrack>) {
+        youtubeAudioTracks = tracks
+        if (tracks.none { it.id == selectedAudioTrackId }) selectedAudioTrackId = null
+        publishYouTubeAudioTracks()
+    }
+
+    private fun clearYouTubeAudioTracks() {
+        youtubeAudioTracks = emptyList()
+        selectedAudioTrackId = null
+    }
+
+    /** The dub to play in place of the original, or null for the original. */
+    private fun selectedDub(): YouTubeAudioTrack? =
+        selectedAudioTrackId
+            ?.let { id -> youtubeAudioTracks.firstOrNull { it.id == id } }
+            ?.takeUnless { it.isOriginal }
+
+    /**
+     * Only a split pair has an audio half to swap, so a muxed, manifest, live
+     * or device source shows no YouTube menu even if a list is held.
+     */
+    private fun youtubeAudioSwitchable(): Boolean {
+        val quality = _currentQuality.value ?: return false
+        return youtubeAudioTracks.size > 1 && !_isLocalPlayback.value && !_isLive.value &&
+            !quality.isLive && !quality.isDASH && quality.audioUrl != null
+    }
+
+    private fun publishYouTubeAudioTracks() {
+        if (!youtubeAudioSwitchable()) {
+            _audioTracks.value = emptyList()
+            return
+        }
+        val selected = selectedDub()
+        _audioTracks.value = youtubeAudioTracks.map { track ->
+            PlayerTrackOption(
+                id = YOUTUBE_AUDIO_OPTION_PREFIX + track.id,
+                label = track.displayName,
+                detail = when (track.kind) {
+                    // YouTube's name for the original already says "original".
+                    YouTubeAudioTrackKind.ORIGINAL -> null
+                    YouTubeAudioTrackKind.DUBBED -> context.getString(R.string.vpc_audio_track_dubbed)
+                    YouTubeAudioTrackKind.AUTO_DUBBED -> context.getString(R.string.vpc_audio_track_auto_dubbed)
+                    YouTubeAudioTrackKind.DESCRIPTIVE -> context.getString(R.string.vpc_audio_track_descriptive)
+                    YouTubeAudioTrackKind.SECONDARY,
+                    YouTubeAudioTrackKind.UNKNOWN -> null
+                },
+                language = track.languageTag,
+                isSelected = if (selected == null) track.isOriginal else track.id == selected.id,
+            )
+        }.let { options ->
+            // A list whose original YouTube left untagged still needs one row
+            // marked while the original plays: the first, which is the default.
+            if (selected == null && options.none { it.isSelected }) {
+                options.mapIndexed { index, option -> option.copy(isSelected = index == 0) }
+            } else {
+                options
+            }
+        }
+    }
+
+    /**
+     * Switch the current video's soundtrack mid-playback.
+     *
+     * The same route as a quality change - rebuild the source, seek back to
+     * the position on READY, play/pause state untouched - so everything that
+     * already copes with a quality switch (the minimize transition, PiP,
+     * SponsorBlock, the watch tracker) copes with this. The video half is
+     * rebuilt too, but its bytes are in the playback cache under a key that
+     * does not change, so only the new audio is fetched.
+     */
+    private fun selectYouTubeAudioTrack(trackId: String) {
+        val track = youtubeAudioTracks.firstOrNull { it.id == trackId } ?: return
+        if (!youtubeAudioSwitchable()) return
+        val newSelection = track.id.takeUnless { track.isOriginal }
+        if (newSelection == selectedAudioTrackId) return
+        val quality = _currentQuality.value ?: return
+        selectedAudioTrackId = newSelection
+        publishYouTubeAudioTracks()
+        reloadPreservingPosition(quality)
     }
 
     /**
@@ -2630,6 +2747,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // snapshot that is about to be replaced; leaving them up would let a
         // tap apply an override against groups that no longer exist.
         clearSelectableTracks()
+        // A dub is chosen per video; the next one opens on its original.
+        clearYouTubeAudioTracks()
         _selectedCaption.value = null // Re-applied below when captions are persistently on
         _isCaptionsLoading.value = false
         captionsLoadedForVideoId = null
@@ -2790,6 +2909,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     val qualities = streamResult.qualities
                     _availableQualities.value = qualities
                     _seekPreview.value = streamResult.seekPreview
+                    // Held now, published once a quality is loaded: the menu
+                    // depends on that quality being a split pair.
+                    youtubeAudioTracks = streamResult.audioTracks
                     _isLive.value = qualities.any { it.isLive }
                     if (_isLive.value) {
                         // Some entry points do not know a broadcast is live
@@ -3015,7 +3137,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             )
         } else {
             val dataSourceFactory = streamDataSourceFactory
-            val audioUrl = quality.audioUrl
+            // A chosen dub replaces only the audio half. Its URL carries its
+            // own xtags, so it caches under its own key beside the original.
+            val dub = if (quality.audioUrl != null && !_isLocalPlayback.value) selectedDub() else null
+            val audioUrl = dub?.url ?: quality.audioUrl
             val primarySource = if (audioUrl != null) {
                 // Non-DASH with separate audio - use MergingMediaSource.
                 // adjustPeriodTimeOffsets aligns the two tracks' start offsets,
@@ -3035,7 +3160,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         cachedProgressiveMediaItem(
                             uri = audioUrl,
                             stream = VideoPlaybackCacheStream.AUDIO,
-                            fallbackVariant = "original-audio",
+                            fallbackVariant = dub?.let { "audio-${it.id}" } ?: "original-audio",
                             includeNowPlayingMetadata = false,
                         )
                     )
@@ -3270,9 +3395,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         return result.copy(qualities = qualities)
     }
-
-    private suspend fun resolvePlayableQualities(videoId: String): List<VideoQuality> =
-        resolvePlayableStreamResult(videoId).qualities
 
     /** One-shot HDR-to-SDR recovery shared by source and decoder failures. */
     private fun fallbackFromHdr(error: PlaybackException): Boolean {
@@ -4242,6 +4364,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     companion object {
         private const val VIDEO_CACHE_OWNER = "video"
         private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
+
+        /** Marks a [PlayerTrackOption] as a YouTube soundtrack rather than a container track. */
+        private const val YOUTUBE_AUDIO_OPTION_PREFIX = "yt-audio:"
 
         /** Speeds offered in the player's speed menu. */
         val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f, 4f, 8f)

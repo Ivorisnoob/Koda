@@ -5178,7 +5178,14 @@ class YouTubeRepository(private val context: Context) {
                     "Video qualities via visionOS: ${qualities.size} for $videoId" +
                         qualities.count(VideoQuality::isHdr).let { if (it > 0) " (HDR=$it)" else "" },
                 )
-                return@withContext VideoStreamResult(qualities, response.seekPreview)
+                // Dubs ride the same response. Live has one soundtrack in its
+                // HLS master, so only a VOD ladder offers a choice.
+                val audioTracks = if (qualities.any(VideoQuality::isLive)) {
+                    emptyList()
+                } else {
+                    response.streamingData?.let(::parseDirectAudioTracks).orEmpty()
+                }
+                return@withContext VideoStreamResult(qualities, response.seekPreview, audioTracks)
             }
             KLog.w("YouTubeRepo", "visionOS answered with no usable formats for $videoId")
         }
@@ -5370,7 +5377,51 @@ class YouTubeRepository(private val context: Context) {
         // NewPipe exposes several codecs and delivery types for the same
         // visible label. Collapse codec alternatives, but retain both a split
         // local-playback entry and a muxed download entry when both exist.
-        return VideoStreamResult(deduplicateVideoQualityVariants(qualities), seekPreview)
+        return VideoStreamResult(
+            deduplicateVideoQualityVariants(qualities),
+            seekPreview,
+            newPipeAudioTracks(extractedAudioStreams, hasOriginalAdaptivePair),
+        )
+    }
+
+    /**
+     * The same soundtrack menu as [parseDirectAudioTracks], built from NewPipe's
+     * streams when the direct call failed. Offered only when the qualities are
+     * split pairs, because the dub replaces a pair's audio half; a muxed or
+     * manifest ladder has no half to replace. NewPipe folds machine dubs into
+     * DUBBED, so this path cannot label them.
+     */
+    private fun newPipeAudioTracks(
+        streams: List<AudioStream>,
+        hasOriginalAdaptivePair: Boolean,
+    ): List<YouTubeAudioTrack> {
+        if (!hasOriginalAdaptivePair) return emptyList()
+        val byTrack = streams
+            .filter { it.isUrl && !it.audioTrackId.isNullOrBlank() }
+            .groupBy { it.audioTrackId!! }
+        if (byTrack.size < 2) return emptyList()
+        return byTrack.mapNotNull { (id, group) ->
+            val best = group.maxWithOrNull(
+                compareBy<AudioStream>(
+                    { if (it.codec?.contains("mp4a", ignoreCase = true) == true) 1 else 0 },
+                    { it.averageBitrate },
+                )
+            ) ?: return@mapNotNull null
+            YouTubeAudioTrack(
+                id = id,
+                displayName = best.audioTrackName?.takeIf { it.isNotBlank() } ?: id,
+                languageTag = best.audioLocale?.toLanguageTag()
+                    ?: id.substringBefore('.').takeIf { it.isNotBlank() },
+                kind = when (best.audioTrackType) {
+                    AudioTrackType.ORIGINAL -> YouTubeAudioTrackKind.ORIGINAL
+                    AudioTrackType.DUBBED -> YouTubeAudioTrackKind.DUBBED
+                    AudioTrackType.DESCRIPTIVE -> YouTubeAudioTrackKind.DESCRIPTIVE
+                    AudioTrackType.SECONDARY -> YouTubeAudioTrackKind.SECONDARY
+                    null -> YouTubeAudioTrackKind.UNKNOWN
+                },
+                url = best.content,
+            )
+        }.sortedForMenu()
     }
 
     /**
