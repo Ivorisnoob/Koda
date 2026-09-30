@@ -80,6 +80,25 @@ Changelog:
 - Existing installations keep their current behavior by default.
 ```
 
+**Write the changelog like release notes someone chose to read, because it is.** [judgement September 2026] Every bullet goes straight to users in the Telegram post and the release page, so it is part of the product, not a commit chore. Take a moment over it:
+
+- **Start from the person, not the diff.** Ask what they will see, hear or be able to do now that they could not before, and write that. The code change is only how it happened.
+- **Name things the way the app names them.** "the artist page", "the three-dots menu in the player", "Library", "the notification" - the words on the screen, never the component, file or setting key behind them.
+- **Say the benefit, not the mechanism.** "Songs that stop playing can now be refreshed from the player's menu", not "added a stream re-resolution command". Words like stream URL, cache, InnerTube, visitorData, session, ViewModel, clip or padding do not belong here.
+- **Open each bullet with a clear verb** - Added, Fixed, Improved, Changed, Removed - so the list scans at a glance.
+- **For a fix, describe what was wrong in the user's terms**, briefly: "Fixed song and artist names being cut off at the corners of cards on the artist page." Someone who hit the bug should recognise it.
+- **One change per bullet, and each one complete on its own.** No "and more", "various fixes" or "minor improvements"; if it is worth shipping it is worth one honest line, and if it is not visible it does not go in.
+- **Warm and plain, never cute.** Short everyday sentences, no hype ("amazing", "huge"), no apologising, no exclamation marks, no emojis.
+- **Read the list back as a user before committing.** If a bullet needs the codebase to make sense, rewrite it.
+
+```text
+Too technical                                   Written for users
+- Remove clip from ArtworkCard                  - Fixed titles being cut off at the corners of cards on the artist page.
+- Add CMD_CYCLE_REPEAT/CMD_TOGGLE_LIKE          - Added repeat and like buttons to the music notification.
+- Route session seekToNext to VideoQueue        - Video notifications now have next and previous buttons.
+- Compact ExpressiveLikedSongsCard              - Made the Liked Songs card in Library smaller and cleaner.
+```
+
 **Public GitHub releases ship APKs only.** Never attach `mapping.txt` or any other deobfuscation artifact to release assets. Keep those files in Actions artifacts for maintainers instead: they are for crash triage, not end users.
 
 **Local commits are expected; the remote is not yours.** Committing to the local branch is the normal end of an item and needs no permission - it is what makes a batch of items individually revertable. Pushing, creating remote branches, opening or editing PRs, and pushing tags are all explicit-request actions.

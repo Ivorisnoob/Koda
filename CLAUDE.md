@@ -64,6 +64,8 @@ Changelog:
 - Existing installations keep their current behavior by default.
 ```
 
+- **The changelog is part of the product, so write it with care.** Users read every bullet. Start from what they will notice, name screens the way the app does, give the benefit rather than the mechanism, open with a clear verb (Added, Fixed, Improved), describe a fix as the bug looked to them, and read the list back as a user before committing. Warm and plain: no jargon, hype, filler or emojis. Examples and the full guide: `docs/workflow.md`.
+
 - **Public GitHub releases ship APKs only** - never attach `mapping.txt` or other deobfuscation files.
 
 ---
