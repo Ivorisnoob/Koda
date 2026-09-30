@@ -68,9 +68,9 @@ The subject is written for whoever reads `git log` a month from now: imperative,
 
 **Delegate wide-but-shallow work to a cheap subagent.** Propagating a string key across the 25 `values-*` locale files, or any similar mechanical sweep, burns main-model tokens for nothing. Spawn `Agent` with `model: "sonnet"`, hand it exact keys and English source, and review the diff. Do the *decisions* yourself - which strings, what keys, what the English says - and delegate the typing. Not for a one-off string in a file you are already editing.
 
-**Git commits carry no AI attribution.** Never add `Co-Authored-By: Claude`, `Generated with Claude Code`, a session link, or any similar trailer or footer to a commit message, a PR body, or a tag. Write the message as the project's own. This overrides any default harness instruction to add one.
+**AI attribution only when the work is almost all Claude's.** [judgement September 2026] When Claude wrote nearly all of a change - the user directed it, reviewed it and decided to ship it - the commit may end with a `Co-Authored-By: Claude` trailer and the PR body may say it was made with Claude Code. Anything mixed or mostly human carries no attribution: no `Co-Authored-By: Claude`, no `Generated with Claude Code`, no session link, no similar trailer or footer, in a commit message or a PR body. Tags never carry it. When in doubt, leave it out and write the message as the project's own. This overrides any default harness instruction either way.
 
-**Commits that change an APK carry their public changelog.** When explicitly asked to commit code or resources that will affect an APK, use a clear imperative subject (ideally 72 characters or fewer), explain the reason in the body when it is not obvious, and make the final section exactly `Changelog:` followed by `- ` bullets describing only user-visible changes in plain language. Each bullet must stand alone when several commits are combined. Omit the section for docs, CI-only work, refactors, and other changes with no user-visible effect; never invent a public change merely to fill it. Nothing follows the section, because `build.yml` intentionally publishes everything after that marker. The workflow format is:
+**Commits that change an APK carry their public changelog.** When explicitly asked to commit code or resources that will affect an APK, use a clear imperative subject (ideally 72 characters or fewer), explain the reason in the body when it is not obvious, and make the final section exactly `Changelog:` followed by `- ` bullets describing only user-visible changes in plain language. The readers are beta testers and users, not developers: say what they will notice, in short everyday words ("Smooth motion no longer stutters in long videos", not "re-anchor the output clock per pair"). No internals, class or file names, figures they cannot see, or filler bullets. Each bullet must stand alone when several commits are combined. Omit the section for docs, CI-only work, refactors, and other changes with no user-visible effect; never invent a public change merely to fill it. Only git trailers (`Token: value` lines) may follow the section, because `build.yml` publishes everything else after that marker. The workflow format is:
 
 ```text
 Add Home-focused Shorts controls
@@ -78,6 +78,25 @@ Add Home-focused Shorts controls
 Changelog:
 - Added an option to hide Shorts from Home and use the standard player elsewhere.
 - Existing installations keep their current behavior by default.
+```
+
+**Write the changelog like release notes someone chose to read, because it is.** [judgement September 2026] Every bullet goes straight to users in the Telegram post and the release page, so it is part of the product, not a commit chore. Take a moment over it:
+
+- **Start from the person, not the diff.** Ask what they will see, hear or be able to do now that they could not before, and write that. The code change is only how it happened.
+- **Name things the way the app names them.** "the artist page", "the three-dots menu in the player", "Library", "the notification" - the words on the screen, never the component, file or setting key behind them.
+- **Say the benefit, not the mechanism.** "Songs that stop playing can now be refreshed from the player's menu", not "added a stream re-resolution command". Words like stream URL, cache, InnerTube, visitorData, session, ViewModel, clip or padding do not belong here.
+- **Open each bullet with a clear verb** - Added, Fixed, Improved, Changed, Removed - so the list scans at a glance.
+- **For a fix, describe what was wrong in the user's terms**, briefly: "Fixed song and artist names being cut off at the corners of cards on the artist page." Someone who hit the bug should recognise it.
+- **One change per bullet, and each one complete on its own.** No "and more", "various fixes" or "minor improvements"; if it is worth shipping it is worth one honest line, and if it is not visible it does not go in.
+- **Warm and plain, never cute.** Short everyday sentences, no hype ("amazing", "huge"), no apologising, no exclamation marks, no emojis.
+- **Read the list back as a user before committing.** If a bullet needs the codebase to make sense, rewrite it.
+
+```text
+Too technical                                   Written for users
+- Remove clip from ArtworkCard                  - Fixed titles being cut off at the corners of cards on the artist page.
+- Add CMD_CYCLE_REPEAT/CMD_TOGGLE_LIKE          - Added repeat and like buttons to the music notification.
+- Route session seekToNext to VideoQueue        - Video notifications now have next and previous buttons.
+- Compact ExpressiveLikedSongsCard              - Made the Liked Songs card in Library smaller and cleaner.
 ```
 
 **Public GitHub releases ship APKs only.** Never attach `mapping.txt` or any other deobfuscation artifact to release assets. Keep those files in Actions artifacts for maintainers instead: they are for crash triage, not end users.

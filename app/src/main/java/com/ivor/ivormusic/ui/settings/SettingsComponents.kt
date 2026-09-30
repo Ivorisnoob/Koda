@@ -513,6 +513,15 @@ internal fun SettingsHubRow(
 internal val LocalSettingsDetailShowsBack = androidx.compose.runtime.compositionLocalOf { true }
 
 /**
+ * Room left under the last row of the hub and of every page, so it can scroll
+ * clear of the floating mini player (and the navigation bar under it) instead
+ * of sitting behind it. Reserved whether or not anything is playing: the mini
+ * player can appear while a page is open, and the list should not jump when it
+ * does. Matches the clearance other full-screen routes (Stats) use.
+ */
+internal val SettingsMiniPlayerClearance = 160.dp
+
+/**
  * Chrome shared by every settings detail page: the back-to-hub bar plus the
  * scrolling body. Pages supply `item { }` blocks so long lists (the palette of
  * player styles, a folder list) still recycle.
@@ -581,12 +590,16 @@ internal fun SettingsDetailScaffold(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 8.dp,
+                bottom = SettingsMiniPlayerClearance
+            ),
             state = listState,
             verticalArrangement = Arrangement.spacedBy(itemSpacing)
         ) {
             content()
-            item { Spacer(modifier = Modifier.height(32.dp)) }
         }
     }
 }

@@ -564,7 +564,11 @@ private fun ShelfChannelCard(channel: SubscribedChannel, onClick: () -> Unit) {
         modifier = Modifier
             .width(120.dp)
             .clip(RoundedCornerShape(16.dp))
-            .combinedClickableCompat(onClick),
+            .combinedClickableCompat(onClick)
+            // Inside the clip, so the press stays rounded but the text clears
+            // the corners: the subscriber line used to sit on the clip's bottom
+            // edge and lose its ends to it.
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         CreatorAvatar(

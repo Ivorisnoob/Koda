@@ -1622,9 +1622,9 @@ private fun PlayerSettingsSections(
     currentQuality: VideoQuality?,
     onQualitySelected: (VideoQuality) -> Unit,
     /**
-     * Audio tracks the media declares, when there is more than one to choose
-     * between. Empty for ordinary YouTube playback, so the section below simply
-     * does not appear there.
+     * Audio tracks to choose between: a device file's own tracks, or a YouTube
+     * video's original and dubs. Empty when there is only one, so the row
+     * simply does not appear.
      */
     audioTracks: List<PlayerTrackOption>,
     onAudioTrackSelected: (PlayerTrackOption) -> Unit,
@@ -1894,6 +1894,52 @@ private fun PlayerSettingsSections(
                     }
                 }
             }
+            if (audioTracks.isNotEmpty()) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 64.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                // A picker row like quality and speed rather than a section of
+                // its own: a dubbed YouTube video can carry 25 languages, and
+                // listing them open would bury every control below.
+                PickerRow(
+                    icon = Icons.Rounded.Audiotrack,
+                    title = stringResource(R.string.vpc_audio_track),
+                    value = audioTracks.firstOrNull { it.isSelected }?.label,
+                    loading = false,
+                    expanded = expandedPicker == SettingsPicker.AUDIO,
+                    onClick = { togglePicker(SettingsPicker.AUDIO) }
+                )
+                AnimatedVisibility(
+                    visible = expandedPicker == SettingsPicker.AUDIO,
+                    enter = expandVertically(
+                        animationSpec = spring(
+                            stiffness = Spring.StiffnessMediumLow,
+                            dampingRatio = Spring.DampingRatioMediumBouncy
+                        )
+                    ) + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    // Rows rather than the chips the quality ladder uses: a track
+                    // name carries a language, a codec and a channel layout, and
+                    // any of those truncated into a chip is exactly the part that
+                    // distinguishes it from the track above it.
+                    Column {
+                        audioTracks.forEach { track ->
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 64.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant
+                            )
+                            SettingsActionRow(
+                                icon = if (track.isSelected) Icons.Rounded.Check else Icons.Rounded.Audiotrack,
+                                title = track.label,
+                                supportingText = track.detail,
+                                onClick = { if (!track.isSelected) onAudioTrackSelected(track) }
+                            )
+                        }
+                    }
+                }
+            }
             if (showEndBehavior) {
                 HorizontalDivider(
                     modifier = Modifier.padding(start = 64.dp),
@@ -1948,40 +1994,6 @@ private fun PlayerSettingsSections(
         }
     }
     Spacer(modifier = Modifier.height(16.dp))
-
-    if (audioTracks.isNotEmpty()) {
-        Spacer(modifier = Modifier.height(16.dp))
-        SettingsSectionLabel(
-            icon = Icons.Rounded.Audiotrack,
-            label = stringResource(R.string.vpc_audio_track)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        // Rows rather than the chips the quality ladder uses: a track name
-        // carries a language, a codec and a channel layout, and any of those
-        // truncated into a chip is exactly the part that distinguishes it from
-        // the track above it.
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
-        ) {
-            Column {
-                audioTracks.forEachIndexed { index, track ->
-                    if (index > 0) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 64.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-                    }
-                    SettingsActionRow(
-                        icon = if (track.isSelected) Icons.Rounded.Check else Icons.Rounded.Audiotrack,
-                        title = track.label,
-                        supportingText = track.detail,
-                        onClick = { if (!track.isSelected) onAudioTrackSelected(track) }
-                    )
-                }
-            }
-        }
-    }
 
     val hasSecondaryActions = showPip || showComments || showQueue ||
         showTimedComments || showLiveChat || showVerticalLive || showZoomToFill ||
@@ -2161,7 +2173,7 @@ private fun smoothMotionStatusText(status: FrameInterpolationStatus): String? = 
 }
 
 /** Which inline picker is open in playback settings; accordion, at most one. */
-private enum class SettingsPicker { QUALITY, SPEED }
+private enum class SettingsPicker { QUALITY, SPEED, AUDIO }
 
 /**
  * A quality/speed row that opens its options inline rather than owning a
@@ -2194,10 +2206,16 @@ private fun PickerRow(
                     ContainedLoadingIndicator(modifier = Modifier.size(24.dp))
                 } else {
                     if (value != null) {
+                        // Capped so a long value (an audio track such as
+                        // "Chinese (Traditional)") ellipsizes instead of
+                        // squeezing the row's title.
                         Text(
                             text = value,
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 160.dp)
                         )
                     }
                     if (expandable) {

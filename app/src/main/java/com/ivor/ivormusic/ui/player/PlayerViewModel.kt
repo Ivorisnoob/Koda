@@ -329,6 +329,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         startBufferingWatchdog()
         seedRecentSongs()
         observeProfileSwitches()
+        // The heart can be flipped from outside this ViewModel - the media
+        // notification's like button, or another screen's instance - so it
+        // follows the shared store rather than only song changes.
+        viewModelScope.launch {
+            likedSongsRepository.likedSongIds.collect { updateCurrentSongLikedStatus() }
+        }
     }
 
     private fun seedRecentSongs() {
@@ -1596,6 +1602,35 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun skipToPrevious() {
         if (controller == null) return
         sendSkipCommand(MusicService.CMD_SKIP_PREVIOUS)
+    }
+
+    /**
+     * Get the playing song a fresh stream from YouTube, keeping its place. Only
+     * a failure says anything: success is the player buffering and carrying
+     * on, which is already visible.
+     */
+    fun refreshCurrentStream() {
+        val ctrl = controller ?: return
+        val future = ctrl.sendCustomCommand(
+            androidx.media3.session.SessionCommand(MusicService.CMD_REFRESH_STREAM, android.os.Bundle.EMPTY),
+            android.os.Bundle.EMPTY,
+        )
+        future.addListener(
+            {
+                val code = runCatching { future.get().resultCode }
+                    .getOrDefault(androidx.media3.session.SessionResult.RESULT_ERROR_UNKNOWN)
+                if (code == androidx.media3.session.SessionResult.RESULT_ERROR_IO ||
+                    code == androidx.media3.session.SessionResult.RESULT_ERROR_UNKNOWN
+                ) {
+                    android.widget.Toast.makeText(
+                        context,
+                        com.ivor.ivormusic.R.string.np_refresh_failed,
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            androidx.core.content.ContextCompat.getMainExecutor(context)
+        )
     }
 
     private fun sendSkipCommand(action: String, index: Int? = null) {

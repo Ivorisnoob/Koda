@@ -208,6 +208,14 @@ object FrameInterpolationPolicy {
     /** A step within this fraction of a whole division of the source interval snaps to it. */
     const val SNAP_TOLERANCE = 0.015
 
+    /**
+     * How much faster than the screen's rate a snapped step may run: a
+     * rounding hair, no more. [scar, September 2026] Snapping within
+     * [SNAP_TOLERANCE] either way once put 122 fps on a 120 Hz screen, which
+     * then discards about two frames a second without counting them as drops.
+     */
+    const val MAX_SNAP_SPEEDUP = 0.001
+
     /** Output textures may take this much memory before the lead shortens. */
     const val POOL_BUDGET_BYTES = 100L * 1024 * 1024
 
@@ -236,13 +244,25 @@ object FrameInterpolationPolicy {
     }
 
     /**
+     * An output step, whether it [snapped] to a whole division of the source
+     * interval, and the unsnapped step at this rate and speed ([paceStepUs]),
+     * which a snapped cadence must not run faster than.
+     */
+    data class OutputStep(val stepUs: Double, val snapped: Boolean, val paceStepUs: Double)
+
+    /** [outputStep]'s step alone. */
+    fun outputStepUs(fps: Int, speed: Float, sourceIntervalUs: Double): Double =
+        outputStep(fps, speed, sourceIntervalUs).stepUs
+
+    /**
      * The media-time gap between output frames for [fps] of real time at
      * [speed]. When the source interval divides into whole steps within
-     * [SNAP_TOLERANCE] (30 into 120, 24 into 120, 30 into 60), the step snaps
-     * to it so every Nth output is a decoded frame shown as it is, rather
-     * than one drawn next to it.
+     * [SNAP_TOLERANCE] (30 into 120, 24 into 120, 30 into 60), and doing so
+     * runs no faster than the screen's rate ([MAX_SNAP_SPEEDUP]), the step
+     * snaps to it so every Nth output is a decoded frame shown as it is,
+     * rather than one drawn next to it.
      */
-    fun outputStepUs(fps: Int, speed: Float, sourceIntervalUs: Double): Double {
+    fun outputStep(fps: Int, speed: Float, sourceIntervalUs: Double): OutputStep {
         val pace = speed.coerceIn(0.1f, 8f).toDouble()
         val minStep = if (sourceIntervalUs > 0.0) {
             sourceIntervalUs / MAX_OUTPUTS_PER_INPUT * (1 - SNAP_TOLERANCE)
@@ -259,10 +279,28 @@ object FrameInterpolationPolicy {
             val divisions = (sourceIntervalUs / step).roundToInt()
             if (divisions >= 2) {
                 val snapped = sourceIntervalUs / divisions
-                if (abs(snapped - step) / step <= SNAP_TOLERANCE) return snapped
+                if (abs(snapped - step) / step <= SNAP_TOLERANCE &&
+                    snapped >= step * (1 - MAX_SNAP_SPEEDUP)
+                ) {
+                    return OutputStep(snapped, snapped = true, paceStepUs = step)
+                }
             }
         }
-        return step
+        return OutputStep(step, snapped = false, paceStepUs = step)
+    }
+
+    /**
+     * The step for one pair [pairUs] apart on a snapped cadence: the pair cut
+     * into whole steps near [stepUs], so its last tick is its decoded frame
+     * exactly, with fewer, longer steps rather than any shorter than
+     * [paceStepUs] allows (a long pair in a variable-rate video).
+     */
+    fun lockedStepUs(pairUs: Long, stepUs: Double, paceStepUs: Double): Double {
+        var divisions = (pairUs / stepUs).roundToInt().coerceAtLeast(1)
+        while (divisions > 1 && pairUs.toDouble() / divisions < paceStepUs * (1 - MAX_SNAP_SPEEDUP)) {
+            divisions--
+        }
+        return pairUs.toDouble() / divisions
     }
 
     /** Whether a pair [intervalUs] apart is worth drawing frames between at [stepUs]. */
@@ -306,6 +344,76 @@ object FrameInterpolationPolicy {
         thermalStatus < PowerManager.THERMAL_STATUS_MODERATE &&
         !powerSave &&
         !cannotKeepUp
+}
+
+/**
+ * The source's frame interval in media time, measured from decoded
+ * timestamps.
+ *
+ * [scar, September 2026] A plain running average took in every gap a
+ * dropped frame leaves, and the gap is exactly the moment the clock
+ * restarts, so it restarted on a step the video did not have and kept it: in
+ * a Mali-G615 bug report a 23.98 fps video went from 24 untouched decoded
+ * frames a second at 120 fps to about 5, and later ran at 122 fps on a
+ * 120 Hz screen. An interval far from the estimate is left out now, unless
+ * [RATE_CHANGE_FRAMES] arrive in a row, which is the video changing rate.
+ */
+class SourceRateMeter {
+    /** The smoothed interval, 0 until two frames have been seen. */
+    var intervalUs: Double = 0.0
+        private set
+
+    private var lastUs = NONE
+    private var outliers = 0
+
+    fun onFrame(presentationTimeUs: Long) {
+        val last = lastUs
+        lastUs = presentationTimeUs
+        if (last == NONE) return
+        val interval = presentationTimeUs - last
+        // Longer is a pause or a cut, not a frame rate; zero or negative is reordering.
+        if (interval !in 1..MAX_MEASURED_INTERVAL_US) return
+        if (intervalUs <= 0.0) {
+            intervalUs = interval.toDouble()
+            return
+        }
+        val ratio = interval / intervalUs
+        if (ratio > OUTLIER_RATIO || ratio < 1 / OUTLIER_RATIO) {
+            if (++outliers < RATE_CHANGE_FRAMES) return
+            intervalUs = interval.toDouble()
+        } else {
+            intervalUs = intervalUs * 0.9 + interval * 0.1
+        }
+        outliers = 0
+    }
+
+    /** A seek: the next frame does not follow the last one, but the rate stands. */
+    fun forgetLastFrame() {
+        lastUs = NONE
+        outliers = 0
+    }
+
+    /** A new stream, which may be another video: measure afresh. */
+    fun reset() {
+        forgetLastFrame()
+        intervalUs = 0.0
+    }
+
+    companion object {
+        /** Gaps longer than this (under 5 fps) are pauses or cuts, not a frame rate. */
+        const val MAX_MEASURED_INTERVAL_US = 200_000L
+
+        /**
+         * An interval this many times longer or shorter than the estimate is
+         * a gap or a glitch: one dropped frame doubles it.
+         */
+        const val OUTLIER_RATIO = 1.5
+
+        /** This many outliers in a row are the new rate. */
+        const val RATE_CHANGE_FRAMES = 3
+
+        private const val NONE = Long.MIN_VALUE
+    }
 }
 
 /**

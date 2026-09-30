@@ -13,7 +13,7 @@ If you are about to add project knowledge here, add it to `CLAUDE.md` instead.
 - **Koda**, repo dir `TheMusicApp`, package `com.ivor.ivormusic`. Android music and video player over YouTube Music, Kotlin + Compose + Material 3 Expressive, no official API keys.
 - Build commands, the test suite, emulator setup and the desugaring constraint: `CLAUDE.md` §6.
 - **Never run a `gradlew` build unless the user explicitly asks.**
-- **Never add AI attribution to a git commit** - no `Co-Authored-By: Claude`, no "Generated with" footer, no session link.
+- **AI attribution only when the work is almost all Claude's** (`CLAUDE.md` §1, Hard limits); otherwise no `Co-Authored-By: Claude`, no "Generated with" footer, no session link.
 - Current SDK is at `E:\Android\Sdk`. `compileSdk = 37`, `targetSdk = 36`, `minSdk = 30`.
 
 ---

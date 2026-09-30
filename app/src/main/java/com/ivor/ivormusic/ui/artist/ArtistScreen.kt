@@ -1457,6 +1457,12 @@ private fun ArtworkCard(
     val interaction = remember { MutableInteractionSource() }
     val scale = pressScale(interaction)
     val targetPx = with(LocalDensity.current) { width.roundToPx() }
+    // No clip on the card: the cover rounds itself, and a rounded clip here
+    // sits on the text too - the words run 2dp from the card's edge, so the
+    // bottom corners shaved the first and last letters and the descenders off
+    // every subtitle. The press-scale spring is the feedback, as on the
+    // Library's playlist cards; a ripple without the clip would be a sharp
+    // rectangle over a rounded cover.
     Column(
         modifier = Modifier
             .width(width)
@@ -1464,10 +1470,9 @@ private fun ArtworkCard(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(20.dp))
             .clickable(
                 interactionSource = interaction,
-                indication = ripple(),
+                indication = null,
                 onClick = onClick
             )
     ) {

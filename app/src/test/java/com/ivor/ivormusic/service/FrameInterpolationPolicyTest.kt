@@ -157,6 +157,84 @@ class FrameInterpolationPolicyTest {
         assertFalse(out.last().second)
     }
 
+    @Test fun `a snapped step never runs faster than the screen`() {
+        // An estimate pulled to ~49 ms divides into six steps of 8.2 ms,
+        // 1.5% inside the tolerance but 122 fps on a 120 Hz screen.
+        val skewed = FrameInterpolationPolicy.outputStep(120, 1f, 49_250.0)
+        assertFalse(skewed.snapped)
+        assertEquals(step120, skewed.stepUs, 0.01)
+        // 23.976 divides a hair slower than 120: snapped.
+        val film = FrameInterpolationPolicy.outputStep(120, 1f, 41_708.0)
+        assertTrue(film.snapped)
+        assertEquals(41_708.0 / 5, film.stepUs, 0.01)
+        assertEquals(step120, film.paceStepUs, 0.01)
+        // Exactly 24 fps divides into exactly the screen's step.
+        assertTrue(FrameInterpolationPolicy.outputStep(120, 1f, 41_666.67).snapped)
+    }
+
+    @Test fun `a locked pair ends exactly on its decoded frame`() {
+        val step = 41_708.0 / 5
+        assertEquals(41_708.0 / 5, FrameInterpolationPolicy.lockedStepUs(41_708L, step, step120), 0.001)
+        assertEquals(41_709.0 / 5, FrameInterpolationPolicy.lockedStepUs(41_709L, step, step120), 0.001)
+        // A long pair in a variable-rate video: six steps still fit at the screen's pace...
+        assertEquals(50_000.0 / 6, FrameInterpolationPolicy.lockedStepUs(50_000L, step, step120), 0.001)
+        // ...but six would be faster than it here, so five longer ones.
+        assertEquals(49_000.0 / 5, FrameInterpolationPolicy.lockedStepUs(49_000L, step, step120), 0.001)
+        // A pair no longer than a step gets no ticks of its own.
+        assertEquals(8_000.0, FrameInterpolationPolicy.lockedStepUs(8_000L, step, step120), 0.001)
+    }
+
+    /** 23.976 fps timestamps as a demuxer rounds them to whole microseconds. */
+    private fun filmTimestamps(frames: Int): List<Long> =
+        (0 until frames).map { (it * 1_000_000.0 * 1001 / 24_000).roundToLong() }
+
+    @Test fun `a dropped frame does not move the measured rate`() {
+        val meter = SourceRateMeter()
+        val pts = filmTimestamps(60)
+        pts.take(40).forEach(meter::onFrame)
+        val settled = meter.intervalUs
+        assertEquals(41_708.3, settled, 1.0)
+        // Frame 40 never reaches the effect: an 83 ms gap.
+        pts.drop(41).forEach(meter::onFrame)
+        assertEquals(settled, meter.intervalUs, 1.0)
+        // So the clock that restarts on that gap still snaps to five a frame.
+        val step = FrameInterpolationPolicy.outputStep(120, 1f, meter.intervalUs)
+        assertTrue(step.snapped)
+        assertEquals(settled / 5, step.stepUs, 1.0)
+    }
+
+    @Test fun `a sustained new rate is taken up after a few frames`() {
+        val meter = SourceRateMeter()
+        var t = 0L
+        repeat(30) { meter.onFrame(t); t += 33_333 }
+        assertEquals(33_333.0, meter.intervalUs, 1.0)
+        // Two long intervals are gaps...
+        repeat(2) { t += 66_667 - 33_333; meter.onFrame(t); t += 33_333 }
+        assertEquals(33_333.0, meter.intervalUs, 1.0)
+        // ...three in a row are the video dropping to 15 fps.
+        val meter2 = SourceRateMeter()
+        t = 0L
+        repeat(30) { meter2.onFrame(t); t += 33_333 }
+        repeat(SourceRateMeter.RATE_CHANGE_FRAMES) { t += 33_334; meter2.onFrame(t); t += 33_333 }
+        assertEquals(66_667.0, meter2.intervalUs, 1.0)
+    }
+
+    @Test fun `a seek keeps the rate and a new stream measures afresh`() {
+        val meter = SourceRateMeter()
+        filmTimestamps(20).forEach(meter::onFrame)
+        val rate = meter.intervalUs
+        meter.forgetLastFrame()
+        // The first frame after a seek is far from the last one; it is not an interval.
+        meter.onFrame(90_000_000L)
+        meter.onFrame(90_000_000L + 41_708)
+        assertEquals(rate, meter.intervalUs, 5.0)
+        meter.reset()
+        assertEquals(0.0, meter.intervalUs, 0.0)
+        meter.onFrame(0L)
+        meter.onFrame(16_683L)
+        assertEquals(16_683.0, meter.intervalUs, 0.0)
+    }
+
     /** Polls a watch at 500ms like the player does; returns whether any poll judged overload. */
     private class Playback(val watch: FrameDropWatch = FrameDropWatch()) {
         var now = 10_000L

@@ -4,8 +4,6 @@ import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -97,14 +95,17 @@ import kotlin.math.roundToInt
  * it. What opens is the same menu everywhere, because the actions are not a
  * style choice.
  *
- * **It is a control panel, not a list.** [judgement, September 2026] The shape
- * is three bands, in the order a thumb reaches them: four **tiles** across the
- * top for the things this menu is opened to press, a wrapping row of **pills**
- * for the places it can leave to, and the two **sliders** last. A list of seven
- * 56dp rows spent the whole sheet on labels for actions whose icons already say
- * what they are, put the two destinations - an artist and an album - on lines
- * identical to everything else, and pushed the one thing here that is dragged
- * rather than tapped to wherever it fell in the stack. The long-press
+ * **It is a control panel, not a list.** [judgement, September 2026] Two
+ * blocks, each built on one set of edges. The top is an **action grid**: four
+ * filled **tiles** for the things this menu is opened to press, and under them
+ * the occasional actions (watch video, share, refresh stream, don't recommend)
+ * unfilled on the same four columns, so every icon sits under the one above it
+ * and the fill alone says which row is primary. The bottom is a **list**: the
+ * places it can leave to (the artist, the album) as rows, since a name is the
+ * label, then the two **sliders** - one container family, one icon edge, one
+ * inset. The centre used to be a wrapping row of pills, which lined up with
+ * nothing: every pill was as wide as its label, so the rows ended raggedly and
+ * a destination looked exactly like an action. The long-press
  * [SongOptionsSheet] stays a list on purpose: it acts on an arbitrary row in a
  * screen, where a name and a subtitle are the point. Both still draw from
  * `PlayerOptionRows.kt`, so the vocabulary is shared even where the shape is not.
@@ -126,7 +127,7 @@ import kotlin.math.roundToInt
  * then follows with another; everything else here either finishes the job or
  * leaves for a screen this sheet would sit on top of.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingOptionsSheet(
     song: Song,
@@ -320,65 +321,141 @@ fun NowPlayingOptionsSheet(
                 }
             }
 
-            // Where this song came from, and what else can be done with it.
-            // Every one of these leaves the player or the app, so each closes
-            // the sheet ahead of whatever replaces it. Pills rather than rows
-            // because an artist's name and an album title are the label.
+            // The occasional actions, as a second row on the tiles' columns:
+            // the same four slots, unfilled, so every icon sits under the one
+            // above it and the fill alone says which row is the loud one.
+            // Fewer than four keep their columns and leave the rest empty
+            // rather than stretching, which would break the grid.
             val watchAsVideo = onWatchAsVideo?.takeIf { song.hasWatchableVideo(context) }
-            if (goToArtist != null || goToAlbum != null || goToStreamingAlbum != null ||
-                shareUrl != null || canBlockArtist || watchAsVideo != null
-            ) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // First, because it is the only pill here that changes what
-                    // the app is doing rather than where it is looking.
-                    if (watchAsVideo != null) {
-                        OptionPill(
-                            icon = Icons.Rounded.Movie,
-                            label = stringResource(R.string.np_pill_watch_video),
+            val canRefreshStream = song.source == SongSource.YOUTUBE
+            val utilities = buildList<@Composable (Modifier) -> Unit> {
+                // First, because it is the only one here that changes what the
+                // app is doing rather than what it knows.
+                if (watchAsVideo != null) add { modifier ->
+                    OptionUtility(
+                        icon = Icons.Rounded.Movie,
+                        label = stringResource(R.string.np_pill_watch_video),
+                        modifier = modifier,
+                        onClick = {
+                            onDismiss()
+                            watchAsVideo()
+                        }
+                    )
+                }
+                if (shareUrl != null) add { modifier ->
+                    OptionUtility(
+                        icon = Icons.Rounded.Share,
+                        label = stringResource(R.string.action_share),
+                        modifier = modifier,
+                        onClick = {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareUrl)
+                            }
+                            context.startActivity(
+                                Intent.createChooser(send, context.getString(R.string.action_share))
+                            )
+                            onDismiss()
+                        }
+                    )
+                }
+                // For a song that stalls, sounds wrong or keeps failing: a new
+                // stream for this song only, at the same position. A file on
+                // this device has no stream to refresh.
+                if (canRefreshStream) add { modifier ->
+                    OptionUtility(
+                        icon = Icons.Rounded.Refresh,
+                        label = stringResource(R.string.np_util_refresh),
+                        contentDescription = stringResource(R.string.np_refresh_stream),
+                        modifier = modifier,
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            viewModel.refreshCurrentStream()
+                            onDismiss()
+                        }
+                    )
+                }
+                // Stop recommending this artist. Last and muted, because it is
+                // the one action here that takes something away rather than
+                // adding it - and only for a song a feed could have served,
+                // since nothing recommended the files on this device.
+                artist?.takeIf { canBlockArtist }?.let { blockedArtist ->
+                    add { modifier ->
+                        OptionUtility(
+                            icon = Icons.Rounded.RemoveCircleOutline,
+                            label = stringResource(R.string.np_pill_block),
+                            contentDescription = stringResource(
+                                R.string.song_options_block_artist, blockedArtist
+                            ),
+                            quiet = true,
+                            modifier = modifier,
                             onClick = {
+                                // The undo snackbar sits at the root of the app,
+                                // under this sheet; the sheet has to leave for
+                                // it to be reachable.
                                 onDismiss()
-                                watchAsVideo()
+                                viewModel.blockArtist(song)
                             }
                         )
                     }
+                }
+            }
+            if (utilities.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    // The tiles' gap, so the columns are the tiles' columns.
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    utilities.forEach { utility -> utility(Modifier.weight(1f)) }
+                    repeat(ACTION_COLUMNS - utilities.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+
+            // Where this song came from. Rows, because the name is the label
+            // and names are as long as they are; the same container, icon edge
+            // and inset as the deck below, so the lower half of the sheet is
+            // one aligned list. Each leaves the player, so each closes the
+            // sheet ahead of the screen that replaces it.
+            if (goToArtist != null || goToAlbum != null || goToStreamingAlbum != null) {
+                OptionGroup {
+                    var needsDivider = false
                     if (goToArtist != null && artist != null) {
-                        OptionPill(
+                        OptionRow(
                             icon = Icons.Rounded.AccountCircle,
-                            label = artist,
-                            contentDescription = stringResource(
-                                R.string.song_options_go_to_artist, artist
-                            ),
+                            title = artist,
+                            subtitle = stringResource(R.string.np_dest_artist),
+                            trailing = OptionRowTrailing.CHEVRON,
                             onClick = {
                                 onDismiss()
                                 goToArtist(artist)
                             }
                         )
+                        needsDivider = true
                     }
                     if (goToAlbum != null && album != null) {
-                        OptionPill(
+                        if (needsDivider) OptionRowDivider()
+                        OptionRow(
                             icon = Icons.Rounded.Album,
-                            label = album,
-                            contentDescription = stringResource(
-                                R.string.song_options_go_to_artist, album
-                            ),
+                            title = album,
+                            subtitle = stringResource(R.string.np_dest_album),
+                            trailing = OptionRowTrailing.CHEVRON,
                             onClick = {
                                 onDismiss()
                                 goToAlbum(album)
                             }
                         )
+                        needsDivider = true
                     }
                     if (goToStreamingAlbum != null) {
                         val (streamingAlbumId, streamingTitle) = goToStreamingAlbum
-                        OptionPill(
+                        if (needsDivider) OptionRowDivider()
+                        OptionRow(
                             icon = Icons.Rounded.Album,
-                            label = streamingTitle,
-                            contentDescription = stringResource(
-                                R.string.song_options_go_to_artist, streamingTitle
-                            ),
+                            title = streamingTitle,
+                            subtitle = stringResource(R.string.np_dest_album),
+                            trailing = OptionRowTrailing.CHEVRON,
                             onClick = {
                                 onDismiss()
                                 onOpenAlbum(
@@ -389,44 +466,6 @@ fun NowPlayingOptionsSheet(
                                         thumbnailUrl = song.highResThumbnailUrl ?: song.thumbnailUrl,
                                     )
                                 )
-                            }
-                        )
-                    }
-                    if (shareUrl != null) {
-                        OptionPill(
-                            icon = Icons.Rounded.Share,
-                            label = stringResource(R.string.action_share),
-                            onClick = {
-                                val send = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, shareUrl)
-                                }
-                                context.startActivity(
-                                    Intent.createChooser(send, context.getString(R.string.action_share))
-                                )
-                                onDismiss()
-                            }
-                        )
-                    }
-                    // Stop recommending this artist. Last and quiet, because it
-                    // is the one action here that takes something away rather
-                    // than adding it - and only for a song a feed could have
-                    // served, since nothing recommended the files on this
-                    // device.
-                    artist?.takeIf { canBlockArtist }?.let { blockedArtist ->
-                        OptionPill(
-                            icon = Icons.Rounded.RemoveCircleOutline,
-                            label = stringResource(R.string.np_pill_block),
-                            contentDescription = stringResource(
-                                R.string.song_options_block_artist, blockedArtist
-                            ),
-                            quiet = true,
-                            onClick = {
-                                // The undo snackbar sits at the root of the app,
-                                // under this sheet; the sheet has to leave for
-                                // it to be reachable.
-                                onDismiss()
-                                viewModel.blockArtist(song)
                             }
                         )
                     }
@@ -728,6 +767,9 @@ private fun speedToSlider(speed: Float): Float =
 
 private fun sliderToSpeed(position: Float): Float =
     ThemePreferences.MIN_PLAYBACK_SPEED * kotlin.math.exp(position.coerceIn(0f, 1f) * SPEED_LOG_SPAN)
+
+/** Columns in the action grid: the tiles, and the utility row laid on the same slots. */
+private const val ACTION_COLUMNS = 4
 
 /** Half a step either side of the recorded speed, so 100% is easy to hit. */
 private const val SPEED_DETENT = 0.03f

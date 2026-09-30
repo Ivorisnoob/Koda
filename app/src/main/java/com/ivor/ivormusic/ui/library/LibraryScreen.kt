@@ -1514,13 +1514,16 @@ private fun RecentSongCard(
             }
         }
         Spacer(Modifier.height(6.dp))
+        // 4dp in and 8dp of floor under the artist line, so both clear the
+        // card's rounded clip; flush against it, the bottom corners cut the
+        // ends and descenders off the artist.
         Text(
             song.title,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 2.dp)
+            modifier = Modifier.padding(horizontal = 4.dp)
         )
         Text(
             song.artist,
@@ -1528,7 +1531,7 @@ private fun RecentSongCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 2.dp)
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp)
         )
     }
 }
@@ -1980,22 +1983,24 @@ fun AlbumsGrid(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
-    // Flat expressive hero: solid container, heart seated in a SoftBurst
-    // material shape, press-scale spring instead of a shadow
+    // A row, not a banner: the same height and rhythm as the shortcut rows
+    // under it, so it reads as the first entry of the Library rather than a
+    // poster in front of it. It keeps the tinted container and the heart in a
+    // SoftBurst - that is what makes it findable - and drops the 120dp height
+    // and headline type that made it shout.
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
+        targetValue = if (isPressed) 0.98f else 1f,
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "likedCardScale"
     )
     Surface(
         onClick = onClick,
         interactionSource = interactionSource,
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp)
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -2005,26 +2010,39 @@ fun ExpressiveLikedSongsCard(count: Int, onClick: () -> Unit) {
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
                 shape = MaterialShapes.SoftBurst.toShape(),
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(56.dp)
+                modifier = Modifier.size(44.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Favorite, null, tint = MaterialTheme.colorScheme.onPrimary)
+                    Icon(
+                        Icons.Rounded.Favorite,
+                        null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
             }
-            Spacer(Modifier.width(24.dp))
+            Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.liked_songs), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
-                    if (count == 1) "1 track • Auto-playlist" else "$count tracks • Auto-playlist",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    stringResource(R.string.liked_songs),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    if (count == 1) "1 song" else "$count songs",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    maxLines = 1
                 )
             }
             Icon(

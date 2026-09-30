@@ -1469,7 +1469,12 @@ private fun SettingsHub(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 8.dp,
+                bottom = SettingsMiniPlayerClearance
+            ),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             item {
