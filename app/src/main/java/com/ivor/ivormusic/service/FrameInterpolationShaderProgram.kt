@@ -75,10 +75,12 @@ internal class FrameInterpolationShaderProgram(
     /** The engine already prepared this input as B, so it can become A without redoing it. */
     private var currentPrepared = false
     private var referenceTimeUs = C.TIME_UNSET
-    private var lastInputTimeUs = C.TIME_UNSET
 
-    /** Smoothed media-time gap between decoded frames, 0 until measured. */
-    private var sourceIntervalUs = 0.0
+    private val sourceRate = SourceRateMeter()
+
+    /** Smoothed media-time gap between decoded frames, gaps left out; 0 until measured. */
+    private val sourceIntervalUs: Double
+        get() = sourceRate.intervalUs
     private val clock = OutputClock()
     /** Timestamps handed downstream must strictly increase. */
     private var lastEmittedUs = Long.MIN_VALUE
@@ -156,9 +158,8 @@ internal class FrameInterpolationShaderProgram(
         // The next stream may be a different video, size or rate; never blend
         // across, and measure it afresh.
         passThrough()
-        lastInputTimeUs = C.TIME_UNSET
+        sourceRate.reset()
         lastEmittedUs = Long.MIN_VALUE
-        sourceIntervalUs = 0.0
         control.sourceFps = 0f
         outputListener.onCurrentOutputStreamEnded()
     }
@@ -173,7 +174,7 @@ internal class FrameInterpolationShaderProgram(
         hasReference = false
         engine?.forgetHistory()
         clock.stop()
-        lastInputTimeUs = C.TIME_UNSET
+        sourceRate.forgetLastFrame()
         lastEmittedUs = Long.MIN_VALUE
         awaitingCapacity = false
         inputListener.onFlush()
@@ -199,18 +200,8 @@ internal class FrameInterpolationShaderProgram(
     // ---------------------------------------------------------------- frames
 
     private fun measureSource(presentationTimeUs: Long) {
-        val intervalUs = if (lastInputTimeUs == C.TIME_UNSET) {
-            C.TIME_UNSET
-        } else {
-            presentationTimeUs - lastInputTimeUs
-        }
-        lastInputTimeUs = presentationTimeUs
-        if (intervalUs != C.TIME_UNSET && intervalUs in 1..MAX_MEASURED_INTERVAL_US) {
-            sourceIntervalUs = if (sourceIntervalUs <= 0.0) {
-                intervalUs.toDouble()
-            } else {
-                sourceIntervalUs * 0.9 + intervalUs * 0.1
-            }
+        sourceRate.onFrame(presentationTimeUs)
+        if (sourceIntervalUs > 0.0) {
             control.sourceFps = (1_000_000.0 / sourceIntervalUs).toFloat()
         }
     }
@@ -235,7 +226,8 @@ internal class FrameInterpolationShaderProgram(
     private fun queueInterpolating(input: GlTextureInfo, presentationTimeUs: Long) {
         val fps = FrameInterpolationPolicy.affordableFps(control.targetFps, frameWidth, frameHeight)
         val speed = control.speed
-        val stepUs = FrameInterpolationPolicy.outputStepUs(fps, speed, sourceIntervalUs)
+        val step = FrameInterpolationPolicy.outputStep(fps, speed, sourceIntervalUs)
+        val stepUs = step.stepUs
         // A new rate or speed restarts the clock on this frame rather than
         // bending the old one.
         if (clock.isRunning && clock.needsRestart(stepUs)) clock.stop()
@@ -244,6 +236,18 @@ internal class FrameInterpolationShaderProgram(
         if (hasReference && clock.isRunning &&
             FrameInterpolationPolicy.shouldInterpolate(pairUs, clock.stepUs)
         ) {
+            // A snapped cadence is anchored on every pair: its ticks divide the
+            // pair from A, so B is always its last tick. A free-running clock
+            // drifts off the decoded frames as soon as its step is a hair off
+            // theirs, and nothing short of a 3% change would restart it; this
+            // also takes up the snapped step the moment the rate settles on
+            // one, after a gap restarted the clock on the screen's pace.
+            if (step.snapped) {
+                clock.start(
+                    referenceTimeUs,
+                    FrameInterpolationPolicy.lockedStepUs(pairUs, stepUs, step.paceStepUs)
+                )
+            }
             emitTicks(input, presentationTimeUs)
         } else {
             emitCopy(input, presentationTimeUs)
@@ -501,9 +505,6 @@ internal class FrameInterpolationShaderProgram(
          * real pair to eight at most ([FrameInterpolationPolicy.MAX_OUTPUTS_PER_INPUT]).
          */
         const val MAX_TICKS_PER_INPUT = 32
-
-        /** Gaps longer than this (under 5 fps) are pauses or cuts, not a frame rate. */
-        const val MAX_MEASURED_INTERVAL_US = 200_000L
 
         /** One match-quality reading per this many pairs, for the log. */
         const val READBACK_EVERY_PAIRS = 60L
