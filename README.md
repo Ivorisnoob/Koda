@@ -86,7 +86,7 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 - A personalized video home feed, plus local recommendations when signed out.
 - Search videos, channels, and playlists with date, duration, and sorting filters.
 - Video quality controls with available resolutions up to 2160p60.
-- Smooth motion (experimental, off by default): frame interpolation that plays 24-60 fps video at up to 120 fps, matched to your screen, using a GPU compute engine on phones that support it.
+- Smooth motion (experimental, off by default): frame interpolation that plays 24-60 fps video at up to 120 fps, matched to your screen, using a GPU compute engine on phones with OpenGL ES 3.2 graphics.
 - Captions with remembered language and on/off state, plus adjustable size, color, and background.
 - Chapters, storyboard seek previews, playback speed, double-tap seeking, and hold-to-2x.
 - Fullscreen brightness and volume gestures, with an option to remember fullscreen brightness.
@@ -254,7 +254,7 @@ Please report vulnerabilities privately through [GitHub Security Advisories](htt
 
 ## Acknowledgements
 
-Smooth motion's engines were designed after studying AMD's [FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) (FSR 3 frame interpolation and optical flow, MIT) and FFmpeg's [`minterpolate`](https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/vf_minterpolate.c) filter (LGPL 2.1+). No code was copied; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for what was learned from each. The libraries Koda is built on are listed, with their licences, under Open-source licences in the app's settings.
+Smooth motion draws its in-between frames with a port of [open-svpflow](https://github.com/Z1xus/open-svpflow) (Apache 2.0), an open-source reimplementation of SmoothVideo Project's frame rendering. Its motion search was written after studying AMD's [FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) (FSR 3 optical flow, MIT), and earlier engines also learned from FFmpeg's [`minterpolate`](https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/vf_minterpolate.c) filter (LGPL 2.1+). [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) says what came from each and carries the licences. The libraries Koda is built on are listed, with their licences, under Open-source licences in the app's settings.
 
 ## License
 
