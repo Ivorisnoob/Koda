@@ -508,15 +508,17 @@ private fun DeviceFolderCard(folder: LocalVideoFolder, onClick: () -> Unit) {
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
+        // Held off the card's rounded clip on both sides and below it: at 2dp
+        // the bottom corners cut the ends off a long folder name.
         Text(
             text = folder.name,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 2.dp),
+            modifier = Modifier.padding(horizontal = 4.dp),
         )
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(8.dp))
     }
 }
 

@@ -993,7 +993,10 @@ internal fun SpotlightArtistRail(
                     .width(112.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .clickable { onClick(artist) }
-                    .padding(vertical = 8.dp),
+                    // Sides as well as ends: a name or subscriber count long
+                    // enough to span the card otherwise ran into the rounded
+                    // clip, which shaved its first and last letters.
+                    .padding(horizontal = 6.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(

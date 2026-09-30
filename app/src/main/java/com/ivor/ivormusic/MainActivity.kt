@@ -101,9 +101,6 @@ private val NON_EXPRESSIVE_NAV_BAR_RESERVE = 80.dp
 /** Height the collapsed music player occupies above the navigation bar. */
 private val MUSIC_PILL_RESERVE = 88.dp
 
-/** Gap the video mini bar keeps above the system navigation bar once the toolbar is gone. */
-private val VIDEO_MINI_RESTING_GAP = 16.dp
-
 class MainActivity : ComponentActivity() {
 
     // A YouTube link shared or opened into Koda, picked up by SharedLinkHandler
@@ -1118,10 +1115,12 @@ fun MusicApp(
     val onHomeRoute = currentRoute == "home"
     // From 600dp across Home navigates from a rail on the start edge
     // (HomeScreen), so the bottom holds only the music pill, which rests just
-    // above the system inset there.
+    // above the system inset there. The overlay adds its own MINI_VIDEO_MARGIN
+    // on top of this, so a rail reserves nothing: anything more rested the bar
+    // twice its side margin above the inset (#303).
     val homeUsesRail = com.ivor.ivormusic.ui.theme.currentWindowLayout().usesNavigationRail
     val navBarReserve = when {
-        homeUsesRail -> VIDEO_MINI_RESTING_GAP
+        homeUsesRail -> 0.dp
         nonExpressiveNavigationBar -> NON_EXPRESSIVE_NAV_BAR_RESERVE
         else -> EXPRESSIVE_NAV_BAR_RESERVE
     }
@@ -1140,11 +1139,17 @@ fun MusicApp(
     // read anything HomeScreen provides. Only the floating variant hides; the
     // standard NavigationBar is pinned, and off the home route there is no
     // toolbar at all.
+    //
+    // The bar travels exactly the toolbar's height, the same distance the music
+    // pill travels, and nothing more. Alone it then rests MINI_VIDEO_MARGIN
+    // above the inset - the same as its side margins and as on every other
+    // route - and stacked it stays the same gap above the music pill. Sliding
+    // by the whole chrome less a resting gap parked a lone bar 32dp up while
+    // its sides sat at 16dp (#303), and dropped a stacked bar onto the pill.
     val floatingToolbarState = androidx.compose.material3.rememberFloatingToolbarState()
     val videoMiniFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
         if (!onHomeRoute || nonExpressiveNavigationBar || homeUsesRail) 0f
-        else (videoMiniBottomChrome - VIDEO_MINI_RESTING_GAP)
-            .coerceAtLeast(0.dp).toPx()
+        else navBarReserve.toPx()
     }
     val videoMiniFollowOffsetPx: () -> Float = {
         videoMiniFollowDistancePx *

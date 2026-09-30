@@ -23,6 +23,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -621,8 +622,13 @@ fun ShortsPlayerOverlay(
                     // title reads as a caption.
                     val stats = shortsStatsLine(video)
                     val hasMore = stats != null || !video.description.isNullOrBlank()
+                    // The press area reaches 6dp past the text on each side,
+                    // pulled back by the offset so the words stay on the
+                    // column's edge. With the clip flush against the text, its
+                    // top-left corner cut into the title's first letter.
                     Column(
                         modifier = Modifier
+                            .offset(x = (-6).dp)
                             .clip(RoundedCornerShape(12.dp))
                             .then(
                                 if (hasMore) {
@@ -631,7 +637,7 @@ fun ShortsPlayerOverlay(
                                     Modifier
                                 }
                             )
-                            .padding(vertical = 2.dp)
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = video.title,
