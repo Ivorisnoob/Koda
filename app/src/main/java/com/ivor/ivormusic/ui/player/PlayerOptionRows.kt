@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,13 +15,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
@@ -35,8 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,12 +56,13 @@ import com.ivor.ivormusic.ui.components.SongArtwork
  *
  * It holds three shapes now, not one, and which a sheet reaches for is about
  * what the sheet is. [OptionRow] is a list line: a long-press menu of one-shot
- * actions on some row in a list. [OptionTile] and [OptionPill] are a control
+ * actions on some row in a list. [OptionTile] and [OptionUtility] are a control
  * panel: the now-playing sheet is opened *from* the player, on the song already
  * playing, and the things in it are pressed and toggled rather than read - so
- * the four common actions are tiles under the thumb and the destinations are
- * pills that can carry an artist's name. The vocabulary stays shared so the two
- * sheets cannot drift into two different-looking menus.
+ * the four common actions are filled tiles under the thumb, and the occasional
+ * ones sit unfilled on the same columns beneath them. The destinations there
+ * are [OptionRow]s, because a name is the label. The vocabulary stays shared so
+ * the two sheets cannot drift into two different-looking menus.
  */
 
 /**
@@ -279,17 +279,22 @@ internal fun OptionTile(
 }
 
 /**
- * One action as a pill: a small icon and a label that can be as long as the
- * thing it names.
+ * A secondary action: an icon over a short label, straight on the sheet with no
+ * container of its own.
  *
- * **This is where a name goes, and a tile is not.** "Go to Kendrick Lamar" and
- * an album title cannot be a one-word label, and a list row for each spends a
- * full 56dp line on a destination; as pills they wrap to as many lines as they
- * need and no more. [quiet] de-emphasises the one action here that takes
- * something away rather than adding it.
+ * **Laid on the same columns as the [OptionTile]s above it.** The sheet's
+ * actions form one grid - four filled tiles, then a row of these - so every
+ * icon centre lines up with the one above it and the eye reads two rows of
+ * one panel rather than a second, differently shaped widget. The difference in
+ * emphasis is carried by the fill alone: tiles are the things this sheet is
+ * opened to press, these are the ones reached for now and then, and a second
+ * row of filled containers would give the panel two loud bands. The press
+ * still has a rounded ripple, so the touch target is the whole column.
+ *
+ * [quiet] mutes the icon for the one action that takes something away.
  */
 @Composable
-internal fun OptionPill(
+internal fun OptionUtility(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
@@ -298,32 +303,24 @@ internal fun OptionPill(
     contentDescription: String? = null,
     quiet: Boolean = false,
 ) {
-    FilledTonalButton(
-        onClick = onClick,
+    Column(
         modifier = modifier
-            .heightIn(min = 48.dp)
-            .widthIn(max = 260.dp)
+            .heightIn(min = 64.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(role = Role.Button, onClick = onClick)
             .then(
                 if (contentDescription != null) {
-                    Modifier.semantics { this.contentDescription = contentDescription }
+                    Modifier.clearAndSetSemantics {
+                        this.contentDescription = contentDescription
+                        role = Role.Button
+                    }
                 } else {
                     Modifier
                 }
-            ),
-        shapes = ButtonDefaults.shapes(),
-        // One surface for every pill, and the accent carried by the icon rather
-        // than the fill: a row of saturated pills under four tiles reads as four
-        // competing buttons, and the destinations are not the loud half of this
-        // sheet. The quiet one keeps the surface and drops to the muted ink.
-        colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = if (quiet) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            }
-        ),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
+            )
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Icon(
             imageVector = icon,
@@ -331,15 +328,19 @@ internal fun OptionPill(
             tint = if (quiet) {
                 MaterialTheme.colorScheme.onSurfaceVariant
             } else {
-                MaterialTheme.colorScheme.primary
+                MaterialTheme.colorScheme.onSurface
             },
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(24.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            // Two lines, for the same reason as a tile's: a quarter of the
+            // sheet at a large display scale is where one line would clip.
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
     }

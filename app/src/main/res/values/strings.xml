@@ -16,6 +16,11 @@
       their shade should not have to silence both.
     -->
     <string name="video_playback_channel_name">Video playback</string>
+    <string name="notification_repeat_off">Repeat off</string>
+    <string name="notification_repeat_all">Repeat all</string>
+    <string name="notification_repeat_one">Repeat one</string>
+    <string name="notification_like">Like</string>
+    <string name="notification_unlike">Remove like</string>
 
 
     <!-- Home screen widgets: picker labels and descriptions. -->
@@ -220,6 +225,11 @@
     <string name="np_tile_downloaded">Saved</string>
     <string name="np_pill_watch_video">Watch video</string>
     <string name="np_pill_block">Don\'t recommend</string>
+    <string name="np_util_refresh">Refresh</string>
+    <string name="np_refresh_stream">Refresh stream</string>
+    <string name="np_refresh_failed">Couldn\'t get a fresh stream for this song</string>
+    <string name="np_dest_artist">Artist</string>
+    <string name="np_dest_album">Album</string>
     <string name="np_volume">Volume</string>
     <string name="np_volume_value">%1$d%%</string>
     <string name="cd_volume_mute">Mute</string>

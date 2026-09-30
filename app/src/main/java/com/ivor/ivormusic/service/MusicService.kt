@@ -28,12 +28,14 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
+import com.ivor.ivormusic.R
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.ivor.ivormusic.MainActivity
@@ -437,6 +439,19 @@ class MusicService : MediaLibraryService() {
          */
         const val CMD_SET_PLAY_ORDER = "com.ivor.ivormusic.SET_PLAY_ORDER"
         const val ARG_PLAY_ORDER = "play_order"
+
+        /** The media notification's repeat button: off -> all -> one -> off. */
+        const val CMD_CYCLE_REPEAT = "com.ivor.ivormusic.CYCLE_REPEAT"
+
+        /** The media notification's heart: like or unlike the playing song. */
+        const val CMD_TOGGLE_LIKE = "com.ivor.ivormusic.TOGGLE_LIKE"
+
+        /**
+         * Ask YouTube for the playing song's stream again and swap it in where
+         * it was. Answers RESULT_ERROR_IO when no new stream arrived in time,
+         * RESULT_ERROR_NOT_SUPPORTED for a file on this device.
+         */
+        const val CMD_REFRESH_STREAM = "com.ivor.ivormusic.REFRESH_STREAM"
         const val EXTRA_SONG_SOURCE = "com.ivor.ivormusic.SONG_SOURCE"
 
         /** Session-extras keys the timer state is published under. */
@@ -868,6 +883,78 @@ class MusicService : MediaLibraryService() {
         mediaLibrarySession = MediaLibrarySession.Builder(this, engine.active, LibrarySessionCallback())
             .setSessionActivity(sessionIntent)
             .build()
+        refreshMediaButtons()
+        // A like from the app's own heart has to reach the notification's.
+        serviceScope.launch {
+            likedSongsRepository.likedSongIds.collect { refreshMediaButtons() }
+        }
+    }
+
+    /** What the extra buttons last showed, so an unchanged state posts nothing. */
+    private var mediaButtonsState: Pair<Int, Boolean>? = null
+
+    /**
+     * Repeat and like, in the two slots the system media controls keep after
+     * previous/play/next. Rebuilt whenever what they draw changes - the repeat
+     * mode, the song, or its liked state - because each button's icon is its
+     * state: a notification cannot tint one button to say it is on.
+     */
+    private fun refreshMediaButtons() {
+        val session = mediaLibrarySession ?: return
+        val player = session.player
+        val songId = player.currentMediaItem?.mediaId
+        val liked = songId != null && likedSongsRepository.isLiked(songId)
+        val state = player.repeatMode to liked
+        if (state == mediaButtonsState) return
+        mediaButtonsState = state
+
+        val repeat = CommandButton.Builder(
+            when (player.repeatMode) {
+                Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE
+                Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL
+                else -> CommandButton.ICON_REPEAT_OFF
+            }
+        )
+            .setDisplayName(
+                getString(
+                    when (player.repeatMode) {
+                        Player.REPEAT_MODE_ONE -> R.string.notification_repeat_one
+                        Player.REPEAT_MODE_ALL -> R.string.notification_repeat_all
+                        else -> R.string.notification_repeat_off
+                    }
+                )
+            )
+            .setSessionCommand(SessionCommand(CMD_CYCLE_REPEAT, Bundle.EMPTY))
+            .build()
+        val like = CommandButton.Builder(
+            if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED
+        )
+            .setDisplayName(
+                getString(if (liked) R.string.notification_unlike else R.string.notification_like)
+            )
+            .setSessionCommand(SessionCommand(CMD_TOGGLE_LIKE, Bundle.EMPTY))
+            .setEnabled(songId != null)
+            .build()
+        session.setMediaButtonPreferences(ImmutableList.of(repeat, like))
+    }
+
+    private fun cycleRepeatMode(player: Player) {
+        player.repeatMode = when (player.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    /**
+     * The whole song goes to the store, not only its id: the Library's Liked
+     * Songs list draws YouTube songs from that metadata when signed out.
+     */
+    private fun toggleCurrentSongLike(player: Player) {
+        val song = player.currentMediaItem?.toQueueSong() ?: return
+        likedSongsRepository.toggleLike(song)
+        // The store's flow calls refreshMediaButtons too; this just skips the wait.
+        refreshMediaButtons()
     }
 
     /** Fill [recentSongIds] from play history, newest first, back to the window's edge. */
@@ -1052,12 +1139,14 @@ class MusicService : MediaLibraryService() {
             playbackRepeatMode = repeatMode
             themePreferences.setPlaybackRepeatMode(repeatMode)
             engine.setRepeatMode(repeatMode)
+            refreshMediaButtons()
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) lastFmTracker?.reset()
             automaticTransitionAttempt = null
+            refreshMediaButtons()
             // Arriving at a song - an advance, a skip, a seek back to it - gives
             // it a fresh recovery allowance. Not a playlist change: that is also
             // what replacing a failed song's source reports, and resetting there
@@ -1678,6 +1767,56 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    /**
+     * The now-playing sheet's "Refresh stream": the playing song only.
+     *
+     * The same moves as the automatic recovery above - drop the cached URL,
+     * force a fresh resolution, swap it in with [replaceMusicSource] so the
+     * position and play intent stand - without its preconditions, because the
+     * user is reporting something the player may not have noticed (a stream
+     * that stalls, sounds wrong, or failed and was retried out). visitorData is
+     * deliberately left alone: reminting it would throw away every other
+     * song's resolved stream, and this is a request about one song.
+     *
+     * Anchored on the queue occurrence, like every other plan that spans a
+     * suspension: if the user moves on while YouTube answers, the new stream
+     * is dropped rather than put under a different song.
+     */
+    private fun refreshCurrentStream(): ListenableFuture<SessionResult> {
+        val currentItem = player.currentMediaItem
+            ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+        val uri = currentItem.localConfiguration?.uri
+        if (uri != null && (uri.scheme == "content" || uri.scheme == "file")) {
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+        }
+        val videoId = currentItem.mediaId
+        KLog.i(TAG, "Refresh requested for $videoId")
+        return serviceScope.future {
+            uriCache.remove(videoId)
+            activeResolutions.forget(videoId)
+            retryCounts.remove(videoId)
+            recoveryStartedAt.remove(recoveryKey(currentItem))
+
+            val resolved = try {
+                withTimeoutOrNull(RETRY_RESOLVE_BUDGET_MS) {
+                    getOrStartResolution(currentItem).await()
+                }?.let { bindResolutionToItem(currentItem, it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w(TAG, "Refresh: resolving $videoId failed", e)
+                null
+            }
+            if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) {
+                // Moved on; nothing went wrong, there is just nothing to apply.
+                return@future SessionResult(SessionResult.RESULT_INFO_SKIPPED)
+            }
+            if (resolved == null) return@future SessionResult(SessionResult.RESULT_ERROR_IO)
+            player.replaceMusicSource(player.currentMediaItemIndex, resolved)
+            SessionResult(SessionResult.RESULT_SUCCESS)
+        }
+    }
+
     /** Recovery bookkeeping is per queue occurrence, falling back to the song id. */
     private fun recoveryKey(item: MediaItem): String = item.queueItemId ?: item.mediaId
 
@@ -1867,6 +2006,9 @@ class MusicService : MediaLibraryService() {
                     .add(SessionCommand(CMD_RESTORE_PLAYBACK, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SET_PLAYBACK_SPEED, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SET_PLAY_ORDER, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_CYCLE_REPEAT, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_TOGGLE_LIKE, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_REFRESH_STREAM, Bundle.EMPTY))
                     .build()
 
             return MediaSession.ConnectionResult.accept(
@@ -1960,6 +2102,15 @@ class MusicService : MediaLibraryService() {
                 applyPlayOrder(args.getIntArray(ARG_PLAY_ORDER))
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
+            CMD_CYCLE_REPEAT -> {
+                cycleRepeatMode(session.player)
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_TOGGLE_LIKE -> {
+                toggleCurrentSongLike(session.player)
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_REFRESH_STREAM -> refreshCurrentStream()
             CMD_SET_PLAYBACK_SPEED -> {
                 applyPlaybackSpeed(
                     args.getFloat(ARG_PLAYBACK_SPEED, ThemePreferences.DEFAULT_PLAYBACK_SPEED),

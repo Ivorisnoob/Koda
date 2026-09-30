@@ -641,6 +641,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 if (advice != null) connectionWatcher.start() else connectionWatcher.stop()
             }
         }
+        // The system's previous/next buttons appear and disappear with the
+        // queue, which the ExoPlayer never sees.
+        viewModelScope.launch {
+            combine(_queue, relatedVideos) { _, _ -> Unit }.collect {
+                com.ivor.ivormusic.service.VideoPlaybackService.publishQueueCommands()
+            }
+        }
     }
 
     private suspend fun retryAfterNetworkChange() {
@@ -2656,6 +2663,23 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
+     * Previous/next for the system's media controls - the notification, lock
+     * screen, headset and Bluetooth buttons. Next matches the PiP window's
+     * (the playlist's next, else the related video autoplay would pick);
+     * previous is the playlist's only. Neither changes whether the player is
+     * open or minimised: a press from the lock screen should not pop the player
+     * open behind it, and one from the shade should not collapse it.
+     */
+    private val sessionQueueControls = object : com.ivor.ivormusic.service.VideoPlaybackService.QueueControls {
+        override val canSkipNext: Boolean
+            get() = _queue.value?.hasNext ?: relatedVideos.value.isNotEmpty()
+        override val canSkipPrevious: Boolean
+            get() = _queue.value?.hasPrevious == true
+        override fun skipNext() = playNextOrRelated(expand = _isExpanded.value)
+        override fun skipPrevious() = playPreviousInQueue(expand = _isExpanded.value)
+    }
+
+    /**
      * @param resumePositionMs set by [restoreVideoSession]: seek here once
      * the stream is ready instead of starting from zero.
      * @param resumePaused whether a [resumePositionMs] seek lands paused. True
@@ -2846,7 +2870,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // because a foreground service may not be started from the background;
         // repeat calls once it is up are no-ops.
         _exoPlayer?.let {
-            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it)
+            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it, sessionQueueControls)
         }
 
         if (localSource != null) {
