@@ -180,7 +180,7 @@ Account actions affect the connected YouTube account. Koda asks for confirmation
 
 ## Screenshots
 
-The current gallery was captured on Koda 4.4 and may differ slightly from the latest release.
+The player styles were captured on Koda 5.1; the rest of the gallery was captured on Koda 4.4 and may differ slightly from the latest release.
 
 <details>
 <summary>Open the screenshot gallery</summary>
@@ -195,11 +195,24 @@ The current gallery was captured on Koda 4.4 and may differ slightly from the la
 
 ### Player styles
 
+Nine styles to choose from. Pick one in Settings, or long-press the artwork while a song plays.
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/10-player-classic.png" width="23%" alt="Classic player"/>
-  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/03-player-editorial.png" width="23%" alt="Editorial player"/>
-  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/12-player-canvas.png" width="23%" alt="Canvas player"/>
-  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/17-player-dial.png" width="23%" alt="Dial player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/50-player-hero.png" width="30%" alt="Hero player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/03-player-editorial.png" width="30%" alt="Editorial player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/10-player-classic.png" width="30%" alt="Classic player"/>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/11-player-gesture.png" width="30%" alt="Gesture player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/12-player-canvas.png" width="30%" alt="Canvas player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/13-player-bento.png" width="30%" alt="Bento player"/>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/14-player-sticker.png" width="30%" alt="Sticker player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/15-player-morph.png" width="30%" alt="Morph player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/17-player-dial.png" width="30%" alt="Dial player"/>
 </p>
 
 ### Video and subscriptions
