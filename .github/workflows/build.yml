@@ -175,9 +175,9 @@ jobs:
   build-release:
     name: Build Release APK
     needs: authorize
-    # Fork PRs never receive the signing secrets, so a release build there would
-    # fail on the keystore decode. Debug still runs for them.
-    if: needs.authorize.outputs.allowed == 'true' && needs.authorize.outputs.is-fork-pr != 'true'
+    # Fork PRs or repos without keystore secrets cannot decode the keystore,
+    # so a release build there would fail. Debug still runs for them.
+    if: needs.authorize.outputs.allowed == 'true' && needs.authorize.outputs.is-fork-pr != 'true' && secrets.KEYSTORE_BASE64 != ''
     runs-on: ubuntu-latest
     permissions:
       actions: read
