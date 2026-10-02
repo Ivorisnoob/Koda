@@ -3112,7 +3112,7 @@ class YouTubeRepository(private val context: Context) {
      * 1. Call /player endpoint to get playback tracking URLs
      * 2. Call the videostatsPlaybackUrl to register the play in history
      */
-    suspend fun reportPlayback(videoId: String) = withContext(Dispatchers.IO) {
+    suspend fun reportPlayback(videoId: String, positionMs: Long = 15_000L) = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext
         // Incognito covers the account's own history too, not only Koda's.
         // Gated here rather than at the call sites so nothing that starts
@@ -3164,7 +3164,7 @@ class YouTubeRepository(private val context: Context) {
                 .url(playerUrl)
                 .post(jsonBody.toRequestBody("application/json".toMediaType()))
                 .authenticate(session)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/")
                 .addHeader("X-Goog-Api-Format-Version", "1")
@@ -3217,10 +3217,15 @@ class YouTubeRepository(private val context: Context) {
                 KLog.w("YouTubeRepo", "History sync: refused a tracking URL on ${baseTrackingUrl?.host}")
                 return@withContext
             }
+            val posSec = (positionMs.coerceAtLeast(0L) / 1000.0).toString()
             val trackingUrl = baseTrackingUrl.newBuilder()
                 .setQueryParameter("cpn", cpn)
                 .setQueryParameter("ver", "2")
                 .setQueryParameter("c", clientName)
+                .setQueryParameter("cver", clientVersion)
+                .setQueryParameter("cmt", posSec)
+                .setQueryParameter("st", "0")
+                .setQueryParameter("et", posSec)
                 .build()
 
             // The /player call above blocks, and the switch can be flipped or
@@ -3239,7 +3244,7 @@ class YouTubeRepository(private val context: Context) {
                 .url(trackingUrl)
                 .get()
                 .authenticate(live)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/watch?v=$videoId")
                 .build()
@@ -9358,28 +9363,41 @@ class YouTubeRepository(private val context: Context) {
             val renderers = mutableListOf<org.json.JSONObject>()
             findObjectsByKey(root, "notificationRenderer", renderers)
             renderers.mapNotNull { renderer ->
-                val message = renderer.optJSONObject("shortMessage")?.optString("simpleText")
-                    ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                fun lastThumb(key: String): String? {
-                    val thumbs = renderer.optJSONObject(key)?.optJSONArray("thumbnails") ?: return null
-                    var url = thumbs.optJSONObject((thumbs.length() - 1).coerceAtLeast(0))
-                        ?.optString("url")?.takeIf { it.isNotBlank() }
-                    if (url?.startsWith("//") == true) url = "https:$url"
-                    return url
+                val message = getRunText(renderer.optJSONObject("shortMessage"))
+                    ?: getRunText(renderer.optJSONObject("headline"))
+                    ?: getRunText(renderer.optJSONObject("message"))
+                    ?: renderer.optString("simpleText").takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+
+                fun lastThumb(vararg keys: String): String? {
+                    for (key in keys) {
+                        val thumbs = renderer.optJSONObject(key)?.optJSONArray("thumbnails") ?: continue
+                        var url = thumbs.optJSONObject((thumbs.length() - 1).coerceAtLeast(0))
+                            ?.optString("url")?.takeIf { it.isNotBlank() }
+                        if (url?.startsWith("//") == true) url = "https:$url"
+                        if (!url.isNullOrBlank()) return url
+                    }
+                    return null
                 }
+
                 val navigation = renderer.optJSONObject("navigationEndpoint")
                 fun endpointVideoId(key: String): String? =
                     navigation?.optJSONObject(key)?.optString("videoId")?.takeIf { it.isNotBlank() }
+
                 val target = endpointVideoId("watchEndpoint")?.let { NotificationTarget.Video(it) }
                     ?: endpointVideoId("reelWatchEndpoint")?.let { NotificationTarget.Short(it) }
                     ?: navigation?.optJSONObject("commandMetadata")
                         ?.optJSONObject("webCommandMetadata")?.optString("url")
                         ?.takeIf { it.startsWith("/") }
                         ?.let { NotificationTarget.Link("https://www.youtube.com$it") }
+
+                val sentTime = getRunText(renderer.optJSONObject("sentTimeText"))
+                    ?: renderer.optJSONObject("sentTimeText")?.optString("simpleText").orEmpty()
+
                 NotificationItem(
                     message = message,
-                    sentTime = renderer.optJSONObject("sentTimeText")?.optString("simpleText").orEmpty(),
-                    channelAvatarUrl = lastThumb("thumbnail"),
+                    sentTime = sentTime,
+                    channelAvatarUrl = lastThumb("thumbnail", "customAvatar", "avatar"),
                     videoThumbnailUrl = lastThumb("videoThumbnail"),
                     target = target,
                     isRead = renderer.optBoolean("read", false)
