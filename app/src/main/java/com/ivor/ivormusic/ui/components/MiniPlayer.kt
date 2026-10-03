@@ -108,8 +108,9 @@ fun MiniPlayerContent(
                     .clip(RoundedCornerShape(topStart = 26.dp, bottomStart = 26.dp)),
                 previousLabel = stringResource(R.string.cd_previous),
                 nextLabel = stringResource(R.string.cd_next),
-                previous = previousSong?.let { song -> { MiniSongIdentity(song) } },
-                next = nextSong?.let { song -> { MiniSongIdentity(song) } },
+                previous = previousSong,
+                next = nextSong,
+                neighbour = { song -> MiniSongIdentity(song) },
             ) {
                 MiniSongIdentity(currentSong) {
                     // Album Art with Circular Progress Ring - doubles as the

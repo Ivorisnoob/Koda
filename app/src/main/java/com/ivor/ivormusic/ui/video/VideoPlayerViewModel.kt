@@ -482,6 +482,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private var captionsLoadedForVideoId: String? = null
 
+    private val downloadedCaptions = com.ivor.ivormusic.data.DownloadedCaptionStore(context)
+
+    /**
+     * Whether a locally played id is one of Koda's own downloads rather than a
+     * device file or a file opened from outside: those carry a prefix, a
+     * download keeps the YouTube id it was saved under.
+     */
+    private fun isDownloadedVideoId(videoId: String): Boolean =
+        !videoId.startsWith(LocalVideo.ID_PREFIX) && !videoId.startsWith("external:")
+
     // Cues of the selected track, rendered by the player overlay. Captions are
     // deliberately kept out of the media source - see [setCaptionTrack].
     private val _captionCues = MutableStateFlow<List<VttCue>>(emptyList())
@@ -2862,7 +2872,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         // Captions that were on for the last video stay on for this one: the
         // track list is fetched up front rather than waiting for a CC tap.
-        if (themePreferences.isCaptionsEnabled() && !_isLocalPlayback.value) {
+        // Downloads included; ensureCaptionsLoaded leaves device files alone.
+        if (themePreferences.isCaptionsEnabled()) {
             ensureCaptionsLoaded()
         }
 
@@ -3445,14 +3456,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Load the caption track list for the current video, once, on demand. */
     fun ensureCaptionsLoaded() {
-        if (_isLocalPlayback.value) return
         val video = _currentVideo.value ?: return
+        // A device file's subtitles are the tracks inside it, read by the
+        // player. A download is a YouTube video played from disk: its captions
+        // are the ones saved beside it when it was downloaded.
+        val isDownload = _isLocalPlayback.value && isDownloadedVideoId(video.videoId)
+        if (_isLocalPlayback.value && !isDownload) return
         if (captionsLoadedForVideoId == video.videoId) return
         captionsLoadedForVideoId = video.videoId
         _isCaptionsLoading.value = true
         viewModelScope.launch {
             try {
-                val tracks = youtubeRepository.getCaptionTracks(video.videoId)
+                val saved = if (isDownload) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        downloadedCaptions.tracks(video.videoId)
+                    }
+                } else emptyList()
+                // A download made before captions were kept has none saved;
+                // with a connection the live list still works for it.
+                val tracks = saved.ifEmpty { youtubeRepository.getCaptionTracks(video.videoId) }
                 // Ignore stale results if the user switched videos meanwhile
                 if (_currentVideo.value?.videoId == video.videoId) {
                     _captionTracks.value = tracks
@@ -3511,7 +3533,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             return
         }
         captionCuesJob = viewModelScope.launch {
-            val cues = youtubeRepository.getCaptionCues(track)
+            // Saved beside a download, or fetched: the store answers null for
+            // a track that is not one of its own.
+            val cues = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                downloadedCaptions.cues(track)
+            }
+                ?: youtubeRepository.getCaptionCues(track)
             // Ignore a load the user has already switched away from
             if (_selectedCaption.value == track) {
                 _captionCues.value = cues

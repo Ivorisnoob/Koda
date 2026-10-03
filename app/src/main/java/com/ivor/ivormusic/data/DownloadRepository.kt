@@ -58,7 +58,14 @@ data class DownloadRequest(
     val thumbnailUrl: String? = null,
     val durationMs: Long = 0,
     val song: Song? = null,
-    val qualityLabel: String? = null
+    val qualityLabel: String? = null,
+    /**
+     * The caption tracks picked in the download sheet, as
+     * [DownloadedCaptionStore.keyOf] keys. Null where nobody was asked (a
+     * playlist, a download started without the sheet) and the likely ones are
+     * kept; empty means the user chose none.
+     */
+    val captionKeys: Set<String>? = null
 ) {
     val isVideo: Boolean get() = type == DownloadMediaType.VIDEO
 }
@@ -224,6 +231,8 @@ class DownloadRepository private constructor(private val context: Context) {
     // Real-time progress tracking for each active download
     private val _downloadProgress = MutableStateFlow<Map<String, DownloadProgress>>(emptyMap())
     val downloadProgress: StateFlow<Map<String, DownloadProgress>> = _downloadProgress.asStateFlow()
+
+    private val captionStore = DownloadedCaptionStore(context)
 
     private val _downloadedVideos = MutableStateFlow<List<DownloadedVideo>>(emptyList())
     val downloadedVideos: StateFlow<List<DownloadedVideo>> = _downloadedVideos.asStateFlow()
@@ -484,6 +493,8 @@ class DownloadRepository private constructor(private val context: Context) {
                     ?.takeIf { it in liveUris }
 
                 if (uri == null) {
+                    // The file was removed outside Koda; its captions go with it.
+                    obj.optString("id").takeIf { it.isNotBlank() }?.let(captionStore::delete)
                     prunedAny = true
                     continue
                 }
@@ -624,8 +635,12 @@ class DownloadRepository private constructor(private val context: Context) {
      * Queue a video download. [qualityLabel] pins the quality picked in the
      * download sheet; null defers to the stored default at transfer time.
      */
-    suspend fun downloadVideo(video: VideoItem, qualityLabel: String? = null) {
-        enqueue(listOf(video.toRequest(qualityLabel)))
+    suspend fun downloadVideo(
+        video: VideoItem,
+        qualityLabel: String? = null,
+        captionKeys: Set<String>? = null,
+    ) {
+        enqueue(listOf(video.toRequest(qualityLabel).copy(captionKeys = captionKeys)))
     }
 
     /**
@@ -1175,6 +1190,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     pendingTarget = null
                 }
 
+                saveCaptions(request)
                 finishSuccess(request)
                 true
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -1332,6 +1348,50 @@ class DownloadRepository private constructor(private val context: Context) {
     private fun parseContentRangeTotal(contentRange: String?): Long? =
         contentRange?.substringAfterLast('/')?.toLongOrNull()?.takeIf { it > 0 }
 
+    /**
+     * Keep the video's caption tracks beside it, so they are there offline.
+     *
+     * After the video is published and recorded, and best-effort throughout:
+     * the download is the video, and a caption track that will not fetch must
+     * never turn a finished file into a failed download. The track list is
+     * normally already in memory - the stream resolution a few lines up reads
+     * the same /player response - so this costs one small request per track.
+     *
+     * Which tracks is the user's choice where the download sheet asked for
+     * one, and [DownloadedCaptionStore.preferredTracks] where nothing did.
+     */
+    private suspend fun saveCaptions(request: DownloadRequest) {
+        val chosen = request.captionKeys
+        // The user was asked and wanted none.
+        if (chosen != null && chosen.isEmpty()) return
+        try {
+            val available = youtubeRepository.getCaptionTracks(request.id)
+            if (available.isEmpty()) return
+            val wanted = if (chosen != null) {
+                available.filter { DownloadedCaptionStore.keyOf(it) in chosen }
+            } else {
+                val locales = context.resources.configuration.locales
+                DownloadedCaptionStore.preferredTracks(
+                    available = available,
+                    savedLanguage = ThemePreferences(context).getCaptionLanguageCode(),
+                    deviceLanguages = (0 until locales.size()).map { locales[it].language },
+                )
+            }
+            var saved = 0
+            for (track in wanted) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val vtt = youtubeRepository.getCaptionVtt(track) ?: continue
+                captionStore.save(request.id, track, vtt)
+                saved++
+            }
+            KLog.d(TAG, "Saved $saved of ${wanted.size} wanted caption tracks for ${request.title}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w(TAG, "Captions not saved for ${request.title}: ${e.message}")
+        }
+    }
+
     private fun recordVideo(request: DownloadRequest, uri: Uri, quality: String?) {
         _downloadedVideos.value = _downloadedVideos.value + DownloadedVideo(
             id = request.id,
@@ -1476,6 +1536,7 @@ class DownloadRepository private constructor(private val context: Context) {
         val current = _downloadedVideos.value
         val video = current.find { it.id == videoId } ?: return
         storage.delete(video.uri)
+        captionStore.delete(videoId)
         _downloadedVideos.value = current - video
         saveVideoMetadata()
     }

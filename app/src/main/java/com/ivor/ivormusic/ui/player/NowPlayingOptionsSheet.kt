@@ -71,7 +71,6 @@ import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.isUnknownAlbum
 import com.ivor.ivormusic.data.isUnknownArtist
-import com.ivor.ivormusic.ui.theme.appColorScheme
 import com.ivor.ivormusic.util.MediaVolumeState
 import com.ivor.ivormusic.util.rememberMediaVolume
 import kotlin.math.roundToInt
@@ -158,12 +157,10 @@ fun NowPlayingOptionsSheet(
     LaunchedEffect(Unit) { viewModel.loadYouTubePlaylistsForSheet() }
 
     if (showPlaylists) {
-        // The app's palette here too, for the reason the sheet below states: the
-        // picker is the same flow one tap on, and a menu that changed palette
-        // halfway through it would be the worst of both.
-        MaterialTheme(colorScheme = appColorScheme()) {
-            SongPlaylistPicker(song = song, viewModel = viewModel, onDismiss = onDismiss)
-        }
+        // The same palette as the sheet below: the picker is the same flow one
+        // tap on, and a menu that changed palette halfway through it would be
+        // the worst of both.
+        SongPlaylistPicker(song = song, viewModel = viewModel, onDismiss = onDismiss)
         return
     }
 
@@ -218,20 +215,16 @@ fun NowPlayingOptionsSheet(
     } else null
     val canBlockArtist = artist != null && song.source == SongSource.YOUTUBE
 
-    // **This sheet is the app's colours, never the album's.** [judgement
-    // September 2026] It is composed inside the expanded player, which
-    // optionally re-themes its accents from the cover, and a bottom sheet is a
-    // subcomposition - so without this every icon, tile, slider and pill in here
-    // picked up artwork accents. That looked wrong for a reason worth keeping:
-    // `rememberArtworkColorScheme` replaces the *accent* roles and keeps the
-    // app's surfaces, so a menu built from those roles is half one palette and
-    // half the other - album-tinted controls on app-grey surfaces - and no
-    // amount of tinting the surfaces fixed it, because the sheet then matched
-    // neither the player behind it nor the app it belongs to. A menu of actions
-    // is app furniture, not part of the artwork: it is the same menu whatever is
-    // playing, so it takes one palette and that palette is the app's. Choose one
-    // or the other here; do not mix them.
-    MaterialTheme(colorScheme = appColorScheme()) {
+    // **This sheet wears whatever the player behind it wears.** [judgement
+    // October 2026, reversing September's] It is composed inside the expanded
+    // player, and a bottom sheet is a subcomposition, so it inherits the
+    // player's scheme: the app's palette, or with Album colours on, the app's
+    // surfaces with accents from the cover. It was forced back to the app's
+    // palette for a while, on the reasoning that a menu is app furniture; in
+    // use that read as the menu belonging to a different screen from the
+    // player it slid up over, whose controls were all album-coloured. The rule
+    // that survives is the other half of that decision: take the scheme
+    // whole. Do not pick roles from the app's palette and the player's here.
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -481,7 +474,6 @@ fun NowPlayingOptionsSheet(
                 }
             }
         }
-    }
     }
 }
 
