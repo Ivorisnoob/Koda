@@ -1290,6 +1290,7 @@
     <string name="vd_remember_sub">Use it as the default for future downloads</string>
     <string name="vd_already">Already downloaded</string>
     <string name="vd_added">Added to downloads</string>
+    <string name="vd_captions_more">%1$d more</string>
     <string name="sd_title">Download song</string>
     <string name="sd_artwork_note">Artwork and lyrics may add a little to the final size.</string>
     <string name="pd_downloading_playlist">Downloading playlist</string>
