@@ -221,7 +221,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - `VideoWatchTracker` owns history qualification, local progress and authenticated watch-time reports, rechecking history-off/incognito/profile before remote writes.
 - Mini-to-expanded is the music player's container transform (`PlayerContainerTransform.kt`, shared with `ExpandablePlayer`); portrait uses a TextureView except HDR and vertical live, which keep the curtain (`supportsAnimatedMinimize`). Never read transition progress in composition; only one view holds the surface.
 - `VideoQueue` is index-addressed; `playQueue` establishes it and `playVideo` clears it. Resume has two stores (active session vs per-video history). Chromecast is gone; do not reintroduce a `Player` indirection.
-- Every `PlayerView` Koda draws captions over calls `disableBuiltInSubtitles()`.
+- Every `PlayerView` Koda draws captions over calls `disableBuiltInSubtitles()`. A video download keeps the caption tracks picked in the download sheet (`DownloadedCaptionStore`), read when it is played from disk.
 - SponsorBlock: opt-in, sends only a hash prefix, per-category skip/manual/ignore, read-only, not on live.
 - Live: detected by formats, not by `hlsManifestUrl`; behind-live measured from `liveTargetOffsetMs`; quality is a track cap; comments hidden on live; a live item in Shorts is handed off (emit before `close()`).
 
@@ -248,7 +248,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### Settings -> `docs/settings.md`
 - A new setting threads through five files (`ThemePreferences`, `ThemeViewModel`, `MainActivity`, `SettingsScreen`, `SettingsPages`) **plus `buildSettingsSearchIndex`**. Backups need nothing.
 - New strings go only in `values/strings.xml` (locales are partial by design).
-- Settings is a hub plus `SettingsPage` enum pages, not routes. Hub rows show the live value; dialogs live in `SettingsScreen`.
+- Settings is a hub plus `SettingsPage` enum pages, not routes (Backup included; it locks the hub while it works). Hub rows show the live value; dialogs live in `SettingsScreen`.
 - The updater hands off to the browser and never installs. Defaults: player style `EDITORIAL`, device library off.
 
 ### Identity -> `docs/identity.md`
@@ -262,7 +262,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### Player UI -> `docs/player-ui.md`
 - Nine styles; adding one touches the `PlayerStyle` constant, a `<Name>PlayerContent.kt`, `ExpandablePlayer`'s `when`, and `playerStyleCatalog`, plus an overflow button opening `NowPlayingOptionsSheet`. **`POSTER` is the Canvas player - do not rename.**
 - Shared contracts: `SwipeToSkip`, `ExpressiveScrubber` (visual only; haptics through `KodaHaptics`), the waveform (decoded through the cache-backed source, frozen once drawn), `rememberSmoothProgress` (the position is extrapolated from the 1Hz sample at `LocalPlaybackSpeed`; **read it only inside a deferred lambda**).
-- `NowPlayingOptionsSheet` is a control panel - tiles, then pills, then the speed and volume deck - while `SongOptionsSheet` stays a list. Volume is the device's `STREAM_MUSIC` level (`util/MediaVolume.kt`), never an app-level gain on `player.volume`. It wears the app palette whole (`appColorScheme()`): a surface takes the app scheme **or** the artwork scheme, never roles from both.
+- `NowPlayingOptionsSheet` is a control panel - tiles, then pills, then the speed and volume deck - while `SongOptionsSheet` stays a list. Volume is the device's `STREAM_MUSIC` level (`util/MediaVolume.kt`), never an app-level gain on `player.volume`. It wears the scheme of the player behind it, album colours included: a surface takes the app scheme **or** the artwork scheme whole, never roles from both.
 - Three queue views share `QueueReorder`/`QueueRowContainer`: drag handle first, swaps per frame, occurrence-qualified keys, guarded auto-scroll.
 - Option sheets share `PlayerOptionRows` and must scroll. `SongOptionsSheet` is hosted once in `HomeScreen`.
 - Motion artwork is an opt-in hero layer with frozen quality tiers and a fallback chain.
