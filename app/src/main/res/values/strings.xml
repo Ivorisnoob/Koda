@@ -1456,6 +1456,7 @@
     <string name="topic_learning">Learning</string>
     <string name="search_explore_title">Explore</string>
     <string name="trending_now">Trending now</string>
+    <string name="search_video_idle_hint">Search for videos, channels and playlists</string>
     <string name="browse_your_library">Browse Your Library</string>
     <string name="section_channels">Channels</string>
     <string name="section_playlists">Playlists</string>

@@ -167,7 +167,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     // In-flight radio fill for the last playSongRadio() seed
     private var radioJob: Job? = null
     private var radioSeedId: String? = null
-    
+    // In-flight auto-queue top-up from loadMoreRecommendations()
+    private var loadMoreJob: Job? = null
+
     // Flag to prevent listener from restoring song after clear
     private var isPlayerCleared = false
     
@@ -233,8 +235,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val hiddenPlaylistsRepository =
         com.ivor.ivormusic.data.HiddenPlaylistsRepository(context)
 
+    private val notInterestedRepository = com.ivor.ivormusic.data.NotInterestedRepository(context)
+
     private val notInterestedActions = com.ivor.ivormusic.data.NotInterestedActions(
-        com.ivor.ivormusic.data.NotInterestedRepository(context),
+        notInterestedRepository,
         youTubeRepository
     )
 
@@ -1100,8 +1104,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     fun loadMoreRecommendations() {
         if (_isLoadingMore.value) return
-        
-        viewModelScope.launch {
+
+        loadMoreJob = viewModelScope.launch {
             _isLoadingMore.value = true
             try {
                 // Related-songs radio for the current track, falling back to
@@ -1137,8 +1141,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     private fun appendToQueue(songs: List<Song>, queuedByUser: Boolean) {
         if (songs.isEmpty()) return
+        // The app's own top-ups never refill a player the listener dismissed.
+        if (!queuedByUser && isPlayerCleared) return
 
-        val acceptedSongs = songsForCurrentOutput(songs)
+        // Radio and auto-queue are recommendations, so "Don't recommend"
+        // applies to them. Without this a blocked artist was queued anyway,
+        // played, and came back in the history as something listened to. What
+        // the listener queues by hand is their own choice and is never filtered.
+        val wanted = if (queuedByUser) songs else notInterestedRepository.filterSongs(songs)
+        val acceptedSongs = songsForCurrentOutput(wanted)
         if (acceptedSongs.isEmpty()) return
         val added = acceptedSongs.map { MusicQueueItem(song = it) }
         val before = _currentQueue.value
@@ -1935,7 +1946,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // Set flag BEFORE clearing to prevent listener from restoring
         isPlayerCleared = true
         pendingPlayRequest = null
-        
+
+        // A radio or auto-queue fetch still in flight would otherwise land
+        // after the clear and put songs back into the emptied player: the
+        // service then saves them as a session, so a song nobody is playing
+        // lingers in the system media controls and comes back on next launch.
+        radioJob?.cancel()
+        loadMoreJob?.cancel()
+        _isLoadingMore.value = false
+
         controller?.let { player ->
             player.stop()
             player.clearMediaItems()

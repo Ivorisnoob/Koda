@@ -4566,9 +4566,30 @@ class YouTubeRepository(private val context: Context) {
                                  part?.optString("accessibilityLabel")?.takeIf { it.isNotBlank() }
                          }
                      )
-                     val firstRowIsStats = firstRowStats.uploadedDate.isNotBlank() ||
-                         firstText.contains("view", ignoreCase = true) ||
-                         firstText.contains("watching", ignoreCase = true)
+                     // FEhistory sends one row, "Creator • 432K views", and says
+                     // so with a byline marker. Without it the positional
+                     // fallback in parseLockupVideoStats read the creator as an
+                     // upload date, which made the row look like statistics and
+                     // left every history entry on "Unknown Channel".
+                     // [verified October 2026, signed in, FEhistory first page;
+                     // the continuation had the same shape in September 2026]
+                     val firstRowIsByline = metadataRows.optJSONObject(0)
+                         ?.optJSONObject("lockupContentMetadataRowExtension")
+                         ?.optString("contentType") == "METADATA_ROW_CONTENT_TYPE_BYLINE"
+                     val firstRowIsStats = !firstRowIsByline && (
+                         firstRowStats.uploadedDate.isNotBlank() ||
+                             firstText.contains("view", ignoreCase = true) ||
+                             firstText.contains("watching", ignoreCase = true)
+                         )
+
+                     if (firstRowIsByline) {
+                         // The parts after the creator are that row's statistics.
+                         val trailingParts = org.json.JSONArray()
+                         for (index in 1 until firstRowParts.length()) {
+                             trailingParts.put(firstRowParts.opt(index))
+                         }
+                         absorbVideoStats(trailingParts)
+                     }
 
                      if (firstRowIsStats) {
                          // Channel tabs omit the creator row because the page
@@ -6429,7 +6450,15 @@ class YouTubeRepository(private val context: Context) {
      * Returns an empty list on any failure; captions are best-effort and must
      * never take playback down with them.
      */
-    suspend fun getCaptionCues(track: CaptionTrack): List<VttCue> = withContext(Dispatchers.IO) {
+    suspend fun getCaptionCues(track: CaptionTrack): List<VttCue> =
+        getCaptionVtt(track)?.let { WebVttParser.parse(it) }.orEmpty()
+
+    /**
+     * One caption track as the WebVTT document timedtext serves, unparsed, or
+     * null on any failure. The player parses it straight away; a video download
+     * keeps it as it is, to be parsed when the file is watched offline.
+     */
+    suspend fun getCaptionVtt(track: CaptionTrack): String? = withContext(Dispatchers.IO) {
         try {
             val request = okhttp3.Request.Builder()
                 .url(track.vttUrl)
@@ -6441,14 +6470,15 @@ class YouTubeRepository(private val context: Context) {
                         "YouTubeRepo",
                         "Caption fetch failed for ${track.languageCode}: HTTP ${response.code}"
                     )
-                    return@withContext emptyList()
+                    return@withContext null
                 }
-                val body = response.body?.string().orEmpty()
-                WebVttParser.parse(body)
+                response.body?.string()?.takeIf { it.isNotBlank() }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getCaptionCues failed for ${track.languageCode}", e)
-            emptyList()
+            KLog.e("YouTubeRepo", "Caption fetch failed for ${track.languageCode}", e)
+            null
         }
     }
 

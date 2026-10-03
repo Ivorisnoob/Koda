@@ -310,6 +310,7 @@ fun SearchScreen(
 
     // Video mode browse state: trending feed doubles as the explore list
     val trendingVideos by viewModel.trendingVideos.collectAsState()
+    val isVideoFeedLoading by viewModel.isVideoLoading.collectAsState()
     LaunchedEffect(videoMode) {
         if (videoMode && trendingVideos.isEmpty()) {
             viewModel.loadTrendingVideos()
@@ -841,6 +842,35 @@ fun SearchScreen(
                 // Video mode browse: trending instead of the music library.
                 // The old hard-coded category chips duplicated search and made
                 // this state read like an Explore page rather than history.
+                // An empty feed that is not loading stays empty: recommendations
+                // are switched off, the phone is offline, or the request came
+                // back with nothing. Spinning there never ended.
+                videoMode && query.isEmpty() && trendingVideos.isEmpty() && !isVideoFeedLoading -> {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = secondaryTextColor.copy(alpha = 0.5f)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    stringResource(R.string.search_video_idle_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = secondaryTextColor
+                                )
+                            }
+                        }
+                    }
+                }
+
                 videoMode && query.isEmpty() -> {
                     item {
                         Text(
