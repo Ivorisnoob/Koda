@@ -189,7 +189,7 @@ internal fun DisplaySizeSettingsPage(
                                             ButtonGroupDefaults.connectedTrailingButtonShapes()
                                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                     },
-                                    colors = ToggleButtonDefaults.toggleButtonColors(
+                                    colors = ToggleButtonDefaults.colors(
                                         containerColor =
                                             MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                                         checkedContainerColor = MaterialTheme.colorScheme.primary,

@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -40,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,7 +68,15 @@ fun AddToPlaylistSheet(
     playlists: List<PlaylistDisplayItem>,
     onPlaylistClick: (PlaylistDisplayItem) -> Unit,
     onCreateNewClick: (String, String?) -> Unit,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    /**
+     * Playlists already holding the item. With [onToggle] set, rows carry a
+     * check box and a tap adds or removes instead of closing the sheet.
+     */
+    containing: Set<String> = emptySet(),
+    /** The account half of [containing] is still loading. */
+    membershipLoading: Boolean = false,
+    onToggle: ((PlaylistDisplayItem, Boolean) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -96,66 +107,70 @@ fun AddToPlaylistSheet(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(bottom = 16.dp)
         ) {
-            Text(
-                stringResource(R.string.add_to_playlist_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
-            )
-
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth()
             ) {
-                // Create New Item
-                item {
-                    ListItem(
-                        headlineContent = {
-                            Text(stringResource(R.string.new_playlist_label), fontWeight = FontWeight.SemiBold)
-                        },
+                Text(
+                    stringResource(R.string.add_to_playlist_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                if (membershipLoading) {
+                    androidx.compose.material3.LoadingIndicator(modifier = Modifier.size(28.dp))
+                }
+            }
+
+            // New playlist stands on its own as a tonal pill; the playlists
+            // follow as one segmented group. A playlist that already holds the
+            // item is the group's selected state - filled, fully rounded and
+            // ticked - the way OpenStream marks the chosen quality or track.
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
+            ) {
+                item(key = "new_playlist") {
+                    androidx.compose.material3.SegmentedListItem(
+                        onClick = { showCreateDialog = true },
+                        shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                        colors = ListItemDefaults.segmentedColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            leadingContentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
                         leadingContent = {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(56.dp)
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(48.dp)
                             ) {
-                                AccessIcon(Icons.Rounded.Add, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                AccessIcon(Icons.Rounded.Add, tint = MaterialTheme.colorScheme.onSecondary)
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showCreateDialog = true }
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    ) {
+                        Text(stringResource(R.string.new_playlist_label), fontWeight = FontWeight.SemiBold)
+                    }
                 }
 
-                items(playlists) { playlist ->
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                playlist.name,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                if (playlist.itemCount >= 0) pluralStringResource(R.plurals.n_songs, playlist.itemCount, playlist.itemCount)
-                                else playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) }
-                            )
-                        },
+                itemsIndexed(playlists, key = { _, it -> it.id }) { index, playlist ->
+                    val isIn = onToggle != null && playlist.id in containing
+                    val onRowClick = {
+                        if (onToggle != null) onToggle(playlist, !isIn) else onPlaylistClick(playlist)
+                    }
+                    androidx.compose.material3.SegmentedListItem(
+                        selected = isIn,
+                        onClick = onRowClick,
+                        shapes = ListItemDefaults.segmentedShapes(index = index, count = playlists.size),
+                        colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.surface),
+                        modifier = Modifier.animateItem(),
                         leadingContent = {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.size(56.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 if (playlist.thumbnailUrl != null) {
                                     AsyncImage(
@@ -172,18 +187,86 @@ fun AddToPlaylistSheet(
                                 }
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPlaylistClick(playlist) }
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
+                        supportingContent = {
+                            Text(
+                                if (playlist.itemCount >= 0) pluralStringResource(R.plurals.n_songs, playlist.itemCount, playlist.itemCount)
+                                else playlist.uploaderName.ifBlank { stringResource(R.string.label_playlist) },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        trailingContent = if (onToggle != null) {
+                            {
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = isIn,
+                                    enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
+                                    exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut()
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Check,
+                                        contentDescription = stringResource(R.string.cd_in_playlist)
+                                    )
+                                }
+                            }
+                        } else null
+                    ) {
+                        Text(
+                            playlist.name,
+                            fontWeight = if (isIn) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+}
+
+/**
+ * [AddToPlaylistSheet] for one song, with check marks: device playlists are
+ * read locally, the account's with one request per open, and a tap adds or
+ * removes without closing. A device file only lists device playlists, since an
+ * account playlist can only hold YouTube songs.
+ */
+@Composable
+fun SongPlaylistPicker(
+    song: com.ivor.ivormusic.data.Song,
+    viewModel: PlayerViewModel,
+    onDismiss: () -> Unit,
+) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val items by viewModel.addToPlaylistItems.collectAsState()
+    val localContents by viewModel.localPlaylistContents.collectAsState()
+    val accountContaining by viewModel.accountPlaylistsContaining.collectAsState()
+    val loading by viewModel.isPlaylistMembershipLoading.collectAsState()
+    LaunchedEffect(song.id) { viewModel.loadPlaylistMembership(song) }
+
+    val localIds = localContents.map { it.id }.toSet()
+    val containing = localContents.filter { list -> list.songs.any { it.id == song.id } }
+        .map { it.id }
+        .toSet() + accountContaining
+    val isYouTube = song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
+
+    AddToPlaylistSheet(
+        playlists = if (isYouTube) items else items.filter { it.id in localIds },
+        onPlaylistClick = {},
+        onCreateNewClick = { name, desc ->
+            viewModel.createPlaylistWithSong(name, desc, song)
+            onDismiss()
+        },
+        onDismissRequest = onDismiss,
+        containing = containing,
+        membershipLoading = loading && isYouTube,
+        onToggle = { playlist, add ->
+            haptics.performHapticFeedback(
+                if (add) androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOn
+                else androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff
+            )
+            viewModel.setPlaylistMembership(playlist.id, song, add)
+        },
+    )
 }
 
 @Composable
@@ -202,7 +285,9 @@ fun CreatePlaylistDialog(
      * Empty by default, which keeps the existing create flows untouched: no
      * pre-fill means no selection and no autofocus change.
      */
-    initialName: String = ""
+    initialName: String = "",
+    /** False for a store with no description (local video playlists). */
+    withDescription: Boolean = true
 ) {
     var nameField by remember(initialName) {
         mutableStateOf(TextFieldValue(initialName, selection = TextRange(0, initialName.length)))
@@ -228,13 +313,15 @@ fun CreatePlaylistDialog(
                         .fillMaxWidth()
                         .focusRequester(nameFocus)
                 )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text(stringResource(R.string.description_optional_label)) },
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (withDescription) {
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text(stringResource(R.string.description_optional_label)) },
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {

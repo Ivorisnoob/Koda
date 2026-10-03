@@ -29,7 +29,7 @@ internal class LastFmPlaybackTracker(
         val item = player.currentMediaItem ?: run { reset(); return }
         val artist = item.mediaMetadata.artist?.toString().orEmpty().trim()
         val title = item.mediaMetadata.title?.toString().orEmpty().trim()
-        if (artist.isBlank() || title.isBlank() || player.isCurrentMediaItemLive) { reset(); return }
+        if (artist.isBlank() || title.isBlank() || player.isCurrentMediaItemLive || item.isUpload) { reset(); return }
         val id = item.queueItemId ?: item.mediaId
         val elapsed = monotonicMillis()
         if (player.isPlaying && announced != id && !session.busy) {

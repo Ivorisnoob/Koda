@@ -2,26 +2,20 @@ package com.ivor.ivormusic.ui.components
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,9 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,12 +45,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.player.rememberPlayerHaptics
 
@@ -72,7 +62,14 @@ fun MiniPlayerContent(
     progress: Float,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    /**
+     * The pill's sideways swipe. The pill itself stays put; the song inside it
+     * slides, with [previousSong] or [nextSong] peeking in from the edge.
+     */
+    skipState: MiniSkipState,
+    previousSong: Song?,
+    nextSong: Song?,
 ) {
     val playerHaptics = rememberPlayerHaptics()
     val playLabel = stringResource(R.string.cd_play)
@@ -101,134 +98,81 @@ fun MiniPlayerContent(
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Album Art with Circular Progress Ring — doubles as the
-            // play/pause target, so the most-hit part of the pill toggles
-            // playback instead of only expanding the player.
-            val artworkInteraction = remember { MutableInteractionSource() }
-            val artworkPressed by artworkInteraction.collectIsPressedAsState()
-            val artworkScale by animateFloatAsState(
-                targetValue = if (artworkPressed) 0.92f else 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                ),
-                label = "miniArtworkScale"
-            )
-
-            Box(
+            MiniSkipCarousel(
+                state = skipState,
                 modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .clickable(
-                        interactionSource = artworkInteraction,
-                        indication = null,
-                        enabled = artworkTogglesPlayback,
-                        onClickLabel = if (isPlaying) pauseLabel else playLabel,
-                        role = Role.Button,
-                        onClick = {
-                            playerHaptics.playPause(!isPlaying)
-                            onPlayPauseClick()
-                        }
-                    ),
-                contentAlignment = Alignment.Center
+                    .weight(1f)
+                    .fillMaxHeight()
+                    // Rounded like the pill's own end, so the song slides out
+                    // under a curve rather than a square edge.
+                    .clip(RoundedCornerShape(topStart = 26.dp, bottomStart = 26.dp)),
+                previousLabel = stringResource(R.string.cd_previous),
+                nextLabel = stringResource(R.string.cd_next),
+                previous = previousSong?.let { song -> { MiniSongIdentity(song) } },
+                next = nextSong?.let { song -> { MiniSongIdentity(song) } },
             ) {
-                val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                val progressColor = MaterialTheme.colorScheme.primary
+                MiniSongIdentity(currentSong) {
+                    // Album Art with Circular Progress Ring - doubles as the
+                    // play/pause target, so the most-hit part of the pill
+                    // toggles playback instead of only expanding the player.
+                    val artworkInteraction = remember { MutableInteractionSource() }
+                    val artworkPressed by artworkInteraction.collectIsPressedAsState()
+                    val artworkScale by animateFloatAsState(
+                        targetValue = if (artworkPressed) 0.92f else 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        label = "miniArtworkScale"
+                    )
 
-                // Progress ring behind the album art
-                Canvas(modifier = Modifier.size(52.dp)) {
-                    val strokeWidth = 3.dp.toPx()
-                    val radius = (size.minDimension - strokeWidth) / 2
-                    
-                    // Track (background ring)
-                    drawCircle(
-                        color = trackColor,
-                        radius = radius,
-                        style = Stroke(width = strokeWidth)
-                    )
-                    
-                    // Progress arc
-                    drawArc(
-                        color = progressColor,
-                        startAngle = -90f,
-                        sweepAngle = 360f * progress,
-                        useCenter = false,
-                        style = Stroke(
-                            width = strokeWidth,
-                            cap = StrokeCap.Round
-                        )
-                    )
-                }
-                
-                // Album art thumbnail (slightly smaller to fit inside ring).
-                // Only the cover springs on press — the ring is a progress
-                // readout and would read as a glitch if it scaled with it.
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .scale(artworkScale)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val imageUrl = currentSong.highResThumbnailUrl ?: currentSong.thumbnailUrl
-                    val localUri = currentSong.albumArtUri
-                    
-                    if (imageUrl != null || localUri != null) {
-                        coil.compose.SubcomposeAsyncImage(
-                            model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                                .data(localUri ?: imageUrl)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = stringResource(R.string.cd_album_art),
-                            modifier = Modifier.size(44.dp),
-                            contentScale = ContentScale.Crop,
-                            loading = {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .clickable(
+                                interactionSource = artworkInteraction,
+                                indication = null,
+                                enabled = artworkTogglesPlayback,
+                                onClickLabel = if (isPlaying) pauseLabel else playLabel,
+                                role = Role.Button,
+                                onClick = {
+                                    playerHaptics.playPause(!isPlaying)
+                                    onPlayPauseClick()
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                        val progressColor = MaterialTheme.colorScheme.primary
+
+                        // Progress ring behind the album art
+                        Canvas(modifier = Modifier.size(52.dp)) {
+                            val strokeWidth = 3.dp.toPx()
+                            val radius = (size.minDimension - strokeWidth) / 2
+                            drawCircle(
+                                color = trackColor,
+                                radius = radius,
+                                style = Stroke(width = strokeWidth)
+                            )
+                            drawArc(
+                                color = progressColor,
+                                startAngle = -90f,
+                                sweepAngle = 360f * progress,
+                                useCenter = false,
+                                style = Stroke(
+                                    width = strokeWidth,
+                                    cap = StrokeCap.Round
                                 )
-                            },
-                            error = {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                            )
+                        }
+
+                        // Only the cover springs on press - the ring is a
+                        // progress readout and would read as a glitch if it
+                        // scaled with it.
+                        MiniSongArtwork(currentSong, Modifier.scale(artworkScale))
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Song Info
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = currentSong.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = currentSong.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -291,6 +235,88 @@ fun MiniPlayerContent(
                     modifier = Modifier.size(24.dp)
                 )
             }
+        }
+    }
+}
+
+/**
+ * One song as the pill shows it: artwork, then title over artist. The playing
+ * song passes its own [artwork] (the progress ring and play/pause target); a
+ * neighbour peeking in during a swipe gets the bare cover in the same 52dp
+ * slot, so the two line up exactly as one slides in over the other.
+ */
+@Composable
+private fun MiniSongIdentity(
+    song: Song,
+    artwork: @Composable () -> Unit = {
+        Box(modifier = Modifier.size(52.dp), contentAlignment = Alignment.Center) {
+            MiniSongArtwork(song)
+        }
+    },
+) {
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        artwork()
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = song.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = song.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * The 44dp circular cover inside the ring's slot, over a note that shows when
+ * there is no cover or it has not arrived.
+ *
+ * [scar] Plain `AsyncImage` over the note, not `SubcomposeAsyncImage` with a
+ * loading slot. The subcomposed version draws its loading content for at least
+ * a frame on every model change, even for a cover already in the memory cache,
+ * so the moment a swipe handed over from the peeking neighbour (which had the
+ * cover loaded) to the pill's own slot, the cover blinked to the note and back
+ * - read as the pill showing some other song. `AsyncImage` draws a memory-cache
+ * hit on its first frame, and Coil skips the crossfade for one.
+ */
+@Composable
+private fun MiniSongArtwork(song: Song, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.MusicNote,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        val model = song.albumArtUri ?: song.highResThumbnailUrl ?: song.thumbnailUrl
+        if (model != null) {
+            coil.compose.AsyncImage(
+                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    .data(model)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = stringResource(R.string.cd_album_art),
+                modifier = Modifier.size(44.dp),
+                contentScale = ContentScale.Crop
+            )
         }
     }
 }

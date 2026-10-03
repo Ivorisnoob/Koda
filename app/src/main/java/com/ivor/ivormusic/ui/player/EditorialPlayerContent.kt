@@ -171,7 +171,7 @@ fun EditorialPlayerSheetContent(
 
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     // The two-tone contract: field + accent, nothing else.
     val field = MaterialTheme.colorScheme.primaryContainer
@@ -526,6 +526,7 @@ private fun EditorialNowPlayingView(
                     // rebuffer if seeked per drag frame).
                     var scrubPosition by remember { mutableStateOf<Float?>(null) }
                     val displayedProgress = scrubPosition?.toLong() ?: progress
+                    val scrubReturnPoint = LocalScrubReturnPoint.current
                     // Advanced from the clock each frame rather than sprung
                     // toward a once-a-second sample - see rememberSmoothProgress.
                     val smoothProgress = rememberSmoothProgress(
@@ -556,9 +557,18 @@ private fun EditorialNowPlayingView(
                         Slider(
                             interactionSource = LocalPlayerScrubInteraction.current,
                             value = scrubPosition ?: progress.toFloat(),
-                            onValueChange = { scrubPosition = it },
+                            // Through the return point: the drag leaves a marker where it
+                            // started and snaps back onto it, and letting go on the marker
+                            // is "never mind" rather than a seek. See ScrubReturnPoint.
+                            onValueChange = {
+                                scrubPosition = scrubReturnPoint.follow(
+                                    value = it,
+                                    rangeEnd = duration.toFloat().coerceAtLeast(1f)
+                                ) { smoothProgress.value }
+                            },
                             onValueChangeFinished = {
-                                scrubPosition?.let { onSeekTo(it.toLong()) }
+                                val cancelled = scrubReturnPoint.release()
+                                if (!cancelled) scrubPosition?.let { onSeekTo(it.toLong()) }
                                 scrubPosition = null
                             },
                             valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
@@ -882,7 +892,7 @@ internal fun EditorialQueueView(
                 Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(26.dp))
             }
             Text(
-                text = "Up Next",
+                text = stringResource(R.string.ps_up_next),
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontFamily = FontFamily.Serif,
                     fontStyle = FontStyle.Italic,

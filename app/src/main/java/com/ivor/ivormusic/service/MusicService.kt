@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.ViewConfiguration
 import androidx.media3.common.AudioAttributes
@@ -27,12 +28,14 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
+import com.ivor.ivormusic.R
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.ivor.ivormusic.MainActivity
@@ -65,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -148,6 +152,13 @@ class MusicService : MediaLibraryService() {
     // over the lifetime of the service.
     private val retryCounts = ConcurrentHashMap<String, Int>()
 
+    /**
+     * When each queue occurrence first failed, for [MAX_RECOVERY_MS]. Keyed by
+     * occurrence rather than song, so the same song tapped again in a new
+     * queue starts with a fresh allowance.
+     */
+    private val recoveryStartedAt = ConcurrentHashMap<String, Long>()
+
     // Kept for warmStreamCache; playback wires the factory into the player
     // separately in initializePlayer.
     private var cacheDataSourceFactory: androidx.media3.datasource.cache.CacheDataSource.Factory? = null
@@ -190,12 +201,28 @@ class MusicService : MediaLibraryService() {
     // volatile field fed by the preference flow instead of a prefs read.
     @Volatile private var isCacheEnabled = true
     private var fadeVolumeJob: Job? = null
+    private var sleepFadeJob: Job? = null
     private var progressJob: Job? = null
     private var transitionJob: Job? = null
     private var playbackShuffleEnabled = false
     private var playbackShuffleSeed = 0L
     private var playbackRepeatMode = Player.REPEAT_MODE_OFF
-    private var lastShuffleOrderItemCount = -1
+    /** A restored session's play order, applied once its queue is in place. */
+    private var pendingRestoredPlayOrder: IntArray? = null
+
+    /**
+     * Songs heard in the last [RECENT_PLAY_WINDOW_MS], plus every song this
+     * service has played since. A shuffle built while this is known plays the
+     * rest first (see [QueueShuffleOrder.freshFirst]). Seeded from play history
+     * off the main thread; read on it, synchronously, when a shuffle is built.
+     */
+    private val recentSongIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * A controller replaced the whole queue, and the shuffle Media3 builds for
+     * it (`cloneAndSet`) sees only a length. Re-ordered once that queue lands.
+     */
+    private var freshShufflePending = false
 
     // Live Update (Android 16+)
     private var musicProgressLiveUpdate: MusicProgressLiveUpdate? = null
@@ -238,19 +265,26 @@ class MusicService : MediaLibraryService() {
 
     companion object {
         private const val TAG = "MusicService"
+
+        /**
+         * How long a play keeps a song at the back of new shuffles. Three days
+         * so someone shuffling the same playlist daily works through all of it
+         * rather than re-hearing yesterday's first half. [judgement]
+         */
+        private const val RECENT_PLAY_WINDOW_MS = 3L * 24 * 60 * 60 * 1000
         private const val PREFETCH_AHEAD_COUNT = 3
         private const val MAX_RESOLVED_URI_ENTRIES = 128
         private const val MAX_WARMED_IDS = 256
-        // Covers the maintained NewPipe extraction and the direct InnerTube
-        // fallback; their individual requests are also bounded by OkHttp.
+        // Covers the direct visionOS call and the NewPipe fallback behind it;
+        // their individual requests are also bounded by OkHttp.
         //
         // This timeout does not itself interrupt anything - both paths block
         // inside OkHttp, so it can only discard a late result, and a discarded
         // result is a skipped song. The budgets underneath are what keep the
-        // arithmetic inside it: YouTubeRepository gives NewPipe
-        // NEWPIPE_STREAM_BUDGET_MS (8s) before handing over, and each direct
-        // /player call is capped at 8s by streamResolveClient, so the ordinary
-        // failing case is one budget plus one client and lands well inside 20s.
+        // arithmetic inside it: each direct /player call is capped at 8s by
+        // streamResolveClient, and YouTubeRepository gives NewPipe
+        // NEWPIPE_STREAM_BUDGET_MS (8s), so the ordinary failing case is one
+        // client plus one budget and lands inside 20s.
         // Lowering either one without the other reintroduces the case where a
         // working fallback exists and is never reached.
         private const val RESOLVE_TIMEOUT_MS = 20_000L
@@ -320,6 +354,47 @@ class MusicService : MediaLibraryService() {
         private const val MAX_RETRIES = 2
         private const val MAX_FORBIDDEN_RETRIES = 4
 
+        /**
+         * A resolution that failed outright (not one that timed out, which is
+         * skipped at once) gets one more try: enough for a network blip, and
+         * no second full client chain for a song that is simply unplayable.
+         */
+        private const val MAX_RESOLUTION_RETRIES = 1
+
+        /**
+         * How long a retry waits for its re-resolution. A retry, not a first
+         * attempt: that already had [RESOLVE_TIMEOUT_MS], and the usual cause
+         * here - an expired URL - resolves in a second or two.
+         */
+        private const val RETRY_RESOLVE_BUDGET_MS = 15_000L
+
+        /**
+         * The most time one song may spend being recovered, counted from its
+         * first error. Together with skipping a timed-out resolution at once,
+         * this is what keeps a broken song from holding the player on a
+         * loading spinner for most of a minute before anything moves.
+         */
+        private const val MAX_RECOVERY_MS = 30_000L
+
+        /** The error URI host [performResolution] uses when its whole budget ran out. */
+        private const val RESOLUTION_TIMEOUT_HOST = "resolution_timeout"
+
+        /**
+         * Broadcast to controllers when a song could not be played, so the
+         * app can say so instead of the queue silently jumping. Carries
+         * [ARG_FAILED_TITLE] and [ARG_FAILED_OUTCOME], one of the
+         * `FAILURE_` values.
+         */
+        const val EVENT_PLAYBACK_FAILED = "com.ivor.ivormusic.PLAYBACK_FAILED"
+        const val ARG_FAILED_TITLE = "failed_title"
+        const val ARG_FAILED_OUTCOME = "failed_outcome"
+        /** Skipped to the next song. */
+        const val FAILURE_SKIPPED = "skipped"
+        /** Nothing left to skip to, so playback stopped. */
+        const val FAILURE_STOPPED = "stopped"
+        /** YouTube's bot check refused it; the player stays on the song. */
+        const val FAILURE_REFUSED = "refused"
+
         // --- Sleep timer: the contract with PlayerViewModel ---
 
         /** Arm the timer. Carries [ARG_SLEEP_TIMER_MINUTES]; 0 = end of track. */
@@ -364,6 +439,19 @@ class MusicService : MediaLibraryService() {
          */
         const val CMD_SET_PLAY_ORDER = "com.ivor.ivormusic.SET_PLAY_ORDER"
         const val ARG_PLAY_ORDER = "play_order"
+
+        /** The media notification's repeat button: off -> all -> one -> off. */
+        const val CMD_CYCLE_REPEAT = "com.ivor.ivormusic.CYCLE_REPEAT"
+
+        /** The media notification's heart: like or unlike the playing song. */
+        const val CMD_TOGGLE_LIKE = "com.ivor.ivormusic.TOGGLE_LIKE"
+
+        /**
+         * Ask YouTube for the playing song's stream again and swap it in where
+         * it was. Answers RESULT_ERROR_IO when no new stream arrived in time,
+         * RESULT_ERROR_NOT_SUPPORTED for a file on this device.
+         */
+        const val CMD_REFRESH_STREAM = "com.ivor.ivormusic.REFRESH_STREAM"
         const val EXTRA_SONG_SOURCE = "com.ivor.ivormusic.SONG_SOURCE"
 
         /** Session-extras keys the timer state is published under. */
@@ -403,7 +491,7 @@ class MusicService : MediaLibraryService() {
          * as drifting off rather than as a glitch, short enough that the last
          * thing heard is not a minute of near-silence.
          */
-        private const val SLEEP_TIMER_FADE_MS = 5_000L
+        private const val SLEEP_TIMER_FADE_MS = 30_000L
 
         /**
          * Longest a single slice of the countdown sleeps for. Bounded so the
@@ -411,6 +499,16 @@ class MusicService : MediaLibraryService() {
          * long delay that deep sleep can stretch.
          */
         private const val SLEEP_TIMER_TICK_MS = 30_000L
+
+        /**
+         * How long a queue edit waits before the session is saved. Coalesces a
+         * drag across several rows, and the burst of source replacements
+         * prefetching makes, into one write.
+         */
+        private const val SESSION_CHECKPOINT_DEBOUNCE_MS = 1_500L
+
+        /** Progress ticks (one a second) between checkpoints while playing. */
+        private const val SESSION_CHECKPOINT_TICKS = 15
     }
 
     /**
@@ -462,9 +560,11 @@ class MusicService : MediaLibraryService() {
         observePreferences()
 
         // 4. Initialize Player
+        startSessionWriter()
         initializePlayer()
         restorePlaybackModes()
         restoreSleepTimer()
+        seedRecentSongs()
 
         // 5. Initialize Session
         initializeSession()
@@ -517,21 +617,44 @@ class MusicService : MediaLibraryService() {
                             session.connectedControllers.forEach { controller ->
                                 session.notifyChildrenChanged(controller, "RECOMMENDED", 0, null)
                                 session.notifyChildrenChanged(controller, "PLAYLISTS", 0, null)
+                                // Likes and listening history are per profile too.
+                                session.notifyChildrenChanged(controller, "LIKED", 0, null)
+                                session.notifyChildrenChanged(controller, "RECENT", 0, null)
                             }
                         }
                     }.onFailure { KLog.w(TAG, "notifyChildrenChanged after profile switch failed", it) }
 
                     resolveScope.launch { youtubeRepository.prefetchVisitorData() }
+
+                    // Listening history is per profile, and a fresh-first
+                    // shuffle plays last what this profile heard recently.
+                    recentSongIds.clear()
+                    seedRecentSongs()
                 }
         }
     }
 
+    /**
+     * The app was swiped away from recents.
+     *
+     * Music that is meant to be playing keeps playing - swiping away the screen
+     * is not a request to stop the music, and every other player treats it
+     * that way. Only an idle service stops, which is also the one case the old
+     * reason for always stopping applied to: a paused foreground notification
+     * cannot be swiped away by the user.
+     *
+     * "Meant to be playing" is play-when-ready rather than Media3's default
+     * `isPlaying`: a song that is still buffering at the moment of the swipe
+     * would otherwise be paused and lost.
+     */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // When the user swipes the app from recents, pause playback and stop the
-        // service so the foreground notification is dismissed instead of getting
-        // stuck (a foreground-service notification cannot be swiped away by the user).
-        // pauseAllPlayersAndStopSelf() is the official Media3 helper for this.
-        pauseAllPlayersAndStopSelf()
+        checkpointSession()
+        val current = player
+        val meantToPlay = current.playWhenReady &&
+            current.mediaItemCount > 0 &&
+            current.playbackState != Player.STATE_ENDED &&
+            current.playbackState != Player.STATE_IDLE
+        if (!meantToPlay) pauseAllPlayersAndStopSelf()
     }
 
     override fun onDestroy() {
@@ -548,6 +671,9 @@ class MusicService : MediaLibraryService() {
         headsetButtonSequence.clear()
         sleepTimerJob?.cancel()
         audioFocus.abandon()
+        // Before the scopes go: the writer lives in one of them, and this is
+        // the last moment the player can still be read.
+        writeFinalSession()
         // Cancel the scopes themselves — they host the preference collectors and
         // any in-flight resolutions, which would otherwise outlive the service.
         serviceScope.cancel()
@@ -757,6 +883,89 @@ class MusicService : MediaLibraryService() {
         mediaLibrarySession = MediaLibrarySession.Builder(this, engine.active, LibrarySessionCallback())
             .setSessionActivity(sessionIntent)
             .build()
+        refreshMediaButtons()
+        // A like from the app's own heart has to reach the notification's.
+        serviceScope.launch {
+            likedSongsRepository.likedSongIds.collect { refreshMediaButtons() }
+        }
+    }
+
+    /** What the extra buttons last showed, so an unchanged state posts nothing. */
+    private var mediaButtonsState: Pair<Int, Boolean>? = null
+
+    /**
+     * Repeat and like, in the two slots the system media controls keep after
+     * previous/play/next. Rebuilt whenever what they draw changes - the repeat
+     * mode, the song, or its liked state - because each button's icon is its
+     * state: a notification cannot tint one button to say it is on.
+     */
+    private fun refreshMediaButtons() {
+        val session = mediaLibrarySession ?: return
+        val player = session.player
+        val songId = player.currentMediaItem?.mediaId
+        val liked = songId != null && likedSongsRepository.isLiked(songId)
+        val state = player.repeatMode to liked
+        if (state == mediaButtonsState) return
+        mediaButtonsState = state
+
+        val repeat = CommandButton.Builder(
+            when (player.repeatMode) {
+                Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE
+                Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL
+                else -> CommandButton.ICON_REPEAT_OFF
+            }
+        )
+            .setDisplayName(
+                getString(
+                    when (player.repeatMode) {
+                        Player.REPEAT_MODE_ONE -> R.string.notification_repeat_one
+                        Player.REPEAT_MODE_ALL -> R.string.notification_repeat_all
+                        else -> R.string.notification_repeat_off
+                    }
+                )
+            )
+            .setSessionCommand(SessionCommand(CMD_CYCLE_REPEAT, Bundle.EMPTY))
+            .build()
+        val like = CommandButton.Builder(
+            if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED
+        )
+            .setDisplayName(
+                getString(if (liked) R.string.notification_unlike else R.string.notification_like)
+            )
+            .setSessionCommand(SessionCommand(CMD_TOGGLE_LIKE, Bundle.EMPTY))
+            .setEnabled(songId != null)
+            .build()
+        session.setMediaButtonPreferences(ImmutableList.of(repeat, like))
+    }
+
+    private fun cycleRepeatMode(player: Player) {
+        player.repeatMode = when (player.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    /**
+     * The whole song goes to the store, not only its id: the Library's Liked
+     * Songs list draws YouTube songs from that metadata when signed out.
+     */
+    private fun toggleCurrentSongLike(player: Player) {
+        val song = player.currentMediaItem?.toQueueSong() ?: return
+        likedSongsRepository.toggleLike(song)
+        // The store's flow calls refreshMediaButtons too; this just skips the wait.
+        refreshMediaButtons()
+    }
+
+    /** Fill [recentSongIds] from play history, newest first, back to the window's edge. */
+    private fun seedRecentSongs() {
+        serviceScope.launch {
+            val cutoff = System.currentTimeMillis() - RECENT_PLAY_WINDOW_MS
+            runCatching { statsRepository.loadHistory() }.getOrNull()
+                ?.asSequence()
+                ?.takeWhile { it.timestamp >= cutoff }
+                ?.forEach { recentSongIds += it.songId }
+        }
     }
 
     private fun restorePlaybackModes() {
@@ -887,21 +1096,24 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-            val itemCount = player.mediaItemCount
-            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED &&
-                playbackShuffleEnabled &&
-                itemCount != lastShuffleOrderItemCount
-            ) {
-                // Set before applying: setShuffleOrder itself publishes a
-                // timeline change with the same count.
-                lastShuffleOrderItemCount = itemCount
-                engine.refreshActiveShuffleOrder()
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                // A restored order is the user's own listening, so it wins over
+                // a fresh-first reshuffle. Both flags clear before applying:
+                // setShuffleOrder raises this callback again.
+                val restored = pendingRestoredPlayOrder
+                val reshuffle = freshShufflePending
+                pendingRestoredPlayOrder = null
+                freshShufflePending = false
+                if (restored != null) applyPlayOrder(restored)
+                else if (reshuffle) applyFreshFirstShuffle()
             }
             // The queue changed, so the order the screens draw changed with it.
-            // Unconditional, and after any reorder above: a removal or an
-            // insertion rewrites the permutation even when the count check
-            // above declines to rebuild it.
             publishSessionState()
+            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                // An emptied queue is the player being cleared (the mini
+                // player dismissed); nothing should restore it next launch.
+                if (timeline.isEmpty) clearSavedSession() else scheduleSessionCheckpoint()
+            }
         }
 
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -910,14 +1122,16 @@ class MusicService : MediaLibraryService() {
                 playbackShuffleSeed = kotlin.random.Random.nextLong()
                 themePreferences.setPlaybackShuffleSeed(playbackShuffleSeed)
             }
+            val turnedOn = shuffleModeEnabled && !playbackShuffleEnabled
             playbackShuffleEnabled = shuffleModeEnabled
-            lastShuffleOrderItemCount = player.mediaItemCount
             themePreferences.setPlaybackShuffle(shuffleModeEnabled)
             engine.setShuffleState(shuffleModeEnabled, playbackShuffleSeed)
+            if (turnedOn) applyFreshFirstShuffle()
             // After the engine has applied the new order, never before: this
             // reads the permutation back off the player, so publishing first
             // would send the outgoing one.
             publishSessionState()
+            scheduleSessionCheckpoint()
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
@@ -925,12 +1139,29 @@ class MusicService : MediaLibraryService() {
             playbackRepeatMode = repeatMode
             themePreferences.setPlaybackRepeatMode(repeatMode)
             engine.setRepeatMode(repeatMode)
+            refreshMediaButtons()
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) lastFmTracker?.reset()
             automaticTransitionAttempt = null
+            refreshMediaButtons()
+            // Arriving at a song - an advance, a skip, a seek back to it - gives
+            // it a fresh recovery allowance. Not a playlist change: that is also
+            // what replacing a failed song's source reports, and resetting there
+            // would retry it forever.
+            if (mediaItem != null && reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                retryCounts.remove(mediaItem.mediaId)
+                recoveryStartedAt.remove(recoveryKey(mediaItem))
+            }
+            mediaItem?.mediaId?.let {
+                com.ivor.ivormusic.data.YouTubeRequestLedger.begin("song $it")
+                // Heard now, so a shuffle built later in this session puts it
+                // back. Not gated on incognito: nothing is recorded, it only
+                // steers this process's own shuffles.
+                if (it.isNotBlank()) recentSongIds += it
+            }
 
             // 1. Loudness correction for the new track, before anything sets a
             // volume. It may still be unknown here - an unresolved song has not
@@ -975,6 +1206,7 @@ class MusicService : MediaLibraryService() {
             // 3. Robust Prefetching of FUTURE items
             prefetchUpcomingSongs()
 
+            checkpointSession()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -985,7 +1217,10 @@ class MusicService : MediaLibraryService() {
                 // The current song plays — give it back its full retry budget
                 // so one bad stretch (expired URL, network blip) months of
                 // uptime ago can't permanently blacklist it.
-                player.currentMediaItem?.mediaId?.let { retryCounts.remove(it) }
+                player.currentMediaItem?.let { current ->
+                    retryCounts.remove(current.mediaId)
+                    recoveryStartedAt.remove(recoveryKey(current))
+                }
                 // Resolution happens after the transition, so this is the first
                 // point at which a first-play song's loudness is known. Applied
                 // only when no fade is running, so a crossfade-in keeps the
@@ -1052,6 +1287,14 @@ class MusicService : MediaLibraryService() {
             ) {
                 clearSleepTimer()
             }
+            if (!playWhenReady) {
+                // A pause, whatever caused it. Settled here rather than in
+                // onIsPlayingChanged: a pause while the outgoing track is
+                // buffering changes nothing about isPlaying, and the overlap
+                // would then be abandoned by the fade itself with the
+                // incoming track dropped.
+                engine.settleForPause()
+            }
             if (!playWhenReady && !audioFocus.isPausedByFocusLoss) {
                 audioFocus.abandon()
             }
@@ -1075,10 +1318,12 @@ class MusicService : MediaLibraryService() {
             } else {
                 progressJob?.cancel()
                 progressJob = null
-                // A pause mid-overlap would leave the standby running under a
-                // stopped session. Drop the transition and keep the track that
-                // is actually on screen.
-                engine.cancelTransition()
+                checkpointSession()
+                // A pause mid-overlap is settled in onPlayWhenReadyChanged,
+                // which may hand the pause to the incoming track. Anything else
+                // that stops the audible player - buffering, an error, the end
+                // - still drops the overlap and keeps the track on screen.
+                if (player.playWhenReady) engine.cancelTransition()
                 transitionJob?.cancel()
                 transitionJob = null
                 musicProgressLiveUpdate?.hide()
@@ -1310,7 +1555,7 @@ class MusicService : MediaLibraryService() {
         }
 
         // 4. Network with Retry
-        // YouTubeRepository owns the NewPipe-first client fallback. This layer
+        // YouTubeRepository owns the visionOS-first client fallback. This layer
         // bounds the whole resolution and handles playback-time re-resolution.
         return try {
             val result = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
@@ -1322,12 +1567,20 @@ class MusicService : MediaLibraryService() {
                 uriCache[videoId] = CachedUri(streamUrl, streamUrlExpiryMs(streamUrl))
                 KLog.d(TAG, "Resolution: Network success for $videoId")
                 buildMediaItemWithUri(originalItem, Uri.parse(streamUrl))
+            } else if (result == null) {
+                // Every client had its turn inside the whole budget. Told apart
+                // from a plain failure so the error path skips instead of
+                // spending the same budget again.
+                KLog.e(TAG, "Resolution: Timed out for $videoId")
+                buildMediaItemWithUri(originalItem, Uri.parse("error://$RESOLUTION_TIMEOUT_HOST/$videoId"))
             } else {
-                KLog.e(TAG, "Resolution: Failed or Timed Out for $videoId")
+                KLog.e(TAG, "Resolution: Failed for $videoId")
                 // Return an item with a special error URI instead of the placeholder
                 // This breaks the loop because isPlaceholder() will be false.
                 buildMediaItemWithUri(originalItem, Uri.parse("error://resolution_failed/$videoId"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Resolution: Exception for $videoId", e)
             buildMediaItemWithUri(originalItem, Uri.parse("error://exception/$videoId"))
@@ -1386,12 +1639,7 @@ class MusicService : MediaLibraryService() {
         // (file deleted, permission revoked, corrupt file). Don't try YouTube resolution.
         if (uri != null && (uri.scheme == "content" || uri.scheme == "file")) {
             KLog.e(TAG, "Error: Local song $videoId failed. Skipping (not retryable via YouTube).")
-            if (player.hasNextMediaItem()) {
-                player.seekToNext()
-                player.play()
-            } else {
-                player.stop()
-            }
+            skipAfterFailure(currentItem)
             return
         }
 
@@ -1412,10 +1660,31 @@ class MusicService : MediaLibraryService() {
         // normally.
         if (uri?.scheme == "error" && YouTubeRepository.isBotCheckVerdictActive()) {
             KLog.w(TAG, "Error: $videoId refused by YouTube's bot check; not retrying or skipping")
+            announcePlaybackFailure(currentItem, FAILURE_REFUSED)
             return
         }
 
-        // 3. Retry Logic (YouTube songs only)
+        // 3. The resolver spent its whole budget, every client included, and
+        // got nothing. Asking again is another twenty seconds of spinner for
+        // the same answer - with two retries, a broken song used to hold the
+        // player for most of a minute.
+        if (uri?.scheme == "error" && uri.host == RESOLUTION_TIMEOUT_HOST) {
+            KLog.e(TAG, "Error: resolution for $videoId used its whole budget. Skipping.")
+            skipAfterFailure(currentItem)
+            return
+        }
+
+        // 4. However the retries below go, one song gets a bounded amount of
+        // recovery time, counted from its first failure.
+        val now = SystemClock.elapsedRealtime()
+        val recoveryStarted = recoveryStartedAt.getOrPut(recoveryKey(currentItem)) { now }
+        if (now - recoveryStarted > MAX_RECOVERY_MS) {
+            KLog.e(TAG, "Error: recovering $videoId took over ${MAX_RECOVERY_MS}ms. Skipping.")
+            skipAfterFailure(currentItem)
+            return
+        }
+
+        // 5. Retry Logic (YouTube songs only)
         val retryCount = retryCounts[videoId] ?: 0
         // Only direct InnerTube streams are tied to Koda's visitorData. The
         // NewPipe-first path uses maintained Android/visionOS clients; a 403
@@ -1427,74 +1696,156 @@ class MusicService : MediaLibraryService() {
         }
         val isVisitorDataForbidden = httpResponseCode(error) == 403 &&
             (issuingClient == "ANDROID_VR" || issuingClient == "IOS")
-        val maxRetries = if (isVisitorDataForbidden) MAX_FORBIDDEN_RETRIES else MAX_RETRIES
+        val maxRetries = when {
+            isVisitorDataForbidden -> MAX_FORBIDDEN_RETRIES
+            uri?.scheme == "error" -> MAX_RESOLUTION_RETRIES
+            else -> MAX_RETRIES
+        }
 
-        if (retryCount < maxRetries) {
-            KLog.w(TAG, "Error: Retrying ($retryCount/$maxRetries) for $videoId...")
-            retryCounts[videoId] = retryCount + 1
-            uriCache.remove(videoId) // Clear bad cache
+        if (retryCount >= maxRetries) {
+            KLog.e(TAG, "Error: Max retries exhausted for $videoId. Skipping.")
+            skipAfterFailure(currentItem)
+            return
+        }
 
-            serviceScope.launch {
-                delay(1000)
-                // The error and retry belong to one exact occurrence. A tap
-                // can replace the queue during this delay with the same track
-                // id, and that new choice must not be reset, replaced or
-                // skipped by this stale recovery.
+        KLog.w(TAG, "Error: Retrying ($retryCount/$maxRetries) for $videoId...")
+        retryCounts[videoId] = retryCount + 1
+        uriCache.remove(videoId) // Clear bad cache
+
+        serviceScope.launch {
+            delay(1000)
+            // The error and retry belong to one exact occurrence. A tap
+            // can replace the queue during this delay with the same track
+            // id, and that new choice must not be reset, replaced or
+            // skipped by this stale recovery.
+            if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) {
+                return@launch
+            }
+            // Mint a fresh visitorData before re-resolving. /player answered
+            // 200 and never sees this refusal, so without it the flagged
+            // token stays in prefs and is replayed for its whole 6h TTL -
+            // every uncached song failing until the user clears app data.
+            // Mirrors VideoPlayerViewModel.recoverFromSourceError.
+            if (isVisitorDataForbidden) {
+                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                currentCoroutineContext().ensureActive()
                 if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) {
                     return@launch
                 }
-                // Mint a fresh visitorData before re-resolving. /player answered
-                // 200 and never sees this refusal, so without it the flagged
-                // token stays in prefs and is replayed for its whole 6h TTL -
-                // every uncached song failing until the user clears app data.
-                // Mirrors VideoPlayerViewModel.recoverFromSourceError.
-                if (isVisitorDataForbidden) {
-                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
-                    currentCoroutineContext().ensureActive()
-                    if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) {
-                        return@launch
-                    }
-                    // Everything prefetchUpcomingSongs resolved was signed with
-                    // the token just discarded, so the rest of the queue is
-                    // already dead. Dropping it here turns one recovery into a
-                    // recovery for the whole queue, instead of the same stall
-                    // repeating on every following song.
-                    uriCache.clear()
-                    retryCounts.clear()
-                    retryCounts[videoId] = retryCount + 1
-                    resetUpcomingItemsToPlaceholders()
-                }
-                // FORCE new resolution
-                activeResolutions.forget(videoId)
+                // Everything prefetchUpcomingSongs resolved was signed with
+                // the token just discarded, so the rest of the queue is
+                // already dead. Dropping it here turns one recovery into a
+                // recovery for the whole queue, instead of the same stall
+                // repeating on every following song.
+                uriCache.clear()
+                retryCounts.clear()
+                retryCounts[videoId] = retryCount + 1
+                val key = recoveryKey(currentItem)
+                recoveryStartedAt.keys.removeAll { it != key }
+                resetUpcomingItemsToPlaceholders()
+            }
+            // FORCE new resolution
+            activeResolutions.forget(videoId)
 
-                val deferred = getOrStartResolution(currentItem)
-                try {
-                    val resolved = bindResolutionToItem(currentItem, deferred.await())
-                    if (player.currentMediaItem?.isSameQueueItemAs(currentItem) == true) {
-                        KLog.i(TAG, "Recovery: Restoring $videoId at ${player.currentPosition}ms")
-                        player.replaceMusicSource(player.currentMediaItemIndex, resolved)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // Retry failed, skip.
-                    if (player.currentMediaItem?.isSameQueueItemAs(currentItem) == true &&
-                        player.hasNextMediaItem()
-                    ) {
-                         player.seekToNext()
-                         player.play()
-                    }
-                }
+            val deferred = getOrStartResolution(currentItem)
+            val resolved = try {
+                withTimeoutOrNull(RETRY_RESOLVE_BUDGET_MS) { deferred.await() }
+                    ?.let { bindResolutionToItem(currentItem, it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
             }
-        } else {
-            KLog.e(TAG, "Error: Max retries exhausted for $videoId. Skipping.")
-            if (player.hasNextMediaItem()) {
-                player.seekToNext()
-                player.play()
-            } else {
-                player.stop()
+            if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) return@launch
+            if (resolved == null) {
+                KLog.e(TAG, "Recovery: re-resolving $videoId did not finish in time. Skipping.")
+                skipAfterFailure(currentItem)
+                return@launch
             }
+            KLog.i(TAG, "Recovery: Restoring $videoId at ${player.currentPosition}ms")
+            player.replaceMusicSource(player.currentMediaItemIndex, resolved)
         }
+    }
+
+    /**
+     * The now-playing sheet's "Refresh stream": the playing song only.
+     *
+     * The same moves as the automatic recovery above - drop the cached URL,
+     * force a fresh resolution, swap it in with [replaceMusicSource] so the
+     * position and play intent stand - without its preconditions, because the
+     * user is reporting something the player may not have noticed (a stream
+     * that stalls, sounds wrong, or failed and was retried out). visitorData is
+     * deliberately left alone: reminting it would throw away every other
+     * song's resolved stream, and this is a request about one song.
+     *
+     * Anchored on the queue occurrence, like every other plan that spans a
+     * suspension: if the user moves on while YouTube answers, the new stream
+     * is dropped rather than put under a different song.
+     */
+    private fun refreshCurrentStream(): ListenableFuture<SessionResult> {
+        val currentItem = player.currentMediaItem
+            ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+        val uri = currentItem.localConfiguration?.uri
+        if (uri != null && (uri.scheme == "content" || uri.scheme == "file")) {
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+        }
+        val videoId = currentItem.mediaId
+        KLog.i(TAG, "Refresh requested for $videoId")
+        return serviceScope.future {
+            uriCache.remove(videoId)
+            activeResolutions.forget(videoId)
+            retryCounts.remove(videoId)
+            recoveryStartedAt.remove(recoveryKey(currentItem))
+
+            val resolved = try {
+                withTimeoutOrNull(RETRY_RESOLVE_BUDGET_MS) {
+                    getOrStartResolution(currentItem).await()
+                }?.let { bindResolutionToItem(currentItem, it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w(TAG, "Refresh: resolving $videoId failed", e)
+                null
+            }
+            if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) {
+                // Moved on; nothing went wrong, there is just nothing to apply.
+                return@future SessionResult(SessionResult.RESULT_INFO_SKIPPED)
+            }
+            if (resolved == null) return@future SessionResult(SessionResult.RESULT_ERROR_IO)
+            player.replaceMusicSource(player.currentMediaItemIndex, resolved)
+            SessionResult(SessionResult.RESULT_SUCCESS)
+        }
+    }
+
+    /** Recovery bookkeeping is per queue occurrence, falling back to the song id. */
+    private fun recoveryKey(item: MediaItem): String = item.queueItemId ?: item.mediaId
+
+    /**
+     * Move past a song that cannot be played, and tell the app, which used to
+     * learn nothing: the queue just jumped, or stopped, with no word why.
+     */
+    private fun skipAfterFailure(failed: MediaItem) {
+        if (player.hasNextMediaItem()) {
+            player.seekToNext()
+            player.play()
+            announcePlaybackFailure(failed, FAILURE_SKIPPED)
+        } else {
+            player.stop()
+            announcePlaybackFailure(failed, FAILURE_STOPPED)
+        }
+    }
+
+    private fun announcePlaybackFailure(failed: MediaItem, outcome: String) {
+        val session = mediaLibrarySession ?: return
+        runCatching {
+            session.broadcastCustomCommand(
+                SessionCommand(EVENT_PLAYBACK_FAILED, Bundle.EMPTY),
+                Bundle().apply {
+                    putString(ARG_FAILED_TITLE, failed.mediaMetadata.title?.toString())
+                    putString(ARG_FAILED_OUTCOME, outcome)
+                },
+            )
+        }.onFailure { KLog.w(TAG, "Could not announce a playback failure: ${it.message}") }
     }
 
     /**
@@ -1553,8 +1904,8 @@ class MusicService : MediaLibraryService() {
     // --- Media Library Session Callback ---
 
     /** Read the last playable queue without touching a Player from the IO thread. */
-    private fun loadPlaybackResumption(): MediaSession.MediaItemsWithStartPosition? {
-        val saved = PlaybackSessionRepository(this).load()
+    private fun loadPlaybackResumption(): Pair<MediaSession.MediaItemsWithStartPosition, IntArray?>? {
+        val saved = sessionRepository.load()
         val queue: List<MusicQueueItem>
         val startIndex: Int
         val startPositionMs: Long
@@ -1574,7 +1925,7 @@ class MusicService : MediaLibraryService() {
             queue.map { it.toPlaybackMediaItem() },
             startIndex,
             startPositionMs,
-        )
+        ) to saved?.playOrder?.takeIf { it.isNotEmpty() }?.toIntArray()
     }
     
     private inner class LibrarySessionCallback : MediaLibrarySession.Callback {
@@ -1655,6 +2006,9 @@ class MusicService : MediaLibraryService() {
                     .add(SessionCommand(CMD_RESTORE_PLAYBACK, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SET_PLAYBACK_SPEED, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SET_PLAY_ORDER, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_CYCLE_REPEAT, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_TOGGLE_LIKE, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_REFRESH_STREAM, Bundle.EMPTY))
                     .build()
 
             return MediaSession.ConnectionResult.accept(
@@ -1680,6 +2034,18 @@ class MusicService : MediaLibraryService() {
          * has its persisted picture, but a newly created ExoPlayer has no
          * timeline until Media3 is given the saved session here.
          */
+        /** A whole queue arriving from a controller; see [freshShufflePending]. */
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            freshShufflePending = true
+            return super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
+        }
+
         override fun onPlaybackResumption(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -1688,7 +2054,7 @@ class MusicService : MediaLibraryService() {
             // System UI also asks for resume-card metadata without applying
             // a queue. That read remains independent of current playback.
             if (!isForPlayback) return resolveScope.future {
-                loadPlaybackResumption()
+                loadPlaybackResumption()?.first
                     ?: throw IllegalStateException("No saved playback session")
             }
             val requestedPlayer = mediaSession.player
@@ -1701,6 +2067,8 @@ class MusicService : MediaLibraryService() {
                 // Refuse on the application thread before returning stale data.
                 check(queueStillEmpty()) { "Playback queue changed during resumption" }
                 restored ?: throw IllegalStateException("No saved playback session")
+                pendingRestoredPlayOrder = restored.second
+                restored.first
             }
         }
 
@@ -1734,6 +2102,15 @@ class MusicService : MediaLibraryService() {
                 applyPlayOrder(args.getIntArray(ARG_PLAY_ORDER))
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
+            CMD_CYCLE_REPEAT -> {
+                cycleRepeatMode(session.player)
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_TOGGLE_LIKE -> {
+                toggleCurrentSongLike(session.player)
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_REFRESH_STREAM -> refreshCurrentStream()
             CMD_SET_PLAYBACK_SPEED -> {
                 applyPlaybackSpeed(
                     args.getFloat(ARG_PLAYBACK_SPEED, ThemePreferences.DEFAULT_PLAYBACK_SPEED),
@@ -1749,10 +2126,11 @@ class MusicService : MediaLibraryService() {
                     // suspended. Do not replace a queue that became live in
                     // the meantime (or reset its freshly changed position).
                     if (session.player.mediaItemCount == 0) {
+                        pendingRestoredPlayOrder = restored.second
                         session.player.setMediaItems(
-                            restored.mediaItems,
-                            restored.startIndex,
-                            restored.startPositionMs,
+                            restored.first.mediaItems,
+                            restored.first.startIndex,
+                            restored.first.startPositionMs,
                         )
                         session.player.prepare()
                     }
@@ -2282,7 +2660,174 @@ class MusicService : MediaLibraryService() {
             .flatten().firstOrNull { it.id == videoId }
     }
 
-    // --- Helpers ---
+    // --- Playback session checkpoints ---
+    //
+    // The service owns playback, so it owns remembering it. This used to be
+    // PlayerViewModel's job, and that ViewModel only exists while the app's
+    // screen does: with the screen gone - Android Auto, a headset or widget
+    // resume, the app swiped away mid-song, Back out of it on Android 11 -
+    // nothing was saved, and a later process death restored an old song at an
+    // old position. The queue is written back from the player's own rows
+    // ([toMusicQueueItem]), so it needs nothing from the UI.
+
+    private val sessionRepository by lazy { PlaybackSessionRepository(this) }
+
+    private sealed interface SessionWrite {
+        /** Main-thread order; the writer never applies an older snapshot over a newer one. */
+        val seq: Long
+
+        class Queue(
+            override val seq: Long,
+            val fingerprint: Long,
+            val queue: List<MusicQueueItem>,
+            val index: Int,
+            val positionMs: Long,
+            val order: IntArray?,
+        ) : SessionWrite
+
+        class Position(
+            override val seq: Long,
+            val queueItemId: String?,
+            val index: Int,
+            val positionMs: Long,
+        ) : SessionWrite
+
+        class Clear(override val seq: Long) : SessionWrite
+    }
+
+    /**
+     * Only the newest snapshot is worth writing, so a burst of checkpoints
+     * collapses into one. Safe to conflate across kinds: until a queue write
+     * lands, [writtenSessionFingerprint] still differs, so every snapshot
+     * taken meanwhile is itself a full queue write.
+     */
+    private val sessionWrites = Channel<SessionWrite>(Channel.CONFLATED)
+    private val sessionWriteLock = Any()
+    private var sessionSeq = 0L
+    private var lastWrittenSessionSeq = 0L
+    private var sessionCheckpointJob: Job? = null
+    private var sessionWritesClosed = false
+
+    /** What the queue file on disk describes; null until this service has written one. */
+    @Volatile private var writtenSessionFingerprint: Long? = null
+
+    private fun startSessionWriter() {
+        resolveScope.launch {
+            for (write in sessionWrites) writeSession(write)
+        }
+    }
+
+    private fun writeSession(write: SessionWrite) {
+        synchronized(sessionWriteLock) {
+            if (write.seq <= lastWrittenSessionSeq) return
+            lastWrittenSessionSeq = write.seq
+            when (write) {
+                is SessionWrite.Queue -> {
+                    sessionRepository.saveQueue(write.queue, write.index, write.positionMs, write.order)
+                    writtenSessionFingerprint = write.fingerprint
+                }
+                is SessionWrite.Position ->
+                    sessionRepository.savePosition(write.queueItemId, write.index, write.positionMs)
+                is SessionWrite.Clear -> {
+                    sessionRepository.clear()
+                    writtenSessionFingerprint = null
+                }
+            }
+        }
+    }
+
+    /**
+     * Which queue this is, cheaply: every row's occurrence, the shuffle order,
+     * and where the saved window starts, so a queue longer than the cap is
+     * written again once the current song walks out of the saved part.
+     */
+    private fun sessionFingerprint(current: Player, order: IntArray?, index: Int): Long {
+        val count = current.mediaItemCount
+        var hash = 17L
+        for (i in 0 until count) {
+            val item = current.getMediaItemAt(i)
+            hash = hash * 31 + (item.queueItemId ?: item.mediaId).hashCode()
+        }
+        if (order != null) {
+            hash = hash * 31 + 1
+            for (position in order) hash = hash * 31 + position
+        }
+        return hash * 31 + PlaybackSessionRepository.savedWindowStart(count, index)
+    }
+
+    /**
+     * A write describing the player now: the whole queue when it differs from
+     * what is on disk, otherwise just the position. Main thread only.
+     */
+    private fun snapshotSession(): SessionWrite? {
+        if (sessionWritesClosed || !::engine.isInitialized) return null
+        val current = player
+        val count = current.mediaItemCount
+        if (count == 0) return null
+        val index = current.currentMediaItemIndex.takeIf { it in 0 until count } ?: return null
+        val positionMs = current.currentPosition.coerceAtLeast(0L)
+        val order = if (current.shuffleModeEnabled) {
+            currentPlayOrder().takeIf { it.size == count }
+        } else null
+        val fingerprint = sessionFingerprint(current, order, index)
+        if (fingerprint == writtenSessionFingerprint) {
+            return SessionWrite.Position(++sessionSeq, current.currentMediaItem?.queueItemId, index, positionMs)
+        }
+        val queue = ArrayList<MusicQueueItem>(count)
+        for (i in 0 until count) {
+            queue += current.getMediaItemAt(i).toMusicQueueItem() ?: return null
+        }
+        return SessionWrite.Queue(++sessionSeq, fingerprint, queue, index, positionMs, order)
+    }
+
+    /**
+     * Save now: a song change, a pause, the periodic tick. Runs inside player
+     * callbacks, where an exception would reach ExoPlayer's listener dispatch,
+     * so a failed save is logged and never allowed to disturb playback.
+     */
+    private fun checkpointSession() {
+        sessionCheckpointJob?.cancel()
+        sessionCheckpointJob = null
+        try {
+            snapshotSession()?.let { sessionWrites.trySend(it) }
+        } catch (e: Exception) {
+            KLog.w(TAG, "Session checkpoint failed: ${e.message}")
+        }
+    }
+
+    /** Save shortly, once a burst of queue edits has settled. */
+    private fun scheduleSessionCheckpoint() {
+        if (sessionWritesClosed) return
+        sessionCheckpointJob?.cancel()
+        sessionCheckpointJob = serviceScope.launch {
+            delay(SESSION_CHECKPOINT_DEBOUNCE_MS)
+            sessionCheckpointJob = null
+            checkpointSession()
+        }
+    }
+
+    private fun clearSavedSession() {
+        if (sessionWritesClosed) return
+        sessionCheckpointJob?.cancel()
+        sessionCheckpointJob = null
+        sessionWrites.trySend(SessionWrite.Clear(++sessionSeq))
+    }
+
+    /**
+     * The last write, synchronously: the process may be gone before a
+     * background writer runs. Later events (the player's own release) must not
+     * clear what this saved, so writing closes here.
+     */
+    private fun writeFinalSession() {
+        try {
+            snapshotSession()?.let(::writeSession)
+        } catch (e: Exception) {
+            KLog.w(TAG, "Final session write failed: ${e.message}")
+        }
+        sessionWritesClosed = true
+        sessionCheckpointJob?.cancel()
+        sessionWrites.close()
+    }
 
     // --- Sleep timer ---
     //
@@ -2345,10 +2890,14 @@ class MusicService : MediaLibraryService() {
         sleepTimerJob = serviceScope.launch {
             while (true) {
                 val remaining = sleepTimerEndsAt - System.currentTimeMillis()
-                if (remaining <= 0L) break
-                delay(remaining.coerceAtMost(SLEEP_TIMER_TICK_MS))
+                if (remaining <= SLEEP_TIMER_FADE_MS) break
+                delay((remaining - SLEEP_TIMER_FADE_MS).coerceAtMost(SLEEP_TIMER_TICK_MS))
             }
-            fadeOutAndPause()
+            // Fade ends on the deadline. A skip's fade-in can pre-empt it, so the pause is also enforced here.
+            fadeOutAndPause((sleepTimerEndsAt - System.currentTimeMillis()).coerceAtLeast(0L)).join()
+            val left = sleepTimerEndsAt - System.currentTimeMillis()
+            if (left > 0L) delay(left)
+            if (player.playWhenReady) player.pause()
             clearSleepTimer()
         }
     }
@@ -2378,22 +2927,26 @@ class MusicService : MediaLibraryService() {
      * fire: the silence is what wakes people. Runs on [fadeVolumeJob] so it and
      * the crossfade fade-in can never drive the volume at the same time.
      */
-    private fun fadeOutAndPause() {
+    private fun fadeOutAndPause(durationMs: Long): Job {
         launchVolumeFade {
-            val steps = 20
+            val steps = 60
             for (i in steps - 1 downTo 0) {
-                player.volume = trackGain * (i / steps.toFloat())
-                delay(SLEEP_TIMER_FADE_MS / steps)
+                player.volume = trackGain * engine.duckGain * (i / steps.toFloat())
+                delay(durationMs / steps)
             }
             player.pause()
             // launchVolumeFade restores the current gain, including ducking.
         }
+        return fadeVolumeJob!!.also { sleepFadeJob = it }
     }
 
     /** Disarm, whether it fired or the user cancelled it. */
     private fun clearSleepTimer(publish: Boolean = true) {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
+        // Cancelling mid-fade restores full volume (launchVolumeFade's completion).
+        sleepFadeJob?.takeIf { it.isActive }?.cancel()
+        sleepFadeJob = null
         sleepTimerEndsAt = 0L
         sleepTimerEndOfTrack = false
         // Both engines matter. The standby becomes audible at the next
@@ -2462,6 +3015,24 @@ class MusicService : MediaLibraryService() {
      * than a wrong-looking queue. Ignored when shuffle is off, where the
      * permutation is not in use and the drag was an ordinary `moveMediaItem`.
      */
+    /**
+     * Re-order the shuffle so songs not heard lately come first, keeping the
+     * current song at the front. A no-op with shuffle off, nothing known to be
+     * recent, or a queue too short to reorder.
+     */
+    private fun applyFreshFirstShuffle() {
+        if (!playbackShuffleEnabled || recentSongIds.isEmpty()) return
+        val count = player.mediaItemCount
+        if (count < 3) return
+        val ids = Array(count) { player.getMediaItemAt(it).mediaId }
+        if (ids.none { it in recentSongIds }) return
+        applyPlayOrder(
+            QueueShuffleOrder.freshFirst(count, player.currentMediaItemIndex, java.util.Random()) {
+                ids[it] in recentSongIds
+            }
+        )
+    }
+
     private fun applyPlayOrder(order: IntArray?) {
         if (order == null || !playbackShuffleEnabled) return
         val count = player.mediaItemCount
@@ -2473,6 +3044,7 @@ class MusicService : MediaLibraryService() {
         }
         engine.setExplicitShuffleOrder(order)
         publishSessionState()
+        scheduleSessionCheckpoint()
     }
 
     /**
@@ -2765,6 +3337,12 @@ class MusicService : MediaLibraryService() {
         engine.setPauseAtEndOfMediaItems(sleepTimerEndOfTrack)
         prefetchUpcomingSongs()
         newActive.currentMediaItem?.let { maybeProfile(it, newActive.duration) }
+        // The incoming player was handed its item directly, so no transition
+        // callback records the new song, and none of its earlier events
+        // reached the listener either: a swap made by a pause arrives with the
+        // incoming player already paused.
+        checkpointSession()
+        publishWidgetState()
     }
 
     /**
@@ -2888,6 +3466,7 @@ class MusicService : MediaLibraryService() {
         progressJob?.cancel()
         progressJob = serviceScope.launch {
             var widgetProgressTick = 0
+            var sessionCheckpointTick = 0
             try {
                 while (isActive && player.isPlaying) {
                     val duration = player.duration
@@ -2929,6 +3508,13 @@ class MusicService : MediaLibraryService() {
                     if (widgetProgressTick >= 5) {
                         widgetProgressTick = 0
                         publishWidgetState()
+                    }
+
+                    // A process death loses at most this much position.
+                    sessionCheckpointTick++
+                    if (sessionCheckpointTick >= SESSION_CHECKPOINT_TICKS) {
+                        sessionCheckpointTick = 0
+                        checkpointSession()
                     }
 
                     // The fade-out used to live here, on a one-second tick,

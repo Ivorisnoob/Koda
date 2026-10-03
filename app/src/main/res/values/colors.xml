@@ -23,4 +23,12 @@
     <!-- Playback progress. Distinct from the download colours so a glance at
          the chip says which of the two it is. -->
     <color name="notification_progress_playback">#FF2196F3</color>
+
+    <!--
+        Launcher shortcut icons (Music / Videos). Drawn by the launcher outside
+        the app theme, the same exception as the notification colours above.
+        Android 12+ replaces these with the wallpaper palette (values-v31).
+    -->
+    <color name="shortcut_background">#FFEADDFF</color>
+    <color name="shortcut_foreground">#FF4F378B</color>
 </resources>

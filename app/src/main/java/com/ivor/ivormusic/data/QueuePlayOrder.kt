@@ -46,3 +46,40 @@ fun queueIndexForPlayOrder(order: IntArray, size: Int, playOrderIndex: Int): Int
     if (order.size != size) return playOrderIndex
     return order.getOrElse(playOrderIndex) { playOrderIndex }
 }
+
+/**
+ * The play order after [addedCount] songs are appended to the end of the
+ * queue [order] describes, placed to play straight after the current song and
+ * after any upcoming songs the listener queued themselves ([isUserQueued],
+ * asked of queue indices).
+ *
+ * **Why "Add to queue" needs this with shuffle on.** An append lands at the
+ * end of the play order - right for auto-queue recommendations, which must not
+ * mix into the playlist being shuffled, and wrong for a song someone just
+ * asked to hear, which then waited behind the whole shuffled playlist, often
+ * hours away. Queued songs line up in the order they were added, like any
+ * other player's queue.
+ *
+ * Null when the current song is not in [order] or nothing was added; the
+ * caller keeps the plain append.
+ */
+fun playOrderQueuingUpNext(
+    order: IntArray,
+    currentIndex: Int,
+    addedCount: Int,
+    isUserQueued: (queueIndex: Int) -> Boolean,
+): IntArray? {
+    if (addedCount <= 0) return null
+    val currentAt = order.indexOf(currentIndex)
+    if (currentAt < 0) return null
+    var insertAt = currentAt + 1
+    while (insertAt < order.size && isUserQueued(order[insertAt])) insertAt++
+    val size = order.size
+    return IntArray(size + addedCount) { position ->
+        when {
+            position < insertAt -> order[position]
+            position < insertAt + addedCount -> size + (position - insertAt)
+            else -> order[position - addedCount]
+        }
+    }
+}

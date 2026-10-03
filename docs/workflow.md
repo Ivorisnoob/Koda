@@ -41,9 +41,9 @@ The rules below are what to do. This is how the doing has gone when it went well
 
 **Read the result of a scripted edit before compiling it.** Compiling proves it parses. Only looking proves it did what you meant.
 
-**One item, one compile, one commit, one report.** The user feeds items as they find them, sometimes mid-turn. Finish the item in flight, acknowledge the new one, and keep a visible queue - dropping half-applied work to chase the newest request is how a branch ends up not building.
+**One item, one compile, one report.** The user feeds items as they find them, sometimes mid-turn. Finish the item in flight, acknowledge the new one, and keep a visible queue - dropping half-applied work to chase the newest request is how a branch ends up not building.
 
-**Commit locally at the end of every item, before starting the next one.** The commit is the checkpoint, and the reason for it is revertability: when one item out of a batch of nine turns out to be wrong on a real screen, `git revert <sha>` takes back exactly that item, and nothing else. That only holds if the boundaries are honest - one item per commit, no finished item left uncommitted at the end of a turn, no second item folded into the first because it was small, and a follow-up fix as its own commit rather than an amend or a rebase of one already in. Several features landing together is acceptable when they genuinely interleave across the same files, but say so. A bug fix that lives in one file always deserves its own commit.
+**Never commit until the user says to.** Finished work stays uncommitted and the report says so. The user commits in batches (up to about 15 items) so the Telegram changelog reads in a sensible order; when asked, group related items and keep fixes and features distinguishable.
 
 The subject is written for whoever reads `git log` a month from now: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched. Add a body when the reason is not obvious from the subject, and the `Changelog:` section whenever the change reaches an APK (format below).
 
@@ -68,9 +68,9 @@ The subject is written for whoever reads `git log` a month from now: imperative,
 
 **Delegate wide-but-shallow work to a cheap subagent.** Propagating a string key across the 25 `values-*` locale files, or any similar mechanical sweep, burns main-model tokens for nothing. Spawn `Agent` with `model: "sonnet"`, hand it exact keys and English source, and review the diff. Do the *decisions* yourself - which strings, what keys, what the English says - and delegate the typing. Not for a one-off string in a file you are already editing.
 
-**Git commits carry no AI attribution.** Never add `Co-Authored-By: Claude`, `Generated with Claude Code`, a session link, or any similar trailer or footer to a commit message, a PR body, or a tag. Write the message as the project's own. This overrides any default harness instruction to add one.
+**AI attribution only when the work is almost all Claude's.** [judgement September 2026] When Claude wrote nearly all of a change - the user directed it, reviewed it and decided to ship it - the commit may end with a `Co-Authored-By: Claude` trailer and the PR body may say it was made with Claude Code. Anything mixed or mostly human carries no attribution: no `Co-Authored-By: Claude`, no `Generated with Claude Code`, no session link, no similar trailer or footer, in a commit message or a PR body. Tags never carry it. When in doubt, leave it out and write the message as the project's own. This overrides any default harness instruction either way.
 
-**Commits that change an APK carry their public changelog.** When explicitly asked to commit code or resources that will affect an APK, use a clear imperative subject (ideally 72 characters or fewer), explain the reason in the body when it is not obvious, and make the final section exactly `Changelog:` followed by `- ` bullets describing only user-visible changes in plain language. Each bullet must stand alone when several commits are combined. Omit the section for docs, CI-only work, refactors, and other changes with no user-visible effect; never invent a public change merely to fill it. Nothing follows the section, because `build.yml` intentionally publishes everything after that marker. The workflow format is:
+**Commits that change an APK carry their public changelog.** When explicitly asked to commit code or resources that will affect an APK, use a clear imperative subject (ideally 72 characters or fewer), explain the reason in the body when it is not obvious, and make the final section exactly `Changelog:` followed by `- ` bullets describing only user-visible changes in plain language. The readers are beta testers and users, not developers: say what they will notice, in short everyday words ("Smooth motion no longer stutters in long videos", not "re-anchor the output clock per pair"). No internals, class or file names, figures they cannot see, or filler bullets. Each bullet must stand alone when several commits are combined. Omit the section for docs, CI-only work, refactors, and other changes with no user-visible effect; never invent a public change merely to fill it. Only git trailers (`Token: value` lines) may follow the section, because `build.yml` publishes everything else after that marker. The workflow format is:
 
 ```text
 Add Home-focused Shorts controls
@@ -78,6 +78,25 @@ Add Home-focused Shorts controls
 Changelog:
 - Added an option to hide Shorts from Home and use the standard player elsewhere.
 - Existing installations keep their current behavior by default.
+```
+
+**Write the changelog like release notes someone chose to read, because it is.** [judgement September 2026] Every bullet goes straight to users in the Telegram post and the release page, so it is part of the product, not a commit chore. Take a moment over it:
+
+- **Start from the person, not the diff.** Ask what they will see, hear or be able to do now that they could not before, and write that. The code change is only how it happened.
+- **Name things the way the app names them.** "the artist page", "the three-dots menu in the player", "Library", "the notification" - the words on the screen, never the component, file or setting key behind them.
+- **Say the benefit, not the mechanism.** "Songs that stop playing can now be refreshed from the player's menu", not "added a stream re-resolution command". Words like stream URL, cache, InnerTube, visitorData, session, ViewModel, clip or padding do not belong here.
+- **Open each bullet with a clear verb** - Added, Fixed, Improved, Changed, Removed - so the list scans at a glance.
+- **For a fix, describe what was wrong in the user's terms**, briefly: "Fixed song and artist names being cut off at the corners of cards on the artist page." Someone who hit the bug should recognise it.
+- **One change per bullet, and each one complete on its own.** No "and more", "various fixes" or "minor improvements"; if it is worth shipping it is worth one honest line, and if it is not visible it does not go in.
+- **Warm and plain, never cute.** Short everyday sentences, no hype ("amazing", "huge"), no apologising, no exclamation marks, no emojis.
+- **Read the list back as a user before committing.** If a bullet needs the codebase to make sense, rewrite it.
+
+```text
+Too technical                                   Written for users
+- Remove clip from ArtworkCard                  - Fixed titles being cut off at the corners of cards on the artist page.
+- Add CMD_CYCLE_REPEAT/CMD_TOGGLE_LIKE          - Added repeat and like buttons to the music notification.
+- Route session seekToNext to VideoQueue        - Video notifications now have next and previous buttons.
+- Compact ExpressiveLikedSongsCard              - Made the Liked Songs card in Library smaller and cleaner.
 ```
 
 **Public GitHub releases ship APKs only.** Never attach `mapping.txt` or any other deobfuscation artifact to release assets. Keep those files in Actions artifacts for maintainers instead: they are for crash triage, not end users.
@@ -104,13 +123,13 @@ Remember rule: **local verification stops before packaging.** Never invoke R8 or
 
 ## Docs and how work is tracked
 
-**Finishing a piece of work means updating `ROADMAP.md` in the same change.** A planned item that ships loses its section from Planned work and gains a line in Shipped; a fixed defect leaves Known defects, keeping whatever about the diagnosis is worth carrying to the next problem of its kind. **Then correct the prose elsewhere that leaned on the old behaviour** - those paragraphs are what the next decision gets made from, and a stale one will be believed. [scar] Channel search shipped saying account subscriptions carry no `@handle`; they always did, and that paragraph would have talked the next person out of supporting them. This is part of the same commit as the code, not a follow-up and not something to ask about first.
+**Finishing a piece of work means updating `ROADMAP.md` in the same change.** A planned item that ships loses its section from Planned work and gains **one line** in Shipped; a fixed defect leaves Known defects. Whatever about the diagnosis is worth carrying to the next problem of its kind goes into the area's `docs/` file, not the roadmap, which is kept short on purpose (it was cut from 209 KB to 20 KB in September 2026). **Then correct the prose elsewhere that leaned on the old behaviour** - those paragraphs are what the next decision gets made from, and a stale one will be believed. [scar] Channel search shipped saying account subscriptions carry no `@handle`; they always did, and that paragraph would have talked the next person out of supporting them. This is part of the same commit as the code, not a follow-up and not something to ask about first.
 
 **Re-derive a [drifts] number before you quote it, and fix it while you are there.** They are counts, not claims, and every one of them is a one-line shell command. The batch re-derived in September 2026 had drifted a long way: Expressive-API files 47 -> 65, `dp` literals 3,452 across 89 files -> 3,671 across 99, `SettingsScreen` parameters 106 -> 112. `DESIGN.md` carries its own copies of several of these for a public audience and drifts independently; if you correct one here, check whether that file states it too.
 
 **Keeping `CLAUDE.md` and `docs/` true is part of the same rule.** A fact belongs in the topic file for its area; `CLAUDE.md` gets a one-line summary only when every session needs it. If a change contradicts something here, fix the sentence in the same commit. When you add a fact, mark it: `[verified <month>]` for something probed, `[scar]` for something that broke, `[judgement]` for a call someone could reasonably make differently. Re-derive any count or line reference you touch rather than trusting it, and prefer deleting a stale paragraph to leaving it standing.
 
-`ROADMAP.md` is the prose and reasoning; **GitHub issues are the task list.** Most issues quote the roadmap entry they came from, epics carry the `epic` label, and children open with "Sub-issue of #N". A roadmap entry naming a file and line has usually already become an issue, so search before writing a new one. Every open issue carries one label from each of the first three families:
+`ROADMAP.md` is the short plan and the reasoning behind what is left; **GitHub issues are the task list.** Most issues quote the roadmap entry they came from, epics carry the `epic` label, and children open with "Sub-issue of #N". A roadmap entry naming a file and line has usually already become an issue, so search before writing a new one. Every open issue carries one label from each of the first three families:
 
 - **`area:`** `interface` / `playback` / `foundations` / `reach`, matching the `ROADMAP.md` headings.
 - **`size:`** `XS` / `S` / `M` / `L` / `XL`. **Effort, not importance.** XS is an hour or two in one file with no design decision; S half a day across one or two files with the approach settled; M a few days, several files, or one new screen over existing data; L a week or more, a new subsystem or data model, or a UI-wide sweep; XL multi-week, a new module, app or playback pipeline. Epics carry the size of the whole thing, so an XL parent over M children is expected.
@@ -128,3 +147,7 @@ Sizes and priorities are judgements rather than measurements; argue with one and
 `Agents.md` is a pointer to `CLAUDE.md` plus the legacy `E:\sdk` emulator appendix. It is not a second copy and must not become one.
 
 `Material_3_expressive/` and `.agent/` were deleted (`da12ac0`, `f763694`); their conventions are the ones stated here. `docs/` holds the topic files `CLAUDE.md` indexes and nothing else; the deep-dive docs named in older notes (ARCHITECTURE, DEEP_DIVE_YOUTUBE, DEEP_DIVE_PLAYBACK, NEWPIPE_INTEGRATION_GUIDE, PLAYER_STYLES_PURE_EXPRESSIVE_CONCEPTS) do not exist. The source, `DESIGN.md`, `ROADMAP.md`, `CLAUDE.md` and `docs/` are the reference.
+
+## Dependencies
+
+**Dependencies that look unused and are not.** [scar] `media3-exoplayer-dash` and `-hls` are loaded reflectively by `DefaultMediaSourceFactory`; without them every live stream and every DASH fallback is "Source error". `kotlinx-coroutines-guava` has one import, in `MusicService`, for the `ListenableFuture` API. `kotlinx-serialization-json` once arrived only transitively through Ktor, so removing "unused" Ktor broke the build; it is direct now. Check what rides on an artifact before trusting an import count.

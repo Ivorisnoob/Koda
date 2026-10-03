@@ -71,6 +71,9 @@ object DiagnosticsCollector {
             )
             appendLine("Subscribe target: ${prefs.subscribeTarget.value}")
             appendLine("Cache enabled: ${prefs.cacheEnabled.value}")
+            appendLine()
+            appendLine("[YouTube requests]")
+            appendLine(YouTubeRequestLedger.describe())
         }
     }
 }

@@ -145,10 +145,13 @@ fun SubscriptionsContent(
     val isFeedLoading by viewModel.isSubscriptionFeedLoading.collectAsState()
     val feedProgress by viewModel.subscriptionFeedProgress.collectAsState()
     val feedError by viewModel.subscriptionFeedError.collectAsState()
+    val feedUpdatedAt by viewModel.subscriptionFeedUpdatedAt.collectAsState()
+    val listLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
     val selectedChannelFeed by viewModel.selectedChannelFeed.collectAsState()
     val isSelectedChannelFeedLoading by viewModel.isSelectedChannelFeedLoading.collectAsState()
     val selectedChannelFeedError by viewModel.selectedChannelFeedError.collectAsState()
     val channels by viewModel.subscribedChannels.collectAsState()
+    val bellWrites by viewModel.bellWrites.collectAsState()
     val isChannelsLoading by viewModel.isSubscriptionsLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     val localSubscriptions by viewModel.localSubscriptions.collectAsState()
@@ -731,13 +734,28 @@ fun SubscriptionsContent(
                             )
                         }
                     } else {
-                        items(visibleFeed, key = { it.videoId }) { video ->
+                        feedUpdatedAt?.let { at ->
+                            item(key = "feed_updated") {
+                                Text(
+                                    text = stringResource(
+                                        R.string.subs_feed_updated,
+                                        android.text.format.DateUtils.getRelativeTimeSpanString(
+                                            at, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS
+                                        ).toString()
+                                    ),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                        videoListItems(visibleFeed, listLayout) { video, cell ->
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },
                                 onLongClick = { onVideoLongPress(video) },
                                 onOpenChannel = onOpenChannel,
-                                modifier = Modifier.padding(horizontal = 16.dp)
+                                modifier = cell
                             )
                         }
                     }
@@ -867,6 +885,8 @@ fun SubscriptionsContent(
                                     onOpenChannel?.invoke(channel.channelId)
                                 },
                                 onUnfollow = { channelToUnfollow = channel },
+                                onBellChosen = { level -> viewModel.setChannelBell(channel, level) },
+                                bellBusy = channel.channelId in bellWrites,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
@@ -1013,6 +1033,9 @@ private fun subscriptionsSubtitle(
 private fun ChannelRow(
     channel: SubscribedChannel,
     onClick: () -> Unit,
+    /** The account bell; drawn only when [channel] carries one. */
+    onBellChosen: (com.ivor.ivormusic.data.BellLevel) -> Unit,
+    bellBusy: Boolean,
     modifier: Modifier = Modifier,
     isLocal: Boolean = false,
     onUnfollow: (() -> Unit)? = null
@@ -1054,6 +1077,17 @@ private fun ChannelRow(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+            // The account bell is the one account write a row offers: it is
+            // cheap to undo and this list is where many are set at once.
+            channel.bell?.let { bell ->
+                com.ivor.ivormusic.ui.channel.ChannelBellButton(
+                    bell = bell,
+                    channelName = channel.name,
+                    onLevelChosen = onBellChosen,
+                    busy = bellBusy,
+                    size = 40.dp
+                )
             }
             // Unfollow only appears for device-followed channels: dropping an
             // account subscription is a write to the user's Google account,

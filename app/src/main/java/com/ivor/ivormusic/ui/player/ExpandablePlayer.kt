@@ -4,12 +4,10 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -29,18 +27,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.lerp
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
+import com.ivor.ivormusic.ui.components.miniSkipGesture
 import com.ivor.ivormusic.ui.components.PLAYER_CONTAINER_SPRING
 import com.ivor.ivormusic.ui.components.containerBackdropAlpha
 import com.ivor.ivormusic.ui.components.containerFullAlpha
 import com.ivor.ivormusic.ui.components.containerMiniAlpha
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 /**
@@ -59,8 +58,10 @@ private const val PLAYER_BACK_PEEK = 0.72f
  * 
  * Swipe gestures:
  * - Swipe UP on mini player: Expand to full player
+ * - Swipe DOWN on mini player: Dismiss/clear player
+ * - Swipe LEFT/RIGHT on mini player: the pill stays put and the song inside it
+ *   moves to the next or previous one in the play order (MiniSkipCarousel)
  * - Swipe DOWN on full player: Collapse to mini player
- * - Swipe LEFT/RIGHT on mini player: Dismiss/clear player
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -88,6 +89,16 @@ fun ExpandablePlayer(
      * recompose the whole player instead.
      */
     collapsedFollowOffsetPx: () -> Float = { 0f },
+    /**
+     * Where the page the pill floats over begins and ends: a navigation rail
+     * on the start edge, and a phone on its side's cutout or system bar. The
+     * pill centres between them, and the expanded player still fills the
+     * whole window.
+     */
+    collapsedStartInset: androidx.compose.ui.unit.Dp = 0.dp,
+    collapsedEndInset: androidx.compose.ui.unit.Dp = 0.dp,
+    /** The widest the collapsed pill may grow; unspecified is the full page. */
+    collapsedMaxWidth: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified,
     onArtistClick: (String) -> Unit = {},
     /** Hand the playing song to the video player; null where there is none. */
     onWatchAsVideo: (() -> Unit)? = null,
@@ -115,6 +126,9 @@ fun ExpandablePlayer(
     // and publishes it here, which is what the visual under it reads to bloom its thumb.
     val playerWaveform = rememberPlayerWaveform(currentSong?.id)
     val scrubInteraction = remember { MutableInteractionSource() }
+    // Where a scrub started, shared by the same route: each style's Slider snaps its drag
+    // through it and the bar under it draws the marker.
+    val scrubReturnPoint = remember { ScrubReturnPoint() }
     // The user's playback rate, for the same reason and by the same route: a bar
     // that interpolates between samples has to know how fast the clock is
     // running. It changes only when somebody moves the speed slider.
@@ -156,9 +170,13 @@ fun ExpandablePlayer(
     // device that keeps its bar on the side) it is short by the same inset.
     // VideoPlayerOverlay solves the same problem with BoxWithConstraints; here
     // the measurement is needed above the layout that would provide it.
-    val windowSize = LocalWindowInfo.current.containerDpSize
+    val windowSize = com.ivor.ivormusic.ui.theme.windowDpSize()
     val screenHeight = windowSize.height
     val screenWidth = windowSize.width
+    // What the expanded player does with a window that is not a phone held
+    // upright: the style as ever, the style beside a companion panel, or one
+    // shared landscape layout. See AdaptivePlayer.kt.
+    val playerFrame = playerFrameFor(com.ivor.ivormusic.ui.theme.currentWindowLayout())
     val density = LocalDensity.current
     val bottomWindowInsets = WindowInsets.navigationBars
     val bottomInset = with(density) { bottomWindowInsets.getBottom(this).toDp() }
@@ -217,6 +235,17 @@ fun ExpandablePlayer(
     // Derive all properties from the single progress value
     val collapsedHeight = 80.dp
     val collapsedWidthPadding = 16.dp
+    // The pill's resting width and where it starts, inside the page area. A
+    // cap only ever narrows it, and the leftover is split either side so the
+    // pill centres over the page rather than hugging the rail.
+    val collapsedPageWidth = (screenWidth - collapsedStartInset - collapsedEndInset)
+        .coerceAtLeast(0.dp)
+    val collapsedPillWidth = (collapsedPageWidth - collapsedWidthPadding * 2)
+        .let { if (collapsedMaxWidth.isSpecified) it.coerceAtMost(collapsedMaxWidth) else it }
+        .coerceAtLeast(0.dp)
+    val collapsedStartPadding = collapsedStartInset + (collapsedPageWidth - collapsedPillWidth) / 2
+    val collapsedEndPadding = (screenWidth - collapsedStartPadding - collapsedPillWidth)
+        .coerceAtLeast(0.dp)
     val collapsedBottomPadding = collapsedBottomSpacing + bottomInset
     // Exactly half the collapsed height: a radius larger than that (the old
     // 50.dp) is illegal for the shape and rendered visibly distorted corners.
@@ -231,7 +260,8 @@ fun ExpandablePlayer(
 
     // Interpolated values based on progress
     val height = lerp(collapsedHeight, expandedHeight, expandProgress)
-    val widthPadding = lerp(collapsedWidthPadding, expandedWidthPadding, expandProgress)
+    val startPadding = lerp(collapsedStartPadding, expandedWidthPadding, expandProgress)
+    val endPadding = lerp(collapsedEndPadding, expandedWidthPadding, expandProgress)
     val bottomPadding = lerp(collapsedBottomPadding, expandedBottomPadding, expandProgress)
     val cornerRadius = lerp(collapsedCornerRadius, expandedCornerRadius, expandProgress)
         .coerceAtMost(height / 2)
@@ -247,35 +277,51 @@ fun ExpandablePlayer(
     // Swipe Logic for expand/collapse (vertical)
     var verticalDragOffset by remember { mutableFloatStateOf(0f) }
     val verticalSwipeThreshold = -50f
+    // Swipe up on the expanded player opens the options sheet. Longer than
+    // the collapse swipe, so a slightly upward flick does not open it.
+    val optionsSwipeThreshold = with(density) { 80.dp.toPx() }
+    val nowPlayingOptionsOpen = remember { mutableStateOf(false) }
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    LaunchedEffect(isExpanded) { if (!isExpanded) nowPlayingOptionsOpen.value = false }
     
-    // Swipe Logic for dismiss (horizontal) - only when collapsed
-    var horizontalDragOffset by remember { mutableFloatStateOf(0f) }
+    // The collapsed pill's gestures, the same set the video bar answers to:
+    // up expands, down dismisses, and sideways moves the song inside the pill
+    // while the pill itself stays put. Sideways used to be the dismiss, and the
+    // two bars disagreed about it; a sideways swipe on something showing a
+    // song reads as "another song", the way it does on the artwork of every
+    // expanded style.
+    //
+    // The downward drag is a plain state while the finger is on the pill and
+    // an Animatable only for the release, as the video bar does: retargeting an
+    // Animatable on every drag delta lags behind the finger on slower devices.
+    var miniDragY by remember { mutableFloatStateOf(0f) }
+    var isMiniDraggingY by remember { mutableStateOf(false) }
     var isDismissing by remember { mutableStateOf(false) }
-    val horizontalDismissThreshold = with(density) { 100.dp.toPx() }
-    
-    // Dismiss animation - slides out and fades
-    val dismissOffsetTarget = if (isDismissing) {
-        // Slide out in the direction of the swipe
-        if (horizontalDragOffset > 0) with(density) { screenWidth.toPx() } else with(density) { -screenWidth.toPx() }
-    } else {
-        horizontalDragOffset
-    }
-    
-    val animatedHorizontalOffset by animateFloatAsState(
-        targetValue = if (!isExpanded) dismissOffsetTarget else 0f,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        finishedListener = { 
-            if (isDismissing) {
-                viewModel.clearPlayer()
-                isDismissing = false
-                horizontalDragOffset = 0f
-            }
-        },
-        label = "horizontalOffset"
+    val miniSettleY = remember { Animatable(0f) }
+    val miniDismissThresholdPx = with(density) { 56.dp.toPx() }
+    val miniFlingVelocityPx = with(density) { 700.dp.toPx() }
+    val miniOffsetY: () -> Float = { if (isMiniDraggingY) miniDragY else miniSettleY.value }
+    val miniOffsetSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+
+    // The songs either side of this one in the order they will play - the
+    // play order, not the queue as added, so a shuffled queue peeks at what
+    // actually comes next. A swipe jumps to that exact occurrence rather than
+    // sending "previous", which past three seconds restarts the song instead.
+    val playOrder by viewModel.playOrderQueue.collectAsState()
+    val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
+    val queuePosition = playOrder.indexOfFirst { it.id == currentQueueItemId }
+    val previousItem = if (queuePosition > 0) playOrder[queuePosition - 1] else null
+    val nextItem = if (queuePosition >= 0) playOrder.getOrNull(queuePosition + 1) else null
+    // Keyed on the song the pill draws, not the queue occurrence: the
+    // occurrence id can move a moment before the song does, and snapping back
+    // on it drew the outgoing song again for a frame after the swipe.
+    val miniSkip = com.ivor.ivormusic.ui.components.rememberMiniSkipState(
+        contentKey = currentSong.id,
+        nextKey = nextItem?.song?.id,
+        previousKey = previousItem?.song?.id,
+        onNext = { nextItem?.let { viewModel.skipToQueueItem(it.id) } },
+        onPrevious = { previousItem?.let { viewModel.skipToQueueItem(it.id) } },
     )
-    
-    // Alpha based on swipe distance
-    val dismissAlpha = if (isDismissing) 0f else 1f - (animatedHorizontalOffset.absoluteValue / (horizontalDismissThreshold * 2)).coerceIn(0f, 0.5f)
 
     // Container
     Box(
@@ -285,16 +331,25 @@ fun ExpandablePlayer(
         Surface(
             modifier = Modifier
                 .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
-                .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
+                .padding(
+                    start = startPadding.coerceAtLeast(0.dp),
+                    end = endPadding.coerceAtLeast(0.dp)
+                )
                 // The follow fades out as the player expands: a fullscreen
                 // player has no navigation bar to sit above.
                 .offset {
                     IntOffset(
-                        animatedHorizontalOffset.roundToInt(),
-                        (collapsedFollowOffsetPx() * (1f - expandProgress)).roundToInt()
+                        0,
+                        (collapsedFollowOffsetPx() * (1f - expandProgress) + miniOffsetY()).roundToInt()
                     )
                 }
-                .graphicsLayer { alpha = dismissAlpha }
+                .graphicsLayer {
+                    // Fades with the downward pull, at most halfway until the
+                    // release commits, then all the way as it leaves.
+                    val fadeLimit = if (isDismissing) 1f else 0.5f
+                    alpha = 1f - (miniOffsetY().coerceAtLeast(0f) / (miniDismissThresholdPx * 2f))
+                        .coerceIn(0f, fadeLimit)
+                }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
                 .pointerInput(isExpanded) {
@@ -305,48 +360,107 @@ fun ExpandablePlayer(
                             onDragEnd = {
                                 if (verticalDragOffset > -verticalSwipeThreshold) {
                                     onExpandChange(false)
+                                } else if (verticalDragOffset < -optionsSwipeThreshold &&
+                                    !nowPlayingOptionsOpen.value
+                                ) {
+                                    haptics.performHapticFeedback(
+                                        androidx.compose.ui.hapticfeedback.HapticFeedbackType.GestureEnd
+                                    )
+                                    nowPlayingOptionsOpen.value = true
                                 }
                                 verticalDragOffset = 0f
                             },
                             onVerticalDrag = { change, dragAmount ->
                                 change.consume()
                                 verticalDragOffset += dragAmount
-                            }
-                        )
-                    } else {
-                        // Collapsed: Handle horizontal drag for dismiss
-                        detectHorizontalDragGestures(
-                            onDragStart = { horizontalDragOffset = 0f },
-                            onDragEnd = {
-                                if (horizontalDragOffset.absoluteValue > horizontalDismissThreshold) {
-                                    // Trigger dismiss animation - don't reset offset yet
-                                    isDismissing = true
-                                } else {
-                                    // Snap back
-                                    horizontalDragOffset = 0f
-                                }
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                horizontalDragOffset += dragAmount
                             }
                         )
                     }
                 }
-                .pointerInput(isExpanded) {
+                // Collapsed: sideways moves the song inside the pill.
+                .miniSkipGesture(miniSkip, enabled = !isExpanded)
+                .pointerInput(isExpanded, miniDismissThresholdPx, miniFlingVelocityPx) {
                     if (!isExpanded) {
-                        // Collapsed: Also handle vertical drag for expand
+                        // Collapsed: up expands, down dismisses. Only the
+                        // downward pull moves the pill: an expansion is its own
+                        // animation, so following the finger up would promise
+                        // a movement that never continues.
+                        val velocityTracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                        var thresholdFeedbackSent = false
+                        val settleHome: () -> Unit = {
+                            val released = miniDragY
+                            playerScope.launch {
+                                miniSettleY.snapTo(released)
+                                isMiniDraggingY = false
+                                miniSettleY.animateTo(0f, miniOffsetSpec)
+                            }
+                        }
                         detectVerticalDragGestures(
-                            onDragStart = { verticalDragOffset = 0f },
+                            onDragStart = {
+                                verticalDragOffset = 0f
+                                thresholdFeedbackSent = false
+                                velocityTracker.resetTracking()
+                                miniDragY = 0f
+                                isMiniDraggingY = true
+                                playerScope.launch { miniSettleY.stop() }
+                            },
                             onDragEnd = {
-                                if (verticalDragOffset < verticalSwipeThreshold) {
-                                    onExpandChange(true)
+                                val velocityY = velocityTracker.calculateVelocity().y
+                                val travel = verticalDragOffset
+                                val dismiss = travel > miniDismissThresholdPx ||
+                                    (travel > 0f && velocityY > miniFlingVelocityPx)
+                                when {
+                                    travel < verticalSwipeThreshold -> {
+                                        settleHome()
+                                        onExpandChange(true)
+                                    }
+                                    dismiss -> {
+                                        if (!thresholdFeedbackSent) haptics.confirm()
+                                        isDismissing = true
+                                        val released = miniDragY
+                                        playerScope.launch {
+                                            miniSettleY.snapTo(released)
+                                            isMiniDraggingY = false
+                                            // Below the screen's edge from wherever it is.
+                                            miniSettleY.animateTo(
+                                                with(density) { (collapsedHeight + collapsedBottomPadding).toPx() } +
+                                                    miniDismissThresholdPx,
+                                                miniOffsetSpec
+                                            )
+                                            viewModel.clearPlayer()
+                                            isDismissing = false
+                                            miniDragY = 0f
+                                            miniSettleY.snapTo(0f)
+                                        }
+                                    }
+                                    else -> settleHome()
                                 }
                                 verticalDragOffset = 0f
+                            },
+                            onDragCancel = {
+                                verticalDragOffset = 0f
+                                settleHome()
                             },
                             onVerticalDrag = { change, dragAmount ->
                                 change.consume()
                                 verticalDragOffset += dragAmount
+                                // Deltas, not pointer positions: the pill moves
+                                // under the finger, so positions relative to it
+                                // under-report the speed.
+                                velocityTracker.addPosition(
+                                    change.uptimeMillis,
+                                    androidx.compose.ui.geometry.Offset(0f, verticalDragOffset)
+                                )
+                                miniDragY = verticalDragOffset.coerceAtLeast(0f)
+                                // Only the dismiss edge ticks, and it re-arms if
+                                // the finger comes back inside it.
+                                val crossed = verticalDragOffset >= miniDismissThresholdPx
+                                if (crossed && !thresholdFeedbackSent) {
+                                    thresholdFeedbackSent = true
+                                    haptics.threshold()
+                                } else if (!crossed) {
+                                    thresholdFeedbackSent = false
+                                }
                             }
                         )
                     }
@@ -375,7 +489,7 @@ fun ExpandablePlayer(
                             // bar's artwork, marquee title and progress track
                             // against new constraints on every frame of the
                             // expansion, for a layer that is fading out.
-                            .requiredWidth(screenWidth - collapsedWidthPadding * 2)
+                            .requiredWidth(collapsedPillWidth)
                             .height(collapsedHeight)
                             .graphicsLayer { alpha = miniAlpha }
                     ) {
@@ -387,7 +501,10 @@ fun ExpandablePlayer(
                             progress = progress,
                             onPlayPauseClick = onPlayPauseClick,
                             onNextClick = onNextClick,
-                            onClick = { onExpandChange(true) }
+                            onClick = { onExpandChange(true) },
+                            skipState = miniSkip,
+                            previousSong = previousItem?.song,
+                            nextSong = nextItem?.song
                         )
                     }
                 }
@@ -441,6 +558,46 @@ fun ExpandablePlayer(
                         CompositionLocalProvider(
                             LocalPlayerStyleWheelController provides styleWheel
                         ) {
+                        if (playerFrame.kind == PlayerFrameKind.LANDSCAPE) {
+                            // Every style shares this one layout on its side,
+                            // so there is no style swap to crossfade. The
+                            // locals are the ones each style receives below.
+                            CompositionLocalProvider(
+                                LocalMotionArtwork provides motionArtworkSession,
+                                LocalMotionArtworkPlaying provides isPlaying,
+                                LocalPlayerWaveform provides playerWaveform,
+                                LocalPlayerScrubInteraction provides scrubInteraction,
+                                LocalScrubReturnPoint provides scrubReturnPoint,
+                                LocalPlaybackSpeed provides playbackSpeed,
+                                LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
+                            ) {
+                                LandscapeNowPlaying(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = { viewModel.loadMoreRecommendations() },
+                                    onArtistClick = onArtistClick,
+                                    onWatchAsVideo = onWatchAsVideo,
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
+                                )
+                            }
+                        } else
+                        Row(modifier = Modifier.fillMaxSize()) {
+                        // FULL: the style is the window. STAGE: the style keeps
+                        // a phone-shaped column and the companion panel takes
+                        // the rest of the width.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .then(
+                                    if (playerFrame.kind == PlayerFrameKind.STAGE) {
+                                        Modifier.width(playerFrame.stageWidth)
+                                    } else {
+                                        Modifier.weight(1f)
+                                    }
+                                )
+                        ) {
                         // Crossfade makes a live style swap (from the style
                         // wheel or Settings) a soft morph instead of a cut.
                         Crossfade(
@@ -453,9 +610,11 @@ fun ExpandablePlayer(
                             LocalMotionArtworkPlaying provides isPlaying,
                             LocalPlayerWaveform provides playerWaveform,
                             LocalPlayerScrubInteraction provides scrubInteraction,
+                            LocalScrubReturnPoint provides scrubReturnPoint,
                             // The rate every style's bar extrapolates at between
                             // the service's once-a-second samples.
                             LocalPlaybackSpeed provides playbackSpeed,
+                            LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
                         ) {
                         when (activeStyle) {
                             PlayerStyle.CLASSIC -> {
@@ -585,6 +744,22 @@ fun ExpandablePlayer(
                                 )
                             }
                         }
+                        }
+                        }
+                        }
+                        if (playerFrame.kind == PlayerFrameKind.STAGE) {
+                            PlayerCompanionPanel(
+                                viewModel = viewModel,
+                                onLoadMore = { viewModel.loadMoreRecommendations() },
+                                ambientBackground = ambientBackground,
+                                // The stage already keeps the start edge clear.
+                                insets = WindowInsets.safeDrawing.only(
+                                    WindowInsetsSides.Vertical + WindowInsetsSides.End
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                            )
                         }
                         }
                         }

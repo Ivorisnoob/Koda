@@ -133,7 +133,7 @@ fun DialPlayerSheetContent(
         onNext = { playerHaptics.skip(); viewModel.skipToNext() },
         onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
     )
-    var showOptions by remember { mutableStateOf(false) }
+    var showOptions by rememberNowPlayingOptionsOpen()
 
     val field = MaterialTheme.colorScheme.surfaceContainerLowest
     val ink = MaterialTheme.colorScheme.onSurface

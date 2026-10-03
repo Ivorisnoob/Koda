@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">مكتبتك فارغة</string>
     <string name="library_empty_subtitle">الأغاني التي تنزّلها أو تعجبك ستظهر هنا</string>
-    <string name="library_create_playlist_hint">أنشئ واحدة بزر + في الأسفل</string>
     <string name="fab_downloads">التنزيلات</string>
     <string name="fab_listening_history">سجل الاستماع</string>
     <string name="fab_statistics">الإحصاءات</string>

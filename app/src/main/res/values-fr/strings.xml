@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Votre bibliothèque est vide</string>
     <string name="library_empty_subtitle">Les titres que vous téléchargez ou aimez apparaîtront ici</string>
-    <string name="library_create_playlist_hint">Créez-en une avec le bouton + ci-dessous</string>
     <string name="fab_downloads">Téléchargements</string>
     <string name="fab_listening_history">Historique d\'écoute</string>
     <string name="fab_statistics">Statistiques</string>

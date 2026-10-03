@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Vaše knihovna je prázdná</string>
     <string name="library_empty_subtitle">Skladby, které si stáhnete nebo kterým dáte líbíko, se zobrazí zde</string>
-    <string name="library_create_playlist_hint">Vytvořte jej tlačítkem + níže</string>
     <string name="fab_downloads">Stažené</string>
     <string name="fab_listening_history">Historie poslechu</string>
     <string name="fab_statistics">Statistiky</string>

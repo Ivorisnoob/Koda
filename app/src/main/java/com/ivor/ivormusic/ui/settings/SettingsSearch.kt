@@ -19,6 +19,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Animation
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.automirrored.rounded.Comment
@@ -31,6 +35,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Bolt
@@ -44,6 +49,7 @@ import androidx.compose.material.icons.rounded.MoneyOff
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
@@ -169,6 +175,7 @@ internal fun buildSettingsSearchIndex(
     onOpenRoutingPicker: (SubscriptionDialogTarget) -> Unit,
     onShowAbout: () -> Unit,
     onShowShortsButtons: () -> Unit,
+    onShowContentRegion: () -> Unit,
     onOpenFolderExclusion: () -> Unit,
     onNavigateToColorPalette: () -> Unit,
     onNavigateToSubscriptions: () -> Unit,
@@ -283,6 +290,16 @@ internal fun buildSettingsSearchIndex(
             "classic", "floating", "expressive"
         )
     ) { onOpenPage(SettingsPage.APPEARANCE) }
+    entry(
+        "rotate_with_device",
+        stringResource(R.string.sp_rotate_with_device),
+        stringResource(R.string.settings_appearance),
+        Icons.Rounded.ScreenRotation,
+        listOf(
+            "rotate", "rotation", "landscape", "portrait", "orientation",
+            "sideways", "turn", "auto rotate", "lock"
+        )
+    ) { onOpenPage(SettingsPage.APPEARANCE) }
 
     // Player
     entry(
@@ -378,11 +395,28 @@ internal fun buildSettingsSearchIndex(
         listOf("hdr", "hdr10", "high dynamic range", "10 bit", "bt2020", "vp9 profile 2")
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
+        "frame_interpolation", stringResource(R.string.sp_frame_interpolation), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.Animation,
+        listOf(
+            "frame interpolation", "motion smoothing", "smooth", "60fps", "60 fps", "fps",
+            "90fps", "90 fps", "120fps", "120 fps", "high refresh rate", "hz",
+            "frame rate", "memc", "judder", "soap opera"
+        )
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
         "video_brightness", "Remember fullscreen brightness", "Playback and quality",
         Icons.Rounded.BrightnessMedium,
         listOf(
             "brightness", "dim", "slider", "fullscreen", "gesture", "reset",
             "system brightness"
+        )
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "pip_buttons", stringResource(R.string.sp_pip_buttons), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.PictureInPictureAlt,
+        listOf(
+            "pip", "picture in picture", "floating", "mini window", "buttons", "controls",
+            "skip", "seek", "forward", "rewind", "10 seconds", "next", "previous"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     // Lives on Appearance now: haptics answer every touch in the app, not
@@ -441,14 +475,40 @@ internal fun buildSettingsSearchIndex(
         listOf("hide buttons", "like", "share", "overlay", "actions")
     ) { onShowShortsButtons() }
     entry(
+        "shorts_hard_block", stringResource(R.string.sp_shorts_hard_block), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.Block,
+        listOf(
+            "block shorts", "remove shorts", "no shorts", "disable shorts", "kill shorts",
+            "hide shorts everywhere", "reels", "channel shorts tab"
+        )
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "subscription_refresh", stringResource(R.string.sp_subs_refresh), stringResource(R.string.settings_subscriptions),
+        Icons.Rounded.Schedule,
+        listOf("refresh", "reload", "interval", "manual refresh", "subscriptions feed", "every restart", "pull to refresh")
+    ) { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
+    entry(
+        "return_dislike", stringResource(R.string.sp_return_dislike), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.ThumbDown,
+        listOf("dislikes", "ryd", "return youtube dislike", "thumbs down", "dislike count")
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "content_region", stringResource(R.string.sp_content_region), stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.Public,
+        listOf(
+            "region", "country", "location", "locale", "trending", "local content",
+            "recommendations region", "gl", "wrong country"
+        )
+    ) { onShowContentRegion() }
+    entry(
         "show_recent_searches", stringResource(R.string.sp_show_recent_searches), stringResource(R.string.settings_content_and_feeds),
         Icons.Rounded.Search,
         listOf("recent", "history", "suggestions", "search bar", "past queries", "hide")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
-        "compact_video_home", stringResource(R.string.sp_compact_video_home), stringResource(R.string.settings_content_and_feeds),
+        "video_list_layout", stringResource(R.string.sp_video_layout), stringResource(R.string.settings_content_and_feeds),
         Icons.Rounded.ViewList,
-        listOf("compact", "video", "home", "small", "thumbnail", "list", "layout", "density")
+        listOf("compact", "grid", "cards", "video", "home", "small", "thumbnail", "list", "layout", "density")
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "show_related_videos", stringResource(R.string.sp_show_related_videos), stringResource(R.string.settings_content_and_feeds),

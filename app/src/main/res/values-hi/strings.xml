@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">आपकी लाइब्रेरी खाली है</string>
     <string name="library_empty_subtitle">डाउनलोड किए या पसंद किए गाने यहाँ दिखेंगे</string>
-    <string name="library_create_playlist_hint">नीचे + बटन से बनाएं</string>
     <string name="fab_downloads">डाउनलोड</string>
     <string name="fab_listening_history">सुनने का इतिहास</string>
     <string name="fab_statistics">आँकड़े</string>

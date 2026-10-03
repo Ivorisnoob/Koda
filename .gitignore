@@ -28,3 +28,5 @@ keystore/
 
 # Local design reference images for planned polish work - not part of the build
 /design-ideas/
+.idea/deploymentTargetSelector.xml
+.idea/deviceManager.xml

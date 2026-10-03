@@ -43,11 +43,15 @@ internal fun parseShortsEndpoint(reel: JSONObject): ShortsItem? {
     val details = reel.optJSONObject("unserializedPrefetchData")
         ?.optJSONObject("playerResponse")?.optJSONObject("videoDetails")
         ?.takeIf { it.optString("videoId") == videoId }
+    // videoDetails also names the uploader (channelId + author), verified
+    // September 2026 on a search sequence: 1 entry of 25 was prefetched.
     return ShortsItem(
         videoId = videoId,
         title = details?.optString("title").orEmpty(),
         thumbnailUrl = thumbnail,
-        sequenceParams = reel.optString("sequenceParams").takeIf { it.isNotBlank() }
+        sequenceParams = reel.optString("sequenceParams").takeIf { it.isNotBlank() },
+        channelId = details?.optString("channelId")?.takeIf { it.startsWith("UC") },
+        channelName = details?.optString("author").orEmpty()
     )
 }
 

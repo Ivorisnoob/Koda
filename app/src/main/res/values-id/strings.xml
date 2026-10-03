@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Koleksimu masih kosong</string>
     <string name="library_empty_subtitle">Lagu yang kamu download atau sukai akan muncul di sini</string>
-    <string name="library_create_playlist_hint">Buat dengan tombol + di bawah</string>
     <string name="fab_downloads">Download</string>
     <string name="fab_listening_history">Riwayat dengar</string>
     <string name="fab_statistics">Statistik</string>

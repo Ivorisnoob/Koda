@@ -45,7 +45,10 @@ data class Song(
     // source supplies no relationship/year; dateAdded is not a release date.
     val albumId: String? = null,
     val releaseYear: Int? = null,
-    val releaseType: MusicReleaseType? = null
+    val releaseType: MusicReleaseType? = null,
+    // A plain YouTube upload played as a song (music search's Videos tab).
+    // Its "artist" is a channel name, so it is never scrobbled to Last.fm.
+    val isUpload: Boolean = false,
 ) {
     val highResThumbnailUrl: String?
         get() = thumbnailUrl?.let { url ->

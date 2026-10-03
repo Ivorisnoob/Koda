@@ -1,4 +1,6 @@
 package com.ivor.ivormusic.ui.search
+
+import com.ivor.ivormusic.ui.video.videoListItems
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
@@ -41,6 +43,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -74,6 +77,7 @@ import androidx.compose.material.icons.rounded.KeyboardVoice
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TravelExplore
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bookmark
@@ -120,6 +124,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.TextButton
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
@@ -156,23 +161,21 @@ import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material3.SegmentedListItem
 import com.ivor.ivormusic.ui.video.VideoCard
+import com.ivor.ivormusic.ui.components.SegmentedFooterShape
+import com.ivor.ivormusic.ui.components.SegmentedGroup
+import com.ivor.ivormusic.ui.components.segmentedRowShape
 import com.ivor.ivormusic.ui.video.VideoOptionsSheetHost
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Segmented list shape helper for Expressive design
+ * A result row's place in its segmented group. [hasMore] means a closing
+ * footer segment is drawn below the last row.
  */
-@Composable
-private fun getSegmentedShape(index: Int, count: Int, hasMore: Boolean = false, cornerSize: androidx.compose.ui.unit.Dp = 28.dp): Shape {
-    return when {
-        count == 1 && !hasMore -> RoundedCornerShape(cornerSize)
-        index == 0 -> RoundedCornerShape(topStart = cornerSize, topEnd = cornerSize)
-        index == count - 1 && !hasMore -> RoundedCornerShape(bottomStart = cornerSize, bottomEnd = cornerSize)
-        else -> RectangleShape
-    }
-}
+private fun getSegmentedShape(index: Int, count: Int, hasMore: Boolean = false): Shape =
+    segmentedRowShape(index, count, continues = hasMore)
 
 /**
  * 🌟 Material 3 Expressive Search Screen
@@ -223,6 +226,7 @@ fun SearchScreen(
     listState: androidx.compose.foundation.lazy.LazyListState =
         androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
+    var initialFocusConsumed by remember { mutableStateOf(false) }
     // Saveable, not just remembered: this composable is disposed and rebuilt
     // both on a tab switch (AnimatedContent in HomeScreen only keeps the
     // target tab's subtree composed) and on process death, and a plainly-
@@ -239,7 +243,11 @@ fun SearchScreen(
     var songResultsExhausted by remember { mutableStateOf(false) }
     var videoResultsExhausted by remember { mutableStateOf(false) }
     var youtubeResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+    // Music mode's Videos tab: ordinary YouTube uploads (remixes, covers, fan
+    // edits) that YouTube Music does not list, played as songs.
+    var videoSongResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    val searchListLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
     var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
     var channelResults by remember {
         mutableStateOf<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
@@ -336,6 +344,7 @@ fun SearchScreen(
             // stale text-search results linger behind the link result card.
             isLoading = false
             youtubeResults = emptyList()
+            videoSongResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
@@ -369,6 +378,7 @@ fun SearchScreen(
 
             // Clear previous results of other types
             youtubeResults = emptyList()
+            videoSongResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
@@ -389,6 +399,7 @@ fun SearchScreen(
             } else {
                 when (selectedCategory) {
                     SearchCategory.SONGS -> youtubeResults = viewModel.searchYouTube(query)
+                    SearchCategory.VIDEOS -> videoSongResults = viewModel.searchVideos(query).asPlayableSongs()
                     SearchCategory.ARTISTS -> artistResults = viewModel.searchArtists(query)
                     SearchCategory.ALBUMS -> albumResults = viewModel.searchAlbums(query)
                     SearchCategory.PLAYLISTS -> playlistResults = viewModel.searchPlaylists(query)
@@ -398,6 +409,7 @@ fun SearchScreen(
         } else {
             isLoading = false
             youtubeResults = emptyList()
+            videoSongResults = emptyList()
             videoResults = emptyList()
             videoPlaylistResults = emptyList()
             channelResults = emptyList()
@@ -412,7 +424,7 @@ fun SearchScreen(
     // immediately pulls the next one, instead of stalling until the user
     // nudges the list.
     LaunchedEffect(
-        isNearListEnd, isLoading, youtubeResults.size, videoResults.size,
+        isNearListEnd, isLoading, youtubeResults.size, videoResults.size, videoSongResults.size,
         query, videoMode, selectedCategory, selectedVideoCategory, selectedDateFilter, selectedSort
     ) {
         if (!isNearListEnd || isLoading || isLoadingMore) return@LaunchedEffect
@@ -420,6 +432,7 @@ fun SearchScreen(
 
         val loadingVideos = videoMode && selectedVideoCategory == VideoSearchCategory.VIDEOS
         val loadingSongs = !videoMode && selectedCategory == SearchCategory.SONGS
+        val loadingVideoSongs = !videoMode && selectedCategory == SearchCategory.VIDEOS
         try {
             when {
                 loadingVideos && videoResults.isNotEmpty() && !videoResultsExhausted -> {
@@ -435,6 +448,13 @@ fun SearchScreen(
                         if (merged.size == videoResults.size) videoResultsExhausted = true
                         videoResults = merged
                     }
+                }
+                loadingVideoSongs && videoSongResults.isNotEmpty() && !videoResultsExhausted -> {
+                    isLoadingMore = true
+                    val more = viewModel.loadMoreVideoResults(query).asPlayableSongs()
+                    val merged = (videoSongResults + more).distinctBy { it.id }
+                    if (merged.size == videoSongResults.size) videoResultsExhausted = true
+                    videoSongResults = merged
                 }
                 loadingSongs && youtubeResults.isNotEmpty() && !songResultsExhausted -> {
                     isLoadingMore = true
@@ -537,15 +557,27 @@ fun SearchScreen(
         }
     }
 
-    Box(
+    androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(backgroundColor)
     ) {
+        // Wide windows: results in columns rather than one long strip, and
+        // the page centred past a reading width so a desktop-sized window does
+        // not put a result's title a metre from its play button.
+        val searchWide = maxWidth >= SEARCH_WIDE_MIN_WIDTH
+        val pageSidePadding = ((maxWidth - SEARCH_PAGE_MAX_WIDTH) / 2).coerceAtLeast(0.dp)
+        val pageWidth = maxWidth - pageSidePadding * 2
+        val artistColumns = if (searchWide) (pageWidth / 200.dp).toInt().coerceIn(3, 7) else 2
+        val collectionColumns = if (searchWide) (pageWidth / 420.dp).toInt().coerceIn(2, 3) else 1
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 140.dp)
+            contentPadding = PaddingValues(
+                start = pageSidePadding,
+                end = pageSidePadding,
+                bottom = contentPadding.calculateBottomPadding() + 140.dp
+            )
         ) {
             // ========== HERO HEADER WITH SEARCH ==========
             item {
@@ -568,7 +600,8 @@ fun SearchScreen(
                     surfaceColor = surfaceColor,
                     textColor = textColor,
                     secondaryTextColor = secondaryTextColor,
-                    requestInitialFocus = requestInitialFocus
+                    requestInitialFocus = requestInitialFocus && !initialFocusConsumed,
+                    onInitialFocusConsumed = { initialFocusConsumed = true }
                 )
             }
             
@@ -686,10 +719,7 @@ fun SearchScreen(
                                     modifier = Modifier.padding(horizontal = 20.dp)
                                 )
                                 if (index < state.songs.size - 1) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(horizontal = 44.dp),
-                                        color = textColor.copy(alpha = 0.06f)
-                                    )
+                                    Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                                 }
                             }
                         }
@@ -749,17 +779,31 @@ fun SearchScreen(
                 isSearchFocused && query.isEmpty() && showRecentSearches &&
                     searchHistory.isNotEmpty() -> {
                     item {
-                        SearchHistoryList(
-                            history = searchHistory,
-                            onHistoryClick = { 
-                                query = it
-                                focusManager.clearFocus()
-                            },
-                            onRemoveClick = { viewModel.removeFromSearchHistory(it) },
-                            onClearAll = { viewModel.clearSearchHistory() },
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor
-                        )
+                        // A list of short queries across a whole tablet puts
+                        // each one's remove button a screen away from it; on
+                        // a wide window it is a reading column instead.
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .widthIn(max = SEARCH_HISTORY_MAX_WIDTH)
+                                    .fillMaxWidth()
+                            ) {
+                                SearchHistoryList(
+                                    history = searchHistory,
+                                    onHistoryClick = {
+                                        query = it
+                                        focusManager.clearFocus()
+                                    },
+                                    onRemoveClick = { viewModel.removeFromSearchHistory(it) },
+                                    onClearAll = { viewModel.clearSearchHistory() },
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -780,7 +824,7 @@ fun SearchScreen(
                                 Text(
                                     when {
                                         videoMode && selectedVideoCategory == VideoSearchCategory.PLAYLISTS -> stringResource(R.string.searching_playlists)
-                                        videoMode -> stringResource(R.string.searching_videos)
+                                        videoMode || selectedCategory == SearchCategory.VIDEOS -> stringResource(R.string.searching_videos)
                                         selectedCategory == SearchCategory.ARTISTS -> stringResource(R.string.searching_artists)
                                         selectedCategory == SearchCategory.ALBUMS -> stringResource(R.string.searching_albums)
                                         selectedCategory == SearchCategory.PLAYLISTS -> stringResource(R.string.searching_playlists)
@@ -862,20 +906,14 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
                         if (index < displaySongs.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         }
                     }
 
                     // Show more button for local browse
                     if (hasMoreLocal) {
                         item {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                             ShowMoreButton(
                                 onClick = { visibleLocalCount += 20 },
                                 cardColor = cardColor,
@@ -953,7 +991,7 @@ fun SearchScreen(
                             ) {
                                 Surface(
                                     shape = CircleShape,
-                                    color = Color(0xFFFF0000).copy(alpha = 0.15f),
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
                                     modifier = Modifier.size(32.dp)
                                 ) {
                                     Box(
@@ -963,7 +1001,7 @@ fun SearchScreen(
                                         Icon(
                                             Icons.Rounded.TravelExplore,
                                             contentDescription = null,
-                                            tint = Color(0xFFFF0000),
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -985,14 +1023,16 @@ fun SearchScreen(
                         }
 
                         // Display video results; long-press opens the save sheet
-                        itemsIndexed(videoResults) { index, video ->
-                            VideoCard(
-                                video = video,
-                                onClick = { onVideoClick(video) },
-                                onLongClick = { onVideoLongPress(video) },
-                                onOpenChannel = onOpenChannel,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
+                        run {
+                            videoListItems(videoResults, searchListLayout) { video, cell ->
+                                VideoCard(
+                                    video = video,
+                                    onClick = { onVideoClick(video) },
+                                    onLongClick = { onVideoLongPress(video) },
+                                    onOpenChannel = onOpenChannel,
+                                    modifier = cell.padding(vertical = 8.dp)
+                                )
+                            }
                         }
 
                         item {
@@ -1020,7 +1060,7 @@ fun SearchScreen(
                         )
                     }
                     
-                    val artistPairs = artistResults.chunked(2)
+                    val artistPairs = artistResults.chunked(artistColumns)
                     items(artistPairs) { pair ->
                         Row(
                             modifier = Modifier
@@ -1041,7 +1081,8 @@ fun SearchScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                             }
-                            if (pair.size == 1) {
+                            // A short last row keeps the column width.
+                            repeat(artistColumns - pair.size) {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
@@ -1061,20 +1102,26 @@ fun SearchScreen(
                             secondaryTextColor = secondaryTextColor
                         )
                     }
-                    items(albumResults) { album ->
-                        PlaylistResultCard(
-                            item = album,
-                            onClick = {
-                                viewModel.addToSearchHistory(query)
-                                onAlbumClick(album)
-                            },
-                            cardColor = cardColor,
-                            textColor = textColor,
-                            secondaryTextColor = secondaryTextColor,
-                            isAlbum = true,
-                            isSaved = savedPlaylistIds.contains(album.id),
-                            onToggleSave = { viewModel.toggleSavedPlaylist(album, isAlbum = true) }
-                        )
+                    items(albumResults.chunked(collectionColumns)) { row ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            row.forEach { album ->
+                                PlaylistResultCard(
+                                    item = album,
+                                    onClick = {
+                                        viewModel.addToSearchHistory(query)
+                                        onAlbumClick(album)
+                                    },
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    isAlbum = true,
+                                    isSaved = savedPlaylistIds.contains(album.id),
+                                    onToggleSave = { viewModel.toggleSavedPlaylist(album, isAlbum = true) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            repeat(collectionColumns - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
                         Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
@@ -1091,21 +1138,80 @@ fun SearchScreen(
                             secondaryTextColor = secondaryTextColor
                         )
                     }
-                    items(playlistResults) { playlist ->
-                        PlaylistResultCard(
-                            item = playlist,
-                            onClick = {
-                                viewModel.addToSearchHistory(query)
-                                onPlaylistClick(playlist)
-                            },
+                    items(playlistResults.chunked(collectionColumns)) { row ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            row.forEach { playlist ->
+                                PlaylistResultCard(
+                                    item = playlist,
+                                    onClick = {
+                                        viewModel.addToSearchHistory(query)
+                                        onPlaylistClick(playlist)
+                                    },
+                                    cardColor = cardColor,
+                                    textColor = textColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    isAlbum = false,
+                                    isSaved = savedPlaylistIds.contains(playlist.id),
+                                    onToggleSave = { viewModel.toggleSavedPlaylist(playlist) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            repeat(collectionColumns - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                }
+
+                !videoMode && selectedCategory == SearchCategory.VIDEOS && videoSongResults.isNotEmpty() -> {
+                    item {
+                        ResultHeader(
+                            title = stringResource(R.string.cat_videos),
+                            count = videoSongResults.size,
+                            icon = Icons.Rounded.SmartDisplay,
+                            color = primaryColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
+                    }
+                    if (searchWide) {
+                        wideSongResults(
+                            songs = videoSongResults,
+                            keyPrefix = "video-songs",
+                            hasMore = isLoadingMore || videoResultsExhausted,
+                            onPlay = { onPlayRadio(it) },
+                            onLongPress = onSongLongPress,
                             cardColor = cardColor,
                             textColor = textColor,
                             secondaryTextColor = secondaryTextColor,
-                            isAlbum = false,
-                            isSaved = savedPlaylistIds.contains(playlist.id),
-                            onToggleSave = { viewModel.toggleSavedPlaylist(playlist) }
+                            accentColor = primaryColor
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                    } else itemsIndexed(videoSongResults) { index, song ->
+                        SearchSongCard(
+                            song = song,
+                            // Radio, as on Songs: an upload's related mix is
+                            // what YouTube itself would play after it.
+                            onClick = { onPlayRadio(song) },
+                            onLongClick = onSongLongPress?.let { press -> { press(song) } },
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = primaryColor,
+                            isYouTube = true,
+                            shape = getSegmentedShape(index, videoSongResults.size, hasMore = isLoadingMore || videoResultsExhausted),
+                            modifier = Modifier.padding(horizontal = 20.dp)
+                        )
+                        if (index < videoSongResults.size - 1) {
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
+                        }
+                    }
+                    item {
+                        SearchPagingFooter(
+                            isLoadingMore = isLoadingMore,
+                            isExhausted = videoResultsExhausted,
+                            cardColor = cardColor,
+                            accentColor = primaryColor,
+                            secondaryTextColor = secondaryTextColor
+                        )
                     }
                 }
 
@@ -1118,7 +1224,7 @@ fun SearchScreen(
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0xFFFF0000).copy(alpha = 0.15f),
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Box(
@@ -1128,7 +1234,7 @@ fun SearchScreen(
                                     Icon(
                                         Icons.Rounded.TravelExplore,
                                         contentDescription = null,
-                                        tint = Color(0xFFFF0000),
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -1149,7 +1255,19 @@ fun SearchScreen(
                         }
                     }
                     
-                    itemsIndexed(youtubeResults) { index, song ->
+                    if (searchWide) {
+                        wideSongResults(
+                            songs = youtubeResults,
+                            keyPrefix = "songs",
+                            hasMore = isLoadingMore || songResultsExhausted,
+                            onPlay = { onPlayRadio(it) },
+                            onLongPress = onSongLongPress,
+                            cardColor = cardColor,
+                            textColor = textColor,
+                            secondaryTextColor = secondaryTextColor,
+                            accentColor = primaryColor
+                        )
+                    } else itemsIndexed(youtubeResults) { index, song ->
                         SearchSongCard(
                             song = song,
                             // Radio, not the result list: the other hits are
@@ -1161,23 +1279,17 @@ fun SearchScreen(
                             secondaryTextColor = secondaryTextColor,
                             accentColor = primaryColor,
                             isYouTube = true,
-                            shape = getSegmentedShape(index, youtubeResults.size, hasMore = true),
+                            shape = getSegmentedShape(index, youtubeResults.size, hasMore = isLoadingMore || songResultsExhausted),
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
                         if (index < youtubeResults.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         }
                     }
                     
                     // Pages now arrive on scroll; this footer only reports state.
                     item {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 44.dp),
-                            color = textColor.copy(alpha = 0.06f)
-                        )
+                        Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         SearchPagingFooter(
                             isLoadingMore = isLoadingMore,
                             isExhausted = songResultsExhausted,
@@ -1244,19 +1356,13 @@ fun SearchScreen(
                                 modifier = Modifier.padding(horizontal = 20.dp)
                             )
                             if (index < localDisplayed.size - 1) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 44.dp),
-                                    color = textColor.copy(alpha = 0.06f)
-                                )
+                                Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                             }
                         }
                         
                         if (hasMoreLocalMatches) {
                             item {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 44.dp),
-                                    color = textColor.copy(alpha = 0.06f)
-                                )
+                                Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                                 ShowMoreButton(
                                     onClick = { visibleLocalCount += 20 },
                                     cardColor = cardColor,
@@ -1340,19 +1446,13 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
                         if (index < displayedLocal.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                         }
                     }
                     
                     if (hasMoreLocal) {
                         item {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 44.dp),
-                                color = textColor.copy(alpha = 0.06f)
-                            )
+                            Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
                             ShowMoreButton(
                                 onClick = { visibleLocalCount += 20 },
                                 cardColor = cardColor,
@@ -1384,14 +1484,19 @@ private fun SearchHeroHeader(
     surfaceColor: Color,
     textColor: Color,
     secondaryTextColor: Color,
-    requestInitialFocus: Boolean
+    requestInitialFocus: Boolean,
+    onInitialFocusConsumed: () -> Unit
 ) {
-    // Auto-focus the search field (and pop the keyboard) when the screen appears
+    // Once per visit: this header is a lazy item, so it re-enters composition
+    // on scroll and relayout, and each re-entry used to pop the keyboard.
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val stillWanted by androidx.compose.runtime.rememberUpdatedState(requestInitialFocus)
     LaunchedEffect(Unit) {
         if (!requestInitialFocus) return@LaunchedEffect
-        delay(150) // let the enter transition settle so focus/IME lands reliably
+        delay(150)
+        if (!stillWanted) return@LaunchedEffect
+        onInitialFocusConsumed()
         focusRequester.requestFocus()
         keyboardController?.show()
     }
@@ -1636,9 +1741,9 @@ private fun ShowMoreButton(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            .clip(SegmentedFooterShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+        shape = SegmentedFooterShape,
         color = cardColor,
         tonalElevation = 1.dp
     ) {
@@ -1731,7 +1836,7 @@ private fun SearchSongCard(
                         Surface(
                             modifier = Modifier.fillMaxSize(),
                             shape = RoundedCornerShape(14.dp),
-                            color = if (isYouTube) Color(0xFFFF0000).copy(alpha = 0.15f) else accentColor.copy(alpha = 0.15f)
+                            color = if (isYouTube) MaterialTheme.colorScheme.tertiaryContainer else accentColor.copy(alpha = 0.15f)
                         ) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
@@ -1740,7 +1845,7 @@ private fun SearchSongCard(
                                 Icon(
                                     Icons.Rounded.MusicNote,
                                     contentDescription = null,
-                                    tint = if (isYouTube) Color(0xFFFF0000) else accentColor,
+                                    tint = if (isYouTube) MaterialTheme.colorScheme.onTertiaryContainer else accentColor,
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
@@ -1765,8 +1870,173 @@ private fun SearchSongCard(
     }
 }
 
+/** From this width results go into columns; below it, the phone's one list. */
+private val SEARCH_WIDE_MIN_WIDTH = 840.dp
+
+/** The widest the results page grows before it centres. */
+private val SEARCH_PAGE_MAX_WIDTH = 1440.dp
+
+/** Recent searches: a reading column, whatever the window. */
+private val SEARCH_HISTORY_MAX_WIDTH = 720.dp
+
+/** How many results the opening band shows: the top result and four beside it. */
+private const val SEARCH_LEAD_COUNT = 5
+
+/**
+ * Song results on a wide window.
+ *
+ * The first result is what most searches were for, so it gets the room: a
+ * large card on the start side with the next four stacked beside it, the way
+ * a results page on a desktop leads. Everything after that flows in two
+ * columns, each column its own segmented group, so the list reads as the
+ * same connected rows the phone draws rather than a scatter of cards.
+ *
+ * Paging is unchanged: it fires when the last visible row nears the end of
+ * the list, which rows of two reach the same way rows of one do.
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.wideSongResults(
+    songs: List<Song>,
+    keyPrefix: String,
+    hasMore: Boolean,
+    onPlay: (Song) -> Unit,
+    onLongPress: ((Song) -> Unit)?,
+    cardColor: Color,
+    textColor: Color,
+    secondaryTextColor: Color,
+    accentColor: Color,
+) {
+    val lead = songs.take(SEARCH_LEAD_COUNT)
+    val top = lead.firstOrNull() ?: return
+    val beside = lead.drop(1)
+    item(key = "$keyPrefix-lead") {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            SearchTopResultCard(
+                song = top,
+                onPlay = { onPlay(top) },
+                onLongClick = onLongPress?.let { press -> { press(top) } },
+                modifier = Modifier
+                    .weight(0.42f)
+                    .height(SEARCH_TOP_RESULT_HEIGHT)
+            )
+            Column(
+                modifier = Modifier.weight(0.58f),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
+            ) {
+                beside.forEachIndexed { index, song ->
+                    SearchSongCard(
+                        song = song,
+                        onClick = { onPlay(song) },
+                        onLongClick = onLongPress?.let { press -> { press(song) } },
+                        cardColor = cardColor,
+                        textColor = textColor,
+                        secondaryTextColor = secondaryTextColor,
+                        accentColor = accentColor,
+                        isYouTube = true,
+                        shape = getSegmentedShape(index, beside.size)
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+    val rows = songs.drop(SEARCH_LEAD_COUNT).chunked(2)
+    itemsIndexed(rows, key = { index, _ -> "$keyPrefix-row-$index" }) { rowIndex, pair ->
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            pair.forEach { song ->
+                SearchSongCard(
+                    song = song,
+                    onClick = { onPlay(song) },
+                    onLongClick = onLongPress?.let { press -> { press(song) } },
+                    cardColor = cardColor,
+                    textColor = textColor,
+                    secondaryTextColor = secondaryTextColor,
+                    accentColor = accentColor,
+                    isYouTube = true,
+                    shape = getSegmentedShape(rowIndex, rows.size, hasMore = hasMore),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (pair.size == 1) Spacer(Modifier.weight(1f))
+        }
+        if (rowIndex < rows.lastIndex) Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
+    }
+}
+
+/** Four result rows and their gaps, so the card and the rows beside it end together. */
+private val SEARCH_TOP_RESULT_HEIGHT = 312.dp
+
+/**
+ * The first result, given the room its likelihood earns: cover, title and
+ * artist large, with Play as a real button. The whole card starts the same
+ * radio a row tap does, and a long press opens the same options sheet.
+ */
+@Composable
+private fun SearchTopResultCard(
+    song: Song,
+    onPlay: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier
+            .clip(RoundedCornerShape(28.dp))
+            .songRowClick(onClick = onPlay, onLongClick = onLongClick)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            AsyncImage(
+                model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(112.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.search_top_result),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = song.artist.takeIf { !isUnknownArtist(it) } ?: stringResource(R.string.unknown_artist),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(12.dp))
+            androidx.compose.material3.Button(onClick = onPlay) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.cd_play))
+            }
+        }
+    }
+}
+
 enum class SearchCategory {
-    SONGS, ARTISTS, ALBUMS, PLAYLISTS
+    SONGS, VIDEOS, ARTISTS, ALBUMS, PLAYLISTS
 }
 
 enum class VideoSearchCategory {
@@ -1893,13 +2163,20 @@ fun SearchFilterChips(
                 Text(
                     when (category) {
                         SearchCategory.SONGS -> stringResource(R.string.cat_songs)
+                        SearchCategory.VIDEOS -> stringResource(R.string.cat_videos)
                         SearchCategory.ARTISTS -> stringResource(R.string.cat_artists)
                         SearchCategory.ALBUMS -> stringResource(R.string.cat_albums)
                         SearchCategory.PLAYLISTS -> stringResource(R.string.cat_playlists)
                     },
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    maxLines = 1
+                    maxLines = 1,
+                    // Five segments: shrink rather than clip on narrow phones
+                    // and at large font scales.
+                    autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
+                        minFontSize = 10.sp,
+                        maxFontSize = MaterialTheme.typography.labelLarge.fontSize,
+                    )
                 )
             }
         }
@@ -2194,48 +2471,21 @@ fun SearchHistoryList(
             }
         }
         
-        history.forEachIndexed { index, query ->
-            val rowShape = getSegmentedShape(index, history.size, cornerSize = 22.dp)
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 1.dp)
-                    .clip(rowShape)
-                    .clickable { onHistoryClick(query) },
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                shape = rowShape
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Rounded.History,
-                        contentDescription = null,
-                        tint = secondaryTextColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.size(16.dp))
-                    Text(
-                        text = query,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = textColor,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = { onRemoveClick(query) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.cd_remove),
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(18.dp)
-                        )
+        // Real segmented rows: the press morph, the group's own gap, and a
+        // full-size remove target (it was a 32dp button).
+        SegmentedGroup(history) { index, count, query ->
+            SegmentedListItem(
+                onClick = { onHistoryClick(query) },
+                shapes = ListItemDefaults.segmentedShapes(index, count),
+                colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.background),
+                leadingContent = { Icon(Icons.Rounded.History, contentDescription = null) },
+                trailingContent = {
+                    IconButton(onClick = { onRemoveClick(query) }) {
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.cd_remove))
                     }
                 }
+            ) {
+                Text(query, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -2262,6 +2512,13 @@ private sealed interface LinkLookupState {
 }
 
 /** Music-mode representation of a video resolved from a pasted link. */
+/**
+ * Uploads that can play as a song. Live streams are dropped: the music path is
+ * progressive, and a live stream is only playable through its HLS manifest.
+ */
+private fun List<VideoItem>.asPlayableSongs(): List<Song> =
+    filter { !it.isLive && it.duration > 0L }.map { it.toSong().copy(isUpload = true) }
+
 private fun VideoItem.toSong(): Song = Song.fromYouTube(
     videoId = videoId,
     title = title,
@@ -2989,8 +3246,8 @@ private fun SearchPagingFooter(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
-        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
+            .clip(SegmentedFooterShape),
+        shape = SegmentedFooterShape,
         color = cardColor,
         tonalElevation = 1.dp
     ) {

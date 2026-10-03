@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.aboutlibraries.android)
 }
 
 // Release signing credentials: CI supplies them as env vars, local builds read
@@ -30,8 +31,8 @@ android {
         // platform did not gain until API 33.
         minSdk = 30
         targetSdk = 36
-        versionCode = 28
-        versionName = "5.0"
+        versionCode = 29
+        versionName = "5.1"
         manifestPlaceholders["appLabel"] = "@string/app_name"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -194,6 +195,9 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
+    // The GL pipeline behind ExoPlayer.setVideoEffects, which the opt-in
+    // frame interpolation runs in. ExoPlayer finds it reflectively.
+    implementation(libs.androidx.media3.effect)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.compose.material.icons.extended)
@@ -206,6 +210,7 @@ dependencies {
     implementation(libs.androidx.glance.material3)
     // The background upload check over the local subscriptions feed.
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.aboutlibraries.compose.m3)
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.ui.text.google.fonts)
     implementation(libs.androidx.palette)

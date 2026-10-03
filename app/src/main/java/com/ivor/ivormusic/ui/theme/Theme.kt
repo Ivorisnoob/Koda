@@ -156,7 +156,13 @@ fun IvorMusicTheme(
         typography = Typography,
     ) {
         // The app's own scheme, kept reachable from inside a local re-theme.
-        CompositionLocalProvider(LocalAppColorScheme provides colorScheme) {
+        // Content color too: most screens paint a plain background rather than
+        // a Surface, and without one an uncolored Text falls back to black,
+        // which is invisible in dark theme.
+        CompositionLocalProvider(
+            LocalAppColorScheme provides colorScheme,
+            androidx.compose.material3.LocalContentColor provides colorScheme.onBackground,
+        ) {
             ScaledDensity(uiScale, content)
         }
     }

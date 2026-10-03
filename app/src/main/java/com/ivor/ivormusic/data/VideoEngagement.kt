@@ -20,7 +20,13 @@ data class VideoEngagement(
      * majority of videos, which have one owner and describe it the ordinary
      * way; see [VideoCollaborator] for why a collab describes none.
      */
-    val collaborators: List<VideoCollaborator> = emptyList()
+    val collaborators: List<VideoCollaborator> = emptyList(),
+    /**
+     * The account bell of each channel the response drew a Subscribe button
+     * for, keyed by channel id - one on an ordinary video, one per channel on a
+     * collaboration. Empty signed out.
+     */
+    val bells: Map<String, ChannelBell> = emptyMap()
 )
 
 enum class LikeStatus { LIKE, DISLIKE, INDIFFERENT }
@@ -37,6 +43,12 @@ data class CommentItem(
     val links: List<RichLink> = emptyList(),
     val author: String,
     val authorAvatarUrl: String?,
+    /**
+     * The commenter's channel (UC id), from `author.channelId` on the
+     * commentEntityPayload [verified September 2026]. Null on shapes that
+     * lack it; the name and avatar are then not tappable.
+     */
+    val authorChannelId: String? = null,
     val publishedTime: String,
     val likeCount: String,           // formatted, e.g. "263K"
     val replyCount: String,          // formatted; empty when no replies

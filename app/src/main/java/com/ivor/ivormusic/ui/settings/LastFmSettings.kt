@@ -44,7 +44,11 @@ class LastFmViewModel(application: Application) : AndroidViewModel(application) 
 }
 
 @Composable
-internal fun LastFmHubRow(onClick: () -> Unit, model: LastFmViewModel = viewModel()) {
+internal fun LastFmHubRow(
+    onClick: () -> Unit,
+    selected: Boolean = false,
+    model: LastFmViewModel = viewModel()
+) {
     val state by model.state.collectAsStateWithLifecycle()
     SettingsHubRow(icon = Icons.Rounded.History, title = stringResource(R.string.lastfm_title),
         value = when {
@@ -52,7 +56,7 @@ internal fun LastFmHubRow(onClick: () -> Unit, model: LastFmViewModel = viewMode
             state.connected -> state.user
             else -> stringResource(R.string.lastfm_not_connected)
         }, onClick = onClick, tint = MaterialTheme.colorScheme.tertiary,
-        explanation = stringResource(R.string.lastfm_intro))
+        explanation = stringResource(R.string.lastfm_intro), selected = selected)
 }
 
 @Composable

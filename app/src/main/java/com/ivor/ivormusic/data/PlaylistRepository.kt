@@ -155,6 +155,15 @@ class PlaylistRepository(private val context: Context) {
         savePlaylist(playlist.copy(songs = songs))
     }
     
+    /** Fills in lengths by song id, re-reading the playlist so a concurrent edit survives. */
+    suspend fun updateSongDurations(playlistId: String, durations: Map<String, Long>) = withContext(Dispatchers.IO) {
+        if (durations.isEmpty()) return@withContext
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+        savePlaylist(playlist.copy(songs = playlist.songs.map { song ->
+            durations[song.id]?.takeIf { song.duration <= 0 }?.let { song.copy(duration = it) } ?: song
+        }))
+    }
+
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         val file = File(playlistDir, "$playlistId.json")
         if (file.exists()) file.delete()

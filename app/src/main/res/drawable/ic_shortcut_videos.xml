@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher shortcut icon for "Videos". See ic_shortcut_music. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/shortcut_background" />
+    <foreground>
+        <inset
+            android:drawable="@drawable/ic_shortcut_videos_glyph"
+            android:inset="33%" />
+    </foreground>
+</adaptive-icon>

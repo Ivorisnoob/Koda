@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -136,11 +137,13 @@ fun SpotlightHomeContent(
     val discoverySongs by viewModel.discoverySongs.collectAsState()
     val discoveryCollections by viewModel.discoveryCollections.collectAsState()
     val isDiscoveryLoading by viewModel.isDiscoveryLoading.collectAsState()
+    val musicBrowse by viewModel.musicBrowse.collectAsState()
 
     // Fetched when its tab is opened rather than with the rest of Home: it is
     // several searches plus a radio call, and most sessions never look at it.
     LaunchedEffect(filter) {
         if (filter == SpotlightFilter.Recommended) viewModel.loadDiscovery()
+        filter.browseKey()?.let { viewModel.loadMusicBrowse(it) }
     }
 
     val quickPicks = remember(filter, songs, likedSongs, recentlyPlayed, discoverySongs) {
@@ -148,6 +151,7 @@ fun SpotlightHomeContent(
             SpotlightFilter.Liked -> likedSongs
             SpotlightFilter.Recent -> recentlyPlayed
             SpotlightFilter.Recommended -> discoverySongs
+            SpotlightFilter.MusicHome, SpotlightFilter.Explore, SpotlightFilter.Charts, SpotlightFilter.NewReleases -> emptyList()
             else -> songs
         }.take(QUICK_PICK_PAGES * QUICK_PICK_ROWS)
     }
@@ -170,7 +174,10 @@ fun SpotlightHomeContent(
         // something other than what the screen is showing.
         isRefreshing = (isRefreshing || isDiscoveryLoading) && !isInitialLoading,
         onRefresh = {
-            if (filter == SpotlightFilter.Recommended) {
+            val browseKey = filter.browseKey()
+            if (browseKey != null) {
+                viewModel.loadMusicBrowse(browseKey, force = true)
+            } else if (filter == SpotlightFilter.Recommended) {
                 viewModel.loadDiscovery(force = true)
             } else {
                 viewModel.refresh(excludedFolders, manualScan)
@@ -323,6 +330,7 @@ fun SpotlightHomeContent(
 
             if (filter != SpotlightFilter.Playlists &&
                 filter != SpotlightFilter.Recommended &&
+                filter.browseKey() == null &&
                 recentlyPlayed.isNotEmpty()
             ) {
                 item(key = "recent-header") {
@@ -396,7 +404,24 @@ fun SpotlightHomeContent(
 
             // A filter that turned up nothing is a real state, and a blank page
             // reads as a bug rather than as an answer.
-            if (!isInitialLoading && !isDiscoveryLoading && quickPicks.isEmpty() &&
+            filter.browseKey()?.let { key ->
+                val mood = musicBrowse[BROWSE_MOOD]
+                val showingMood = filter == SpotlightFilter.Explore && mood != null
+                musicBrowseItems(
+                    state = if (showingMood) mood!! else musicBrowse[key],
+                    moodTitle = if (showingMood) mood!!.title else null,
+                    onCloseMood = { viewModel.closeMood() },
+                    onRetry = { viewModel.loadMusicBrowse(if (showingMood) BROWSE_MOOD else key, force = true) },
+                    onLoadMore = { viewModel.loadMoreMusicBrowse(if (showingMood) BROWSE_MOOD else key) },
+                    onPlaylistClick = onPlaylistClick,
+                    onArtistClick = { viewModel.requestArtistPage(it.name) },
+                    onPlayTracks = onPlaySongs,
+                    onMoodClick = { viewModel.openMood(it) },
+                    onSongLongPress = onSongLongPress,
+                )
+            }
+
+            if (filter.browseKey() == null && !isInitialLoading && !isDiscoveryLoading && quickPicks.isEmpty() &&
                 (filter == SpotlightFilter.Recommended || shortcuts.isEmpty()) &&
                 (filter != SpotlightFilter.Recommended || discoveryCollections.isEmpty()) &&
                 (filter != SpotlightFilter.Playlists || ownPlaylists.isEmpty())
@@ -432,6 +457,21 @@ internal fun isAutoMix(name: String): Boolean {
 }
 
 private const val QUICK_PICK_ROWS = 4
+
+/**
+ * One quick-picks page per 360dp of width, at most three: a phone shows one
+ * page of four rows as it always has, a tablet shows two or three columns of
+ * them instead of one row stretched across the whole screen.
+ */
+private object QuickPickPageSize : PageSize {
+    override fun androidx.compose.ui.unit.Density.calculateMainAxisPageSize(
+        availableSpace: Int,
+        pageSpacing: Int,
+    ): Int {
+        val columns = (availableSpace / 360.dp.roundToPx()).coerceIn(1, 3)
+        return (availableSpace - pageSpacing * (columns - 1)) / columns
+    }
+}
 private const val QUICK_PICK_PAGES = 3
 private const val SHELF_ITEMS = 12
 private const val SHORTCUT_COUNT = 6
@@ -456,9 +496,21 @@ internal enum class SpotlightFilter(val label: String, val quickPickCaption: Str
      * entry that answers "what should I listen to that I have not heard".
      */
     Recommended("For you", "Not in your library yet"),
+    MusicHome("Home", null),
+    Explore("Explore", null),
+    Charts("Charts", null),
+    NewReleases("New", null),
     Liked("Liked", "From songs you liked"),
     Recent("Recent", "From what you played lately"),
     Playlists("Playlists", null),
+}
+
+internal fun SpotlightFilter.browseKey(): String? = when (this) {
+    SpotlightFilter.MusicHome -> BROWSE_HOME
+    SpotlightFilter.Explore -> BROWSE_EXPLORE
+    SpotlightFilter.Charts -> BROWSE_CHARTS
+    SpotlightFilter.NewReleases -> BROWSE_NEW
+    else -> null
 }
 
 /** The Spin pool matching what a filter shows, so "spin these" means these. */
@@ -466,7 +518,7 @@ private fun SpotlightFilter.spinSource(): SpinSource = when (this) {
     SpotlightFilter.Recommended -> SpinSource.ForYou
     SpotlightFilter.Liked -> SpinSource.Liked
     SpotlightFilter.Recent -> SpinSource.Recent
-    SpotlightFilter.All, SpotlightFilter.Playlists -> SpinSource.Mix
+    else -> SpinSource.Mix
 }
 
 /**
@@ -510,7 +562,7 @@ private fun SpotlightFilterChips(
                     entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-                colors = ToggleButtonDefaults.toggleButtonColors(
+                colors = ToggleButtonDefaults.colors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     checkedContainerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onSurface,
@@ -530,6 +582,10 @@ private fun spotlightFilterLabel(filter: SpotlightFilter): String = when (filter
     SpotlightFilter.Liked -> stringResource(R.string.filter_liked)
     SpotlightFilter.Recent -> stringResource(R.string.filter_recent)
     SpotlightFilter.Playlists -> stringResource(R.string.filter_playlists)
+    SpotlightFilter.MusicHome -> stringResource(R.string.filter_music_home)
+    SpotlightFilter.Explore -> stringResource(R.string.filter_explore)
+    SpotlightFilter.Charts -> stringResource(R.string.filter_charts)
+    SpotlightFilter.NewReleases -> stringResource(R.string.filter_new_releases)
 }
 
 @Composable
@@ -586,32 +642,36 @@ private fun buildShortcuts(
 }.take(SHORTCUT_COUNT)
 
 /**
- * Two columns of wide, short tiles. Built from Rows rather than a LazyGrid,
- * because a lazy grid nested in this LazyColumn has unbounded height - the same
- * constraint PlayerStylePicker works around.
+ * Two columns of wide, short tiles on a phone, three from 600dp of page, so
+ * the six shortcuts are two rows rather than three across a tablet and each
+ * tile stays a readable shape instead of a 500dp-wide bar. Built from Rows
+ * rather than a LazyGrid, because a lazy grid nested in this LazyColumn has
+ * unbounded height - the same constraint PlayerStylePicker works around.
  */
 @Composable
 private fun SpotlightShortcutGrid(
     shortcuts: List<Shortcut>,
     onClick: (Shortcut) -> Unit,
 ) {
-    Column(
+    androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        shortcuts.chunked(2).forEach { pair ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                pair.forEach { shortcut ->
-                    SpotlightShortcutTile(
-                        shortcut = shortcut,
-                        onClick = { onClick(shortcut) },
-                        modifier = Modifier.weight(1f),
-                    )
+        val columns = if (maxWidth >= 600.dp) 3 else 2
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            shortcuts.chunked(columns).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { shortcut ->
+                        SpotlightShortcutTile(
+                            shortcut = shortcut,
+                            onClick = { onClick(shortcut) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // A short last row must not stretch its tiles across it.
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
-                // An odd count must not stretch the last tile across the row.
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -721,6 +781,9 @@ private fun SpotlightQuickPicks(
             state = pagerState,
             contentPadding = PaddingValues(horizontal = 16.dp),
             pageSpacing = 8.dp,
+            // Several pages side by side on a wide page, still snapping one
+            // page at a time.
+            pageSize = QuickPickPageSize,
             modifier = Modifier.fillMaxWidth(),
         ) { page ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -834,7 +897,7 @@ internal data class ShelfItem(
  * between a shelf and a list with pictures.
  */
 @Composable
-private fun SpotlightShelf(items: List<ShelfItem>, onClick: (String) -> Unit) {
+internal fun SpotlightShelf(items: List<ShelfItem>, onClick: (String) -> Unit) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -916,7 +979,7 @@ private fun PlaylistDisplayItem.toShelfItem(): ShelfItem = ShelfItem(
  * beneath it, so the rail scans as "people" at a glance.
  */
 @Composable
-private fun SpotlightArtistRail(
+internal fun SpotlightArtistRail(
     artists: List<com.ivor.ivormusic.data.ArtistItem>,
     onClick: (com.ivor.ivormusic.data.ArtistItem) -> Unit,
 ) {
@@ -930,7 +993,10 @@ private fun SpotlightArtistRail(
                     .width(112.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .clickable { onClick(artist) }
-                    .padding(vertical = 8.dp),
+                    // Sides as well as ends: a name or subscriber count long
+                    // enough to span the card otherwise ran into the rounded
+                    // clip, which shaved its first and last letters.
+                    .padding(horizontal = 6.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
@@ -977,7 +1043,7 @@ private fun SpotlightArtistRail(
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun SpotlightSectionHeader(
+internal fun SpotlightSectionHeader(
     title: String,
     subtitle: String? = null,
     actionLabel: String? = null,
@@ -1062,7 +1128,7 @@ private fun SpotlightEmptyState(filter: SpotlightFilter) {
                 SpotlightFilter.Recent -> stringResource(R.string.spotlight_empty_no_recent)
                 SpotlightFilter.Playlists -> stringResource(R.string.spotlight_empty_no_playlists)
                 SpotlightFilter.Recommended -> stringResource(R.string.spotlight_discovery_empty)
-                SpotlightFilter.All -> stringResource(R.string.spotlight_empty_generic)
+                else -> stringResource(R.string.spotlight_empty_generic)
             },
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface,

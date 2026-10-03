@@ -205,6 +205,8 @@ private fun ChannelRoot(
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val loadFailed by viewModel.loadFailed.collectAsState()
     val isSubscribed by viewModel.isSubscribed.collectAsState()
+    val bell by viewModel.bell.collectAsState()
+    val bellBusy by viewModel.bellBusy.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
     val about by viewModel.about.collectAsState()
     val isAboutLoading by viewModel.isAboutLoading.collectAsState()
@@ -292,6 +294,62 @@ private fun ChannelRoot(
             images = images,
             startIndex = index,
             onDismiss = { photoViewer = null }
+        )
+    }
+
+    // A community post's comments: the shared comments panel in a tall sheet,
+    // with the post pinned above the thread so replies keep their context.
+    val commentsPost by viewModel.commentsPost.collectAsState()
+    var showCommentSignIn by remember { mutableStateOf(false) }
+    commentsPost?.let { post ->
+        val thread = viewModel.postComments
+        val isLoggedInNow by viewModel.isLoggedIn.collectAsState()
+        val threadComments by thread.comments.collectAsState()
+        val threadReplies by thread.replies.collectAsState()
+        val loadingReplyIds by thread.loadingReplyIds.collectAsState()
+        val isThreadLoading by thread.isLoading.collectAsState()
+        val isThreadLoadingMore by thread.isLoadingMore.collectAsState()
+        val isThreadAvailable by thread.isAvailable.collectAsState()
+        val canComment by thread.canComment.collectAsState()
+        val isPosting by thread.isPosting.collectAsState()
+        com.ivor.ivormusic.ui.video.CommentsSheet(
+            comments = threadComments,
+            replies = threadReplies,
+            loadingReplyIds = loadingReplyIds,
+            isLoading = isThreadLoading,
+            isLoadingMore = isThreadLoadingMore,
+            commentsAvailable = isThreadAvailable,
+            canComment = canComment,
+            isPosting = isPosting,
+            onLoadMore = thread::loadMore,
+            onLoadReplies = thread::loadReplies,
+            onPostComment = thread::postComment,
+            onPostReply = thread::postReply,
+            // Signed out, a like would be refused and flicker back; ask for
+            // the sign-in instead, as the players do.
+            onLikeComment = { comment ->
+                if (isLoggedInNow) thread.toggleLike(comment) else showCommentSignIn = true
+            },
+            onDeleteComment = thread::delete,
+            onDismiss = viewModel::closePostComments,
+            onOpenAuthor = { channelId ->
+                viewModel.closePostComments()
+                onOpenChannel(channelId)
+            },
+            heightFraction = 0.92f,
+            header = { PostCommentsContext(post) },
+            unavailableMessage = stringResource(R.string.ch_post_comments_unavailable)
+        )
+    }
+    if (showCommentSignIn) {
+        com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
+            onDismiss = { showCommentSignIn = false },
+            onAuthSuccess = {
+                showCommentSignIn = false
+                viewModel.onLoginStateChanged()
+                // The thread was fetched signed out: no composer, no like state.
+                viewModel.reloadPostComments()
+            }
         )
     }
 
@@ -416,6 +474,10 @@ private fun ChannelRoot(
                                         if (viewModel.subscribeNeedsLogin()) onLoginClick()
                                         else viewModel.toggleSubscribe()
                                     },
+                                    bell = bell,
+                                    bellBusy = bellBusy,
+                                    channelName = currentHeader.name,
+                                    onBellChosen = viewModel::setBell,
                                     onShareClick = { shareChannel(context, currentHeader.shareUrl) },
                                     onSearchClick = { searchMode = true },
                                     onBlockClick = { viewModel.toggleBlocked() },
@@ -452,7 +514,8 @@ private fun ChannelRoot(
                         onOpenPlaylist = onOpenPlaylist,
                         onOpenChannel = onOpenChannel,
                         onSelectSort = { viewModel.selectSort(it, selectedTab) },
-                        onOpenPhotos = { images, index -> photoViewer = images to index }
+                        onOpenPhotos = { images, index -> photoViewer = images to index },
+                        onOpenComments = viewModel::openPostComments
                     )
 
                     if (isLoadingMore) {
@@ -600,6 +663,11 @@ private fun ChannelHeaderActions(
     isBlocked: Boolean,
     canSearch: Boolean,
     onSubscribeClick: () -> Unit,
+    /** The account bell; null hides it (signed out, device-only follow, or none served). */
+    bell: com.ivor.ivormusic.data.ChannelBell?,
+    bellBusy: Boolean,
+    channelName: String,
+    onBellChosen: (com.ivor.ivormusic.data.BellLevel) -> Unit,
     onShareClick: () -> Unit,
     onSearchClick: () -> Unit,
     onBlockClick: () -> Unit,
@@ -617,6 +685,16 @@ private fun ChannelHeaderActions(
             onClick = onSubscribeClick,
             modifier = Modifier.weight(1f)
         )
+        // Beside Subscribe rather than among the icons: it is the second half
+        // of the subscribed state, and arrives and leaves with it.
+        if (bell != null) {
+            ChannelBellButton(
+                bell = bell,
+                channelName = channelName,
+                onLevelChosen = onBellChosen,
+                busy = bellBusy
+            )
+        }
         if (canSearch) {
             ChannelIconAction(
                 icon = Icons.Rounded.Search,

@@ -35,8 +35,8 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -68,6 +68,19 @@ import kotlinx.coroutines.isActive
  */
 private fun TextStyle.withLyricsFont(family: FontFamily?): TextStyle =
     if (family == null) this else copy(fontFamily = family)
+
+/**
+ * The one style every lyric line is set in, sung or not, word-timed or not.
+ *
+ * Emphasis is colour, alpha and glow only. Giving the current line a larger
+ * size or heavier weight re-wraps it the moment it becomes current, so a line
+ * that fit on one row jumped to two with nothing to animate between; and
+ * enlarging it after layout instead draws outside its bounds (the clipping
+ * scar in docs/playback-music.md).
+ */
+@Composable
+private fun lyricLineStyle(): TextStyle =
+    MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold)
 
 /**
  * Synced Lyrics View - Material 3 Expressive
@@ -279,6 +292,24 @@ private fun LyricLine(
         label = "LyricAlpha"
     )
 
+    // Current and inactive lines share one style so a line wraps identically
+    // either way; only colour and glow change, and both fade. Held here rather
+    // than inside the plain-text branch so a word-timed line leaving the
+    // karaoke view fades from its sung colour instead of snapping. A size or
+    // weight change re-wrapped the line the moment it became current, jumping
+    // from one row to two.
+    val highlighted = isSynced && isCurrent
+    val lineColor by animateColorAsState(
+        targetValue = if (highlighted) primaryColor else onSurfaceColor,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "LyricColor"
+    )
+    val glow by animateFloatAsState(
+        targetValue = if (highlighted) 1f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "LyricGlow"
+    )
+
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val tapModifier = if (isSynced) {
         Modifier.clickable(
@@ -310,39 +341,46 @@ private fun LyricLine(
                 modifier = Modifier.fillMaxWidth()
             )
 
-        } else if (isSynced && isCurrent) {
-            // Standard LRC: Line-Synced Only
-            // Just highlight the whole line clearly. No "fake" gradient filling.
-            // This is safer and more honest to the user.
-            
-            Text(
-                text = line.text,
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    shadow = androidx.compose.ui.graphics.Shadow(
-                        color = primaryColor.copy(alpha = 0.5f),
-                        blurRadius = 24f
-                    )
-                ).withLyricsFont(lyricsFont),
-                color = primaryColor,
-                textAlign = TextAlign.Center
-            )
         } else {
-            // Inactive lines
+            // Line-synced lyrics highlight the whole line - no invented
+            // per-word fill.
             Text(
                 text = line.text,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Medium
+                style = lyricLineStyle().copy(
+                    shadow = if (glow > 0.01f) {
+                        Shadow(
+                            color = primaryColor.copy(alpha = 0.5f * glow),
+                            blurRadius = 24f * glow
+                        )
+                    } else {
+                        null
+                    }
                 ).withLyricsFont(lyricsFont),
-                color = onSurfaceColor,
+                color = lineColor,
                 textAlign = TextAlign.Center
             )
         }
     }
 }
 
-private const val LETTER_LIFT_DURATION_MS = 220L
-private val LetterLiftEasing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+/**
+ * The letter wave. Each letter starts rising as it is sung and takes far longer
+ * to settle than the gap to the next letter, so neighbours are always mid-rise
+ * together and the word swells as one slow ripple instead of letters popping
+ * one at a time. The rise is small and eased at both ends on purpose: the old
+ * 6dp, 220ms pop with a per-letter swell read as letters jumping around.
+ */
+private const val LETTER_RISE_MS = 650L
+private val LETTER_LIFT = 3.dp
+private val LetterRiseEasing = CubicBezierEasing(0.37f, 0f, 0.2f, 1f)
+
+/**
+ * Held notes only: a word sung over at least this long swells gently and
+ * glows while it lasts, reaching full strength by [SUSTAIN_FULL_MS].
+ */
+private const val SUSTAIN_START_MS = 900L
+private const val SUSTAIN_FULL_MS = 1_800L
+private const val SUSTAIN_SCALE = 0.035f
 
 private data class TimedLyricGrapheme(
     val text: String,
@@ -367,8 +405,7 @@ private data class TimedLyricToken(
 private data class MeasuredLyricGrapheme(
     val timing: TimedLyricGrapheme,
     val textLayout: TextLayoutResult,
-    val position: Offset,
-    val pivot: Offset
+    val position: Offset
 )
 
 private data class MeasuredLyricWord(
@@ -396,21 +433,25 @@ private fun KaraokeWordFlow(
     if (tokens.isEmpty()) {
         Text(
             text = lineText,
-            style = MaterialTheme.typography.headlineMedium
-                .copy(fontWeight = FontWeight.ExtraBold)
-                .withLyricsFont(lyricsFont),
+            style = lyricLineStyle().withLyricsFont(lyricsFont),
             color = primaryColor,
             textAlign = TextAlign.Center
         )
         return
     }
 
-    val textStyle = MaterialTheme.typography.headlineMedium
-        .copy(fontWeight = FontWeight.ExtraBold)
-        .withLyricsFont(lyricsFont)
+    val textStyle = lyricLineStyle().withLyricsFont(lyricsFont)
     val density = LocalDensity.current
-    val wordSpacing = with(density) {
-        runCatching { (textStyle.fontSize.toPx() * 0.26f).toDp() }.getOrDefault(6.dp)
+    // The font's real space advance, so this line wraps where the same line
+    // set as plain text does. Measured as the difference between "a a" and
+    // "aa", because a lone space can be trimmed as trailing whitespace.
+    val spaceMeasurer = rememberTextMeasurer(cacheSize = 2)
+    val wordSpacing = remember(textStyle, spaceMeasurer, density) {
+        runCatching {
+            val spaced = spaceMeasurer.measure("a a", textStyle).size.width
+            val joined = spaceMeasurer.measure("aa", textStyle).size.width
+            with(density) { (spaced - joined).coerceAtLeast(1).toDp() }
+        }.getOrDefault(6.dp)
     }
 
     BoxWithConstraints(modifier = modifier) {
@@ -418,7 +459,9 @@ private fun KaraokeWordFlow(
         CenteredLyricFlow(
             tokens = tokens,
             horizontalSpacing = wordSpacing,
-            verticalSpacing = 8.dp,
+            // The style's line height already carries the leading, so rows sit
+            // as close as the same line drawn as plain text would.
+            verticalSpacing = 0.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .clearAndSetSemantics {
@@ -450,7 +493,7 @@ private fun KaraokeWord(
 ) {
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer(cacheSize = token.graphemes.size + 1)
-    val liftPx = with(density) { 6.dp.toPx() }
+    val liftPx = with(density) { LETTER_LIFT.toPx() }
     val topInsetPx = with(density) { 10.dp.toPx() }
     val sideInsetPx = with(density) { 6.dp.toPx() }
     val measuredWord = remember(
@@ -477,58 +520,92 @@ private fun KaraokeWord(
     // glyph at its original bound inside one fixed Canvas. Playback therefore
     // invalidates drawing only: kerning, wrapping, and line placement never
     // change while the letter wave moves.
-    Canvas(modifier = Modifier.size(width = canvasWidth, height = canvasHeight)) {
+    // The insets are drawing room for the rise, the held-note swell and glyph
+    // bearings, not spacing: the word reports only its text's size to the flow
+    // and lets the canvas overhang by the insets. Counting them made a short
+    // line read as loose, widely spaced words with tall gaps between rows.
+    val sideInsetRoundedPx = sideInsetPx.toInt()
+    val topInsetRoundedPx = topInsetPx.toInt()
+    Canvas(
+        modifier = Modifier
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(
+                    constraints.copy(minWidth = 0, minHeight = 0, maxWidth = Constraints.Infinity)
+                )
+                val width = (placeable.width - sideInsetRoundedPx * 2).coerceAtLeast(1)
+                val height = (placeable.height - topInsetRoundedPx * 2).coerceAtLeast(1)
+                layout(width, height) {
+                    placeable.place(-sideInsetRoundedPx, -topInsetRoundedPx)
+                }
+            }
+            .size(width = canvasWidth, height = canvasHeight)
+    ) {
         val currentPositionMs = currentPositionProvider()
-        measuredWord.graphemes.forEach { glyph ->
-            val grapheme = glyph.timing
-            val highlightProgress = (
-                (currentPositionMs - grapheme.startMs).toFloat() / grapheme.durationMs
-            ).coerceIn(0f, 1f)
-            val liftProgress = (
-                (currentPositionMs - grapheme.startMs).toFloat() / LETTER_LIFT_DURATION_MS
-            ).coerceIn(0f, 1f)
-            val liftAmount = if (motionEnabled) {
-                LetterLiftEasing.transform(liftProgress)
-            } else {
-                0f
-            }
 
-            // A short swell and glow travel with the leading letter, but its
-            // vertical lift remains completed after the pulse has passed.
-            val pulse = 4f * liftProgress * (1f - liftProgress)
-            val letterScale = 1f + 0.06f * pulse
-            val glow = if (liftProgress in 0.0001f..0.9999f) {
-                (liftProgress * (1f - liftProgress) / 0.21f).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
-            val drawPosition = glyph.position.copy(
-                y = glyph.position.y - liftPx * liftAmount
+        // Held notes swell and glow as a whole word, rising and falling over
+        // the note itself; short words never do, so ordinary lines stay calm.
+        val wordDurationMs = (token.endMs - token.startMs).coerceAtLeast(1L)
+        val sustainStrength = if (motionEnabled) {
+            ((wordDurationMs - SUSTAIN_START_MS).toFloat() /
+                (SUSTAIN_FULL_MS - SUSTAIN_START_MS)).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        val sustain = if (sustainStrength > 0f) {
+            val wordProgress = (
+                (currentPositionMs - token.startMs).toFloat() / wordDurationMs
+            ).coerceIn(0f, 1f)
+            sustainStrength * kotlin.math.sin(Math.PI.toFloat() * wordProgress)
+        } else {
+            0f
+        }
+        val wordScale = 1f + SUSTAIN_SCALE * sustain
+        val wordPivot = Offset(size.width / 2f, size.height - topInsetPx)
+        val glowShadow = if (sustain > 0.01f) {
+            Shadow(
+                color = primaryColor.copy(alpha = 0.35f * sustain),
+                blurRadius = 16f * sustain
             )
-            val drawPivot = glyph.pivot.copy(
-                y = glyph.pivot.y - liftPx * liftAmount
-            )
+        } else {
+            null
+        }
 
-            withTransform({
-                scale(
-                    scaleX = letterScale,
-                    scaleY = letterScale,
-                    pivot = drawPivot
-                )
-            }) {
-                drawText(
-                    textLayoutResult = glyph.textLayout,
-                    color = lerp(unsungColor, primaryColor, highlightProgress),
-                    topLeft = drawPosition,
-                    shadow = if (glow > 0f) {
-                        Shadow(
-                            color = primaryColor.copy(alpha = 0.4f * glow),
-                            blurRadius = 10f * glow
-                        )
-                    } else {
-                        null
-                    }
-                )
+        withTransform({ scale(wordScale, wordScale, pivot = wordPivot) }) {
+            measuredWord.graphemes.forEach { glyph ->
+                val grapheme = glyph.timing
+                val highlightProgress = (
+                    (currentPositionMs - grapheme.startMs).toFloat() / grapheme.durationMs
+                ).coerceIn(0f, 1f)
+                // Rises from the letter's own start but settles long after the
+                // next letter has begun, so the word moves as one ripple.
+                val riseProgress = (
+                    (currentPositionMs - grapheme.startMs).toFloat() / LETTER_RISE_MS
+                ).coerceIn(0f, 1f)
+                val lift = if (motionEnabled) LetterRiseEasing.transform(riseProgress) else 0f
+                val drawPosition = glyph.position.copy(y = glyph.position.y - liftPx * lift)
+
+                // The sung colour fades in over the unsung one rather than
+                // blending into it. The unsung colour is translucent, so a blend
+                // (or a gradient edge between the two) passes through a paler
+                // shade than either end, which read as a light band flickering
+                // across each letter just before it lit up.
+                if (highlightProgress < 1f) {
+                    drawText(
+                        textLayoutResult = glyph.textLayout,
+                        color = unsungColor,
+                        topLeft = drawPosition,
+                        shadow = if (highlightProgress <= 0f) glowShadow else null
+                    )
+                }
+                if (highlightProgress > 0f) {
+                    drawText(
+                        textLayoutResult = glyph.textLayout,
+                        color = primaryColor,
+                        topLeft = drawPosition,
+                        alpha = highlightProgress,
+                        shadow = glowShadow
+                    )
+                }
             }
         }
     }
@@ -575,16 +652,11 @@ private fun measureLyricWord(
         val x = sideInsetPx + left + (originalWidth - graphemeLayout.size.width) / 2f
         val y = topInsetPx + top + (originalHeight - graphemeLayout.size.height) / 2f
         val position = Offset(x = x, y = y)
-        val pivot = Offset(
-            x = sideInsetPx + left + originalWidth / 2f,
-            y = y + graphemeLayout.size.height
-        )
         textOffset = endOffset
         MeasuredLyricGrapheme(
             timing = grapheme,
             textLayout = graphemeLayout,
-            position = position,
-            pivot = pivot
+            position = position
         )
     }
 

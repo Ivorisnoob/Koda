@@ -129,8 +129,19 @@ class ThemePreferences(context: Context) {
     private val _timedCommentsEnabled = MutableStateFlow(getTimedCommentsEnabledPreference())
     val timedCommentsEnabled: StateFlow<Boolean> = _timedCommentsEnabled.asStateFlow()
 
+    private val _returnDislike = MutableStateFlow(prefs.getBoolean(KEY_RETURN_DISLIKE, false))
+    val returnDislike: StateFlow<Boolean> = _returnDislike.asStateFlow()
+
     private val _shortsEnabled = MutableStateFlow(getShortsEnabledPreference())
     val shortsEnabled: StateFlow<Boolean> = _shortsEnabled.asStateFlow()
+
+    /** Whether Shorts are removed from every surface; see [isShortsHardBlocked]. */
+    private val _shortsHardBlock = MutableStateFlow(prefs.getBoolean(KEY_SHORTS_HARD_BLOCK, false))
+    val shortsHardBlock: StateFlow<Boolean> = _shortsHardBlock.asStateFlow()
+
+    /** The chosen content region's ISO code, or "" to follow the device. */
+    private val _contentRegion = MutableStateFlow(prefs.getString(KEY_CONTENT_REGION, "").orEmpty())
+    val contentRegion: StateFlow<String> = _contentRegion.asStateFlow()
 
     private val _shortsHiddenActions = MutableStateFlow(getShortsHiddenActionsPreference())
     val shortsHiddenActions: StateFlow<Set<String>> = _shortsHiddenActions.asStateFlow()
@@ -143,6 +154,15 @@ class ThemePreferences(context: Context) {
 
     private val _preferHdr = MutableStateFlow(getPreferHdrPreference())
     val preferHdr: StateFlow<Boolean> = _preferHdr.asStateFlow()
+
+    private val _frameInterpolation = MutableStateFlow(isFrameInterpolationEnabled())
+    val frameInterpolation: StateFlow<Boolean> = _frameInterpolation.asStateFlow()
+
+    private val _frameInterpolationPlayerOn = MutableStateFlow(isFrameInterpolationPlayerOn())
+    val frameInterpolationPlayerOn: StateFlow<Boolean> = _frameInterpolationPlayerOn.asStateFlow()
+
+    private val _frameInterpolationMaxFps = MutableStateFlow(getFrameInterpolationMaxFps())
+    val frameInterpolationMaxFps: StateFlow<Int> = _frameInterpolationMaxFps.asStateFlow()
 
     private val _captionTextSize = MutableStateFlow(getCaptionTextSizePreference())
     val captionTextSize: StateFlow<Float> = _captionTextSize.asStateFlow()
@@ -199,12 +219,17 @@ class ThemePreferences(context: Context) {
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
         _nonExpressiveNavigationBar.asStateFlow()
 
+    private val _rotateWithDevice = MutableStateFlow(getRotateWithDevicePreference())
+    val rotateWithDevice: StateFlow<Boolean> = _rotateWithDevice.asStateFlow()
 
     private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
     val subscriptionSource: StateFlow<String> = _subscriptionSource.asStateFlow()
 
     private val _subscribeTarget = MutableStateFlow(getSubscribeTargetPreference())
     val subscribeTarget: StateFlow<String> = _subscribeTarget.asStateFlow()
+
+    private val _subscriptionRefresh = MutableStateFlow(prefs.getInt(KEY_SUBS_REFRESH_MINUTES, SUBS_REFRESH_ON_OPEN))
+    val subscriptionRefresh: StateFlow<Int> = _subscriptionRefresh.asStateFlow()
 
     private val _fastSubscriptionFeed = MutableStateFlow(getFastSubscriptionFeedPreference())
     val fastSubscriptionFeed: StateFlow<Boolean> = _fastSubscriptionFeed.asStateFlow()
@@ -249,6 +274,10 @@ class ThemePreferences(context: Context) {
         MutableStateFlow(getRememberVideoBrightness())
     val rememberVideoBrightness: StateFlow<Boolean> = _rememberVideoBrightness.asStateFlow()
 
+    private val _pipButtons = MutableStateFlow(getPipButtons())
+    /** [PIP_BUTTONS_VIDEOS] or [PIP_BUTTONS_SEEK]: what flanks play/pause in PiP. */
+    val pipButtons: StateFlow<String> = _pipButtons.asStateFlow()
+
     private val _hapticsLevel = MutableStateFlow(getHapticsLevelPreference())
     val hapticsLevel: StateFlow<String> = _hapticsLevel.asStateFlow()
 
@@ -285,6 +314,12 @@ class ThemePreferences(context: Context) {
     private val _libraryTab = MutableStateFlow(getLibraryTabPreference())
     val libraryTab: StateFlow<String> = _libraryTab.asStateFlow()
 
+    // The Artists and Albums tabs' own sort orders, LibraryGroupSort names.
+    private val _libraryArtistSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_ARTIST_SORT, null))
+    val libraryArtistSort: StateFlow<String?> = _libraryArtistSort.asStateFlow()
+    private val _libraryAlbumSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_ALBUM_SORT, null))
+    val libraryAlbumSort: StateFlow<String?> = _libraryAlbumSort.asStateFlow()
+
     // The Subscriptions feed's own controls. Persisted for the reason the
     // Library sort is: they were held in composition state, and the tab lives
     // inside Home's AnimatedContent, so leaving the tab disposed the state and
@@ -311,6 +346,9 @@ class ThemePreferences(context: Context) {
 
     private val _inlinePreviews = MutableStateFlow(getInlinePreviewsPreference())
     val inlinePreviews: StateFlow<Boolean> = _inlinePreviews.asStateFlow()
+
+    private val _videoListLayout = MutableStateFlow(getVideoListLayoutPreference())
+    val videoListLayout: StateFlow<String> = _videoListLayout.asStateFlow()
 
     private val _compactVideoHome = MutableStateFlow(getCompactVideoHomePreference())
     val compactVideoHome: StateFlow<Boolean> = _compactVideoHome.asStateFlow()
@@ -361,10 +399,16 @@ class ThemePreferences(context: Context) {
             KEY_LIVE_PLAYBACK_UPDATES -> _livePlaybackUpdates.value = getLivePlaybackUpdatesPreference()
             KEY_TIMED_COMMENTS_ENABLED -> _timedCommentsEnabled.value = getTimedCommentsEnabledPreference()
             KEY_SHORTS_ENABLED -> _shortsEnabled.value = getShortsEnabledPreference()
+            KEY_RETURN_DISLIKE -> _returnDislike.value = prefs.getBoolean(KEY_RETURN_DISLIKE, false)
+            KEY_CONTENT_REGION -> _contentRegion.value = prefs.getString(KEY_CONTENT_REGION, "").orEmpty()
+            KEY_SHORTS_HARD_BLOCK -> _shortsHardBlock.value = prefs.getBoolean(KEY_SHORTS_HARD_BLOCK, false)
             KEY_SHORTS_HIDDEN_ACTIONS -> _shortsHiddenActions.value = getShortsHiddenActionsPreference()
             KEY_VIDEO_QUALITY_WIFI -> _videoQualityWifi.value = getVideoQualityWifiPreference()
             KEY_VIDEO_QUALITY_MOBILE -> _videoQualityMobile.value = getVideoQualityMobilePreference()
             KEY_PREFER_HDR -> _preferHdr.value = getPreferHdrPreference()
+            KEY_FRAME_INTERPOLATION -> _frameInterpolation.value = isFrameInterpolationEnabled()
+            KEY_FRAME_INTERPOLATION_PLAYER_ON -> _frameInterpolationPlayerOn.value = isFrameInterpolationPlayerOn()
+            KEY_FRAME_INTERPOLATION_MAX_FPS -> _frameInterpolationMaxFps.value = getFrameInterpolationMaxFps()
             KEY_CAPTION_TEXT_SIZE -> _captionTextSize.value = getCaptionTextSizePreference()
             KEY_CAPTION_TEXT_COLOR -> _captionTextColor.value = getCaptionTextColorPreference()
             KEY_CAPTION_BACKGROUND -> _captionBackground.value = getCaptionBackgroundPreference()
@@ -384,9 +428,11 @@ class ThemePreferences(context: Context) {
                 _sponsorBlockMinDurationMs.value = getSponsorBlockMinDurationPreference()
             KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
                 _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
+            KEY_ROTATE_WITH_DEVICE -> _rotateWithDevice.value = getRotateWithDevicePreference()
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
+            KEY_SUBS_REFRESH_MINUTES -> _subscriptionRefresh.value = prefs.getInt(KEY_SUBS_REFRESH_MINUTES, SUBS_REFRESH_ON_OPEN)
             KEY_EXCLUDED_FOLDERS -> _excludedFolders.value = getExcludedFoldersPreference()
             KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
             KEY_VIDEO_CACHE_ENABLED -> _videoCacheEnabled.value = getVideoCacheEnabledPreference()
@@ -400,6 +446,7 @@ class ThemePreferences(context: Context) {
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
             KEY_REMEMBER_VIDEO_BRIGHTNESS ->
                 _rememberVideoBrightness.value = getRememberVideoBrightness()
+            KEY_PIP_BUTTONS -> _pipButtons.value = getPipButtons()
             KEY_HAPTICS_LEVEL -> _hapticsLevel.value = getHapticsLevelPreference()
             KEY_UPLOAD_NOTIFICATIONS_ENABLED ->
                 _uploadNotificationsEnabled.value = getUploadNotificationsEnabledPreference()
@@ -413,6 +460,8 @@ class ThemePreferences(context: Context) {
             KEY_TIME_LIMIT_BUDGETS -> _timeLimitBudgets.value = getTimeLimitBudgetsPreference()
             KEY_LIBRARY_SORT_OPTION -> _librarySortOption.value = getLibrarySortOptionPreference()
             KEY_LIBRARY_TAB -> _libraryTab.value = getLibraryTabPreference()
+            KEY_LIBRARY_ARTIST_SORT -> _libraryArtistSort.value = prefs.getString(KEY_LIBRARY_ARTIST_SORT, null)
+            KEY_LIBRARY_ALBUM_SORT -> _libraryAlbumSort.value = prefs.getString(KEY_LIBRARY_ALBUM_SORT, null)
             KEY_SUBSCRIPTION_FEED_PERIOD ->
                 _subscriptionFeedPeriod.value = getSubscriptionFeedPeriodPreference()
             KEY_SUBSCRIPTION_FEED_ORDER ->
@@ -422,6 +471,7 @@ class ThemePreferences(context: Context) {
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
             KEY_COMPACT_VIDEO_HOME -> _compactVideoHome.value = getCompactVideoHomePreference()
+            KEY_VIDEO_LIST_LAYOUT -> _videoListLayout.value = getVideoListLayoutPreference()
             KEY_PLAYLIST_SWIPE_ENABLED -> _playlistSwipeEnabled.value = getPlaylistSwipeEnabledPreference()
             KEY_PLAYLIST_SWIPE_START_ACTION -> _playlistSwipeStartAction.value = getPlaylistSwipeStartActionPreference()
             KEY_PLAYLIST_SWIPE_END_ACTION -> _playlistSwipeEndAction.value = getPlaylistSwipeEndActionPreference()
@@ -532,6 +582,51 @@ class ThemePreferences(context: Context) {
                     .getBoolean(KEY_LIVE_PLAYBACK_UPDATES, false)
         private const val KEY_TIMED_COMMENTS_ENABLED = "timed_comments_enabled"
         private const val KEY_SHORTS_ENABLED = "shorts_enabled"
+        private const val KEY_CONTENT_REGION = "content_region"
+        private const val KEY_SHORTS_HARD_BLOCK = "shorts_hard_block"
+        private const val KEY_RETURN_DISLIKE = "return_dislike"
+
+        /**
+         * Whether Shorts are gone from the whole app: the Shorts experience is
+         * off *and* the user asked for them fully blocked. Off alone only
+         * hides the Home shelf and plays any Short found elsewhere in the
+         * ordinary player; blocked also drops the channel page's Shorts tab
+         * and shelves and NewPipe-flagged Shorts from video search - the
+         * surfaces that know what a Short is, kept light on purpose. The switch only
+         * exists while Shorts are off, so a stale true under Shorts-on is
+         * ignored rather than trusted. Static fresh read for the same reason
+         * as [resolveContentRegion].
+         */
+        fun isShortsHardBlocked(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return !prefs.getBoolean(KEY_SHORTS_ENABLED, false) &&
+                prefs.getBoolean(KEY_SHORTS_HARD_BLOCK, false)
+        }
+
+        /**
+         * The country YouTube should rank for: the chosen region, else the
+         * device's, else US. A static fresh read, because every repository
+         * instance builds its own request context and the setting is changed
+         * from the settings screen's own instance.
+         *
+         * Only the country follows the user. The language stays English on
+         * purpose: parsers read English UI text (view counts, shelf names), and
+         * a translated response would break them silently. [verified September
+         * 2026] `gl` alone moves signed-out search and feeds (13 of 27 results
+         * shared US vs IN, against 20 of 27 for two US calls); signed-in feeds
+         * are ranked by the account and do not move with it.
+         */
+        fun resolveContentRegion(context: Context): String {
+            val chosen = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_CONTENT_REGION, "").orEmpty()
+            if (chosen.length == 2) return chosen
+            return deviceRegion() ?: "US"
+        }
+
+        /** The device's country as an ISO alpha-2 code, or null when it has none. */
+        fun deviceRegion(): String? =
+            java.util.Locale.getDefault().country.uppercase()
+                .takeIf { it.length == 2 && it.all { c -> c in 'A'..'Z' } }
         private const val KEY_SHORTS_HIDDEN_ACTIONS = "shorts_hidden_actions"
 
         /** Ids for the Shorts action-rail buttons that can be hidden. */
@@ -551,6 +646,9 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_QUALITY_WIFI = "video_quality_wifi"
         private const val KEY_VIDEO_QUALITY_MOBILE = "video_quality_mobile"
         private const val KEY_PREFER_HDR = "prefer_hdr_video"
+        private const val KEY_FRAME_INTERPOLATION = "video_frame_interpolation"
+        private const val KEY_FRAME_INTERPOLATION_MAX_FPS = "video_frame_interpolation_max_fps"
+        private const val KEY_FRAME_INTERPOLATION_PLAYER_ON = "video_frame_interpolation_player_on"
         private const val KEY_CAPTION_TEXT_SIZE = "caption_text_size"
         private const val KEY_CAPTION_TEXT_COLOR = "caption_text_color"
         private const val KEY_CAPTION_BACKGROUND = "caption_background"
@@ -559,6 +657,10 @@ class ThemePreferences(context: Context) {
 
         /** Sentinel meaning "highest available quality". */
         const val VIDEO_QUALITY_AUTO = "auto"
+
+        /** Smooth motion's output caps. Frozen: stored as they are. */
+        const val FRAME_INTERPOLATION_FPS_LOW = 60
+        const val FRAME_INTERPOLATION_FPS_HIGH = 120
 
         /** Quality labels offered in Settings, best first. */
         val VIDEO_QUALITY_OPTIONS = listOf(
@@ -578,6 +680,14 @@ class ThemePreferences(context: Context) {
         private const val KEY_SUBSCRIPTION_SOURCE = "subscription_source"
         private const val KEY_SUBSCRIBE_TARGET = "subscribe_target"
         private const val KEY_FAST_SUBSCRIPTION_FEED = "fast_subscription_feed"
+        private const val KEY_SUBS_REFRESH_MINUTES = "subscription_refresh_minutes"
+        private const val KEY_VIDEO_LIST_LAYOUT = "video_list_layout"
+        const val VIDEO_LAYOUT_CARDS = "cards"
+        const val VIDEO_LAYOUT_COMPACT = "compact"
+        const val VIDEO_LAYOUT_GRID = "grid"
+        const val SUBS_REFRESH_ON_OPEN = 0
+        const val SUBS_REFRESH_MANUAL = -1
+        val SUBS_REFRESH_OPTIONS = listOf(SUBS_REFRESH_ON_OPEN, 60, 360, 720, 1440, SUBS_REFRESH_MANUAL)
 
         /**
          * Show whichever subscriptions exist - the device's, the account's, or
@@ -667,6 +777,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_SPONSORBLOCK_MIN_DURATION = "sponsorblock_min_duration"
         private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
             "non_expressive_navigation_bar"
+        private const val KEY_ROTATE_WITH_DEVICE = "rotate_with_device"
 
         /**
          * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
@@ -776,13 +887,28 @@ class ThemePreferences(context: Context) {
          * Util.constrainValue in setPlaybackParameters.]
          */
         const val MIN_PLAYBACK_SPEED = 0.1f
-        const val MAX_PLAYBACK_SPEED = 2f
+        /** Media3's ceiling, from the same constrainValue call as the floor. */
+        const val MAX_PLAYBACK_SPEED = 8f
         const val DEFAULT_PLAYBACK_SPEED = 1f
 
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
         private const val KEY_REMEMBER_VIDEO_BRIGHTNESS = "remember_video_brightness"
+        private const val KEY_PIP_BUTTONS = "pip_buttons"
+
+        /**
+         * PiP side buttons. Stored values are frozen: "videos" is previous and
+         * next in a playlist, back 10s and next otherwise (the behaviour
+         * before the setting existed); "seek" is back and forward 10s always.
+         */
+        const val PIP_BUTTONS_VIDEOS = "videos"
+        const val PIP_BUTTONS_SEEK = "seek"
+
+        /** Fresh read for callers outside the settings flows (an explicit PiP entry). */
+        fun pipButtonsSeekOnly(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_PIP_BUTTONS, PIP_BUTTONS_VIDEOS) == PIP_BUTTONS_SEEK
         private const val KEY_HAPTICS_LEVEL = "haptics_level"
         private const val KEY_UPLOAD_NOTIFICATIONS_ENABLED = "upload_notifications_enabled"
         private const val KEY_OEM_FIX_ENABLED = "oem_fix_enabled"
@@ -801,6 +927,8 @@ class ThemePreferences(context: Context) {
 
         private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
         private const val KEY_LIBRARY_TAB = "library_tab"
+        private const val KEY_LIBRARY_ARTIST_SORT = "library_artist_sort"
+        private const val KEY_LIBRARY_ALBUM_SORT = "library_album_sort"
         private const val KEY_SUBSCRIPTION_FEED_PERIOD = "subscription_feed_period"
         private const val KEY_SUBSCRIPTION_FEED_ORDER = "subscription_feed_order"
         private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
@@ -840,6 +968,15 @@ class ThemePreferences(context: Context) {
         fun isLocalOnly(context: Context): Boolean =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .getBoolean(KEY_LOCAL_ONLY_MODE, false)
+
+        /**
+         * Static fresh read for the orientation policy, which is applied from
+         * the video watch page as well as MainActivity and must not trust a
+         * flow held by some other instance.
+         */
+        fun isRotateWithDevice(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_ROTATE_WITH_DEVICE, false)
 
         private const val KEY_LAST_SONG_ID = "last_song_id"
         private const val KEY_LAST_SONG_TITLE = "last_song_title"
@@ -1324,6 +1461,18 @@ class ThemePreferences(context: Context) {
         _shortsEnabled.value = enabled
     }
 
+    fun setShortsHardBlock(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHORTS_HARD_BLOCK, enabled).apply()
+        _shortsHardBlock.value = enabled
+    }
+
+    /** "" follows the device; otherwise an ISO 3166 alpha-2 code. */
+    fun setContentRegion(code: String) {
+        val value = code.trim().uppercase().takeIf { it.length == 2 }.orEmpty()
+        prefs.edit().putString(KEY_CONTENT_REGION, value).apply()
+        _contentRegion.value = value
+    }
+
     /**
      * Get the Shorts action buttons the user chose to hide (ids from
      * SHORTS_ACTION_OPTIONS). Defaults to empty: all buttons visible.
@@ -1350,6 +1499,13 @@ class ThemePreferences(context: Context) {
     /**
      * Save timed comments preference and update the flow.
      */
+    fun isReturnDislikeEnabled(): Boolean = prefs.getBoolean(KEY_RETURN_DISLIKE, false)
+
+    fun setReturnDislike(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_RETURN_DISLIKE, enabled).apply()
+        _returnDislike.value = enabled
+    }
+
     fun setTimedCommentsEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_TIMED_COMMENTS_ENABLED, enabled).apply()
         _timedCommentsEnabled.value = enabled
@@ -1412,6 +1568,56 @@ class ThemePreferences(context: Context) {
     fun setPreferHdr(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_PREFER_HDR, enabled).apply()
         _preferHdr.value = enabled
+    }
+
+    /**
+     * Smooth motion (video frame interpolation) is available: the player is
+     * built with its effect graph and its settings panel shows the switch
+     * ([isFrameInterpolationPlayerOn]). Off by default and only ever turned on
+     * through its warning dialog; read fresh by the video player.
+     */
+    fun isFrameInterpolationEnabled(): Boolean =
+        prefs.getBoolean(KEY_FRAME_INTERPOLATION, false)
+
+    /** Turning it on here also turns the player's switch on, so it starts working at once. */
+    fun setFrameInterpolation(enabled: Boolean) {
+        prefs.edit().apply {
+            putBoolean(KEY_FRAME_INTERPOLATION, enabled)
+            if (enabled) putBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, true)
+        }.apply()
+        _frameInterpolation.value = enabled
+        if (enabled) _frameInterpolationPlayerOn.value = true
+    }
+
+    /**
+     * The switch in the video player's settings panel: whether an available
+     * Smooth motion draws frames. Changes take effect within a poll, without
+     * rebuilding the player; read fresh by the video player.
+     */
+    fun isFrameInterpolationPlayerOn(): Boolean =
+        prefs.getBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, true)
+
+    fun setFrameInterpolationPlayerOn(on: Boolean) {
+        prefs.edit().putBoolean(KEY_FRAME_INTERPOLATION_PLAYER_ON, on).apply()
+        _frameInterpolationPlayerOn.value = on
+    }
+
+    /**
+     * The most Smooth motion may output: 60 or 120 (frozen stored values).
+     * The screen's own fastest mode caps it further, so 120 on a 90 Hz phone
+     * means 90. Read fresh by the video player.
+     */
+    fun getFrameInterpolationMaxFps(): Int =
+        if (prefs.getInt(KEY_FRAME_INTERPOLATION_MAX_FPS, FRAME_INTERPOLATION_FPS_HIGH) <= FRAME_INTERPOLATION_FPS_LOW) {
+            FRAME_INTERPOLATION_FPS_LOW
+        } else {
+            FRAME_INTERPOLATION_FPS_HIGH
+        }
+
+    fun setFrameInterpolationMaxFps(fps: Int) {
+        val stored = if (fps <= FRAME_INTERPOLATION_FPS_LOW) FRAME_INTERPOLATION_FPS_LOW else FRAME_INTERPOLATION_FPS_HIGH
+        prefs.edit().putInt(KEY_FRAME_INTERPOLATION_MAX_FPS, stored).apply()
+        _frameInterpolationMaxFps.value = stored
     }
 
     private fun getCaptionTextSizePreference(): Float =
@@ -1491,6 +1697,13 @@ class ThemePreferences(context: Context) {
      * live badge. Off means a full channel fetch per channel, which restores
      * those at a real cost on a large subscription list.
      */
+    fun subscriptionRefreshMinutes(): Int = prefs.getInt(KEY_SUBS_REFRESH_MINUTES, SUBS_REFRESH_ON_OPEN)
+
+    fun setSubscriptionRefreshMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_SUBS_REFRESH_MINUTES, minutes).apply()
+        _subscriptionRefresh.value = minutes
+    }
+
     fun setFastSubscriptionFeed(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_FAST_SUBSCRIPTION_FEED, enabled).apply()
         _fastSubscriptionFeed.value = enabled
@@ -1651,6 +1864,21 @@ class ThemePreferences(context: Context) {
     }
 
     /**
+     * Whether a phone turns the app with the device. Off by default so an
+     * upgrading install stays portrait as it always was; large screens rotate
+     * regardless (see `ui/theme/WindowLayout.kt`), because Android 16 ignores
+     * orientation locks there anyway and a tablet held sideways is its normal
+     * posture rather than an accident. The system rotation lock still wins.
+     */
+    private fun getRotateWithDevicePreference(): Boolean =
+        prefs.getBoolean(KEY_ROTATE_WITH_DEVICE, false)
+
+    fun setRotateWithDevice(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ROTATE_WITH_DEVICE, enabled).apply()
+        _rotateWithDevice.value = enabled
+    }
+
+    /**
      * Default quality for video downloads. See [currentDownloadVideoQuality]
      * for the semantics; this instance pair serves the download sheet, which
      * preselects from it and writes it back through its "remember" toggle.
@@ -1701,11 +1929,11 @@ class ThemePreferences(context: Context) {
      * Live broadcasts always play at 1x and never overwrite the stored value.
      */
     fun getVideoPlaybackSpeed(): Float =
-        prefs.getFloat(KEY_VIDEO_PLAYBACK_SPEED, 1f).coerceIn(0.25f, 2f)
+        prefs.getFloat(KEY_VIDEO_PLAYBACK_SPEED, 1f).coerceIn(0.25f, MAX_PLAYBACK_SPEED)
 
     fun setVideoPlaybackSpeed(speed: Float) {
         prefs.edit()
-            .putFloat(KEY_VIDEO_PLAYBACK_SPEED, speed.coerceIn(0.25f, 2f))
+            .putFloat(KEY_VIDEO_PLAYBACK_SPEED, speed.coerceIn(0.25f, MAX_PLAYBACK_SPEED))
             .apply()
     }
 
@@ -1735,6 +1963,17 @@ class ThemePreferences(context: Context) {
     fun setRememberVideoBrightness(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_REMEMBER_VIDEO_BRIGHTNESS, enabled).apply()
         _rememberVideoBrightness.value = enabled
+    }
+
+    fun getPipButtons(): String =
+        prefs.getString(KEY_PIP_BUTTONS, PIP_BUTTONS_VIDEOS)
+            ?.takeIf { it == PIP_BUTTONS_VIDEOS || it == PIP_BUTTONS_SEEK }
+            ?: PIP_BUTTONS_VIDEOS
+
+    fun setPipButtons(value: String) {
+        if (value != PIP_BUTTONS_VIDEOS && value != PIP_BUTTONS_SEEK) return
+        prefs.edit().putString(KEY_PIP_BUTTONS, value).apply()
+        _pipButtons.value = value
     }
 
     /**
@@ -2115,6 +2354,17 @@ class ThemePreferences(context: Context) {
         _libraryTab.value = tabName
     }
 
+    /** Pass a LibraryGroupSort name; the constants are frozen like the other sorts. */
+    fun setLibraryArtistSort(sortName: String) {
+        prefs.edit().putString(KEY_LIBRARY_ARTIST_SORT, sortName).apply()
+        _libraryArtistSort.value = sortName
+    }
+
+    fun setLibraryAlbumSort(sortName: String) {
+        prefs.edit().putString(KEY_LIBRARY_ALBUM_SORT, sortName).apply()
+        _libraryAlbumSort.value = sortName
+    }
+
     private fun getSubscriptionFeedPeriodPreference(): String =
         prefs.getString(KEY_SUBSCRIPTION_FEED_PERIOD, "") ?: ""
 
@@ -2150,6 +2400,16 @@ class ThemePreferences(context: Context) {
     fun setShowRecentSearches(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_RECENT_SEARCHES, show).apply()
         _showRecentSearches.value = show
+    }
+
+    // Falls back to the old Home-only compact switch so existing choices carry over.
+    private fun getVideoListLayoutPreference(): String =
+        prefs.getString(KEY_VIDEO_LIST_LAYOUT, null)
+            ?: if (prefs.getBoolean(KEY_COMPACT_VIDEO_HOME, false)) VIDEO_LAYOUT_COMPACT else VIDEO_LAYOUT_CARDS
+
+    fun setVideoListLayout(layout: String) {
+        prefs.edit().putString(KEY_VIDEO_LIST_LAYOUT, layout).apply()
+        _videoListLayout.value = layout
     }
 
     private fun getCompactVideoHomePreference(): Boolean =

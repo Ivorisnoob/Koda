@@ -878,7 +878,7 @@ private fun SpinSourceRow(
                     entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-                colors = ToggleButtonDefaults.toggleButtonColors(
+                colors = ToggleButtonDefaults.colors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     checkedContainerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onSurface,

@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -198,8 +199,13 @@ fun VideoOptionsSheet(
     onCreatePlaylist: ((name: String, onCreated: (String?) -> Unit) -> Unit)? = null,
     /** Queue this video, either straight after what is playing or at the end. */
     onEnqueue: ((playNext: Boolean) -> Unit)? = null,
-    /** Playlist ids that already contain this video; device playlists only. */
+    /** Playlist ids that already contain this video, device and account. */
     alreadyIn: Set<String> = emptySet(),
+    /**
+     * Take the video out of a playlist it is in. Null keeps the picker
+     * add-only; set, a checked row unticks on tap.
+     */
+    onRemove: ((playlistId: String, onResult: (Boolean) -> Unit) -> Unit)? = null,
     /**
      * Open this video's creator. Null hides the row, which is right where the
      * item carried no channel id, and where the channel is the page the sheet
@@ -219,6 +225,8 @@ fun VideoOptionsSheet(
     var savingIds by remember { mutableStateOf(emptySet<String>()) }
     var savedIds by remember { mutableStateOf(emptySet<String>()) }
     var failedIds by remember { mutableStateOf(emptySet<String>()) }
+    // Removed in this sheet: wins over [alreadyIn], which can lag the write.
+    var removedIds by remember { mutableStateOf(emptySet<String>()) }
     var showCreateDialog by remember { mutableStateOf(false) }
 
     // Only a terminal action closes the sheet behind its check. A save made in
@@ -234,20 +242,44 @@ fun VideoOptionsSheet(
 
     fun rowState(id: String): SaveRowState = when {
         id in savingIds -> SaveRowState.SAVING
-        id in savedIds || id in alreadyIn -> SaveRowState.SAVED
+        id in savedIds || (id in alreadyIn && id !in removedIds) -> SaveRowState.SAVED
         id in failedIds -> SaveRowState.FAILED
         else -> SaveRowState.IDLE
     }
 
     /** @param terminal whether a successful save should close the sheet. */
+    fun remove(id: String) {
+        val removeFrom = onRemove ?: return
+        if (id in savingIds) return
+        haptics.performHapticFeedback(HapticFeedbackType.ToggleOff)
+        failedIds = failedIds - id
+        savingIds = savingIds + id
+        removeFrom(id) { ok ->
+            savingIds = savingIds - id
+            if (ok) {
+                savedIds = savedIds - id
+                removedIds = removedIds + id
+            } else {
+                failedIds = failedIds + id
+            }
+        }
+    }
+
     fun save(id: String, terminal: Boolean) {
-        if (id in savingIds || id in savedIds || id in alreadyIn) return
+        if (rowState(id) == SaveRowState.SAVED) {
+            // Only the picker unticks; a terminal row (Watch later in the
+            // action list) stays add-only.
+            if (!terminal) remove(id)
+            return
+        }
+        if (id in savingIds) return
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         failedIds = failedIds - id
         savingIds = savingIds + id
         onSave(id) { ok ->
             savingIds = savingIds - id
             if (ok) {
+                removedIds = removedIds - id
                 savedIds = savedIds + id
                 if (terminal) confirmedTerminal = id
             } else {
@@ -371,6 +403,7 @@ fun VideoOptionsSheet(
                     isSignedOut = isSignedOut,
                     stateOf = { id -> rowState(id) },
                     onPick = { id -> save(id, terminal = false) },
+                    removable = onRemove != null,
                     onBack = { pane = OptionsPane.ACTIONS },
                     onCreatePlaylist = if (onCreatePlaylist != null) {
                         { showCreateDialog = true }
@@ -608,7 +641,9 @@ private fun PlaylistPickerPane(
     onPick: (String) -> Unit,
     onBack: () -> Unit,
     onCreatePlaylist: (() -> Unit)?,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    /** A checked row unticks on tap. */
+    removable: Boolean = false,
 ) {
     var query by remember { mutableStateOf("") }
 
@@ -704,13 +739,18 @@ private fun PlaylistPickerPane(
                         .weight(1f, fill = false)
                         .fillMaxWidth(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(
+                        androidx.compose.material3.ListItemDefaults.SegmentedGap
+                    )
                 ) {
-                    items(filtered, key = { it.playlistId }) { playlist ->
+                    itemsIndexed(filtered, key = { _, it -> it.playlistId }) { index, playlist ->
                         PlaylistPickRow(
                             playlist = playlist,
                             state = stateOf(playlist.playlistId),
-                            onClick = { onPick(playlist.playlistId) }
+                            removable = removable,
+                            onClick = { onPick(playlist.playlistId) },
+                            index = index,
+                            count = filtered.size
                         )
                     }
                 }
@@ -793,20 +833,19 @@ private fun VideoOptionsHeader(video: VideoItem) {
     }
 }
 
-/** One rounded container holding a run of [OptionRow]s. */
+/** A run of [OptionRow]s as a segmented group; the music sheets' twin. */
 @Composable
 private fun OptionGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
+    com.ivor.ivormusic.ui.components.SegmentedColumn(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
-        Column(content = content)
-    }
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        content = content
+    )
 }
 
 @Composable
 private fun OptionRowDivider() {
+    if (com.ivor.ivormusic.ui.components.LocalInSegmentedColumn.current) return
     HorizontalDivider(
         modifier = Modifier.padding(start = 56.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
@@ -919,39 +958,34 @@ private fun OptionRow(
  * One playlist in the picker: artwork, title, count, and the same
  * idle/spinner/check walk the action rows use.
  *
- * A checked row stays tappable-looking but is inert - saving is add-only, so a
- * second tap has nothing to do. Removing a video from a playlist belongs on
- * that playlist's own page, where the row being removed is visible.
+ * With [removable] a checked row unticks on tap, as YouTube's own save sheet
+ * does; without it a checked row is inert.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun PlaylistPickRow(
     playlist: VideoPlaylist,
     state: SaveRowState,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    index: Int,
+    count: Int,
+    removable: Boolean = false,
 ) {
     val saved = state == SaveRowState.SAVED
+    val tappable = state == SaveRowState.IDLE || state == SaveRowState.FAILED ||
+        (removable && state == SaveRowState.SAVED)
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = state == SaveRowState.IDLE || state == SaveRowState.FAILED) {
-                onClick()
-            },
-        shape = RoundedCornerShape(16.dp),
-        color = if (saved) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    // A segmented row whose "selected" state is "already in this playlist":
+    // filled, fully rounded and ticked, like the music sheet. Taps during a
+    // save are ignored rather than disabling the row, which would grey it out
+    // mid-spinner.
+    androidx.compose.material3.SegmentedListItem(
+        selected = saved,
+        onClick = { if (tappable) onClick() },
+        shapes = androidx.compose.material3.ListItemDefaults.segmentedShapes(index, count),
+        colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.surfaceContainer),
+        modifier = Modifier.fillMaxWidth(),
+        leadingContent = {
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -975,40 +1009,16 @@ private fun PlaylistPickRow(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = playlist.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (saved) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                // The count and "On this device" are the two things that tell
-                // one playlist from another of the same name, so both show.
-                listOfNotNull(
-                    playlist.videoCountText?.takeIf { it.isNotBlank() },
-                    playlist.subtitle?.takeIf { it.isNotBlank() }
-                ).joinToString(" · ").takeIf { it.isNotBlank() }?.let { line ->
-                    Text(
-                        text = line,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
+        },
+        // The count and "On this device" are the two things that tell one
+        // playlist from another of the same name, so both show.
+        supportingContent = listOfNotNull(
+            playlist.videoCountText?.takeIf { it.isNotBlank() },
+            playlist.subtitle?.takeIf { it.isNotBlank() }
+        ).joinToString(" · ").takeIf { it.isNotBlank() }?.let { line ->
+            { Text(text = line, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        },
+        trailingContent = {
             when (state) {
                 SaveRowState.SAVING -> LoadingIndicator(
                     modifier = Modifier.size(22.dp),
@@ -1018,7 +1028,6 @@ private fun PlaylistPickRow(
                 SaveRowState.SAVED -> Icon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = stringResource(R.string.cd_in_this_playlist),
-                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(22.dp)
                 )
 
@@ -1037,6 +1046,13 @@ private fun PlaylistPickRow(
                 )
             }
         }
+    ) {
+        Text(
+            text = playlist.title,
+            fontWeight = if (saved) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1157,9 +1173,11 @@ fun VideoOptionsSheetHost(
     // account's half waits on a session.
     LaunchedEffect(video.videoId, isConnected) {
         if (isConnected) viewModel.loadVideoPlaylists()
+        if (isConnected && !isDeviceVideo) viewModel.loadVideoPlaylistMembership(video.videoId)
     }
+    val accountContaining by viewModel.accountPlaylistsContainingVideo.collectAsState()
 
-    val alreadyIn = remember(localPlaylists, video.videoId, isConnected) {
+    val alreadyIn = remember(localPlaylists, video.videoId, isConnected, accountContaining) {
         val ids = localPlaylists
             .filter { list -> list.videos.any { it.videoId == video.videoId } }
             .map { it.id }
@@ -1168,6 +1186,8 @@ fun VideoOptionsSheetHost(
         // that is what tells it whether the video is already there.
         if (!isConnected && LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids) {
             ids + WATCH_LATER_ID
+        } else if (isConnected) {
+            ids + accountContaining
         } else {
             ids
         }
@@ -1190,6 +1210,9 @@ fun VideoOptionsSheetHost(
         isLoading = isLoading,
         onSave = { playlistId, onResult ->
             viewModel.addVideoToPlaylist(playlistId, video, onResult)
+        },
+        onRemove = { playlistId, onResult ->
+            viewModel.removeVideoFromPlaylist(playlistId, video, onResult)
         },
         onDownload = { showDownload = true },
         onDismiss = onDismiss,

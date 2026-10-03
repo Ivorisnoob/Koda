@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">הספרייה שלך ריקה</string>
     <string name="library_empty_subtitle">שירים שתוריד או תאהב יופיעו כאן</string>
-    <string name="library_create_playlist_hint">צור אחת עם כפתור + למטה</string>
     <string name="fab_downloads">הורדות</string>
     <string name="fab_listening_history">היסטוריית האזנה</string>
     <string name="fab_statistics">סטטיסטיקות</string>

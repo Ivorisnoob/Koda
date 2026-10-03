@@ -433,7 +433,49 @@ data class VideoSeekPreviewFrame(
 data class VideoStreamResult(
     val qualities: List<VideoQuality>,
     val seekPreview: VideoSeekPreview? = null,
+    /**
+     * The soundtracks a viewer can switch between: the original plus YouTube's
+     * dubs. Empty when there is only one, which is most videos. Every quality
+     * above still carries the original in [VideoQuality.audioUrl]; a chosen
+     * dub replaces that URL when the source is built, so the ladder and the
+     * soundtrack stay independent choices.
+     */
+    val audioTracks: List<YouTubeAudioTrack> = emptyList(),
 )
+
+/** What YouTube says a soundtrack is, from the `acont` entry of its xtags. */
+enum class YouTubeAudioTrackKind {
+    ORIGINAL,
+    DUBBED,
+    /** YouTube's machine dub ("dubbed-auto"), labelled so it is not mistaken for a studio one. */
+    AUTO_DUBBED,
+    DESCRIPTIVE,
+    SECONDARY,
+    UNKNOWN,
+}
+
+/**
+ * One language of a video's soundtrack, resolved to the single best audio
+ * file for it.
+ *
+ * [verified September 2026, `.probe/dub_probe.py`] visionOS `/player` lists
+ * every dub as its own set of adaptive audio formats (the same itags as the
+ * original), each tagged `audioTrack {id: "de.3", displayName, audioIsDefault}`
+ * and `xtags` {acont: dubbed, lang: de}. The URLs are plain and ranged reads are
+ * served to the end of the file; the original stays `audioIsDefault` whatever
+ * `hl` says, so which track plays is entirely Koda's choice.
+ */
+data class YouTubeAudioTrack(
+    /** YouTube's track id, e.g. "de.3" or "en-US.4"; stable across URL refreshes. */
+    val id: String,
+    /** YouTube's own name for it, already in the request's interface language. */
+    val displayName: String,
+    val languageTag: String?,
+    val kind: YouTubeAudioTrackKind,
+    val url: String,
+) {
+    val isOriginal: Boolean get() = kind == YouTubeAudioTrackKind.ORIGINAL
+}
 
 /**
  * Everything the video player needs from a single watch-next (/next) call:

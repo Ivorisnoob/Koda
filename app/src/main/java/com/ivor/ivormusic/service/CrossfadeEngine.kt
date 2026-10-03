@@ -2,12 +2,12 @@ package com.ivor.ivormusic.service
 
 import com.ivor.ivormusic.util.KLog
 
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.ShuffleOrder
 import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -121,6 +121,13 @@ class CrossfadeEngine(
 
     private var pendingTransition: PendingTransition? = null
 
+    /**
+     * How far the running overlap has mixed, 0 to 1, or null while there is
+     * no curve yet (the standby still preparing or waiting for its cue).
+     * [settleForPause] reads it to decide which track a pause belongs to.
+     */
+    private var mixProgress: Float? = null
+
     /** A transport command can arrive before the fade's next validation tick. */
     val pendingTargetIndex: Int?
         get() = pendingTransition?.takeIf { pending ->
@@ -135,21 +142,32 @@ class CrossfadeEngine(
     private var shuffleSeed = 0L
     private var repeatMode = Player.REPEAT_MODE_OFF
 
+    private var shuffleRandom = java.util.Random()
+
+    init {
+        playerA.setShuffleOrder(QueueShuffleOrder.startingAt(0, C.INDEX_UNSET, shuffleRandom))
+        playerB.setShuffleOrder(QueueShuffleOrder.startingAt(0, C.INDEX_UNSET, shuffleRandom))
+    }
+
     /**
-     * One shuffle permutation shared by both engines. Copying only the Boolean
-     * makes each incoming ExoPlayer generate a fresh order at every crossfade,
-     * which puts already-played songs back into the future.
+     * Turning shuffle on (or a new seed) reshuffles the audible queue with the
+     * current song first, so nothing is stranded before it. The permutation
+     * then lives on the active player and is copied across at each swap, so a
+     * crossfade can never generate a different order.
      */
     fun setShuffleState(enabled: Boolean, seed: Long) {
         if (shuffleEnabled != enabled || shuffleSeed != seed) cancelTransition()
-        // A new seed is a new shuffle, and a hand-arranged order belonged to
-        // the old one. Keeping it would make turning shuffle off and on again
-        // return the same sequence, which is the one thing that gesture is for.
-        if (shuffleSeed != seed) explicitShuffleOrder = null
+        val reshuffle = enabled && (!shuffleEnabled || shuffleSeed != seed)
         shuffleEnabled = enabled
         shuffleSeed = seed
-        applyPlaybackOrder(playerA)
-        applyPlaybackOrder(playerB)
+        if (reshuffle) {
+            shuffleRandom = java.util.Random(seed)
+            active.setShuffleOrder(
+                QueueShuffleOrder.startingAt(active.mediaItemCount, active.currentMediaItemIndex, shuffleRandom)
+            )
+        }
+        applyModes(playerA)
+        applyModes(playerB)
     }
 
     fun setRepeatMode(mode: Int) {
@@ -176,6 +194,9 @@ class CrossfadeEngine(
     /** [PlaybackParameters] at the user's rate: this engine's resting tempo. */
     private fun baseParameters() = PlaybackParameters(baseSpeed, 1f)
 
+    /** The sink clamps above 8x while the player reports the unclamped rate. */
+    private fun transitionSpeed(factor: Float) = (baseSpeed * factor).coerceAtMost(MAX_SINK_SPEED)
+
     /**
      * Change the resting tempo of both engines.
      *
@@ -195,47 +216,23 @@ class CrossfadeEngine(
         playerB.playbackParameters = baseParameters()
     }
 
-    /** Rebuild the audible player's permutation after its queue was edited. */
-    fun refreshActiveShuffleOrder() {
-        applyPlaybackOrder(active)
-    }
-
     /**
-     * Use [order] as the permutation instead of the seeded one, for a queue
-     * the user has arranged by hand while shuffle is on.
-     *
-     * Held so that both players and every later rebuild use it, for the reason
-     * [setShuffleState] shares one seed: an incoming crossfade player that
-     * generated its own order would put songs the user has just ordered back
-     * into a random sequence at the next transition. It is dropped as soon as
-     * the queue changes length, because a permutation is a permutation of a
-     * particular queue and nothing sensible can be salvaged from one that no
-     * longer fits - the seeded order takes over again there.
+     * Use [order] as the audible queue's permutation, for a queue arranged by
+     * hand or a restored session. The caller checks it addresses every queue
+     * index exactly once.
      */
     fun setExplicitShuffleOrder(order: IntArray) {
-        explicitShuffleOrder = order.copyOf()
+        if (order.size != active.mediaItemCount) return
         cancelTransition()
-        applyPlaybackOrder(playerA)
-        applyPlaybackOrder(playerB)
+        active.setShuffleOrder(QueueShuffleOrder.of(order, shuffleRandom))
     }
-
-    private var explicitShuffleOrder: IntArray? = null
 
     fun setPauseAtEndOfMediaItems(enabled: Boolean) {
         playerA.pauseAtEndOfMediaItems = enabled
         playerB.pauseAtEndOfMediaItems = enabled
     }
 
-    private fun applyPlaybackOrder(target: ExoPlayer) {
-        val explicit = explicitShuffleOrder?.takeIf { it.size == target.mediaItemCount }
-        if (explicit == null) explicitShuffleOrder = null
-        target.setShuffleOrder(
-            if (explicit != null) {
-                ShuffleOrder.DefaultShuffleOrder(explicit.copyOf(), shuffleSeed)
-            } else {
-                ShuffleOrder.DefaultShuffleOrder(target.mediaItemCount, shuffleSeed)
-            }
-        )
+    private fun applyModes(target: ExoPlayer) {
         target.shuffleModeEnabled = shuffleEnabled
         target.repeatMode = repeatMode
     }
@@ -321,12 +318,13 @@ class CrossfadeEngine(
 
         return try {
             fadingIntoId = nextItem.mediaId
+            mixProgress = null
             pendingTransition = PendingTransition(outgoing, outgoingItem, nextItem, targetIndex)
             // One item only. The rest of the queue is spliced around it at swap
             // time, from the live timeline rather than a stale snapshot.
             incoming.setMediaItem(nextItem, incomingStartMs.coerceAtLeast(0L))
             incoming.playbackParameters = PlaybackParameters(
-                baseSpeed * incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED),
+                transitionSpeed(incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED)),
                 1f
             )
             incoming.volume = 0f
@@ -550,6 +548,7 @@ class CrossfadeEngine(
                 // the outgoing side never disappears ahead of incoming audio.
                 val elapsedMs = minOf(outgoingElapsedMs, incomingElapsedMs)
                 val t = (elapsedMs.toFloat() / fadeMs).coerceIn(0f, 1f)
+                mixProgress = t
 
                 // Equal power: cos^2 + sin^2 == 1, so the summed energy is flat
                 // across the transition instead of dipping in the middle.
@@ -650,7 +649,13 @@ class CrossfadeEngine(
             // trailing items are appended.
             if (before.isNotEmpty()) incoming.addMediaItems(0, before)
 
-            applyPlaybackOrder(incoming)
+            // Carry the permutation the listener has been walking, edits and
+            // all; a regenerated one would replay or skip songs.
+            val order = outgoing.shuffleOrder
+            if (order.length == incoming.mediaItemCount) {
+                incoming.setShuffleOrder(QueueShuffleOrder.copyOf(order, shuffleRandom))
+            }
+            applyModes(incoming)
             incoming.volume = inGain * duckGain
 
             movedListener?.let {
@@ -693,6 +698,7 @@ class CrossfadeEngine(
         } finally {
             fadingIntoId = null
             pendingTransition = null
+            mixProgress = null
         }
     }
 
@@ -705,6 +711,7 @@ class CrossfadeEngine(
     private fun abortInto(outgoing: ExoPlayer, incoming: ExoPlayer) {
         fadingIntoId = null
         pendingTransition = null
+        mixProgress = null
         runCatching {
             incoming.stop()
             incoming.clearMediaItems()
@@ -731,6 +738,7 @@ class CrossfadeEngine(
         fadeJob = null
         fadingIntoId = null
         pendingTransition = null
+        mixProgress = null
         runCatching {
             standby.stop()
             standby.clearMediaItems()
@@ -740,6 +748,48 @@ class CrossfadeEngine(
             setFilterSweep(active, 0f)
             active.volume = gainFor(active) * duckGain
         }
+    }
+
+    /**
+     * Playback was paused - by the user, audio focus, unplugged headphones or
+     * the sleep timer - while an overlap was running.
+     *
+     * [cancelTransition] alone keeps the outgoing track, which is wrong once
+     * the mix is past halfway: by then the incoming track is what is being
+     * heard, and dropping it meant a resume went back to the last seconds of
+     * the old song and then played the new song's opening a second time. Past
+     * the equal-power midpoint the swap completes now instead, with the
+     * incoming player paused where it is, so the pause lands on the song the
+     * listener was actually hearing. Before the midpoint the overlap is
+     * dropped as before; the incoming track had been quieter than the one
+     * being paused, so hearing its opening again on resume is the lesser
+     * surprise.
+     *
+     * Call from the audible player's pause event, before the fade's own next
+     * tick sees the pause and abandons the overlap by itself.
+     */
+    fun settleForPause() {
+        val job = fadeJob
+        val pending = pendingTransition
+        val progress = mixProgress
+        if (job?.isActive != true || pending == null || progress == null ||
+            progress < PAUSE_HANDOVER_PROGRESS || active !== pending.outgoing
+        ) {
+            cancelTransition()
+            return
+        }
+        val incoming = standby
+        // Stop the fade first, so nothing writes volumes or swaps behind this.
+        job.cancel()
+        fadeJob = null
+        incoming.playWhenReady = false
+        completeSwap(
+            outgoing = pending.outgoing,
+            incoming = incoming,
+            inGain = gainFor(incoming),
+            targetIndex = pending.targetIndex,
+            outgoingItem = pending.outgoingItem,
+        )
     }
 
     /** Ease the small tempo correction back to the source tempo after mixing. */
@@ -803,6 +853,12 @@ class CrossfadeEngine(
         private const val MAX_INCOMING_STALL_MS = 350L
 
         /**
+         * The equal-power crossover: from here the incoming track is at least
+         * as loud as the outgoing one, so a pause belongs to it.
+         */
+        private const val PAUSE_HANDOVER_PROGRESS = 0.5f
+
+        /**
          * A drift change this large between two 16ms ticks is a step, not the
          * sink's gradual slew (at most ~10% of the interval, a couple of
          * milliseconds per tick). A step is *detected* here but only
@@ -845,7 +901,12 @@ class CrossfadeEngine(
         private const val MIN_BASE_SPEED = 0.1f
         private const val MIN_TRANSITION_SPEED = 0.96f
         private const val MAX_TRANSITION_SPEED = 1.04f
+        private const val MAX_SINK_SPEED = 8f
         private const val TEMPO_RELEASE_MS = 2_500L
-        private const val TEMPO_RELEASE_STEP_MS = 100L
+        // Few steps on purpose: DefaultAudioSink drains and rebuilds its
+        // processor chain for every rate change [verified September 2026,
+        // 1.11.0 afterDrainParameters], and each rebuild can click. Five
+        // steps of under 1% tempo are inaudible as jumps.
+        private const val TEMPO_RELEASE_STEP_MS = 500L
     }
 }

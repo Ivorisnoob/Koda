@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
+import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Close
@@ -70,6 +72,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.R
 import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.data.ChannelAbout
@@ -134,7 +140,9 @@ internal fun LazyGridScope.channelTabContent(
     onOpenChannel: (String) -> Unit,
     onSelectSort: (ChannelSortOption) -> Unit,
     /** Open post photos in the fullscreen zoomable viewer, at [Int]. */
-    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> }
+    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> },
+    /** Open a community post's comments. Required: a default would ship posts with a dead button. */
+    onOpenComments: (ChannelPost) -> Unit
 ) {
     if (tabKind == ChannelTabKind.ABOUT) {
         aboutTab(about = about, isLoading = isAboutLoading)
@@ -188,7 +196,8 @@ internal fun LazyGridScope.channelTabContent(
                 onOpenShorts = onOpenShorts,
                 onOpenPlaylist = onOpenPlaylist,
                 onOpenChannel = onOpenChannel,
-                onOpenPhotos = onOpenPhotos
+                onOpenPhotos = onOpenPhotos,
+                onOpenComments = onOpenComments
             )
         }
     }
@@ -219,7 +228,12 @@ internal fun LazyGridScope.channelTabContent(
     }
 
     spanItems(page.posts, key = { "post_${it.postId}" }) { post ->
-        ChannelPostCard(post = post, onPlayVideo = onPlayVideo, onOpenPhotos = onOpenPhotos)
+        ChannelPostCard(
+            post = post,
+            onPlayVideo = onPlayVideo,
+            onOpenPhotos = onOpenPhotos,
+            onOpenComments = post.detailParams?.let { { onOpenComments(post) } }
+        )
     }
 }
 
@@ -426,7 +440,8 @@ private fun ChannelShelfRow(
     onOpenShorts: (List<ShortsItem>, Int) -> Unit,
     onOpenPlaylist: (VideoPlaylist) -> Unit,
     onOpenChannel: (String) -> Unit,
-    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> }
+    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> },
+    onOpenComments: (ChannelPost) -> Unit
 ) {
     Column(modifier = Modifier.bleedHorizontally().fillMaxWidth()) {
         Text(
@@ -469,6 +484,7 @@ private fun ChannelShelfRow(
                     post = post,
                     onPlayVideo = onPlayVideo,
                     onOpenPhotos = onOpenPhotos,
+                    onOpenComments = post.detailParams?.let { { onOpenComments(post) } },
                     modifier = Modifier.width(300.dp)
                 )
             }
@@ -548,7 +564,11 @@ private fun ShelfChannelCard(channel: SubscribedChannel, onClick: () -> Unit) {
         modifier = Modifier
             .width(120.dp)
             .clip(RoundedCornerShape(16.dp))
-            .combinedClickableCompat(onClick),
+            .combinedClickableCompat(onClick)
+            // Inside the clip, so the press stays rounded but the text clears
+            // the corners: the subscriber line used to sit on the clip's bottom
+            // edge and lose its ends to it.
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         CreatorAvatar(
@@ -807,8 +827,13 @@ private fun LazyGridScope.aboutTab(about: ChannelAbout?, isLoading: Boolean) {
     if (!about.description.isNullOrBlank()) {
         item(key = "about_description", span = { GridItemSpan(maxLineSpan) }) {
             AboutCard(title = "Description") {
+                // The bio arrives as a bare string, so its addresses, emails
+                // and @handles are found here; a YouTube one opens in Koda.
+                val linkified = remember(about.description) {
+                    com.ivor.ivormusic.data.linkifyPlainText(about.description)
+                }
                 Text(
-                    text = about.description,
+                    text = com.ivor.ivormusic.ui.components.rememberLinkedText(linkified),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -933,6 +958,8 @@ private fun AboutCard(title: String, content: @Composable () -> Unit) {
 private fun ChannelPostCard(
     post: ChannelPost,
     onPlayVideo: (VideoItem) -> Unit,
+    /** Null when the post has no page of its own to hang comments off. */
+    onOpenComments: (() -> Unit)?,
     modifier: Modifier = Modifier,
     onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> }
 ) {
@@ -972,8 +999,10 @@ private fun ChannelPostCard(
 
             if (!post.text.isBlank) {
                 Spacer(Modifier.height(10.dp))
+                // The post's own link spans, parsed all along and drawn as
+                // plain text until now.
                 Text(
-                    text = post.text.text,
+                    text = com.ivor.ivormusic.ui.components.rememberLinkedText(post.text),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -1044,9 +1073,8 @@ private fun ChannelPostCard(
                 }
             }
 
-            val footer = listOfNotNull(post.voteCountText, post.replyCountText)
-            if (footer.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
+            if (post.voteCountText != null || post.replyCountText != null || onOpenComments != null) {
+                Spacer(Modifier.height(8.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -1069,15 +1097,115 @@ private fun ChannelPostCard(
                             )
                         }
                     }
-                    post.replyCountText?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    if (onOpenComments != null) {
+                        PostCommentsButton(countText = post.replyCountText, onClick = onOpenComments)
+                    } else {
+                        post.replyCountText?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The post a comments sheet belongs to, compact: who, when, and the first
+ * lines of what they said, with a thumbnail of the first image when the post
+ * has no text. Enough to keep replies in context without pushing the thread
+ * off a short screen; the full post is one swipe down, behind the sheet.
+ */
+@Composable
+internal fun PostCommentsContext(post: ChannelPost) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            CreatorAvatar(
+                avatarUrl = post.authorAvatarUrl,
+                name = post.authorName,
+                modifier = Modifier.size(32.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = listOfNotNull(
+                        post.authorName.takeIf { it.isNotBlank() },
+                        post.publishedText
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!post.text.isBlank) {
+                    Text(
+                        text = post.text.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            val image = post.images.firstOrNull()
+                ?: post.video?.thumbnailUrl
+            if (image != null && post.text.isBlank) {
+                AsyncImage(
+                    model = image,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The way into a post's comments: a tonal pill carrying the count, so the
+ * number that used to be a dead label is also the thing to tap. 40dp tall with
+ * a 48dp touch target, like the players' action pills.
+ */
+@Composable
+private fun PostCommentsButton(countText: String?, onClick: () -> Unit) {
+    val label = countText?.takeIf { it.isNotBlank() }
+    val description = stringResource(R.string.ch_post_open_comments)
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .heightIn(min = 40.dp)
+            .semantics { contentDescription = description }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            Icon(
+                Icons.AutoMirrored.Rounded.Comment,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = label ?: stringResource(R.string.cd_comments),
+                style = MaterialTheme.typography.labelLarge
+            )
         }
     }
 }

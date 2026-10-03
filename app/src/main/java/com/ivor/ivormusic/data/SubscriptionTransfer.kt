@@ -188,11 +188,11 @@ object SubscriptionTransfer {
 
     // ---------------- NewPipe-family backup archive ----------------
 
-    private fun looksLikeZip(bytes: ByteArray): Boolean =
+    internal fun looksLikeZip(bytes: ByteArray): Boolean =
         bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte() &&
             bytes[2] == 0x03.toByte() && bytes[3] == 0x04.toByte()
 
-    private fun looksLikeSqlite(bytes: ByteArray): Boolean =
+    internal fun looksLikeSqlite(bytes: ByteArray): Boolean =
         bytes.size >= SQLITE_MAGIC.size &&
             SQLITE_MAGIC.indices.all { bytes[it] == SQLITE_MAGIC[it] }
 
@@ -206,7 +206,7 @@ object SubscriptionTransfer {
      * and the copy is capped, since an export is a couple of megabytes and
      * anything wildly past that is not one.
      */
-    private fun unpackDatabase(input: InputStream, destination: File): Boolean {
+    internal fun unpackDatabase(input: InputStream, destination: File): Boolean {
         return try {
             ZipInputStream(input).use { zip ->
                 while (true) {

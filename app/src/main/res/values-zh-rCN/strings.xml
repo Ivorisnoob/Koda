@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">你的媒体库是空的</string>
     <string name="library_empty_subtitle">下载或喜欢的歌曲会显示在这里</string>
-    <string name="library_create_playlist_hint">用下方的 + 按钮创建一个</string>
     <string name="fab_downloads">下载</string>
     <string name="fab_listening_history">收听历史</string>
     <string name="fab_statistics">统计</string>

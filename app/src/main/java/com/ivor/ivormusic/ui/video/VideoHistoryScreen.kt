@@ -74,6 +74,7 @@ fun VideoHistoryContent(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val historyVideos by viewModel.historyVideos.collectAsState()
+    val historyListLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
     val pageState by viewModel.historyPageState.collectAsState()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     LoadVideoPageAtEnd(listState, historyVideos.size, pageState, viewModel::loadMoreYouTubeHistory)
@@ -241,13 +242,13 @@ fun VideoHistoryContent(
                     }
                 }
             } else {
-                items(historyVideos, key = { it.videoId }) { video ->
+                videoListItems(historyVideos, historyListLayout) { video, cell ->
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },
                         onLongClick = { optionsTarget = video },
                         onOpenChannel = onOpenChannel,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        modifier = cell
                     )
                 }
             }

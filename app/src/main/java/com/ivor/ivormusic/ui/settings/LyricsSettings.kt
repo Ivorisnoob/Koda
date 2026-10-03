@@ -178,7 +178,7 @@ internal fun LyricsSettingsPage(
                                     // The card is surfaceContainer, the toggle's own
                                     // default, so the unselected half needs a step up
                                     // the surface ladder to read against it.
-                                    colors = ToggleButtonDefaults.toggleButtonColors(
+                                    colors = ToggleButtonDefaults.colors(
                                         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                         contentColor = MaterialTheme.colorScheme.onSurface,
                                         checkedContainerColor = MaterialTheme.colorScheme.primary,

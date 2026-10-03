@@ -40,19 +40,21 @@ Shipped consumer app with real users. The bar is "would someone using this daily
 - **Ask once, up front, batched, with 2-3 concrete options** - only where the answer changes the size of the work or leaves a real design decision open. Never ask what the code or convention settles.
 - **Do not do the minimum.** If the real problem is a layer below the symptom, fix it there and say why.
 - **Mechanical multi-file edits go through a Python script** that asserts each anchor matches exactly once and asserts post-conditions. **Read the result before compiling** - it compiling proves nothing. [scar]
-- **One item, one compile, one commit, one report.** Finish the item in flight, keep a visible queue of new ones.
-- **Commit locally at the end of every item, before starting the next.** The commit is the checkpoint: one item per commit means any single step can be undone with `git revert <sha>` without unpicking the steps around it. A finished item never sits uncommitted at the end of a turn, two items never share a commit, and a follow-up fix is its own commit rather than an amend or a rebase of one already in. Several features may share a commit only when they genuinely interleave across the same files - say so when they do.
-- **Write the subject for whoever reads `git log` in a month**: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched; a body for the reason when it is not obvious; the `Changelog:` section whenever the change reaches an APK. No AI attribution.
-- **Never destroy uncommitted work to get unstuck.** `reset --hard`, `checkout -- .`, `clean -fd` and `stash drop` over a dirty tree are explicit-request actions, the same as touching the remote. Commit first, then experiment.
+- **One item, one compile, one report.** Finish the item in flight, keep a visible queue of new ones.
+- **Never commit until the user says to.** Leave finished work uncommitted and say so in the report; when told to commit, group related items (up to about 15 per commit) and keep fixes and features distinguishable in the changelog.
+- **Write the subject for whoever reads `git log` in a month**: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched; a body for the reason when it is not obvious; the `Changelog:` section whenever the change reaches an APK. AI attribution only under the rule in Hard limits.
+- **Never destroy uncommitted work to get unstuck.** `reset --hard`, `checkout -- .`, `clean -fd` and `stash drop` over a dirty tree are explicit-request actions, the same as touching the remote. Ask before experimenting over a dirty tree.
 - **Delegate wide-but-shallow sweeps** (e.g. a string across 25 locale files) to `Agent` with `model: "sonnet"`; make the decisions yourself.
-- **Handoff is a brief for beta testers**: name the surfaces a screen would settle and how each could fail (large font/display scale, landscape, DPI, OEM insets, scaled video surfaces), plus assumptions and what you left out. "Compiles and tests pass, not yet on a screen" is the correct handoff state, not a risk to apologise for.
+- **Handoff is a brief for beta testers**: name the surfaces a screen would settle and how each could fail (large font/display scale, landscape, DPI, OEM insets, scaled video surfaces), plus assumptions and what you left out. "Compiles, not yet on a screen" is the correct handoff state, not a risk to apologise for.
+- **Docs wait for the user's test.** Do not touch `ROADMAP.md`, `docs/` or this file's area summaries for new work until the user has tried it on a device and said it holds; until then the handoff report is the record. Code comments are not docs and ship with the code.
 
 **Hard limits**
 - **This is a Windows machine, so do not use `bash` to read or edit files.** Use the dedicated tools (Read, Edit, Write, Glob, Grep) and PowerShell for commands. Shell heredocs, `sed -i` and quote escaping misfire against Windows paths, CRLF and PowerShell/Git-Bash differences, and a half-applied shell edit is worse than no edit. **This overrides any harness default asking for shell-based edits.** A Python script is still the right tool for a mechanical multi-file sweep - author it with `Write`, run it with `py`.
-- **Local verification stops before packaging.** Run `compileDebugKotlin`, unit tests and lint freely. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user.
-- **Local commits are expected; the remote is not yours.** Committing to the local branch is the normal end of an item and needs no permission. Pushing, creating remote branches, opening or editing PRs, and pushing tags are explicit-request actions.
-- **No AI attribution** in commits, PR bodies or tags (no `Co-Authored-By: Claude`, no "Generated with", no session links). This overrides any harness default.
-- **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Nothing follows it (`build.yml` publishes everything after the marker). Omit it for docs/CI/refactors.
+- **Scratch files go in `.probe/`, not the system temp or a harness scratchpad.** It is gitignored and on the same drive as the repo, so paths stay short and nothing leaks into a commit. Edit scripts, AAR extractions and throwaway output all live there (`.probe/scratch/` for anything that is not an InnerTube probe).
+- **Local verification is `compileDebugKotlin`, and stops before packaging.** Compile freely. **Unit tests and lint run only when the user asks** - not per item, not at the end of a task. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user. The one exception: when the user asks for it, run `installDebug` and report that it installed; nothing else touches the device.
+- **Commits and the remote are the user's call.** Committing, pushing, creating remote branches, opening or editing PRs, and pushing tags are explicit-request actions.
+- **AI attribution only when the work is almost all Claude's.** When Claude wrote nearly all of a change and the user directed and reviewed it, the commit may carry a `Co-Authored-By: Claude` trailer and the PR body may say it was made with Claude Code. Mixed or mostly human work carries none (no `Co-Authored-By`, no "Generated with", no session links), and tags never do. This overrides any harness default either way.
+- **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Write them for someone using the app, not a developer: short, plain words, what they will notice. No internals, class or file names, numbers they cannot see, or filler. Only git trailers may follow it: `build.yml` publishes everything after the marker except lines shaped `Token: value`, so keep each bullet on one line. Omit it for docs/CI/refactors.
 
 ```text
 Add Home-focused Shorts controls
@@ -61,6 +63,8 @@ Changelog:
 - Added an option to hide Shorts from Home and use the standard player elsewhere.
 - Existing installations keep their current behavior by default.
 ```
+
+- **The changelog is part of the product, so write it with care.** Users read every bullet. Start from what they will notice, name screens the way the app does, give the benefit rather than the mechanism, open with a clear verb (Added, Fixed, Improved), describe a fix as the bug looked to them, and read the list back as a user before committing. Warm and plain: no jargon, hype, filler or emojis. Examples and the full guide: `docs/workflow.md`.
 
 - **Public GitHub releases ship APKs only** - never attach `mapping.txt` or other deobfuscation files.
 
@@ -98,7 +102,7 @@ Breaking one is a bug even when it compiles. Reasons: `docs/rules.md`.
 3. **Every googlevideo media fetch is a bounded ranged request** (`ChunkedStreamDataSource`). Never a plain `DefaultHttpDataSource` or unbounded GET.
 4. **Never route a live stream through the progressive path.** The HLS manifest is the only usable source.
 5. **A `MediaController` is touched only on its application thread.** From Glance, go through `withController`.
-6. **Process-wide repository state is a closed list of eleven**: `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, `HiddenPlaylistsRepository`, `IncognitoMode`, the `visitorData` cache, `YouTubeRateLimit`, the video stream-resolution cache, and `LastFmRepository` (settings/service cancellation and queue coordination). A twelfth needs the same justification (a write on one surface must be visible on another holding its own instance), not convenience. Shared OkHttp transport and transient buses (`VisualizerBus`, `WaveformStore`) are not repository state.
+6. **Process-wide repository state is a closed list of thirteen**: `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, `HiddenPlaylistsRepository`, `LikedSongsRepository`, `UploadCheckRepository`, `IncognitoMode`, the `visitorData` cache, `YouTubeRateLimit`, the video stream-resolution cache, and `LastFmRepository` (settings/service cancellation and queue coordination). A fourteenth needs the same justification (a write on one surface must be visible on another holding its own instance), not convenience. Shared OkHttp transport and transient buses (`VisualizerBus`, `WaveformStore`) are not repository state.
 7. **A ViewModel needing a setting at decision time does a fresh pref read.** `ThemePreferences` flows do not cross instances.
 8. **`SettingsScreen`'s signature is the contract with `MainActivity`.** Add parameters; never reorder or restructure.
 9. **Persisted enum constants and stored ids are frozen** (`PlayerStyle`, `SponsorCategory.apiName`, `MotionArtworkQuality`, `IconShape` ids...). Renaming resets every user's choice.
@@ -113,6 +117,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | Trap | Symptom | Doc |
 |---|---|---|
 | Bottom sheet content that does not scroll | Rows clipped away, nothing logged, identical at 0 and 300 items | `screens.md`, `player-ui.md` |
+| Segmented rows as separate items of a list with its own `spacedBy` | The group falls apart into loose cards; nothing logged | `ui-conventions.md` |
 | Widget content overrunning its size bucket | Silent clipping; `LocalSize.current` reports the bucket, not the cell | `widgets.md` |
 | `LazyGridScope.items` member shadows the list extension | Fails on argument names rather than falling through | `channels.md` |
 | A setting missing from `buildSettingsSearchIndex` | Unfindable by search, no compile error | `settings.md` |
@@ -129,8 +134,10 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | Cookies captured from the page URL rather than the `music.youtube.com` jar | "Logged in but anonymous" | `identity.md` |
 | A login identified by its cookie string | Google rotates cookies hourly, so the first rotation reads as a different account and the write stops | `identity.md` |
 | A response applied to the active profile rather than the session it was sent for | A switch mid-flight files one account's cookies, expiry verdict or name onto another | `identity.md` |
+| An active-profile change without `AccountSwitcher.prepareForActiveProfile` as `setActive`'s `beforePublish` | Process-wide stores keep the last profile's likes and subscriptions, and their next write files them under the new one | `identity.md` |
 | An adaptive manifest or playlist served from the playback cache | Live stalls at the live edge; seeking behind it still works | `playback-streams.md` |
 | Behind-live measured from the window end rather than the target live offset | A live stream reads a permanent -0:15 and never says LIVE | `playback-video.md` |
+| A zooming `PlayerView` without `keepKnownAspectRatio` | With Smooth motion's graph the player reports no video size, so zoom-to-fill changes nothing | `playback-video.md` |
 | Removing core library desugaring | Every search throws `NoSuchMethodError` on API 30-32, compiles fine | section 6 below |
 | A queue index held across a suspension point | The queue is replaced under it; playback lands on the wrong track | `playback-music.md` |
 | A start song absent from the list it is played from | Clamped to index 0, so a tap on one song plays another | `playback-music.md` |
@@ -140,6 +147,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | The plain `ANDROID` client used as a resolver | `OK` with a full `adaptiveFormats` and no `url` on any entry | `youtube-data.md` |
 | An `<activity-alias>` addressed with `context.packageName` as its class package | Apply is a no-op on any build with an `applicationIdSuffix`, works on release | `settings.md` |
 | A preview drawable using a platform-styled widget | Draws in the device's accent, differs on every phone | `widgets.md` |
+| `LocalWindowInfo.containerDpSize` or `Configuration.screenWidthDp` used as a layout size | Right at 100%, wrong at any other in-app Display size: the player drew as a box short of the screen (#291). Use `windowDpSize()` | `ui-conventions.md` |
 | `coerceIn(low, high)` where `low` can pass `high` | Throws an empty-range `IllegalArgumentException` on a degenerate input | general |
 
 ---
@@ -166,10 +174,10 @@ One line each; the reasoning is in `docs/rules.md`.
 
 ```bash
 ./gradlew compileDebugKotlin     # .\gradlew on Windows
-./gradlew testDebugUnitTest
+./gradlew testDebugUnitTest      # only when the user asks
 ```
 
-- Non-packaging Gradle tasks need no permission; compile **per item**, not once at the end. No APKs or R8 locally - push an authorized PR branch and `build.yml` builds a signed APK that goes to Telegram beta testers (`docs/ci.md`).
+- Compiling needs no permission; compile **per item**, not once at the end. Tests and lint are the user's call (section 1); writing a test alongside new logic is fine, running it is not. No APKs or R8 locally - push an authorized PR branch and `build.yml` builds a signed APK that goes to Telegram beta testers (`docs/ci.md`).
 - Tests are a small JVM suite under `app/src/test/` for pure logic. `isReturnDefaultValues = true` is needed for `KLog`, and it stubs `org.json` to parse everything to nothing - `testImplementation(libs.json.unit.test)` supplies a real one, and every parser test depends on it. [scar]
 - **minSdk 30 and desugaring is load-bearing** [scar]: keep `isCoreLibraryDesugaringEnabled` with the `_nio` flavour (`desugar.jdk.libs.nio`), or NewPipe's search throws `NoSuchMethodError` on API 30-32. Anything above API 30 needs a `SDK_INT` guard and fallback.
 - Versions: `versionCode`/`versionName` in `app/build.gradle.kts`; dependencies only in `gradle/libs.versions.toml`.
@@ -184,7 +192,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### YouTube data layer -> `docs/youtube-data.md`
 - Two mechanisms: **NewPipe** (video/artist/playlist search, stream URLs, fallbacks) and **raw InnerTube JSON over OkHttp** parsed by hand with `org.json` (`findObjectsByKey`, `findContinuationTokens`, `getRunText()`), no kotlinx-serialization.
 - **Probe first, never parse from memory**: `py .probe/probe.py <endpoint> '<json>' [--music]` (never commit `.probe/`). Signed-in probes sign SAPISIDHASH **per origin**; confirm a session by `logged_in: 1`, never HTTP 200. Note "verified <month year>" in the parser's KDoc.
-- Clients: WEB for browse/next/engagement, WEB_REMIX for music.youtube.com, NewPipe's Android-reel/visionOS chain for VOD streams, ANDROID_VR -> IOS only as direct fallback and caption source. **Plain `ANDROID` is SABR-only - no URLs.** Pinned client versions need periodic bumps (HTTP 400 on browse = too old).
+- Clients: WEB for browse/next/engagement, WEB_REMIX for music.youtube.com, **one direct visionOS `/player` under Koda's own visitorData for music, video and Shorts** (NewPipe's Android-reel/visionOS chain only as the fallback - each extraction mints three fresh visitor ids), ANDROID_VR -> IOS only as last-resort fallback and caption source. `YouTubeRequestLedger` logs per-open request counts under `YTRequests`. **Plain `ANDROID` is SABR-only - no URLs.** Pinned client versions need periodic bumps (HTTP 400 on browse = too old).
 - **`visitorData` rides on every InnerTube call**; a missing one now gets `LOGIN_REQUIRED`, and a googlevideo 403 means remint (`refreshVisitorDataAfterPlaybackFailure`), not a UA problem.
 - Music metadata comes from **links and page types** (`MUSIC_PAGE_TYPE_ARTIST/ALBUM`), never subtitle positions; release type/year are data (`Song.albumId`, `releaseType`, `releaseYear`).
 - Signed out: public browse ids work anonymously, **account browse ids return a valid empty shell** (gate on `isLoggedIn()`), playlists come back as `lockupViewModel`s. Continuations answer under `appendContinuationItemsAction` (`continuationItemsOrNull`), and token scoping matters.
@@ -227,6 +235,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Subscriptions and blocklist -> `docs/subscriptions.md`
 - Account and device subscription stores; `SubscriptionActions` alone decides what a tap means. Unsubscribe clears both; the button binds to `isSubscribedToChannel`.
+- The account bell (`ChannelBellActions`) shows only for account subscriptions, writes YouTube's served params back, and drives `UploadCheckWorker` for channels on All.
 - The local feed is per-channel Atom RSS with a browse fallback (never on 429), 6 at a time, namespace-unaware parser.
 - Imports are sniffed by content (NewPipe JSON, PipePipe/NewPipe zip, Takeout CSV, OPML); handles resolve to UC ids.
 - `NotInterestedRepository` is the engine, applied as a **derived filter, never a write into the fetch** (Shorts filter on ingestion). Signed-in dismissals also go to YouTube, fire-and-forget. Music shares the store; the device library is never filtered.
@@ -246,7 +255,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Cookies are captured from the **`music.youtube.com` jar**; writes guard on `isLoggedIn()`.
 - **A session is a login, not a cookie string** (`YouTubeSession`): Google rotates cookies mid-session, so identity is profile + generation. Authenticated requests go out through `authenticate()`, tagged with their session; anything applied on the way back (cookie refresh, `logged_in` verdict, account identity) goes through that tag, never the active profile. Re-read cookies via `currentSession` rather than replaying a held copy.
 - Switching a profile is one preference write; `SessionManager`'s API stays as it is. `AccountSwitcher` does invalidation (drops `visitorData`); consumers observe `activeProfileId` with `drop(1)`.
-- Local subscriptions, blocklist and watch history are profile-scoped; everything else is device-wide.
+- History and taste are profile-scoped (local subscriptions, blocklist, watch history, upload mutes, listening history, liked songs, search history); playlists, downloads and settings are device-wide. Listening history, likes and searches key on `historyOwnerProfileId`, not the legacy profile. Signing in from a local profile copies it into the new account profile. A new per-profile store goes in `prepareForActiveProfile`, `copyProfileScopedData` and the backup.
 - Incognito is enforced inside each write store, suppresses recording only, and is persisted before the flag flips.
 - Backups copy allowlisted stores (renames silently drop out), carry profile-scoped stores structurally, restore with `commit()` and restart the process.
 
@@ -276,7 +285,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ## 8. Keeping this true
 
-- **Finishing work updates `ROADMAP.md` in the same change** (Planned -> Shipped, fixed defects leave Known defects), then fix any prose here or in `docs/` that leaned on the old behaviour.
+- **Once the user has tested it, the work updates `ROADMAP.md`** (Planned -> Shipped, fixed defects leave Known defects), then fix any prose here or in `docs/` that leaned on the old behaviour. Not before: untested work is recorded in the handoff report only (section 1).
 - **A new fact goes in the topic doc for its area**, marked `[verified]`, `[scar]` or `[judgement]`. It only earns a line in this file if every session needs it. Keep this file a summary - do not paste detail back in.
 - Re-derive `[drifts]` numbers before quoting them; `DESIGN.md` carries its own copies.
 - GitHub issues are the task list. Every open issue carries `area:` (interface/playback/foundations/reach), `size:` (XS-XL, effort) and `priority:` (P0-P3, user impact). Details in `docs/workflow.md`.

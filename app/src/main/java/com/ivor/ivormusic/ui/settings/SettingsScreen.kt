@@ -49,6 +49,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -62,6 +65,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BookmarkAdd
@@ -202,6 +206,11 @@ import com.ivor.ivormusic.data.YouTubeAuthUtils
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.ui.components.coveredBy
+import com.ivor.ivormusic.ui.components.SegmentedGroup
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material.icons.automirrored.rounded.LibraryBooks
+import androidx.compose.material.icons.rounded.Check
 import com.ivor.ivormusic.data.MotionArtworkQuality
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.theme.ThemeMode
@@ -343,12 +352,22 @@ fun SettingsScreen(
     onShortsEnabledToggle: (Boolean) -> Unit,
     shortsHiddenActions: Set<String> = emptySet(),
     onShortsHiddenActionsChange: (Set<String>) -> Unit = {},
+    shortsHardBlock: Boolean,
+    onShortsHardBlockToggle: (Boolean) -> Unit,
+    returnDislike: Boolean,
+    onReturnDislikeToggle: (Boolean) -> Unit,
+    contentRegion: String,
+    onContentRegionChange: (String) -> Unit,
     videoQualityWifi: String,
     onVideoQualityWifiChange: (String) -> Unit,
     videoQualityMobile: String,
     onVideoQualityMobileChange: (String) -> Unit,
     preferHdr: Boolean = false,
     onPreferHdrToggle: (Boolean) -> Unit = {},
+    frameInterpolation: Boolean,
+    onFrameInterpolationToggle: (Boolean) -> Unit,
+    frameInterpolationMaxFps: Int,
+    onFrameInterpolationMaxFpsChange: (Int) -> Unit,
     musicQualityWifi: String,
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
@@ -359,6 +378,8 @@ fun SettingsScreen(
     onSubscribeTargetChange: (String) -> Unit = {},
     fastSubscriptionFeed: Boolean = true,
     onFastSubscriptionFeedToggle: (Boolean) -> Unit = {},
+    subscriptionRefresh: Int,
+    onSubscriptionRefreshChange: (Int) -> Unit,
     onNavigateToSubscriptions: () -> Unit = {},
     onNavigateToNotInterested: () -> Unit = {},
     onNavigateToBackup: () -> Unit = {},
@@ -396,6 +417,8 @@ fun SettingsScreen(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    pipButtons: String,
+    onPipButtonsChange: (String) -> Unit,
     hapticsLevel: String,
     onHapticsLevelChange: (String) -> Unit,
     uploadNotificationsEnabled: Boolean,
@@ -424,7 +447,11 @@ fun SettingsScreen(
     onSponsorBlockNoticeToggle: (Boolean) -> Unit = {},
     sponsorBlockMinDurationMs: Long = 0L,
     onSponsorBlockMinDurationChange: (Long) -> Unit = {},
-    contentPadding: PaddingValues = PaddingValues()
+    contentPadding: PaddingValues = PaddingValues(),
+    /** Opens the open-source licences screen, from the About dialog. */
+    onNavigateToLicenses: () -> Unit = {},
+    rotateWithDevice: Boolean = false,
+    onRotateWithDeviceToggle: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -449,21 +476,44 @@ fun SettingsScreen(
     // leave for system settings and come back.
     val notificationHelper = remember { DownloadNotificationHelper(context) }
     var canPostPromoted by remember { mutableStateOf(notificationHelper.canPostLiveUpdates()) }
+    // Same idea for plain notifications: the upload bell can be on while the
+    // system drops every post, and the page has to say so.
+    var canPostNotifications by remember {
+        mutableStateOf(com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context))
+    }
     val settingsActivity = context as? androidx.activity.ComponentActivity
     DisposableEffect(settingsActivity) {
         val lifecycle = settingsActivity?.lifecycle
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 canPostPromoted = notificationHelper.canPostLiveUpdates()
+                canPostNotifications =
+                    com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context)
             }
         }
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
+    val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) {
+        canPostNotifications = com.ivor.ivormusic.work.UploadCheckWorker.canPostNotifications(context)
+    }
 
     // Which category page is open, and what is typed in the hub's search box.
     var page by remember { mutableStateOf(SettingsPage.HUB) }
     var searchQuery by remember { mutableStateOf("") }
+
+    // List-detail on a window wide enough for both: the hub stays on the
+    // start side and the open category fills the rest, rather than a phone's
+    // one-screen-at-a-time stack stretched across a tablet. The hub is still
+    // the same composable and the pages the same pages; only where they sit
+    // changes. "No page open" means the first category is shown, because an
+    // empty detail pane is a hole in the screen rather than a state.
+    val settingsWindow = com.ivor.ivormusic.ui.theme.currentWindowLayout()
+    val twoPane = settingsWindow.supportsTwoPanes
+    val detailPage = if (page == SettingsPage.HUB) SettingsPage.ACCOUNT else page
+    val nestedPage = page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON
 
     /**
      * Back unwinds one step at a time: an open page returns to the hub, then a
@@ -494,7 +544,22 @@ fun SettingsScreen(
     var peelSign by remember { mutableFloatStateOf(1f) }
     var containerWidth by remember { mutableFloatStateOf(0f) }
 
-    PredictiveBackHandler(enabled = page != SettingsPage.HUB || searchQuery.isNotEmpty()) { events ->
+    // Side by side, back only unwinds what is stacked: a nested page returns to
+    // Appearance and a query clears. A top-level category is not "on top" of
+    // anything there, so back leaves Settings as it would from the hub.
+    PredictiveBackHandler(
+        enabled = if (twoPane) nestedPage || searchQuery.isNotEmpty()
+        else page != SettingsPage.HUB || searchQuery.isNotEmpty()
+    ) { events ->
+        if (twoPane) {
+            try {
+                events.collect { }
+                if (nestedPage) page = SettingsPage.APPEARANCE else searchQuery = ""
+            } catch (cancelled: CancellationException) {
+                // Nothing moved, so there is nothing to spring back.
+            }
+            return@PredictiveBackHandler
+        }
         val hasPage = page != SettingsPage.HUB
         var dragged = false
         try {
@@ -563,6 +628,16 @@ fun SettingsScreen(
     // the peel reads 0 while the hub is still wearing its peel layer, and the
     // hub jumps to 0.94 scale for exactly one frame. With the flag cleared
     // first there is no layer left for the value to feed.
+    // A window that became two panes mid-peel (a foldable opening) must not
+    // carry a committed peel into the next single-pane transition.
+    LaunchedEffect(twoPane) {
+        if (twoPane && (peelCommitted || isPeeling)) {
+            peelCommitted = false
+            isPeeling = false
+            peel.snapTo(0f)
+        }
+    }
+
     LaunchedEffect(page) {
         if (page == SettingsPage.HUB && peelCommitted) {
             peelCommitted = false
@@ -591,12 +666,16 @@ fun SettingsScreen(
     // Which per-network quality picker is open, if any
     var qualityDialogTarget by remember { mutableStateOf<QualityDialogTarget?>(null) }
 
+    // Smooth motion is only ever turned on through its warning.
+    var showFrameInterpolationWarning by remember { mutableStateOf(false) }
+
     // Which subscription-routing picker is open, if any
     var subscriptionDialogTarget by remember { mutableStateOf<SubscriptionDialogTarget?>(null) }
 
     // Dialog state for Folder Exclusion
     var showFolderExclusionDialog by remember { mutableStateOf(false) }
     var showShortsButtonsDialog by remember { mutableStateOf(false) }
+    var showContentRegionSheet by remember { mutableStateOf(false) }
     var showAutoHelpDialog by remember { mutableStateOf(false) }
     var availableFolders by remember { mutableStateOf<List<FolderInfo>>(emptyList()) }
     var isFoldersLoading by remember { mutableStateOf(false) }
@@ -619,6 +698,7 @@ fun SettingsScreen(
         onOpenRoutingPicker = { subscriptionDialogTarget = it },
         onShowAbout = { showAboutDialog = true },
         onShowShortsButtons = { showShortsButtonsDialog = true },
+        onShowContentRegion = { showContentRegionSheet = true },
         onOpenFolderExclusion = openFolderExclusion,
         onNavigateToColorPalette = onNavigateToColorPalette,
         onNavigateToSubscriptions = onNavigateToSubscriptions,
@@ -629,7 +709,372 @@ fun SettingsScreen(
         supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
     )
 
+    val pageContent: @Composable (SettingsPage) -> Unit = { currentPage ->
+        when (currentPage) {
+            // Nothing on top: the hub below is the screen. Full size
+            // rather than empty so this layer measures the same in
+            // both states, and takes no touches so the hub underneath
+            // still gets them.
+            SettingsPage.HUB -> Spacer(Modifier.fillMaxSize())
+
+            SettingsPage.ACCOUNT -> AccountSettingsPage(
+            isLoggedIn = isLoggedIn,
+            accountRefreshKey = accountRefreshKey,
+            sessionManager = sessionManager,
+            saveVideoHistory = saveVideoHistory,
+            onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
+            onShowAuthDialog = { showAuthDialog = true },
+            onShowCookieSheet = { showCookiePasteSheet = true },
+            onSignOut = {
+                sessionManager.clearSession()
+                isLoggedIn = false
+                onLogoutClick()
+            },
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.APPEARANCE -> AppearanceSettingsPage(
+            paletteStyle = paletteStyle,
+            currentThemeMode = currentThemeMode,
+            onThemeModeChange = onThemeModeChange,
+            hapticsLevel = hapticsLevel,
+            onHapticsLevelChange = onHapticsLevelChange,
+            colorPalette = colorPalette,
+            onNavigateToColorPalette = onNavigateToColorPalette,
+            amoledTheme = amoledTheme,
+            onAmoledThemeToggle = onAmoledThemeToggle,
+            ambientBackground = ambientBackground,
+            onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+            spotlightHome = spotlightHome,
+            onSpotlightHomeToggle = onSpotlightHomeToggle,
+            nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+            onNonExpressiveNavigationBarToggle =
+                onNonExpressiveNavigationBarToggle,
+            uiScale = uiScale,
+            onNavigateToDisplaySize = { page = SettingsPage.DISPLAY_SIZE },
+            rotateWithDevice = rotateWithDevice,
+            onRotateWithDeviceToggle = onRotateWithDeviceToggle,
+            appIcon = appIcon,
+            onNavigateToAppIcon = { page = SettingsPage.APP_ICON },
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.LASTFM -> LastFmSettingsPage(onBack = { page = SettingsPage.HUB })
+        SettingsPage.LYRICS -> LyricsSettingsPage(
+            configuration = lyricsConfiguration,
+            onChange = onLyricsConfigurationChange,
+            onBack = { page = SettingsPage.HUB }
+        )
+        SettingsPage.SPONSORBLOCK -> SponsorBlockSettingsPage(
+            enabled = sponsorBlockEnabled,
+            onEnabledToggle = onSponsorBlockEnabledToggle,
+            actions = sponsorBlockActions,
+            onActionChange = onSponsorBlockActionChange,
+            onResetCategories = onResetSponsorBlockActions,
+            showOnSeekBar = sponsorBlockShowOnSeekBar,
+            onShowOnSeekBarToggle = onSponsorBlockShowOnSeekBarToggle,
+            showNotice = sponsorBlockNotice,
+            onShowNoticeToggle = onSponsorBlockNoticeToggle,
+            minDurationMs = sponsorBlockMinDurationMs,
+            onMinDurationChange = onSponsorBlockMinDurationChange,
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        // Back lands on Appearance rather than the hub: this page is
+        // opened from there, and the scale is usually adjusted more
+        // than once before it is right.
+        SettingsPage.DISPLAY_SIZE -> DisplaySizeSettingsPage(
+            uiScale = uiScale,
+            onUiScaleChange = onUiScaleChange,
+            onBack = { page = SettingsPage.APPEARANCE }
+        )
+
+        SettingsPage.APP_ICON -> AppIconSettingsPage(
+            onBack = { page = SettingsPage.APPEARANCE }
+        )
+
+        SettingsPage.PLAYER -> PlayerSettingsPage(
+            playerStyle = playerStyle,
+            onPlayerStyleChange = onPlayerStyleChange,
+            playerArtworkColors = playerArtworkColors,
+            onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
+            motionArtwork = motionArtwork,
+            onMotionArtworkToggle = onMotionArtworkToggle,
+            motionArtworkWifiOnly = motionArtworkWifiOnly,
+            onMotionArtworkWifiOnlyToggle = onMotionArtworkWifiOnlyToggle,
+            motionArtworkQuality = motionArtworkQuality,
+            onMotionArtworkQualityChange = onMotionArtworkQualityChange,
+            waveformSeekBar = waveformSeekBar,
+            onWaveformSeekBarToggle = onWaveformSeekBarToggle,
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.PLAYBACK -> PlaybackSettingsPage(
+            crossfadeEnabled = crossfadeEnabled,
+            onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
+            crossfadeAuto = crossfadeAuto,
+            onCrossfadeAutoChange = onCrossfadeAutoChange,
+            crossfadeDurationMs = crossfadeDurationMs,
+            onCrossfadeDurationChange = onCrossfadeDurationChange,
+            normalizeVolume = normalizeVolume,
+            onNormalizeVolumeToggle = onNormalizeVolumeToggle,
+            rememberVideoBrightness = rememberVideoBrightness,
+            onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+            pipButtons = pipButtons,
+            onPipButtonsChange = onPipButtonsChange,
+            autoLoadQueue = autoLoadQueue,
+            onAutoLoadQueueToggle = onAutoLoadQueueToggle,
+            saveMusicHistory = saveMusicHistory,
+            onSaveMusicHistoryToggle = onSaveMusicHistoryToggle,
+            musicQualityWifi = musicQualityWifi,
+            musicQualityMobile = musicQualityMobile,
+            videoQualityWifi = videoQualityWifi,
+            videoQualityMobile = videoQualityMobile,
+            preferHdr = preferHdr,
+            onPreferHdrToggle = onPreferHdrToggle,
+            frameInterpolation = frameInterpolation,
+            onFrameInterpolationToggle = { enabled ->
+                if (enabled) showFrameInterpolationWarning = true
+                else onFrameInterpolationToggle(false)
+            },
+            frameInterpolationMaxFps = frameInterpolationMaxFps,
+            onFrameInterpolationMaxFpsChange = onFrameInterpolationMaxFpsChange,
+            onOpenQualityPicker = { qualityDialogTarget = it },
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.CONTENT -> ContentSettingsPage(
+            localOnlyMode = localOnlyMode,
+            onLocalOnlyModeToggle = onLocalOnlyModeToggle,
+            videoMode = videoMode,
+            onVideoModeToggle = onVideoModeToggle,
+            homeModeToggleEnabled = homeModeToggleEnabled,
+            onHomeModeToggleChange = onHomeModeToggleChange,
+            timedCommentsEnabled = timedCommentsEnabled,
+            showRecentSearches = showRecentSearches,
+            onShowRecentSearchesToggle = onShowRecentSearchesToggle,
+            showRelatedVideos = showRelatedVideos,
+            onShowRelatedVideosToggle = onShowRelatedVideosToggle,
+            inlinePreviews = inlinePreviews,
+            onInlinePreviewsToggle = onInlinePreviewsToggle,
+            compactVideoHome = compactVideoHome,
+            onCompactVideoHomeToggle = onCompactVideoHomeToggle,
+            onTimedCommentsToggle = onTimedCommentsToggle,
+            shortsEnabled = shortsEnabled,
+            onShortsEnabledToggle = onShortsEnabledToggle,
+            shortsHardBlock = shortsHardBlock,
+            onShortsHardBlockToggle = onShortsHardBlockToggle,
+            returnDislike = returnDislike,
+            onReturnDislikeToggle = onReturnDislikeToggle,
+            contentRegion = contentRegion,
+            onShowContentRegion = { showContentRegionSheet = true },
+            shortsHiddenActions = shortsHiddenActions,
+            onShowShortsButtons = { showShortsButtonsDialog = true },
+            onNavigateToNotInterested = onNavigateToNotInterested,
+            onNavigateToVideoHome = { page = SettingsPage.VIDEO_HOME },
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.VIDEO_HOME -> VideoHomeSettingsPage(
+            configuration = videoHomeConfiguration,
+            onRecommendationsEnabledChange =
+                onVideoRecommendationsEnabledChange,
+            onDestinationVisibleChange =
+                onVideoHomeDestinationVisibleChange,
+            onMoveDestination = onMoveVideoHomeDestination,
+            onBack = { page = SettingsPage.CONTENT },
+        )
+
+        SettingsPage.SUBSCRIPTIONS -> SubscriptionsSettingsPage(
+            subscriptionSource = subscriptionSource,
+            subscribeTarget = subscribeTarget,
+            fastSubscriptionFeed = fastSubscriptionFeed,
+            onFastSubscriptionFeedToggle = onFastSubscriptionFeedToggle,
+            subscriptionRefresh = subscriptionRefresh,
+            onSubscriptionRefreshChange = onSubscriptionRefreshChange,
+            onNavigateToSubscriptions = onNavigateToSubscriptions,
+            onOpenRoutingPicker = { subscriptionDialogTarget = it },
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.STORAGE -> StorageSettingsPage(
+            privateDownloadsEnabled = privateDownloadsEnabled,
+            onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
+            cacheEnabled = cacheEnabled,
+            onCacheEnabledToggle = onCacheEnabledToggle,
+            videoCacheEnabled = videoCacheEnabled,
+            onVideoCacheEnabledToggle = onVideoCacheEnabledToggle,
+            shortsCacheEnabled = shortsCacheEnabled,
+            onShortsCacheEnabledToggle = onShortsCacheEnabledToggle,
+            playbackPreloadEnabled = playbackPreloadEnabled,
+            onPlaybackPreloadEnabledToggle = onPlaybackPreloadEnabledToggle,
+            maxCacheSizeMb = maxCacheSizeMb,
+            onMaxCacheSizeMbChange = onMaxCacheSizeMbChange,
+            currentCacheSize = currentCacheSize,
+            onClearCacheClick = onClearCacheClick,
+            onClearVideoCacheClick = onClearVideoCacheClick,
+            onClearShortsCacheClick = onClearShortsCacheClick,
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.NOTIFICATIONS -> NotificationsSettingsPage(
+            liveDownloadUpdates = liveDownloadUpdates,
+            onLiveDownloadUpdatesToggle = onLiveDownloadUpdatesToggle,
+            livePlaybackUpdates = livePlaybackUpdates,
+            onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
+            canPostPromoted = canPostPromoted,
+            uploadNotificationsEnabled = uploadNotificationsEnabled,
+            onUploadNotificationsToggle = { enabled ->
+                onUploadNotificationsToggle(enabled)
+                // Turning the bell on is the moment the permission
+                // means something; onboarding may have been skipped.
+                // A permanent denial returns at once without a
+                // dialog, which the blocked row below then covers.
+                if (enabled &&
+                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                    !canPostNotifications
+                ) {
+                    notificationPermissionLauncher.launch(
+                        android.Manifest.permission.POST_NOTIFICATIONS
+                    )
+                }
+            },
+            canPostNotifications = canPostNotifications,
+            onOpenAppNotificationSettings = {
+                val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                runCatching { context.startActivity(intent) }
+            },
+            followedChannels = followedChannels,
+            mutedChannelIds = mutedChannelIds,
+            onChannelMutedChange = { channelId, muted ->
+                uploadCheckRepository.setMuted(channelId, muted)
+            },
+            onOpenSystemSettings = {
+                notificationHelper
+                    .promotedNotificationSettingsIntent()
+                    ?.let { runCatching { context.startActivity(it) } }
+            },
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.LOCAL_LIBRARY -> LocalLibrarySettingsPage(
+            loadLocalSongs = loadLocalSongs,
+            onLoadLocalSongsToggle = onLoadLocalSongsToggle,
+            excludedFolderCount = excludedFolders.size,
+            onOpenFolderExclusion = openFolderExclusion,
+            playlistSwipeEnabled = playlistSwipeEnabled,
+            onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
+            playlistSwipeStartAction = playlistSwipeStartAction,
+            onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
+            playlistSwipeEndAction = playlistSwipeEndAction,
+            onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
+            onBack = { page = SettingsPage.HUB }
+        )
+
+            SettingsPage.ADVANCED -> AdvancedSettingsPage(
+                manualScanEnabled = manualScanEnabled,
+                onManualScanEnabledToggle = onManualScanEnabledToggle,
+                onReportBug = onNavigateToReportBug,
+                onOpenTimeLimit = onNavigateToTimeLimit,
+                onOpenAutoHelp = { showAutoHelpDialog = true },
+                onBack = { page = SettingsPage.HUB }
+            )
+        }
+    }
+
+    val hubContent: @Composable (selectedPage: SettingsPage?) -> Unit = { selectedPage ->
+        SettingsHub(
+            searchQuery = searchQuery,
+            onSearchQueryChange = { searchQuery = it },
+            searchEntries = searchEntries,
+            isLoggedIn = isLoggedIn,
+            accountRefreshKey = accountRefreshKey,
+            sessionManager = sessionManager,
+            currentThemeMode = currentThemeMode,
+            colorPalette = colorPalette,
+            spotlightHome = spotlightHome,
+            uiScale = uiScale,
+            lyricsConfiguration = lyricsConfiguration,
+            sponsorBlockEnabled = sponsorBlockEnabled,
+            sponsorBlockActions = sponsorBlockActions,
+            playerStyle = playerStyle,
+            musicQualityWifi = musicQualityWifi,
+            videoQualityWifi = videoQualityWifi,
+            localOnlyMode = localOnlyMode,
+            videoMode = videoMode,
+            subscriptionSource = subscriptionSource,
+            privateDownloadsEnabled = privateDownloadsEnabled,
+            cacheEnabled = cacheEnabled,
+            currentCacheSize = currentCacheSize,
+            liveDownloadUpdates = liveDownloadUpdates,
+            livePlaybackUpdates = livePlaybackUpdates,
+            canPostPromoted = canPostPromoted,
+            loadLocalSongs = loadLocalSongs,
+            excludedFolderCount = excludedFolders.size,
+            onOpenPage = { page = it },
+            onNavigateToBackup = onNavigateToBackup,
+            onShowAbout = { showAboutDialog = true },
+            onBackClick = onBackClick,
+            selectedPage = selectedPage
+        )
+    }
+
     CompositionLocalProvider(LocalSettingsInfoSink provides { settingsInfo = it }) {
+    if (twoPane) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(contentPadding)
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+                )
+        ) {
+            Box(
+                modifier = Modifier
+                    .width((settingsWindow.width * 0.38f).coerceIn(320.dp, 420.dp))
+                    .fillMaxHeight()
+            ) {
+                hubContent(detailPage)
+            }
+            // The page sits on a raised pane of the same palette, so the two
+            // read as list and detail rather than two screens pushed together.
+            // Consuming the status-bar inset here keeps each page's own top
+            // bar from padding for it a second time inside the pane.
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(top = 8.dp, end = 12.dp, bottom = 12.dp)
+                    .clip(RoundedCornerShape(28.dp))
+            ) {
+                MaterialTheme(
+                    colorScheme = MaterialTheme.colorScheme.copy(
+                        background = MaterialTheme.colorScheme.surfaceContainerLow
+                    )
+                ) {
+                    CompositionLocalProvider(LocalSettingsDetailShowsBack provides nestedPage) {
+                        AnimatedContent(
+                            targetState = detailPage,
+                            transitionSpec = {
+                                (fadeIn(tween(220)) + slideInVertically(
+                                    spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                ) { it / 24 }) togetherWith fadeOut(tween(120))
+                            },
+                            label = "settingsDetailPane"
+                        ) { shown ->
+                            pageContent(shown)
+                        }
+                    }
+                }
+            }
+        }
+    } else
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -668,39 +1113,8 @@ fun SettingsScreen(
                 // tappable through it and still read out by TalkBack.
                 .coveredBy(page != SettingsPage.HUB)
         ) {
-            SettingsHub(
-                searchQuery = searchQuery,
-                onSearchQueryChange = { searchQuery = it },
-                searchEntries = searchEntries,
-                isLoggedIn = isLoggedIn,
-                accountRefreshKey = accountRefreshKey,
-                sessionManager = sessionManager,
-                currentThemeMode = currentThemeMode,
-                colorPalette = colorPalette,
-                spotlightHome = spotlightHome,
-                uiScale = uiScale,
-                lyricsConfiguration = lyricsConfiguration,
-                sponsorBlockEnabled = sponsorBlockEnabled,
-                sponsorBlockActions = sponsorBlockActions,
-                playerStyle = playerStyle,
-                musicQualityWifi = musicQualityWifi,
-                videoQualityWifi = videoQualityWifi,
-                localOnlyMode = localOnlyMode,
-                videoMode = videoMode,
-                subscriptionSource = subscriptionSource,
-                privateDownloadsEnabled = privateDownloadsEnabled,
-                cacheEnabled = cacheEnabled,
-                currentCacheSize = currentCacheSize,
-                liveDownloadUpdates = liveDownloadUpdates,
-                livePlaybackUpdates = livePlaybackUpdates,
-                canPostPromoted = canPostPromoted,
-                loadLocalSongs = loadLocalSongs,
-                excludedFolderCount = excludedFolders.size,
-                onOpenPage = { page = it },
-                onNavigateToBackup = onNavigateToBackup,
-                onShowAbout = { showAboutDialog = true },
-                onBackClick = onBackClick
-            )
+            hubContent(null)
+
         }
 
         // The open page, riding on top of the hub.
@@ -762,238 +1176,7 @@ fun SettingsScreen(
                 },
                 label = "settingsPage"
             ) { currentPage ->
-                when (currentPage) {
-                    // Nothing on top: the hub below is the screen. Full size
-                    // rather than empty so this layer measures the same in
-                    // both states, and takes no touches so the hub underneath
-                    // still gets them.
-                    SettingsPage.HUB -> Spacer(Modifier.fillMaxSize())
-
-                    SettingsPage.ACCOUNT -> AccountSettingsPage(
-                    isLoggedIn = isLoggedIn,
-                    accountRefreshKey = accountRefreshKey,
-                    sessionManager = sessionManager,
-                    saveVideoHistory = saveVideoHistory,
-                    onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
-                    onShowAuthDialog = { showAuthDialog = true },
-                    onShowCookieSheet = { showCookiePasteSheet = true },
-                    onSignOut = {
-                        sessionManager.clearSession()
-                        isLoggedIn = false
-                        onLogoutClick()
-                    },
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                SettingsPage.APPEARANCE -> AppearanceSettingsPage(
-                    paletteStyle = paletteStyle,
-                    currentThemeMode = currentThemeMode,
-                    onThemeModeChange = onThemeModeChange,
-                    hapticsLevel = hapticsLevel,
-                    onHapticsLevelChange = onHapticsLevelChange,
-                    colorPalette = colorPalette,
-                    onNavigateToColorPalette = onNavigateToColorPalette,
-                    amoledTheme = amoledTheme,
-                    onAmoledThemeToggle = onAmoledThemeToggle,
-                    ambientBackground = ambientBackground,
-                    onAmbientBackgroundToggle = onAmbientBackgroundToggle,
-                    spotlightHome = spotlightHome,
-                    onSpotlightHomeToggle = onSpotlightHomeToggle,
-                    nonExpressiveNavigationBar = nonExpressiveNavigationBar,
-                    onNonExpressiveNavigationBarToggle =
-                        onNonExpressiveNavigationBarToggle,
-                    uiScale = uiScale,
-                    onNavigateToDisplaySize = { page = SettingsPage.DISPLAY_SIZE },
-                    appIcon = appIcon,
-                    onNavigateToAppIcon = { page = SettingsPage.APP_ICON },
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                SettingsPage.LASTFM -> LastFmSettingsPage(onBack = { page = SettingsPage.HUB })
-                SettingsPage.LYRICS -> LyricsSettingsPage(
-                    configuration = lyricsConfiguration,
-                    onChange = onLyricsConfigurationChange,
-                    onBack = { page = SettingsPage.HUB }
-                )
-                SettingsPage.SPONSORBLOCK -> SponsorBlockSettingsPage(
-                    enabled = sponsorBlockEnabled,
-                    onEnabledToggle = onSponsorBlockEnabledToggle,
-                    actions = sponsorBlockActions,
-                    onActionChange = onSponsorBlockActionChange,
-                    onResetCategories = onResetSponsorBlockActions,
-                    showOnSeekBar = sponsorBlockShowOnSeekBar,
-                    onShowOnSeekBarToggle = onSponsorBlockShowOnSeekBarToggle,
-                    showNotice = sponsorBlockNotice,
-                    onShowNoticeToggle = onSponsorBlockNoticeToggle,
-                    minDurationMs = sponsorBlockMinDurationMs,
-                    onMinDurationChange = onSponsorBlockMinDurationChange,
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                // Back lands on Appearance rather than the hub: this page is
-                // opened from there, and the scale is usually adjusted more
-                // than once before it is right.
-                SettingsPage.DISPLAY_SIZE -> DisplaySizeSettingsPage(
-                    uiScale = uiScale,
-                    onUiScaleChange = onUiScaleChange,
-                    onBack = { page = SettingsPage.APPEARANCE }
-                )
-
-                SettingsPage.APP_ICON -> AppIconSettingsPage(
-                    onBack = { page = SettingsPage.APPEARANCE }
-                )
-
-                SettingsPage.PLAYER -> PlayerSettingsPage(
-                    playerStyle = playerStyle,
-                    onPlayerStyleChange = onPlayerStyleChange,
-                    playerArtworkColors = playerArtworkColors,
-                    onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
-                    motionArtwork = motionArtwork,
-                    onMotionArtworkToggle = onMotionArtworkToggle,
-                    motionArtworkWifiOnly = motionArtworkWifiOnly,
-                    onMotionArtworkWifiOnlyToggle = onMotionArtworkWifiOnlyToggle,
-                    motionArtworkQuality = motionArtworkQuality,
-                    onMotionArtworkQualityChange = onMotionArtworkQualityChange,
-                    waveformSeekBar = waveformSeekBar,
-                    onWaveformSeekBarToggle = onWaveformSeekBarToggle,
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                SettingsPage.PLAYBACK -> PlaybackSettingsPage(
-                    crossfadeEnabled = crossfadeEnabled,
-                    onCrossfadeEnabledToggle = onCrossfadeEnabledToggle,
-                    crossfadeAuto = crossfadeAuto,
-                    onCrossfadeAutoChange = onCrossfadeAutoChange,
-                    crossfadeDurationMs = crossfadeDurationMs,
-                    onCrossfadeDurationChange = onCrossfadeDurationChange,
-                    normalizeVolume = normalizeVolume,
-                    onNormalizeVolumeToggle = onNormalizeVolumeToggle,
-                    rememberVideoBrightness = rememberVideoBrightness,
-                    onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
-                    autoLoadQueue = autoLoadQueue,
-                    onAutoLoadQueueToggle = onAutoLoadQueueToggle,
-                    saveMusicHistory = saveMusicHistory,
-                    onSaveMusicHistoryToggle = onSaveMusicHistoryToggle,
-                    musicQualityWifi = musicQualityWifi,
-                    musicQualityMobile = musicQualityMobile,
-                    videoQualityWifi = videoQualityWifi,
-                    videoQualityMobile = videoQualityMobile,
-                    preferHdr = preferHdr,
-                    onPreferHdrToggle = onPreferHdrToggle,
-                    onOpenQualityPicker = { qualityDialogTarget = it },
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                SettingsPage.CONTENT -> ContentSettingsPage(
-                    localOnlyMode = localOnlyMode,
-                    onLocalOnlyModeToggle = onLocalOnlyModeToggle,
-                    videoMode = videoMode,
-                    onVideoModeToggle = onVideoModeToggle,
-                    homeModeToggleEnabled = homeModeToggleEnabled,
-                    onHomeModeToggleChange = onHomeModeToggleChange,
-                    timedCommentsEnabled = timedCommentsEnabled,
-                    showRecentSearches = showRecentSearches,
-                    onShowRecentSearchesToggle = onShowRecentSearchesToggle,
-                    showRelatedVideos = showRelatedVideos,
-                    onShowRelatedVideosToggle = onShowRelatedVideosToggle,
-                    inlinePreviews = inlinePreviews,
-                    onInlinePreviewsToggle = onInlinePreviewsToggle,
-                    compactVideoHome = compactVideoHome,
-                    onCompactVideoHomeToggle = onCompactVideoHomeToggle,
-                    onTimedCommentsToggle = onTimedCommentsToggle,
-                    shortsEnabled = shortsEnabled,
-                    onShortsEnabledToggle = onShortsEnabledToggle,
-                    shortsHiddenActions = shortsHiddenActions,
-                    onShowShortsButtons = { showShortsButtonsDialog = true },
-                    onNavigateToNotInterested = onNavigateToNotInterested,
-                    onNavigateToVideoHome = { page = SettingsPage.VIDEO_HOME },
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                SettingsPage.VIDEO_HOME -> VideoHomeSettingsPage(
-                    configuration = videoHomeConfiguration,
-                    onRecommendationsEnabledChange =
-                        onVideoRecommendationsEnabledChange,
-                    onDestinationVisibleChange =
-                        onVideoHomeDestinationVisibleChange,
-                    onMoveDestination = onMoveVideoHomeDestination,
-                    onBack = { page = SettingsPage.CONTENT },
-                )
-
-                SettingsPage.SUBSCRIPTIONS -> SubscriptionsSettingsPage(
-                    subscriptionSource = subscriptionSource,
-                    subscribeTarget = subscribeTarget,
-                    fastSubscriptionFeed = fastSubscriptionFeed,
-                    onFastSubscriptionFeedToggle = onFastSubscriptionFeedToggle,
-                    onNavigateToSubscriptions = onNavigateToSubscriptions,
-                    onOpenRoutingPicker = { subscriptionDialogTarget = it },
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                SettingsPage.STORAGE -> StorageSettingsPage(
-                    privateDownloadsEnabled = privateDownloadsEnabled,
-                    onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
-                    cacheEnabled = cacheEnabled,
-                    onCacheEnabledToggle = onCacheEnabledToggle,
-                    videoCacheEnabled = videoCacheEnabled,
-                    onVideoCacheEnabledToggle = onVideoCacheEnabledToggle,
-                    shortsCacheEnabled = shortsCacheEnabled,
-                    onShortsCacheEnabledToggle = onShortsCacheEnabledToggle,
-                    playbackPreloadEnabled = playbackPreloadEnabled,
-                    onPlaybackPreloadEnabledToggle = onPlaybackPreloadEnabledToggle,
-                    maxCacheSizeMb = maxCacheSizeMb,
-                    onMaxCacheSizeMbChange = onMaxCacheSizeMbChange,
-                    currentCacheSize = currentCacheSize,
-                    onClearCacheClick = onClearCacheClick,
-                    onClearVideoCacheClick = onClearVideoCacheClick,
-                    onClearShortsCacheClick = onClearShortsCacheClick,
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                SettingsPage.NOTIFICATIONS -> NotificationsSettingsPage(
-                    liveDownloadUpdates = liveDownloadUpdates,
-                    onLiveDownloadUpdatesToggle = onLiveDownloadUpdatesToggle,
-                    livePlaybackUpdates = livePlaybackUpdates,
-                    onLivePlaybackUpdatesToggle = onLivePlaybackUpdatesToggle,
-                    canPostPromoted = canPostPromoted,
-                    uploadNotificationsEnabled = uploadNotificationsEnabled,
-                    onUploadNotificationsToggle = onUploadNotificationsToggle,
-                    followedChannels = followedChannels,
-                    mutedChannelIds = mutedChannelIds,
-                    onChannelMutedChange = { channelId, muted ->
-                        uploadCheckRepository.setMuted(channelId, muted)
-                    },
-                    onOpenSystemSettings = {
-                        notificationHelper
-                            .promotedNotificationSettingsIntent()
-                            ?.let { runCatching { context.startActivity(it) } }
-                    },
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                SettingsPage.LOCAL_LIBRARY -> LocalLibrarySettingsPage(
-                    loadLocalSongs = loadLocalSongs,
-                    onLoadLocalSongsToggle = onLoadLocalSongsToggle,
-                    excludedFolderCount = excludedFolders.size,
-                    onOpenFolderExclusion = openFolderExclusion,
-                    playlistSwipeEnabled = playlistSwipeEnabled,
-                    onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
-                    playlistSwipeStartAction = playlistSwipeStartAction,
-                    onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
-                    playlistSwipeEndAction = playlistSwipeEndAction,
-                    onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
-                    onBack = { page = SettingsPage.HUB }
-                )
-
-                    SettingsPage.ADVANCED -> AdvancedSettingsPage(
-                        manualScanEnabled = manualScanEnabled,
-                        onManualScanEnabledToggle = onManualScanEnabledToggle,
-                        onReportBug = onNavigateToReportBug,
-                        onOpenTimeLimit = onNavigateToTimeLimit,
-                        onOpenAutoHelp = { showAutoHelpDialog = true },
-                        onBack = { page = SettingsPage.HUB }
-                    )
-                }
+                pageContent(currentPage)
             }
         }
     }
@@ -1038,7 +1221,8 @@ fun SettingsScreen(
     if (showAboutDialog) {
         ExpressiveAboutDialog(
             onDismiss = { showAboutDialog = false },
-            onNavigateToUpdate = onNavigateToUpdate
+            onNavigateToUpdate = onNavigateToUpdate,
+            onNavigateToLicenses = onNavigateToLicenses
         )
     }
 
@@ -1100,6 +1284,14 @@ fun SettingsScreen(
         )
     }
 
+    if (showContentRegionSheet) {
+        ContentRegionSheet(
+            selected = contentRegion,
+            onSelect = onContentRegionChange,
+            onDismiss = { showContentRegionSheet = false }
+        )
+    }
+
     if (showShortsButtonsDialog) {
         ShortsButtonsDialog(
             hiddenActions = shortsHiddenActions,
@@ -1112,6 +1304,16 @@ fun SettingsScreen(
     if (showAutoHelpDialog) {
         AndroidAutoHelpDialog(
             onDismiss = { showAutoHelpDialog = false }
+        )
+    }
+
+    if (showFrameInterpolationWarning) {
+        FrameInterpolationWarningDialog(
+            onConfirm = {
+                showFrameInterpolationWarning = false
+                onFrameInterpolationToggle(true)
+            },
+            onDismiss = { showFrameInterpolationWarning = false }
         )
     }
 }
@@ -1154,7 +1356,9 @@ private fun SettingsHub(
     onOpenPage: (SettingsPage) -> Unit,
     onNavigateToBackup: () -> Unit,
     onShowAbout: () -> Unit,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    /** The category shown beside the hub in two-pane mode; null on a phone. */
+    selectedPage: SettingsPage? = null
 ) {
     // Animation states for staggered entry
     var isVisible by remember { mutableStateOf(false) }
@@ -1265,7 +1469,12 @@ private fun SettingsHub(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 8.dp,
+                bottom = SettingsMiniPlayerClearance
+            ),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             item {
@@ -1332,6 +1541,7 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_account),
                             value = accountValue,
                             onClick = { onOpenPage(SettingsPage.ACCOUNT) },
+                            selected = selectedPage == SettingsPage.ACCOUNT,
                             iconShape = MaterialShapes.Sunny.toShape(),
                             explanation = stringResource(R.string.si_hub_account)
                         )
@@ -1357,6 +1567,7 @@ private fun SettingsHub(
                                 }
                             },
                             onClick = { onOpenPage(SettingsPage.APPEARANCE) },
+                            selected = selectedPage == SettingsPage.APPEARANCE,
                             tint = MaterialTheme.colorScheme.tertiary,
                             iconShape = MaterialShapes.Cookie9Sided.toShape(),
                             explanation = stringResource(R.string.si_hub_appearance)
@@ -1367,6 +1578,7 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_player),
                             value = playerStyleLabel,
                             onClick = { onOpenPage(SettingsPage.PLAYER) },
+                            selected = selectedPage == SettingsPage.PLAYER,
                             tint = MaterialTheme.colorScheme.tertiary,
                             iconShape = MaterialShapes.Clover4Leaf.toShape(),
                             explanation = stringResource(R.string.si_hub_player)
@@ -1384,6 +1596,7 @@ private fun SettingsHub(
                             value = "${musicQualityLabel(musicQualityWifi)} music, " +
                                 "${videoQualityLabel(videoQualityWifi)} video on Wi-Fi",
                             onClick = { onOpenPage(SettingsPage.PLAYBACK) },
+                            selected = selectedPage == SettingsPage.PLAYBACK,
                             tint = MaterialTheme.colorScheme.secondary,
                             iconShape = MaterialShapes.SoftBurst.toShape(),
                             explanation = stringResource(R.string.si_hub_playback)
@@ -1394,6 +1607,7 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_content_and_feeds),
                             value = contentValue,
                             onClick = { onOpenPage(SettingsPage.CONTENT) },
+                            selected = selectedPage == SettingsPage.CONTENT,
                             tint = MaterialTheme.colorScheme.secondary,
                             iconShape = MaterialShapes.Gem.toShape(),
                             explanation = stringResource(R.string.si_hub_content)
@@ -1404,6 +1618,7 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_subscriptions),
                             value = subscriptionSourceLabel(subscriptionSource),
                             onClick = { onOpenPage(SettingsPage.SUBSCRIPTIONS) },
+                            selected = selectedPage == SettingsPage.SUBSCRIPTIONS,
                             tint = MaterialTheme.colorScheme.secondary,
                             iconShape = MaterialShapes.Cookie6Sided.toShape(),
                             explanation = stringResource(R.string.si_hub_subscriptions)
@@ -1416,12 +1631,16 @@ private fun SettingsHub(
                                 stringResource(R.string.lyrics_provider_summary, lyricsConfiguration.enabledProviders.size, lyricsConfiguration.enabledProviders.first())
                             else stringResource(R.string.lyrics_local_only),
                             onClick = { onOpenPage(SettingsPage.LYRICS) },
+                            selected = selectedPage == SettingsPage.LYRICS,
                             tint = MaterialTheme.colorScheme.tertiary,
                             iconShape = MaterialShapes.Cookie6Sided.toShape(),
                             explanation = stringResource(R.string.lyrics_settings_intro)
                         )
                         SettingsDivider()
-                        LastFmHubRow(onClick = { onOpenPage(SettingsPage.LASTFM) })
+                        LastFmHubRow(
+                            onClick = { onOpenPage(SettingsPage.LASTFM) },
+                            selected = selectedPage == SettingsPage.LASTFM
+                        )
                         SettingsDivider()
                         SettingsHubRow(
                             icon = Icons.Rounded.MoneyOff,
@@ -1440,6 +1659,7 @@ private fun SettingsHub(
                                 )
                             },
                             onClick = { onOpenPage(SettingsPage.SPONSORBLOCK) },
+                            selected = selectedPage == SettingsPage.SPONSORBLOCK,
                             tint = MaterialTheme.colorScheme.secondary,
                             iconShape = MaterialShapes.Boom.toShape(),
                             explanation = stringResource(R.string.si_hub_sponsorblock)
@@ -1456,6 +1676,7 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_storage_and_cache),
                             value = storageValue,
                             onClick = { onOpenPage(SettingsPage.STORAGE) },
+                            selected = selectedPage == SettingsPage.STORAGE,
                             iconShape = MaterialShapes.Arch.toShape(),
                             explanation = stringResource(R.string.si_hub_storage)
                         )
@@ -1466,6 +1687,7 @@ private fun SettingsHub(
                                 title = stringResource(R.string.settings_notifications),
                                 value = notificationsValue,
                                 onClick = { onOpenPage(SettingsPage.NOTIFICATIONS) },
+                                selected = selectedPage == SettingsPage.NOTIFICATIONS,
                                 tint = if (!canPostPromoted && (liveDownloadUpdates || livePlaybackUpdates)) {
                                     SettingsRowDefaults.destructiveTint
                                 } else {
@@ -1481,6 +1703,7 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_local_library),
                             value = localLibraryValue,
                             onClick = { onOpenPage(SettingsPage.LOCAL_LIBRARY) },
+                            selected = selectedPage == SettingsPage.LOCAL_LIBRARY,
                             iconShape = MaterialShapes.Pentagon.toShape(),
                             explanation = stringResource(R.string.si_hub_local_library)
                         )
@@ -1503,6 +1726,7 @@ private fun SettingsHub(
                                 stringResource(R.string.settings_advanced_value_other)
                             },
                             onClick = { onOpenPage(SettingsPage.ADVANCED) },
+                            selected = selectedPage == SettingsPage.ADVANCED,
                             tint = if (isXiaomiDevice()) {
                                 MaterialTheme.colorScheme.tertiary
                             } else {
@@ -1574,7 +1798,7 @@ internal fun ExpressiveThemeSelectGroup(
                     onCheckedChange = { onModeSelected(mode) },
                     modifier = Modifier.weight(1f),
                     shapes = shapes,
-                    colors = ToggleButtonDefaults.toggleButtonColors(
+                    colors = ToggleButtonDefaults.colors(
                         containerColor = accentColor.copy(alpha = 0.1f),
                         checkedContainerColor = accentColor,
                         contentColor = textColor,
@@ -1755,7 +1979,7 @@ internal fun ExpressiveVideoModeToggleItem(
                             ButtonGroupDefaults.connectedTrailingButtonShapes()
                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                     },
-                    colors = ToggleButtonDefaults.toggleButtonColors(
+                    colors = ToggleButtonDefaults.colors(
                         containerColor = accentColor.copy(alpha = 0.1f),
                         checkedContainerColor = accentColor,
                         contentColor = textColor,
@@ -1916,43 +2140,19 @@ private fun SubscriptionRoutingDialog(
                         SubscriptionDialogTarget.SOURCE -> ThemePreferences.SUBSCRIPTION_SOURCE_OPTIONS
                         SubscriptionDialogTarget.TARGET -> ThemePreferences.SUBSCRIBE_TARGET_OPTIONS
                     }
-                    options.forEach { option ->
-                        val selected = option == currentValue
+                    SegmentedGroup(options) { index, count, option ->
                         val (label, description) = when (target) {
                             SubscriptionDialogTarget.SOURCE -> subscriptionSourceOptionLabel(option)
                             SubscriptionDialogTarget.TARGET -> subscribeTargetOptionLabel(option)
                         }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (selected) primaryColor.copy(alpha = 0.12f)
-                                    else Color.Transparent
-                                )
-                                .clickable { onValueSelected(option) }
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selected,
-                                onClick = { onValueSelected(option) }
-                            )
-                            Column(modifier = Modifier.padding(start = 4.dp)) {
-                                Text(
-                                    text = label,
-                                    color = if (selected) primaryColor else textColor,
-                                    fontSize = 15.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                                )
-                                Text(
-                                    text = description,
-                                    color = secondaryTextColor,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp
-                                )
-                            }
-                        }
+                        SegmentedChoiceRow(
+                            selected = option == currentValue,
+                            onClick = { onValueSelected(option) },
+                            index = index,
+                            count = count,
+                            label = label,
+                            description = description
+                        )
                     }
                 }
             },
@@ -1966,6 +2166,35 @@ private fun SubscriptionRoutingDialog(
                 }
             }
         )
+    }
+}
+
+/**
+ * One option of a single-choice picker: a selectable Material 3 Expressive
+ * segmented row, the chosen one filled and ticked. Shared by the pickers in
+ * these dialogs so they cannot drift into different treatments again.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun SegmentedChoiceRow(
+    selected: Boolean,
+    onClick: () -> Unit,
+    index: Int,
+    count: Int,
+    label: String,
+    description: String? = null
+) {
+    SegmentedListItem(
+        selected = selected,
+        onClick = onClick,
+        shapes = ListItemDefaults.segmentedShapes(index, count),
+        colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.surfaceContainerHigh),
+        supportingContent = description?.let { { Text(it) } },
+        trailingContent = if (selected) {
+            { Icon(Icons.Rounded.Check, contentDescription = null) }
+        } else null
+    ) {
+        Text(label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
     }
 }
 
@@ -2069,32 +2298,15 @@ private fun StreamQualityDialog(
                     )
                     val options = if (target.isMusic) ThemePreferences.MUSIC_QUALITY_OPTIONS
                         else ThemePreferences.VIDEO_QUALITY_OPTIONS
-                    options.forEach { option ->
-                        val selected = option == currentQuality
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (selected) primaryColor.copy(alpha = 0.12f)
-                                    else Color.Transparent
-                                )
-                                .clickable { onQualitySelected(option) }
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selected,
-                                onClick = { onQualitySelected(option) }
-                            )
-                            Text(
-                                text = if (target.isMusic) musicQualityOptionLabel(option)
-                                    else videoQualityLabel(option),
-                                color = if (selected) primaryColor else textColor,
-                                fontSize = 15.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                            )
-                        }
+                    SegmentedGroup(options) { index, count, option ->
+                        SegmentedChoiceRow(
+                            selected = option == currentQuality,
+                            onClick = { onQualitySelected(option) },
+                            index = index,
+                            count = count,
+                            label = if (target.isMusic) musicQualityOptionLabel(option)
+                                else videoQualityLabel(option)
+                        )
                     }
                 }
             },
@@ -2118,7 +2330,8 @@ private fun StreamQualityDialog(
 @Composable
 private fun ExpressiveAboutDialog(
     onDismiss: () -> Unit,
-    onNavigateToUpdate: () -> Unit
+    onNavigateToUpdate: () -> Unit,
+    onNavigateToLicenses: () -> Unit
 ) {
     val context = LocalContext.current
     val githubUrl = "https://github.com/${BuildConfig.GITHUB_REPO}"
@@ -2376,6 +2589,17 @@ private fun ExpressiveAboutDialog(
                                 )
                                 SettingsDivider()
                                 SettingsRow(
+                                    icon = Icons.AutoMirrored.Rounded.LibraryBooks,
+                                    title = stringResource(R.string.about_licenses),
+                                    subtitle = stringResource(R.string.about_licenses_subtitle),
+                                    onClick = {
+                                        onDismiss()
+                                        onNavigateToLicenses()
+                                    },
+                                    showChevron = true,
+                                )
+                                SettingsDivider()
+                                SettingsRow(
                                     icon = Icons.Rounded.BugReport,
                                     title = stringResource(R.string.sp_report_bug),
                                     subtitle = stringResource(R.string.about_report_issue_subtitle),
@@ -2579,6 +2803,152 @@ private fun AndroidAutoHelpDialog(
                         text = stringResource(R.string.action_got_it),
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+            }
+        )
+    }
+}
+
+/**
+ * The only way Smooth motion turns on. It costs battery and heat for as long
+ * as a video plays and can visibly warp motion, so the switch alone is not
+ * consent; dismissing leaves it off.
+ */
+@Composable
+private fun FrameInterpolationWarningDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    var dialogVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { dialogVisible = true }
+
+    AnimatedVisibility(
+        visible = dialogVisible,
+        enter = scaleIn(
+            initialScale = 0.8f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        ) + fadeIn(tween(200)),
+        exit = scaleOut(targetScale = 0.8f) + fadeOut(tween(150))
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = backgroundColor,
+            shape = RoundedCornerShape(32.dp),
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(primaryColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Animation,
+                        contentDescription = null,
+                        tint = primaryColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.fi_warning_title),
+                        color = textColor,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.fi_warning_subtitle),
+                        color = secondaryTextColor,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            text = {
+                // Scrolls: at a large font or display size the points outgrow
+                // a landscape phone's height.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = stringResource(R.string.fi_warning_intro),
+                        color = textColor,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val points = listOf(
+                        stringResource(R.string.fi_warning_battery),
+                        stringResource(R.string.fi_warning_artifacts),
+                        stringResource(R.string.fi_warning_hdr),
+                        stringResource(R.string.fi_warning_auto)
+                    )
+                    points.forEachIndexed { index, point ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = primaryColor.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    color = primaryColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = point,
+                                color = secondaryTextColor,
+                                fontSize = 13.sp
+                            )
+                        }
+                        if (index < points.lastIndex) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.fi_warning_note),
+                        color = secondaryTextColor,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onConfirm,
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.fi_warning_confirm),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text(text = stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -2799,7 +3169,7 @@ private fun FolderItem(
                 colors = CheckboxDefaults.colors(
                     checkedColor = excludedColor,
                     uncheckedColor = secondaryTextColor.copy(alpha = 0.5f),
-                    checkmarkColor = Color.White
+                    checkmarkColor = MaterialTheme.colorScheme.onError
                 )
             )
             

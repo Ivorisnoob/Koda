@@ -57,6 +57,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -106,12 +111,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -124,6 +136,8 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.library.songRowClick
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.MusicVideoToggle
+import com.ivor.ivormusic.ui.components.navBarScrub
+import com.ivor.ivormusic.ui.components.navBarScrubItem
 import com.ivor.ivormusic.ui.components.MusicVideoToggleState
 import com.ivor.ivormusic.ui.components.rememberMusicVideoToggleState
 import com.ivor.ivormusic.ui.components.rememberPermissionState
@@ -173,6 +187,13 @@ private val MINI_PLAYER_RESTING_GAP = 16.dp
  * the transition between the two is not the one a tab move deserves.
  */
 private data class HomeTabKey(val tab: Int, val videoMode: Boolean)
+
+/**
+ * The widest the collapsed music pill grows beside a rail. Past this it stops
+ * reading as a pill and starts reading as a banner, so on a tablet it centres
+ * over the page instead of spanning it.
+ */
+private val MINI_PLAYER_MAX_WIDE_WIDTH = 560.dp
 
 /**
  * A tab a hand-off asked for, and the mode that tab belongs to.
@@ -630,16 +651,45 @@ fun HomeScreen(
     // 188dp, stacked to 284dp when the music pill is also alive). Animated so
     // FABs glide instead of jumping when a mini player appears.
     val musicPillVisible = currentSong != null
+    // From 600dp across, navigation moves to a rail on the start edge and the
+    // page starts where the rail ends. The horizontal safe-drawing inset is
+    // taken here too: a phone on its side has its cutout and (with three-button
+    // navigation) its system bar on the left or right, which a portrait-only
+    // app never had to think about.
+    val windowLayout = com.ivor.ivormusic.ui.theme.currentWindowLayout()
+    val useRail = windowLayout.usesNavigationRail
+    val shellLayoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val safeHorizontalInsets = WindowInsets.safeDrawing
+        .only(androidx.compose.foundation.layout.WindowInsetsSides.Horizontal)
+        .asPaddingValues()
+    val safeStartInset = safeHorizontalInsets.calculateStartPadding(shellLayoutDirection)
+    val safeEndInset = safeHorizontalInsets.calculateEndPadding(shellLayoutDirection)
+    val contentStartInset = safeStartInset + when {
+        !useRail -> 0.dp
+        nonExpressiveNavigationBar -> HOME_STANDARD_RAIL_RESERVE
+        else -> HOME_FLOATING_RAIL_RESERVE
+    }
+    val contentEndInset = safeEndInset
     // The standard non-expressive NavigationBar is 80dp tall. The expressive
     // toolbar occupies 84dp including its bottom breathing room. Keep the same
     // clearance above either variant so overlaid controls do not jump or
-    // collide when this preference changes.
-    val navigationOverlayInset = if (nonExpressiveNavigationBar) 84.dp else 88.dp
-    val miniPlayerCollapsedSpacing = if (nonExpressiveNavigationBar) 96.dp else 100.dp
+    // collide when this preference changes. With a rail there is no bar at the
+    // bottom at all, and the pill rests just above the system inset.
+    val navigationOverlayInset = when {
+        useRail -> 0.dp
+        nonExpressiveNavigationBar -> 84.dp
+        else -> 88.dp
+    }
+    val miniPlayerCollapsedSpacing = when {
+        useRail -> 12.dp
+        nonExpressiveNavigationBar -> 96.dp
+        else -> 100.dp
+    }
     // Only the floating toolbar hides on scroll; the standard NavigationBar
-    // stays pinned, so there is nothing for the pill to follow there.
+    // stays pinned, so there is nothing for the pill to follow there, and a
+    // rail never hides.
     val miniPlayerFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
-        if (nonExpressiveNavigationBar) 0f
+        if (nonExpressiveNavigationBar || useRail) 0f
         else (miniPlayerCollapsedSpacing - MINI_PLAYER_RESTING_GAP).toPx()
     }
     val miniPlayerFollowOffsetPx: () -> Float = {
@@ -669,16 +719,27 @@ fun HomeScreen(
 
     // Use Box overlay instead of Scaffold for truly floating navbar
     androidx.compose.runtime.CompositionLocalProvider(
-        com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset
+        com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset,
+        com.ivor.ivormusic.ui.components.LocalNowPlaying provides
+            com.ivor.ivormusic.ui.components.NowPlayingState(currentSong?.id, isPlaying)
     ) {
     // Experiment: flick between the main tabs with a swipe, same contract as
     // the channel page - a fast horizontal flick moves to the next/previous
     // visible destination and the existing AnimatedContent slide carries it,
     // so there is deliberately no follow-the-finger pager here. Observe-only:
-    // nothing is consumed, taps and vertical scrolling are untouched, and the
-    // same flick gates (fast, far, horizontal) keep shelf browsing from
-    // tripping it. Uses the nav bar's own destination order, so hidden
+    // nothing is consumed, taps and vertical scrolling are untouched. The flick
+    // gates (fast, far, horizontal) alone did not keep shelf browsing or the
+    // mini player's swipes from tripping it, so a gesture any child consumed
+    // is never a tab flick. Uses the nav bar's own destination order, so hidden
     // destinations are never landed on.
+    //
+    // That alone made the gesture close to dead on music Home, which is mostly
+    // shelves: nearly every swipe starts on one. So a shelf hands the flick on
+    // the way a carousel inside a pager does - it scrolls first, and only a
+    // flick it had nowhere to go with (already at its end in that direction)
+    // reaches the tabs. That arrives through nested scroll as delta the shelf
+    // left unconsumed; the mini player's swipes are not scrollables and never
+    // dispatch it, so they stay excluded.
     val gestureHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val gestureDensity = LocalDensity.current
     val gestureTabIds = if (videoMode) {
@@ -686,18 +747,70 @@ fun HomeScreen(
     } else {
         listOf(0, 1, 2)
     }
+    val flickToTab: (towardNext: Boolean) -> Unit = { towardNext ->
+        val index = gestureTabIds.indexOf(selectedTab)
+        val target = if (towardNext) gestureTabIds.getOrNull(index + 1)
+        else gestureTabIds.getOrNull(index - 1)
+        if (target != null && target != selectedTab) {
+            gestureHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+            selectedTab = target
+        }
+    }
+    val currentFlickToTab by rememberUpdatedState(flickToTab)
+    val shelfEdgeFlick = remember(gestureDensity) {
+        object : NestedScrollConnection {
+            val minDistancePx = with(gestureDensity) { 72.dp.toPx() }
+            val minVelocityPx = with(gestureDensity) { 600.dp.toPx() }
+            // Any real movement of the shelf means the swipe was browsing it.
+            val slackPx = with(gestureDensity) { 2.dp.toPx() }
+            var shelfMovedX = 0f
+            var leftoverX = 0f
+
+            fun reset() {
+                shelfMovedX = 0f
+                leftoverX = 0f
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    shelfMovedX += kotlin.math.abs(consumed.x)
+                    leftoverX += available.x
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val edgeFlick = shelfMovedX <= slackPx &&
+                    kotlin.math.abs(leftoverX) >= minDistancePx &&
+                    kotlin.math.abs(available.x) >= minVelocityPx &&
+                    (available.x < 0f) == (leftoverX < 0f)
+                val towardNext = leftoverX < 0f
+                reset()
+                if (edgeFlick) currentFlickToTab(towardNext)
+                return Velocity.Zero
+            }
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundColor)
             .then(
-                if (nonExpressiveNavigationBar) Modifier
+                if (nonExpressiveNavigationBar || useRail) Modifier
                 else Modifier.nestedScroll(floatingToolbarScrollBehavior)
             )
+            .nestedScroll(shelfEdgeFlick)
             .pointerInput(selectedTab, videoMode, gestureTabIds) {
                 val minDistancePx = with(gestureDensity) { 96.dp.toPx() }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    // A drag that ended without a fling never reaches
+                    // onPostFling, so each gesture starts from a clean slate.
+                    shelfEdgeFlick.reset()
                     var totalX = 0f
                     var totalY = 0f
                     val startTime = down.uptimeMillis
@@ -706,6 +819,16 @@ fun HomeScreen(
                     while (true) {
                         val event = awaitPointerEvent()
                         if (event.changes.size > 1) {
+                            aborted = true
+                            break
+                        }
+                        // A child claimed this gesture: a shelf or carousel
+                        // scrolling, the mini player's swipe-to-skip or its
+                        // drag to dismiss. Their drag detectors consume every
+                        // move once past touch slop (even at a list's end),
+                        // and children see the Main pass before this parent,
+                        // so a consumed change means the swipe was theirs.
+                        if (event.changes.any { it.isConsumed }) {
                             aborted = true
                             break
                         }
@@ -722,13 +845,7 @@ fun HomeScreen(
                         kotlin.math.abs(totalX) >= minDistancePx &&
                         kotlin.math.abs(totalX) >= 1.5f * kotlin.math.abs(totalY)
                     ) {
-                        val index = gestureTabIds.indexOf(selectedTab)
-                        val target = if (totalX < 0f) gestureTabIds.getOrNull(index + 1)
-                        else gestureTabIds.getOrNull(index - 1)
-                        if (target != null && target != selectedTab) {
-                            gestureHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                            selectedTab = target
-                        }
+                        flickToTab(totalX < 0f)
                     }
                 }
             }
@@ -736,6 +853,7 @@ fun HomeScreen(
         // Main content
         if (!loadLocalSongs || permissionState.isGranted) {
             androidx.compose.animation.AnimatedContent(
+                modifier = Modifier.padding(start = contentStartInset, end = contentEndInset),
                 // Keyed on the mode as well as the tab so the spec below can
                 // tell a tab move from a mode switch. They deserve different
                 // motion and used to share one.
@@ -833,6 +951,7 @@ fun HomeScreen(
                                     shortsEnabled = shortsEnabled,
                                     shorts = if (shortsEnabled) shortsFeed else emptyList(),
                                     onShortClick = { index -> onOpenShorts(shortsFeed, index) },
+                                    onOpenShorts = onOpenShorts,
                                     // Without this the long-press sheet loses
                                     // its whole queue section, on the one feed
                                     // people spend the most time in.
@@ -929,10 +1048,82 @@ fun HomeScreen(
                                             // data-backed sections rather than a full-screen
                                             // spinner - the top bar, titles and nav have
                                             // nothing to wait for.
+                                            val classicPlaylists by viewModel.userPlaylists.collectAsState()
+                                            val classicRecentAlbums by viewModel.recentAlbums.collectAsState()
+                                            val classicLiked by viewModel.likedSongs.collectAsState()
+                                            val classicTopArtists by viewModel.topArtists.collectAsState()
+                                            val classicArtistPhotos by viewModel.artistPhotos.collectAsState()
+                                            val classicOnline by viewModel.isOnline.collectAsState()
+                                            val classicReadyOffline by viewModel.readyOffline.collectAsState()
+                                            val classicDownloads by viewModel.downloadedSongs.collectAsState()
+                                            // The cache changes as a side effect of
+                                            // listening, so it is re-read each time the
+                                            // connection goes, not held from earlier.
+                                            LaunchedEffect(classicOnline) {
+                                                if (!classicOnline) viewModel.refreshReadyOffline()
+                                            }
+                                            val classicOfflineSongs = remember(classicDownloads, classicReadyOffline) {
+                                                (classicDownloads + classicReadyOffline.songs).distinctBy { it.id }
+                                            }
                                             YourMixContent(
+                                                likedCount = classicLiked.size,
+                                                // Straight onto the likes, as the Library's
+                                                // own Liked row opens them.
+                                                onLikedClick = {
+                                                    noteLibraryReturn()
+                                                    viewedPlaylistFromHome = com.ivor.ivormusic.data.PlaylistDisplayItem(
+                                                        context.getString(R.string.liked_songs), "LM", "You", classicLiked.size, null
+                                                    )
+                                                    selectedTab = 2
+                                                },
+                                                topArtists = classicTopArtists,
+                                                artistPhotos = classicArtistPhotos,
+                                                onArtistClick = { artist -> viewModel.requestArtistPage(artist.name) },
+                                                isOffline = !classicOnline,
+                                                offlineSongs = classicOfflineSongs,
+                                                onOfflineSongClick = { song ->
+                                                    playerViewModel.playQueue(classicOfflineSongs, song)
+                                                    showPlayerSheet = true
+                                                },
+                                                recentAlbums = classicRecentAlbums,
+                                                onRecentAlbumClick = { album ->
+                                                    // A device album has a page of its own in
+                                                    // the Library, opened by name.
+                                                    if (album.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
+                                                        noteLibraryReturn()
+                                                        viewedAlbumFromPlayer = album.title
+                                                        selectedTab = 2
+                                                        return@YourMixContent
+                                                    }
+                                                    scope.launch {
+                                                        val page = viewModel.resolveRecentAlbum(album)
+                                                        // The resolve can take a network round
+                                                        // trip; if the user has moved on, a late
+                                                        // jump to Library would yank them away.
+                                                        if (selectedTab != 0 || videoMode) return@launch
+                                                        if (page != null) {
+                                                            noteLibraryReturn()
+                                                            viewedPlaylistFromHome = page
+                                                            selectedTab = 2
+                                                        } else {
+                                                            val queue = viewModel.recentAlbumQueue(album)
+                                                            if (queue.isNotEmpty()) {
+                                                                playerViewModel.playQueue(queue)
+                                                                showPlayerSheet = true
+                                                            }
+                                                        }
+                                                    }
+                                                },
                                                 songs = songs,
                                                 isInitialLoading = isLoading && songs.isEmpty(),
                                                 recentlyPlayed = recentlyPlayed,
+                                                playlists = classicPlaylists,
+                                                // The same Library hand-off Spotlight uses.
+                                                onPlaylistClick = { playlist ->
+                                                    noteLibraryReturn()
+                                                    viewedPlaylistFromHome = playlist
+                                                    selectedTab = 2
+                                                },
                                                 onRecentClick = { song ->
                                                     // Resume from the history rail: the
                                                     // recents are the queue, not the mix.
@@ -1039,7 +1230,7 @@ fun HomeScreen(
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
                         localOnly = localOnly,
-                        requestInitialFocus = !hasExpandedVideoPlayer,
+                        requestInitialFocus = !hasExpandedVideoPlayer && !showPlayerSheet,
                         listState = searchScrollState
                     )
                     2 -> {
@@ -1254,6 +1445,7 @@ fun HomeScreen(
                     .fillMaxWidth()
                     .background(backgroundColor)
                     .padding(top = statusBarInset)
+                    .padding(start = contentStartInset, end = contentEndInset)
             ) {
                 com.ivor.ivormusic.ui.video.VideoTopBarSection(
                     onProfileClick = onProfileClick,
@@ -1316,18 +1508,57 @@ fun HomeScreen(
                 selectedTab = index
             }
         }
+        // Slide a thumb along the bar to pick a tab; the highlight follows the
+        // finger and the tab opens on release. A release on the tab already
+        // open does nothing - unlike a tap, it is not a scroll-to-top request.
+        val navScrub = com.ivor.ivormusic.ui.components.rememberNavBarScrubState(
+            tabIds = navTabs.map { it.first },
+            onHoverChange = { navBarHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick) },
+            onCommit = { target ->
+                if (target != selectedTab) {
+                    navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    selectedTab = target
+                }
+            }
+        )
 
-        if (nonExpressiveNavigationBar) {
+        if (useRail) {
+            val railTabs = navTabs.map { (index, label, icons) ->
+                HomeNavTab(index, label, icons.first, icons.second)
+            }
+            if (nonExpressiveNavigationBar) {
+                HomeStandardRail(
+                    tabs = railTabs,
+                    selectedTab = selectedTab,
+                    scrub = navScrub,
+                    onSelect = selectNavTab,
+                    modifier = Modifier.align(Alignment.CenterStart)
+                )
+            } else {
+                HomeFloatingRail(
+                    tabs = railTabs,
+                    selectedTab = selectedTab,
+                    scrub = navScrub,
+                    onSelect = selectNavTab,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = safeStartInset + 12.dp)
+                )
+            }
+        } else if (nonExpressiveNavigationBar) {
             NavigationBar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    .navBarScrub(navScrub)
             ) {
                 navTabs.forEach { (index, label, icons) ->
-                    val selected = selectedTab == index
+                    val selected = (navScrub.hoveredTab ?: selectedTab) == index
                     val (filledIcon, outlinedIcon) = icons
                     NavigationBarItem(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .navBarScrubItem(navScrub, index),
                         selected = selected,
                         onClick = { selectNavTab(index) },
                         icon = {
@@ -1347,10 +1578,11 @@ fun HomeScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 20.dp),
+                    .padding(bottom = 20.dp)
+                    .navBarScrub(navScrub),
                 content = {
                     navTabs.forEach { (index, label, icons) ->
-                        val selected = selectedTab == index
+                        val selected = (navScrub.hoveredTab ?: selectedTab) == index
                         val (filledIcon, outlinedIcon) = icons
 
                         // fastSpatialSpec: snappy expressive motion — StiffnessLow
@@ -1379,7 +1611,9 @@ fun HomeScreen(
                             shape = CircleShape,
                             color = animatedContainerColor,
                             contentColor = animatedContentColor,
-                            modifier = Modifier.height(48.dp)
+                            modifier = Modifier
+                                .height(48.dp)
+                                .navBarScrubItem(navScrub, index)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1461,6 +1695,9 @@ fun HomeScreen(
             onPlayerStyleChange = onPlayerStyleChange,
             collapsedBottomSpacing = miniPlayerCollapsedSpacing,
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
+            collapsedStartInset = contentStartInset,
+            collapsedEndInset = contentEndInset,
+            collapsedMaxWidth = if (useRail) MINI_PLAYER_MAX_WIDE_WIDTH else androidx.compose.ui.unit.Dp.Unspecified,
             onWatchAsVideo = onWatchAsVideo,
             onArtistClick = { artistName ->
                 // Collapse the player and open the artist inside the music
@@ -1511,7 +1748,7 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .navigationBarsPadding()
-                .padding(start = 20.dp, bottom = bottomOverlayInset + 8.dp)
+                .padding(start = 20.dp + contentStartInset, bottom = bottomOverlayInset + 8.dp)
         ) {
             Surface(
                 modifier = Modifier
@@ -1665,6 +1902,25 @@ fun YourMixContent(
     /** Local play history for the "Jump back in" rail. Empty for a new user. */
     recentlyPlayed: List<Song> = emptyList(),
     onRecentClick: (Song) -> Unit = {},
+    /** Albums behind the play history, newest first. */
+    recentAlbums: List<RecentAlbum>,
+    /** Required: a shelf card left unwired is a dead card. */
+    onRecentAlbumClick: (RecentAlbum) -> Unit,
+    /** The merged local, saved and account playlists, as Spotlight shows them. */
+    playlists: List<com.ivor.ivormusic.data.PlaylistDisplayItem>,
+    /** Required: a shelf card left unwired is a dead card. */
+    onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit,
+    /** Liked songs, for the tile leading Your playlists; 0 hides it. */
+    likedCount: Int,
+    onLikedClick: () -> Unit,
+    topArtists: List<TopArtist>,
+    artistPhotos: Map<String, String>,
+    onArtistClick: (TopArtist) -> Unit,
+    /** Whether to lead with [offlineSongs]; the shelf exists only offline. */
+    isOffline: Boolean,
+    /** Downloads, then songs cached in full, newest first. */
+    offlineSongs: List<Song>,
+    onOfflineSongClick: (Song) -> Unit,
     /**
      * Carousels on a vertically-scrolling page need a way to reach every item
      * without scrolling sideways; this backs the arrow button in each header.
@@ -1697,6 +1953,10 @@ fun YourMixContent(
 
     val isRefreshing by viewModel.isLoading.collectAsState()
 
+    // One pass over the merged list: what the user made or saved, and the
+    // mixes YouTube Music generated for them, each to its own rail.
+    val (mixes, ownPlaylists) = remember(playlists) { playlists.partition { isAutoMix(it.name) } }
+
     // Do not leave an infinite transition running behind the loaded Home.
     // Reading its value here invalidates this whole composition on every
     // animation frame, which made ordinary vertical scrolling compete with an
@@ -1716,12 +1976,25 @@ fun YourMixContent(
         onRefresh = { viewModel.refresh(excludedFolders, manualScan) },
         modifier = Modifier.fillMaxSize()
     ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val wideHero = maxWidth >= CLASSIC_WIDE_HERO_MIN_WIDTH
+        // Centred past the page cap. Padding on the list rather than a width
+        // on it, so the whole window still scrolls and flings.
+        val pageSidePadding = ((maxWidth - CLASSIC_PAGE_MAX_WIDTH) / 2).coerceAtLeast(0.dp)
+        // What is left of the window under the top bar, for the collage to
+        // shrink into on a short (landscape) window.
+        val collageRoom = maxHeight - contentPadding.calculateTopPadding() - 140.dp
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundColor),
-            contentPadding = contentPadding
+            contentPadding = PaddingValues(
+                start = pageSidePadding,
+                end = pageSidePadding,
+                top = contentPadding.calculateTopPadding(),
+                bottom = contentPadding.calculateBottomPadding()
+            )
         ) {
             item { 
                 var visible by remember { mutableStateOf(false) }
@@ -1741,7 +2014,20 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else 40f
                 }) {
-                    HeroSection(
+                    if (wideHero) {
+                        // Title, actions and the next songs beside the
+                        // collage, rather than stacked above it.
+                        ClassicWideMixHero(
+                            songs = songs,
+                            isLoading = isInitialLoading,
+                            skeletonAlpha = skeletonAlpha,
+                            onPlayClick = onPlayClick,
+                            onSpinClick = onSpinClick,
+                            onSongClick = onSongClick,
+                            onSongLongPress = onSongLongPress,
+                            maxCollageHeight = collageRoom
+                        )
+                    } else HeroSection(
                         songs = songs,
                         onPlayClick = onPlayClick,
                         onSpinClick = onSpinClick,
@@ -1752,7 +2038,26 @@ fun YourMixContent(
                 }
             }
 
-            item {
+            // Offline, the mix below is mostly songs that need a connection.
+            // What will actually play goes first, and only while it is true.
+            if (isOffline && offlineSongs.isNotEmpty()) {
+                item(key = "ready-offline") {
+                    Column {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        JumpBackInSection(
+                            songs = offlineSongs,
+                            onSongClick = onOfflineSongClick,
+                            onSongLongPress = onSongLongPress,
+                            onShowAll = onShowAllInLibrary,
+                            title = stringResource(R.string.ready_offline),
+                            subtitle = stringResource(R.string.home_offline_subtitle)
+                        )
+                    }
+                }
+            }
+
+            // The wide hero already carries the collage.
+            if (!wideHero) item {
                 if (isInitialLoading) {
                     OrganicSongLayoutSkeleton(skeletonAlpha = skeletonAlpha)
                 } else if (songs.isNotEmpty()) {
@@ -1779,26 +2084,69 @@ fun YourMixContent(
                     alpha = if (visible) 1f else 0f
                     translationY = if (visible) 0f else 30f
                 }) {
-                    Spacer(modifier = Modifier.height(32.dp))
                     if (isInitialLoading) {
+                        Spacer(modifier = Modifier.height(32.dp))
                         HomeCarouselSkeleton(
                             title = stringResource(R.string.home_section_recent_albums),
                             itemWidth = 200.dp,
                             itemHeight = 240.dp,
                             skeletonAlpha = skeletonAlpha
                         )
-                    } else {
+                    } else if (recentAlbums.isNotEmpty()) {
+                        // Absent for someone who has not played an album yet,
+                        // rather than a shelf of the recommendations above it
+                        // under an "albums" title - what it used to show.
+                        Spacer(modifier = Modifier.height(32.dp))
                         RecentAlbumsSection(
-                            songs = songs,
-                            onSongClick = onSongClick,
-                            onSongLongPress = onSongLongPress,
-                            isDarkMode = isDarkMode,
+                            albums = recentAlbums,
+                            onAlbumClick = onRecentAlbumClick,
                             onShowAll = onShowAllInLibrary
                         )
                     }
                 }
             }
-            
+
+            // Arrives from its own fetch, independently of the mix above, so
+            // it has no skeleton: it appears when it has something and is
+            // absent for someone with no playlists, rather than an empty title.
+            item {
+                if (!isInitialLoading) {
+                    PlaylistsShelfSection(
+                        title = stringResource(R.string.spotlight_your_playlists),
+                        playlists = ownPlaylists,
+                        onPlaylistClick = onPlaylistClick,
+                        onShowAll = onShowAllInLibrary,
+                        likedCount = likedCount,
+                        onLikedClick = onLikedClick
+                    )
+                }
+            }
+
+            item {
+                if (!isInitialLoading) {
+                    TopArtistsSection(
+                        artists = topArtists,
+                        photos = artistPhotos,
+                        onArtistClick = onArtistClick
+                    )
+                }
+            }
+
+            // YouTube Music's own generated mixes: kept out of Your playlists
+            // (they churn on their own and would crowd out what was chosen)
+            // and given their own rail rather than dropped, since they are
+            // still some of the best things to put on.
+            item {
+                if (!isInitialLoading) {
+                    PlaylistsShelfSection(
+                        title = stringResource(R.string.home_section_mixes),
+                        playlists = mixes,
+                        onPlaylistClick = onPlaylistClick,
+                        onShowAll = null
+                    )
+                }
+            }
+
             item {
                 // No entrance animation on this last section: the staggered
                 // fade/slide above only starts its timer when the item scrolls
@@ -1828,6 +2176,7 @@ fun YourMixContent(
                 }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
+        }
         }
     }
 }
@@ -2119,11 +2468,13 @@ fun HeroSection(
  * rearrange itself when the songs arrive.
  */
 @Composable
-private fun OrganicSongLayoutSkeleton(
+internal fun OrganicSongLayoutSkeleton(
     skeletonAlpha: Float
 ) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
     BoxWithConstraints(
         modifier = Modifier
+            .widthIn(max = ORGANIC_LAYOUT_MAX_WIDTH)
             .fillMaxWidth()
             .height(480.dp)
     ) {
@@ -2162,6 +2513,7 @@ private fun OrganicSongLayoutSkeleton(
             shape = CircleShape,
             alpha = skeletonAlpha
         )
+    }
     }
 }
 
@@ -2227,14 +2579,25 @@ private fun HomeCarouselSkeleton(
     }
 }
 
+/**
+ * The collage is composed for a phone's width: its circles are fractions of
+ * the box, and the pill a fixed 260 by 500. On a tablet the fractions made
+ * circles a third of the screen that overran the pill and the 480dp box, so
+ * the box is capped at [ORGANIC_LAYOUT_MAX_WIDTH] and centred - the
+ * composition keeps its proportions rather than stretching.
+ */
+private val ORGANIC_LAYOUT_MAX_WIDTH = 460.dp
+
 @Composable
 fun OrganicSongLayout(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onSongLongPress: ((Song) -> Unit)? = null
 ) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
     BoxWithConstraints(
         modifier = Modifier
+            .widthIn(max = ORGANIC_LAYOUT_MAX_WIDTH)
             .fillMaxWidth()
             .height(480.dp)
     ) {
@@ -2440,6 +2803,7 @@ fun OrganicSongLayout(
                 }
             }
         }
+    }
     }
 }
 
@@ -2722,19 +3086,17 @@ fun SearchContent(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun RecentAlbumsSection(
-    songs: List<Song>,
-    onSongClick: (Song) -> Unit,
-    onSongLongPress: ((Song) -> Unit)? = null,
-    isDarkMode: Boolean = true,
+    albums: List<RecentAlbum>,
+    onAlbumClick: (RecentAlbum) -> Unit,
     onShowAll: (() -> Unit)? = null
 ) {
-    if (songs.isEmpty()) return
+    if (albums.isEmpty()) return
 
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
 
     // We need at least one large, one medium, one small for full effect,
     // but the component handles fewer items gracefully.
-    val state = rememberCarouselState { songs.size }
+    val state = rememberCarouselState { albums.size }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         HomeSectionHeader(title = stringResource(R.string.home_section_recent_albums), onShowAll = onShowAll)
@@ -2748,32 +3110,37 @@ fun RecentAlbumsSection(
                 .fillMaxWidth()
                 .height(240.dp)
         ) { index ->
-            val song = songs[index]
+            val album = albums[index]
             Box(
                 modifier = Modifier
                     // 28dp is the M3 carousel item radius; shapes.medium (12dp)
                     // made these read as generic cards.
                     .maskClip(RoundedCornerShape(28.dp))
                     .background(cardBgColor)
-                    .songRowClick(
-                        onClick = { onSongClick(song) },
-                        onLongClick = onSongLongPress?.let { press -> { press(song) } }
-                    )
+                    .songRowClick(onClick = { onAlbumClick(album) }, onLongClick = null),
+                contentAlignment = Alignment.Center
             ) {
-                if (song.albumArtUri != null || song.thumbnailUrl != null) {
+                Icon(
+                    imageVector = Icons.Rounded.Album,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(32.dp)
+                )
+                if (album.artwork != null) {
+                    val label = if (album.artist.isNotBlank()) "${album.title}, ${album.artist}" else album.title
                     AsyncImage(
-                        model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
-                        contentDescription = song.title,
+                        model = album.artwork,
+                        contentDescription = label,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                         Icon(
-                            imageVector = Icons.Rounded.MusicNote,
+                    val sized = com.ivor.ivormusic.data.googleImageAtSize(album.artwork, 600)
+                    if (sized != null && sized != album.artwork) {
+                        AsyncImage(
+                            model = sized,
                             contentDescription = null,
-                            tint = Color.Gray,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
                     }
                 }
@@ -2791,9 +3158,11 @@ fun RecentAlbumsSection(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun HomeSectionHeader(
+internal fun HomeSectionHeader(
     title: String,
-    onShowAll: (() -> Unit)? = null
+    onShowAll: (() -> Unit)? = null,
+    /** One line under the title, for a shelf whose reason for being there is not obvious. */
+    subtitle: String? = null
 ) {
     Row(
         modifier = Modifier
@@ -2801,12 +3170,20 @@ private fun HomeSectionHeader(
             .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         if (onShowAll != null) {
             // Default size on purpose: M3's own 40dp container carries a 48dp
             // touch target, and pinning it smaller would break that.
@@ -2824,11 +3201,143 @@ private fun HomeSectionHeader(
     }
 }
 
+/**
+ * A rail of playlist covers - the user's own playlists, or YouTube Music's
+ * mixes for them - so Classic reaches them without a detour through Library.
+ * Same card shape as [JumpBackInSection], for the same reason: captions under
+ * the art rule out a masking carousel. The caller decides which playlists
+ * belong ([isAutoMix] splits the two shelves).
+ *
+ * [likedCount] above zero leads the rail with the Liked songs tile, the one
+ * entry to the user's likes on this Home.
+ */
+@Composable
+fun PlaylistsShelfSection(
+    title: String,
+    playlists: List<com.ivor.ivormusic.data.PlaylistDisplayItem>,
+    onPlaylistClick: (com.ivor.ivormusic.data.PlaylistDisplayItem) -> Unit,
+    onShowAll: (() -> Unit)?,
+    likedCount: Int = 0,
+    onLikedClick: () -> Unit = {}
+) {
+    // distinctBy: a LazyRow key seen twice throws, and three sources merge here.
+    val shown = remember(playlists) {
+        playlists.distinctBy { it.id }.take(PLAYLIST_SHELF_ITEMS)
+    }
+    if (shown.isEmpty() && likedCount <= 0) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Spacer(modifier = Modifier.height(24.dp))
+        HomeSectionHeader(title = title, onShowAll = onShowAll)
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (likedCount > 0) {
+                item(key = "liked_tile") {
+                    LikedSongsTile(count = likedCount, onClick = onLikedClick)
+                }
+            }
+            items(shown, key = { "playlist_${it.id}" }) { playlist ->
+                Column(
+                    modifier = Modifier
+                        .width(ARTWORK_SIZE)
+                        .homeCardClickable(HOME_CARD_SHAPE, onClick = { onPlaylistClick(playlist) })
+                        .padding(bottom = CAPTION_BOTTOM_INSET)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(ARTWORK_SIZE)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        if (playlist.thumbnailUrl != null) {
+                            // Layered over the icon, so a cover that fails to
+                            // load leaves the playlist glyph rather than a hole;
+                            // the drawn-size cover then over the original, so a
+                            // resize miss costs sharpness, not the picture.
+                            AsyncImage(
+                                model = playlist.thumbnailUrl,
+                                contentDescription = playlist.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                            val sized = com.ivor.ivormusic.data.googleImageAtSize(playlist.thumbnailUrl, 512)
+                            if (sized != null && sized != playlist.thumbnailUrl) {
+                                AsyncImage(
+                                    model = sized,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(CAPTION_GAP))
+
+                    Text(
+                        text = playlist.name,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
+                    )
+                    val subtitle = when {
+                        playlist.itemCount >= 0 -> androidx.compose.ui.res.pluralStringResource(
+                            R.plurals.n_songs, playlist.itemCount, playlist.itemCount
+                        )
+                        else -> playlist.uploaderName
+                    }
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Covers on the Classic playlists rail; the header arrow reaches the rest. */
+private const val PLAYLIST_SHELF_ITEMS = 20
+
 /** Square artwork edge, and the rail's item width. */
-private val ARTWORK_SIZE = 140.dp
+internal val ARTWORK_SIZE = 140.dp
+
+/**
+ * A rail card's shape: the artwork's own 28dp, so the press ripple and the
+ * cover share one outline and the ripple is never a square around a rounded
+ * picture.
+ */
+internal val HOME_CARD_SHAPE = RoundedCornerShape(28.dp)
+
+/**
+ * How far captions sit in from a clipped card's edges. At 10dp up from the
+ * bottom a 28dp corner has curved in by about 6.6dp, so 8dp at the sides keeps
+ * every glyph clear of it.
+ */
+internal val CAPTION_SIDE_INSET = 8.dp
+internal val CAPTION_BOTTOM_INSET = 10.dp
 
 /** Space between artwork and the first caption line. */
-private val CAPTION_GAP = 8.dp
+internal val CAPTION_GAP = 8.dp
 
 /**
  * The user's own play history, newest first - the "resume what you were doing"
@@ -2847,7 +3356,10 @@ fun JumpBackInSection(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onSongLongPress: ((Song) -> Unit)? = null,
-    onShowAll: (() -> Unit)? = null
+    onShowAll: (() -> Unit)? = null,
+    /** Another rail of songs in the same cards (Ready offline); null is Jump back in. */
+    title: String? = null,
+    subtitle: String? = null
 ) {
     if (songs.isEmpty()) return
 
@@ -2856,7 +3368,11 @@ fun JumpBackInSection(
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        HomeSectionHeader(title = stringResource(R.string.home_section_jump_back_in), onShowAll = onShowAll)
+        HomeSectionHeader(
+            title = title ?: stringResource(R.string.home_section_jump_back_in),
+            onShowAll = onShowAll,
+            subtitle = subtitle
+        )
 
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -2864,16 +3380,19 @@ fun JumpBackInSection(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(songs, key = { "recent_${it.id}" }) { song ->
-                // No clip on this column: a rounded clip here is what rounds
-                // the corners off the caption text underneath the artwork.
-                // Only the artwork itself gets a shape.
+                // Clipped to the artwork's shape so the press ripple is a
+                // rounded card rather than a square. The captions are inset
+                // (CAPTION_*_INSET) so that curve never reaches their glyphs -
+                // the reason this column once had no clip at all.
                 Column(
                     modifier = Modifier
                         .width(ARTWORK_SIZE)
-                        .songRowClick(
+                        .homeCardClickable(
+                            HOME_CARD_SHAPE,
                             onClick = { onSongClick(song) },
                             onLongClick = onSongLongPress?.let { press -> { press(song) } }
                         )
+                        .padding(bottom = CAPTION_BOTTOM_INSET)
                 ) {
                     Box(
                         modifier = Modifier
@@ -2910,14 +3429,16 @@ fun JumpBackInSection(
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = textColor
+                        color = textColor,
+                        modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
                     )
                     Text(
                         text = song.artist.takeIf { !isUnknownArtist(it) } ?: stringResource(R.string.unknown_artist),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelMedium,
-                        color = secondaryTextColor
+                        color = secondaryTextColor,
+                        modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
                     )
                 }
             }

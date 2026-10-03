@@ -46,6 +46,8 @@ import com.ivor.ivormusic.data.SponsorSegment
 import com.ivor.ivormusic.data.activeCategories
 import com.ivor.ivormusic.data.segmentAt
 import com.ivor.ivormusic.data.LocalSubscription
+import com.ivor.ivormusic.data.BellLevel
+import com.ivor.ivormusic.data.ChannelBellActions
 import com.ivor.ivormusic.data.SubscriptionActions
 import com.ivor.ivormusic.data.SubscriptionStore
 import com.ivor.ivormusic.data.LiveChatBanner
@@ -61,6 +63,9 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
 import com.ivor.ivormusic.data.VideoPlaybackCacheStream
 import com.ivor.ivormusic.data.VideoSeekPreview
+import com.ivor.ivormusic.data.YouTubeAudioTrack
+import com.ivor.ivormusic.data.YouTubeAudioTrackKind
+import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
@@ -141,6 +146,49 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private var _exoPlayer: ExoPlayer? = null
     val exoPlayer: ExoPlayer? get() = _exoPlayer
 
+    /**
+     * Smooth motion. Whether the current player was built with the effect
+     * graph is fixed for its lifetime (see [FrameInterpolationEffect]), so it
+     * is remembered here and compared with the setting when the player closes.
+     */
+    private val frameInterpolation =
+        com.ivor.ivormusic.service.FrameInterpolationGovernor(context)
+
+    /** Whether this GPU runs Smooth motion at all (GLES 3.2); fixed for the device. */
+    private val frameInterpolationSupported by lazy {
+        com.ivor.ivormusic.service.FrameInterpolationSupport.isSupported(context)
+    }
+
+    /**
+     * Smooth motion as set and as this phone can run it: a setting carried
+     * over from another phone (a restored backup) must not install the graph
+     * where the engine cannot run.
+     */
+    private fun frameInterpolationWanted(): Boolean =
+        frameInterpolationSupported && themePreferences.isFrameInterpolationEnabled()
+    private var playerHasInterpolation = false
+    private var graphRedrawJob: Job? = null
+
+    /** Available and switched on in the player's settings panel: whether frames are drawn. */
+    private fun frameInterpolationOn(): Boolean =
+        frameInterpolationWanted() && themePreferences.isFrameInterpolationPlayerOn()
+
+    /** Whether the player's settings panel offers the Smooth motion switch. */
+    val smoothMotionAvailable: StateFlow<Boolean> = themePreferences.frameInterpolation
+        .map { it && frameInterpolationSupported }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, frameInterpolationWanted())
+
+    /** The player's Smooth motion switch, remembered across videos and launches. */
+    val smoothMotionOn: StateFlow<Boolean> = themePreferences.frameInterpolationPlayerOn
+
+    fun setSmoothMotionOn(on: Boolean) {
+        themePreferences.setFrameInterpolationPlayerOn(on)
+    }
+
+    /** What Smooth motion is doing for the video on screen, for the player's settings panel. */
+    val frameInterpolationStatus: StateFlow<com.ivor.ivormusic.service.FrameInterpolationStatus> =
+        frameInterpolation.status
+
     // State
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
     val currentVideo: StateFlow<VideoItem?> = _currentVideo
@@ -184,15 +232,28 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private var localSourcesById: Map<String, LocalPlaybackSource> = emptyMap()
 
     /**
-     * Audio tracks the current media declares, when it declares more than one.
+     * Audio tracks the viewer can switch between, when there is more than one.
      *
-     * Empty for every ordinary YouTube stream - the app merges a single chosen
-     * audio rendition - so the control this drives simply never appears there.
-     * A device file with a dub track, a commentary or a second language is the
-     * case it exists for.
+     * Two sources feed it. A device file's tracks come from the container and
+     * switch by track-selection override. A YouTube video's come from the
+     * resolver ([youtubeAudioTracks]): each dub is a separate file, so
+     * switching rebuilds the split source with that file as its audio half.
+     * Empty for most YouTube videos, which have one soundtrack.
      */
     private val _audioTracks = MutableStateFlow<List<PlayerTrackOption>>(emptyList())
     val audioTracks: StateFlow<List<PlayerTrackOption>> = _audioTracks.asStateFlow()
+
+    /** The current YouTube video's soundtracks, from the same resolution as its ladder. */
+    private var youtubeAudioTracks: List<YouTubeAudioTrack> = emptyList()
+
+    /**
+     * The viewer's soundtrack for the current video, by YouTube's track id, or
+     * null for the original. An id rather than a URL so it survives a
+     * re-resolution that re-signs every URL, and a quality or HDR switch, all of
+     * which rebuild the source through [loadQuality]. Every video opens on the
+     * original: a dub is a per-video choice.
+     */
+    private var selectedAudioTrackId: String? = null
 
     /**
      * Subtitle tracks carried inside the media itself.
@@ -556,6 +617,48 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
+    /**
+     * Network advice for the current error when YouTube refused the connection
+     * rather than the video; see [com.ivor.ivormusic.data.connectionAdviceFor].
+     * While it stands, a network change retries on its own.
+     */
+    private val _connectionAdvice = MutableStateFlow<com.ivor.ivormusic.data.ConnectionAdvice?>(null)
+    val connectionAdvice: StateFlow<com.ivor.ivormusic.data.ConnectionAdvice?> =
+        _connectionAdvice.asStateFlow()
+
+    private val connectionWatcher = com.ivor.ivormusic.data.NetworkChangeWatcher(context) {
+        viewModelScope.launch { retryAfterNetworkChange() }
+    }
+
+    init {
+        viewModelScope.launch {
+            _playbackError.collect { error ->
+                // A device video never asked YouTube for anything.
+                val advice = error
+                    ?.takeUnless { _isLocalPlayback.value }
+                    ?.let { com.ivor.ivormusic.data.connectionAdviceFor(context, it) }
+                _connectionAdvice.value = advice
+                if (advice != null) connectionWatcher.start() else connectionWatcher.stop()
+            }
+        }
+        // The system's previous/next buttons appear and disappear with the
+        // queue, which the ExoPlayer never sees.
+        viewModelScope.launch {
+            combine(_queue, relatedVideos) { _, _ -> Unit }.collect {
+                com.ivor.ivormusic.service.VideoPlaybackService.publishQueueCommands()
+            }
+        }
+    }
+
+    private suspend fun retryAfterNetworkChange() {
+        if (_connectionAdvice.value == null) return
+        KLog.i("VideoPlayerVM", "Network changed while YouTube was refusing the connection; retrying")
+        YouTubeRepository.forgetConnectionVerdicts()
+        youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+        // The user may have moved on or retried while the remint ran.
+        if (_connectionAdvice.value != null) retryPlayback()
+    }
+
     // Video rendering is suspended while the app is not visible - see onEnterBackground()
     private var isVideoSuspended = false
 
@@ -582,6 +685,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
 
+    private val returnDislikeRepository = com.ivor.ivormusic.data.ReturnDislikeRepository()
+    private val _dislikeCount = MutableStateFlow<String?>(null)
+    val dislikeCount: StateFlow<String?> = _dislikeCount.asStateFlow()
+
     private val _engagement = MutableStateFlow<VideoEngagement?>(null)
     val engagement: StateFlow<VideoEngagement?> = _engagement.asStateFlow()
 
@@ -606,6 +713,36 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** True when the subscribe button has to send the user to sign in first. */
     fun subscribeNeedsLogin(): Boolean = subscriptionActions.subscribeNeedsLogin()
+
+    private val bellActions = ChannelBellActions(context, youtubeRepository)
+
+    private val _bellWrites = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Channels whose bell write is in flight; their bell is disabled until it lands. */
+    val bellWrites: StateFlow<Set<String>> = _bellWrites.asStateFlow()
+
+    /**
+     * Move [channelId]'s account bell to [level] (see [ChannelBellActions]).
+     * Optimistic, with the old level put back when the write does not land.
+     */
+    fun setChannelBell(channelId: String, level: BellLevel, channelName: String) {
+        val current = _engagement.value ?: return
+        val bell = current.bells[channelId] ?: return
+        if (channelId in _bellWrites.value) return
+        _bellWrites.value = _bellWrites.value + channelId
+        _engagement.value = current.copy(bells = current.bells + (channelId to bell.withLevel(level)))
+        viewModelScope.launch {
+            try {
+                val landed = bellActions.change(bell, level, channelName)
+                val now = _engagement.value
+                if (now?.videoId == current.videoId) {
+                    _engagement.value = now.copy(bells = now.bells + (channelId to (landed ?: bell)))
+                }
+            } finally {
+                _bellWrites.value = _bellWrites.value - channelId
+            }
+        }
+    }
 
     // ---------------- Live broadcast ----------------
 
@@ -824,7 +961,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     if (fallback != null) reloadPreservingPosition(fallback)
                 } else if (enabled && !current.isHdr) {
                     val streamResult = resolvePlayableStreamResult(video.videoId)
+                    if (_currentVideo.value?.videoId != video.videoId) return@collect
                     _availableQualities.value = streamResult.qualities
+                    applyYouTubeAudioTracks(streamResult.audioTracks)
                 }
             }
         }
@@ -917,8 +1056,32 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // process restart rebuilds the player at 1x while the sheet
             // still shows the remembered rate.
             player.setPlaybackSpeed(_playbackSpeed.value)
+            installFrameInterpolation(player)
         }
     }
+
+    /**
+     * Before the first prepare or never: the video renderer decides on its
+     * first enable whether it renders through the effect graph, and does not
+     * revisit it. Everything after this is the per-frame gate the progress
+     * poll sets.
+     */
+    private fun installFrameInterpolation(player: ExoPlayer) {
+        playerHasInterpolation = frameInterpolationWanted()
+        if (!playerHasInterpolation) return
+        player.setVideoEffects(
+            listOf(com.ivor.ivormusic.service.FrameInterpolationEffect(frameInterpolation.control))
+        )
+    }
+
+    /**
+     * HDR stays out of the ladder while Smooth motion is on, and while the
+     * player still carries the effect graph after it was turned off: an HDR
+     * rendition through that graph is tone-mapped or not, depending on the
+     * device's GL extensions, which is a worse answer than SDR on purpose.
+     */
+    private fun frameInterpolationBlocksHdr(): Boolean =
+        playerHasInterpolation || frameInterpolationWanted()
 
     /**
      * The playback listener the local ExoPlayer carries: buffering spinner,
@@ -977,6 +1140,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     // only available once a frame has decoded.
                     _isPortraitVideo.value = ratio < 1f
                 }
+            }
+
+            override fun onSurfaceSizeChanged(width: Int, height: Int) {
+                if (width > 0 && height > 0) redrawPausedFrameThroughGraph()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -1343,6 +1510,30 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
+                    // Fresh reads: turning the setting off or changing its rate
+                    // takes effect within a tick, without rebuilding the
+                    // player. The renderer's drop counter is how the governor
+                    // learns whether this phone keeps up; it only means
+                    // anything with the effect graph installed.
+                    val counters = if (playerHasInterpolation) {
+                        player.videoDecoderCounters?.also { it.ensureUpdated() }
+                    } else null
+                    val quality = _currentQuality.value
+                    frameInterpolation.update(
+                        enabledByUser = frameInterpolationOn(),
+                        userMaxFps = themePreferences.getFrameInterpolationMaxFps(),
+                        pipelineInstalled = playerHasInterpolation,
+                        currentVideoId = _currentVideo.value?.videoId,
+                        qualityKey = quality?.let {
+                            "${it.resolution}|${it.width}x${it.height}@${it.frameRate}|${it.dynamicRange}"
+                        },
+                        isLive = _isLive.value,
+                        isHdr = quality?.isHdr == true,
+                        speed = player.playbackParameters.speed,
+                        isPlaying = player.isPlaying,
+                        positionMs = player.currentPosition,
+                        droppedFrames = counters?.droppedBufferCount,
+                    )
                     // A non-positive duration means "not known yet" (and is the
                     // normal case for a live stream), so leave the last good
                     // values alone rather than dividing by it.
@@ -1596,8 +1787,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     ): Boolean {
         if (_exoPlayer == null) return false
         youtubeRepository.invalidateVideoStreamResult(video.videoId)
-        val qualities = try {
-            resolvePlayableQualities(video.videoId)
+        val streamResult = try {
+            resolvePlayableStreamResult(video.videoId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
             // that would let a dead recovery keep writing loading/error state
@@ -1605,8 +1796,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             throw e
         } catch (e: Exception) {
             KLog.w("VideoPlayerVM", "Re-resolve failed for ${video.videoId}", e)
-            emptyList()
+            VideoStreamResult(emptyList())
         }
+        val qualities = streamResult.qualities
         if (_currentVideo.value?.videoId != video.videoId) {
             _isLoading.value = false
             return true
@@ -1614,6 +1806,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (qualities.isEmpty()) return false
 
         _availableQualities.value = qualities
+        // The re-signed URLs replace the old ones; a chosen dub is kept by id,
+        // so a recovery from an expired URL does not drop the viewer back to
+        // the original language.
+        applyYouTubeAudioTracks(streamResult.audioTracks)
         val previousLabel = _currentQuality.value?.resolution
         val chosen = localVideoQualityOptions(qualities)
             .firstOrNull { it.resolution == previousLabel }
@@ -1719,7 +1915,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /** Set the playback speed for the current video and remember it for the next one. */
     fun setPlaybackSpeed(speed: Float) {
-        val bounded = speed.coerceIn(0.25f, 2f)
+        val bounded = speed.coerceIn(0.25f, ThemePreferences.MAX_PLAYBACK_SPEED)
         _playbackSpeed.value = bounded
         _exoPlayer?.setPlaybackSpeed(bounded)
         // A live broadcast always plays at 1x: a manual change there is a
@@ -1758,6 +1954,28 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the listener did not come back to this video, they were already inside
      * it.
      */
+    /**
+     * [playVideoAt] for a handover that brings its list along: the music
+     * queue moving to video mode. [queue]'s current video starts at
+     * [startPositionMs] and the rest play after it as an ordinary queue.
+     */
+    fun playQueueAt(queue: com.ivor.ivormusic.data.VideoQueue, startPositionMs: Long) {
+        val target = queue.current ?: return
+        if (queue.videos.size < 2) {
+            playVideoAt(target, startPositionMs)
+            return
+        }
+        leaveLocalPlayback()
+        _queue.value = queue.at(queue.index)
+        lastQueueRemoval = null
+        queueErrorSkipCount = 0
+        startVideo(
+            target,
+            forceRestart = true,
+            resumePositionMs = startPositionMs.coerceAtLeast(0L),
+        )
+    }
+
     fun playVideoAt(video: VideoItem, startPositionMs: Long) {
         if (LocalVideo.isDeviceVideoId(video.videoId)) {
             playDeviceVideoItem(video)
@@ -1773,7 +1991,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         )
     }
 
-    fun playVideo(video: VideoItem, forceRestart: Boolean = false) {
+    /**
+     * @param expand false keeps a collapsed player collapsed - the mini bar's
+     * sideways skip, which changes the video inside the bar and must not
+     * throw the viewer into the watch page.
+     */
+    fun playVideo(video: VideoItem, forceRestart: Boolean = false, expand: Boolean = true) {
         // A device video reaching the ordinary entry point is a watch-history
         // row being replayed: history stores VideoItems and nothing else, so a
         // file on this phone comes back through the same door a YouTube video
@@ -1789,7 +2012,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // The queue this belonged to is gone, so restoring into the next one
         // would drop a video into a list it was never part of.
         lastQueueRemoval = null
-        startVideo(video, forceRestart)
+        startVideo(video, forceRestart, expand = expand)
     }
 
     /**
@@ -1991,10 +2214,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (_isLive.value) publishLiveQualityLadder(tracks)
         val local = localSourcesById[_currentVideo.value?.videoId]
         if (local?.allowsTrackSelection != true) {
-            // Nothing else in the app has tracks worth choosing between, and
-            // leaving a previous file's menus standing would offer overrides
-            // against a Tracks snapshot that no longer exists.
-            clearSelectableTracks()
+            // A YouTube source is one audio file chosen by the resolver, so its
+            // Tracks never hold a choice; its menu comes from the resolver's
+            // list instead. Leaving a previous file's menus standing would
+            // offer overrides against a Tracks snapshot that no longer exists.
+            _embeddedTextTracks.value = emptyList()
+            _embeddedCueText.value = null
+            publishYouTubeAudioTracks()
             return
         }
 
@@ -2142,7 +2368,98 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * produced it and this menu can outlive a queue advance by a frame.
      */
     fun setAudioTrack(option: PlayerTrackOption) {
+        if (option.id.startsWith(YOUTUBE_AUDIO_OPTION_PREFIX)) {
+            selectYouTubeAudioTrack(option.id.removePrefix(YOUTUBE_AUDIO_OPTION_PREFIX))
+            return
+        }
         applyTrackOverride(option, C.TRACK_TYPE_AUDIO)
+    }
+
+    // ---------------- YouTube soundtracks (dubs) ----------------
+
+    /**
+     * Take a freshly resolved soundtrack list for the current video, keeping
+     * the viewer's pick when the new list still has it, and redraw the menu.
+     */
+    private fun applyYouTubeAudioTracks(tracks: List<YouTubeAudioTrack>) {
+        youtubeAudioTracks = tracks
+        if (tracks.none { it.id == selectedAudioTrackId }) selectedAudioTrackId = null
+        publishYouTubeAudioTracks()
+    }
+
+    private fun clearYouTubeAudioTracks() {
+        youtubeAudioTracks = emptyList()
+        selectedAudioTrackId = null
+    }
+
+    /** The dub to play in place of the original, or null for the original. */
+    private fun selectedDub(): YouTubeAudioTrack? =
+        selectedAudioTrackId
+            ?.let { id -> youtubeAudioTracks.firstOrNull { it.id == id } }
+            ?.takeUnless { it.isOriginal }
+
+    /**
+     * Only a split pair has an audio half to swap, so a muxed, manifest, live
+     * or device source shows no YouTube menu even if a list is held.
+     */
+    private fun youtubeAudioSwitchable(): Boolean {
+        val quality = _currentQuality.value ?: return false
+        return youtubeAudioTracks.size > 1 && !_isLocalPlayback.value && !_isLive.value &&
+            !quality.isLive && !quality.isDASH && quality.audioUrl != null
+    }
+
+    private fun publishYouTubeAudioTracks() {
+        if (!youtubeAudioSwitchable()) {
+            _audioTracks.value = emptyList()
+            return
+        }
+        val selected = selectedDub()
+        _audioTracks.value = youtubeAudioTracks.map { track ->
+            PlayerTrackOption(
+                id = YOUTUBE_AUDIO_OPTION_PREFIX + track.id,
+                label = track.displayName,
+                detail = when (track.kind) {
+                    // YouTube's name for the original already says "original".
+                    YouTubeAudioTrackKind.ORIGINAL -> null
+                    YouTubeAudioTrackKind.DUBBED -> context.getString(R.string.vpc_audio_track_dubbed)
+                    YouTubeAudioTrackKind.AUTO_DUBBED -> context.getString(R.string.vpc_audio_track_auto_dubbed)
+                    YouTubeAudioTrackKind.DESCRIPTIVE -> context.getString(R.string.vpc_audio_track_descriptive)
+                    YouTubeAudioTrackKind.SECONDARY,
+                    YouTubeAudioTrackKind.UNKNOWN -> null
+                },
+                language = track.languageTag,
+                isSelected = if (selected == null) track.isOriginal else track.id == selected.id,
+            )
+        }.let { options ->
+            // A list whose original YouTube left untagged still needs one row
+            // marked while the original plays: the first, which is the default.
+            if (selected == null && options.none { it.isSelected }) {
+                options.mapIndexed { index, option -> option.copy(isSelected = index == 0) }
+            } else {
+                options
+            }
+        }
+    }
+
+    /**
+     * Switch the current video's soundtrack mid-playback.
+     *
+     * The same route as a quality change - rebuild the source, seek back to
+     * the position on READY, play/pause state untouched - so everything that
+     * already copes with a quality switch (the minimize transition, PiP,
+     * SponsorBlock, the watch tracker) copes with this. The video half is
+     * rebuilt too, but its bytes are in the playback cache under a key that
+     * does not change, so only the new audio is fetched.
+     */
+    private fun selectYouTubeAudioTrack(trackId: String) {
+        val track = youtubeAudioTracks.firstOrNull { it.id == trackId } ?: return
+        if (!youtubeAudioSwitchable()) return
+        val newSelection = track.id.takeUnless { track.isOriginal }
+        if (newSelection == selectedAudioTrackId) return
+        val quality = _currentQuality.value ?: return
+        selectedAudioTrackId = newSelection
+        publishYouTubeAudioTracks()
+        reloadPreservingPosition(quality)
     }
 
     /**
@@ -2229,11 +2546,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * otherwise swallow the jump and leave the queue pointing somewhere the
      * player is not.
      */
-    fun playQueueIndex(index: Int) {
+    fun playQueueIndex(index: Int, expand: Boolean = true) {
         val active = _queue.value ?: return
         val target = active.videos.getOrNull(index) ?: return
         _queue.value = active.copy(index = index)
-        startVideo(target, forceRestart = true)
+        startVideo(target, forceRestart = true, expand = expand)
     }
 
     // ---------------- Editing the queue ----------------
@@ -2246,6 +2563,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * one ends, so the order is only ever consulted at that moment. Moving the
      * playing entry therefore cannot interrupt it.
      */
+    /**
+     * Keep the playing queue as a local video playlist, the video side of
+     * music's "Save queue as playlist". [onSaved] gets the name and how many
+     * videos were kept (repeats are dropped; see createWithVideos).
+     */
+    fun saveQueueAsPlaylist(name: String, onSaved: (savedName: String, count: Int) -> Unit = { _, _ -> }) {
+        val videos = _queue.value?.videos.orEmpty()
+            .filterNot { com.ivor.ivormusic.data.LocalVideo.isDeviceVideoId(it.videoId) || it.videoId.startsWith("external:") }
+        if (videos.isEmpty()) return
+        viewModelScope.launch {
+            val saved = localVideoPlaylistsRepository.createWithVideos(name, videos) ?: return@launch
+            onSaved(name.trim(), saved.second)
+        }
+    }
+
     fun moveQueueItem(from: Int, to: Int) {
         val active = _queue.value ?: return
         _queue.value = active.moved(from, to)
@@ -2309,10 +2641,42 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (active.hasNext) playQueueIndex(active.index + 1)
     }
 
+    /**
+     * Next for a surface with a single Next button and no room to explain it -
+     * the PiP window: the playlist's next video, or else the related video
+     * autoplay would pick (the filtered list, so nothing marked not interested).
+     * PiP never autoplays into a related video on its own; a tap is a request.
+     */
+    fun playNextOrRelated(expand: Boolean = true) {
+        val active = _queue.value
+        if (active != null) {
+            if (active.hasNext) playQueueIndex(active.index + 1, expand)
+            return
+        }
+        relatedVideos.value.firstOrNull()?.let { playVideo(it, expand = expand) }
+    }
+
     /** Previous video in the playlist. No-op at the start of it. */
-    fun playPreviousInQueue() {
+    fun playPreviousInQueue(expand: Boolean = true) {
         val active = _queue.value ?: return
-        if (active.hasPrevious) playQueueIndex(active.index - 1)
+        if (active.hasPrevious) playQueueIndex(active.index - 1, expand)
+    }
+
+    /**
+     * Previous/next for the system's media controls - the notification, lock
+     * screen, headset and Bluetooth buttons. Next matches the PiP window's
+     * (the playlist's next, else the related video autoplay would pick);
+     * previous is the playlist's only. Neither changes whether the player is
+     * open or minimised: a press from the lock screen should not pop the player
+     * open behind it, and one from the shade should not collapse it.
+     */
+    private val sessionQueueControls = object : com.ivor.ivormusic.service.VideoPlaybackService.QueueControls {
+        override val canSkipNext: Boolean
+            get() = _queue.value?.hasNext ?: relatedVideos.value.isNotEmpty()
+        override val canSkipPrevious: Boolean
+            get() = _queue.value?.hasPrevious == true
+        override fun skipNext() = playNextOrRelated(expand = _isExpanded.value)
+        override fun skipPrevious() = playPreviousInQueue(expand = _isExpanded.value)
     }
 
     /**
@@ -2320,9 +2684,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * the stream is ready instead of starting from zero.
      * @param resumePaused whether a [resumePositionMs] seek lands paused. True
      * for the cold-process restore - the user decides when to jump back in.
-     * @param expand false only for a cold-process restore, where popping
-     * straight into a fullscreen player would be a jump-scare rather than the
-     * "you left this running" cue a mini player gives.
+     * @param expand false for a cold-process restore, where popping straight
+     * into a fullscreen player would be a jump-scare rather than the "you left
+     * this running" cue a mini player gives, and for the mini bar's sideways
+     * skip, which changes the video inside the bar and nothing else.
      * @param deferStreamLoad cold-restore-only path which reconstructs player
      * chrome without resolving or preparing media until the user presses Play.
      */
@@ -2347,6 +2712,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             playFromExternal()
             return
         }
+        com.ivor.ivormusic.data.YouTubeRequestLedger.begin("video ${video.videoId}")
 
         // Capture the outgoing item before any player state is reset. The
         // explicit session restore position wins; ordinary opens use this
@@ -2405,6 +2771,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // snapshot that is about to be replaced; leaving them up would let a
         // tap apply an override against groups that no longer exist.
         clearSelectableTracks()
+        // A dub is chosen per video; the next one opens on its original.
+        clearYouTubeAudioTracks()
         _selectedCaption.value = null // Re-applied below when captions are persistently on
         _isCaptionsLoading.value = false
         captionsLoadedForVideoId = null
@@ -2421,6 +2789,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         // Reset engagement + comments state for the new video
         _engagement.value = null
+        _dislikeCount.value = null
         _comments.value = emptyList()
         _replies.value = emptyMap()
         _loadingReplyIds.value = emptySet()
@@ -2501,7 +2870,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // because a foreground service may not be started from the background;
         // repeat calls once it is up are no-ops.
         _exoPlayer?.let {
-            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it)
+            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it, sessionQueueControls)
         }
 
         if (localSource != null) {
@@ -2564,6 +2933,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     val qualities = streamResult.qualities
                     _availableQualities.value = qualities
                     _seekPreview.value = streamResult.seekPreview
+                    // Held now, published once a quality is loaded: the menu
+                    // depends on that quality being a split pair.
+                    youtubeAudioTracks = streamResult.audioTracks
                     _isLive.value = qualities.any { it.isLive }
                     if (_isLive.value) {
                         // Some entry points do not know a broadcast is live
@@ -2645,6 +3017,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // Guard against a video switch that happened mid-flight
                 if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
                 _engagement.value = watchNext.engagement
+                if (themePreferences.isReturnDislikeEnabled() && video.videoId.length == 11) {
+                    launch {
+                        val count = returnDislikeRepository.getDislikes(video.videoId) ?: return@launch
+                        if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
+                            _dislikeCount.value = android.icu.text.CompactDecimalFormat
+                                .getInstance(java.util.Locale.getDefault(), android.icu.text.CompactDecimalFormat.CompactStyle.SHORT)
+                                .format(count)
+                        }
+                    }
+                }
                 if (watchNext.updatedVideoItem != null) {
                     val wasNameless = _currentVideo.value?.title.isNullOrBlank()
                     _currentVideo.value = watchNext.updatedVideoItem
@@ -2779,7 +3161,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             )
         } else {
             val dataSourceFactory = streamDataSourceFactory
-            val audioUrl = quality.audioUrl
+            // A chosen dub replaces only the audio half. Its URL carries its
+            // own xtags, so it caches under its own key beside the original.
+            val dub = if (quality.audioUrl != null && !_isLocalPlayback.value) selectedDub() else null
+            val audioUrl = dub?.url ?: quality.audioUrl
             val primarySource = if (audioUrl != null) {
                 // Non-DASH with separate audio - use MergingMediaSource.
                 // adjustPeriodTimeOffsets aligns the two tracks' start offsets,
@@ -2799,7 +3184,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         cachedProgressiveMediaItem(
                             uri = audioUrl,
                             stream = VideoPlaybackCacheStream.AUDIO,
-                            fallbackVariant = "original-audio",
+                            fallbackVariant = dub?.let { "audio-${it.id}" } ?: "original-audio",
                             includeNowPlayingMetadata = false,
                         )
                     )
@@ -3024,7 +3409,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // The preference is intent; the display capability decides whether
         // HDR can produce a visible benefit. This also handles an enabled
         // value restored onto an SDR-only phone.
-        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context)
+        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context) &&
+            !frameInterpolationBlocksHdr()
         val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
         val qualities = if (includeHdr) {
             result.qualities
@@ -3033,9 +3419,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         return result.copy(qualities = qualities)
     }
-
-    private suspend fun resolvePlayableQualities(videoId: String): List<VideoQuality> =
-        resolvePlayableStreamResult(videoId).qualities
 
     /** One-shot HDR-to-SDR recovery shared by source and decoder failures. */
     private fun fallbackFromHdr(error: PlaybackException): Boolean {
@@ -3192,6 +3575,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _isExpanded.value = false
         // Nothing is playing any more, so nothing should be on the lock screen.
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
+        // Whatever opens next - even this same video - gets a fresh chance.
+        frameInterpolation.reset()
+        // Smooth motion can only be added or removed by building a new player,
+        // and this is the one moment nothing holds the old one: the session is
+        // gone (just above) and the overlay disposes its views with the video.
+        if (_exoPlayer != null &&
+            playerHasInterpolation != frameInterpolationWanted()
+        ) {
+            _exoPlayer?.release()
+            _exoPlayer = null
+            playerHasInterpolation = false
+        }
         // An explicit close means "I'm done with this video" - the opposite
         // of what the resume snapshot is for, so it must not reappear next
         // launch.
@@ -3269,6 +3664,37 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * session or a quality switch is being restored to - so those pass
      * [precise] and keep exact seeking.
      */
+    /**
+     * Draw the paused frame again once a new surface has its size, when
+     * Smooth motion's effect graph is installed.
+     *
+     * The graph draws at the output surface's size, and a view taking the
+     * surface over (the mini bar handing to the page, fullscreen back to
+     * portrait) reaches it before its size does: the paused frame is drawn at
+     * the size the last surface had, a small picture in the bottom-left corner
+     * (GL's origin), and nothing draws again until playback resumes. Media3's
+     * own redraw (`VideoFrameProcessor.REDRAW`) needs a replayable frame cache
+     * that playback never builds, and throws without one [verified September
+     * 2026 against the 1.11.0 bytecode], so an exact seek to where playback
+     * already is renders the frame afresh. Settled briefly, because a
+     * hand-off reports sizes in a burst. Playing needs nothing: the next frame
+     * is drawn at the new size.
+     */
+    private fun redrawPausedFrameThroughGraph() {
+        if (!playerHasInterpolation) return
+        graphRedrawJob?.cancel()
+        graphRedrawJob = viewModelScope.launch {
+            delay(GRAPH_REDRAW_SETTLE_MS)
+            val player = _exoPlayer ?: return@launch
+            if (player.isPlaying || player.playbackState != Player.STATE_READY ||
+                player.isCurrentMediaItemLive
+            ) {
+                return@launch
+            }
+            seekPlayerTo(player, player.currentPosition, precise = true)
+        }
+    }
+
     private fun seekPlayerTo(player: Player, positionMs: Long, precise: Boolean) {
         (player as? ExoPlayer)?.setSeekParameters(
             if (precise) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC
@@ -3646,6 +4072,34 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * base and no DI to hand one an instance of the other; the store underneath
      * is process-wide, so both see the same list either way.
      */
+    /** Account playlists holding the video a save sheet is open on. */
+    private val videoPlaylistMembership =
+        com.ivor.ivormusic.data.PlaylistMembership(youtubeRepository, viewModelScope)
+    val accountPlaylistsContainingVideo: StateFlow<Set<String>> = videoPlaylistMembership.containing
+
+    /** One account lookup per sheet open. */
+    fun loadVideoPlaylistMembership(videoId: String) = videoPlaylistMembership.load(videoId)
+
+    /** Untick a video in the save sheet; the mirror of adding it. */
+    fun removeVideoFromPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
+            val ok = when {
+                local.isLocal(playlistId) -> {
+                    localVideoPlaylistsRepository.removeVideo(playlistId, video.videoId)
+                    true
+                }
+                playlistId == "WL" && !_isLoggedIn.value -> {
+                    localVideoPlaylistsRepository.removeVideo(local.WATCH_LATER_ID, video.videoId)
+                    true
+                }
+                else -> youtubeRepository.removeFromYouTubePlaylist(playlistId, video.videoId, music = false)
+                    .also { if (it) videoPlaylistMembership.record(playlistId, video.videoId, false) }
+            }
+            onResult(ok)
+        }
+    }
+
     fun addVideoToPlaylist(playlistId: String, video: VideoItem, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
             val local = com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
@@ -3662,7 +4116,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         playlistId,
                         video.videoId,
                         music = false
-                    )
+                    ).also { if (it) videoPlaylistMembership.record(playlistId, video.videoId, true) }
                 }
             )
         }
@@ -3935,14 +4389,20 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         private const val VIDEO_CACHE_OWNER = "video"
         private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
 
+        /** Marks a [PlayerTrackOption] as a YouTube soundtrack rather than a container track. */
+        private const val YOUTUBE_AUDIO_OPTION_PREFIX = "yt-audio:"
+
         /** Speeds offered in the player's speed menu. */
-        val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+        val PLAYBACK_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f, 4f, 8f)
 
         /**
          * One skip step, shared by the double-tap gesture on the player, the
          * media notification and the Picture-in-Picture controls.
          */
         const val SEEK_STEP_MS = 10_000L
+
+        /** How long a surface hand-off's size reports are left to settle before a paused redraw. */
+        private const val GRAPH_REDRAW_SETTLE_MS = 150L
 
         /** Silent re-prepare attempts before a renderer error reaches the UI. */
         private const val MAX_RENDERER_RETRIES = 2
@@ -4028,6 +4488,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     override fun onCleared() {
+        connectionWatcher.stop()
         watchTracker.close()
         super.onCleared()
         // Remove quality change listener to prevent leaks

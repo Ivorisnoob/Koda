@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Thư viện của bạn đang trống</string>
     <string name="library_empty_subtitle">Bài bạn tải xuống hoặc yêu thích sẽ hiện ở đây</string>
-    <string name="library_create_playlist_hint">Tạo bằng nút + bên dưới</string>
     <string name="fab_downloads">Tải xuống</string>
     <string name="fab_listening_history">Lịch sử nghe</string>
     <string name="fab_statistics">Thống kê</string>

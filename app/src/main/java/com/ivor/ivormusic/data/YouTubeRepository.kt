@@ -47,8 +47,14 @@ class YouTubeRepository(private val context: Context) {
     private val videoHistoryPreferences by lazy { ThemePreferences(context) }
 
     companion object {
+        /** The browse id of a community post's own page. */
+        private const val POST_DETAIL_BROWSE_ID = "FEpost_detail"
+        private const val UPLOAD_CREATE_BATCH = 100
+        private const val UPLOAD_ADD_BATCH = 50
+        private const val UPLOAD_BATCH_PAUSE_MS = 400L
         private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
         @Volatile private var isInitialized = false
+        @Volatile private var appliedNewPipeRegion: String? = null
         private val newPipeInitLock = Any()
 
         // ServiceList eagerly constructs every extractor NewPipe supports. Koda
@@ -159,6 +165,12 @@ class YouTubeRepository(private val context: Context) {
         // Tolerant of the pretty-printed spacing so it matches either form.
         private val LOGGED_IN_TRACKING_PARAM =
             Regex("\"logged_in\"\\s*,\\s*\"value\"\\s*:\\s*\"([01])\"")
+
+        // Where a music history ping may carry the account's cookies. WEB_REMIX
+        // /player returns its tracking URLs on s.youtube.com, with no cpn, c or
+        // ver of their own [verified September 2026, signed-in probe]; the
+        // video path's www.youtube.com is allowed as well.
+        private val MUSIC_HISTORY_TRACKING_HOSTS = setOf("s.youtube.com", "www.youtube.com")
 
         // ANDROID_VR is the client for audio extraction in 2026: it returns
         // direct, unobfuscated stream URLs (no signatureCipher to decrypt) and
@@ -335,6 +347,18 @@ class YouTubeRepository(private val context: Context) {
             botCheckVerdictAtMs = System.currentTimeMillis()
         }
 
+        /**
+         * The device moved to a different network, so the verdicts YouTube
+         * passed on the old address no longer describe this one: drop the
+         * bot-check verdict, the 429 hold and every ladder resolved under the
+         * old address. The caller remints visitorData on the new one.
+         */
+        fun forgetConnectionVerdicts() {
+            botCheckVerdictAtMs = 0L
+            YouTubeRateLimit.clear()
+            VideoStreamResolutionCache.clear()
+        }
+
         private fun clearBotCheckVerdict() {
             if (botCheckVerdictAtMs != 0L) {
                 botCheckVerdictAtMs = 0L
@@ -404,6 +428,9 @@ class YouTubeRepository(private val context: Context) {
             }
             chain.proceed(chain.request())
         }
+        // After the kill-switch, so a request local-only mode refused is not
+        // counted as one YouTube saw.
+        .addInterceptor(YouTubeRequestLedger)
         // Folds Google's rotated session cookies back into storage. Without it
         // the login snapshot goes stale on its own and every authenticated
         // endpoint quietly answers as signed out. A *network* interceptor
@@ -473,6 +500,34 @@ class YouTubeRepository(private val context: Context) {
         videoSearchContinuations.clear()
     }
 
+    /**
+     * A NewPipe search extractor that ranks for [contentRegion].
+     *
+     * NewPipe keeps one global localization, defaulting to en-GB, so without
+     * this every NewPipe-backed search (videos, artists, albums, playlists)
+     * was British whatever the device said. Re-applied only when the region
+     * changed; the language stays English for the same reason as the InnerTube
+     * context (see ThemePreferences.resolveContentRegion).
+     */
+    private fun regionalSearchExtractor(
+        query: String,
+        filters: List<String>,
+        sort: String,
+    ): org.schabi.newpipe.extractor.search.SearchExtractor {
+        val region = contentRegion()
+        if (region != appliedNewPipeRegion) {
+            NewPipe.setupLocalization(
+                org.schabi.newpipe.extractor.localization.Localization("en", region),
+                org.schabi.newpipe.extractor.localization.ContentCountry(region)
+            )
+            appliedNewPipeRegion = region
+        }
+        return youtubeService.getSearchExtractor(query, filters, sort)
+    }
+
+    /** The country every InnerTube context and NewPipe search ranks for. */
+    private fun contentRegion(): String = ThemePreferences.resolveContentRegion(context)
+
     private fun initializeNewPipe() {
         if (isInitialized) return
         synchronized(newPipeInitLock) {
@@ -534,7 +589,7 @@ class YouTubeRepository(private val context: Context) {
         }
         try {
             // YouTube Music search often uses the search extractor with specific filters
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(filter), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(filter), "")
             searchExtractor.fetchPage()
             
             // Cache for pagination
@@ -566,7 +621,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -594,7 +649,7 @@ class YouTubeRepository(private val context: Context) {
             if (releases.isNotEmpty()) return@withContext releases
         }
         try {
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_ALBUMS), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_ALBUMS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -616,7 +671,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchArtists(query: String): List<ArtistItem> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_ARTISTS), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_ARTISTS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<ChannelInfoItem>().mapNotNull { item ->
@@ -870,11 +925,23 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /** Metadata-only WEB_REMIX calls, public when signed out. Never playback. */
+    /** A YouTube Music browse page (FEmusic_home, _explore, _charts, _new_releases, a mood) as shelves. */
+    suspend fun getMusicShelves(browseId: String, params: String? = null): MusicShelfPage? =
+        withContext(Dispatchers.IO) {
+            postMusicMetadata("browse", org.json.JSONObject().put("browseId", browseId).apply {
+                if (params != null) put("params", params)
+            })?.let(::parseMusicShelves)
+        }
+
+    suspend fun getMusicShelvesContinuation(token: String): MusicShelfPage? = withContext(Dispatchers.IO) {
+        postMusicMetadata("browse", org.json.JSONObject().put("continuation", token))?.let(::parseMusicShelves)
+    }
+
     private fun postMusicMetadata(endpoint: String, payload: org.json.JSONObject): org.json.JSONObject? {
         return try {
             val session = sessionManager.captureSession()
             val client = org.json.JSONObject().put("clientName", "WEB_REMIX")
-                .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", "US")
+                .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", contentRegion())
             cachedVisitorDataOrNull()?.let { client.put("visitorData", it) }
             payload.put("context", org.json.JSONObject().put("client", client))
             val builder = okhttp3.Request.Builder()
@@ -953,33 +1020,49 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
 
-        // Primary: NewPipe's maintained Android/visionOS client chain. Direct
-        // ANDROID_VR URLs can start successfully and then hit GVS's progressive
-        // byte ceiling on long media, which is the same failure that moved video
-        // playback to NewPipe first. Audio must use the maintained path too or a
-        // long song can fail only after it has already been playing for a while.
+        // Primary: one visionOS /player under Koda's own visitorData, the same
+        // resolver video and Shorts use - see resolveVisionOsPlayer for why it
+        // replaced NewPipe (eight requests and three fresh visitor ids per song,
+        // times three for the songs prefetched ahead). visionOS URLs serve the
+        // whole file in bounded ranges [verified September 2026: a 141-minute
+        // audio track downloaded whole], unlike ANDROID_VR's below.
+        val direct = resolveVisionOsPlayer(videoId)
+        direct.response?.streamingData
+            ?.let { pickAudioStreamUrl(videoId, it) }
+            ?.let { url ->
+                clearBotCheckVerdict()
+                KLog.i(
+                    "YouTubeRepository",
+                    "Resolve[visionOS] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
+                )
+                return@withContext Result.success(url)
+            }
+
+        // Fallback: NewPipe's maintained Android/visionOS client chain, with
+        // identities of its own.
         //
         // Bounded, because being slow here used to be indistinguishable from
         // failing: the extraction is eight blocking requests (see newPipeClient)
         // and the caller's own timeout could not interrupt one, so a stalled
-        // primary path ran out MusicService's whole resolution budget and the
-        // song resolved to an error URI and was skipped - with a working
-        // fallback sitting unused behind it.
+        // path ran out MusicService's whole resolution budget and the song
+        // resolved to an error URI and was skipped - with a working fallback
+        // sitting unused behind it.
         val newPipe = resolveAudioUrlWithinBudget(videoId)
         val newPipeUrl = newPipe.url
         if (!newPipeUrl.isNullOrEmpty()) {
             clearBotCheckVerdict()
             KLog.i(
                 "YouTubeRepository",
-                "Resolve[NewPipe] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
+                "Resolve[NewPipe fallback] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
             )
             return@withContext Result.success(newPipeUrl)
         }
 
-        // Last-resort fallback: the older direct /player chain. It can still
-        // cover a client-specific NewPipe extraction failure, but its progressive
-        // URLs must not be the normal path for the reason above.
-        val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked)
+        // Last resort: the ANDROID_VR -> IOS chain. It can still cover a
+        // client-specific failure, but never the normal path: ANDROID_VR URLs
+        // can start and then hit googlevideo's progressive byte ceiling on long
+        // media, so a long song fails after it has already been playing.
+        val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked || direct.botChecked)
             ?.let { pickAudioStreamUrl(videoId, it) }
         val dt = System.currentTimeMillis() - startMs
         if (!innerTubeUrl.isNullOrEmpty()) {
@@ -1007,6 +1090,14 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getDownloadAudioStreamUrl(videoId: String): Result<String> =
         withContext(Dispatchers.IO) {
+            // Same order as getStreamUrl: visionOS under Koda's own identity,
+            // then NewPipe, then the direct chain.
+            val direct = resolveVisionOsPlayer(videoId)
+            direct.response?.streamingData?.let(::pickM4aAudioStreamUrl)?.let { url ->
+                clearBotCheckVerdict()
+                return@withContext Result.success(url)
+            }
+
             val newPipe = resolveM4aAudioUrlViaNewPipe(videoId)
             val newPipeUrl = newPipe.url
             if (!newPipeUrl.isNullOrBlank()) {
@@ -1014,7 +1105,7 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext Result.success(newPipeUrl)
             }
 
-            val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked)
+            val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked || direct.botChecked)
                 ?.let(::pickM4aAudioStreamUrl)
             if (!innerTubeUrl.isNullOrBlank()) return@withContext Result.success(innerTubeUrl)
 
@@ -1407,7 +1498,7 @@ class YouTubeRepository(private val context: Context) {
                         put("clientName", "WEB")
                         put("clientVersion", WEB_VERSION)
                         put("hl", "en")
-                        put("gl", "US")
+                        put("gl", contentRegion())
                     }
                 )
             ).toString()
@@ -1551,47 +1642,62 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getRelatedSongs(videoId: String, limit: Int = 25): List<Song> = withContext(Dispatchers.IO) {
         try {
-            val jsonBody = """
-                {
-                    "context": {
-                        "client": {
-                            "clientName": "WEB_REMIX",
-                            "clientVersion": "$WEB_REMIX_VERSION",
-                            "hl": "en",
-                            "gl": "US"
-                        }
-                    },
-                    "videoId": "$videoId",
-                    "playlistId": "RDAMVM$videoId",
-                    "isAudioOnly": true,
-                    "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
-                }
-            """.trimIndent()
-
-            val requestBuilder = okhttp3.Request.Builder()
-                .url("https://music.youtube.com/youtubei/v1/next")
-                .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .addHeader("User-Agent", getRandomUserAgent())
-                .addHeader("Origin", "https://music.youtube.com")
-
-            // Personalize the radio when logged in; anonymous works fine too.
-            requestBuilder.authenticate(sessionManager.captureSession())
-
-            val response = okHttpClient.newCall(requestBuilder.build()).execute()
-            val body = response.body?.string()
-            if (body.isNullOrEmpty()) return@withContext emptyList()
-
-            val renderers = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(org.json.JSONObject(body), "playlistPanelVideoRenderer", renderers)
-
-            renderers.mapNotNull { parsePlaylistPanelVideo(it) }
+            radioPanelSongs(videoId)
                 .filter { it.id != videoId } // first radio item is the seed itself
                 .distinctBy { it.id }
                 .take(limit)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             KLog.e("YouTubeRepo", "Error fetching related songs for $videoId", e)
             emptyList()
         }
+    }
+
+    /** The song itself as the radio panel describes it: title, artist and length. */
+    suspend fun getSongFromPanel(videoId: String): Song? = withContext(Dispatchers.IO) {
+        try {
+            radioPanelSongs(videoId).firstOrNull { it.id == videoId }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            KLog.w("YouTubeRepo", "No panel entry for $videoId", e)
+            null
+        }
+    }
+
+    private fun radioPanelSongs(videoId: String): List<Song> {
+        val jsonBody = """
+            {
+                "context": {
+                    "client": {
+                        "clientName": "WEB_REMIX",
+                        "clientVersion": "$WEB_REMIX_VERSION",
+                        "hl": "en",
+                        "gl": "${contentRegion()}"
+                    }
+                },
+                "videoId": "$videoId",
+                "playlistId": "RDAMVM$videoId",
+                "isAudioOnly": true,
+                "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
+            }
+        """.trimIndent()
+
+        val requestBuilder = okhttp3.Request.Builder()
+            .url("https://music.youtube.com/youtubei/v1/next")
+            .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .addHeader("User-Agent", getRandomUserAgent())
+            .addHeader("Origin", "https://music.youtube.com")
+
+        // Personalize the radio when logged in; anonymous works fine too.
+        requestBuilder.authenticate(sessionManager.captureSession())
+
+        val response = okHttpClient.newCall(requestBuilder.build()).execute()
+        val body = response.use { it.body?.string() }
+        if (body.isNullOrEmpty()) return emptyList()
+
+        val renderers = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(org.json.JSONObject(body), "playlistPanelVideoRenderer", renderers)
+        return renderers.mapNotNull { parsePlaylistPanelVideo(it) }
     }
 
     /**
@@ -1740,7 +1846,7 @@ class YouTubeRepository(private val context: Context) {
                         "clientName": "WEB_REMIX",
                         "clientVersion": "$WEB_REMIX_VERSION",
                         "hl": "en",
-                        "gl": "US"
+                        "gl": "${contentRegion()}"
                     }
                 },
                 "continuation": "$continuationToken"
@@ -2131,6 +2237,8 @@ class YouTubeRepository(private val context: Context) {
          * playability.
          */
         val loudnessDb: Float? = null,
+        /** The scrub-preview storyboard from `storyboards`; see [parseStoryboardSeekPreview]. */
+        val seekPreview: VideoSeekPreview? = null,
     )
 
     /**
@@ -2246,19 +2354,59 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Resolve the direct visionOS response used only to augment an otherwise
-     * successful NewPipe extraction with HDR formats. Its VP9.2 HDR URLs
-     * serve bounded ranges across all HDR itags 330-337 without throttling.
+     * A direct visionOS `/player` resolution, and whether the bot check refused
+     * it even after a fresh identity - which the fallbacks behind it need, so
+     * they do not remint for a refusal that is already known.
      */
-    private suspend fun resolveVisionOsStreamingData(videoId: String): org.json.JSONObject? {
-        val visitorData = getVisitorData()
-        val first = fetchVisionOsPlayerResponse(videoId, visitorData)
-        first.streamingData?.let { return it }
-        if (!first.visitorDataSuspect || isBotCheckVerdictActive()) return null
+    private class VisionOsResolution(val response: PlayerResponse?, val botChecked: Boolean)
 
-        val fresh = remintVisitorData(flagged = visitorData) ?: return null
-        if (fresh == visitorData) return null
-        return fetchVisionOsPlayerResponse(videoId, fresh).streamingData
+    /**
+     * Resolve a video's streams with one visionOS `/player` call carrying
+     * Koda's own persisted visitorData.
+     *
+     * This is the primary video and Shorts resolver because of what it does
+     * not do. A NewPipe v0.26.5 extraction is eight requests and mints three
+     * brand-new anonymous visitor ids every time [verified September 2026 on
+     * device through YouTubeRequestLedger: visitor_id(ANDROID),
+     * reel_item_watch, visitor_id(VISIONOS), player(VISIONOS), visitor_id(WEB),
+     * player(WEB), next, and sw.js once per process] - so every video opened
+     * and every Short swiped showed YouTube three new visitors from one
+     * address, the pattern its bot check is built to catch. One call under the
+     * identity Koda already holds is the same work without that signature.
+     *
+     * [verified September 2026, `.probe/visionos_reuse_probe.py`] One WEB-minted
+     * visitorData reused across videos: visionOS answered OK with a plain URL
+     * on every format (none ciphered, none SABR-only) for ordinary, 2-hour and
+     * live videos; bounded ranges were served at 0/25/50/90% and the tail of
+     * audio and 1080p video, 3.7 GB into a 2-hour file; a 141-minute audio
+     * track downloaded whole in 10 MB ranges; live returned an HLS master with
+     * every variant; HDR itags 330-337 were present with ranges served to 95%;
+     * and its caption URLs serve WebVTT without a PO token. NewPipe's own dev
+     * branch dropped every stream client except visionOS in August 2026.
+     *
+     * The same response carries HDR, captions and the storyboard, so the HDR
+     * augmentation call and a CC tap's `/player` both disappear with it.
+     */
+    private suspend fun resolveVisionOsPlayer(videoId: String): VisionOsResolution {
+        var visitorData = getVisitorData()
+        // Same reasoning as resolvePlayerStreamingData: without a token the
+        // refusal is already known, so mint before spending the request.
+        if (visitorData.isBlank()) visitorData = remintVisitorData(flagged = "").orEmpty()
+        val first = fetchVisionOsPlayerResponse(videoId, visitorData)
+        if (first.streamingData != null) return VisionOsResolution(first, botChecked = false)
+        if (!first.visitorDataSuspect) return VisionOsResolution(null, botChecked = false)
+        if (isBotCheckVerdictActive()) return VisionOsResolution(null, botChecked = true)
+
+        KLog.w(
+            "YouTubeRepository",
+            "Resolve[visionOS] visitorData flagged by bot check, reminting videoId=$videoId",
+        )
+        val fresh = remintVisitorData(flagged = visitorData)
+        if (fresh == null || fresh == visitorData) return VisionOsResolution(null, botChecked = false)
+        val retry = fetchVisionOsPlayerResponse(videoId, fresh)
+        if (retry.streamingData != null) return VisionOsResolution(retry, botChecked = false)
+        if (retry.visitorDataSuspect) noteBotCheckVerdict(videoId)
+        return VisionOsResolution(null, botChecked = retry.visitorDataSuspect)
     }
 
     private suspend fun fetchVisionOsPlayerResponse(
@@ -2360,10 +2508,16 @@ class YouTubeRepository(private val context: Context) {
             ?.takeIf { it.isNotEmpty() }?.let { return it }
 
         // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).
-        // ExoPlayer happily plays just the audio track of these.
-        val muxedFormats = formats.filter {
-            it.optString("mimeType").startsWith("video/") && hasPlayableUrl(it)
-        }
+        // ExoPlayer happily plays just the audio track of these. Only
+        // `formats` is muxed: every video/ entry in adaptiveFormats is
+        // video-only, and the lowest-bitrate one used to win here - a silent
+        // 144p stream. [verified September 2026: visionOS returns an empty
+        // `formats`, so on the primary path this fallback finds nothing rather
+        // than something silent.]
+        val muxedFormats = streamingData.optJSONArray("formats")
+            ?.let { arr -> (0 until arr.length()).mapNotNull(arr::optJSONObject) }
+            .orEmpty()
+            .filter { it.optString("mimeType").startsWith("video/") && hasPlayableUrl(it) }
         muxedFormats.minByOrNull { it.optInt("bitrate") }?.optString("url")
             ?.takeIf { it.isNotEmpty() }?.let {
                 KLog.w(
@@ -2499,7 +2653,10 @@ class YouTubeRepository(private val context: Context) {
                 // of a stale/missing visitorData.
                 return@withContext PlayerResponse(null, true, captionTracks, loudnessDb)
             }
-            PlayerResponse(streamingData, false, captionTracks, loudnessDb)
+            // Best-effort, like the NewPipe path it replaces: a malformed spec
+            // costs the scrub preview, never the stream.
+            val seekPreview = runCatching { parseStoryboardSeekPreview(root) }.getOrNull()
+            PlayerResponse(streamingData, false, captionTracks, loudnessDb, seekPreview)
         } catch (e: CancellationException) {
             // Swallowing this would report a cancelled call as a client that
             // has no streams, sending the chain on to the next client inside a
@@ -2536,7 +2693,7 @@ class YouTubeRepository(private val context: Context) {
                             "clientName": "WEB_REMIX",
                             "clientVersion": "$WEB_REMIX_VERSION",
                             "hl": "en",
-                            "gl": "US"
+                            "gl": "${contentRegion()}"
                         }
                     },
                     "browseId": "$endpoint"
@@ -2550,7 +2707,7 @@ class YouTubeRepository(private val context: Context) {
                             "clientName": "WEB_REMIX",
                             "clientVersion": "$WEB_REMIX_VERSION",
                             "hl": "en",
-                            "gl": "US"
+                            "gl": "${contentRegion()}"
                         }
                     }
                 }
@@ -2959,18 +3116,24 @@ class YouTubeRepository(private val context: Context) {
         if (!sessionManager.isLoggedIn()) return@withContext
         // Incognito covers the account's own history too, not only Koda's.
         // Gated here rather than at the call sites so nothing that starts
-        // playback later has to remember.
+        // playback later has to remember. The music history switch does not:
+        // it is the on-device log, and its setting says it is separate from
+        // the account's history (si_music_history).
         if (IncognitoMode.isEnabled(context)) return@withContext
 
         try {
             val session = sessionManager.captureSession() ?: return@withContext
             val cpn = generateCpn()
 
-            // This install's own minted token, which every other InnerTube call
-            // already rides on. The literal is the last resort it was always
-            // documented to be: a hardcoded visitor id identifies a stranger's
-            // session, and a missing one now answers LOGIN_REQUIRED.
-            val visitorData = cachedVisitorDataOrNull() ?: "Cgt6SUNYVzB2VkJDbyjGrrSmBg%3D%3D"
+            // This install's own token, which every other InnerTube call rides
+            // on, minted here if none is cached yet (a fresh install's first
+            // play). Never a fallback literal: a hardcoded visitor id is a
+            // stranger's session, and without a token the play is skipped
+            // rather than filed under one.
+            val visitorData = getVisitorData().ifEmpty {
+                KLog.w("YouTubeRepo", "History sync: no visitorData, skipped $videoId")
+                return@withContext
+            }
 
             // Client constants - using WEB_REMIX (web player)
             val clientName = "WEB_REMIX"
@@ -2985,19 +3148,17 @@ class YouTubeRepository(private val context: Context) {
                             "clientName": "$clientName",
                             "clientVersion": "$clientVersion",
                             "hl": "en",
-                            "gl": "US",
+                            "gl": "${contentRegion()}",
                             "visitorData": "$visitorData"
                         }
                     },
                     "videoId": "$videoId",
-                    "cpn": "$cpn",
-                    "playbackContext": {
-                        "contentPlaybackContext": {
-                            "signatureTimestamp": ${System.currentTimeMillis() / 1000}
-                        }
-                    }
+                    "cpn": "$cpn"
                 }
             """.trimIndent()
+            // No playbackContext.signatureTimestamp: that field is the
+            // player-JS version, not a clock, and the tracking URLs do not need
+            // it - the video history /player sends none either.
 
             val playerRequest = okhttp3.Request.Builder()
                 .url(playerUrl)
@@ -3013,13 +3174,15 @@ class YouTubeRepository(private val context: Context) {
                 .build()
 
             val playerResponse = okHttpClient.newCall(playerRequest).execute()
+            val playerCode = playerResponse.code
             val playerResponseBody = playerResponse.body?.string()
             playerResponse.close()
-            
+
             if (playerResponseBody.isNullOrEmpty()) {
-                KLog.e("YouTubeRepo", "Player response empty for $videoId")
+                KLog.e("YouTubeRepo", "History sync: /player HTTP $playerCode with an empty body for $videoId")
                 return@withContext
             }
+            if (historyPlayerSignedOut(playerResponseBody, session, "Music")) return@withContext
 
             // Parse response to extract playback tracking URL
             val playerJson = org.json.JSONObject(playerResponseBody)
@@ -3043,17 +3206,22 @@ class YouTubeRepository(private val context: Context) {
                 return@withContext
             }
 
-            // Step 3: Call the tracking URL to register the play
-            // Append required parameters
-            val trackingUrl = buildString {
-                append(videostatsPlaybackUrl)
-                if (!videostatsPlaybackUrl.contains("cpn=")) {
-                    append(if (videostatsPlaybackUrl.contains("?")) "&" else "?")
-                    append("cpn=$cpn")
-                }
-                append("&ver=2")
-                append("&c=$clientName")
+            // Step 3: Call the tracking URL to register the play. Credentials
+            // only go to the YouTube tracking hosts /player returns, and each
+            // parameter is set rather than appended, so one the URL already
+            // carries is replaced instead of sent twice.
+            val baseTrackingUrl = videostatsPlaybackUrl.toHttpUrlOrNull()
+            if (baseTrackingUrl == null || baseTrackingUrl.scheme != "https" ||
+                baseTrackingUrl.host !in MUSIC_HISTORY_TRACKING_HOSTS
+            ) {
+                KLog.w("YouTubeRepo", "History sync: refused a tracking URL on ${baseTrackingUrl?.host}")
+                return@withContext
             }
+            val trackingUrl = baseTrackingUrl.newBuilder()
+                .setQueryParameter("cpn", cpn)
+                .setQueryParameter("ver", "2")
+                .setQueryParameter("c", clientName)
+                .build()
 
             // The /player call above blocks, and the switch can be flipped or
             // the account changed while it does. This ping is the write that
@@ -3062,7 +3230,10 @@ class YouTubeRepository(private val context: Context) {
             // the cookies as they are now, which /player itself may have
             // rotated on the way through.
             if (IncognitoMode.isEnabled(context)) return@withContext
-            val live = sessionManager.currentSession(session) ?: return@withContext
+            val live = sessionManager.currentSession(session) ?: run {
+                KLog.w("YouTubeRepo", "History sync: login changed before the ping for $videoId")
+                return@withContext
+            }
 
             val trackingRequest = okhttp3.Request.Builder()
                 .url(trackingUrl)
@@ -3075,12 +3246,15 @@ class YouTubeRepository(private val context: Context) {
 
             val trackingResponse = okHttpClient.newCall(trackingRequest).execute()
             if (trackingResponse.isSuccessful) {
-                KLog.d("YouTubeRepo", "History sync SUCCESS for $videoId")
+                KLog.d("YouTubeRepo", "History sync: ping accepted for $videoId")
             } else {
-                KLog.e("YouTubeRepo", "History sync failed: ${trackingResponse.code}")
+                KLog.e("YouTubeRepo", "History sync: ping HTTP ${trackingResponse.code} for $videoId")
             }
             trackingResponse.close()
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // The token mint above suspends; never swallow a cancellation.
+            throw e
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Error in reportPlayback", e)
         }
@@ -3119,7 +3293,7 @@ class YouTubeRepository(private val context: Context) {
 
         try {
             // Use YouTube videos filter (not music_videos)
-            val searchExtractor = youtubeService.getSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
+            val searchExtractor = regionalSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
             searchExtractor.fetchPage()
 
             // Cache for pagination (see searchVideosNext)
@@ -3173,6 +3347,11 @@ class YouTubeRepository(private val context: Context) {
     /** Map a NewPipe search page's streams to [VideoItem]s, skipping unusable rows. */
     private fun List<org.schabi.newpipe.extractor.InfoItem>.toVideoItems(): List<VideoItem> =
         filterIsInstance<StreamInfoItem>().mapNotNull { item ->
+            // "Fully block Shorts": NewPipe already knows which results are
+            // Shorts, so they are dropped here rather than drawn.
+            if (item.isShortFormContent && ThemePreferences.isShortsHardBlocked(context)) {
+                return@mapNotNull null
+            }
             try {
                 val uploaderUrl = item.uploaderUrl ?: ""
                 val channelId = when {
@@ -3207,7 +3386,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchVideoPlaylists(query: String): List<VideoPlaylist> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = youtubeService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
+            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
             searchExtractor.fetchPage()
 
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -3242,7 +3421,7 @@ class YouTubeRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 val searchExtractor =
-                    youtubeService.getSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
+                    regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
                 searchExtractor.fetchPage()
 
                 searchExtractor.initialPage.items
@@ -3441,7 +3620,7 @@ class YouTubeRepository(private val context: Context) {
                         "clientName": "WEB",
                         "clientVersion": "$WEB_VERSION",
                         "hl": "en",
-                        "gl": "US",
+                        "gl": "${contentRegion()}",
                         "originalUrl": "https://www.youtube.com/",
                         "platform": "DESKTOP"
                     },
@@ -4868,7 +5047,7 @@ class YouTubeRepository(private val context: Context) {
                         .put("clientName", "WEB")
                         .put("clientVersion", WEB_VERSION)
                         .put("hl", "en")
-                        .put("gl", "US")
+                        .put("gl", contentRegion())
                         .apply { visitorData?.let { put("visitorData", it) } }
                 )
             )
@@ -4980,59 +5159,51 @@ class YouTubeRepository(private val context: Context) {
         videoId: String,
         includeHdr: Boolean = false,
     ): VideoStreamResult = withContext(Dispatchers.IO) {
-        // NewPipe already performs this visionOS call internally, but v0.26.5
-        // drops HDR itags 330-337 because they are absent from its ItagItem
-        // table. When HDR is requested, run the raw visionOS request in parallel
-        // to recover those otherwise discarded formats.
-        val visionOsResult = if (includeHdr) {
-            async {
-                try {
-                    resolveVisionOsStreamingData(videoId)
-                        ?.let { parseQualitiesFromStreamingData(it, includeHdr = true) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    KLog.w("YouTubeRepo", "visionOS HDR resolution failed for $videoId", e)
-                    null
+        // Primary: one visionOS /player under Koda's own visitorData. See
+        // resolveVisionOsPlayer for why this is not NewPipe any more. The
+        // direct parser keeps HDR itags 330-337 that NewPipe v0.26.5's ItagItem
+        // table drops, so HDR comes from this same response rather than from a
+        // second request merged into NewPipe's ladder as it used to.
+        val direct = resolveVisionOsPlayer(videoId)
+        direct.response?.let { response ->
+            val qualities = response.streamingData
+                ?.let { parseQualitiesFromStreamingData(it, includeHdr) }
+                .orEmpty()
+            if (qualities.isNotEmpty()) {
+                clearBotCheckVerdict()
+                // Makes a CC tap free: getCaptionTracks reads this cache first.
+                cacheCaptionTracks(videoId, response.captionTracks)
+                KLog.i(
+                    "YouTubeRepo",
+                    "Video qualities via visionOS: ${qualities.size} for $videoId" +
+                        qualities.count(VideoQuality::isHdr).let { if (it > 0) " (HDR=$it)" else "" },
+                )
+                // Dubs ride the same response. Live has one soundtrack in its
+                // HLS master, so only a VOD ladder offers a choice.
+                val audioTracks = if (qualities.any(VideoQuality::isLive)) {
+                    emptyList()
+                } else {
+                    response.streamingData?.let(::parseDirectAudioTracks).orEmpty()
                 }
+                return@withContext VideoStreamResult(qualities, response.seekPreview, audioTracks)
             }
-        } else {
-            null
+            KLog.w("YouTubeRepo", "visionOS answered with no usable formats for $videoId")
         }
 
-        // NewPipe 0.26.3+ deliberately resolves VOD streams through Android's
-        // reel endpoint and a visionOS fallback, both of which avoid the WEB
-        // client's SABR-only response. Keep that maintained client selection in
-        // front of our older ANDROID_VR resolver: ANDROID_VR URLs now hit GVS's
-        // progressive byte ceiling on long videos even though /player itself
-        // succeeds, so accepting that ladder first creates a source that starts
-        // normally and then dies part-way through playback.
+        // Fallback: NewPipe's maintained Android reel + visionOS chain, with
+        // identities of its own. It no longer carries the HDR augmentation - a
+        // video that reaches this far is already a failure being covered, and
+        // the augmentation was the same visionOS call that just failed.
         var newPipeBotChecked = false
         try {
             val extracted = getVideoStreamsFromNewPipe(videoId)
             if (extracted.qualities.isNotEmpty()) {
                 clearBotCheckVerdict()
-                val hdrQualities = if (extracted.qualities.any { it.isLive }) {
-                    visionOsResult?.cancel()
-                    emptyList()
-                } else {
-                    visionOsResult?.await().orEmpty().filter(VideoQuality::isHdr)
-                }
-                val merged = if (hdrQualities.isEmpty()) {
-                    extracted
-                } else {
-                    extracted.copy(
-                        qualities = deduplicateVideoQualityVariants(
-                            extracted.qualities + hdrQualities
-                        )
-                    )
-                }
                 KLog.i(
                     "YouTubeRepo",
-                    "Video qualities via NewPipe: ${merged.qualities.size} for $videoId" +
-                        if (hdrQualities.isNotEmpty()) " (HDR=${hdrQualities.size})" else ""
+                    "Video qualities via NewPipe fallback: ${extracted.qualities.size} for $videoId",
                 )
-                return@withContext merged
+                return@withContext extracted
             }
         } catch (e: CancellationException) {
             throw e
@@ -5045,10 +5216,18 @@ class YouTubeRepository(private val context: Context) {
             )
         }
 
-        // Last-resort fallback. It is still useful for a client-specific edge
-        // case, but it must not be the normal VOD path for the reason above.
+        // Last resort: the ANDROID_VR -> IOS chain. Still useful for a
+        // client-specific edge case, but never the normal VOD path: ANDROID_VR
+        // URLs hit googlevideo's progressive byte ceiling on long videos even
+        // though /player succeeds, so the source starts and then dies part-way.
         try {
-            VideoStreamResult(getVideoQualitiesFromInnerTube(videoId, includeHdr, newPipeBotChecked))
+            VideoStreamResult(
+                getVideoQualitiesFromInnerTube(
+                    videoId,
+                    includeHdr,
+                    newPipeBotChecked || direct.botChecked,
+                )
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -5198,7 +5377,51 @@ class YouTubeRepository(private val context: Context) {
         // NewPipe exposes several codecs and delivery types for the same
         // visible label. Collapse codec alternatives, but retain both a split
         // local-playback entry and a muxed download entry when both exist.
-        return VideoStreamResult(deduplicateVideoQualityVariants(qualities), seekPreview)
+        return VideoStreamResult(
+            deduplicateVideoQualityVariants(qualities),
+            seekPreview,
+            newPipeAudioTracks(extractedAudioStreams, hasOriginalAdaptivePair),
+        )
+    }
+
+    /**
+     * The same soundtrack menu as [parseDirectAudioTracks], built from NewPipe's
+     * streams when the direct call failed. Offered only when the qualities are
+     * split pairs, because the dub replaces a pair's audio half; a muxed or
+     * manifest ladder has no half to replace. NewPipe folds machine dubs into
+     * DUBBED, so this path cannot label them.
+     */
+    private fun newPipeAudioTracks(
+        streams: List<AudioStream>,
+        hasOriginalAdaptivePair: Boolean,
+    ): List<YouTubeAudioTrack> {
+        if (!hasOriginalAdaptivePair) return emptyList()
+        val byTrack = streams
+            .filter { it.isUrl && !it.audioTrackId.isNullOrBlank() }
+            .groupBy { it.audioTrackId!! }
+        if (byTrack.size < 2) return emptyList()
+        return byTrack.mapNotNull { (id, group) ->
+            val best = group.maxWithOrNull(
+                compareBy<AudioStream>(
+                    { if (it.codec?.contains("mp4a", ignoreCase = true) == true) 1 else 0 },
+                    { it.averageBitrate },
+                )
+            ) ?: return@mapNotNull null
+            YouTubeAudioTrack(
+                id = id,
+                displayName = best.audioTrackName?.takeIf { it.isNotBlank() } ?: id,
+                languageTag = best.audioLocale?.toLanguageTag()
+                    ?: id.substringBefore('.').takeIf { it.isNotBlank() },
+                kind = when (best.audioTrackType) {
+                    AudioTrackType.ORIGINAL -> YouTubeAudioTrackKind.ORIGINAL
+                    AudioTrackType.DUBBED -> YouTubeAudioTrackKind.DUBBED
+                    AudioTrackType.DESCRIPTIVE -> YouTubeAudioTrackKind.DESCRIPTIVE
+                    AudioTrackType.SECONDARY -> YouTubeAudioTrackKind.SECONDARY
+                    null -> YouTubeAudioTrackKind.UNKNOWN
+                },
+                url = best.content,
+            )
+        }.sortedForMenu()
     }
 
     /**
@@ -5362,7 +5585,7 @@ class YouTubeRepository(private val context: Context) {
                 .put("clientName", "WEB")
                 .put("clientVersion", WEB_VERSION)
                 .put("hl", "en")
-                .put("gl", "US")
+                .put("gl", contentRegion())
                 .apply {
                     cachedVisitorDataOrNull()?.let { put("visitorData", it) }
                 }
@@ -6385,8 +6608,27 @@ class YouTubeRepository(private val context: Context) {
                 isSubscribed = isSubscribed,
                 subscriberCountText = subscriberCountText,
                 commentsToken = commentsToken,
-                collaborators = parseCollaborators(owner)
+                collaborators = parseCollaborators(owner),
+                bells = ChannelBellParser.fromSubscribeButtons(root).let { bells ->
+                    // Not every watch page has moved to the view-model button.
+                    val legacy = channelId?.takeIf { it !in bells }?.let { legacyBell(subButton, it) }
+                    if (legacy != null) bells + (legacy.channelId to legacy) else bells
+                }
             )
+    }
+
+    /**
+     * The bell inside a legacy `subscribeButtonRenderer`, at
+     * `notificationPreferenceButton.subscriptionNotificationToggleButtonRenderer`.
+     * [verified September 2026, signed in] Some watch pages still draw their
+     * Subscribe button this way (`videoSecondaryInfoRenderer.subscribeButton`)
+     * while others use `subscribeButtonViewModel`, so both are read.
+     */
+    private fun legacyBell(subscribeButton: org.json.JSONObject?, channelId: String): ChannelBell? {
+        if (subscribeButton == null) return null
+        val toggles = mutableListOf<org.json.JSONObject>()
+        findObjectsByKey(subscribeButton, "subscriptionNotificationToggleButtonRenderer", toggles)
+        return ChannelBellParser.fromToggle(toggles.firstOrNull(), channelId)
     }
 
     /**
@@ -6545,15 +6787,58 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * The continuation token for a community post's comments, from the post's
+     * own `FEpost_detail` page ([ChannelPost.detailParams]). Null when the post
+     * has comments turned off - the page then carries no comment section - or
+     * when the request fails.
+     *
+     * Verified September 2026: the page holds a `backstage-item-section` (the
+     * post) and a `comment-item-section` whose continuation opens the thread.
+     */
+    suspend fun getPostCommentsToken(detailParams: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", POST_DETAIL_BROWSE_ID)
+                    .put("params", detailParams)
+            ) ?: return@withContext null
+            val sections = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(org.json.JSONObject(raw), "itemSectionRenderer", sections)
+            val comments = sections.firstOrNull {
+                it.optString("sectionIdentifier") == "comment-item-section"
+            } ?: return@withContext null
+            val tokens = mutableListOf<String>()
+            findContinuationTokens(comments, tokens)
+            tokens.firstOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e("YouTubeRepo", "getPostCommentsToken failed", e)
+            null
+        }
+    }
+
+    /**
      * Fetch one page of comments (top-level or replies) from a continuation token.
      * Parses the modern commentEntityPayload format (frameworkUpdates mutations).
+     *
+     * [viaBrowse] is for a community post's thread: its first page, next pages
+     * and reply threads all answer on `/browse` in the same entity shape and
+     * come back empty from `/next` [verified September 2026]. A video's thread
+     * is the other way round.
      */
-    suspend fun getCommentsPage(token: String): CommentsPage? = withContext(Dispatchers.IO) {
+    suspend fun getCommentsPage(
+        token: String,
+        viaBrowse: Boolean = false
+    ): CommentsPage? = withContext(Dispatchers.IO) {
         try {
             val body = org.json.JSONObject()
                 .put("context", webContext())
                 .put("continuation", token)
-            val raw = postWatchApi("next", body) ?: return@withContext null
+            val raw = postWatchApi(if (viaBrowse) "browse" else "next", body)
+                ?: return@withContext null
             val root = org.json.JSONObject(raw)
 
             // 1. Collect entity payloads: commentId -> payload, toolbar states and
@@ -6714,6 +6999,7 @@ class YouTubeRepository(private val context: Context) {
             links = content.links,
             author = author?.optString("displayName").orEmpty(),
             authorAvatarUrl = author?.optString("avatarThumbnailUrl")?.takeIf { it.isNotBlank() },
+            authorChannelId = author?.optString("channelId")?.takeIf { it.startsWith("UC") },
             publishedTime = props?.optString("publishedTime").orEmpty(),
             likeCount = toolbar?.optString("likeCountNotliked").orEmpty().trim(),
             replyCount = toolbar?.optString("replyCount").orEmpty().trim(),
@@ -6761,6 +7047,52 @@ class YouTubeRepository(private val context: Context) {
         postWatchApi(endpoint, body) != null
     }
 
+    /**
+     * Move [bell]'s channel to [level] on the account, with the params YouTube
+     * served for that level.
+     *
+     * [verified September 2026, signed in] `notification/modify_channel_preference`
+     * answers with the channel's fresh bell (`newNotificationButton`, the toggle
+     * shape) and a toast (`notificationActionRenderer.responseText`, "You'll get
+     * personalized notifications"). Success is that bell standing at [level], not
+     * the HTTP code: account writes on this API answer 200 to requests they did
+     * not act on. Null means the level did not change; the caller keeps what it
+     * had.
+     */
+    suspend fun setChannelBell(bell: ChannelBell, level: BellLevel): ChannelBellChange? =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext null
+            val params = bell.choices[level] ?: return@withContext null
+            try {
+                val raw = postWatchApi(
+                    "notification/modify_channel_preference",
+                    org.json.JSONObject().put("context", webContext()).put("params", params)
+                ) ?: return@withContext null
+                val root = org.json.JSONObject(raw)
+                val updated = ChannelBellParser.fromToggle(
+                    root.optJSONObject("newNotificationButton"), bell.channelId
+                )
+                if (updated?.level != level) {
+                    KLog.w("YouTubeRepo", "Bell for ${bell.channelId} did not move to $level (reply: ${updated?.level})")
+                    return@withContext null
+                }
+                val toasts = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "notificationActionRenderer", toasts)
+                ChannelBellChange(
+                    // The level is the reply's; the params stay the ones the
+                    // calling surface was served, which were minted for it.
+                    bell = bell.withLevel(level),
+                    message = getRunText(toasts.firstOrNull()?.optJSONObject("responseText"))
+                        ?.takeIf { it.isNotBlank() }
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w("YouTubeRepo", "setChannelBell failed", e)
+                null
+            }
+        }
+
     // ============================================================
     // Playlist editing: playlist/create, playlist/delete and
     // browse/edit_playlist. The same InnerTube write endpoints exist
@@ -6779,7 +7111,7 @@ class YouTubeRepository(private val context: Context) {
                 .put("clientName", "WEB_REMIX")
                 .put("clientVersion", WEB_REMIX_VERSION)
                 .put("hl", "en")
-                .put("gl", "US")
+                .put("gl", contentRegion())
         )
 
     /**
@@ -6858,11 +7190,67 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
+    /** How an upload went: [uploaded] of [total] songs reached [playlistId]. */
+    data class PlaylistUpload(val playlistId: String, val uploaded: Int, val total: Int)
+
+    /**
+     * Copy a playlist onto the YouTube Music account as a new private playlist.
+     *
+     * Batched so a long playlist costs a handful of writes, not one per song:
+     * `playlist/create` carries the first [UPLOAD_CREATE_BATCH] ids and each
+     * `edit_playlist` carries [UPLOAD_ADD_BATCH] add actions [verified September
+     * 2026: a 100-id create and a 50-action edit both landed every row]. A
+     * failed batch stops the upload and reports how far it got, rather than
+     * retrying writes against an account. Null when nothing was created.
+     */
+    suspend fun uploadPlaylist(title: String, description: String?, videoIds: List<String>): PlaylistUpload? =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn() || videoIds.isEmpty()) return@withContext null
+            val first = videoIds.take(UPLOAD_CREATE_BATCH)
+            val createBody = org.json.JSONObject()
+                .put("context", musicContext())
+                .put("title", title)
+                .put("privacyStatus", "PRIVATE")
+                .put("videoIds", org.json.JSONArray(first))
+            val playlistId = postMusicApi("playlist/create", createBody)
+                ?.let { runCatching { org.json.JSONObject(it).optString("playlistId") }.getOrNull() }
+                ?.takeIf { it.isNotBlank() }
+                ?: return@withContext null
+            var uploaded = first.size
+            for (batch in videoIds.drop(UPLOAD_CREATE_BATCH).chunked(UPLOAD_ADD_BATCH)) {
+                kotlinx.coroutines.delay(UPLOAD_BATCH_PAUSE_MS)
+                val actions = org.json.JSONArray()
+                batch.forEach {
+                    actions.put(org.json.JSONObject().put("action", "ACTION_ADD_VIDEO").put("addedVideoId", it))
+                }
+                val body = org.json.JSONObject()
+                    .put("context", musicContext())
+                    .put("playlistId", playlistId)
+                    .put("actions", actions)
+                if (!editStatusOk(postMusicApi("browse/edit_playlist", body))) break
+                uploaded += batch.size
+            }
+            if (!description.isNullOrBlank()) {
+                renameYouTubePlaylist(playlistId, title, music = true, description = description)
+            }
+            PlaylistUpload(playlistId, uploaded, videoIds.size)
+        }
+
     /**
      * Delete a playlist. playlist/delete only works on playlists the user
      * owns; for saved (someone else's) playlists it fails, so fall back to
      * removing the playlist from the library instead. Requires login.
      */
+    /** Add or remove someone else's playlist from the account's YouTube Music library. */
+    suspend fun setPlaylistInLibrary(playlistId: String, saved: Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!sessionManager.isLoggedIn()) return@withContext false
+            val body = org.json.JSONObject()
+                .put("context", playlistContext(true))
+                .put("target", org.json.JSONObject().put("playlistId", normalizePlaylistId(playlistId)))
+            postPlaylistApi(true, if (saved) "like/like" else "like/removelike", body) != null
+        }
+
     suspend fun deleteYouTubePlaylist(playlistId: String, music: Boolean): Boolean =
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext false
@@ -6960,6 +7348,20 @@ class YouTubeRepository(private val context: Context) {
                 )
             )
         editStatusOk(postPlaylistApi(music, "browse/edit_playlist", body))
+    }
+
+    /**
+     * The account playlists holding [videoId], from one www
+     * `playlist/get_add_to_playlist` (only www reports membership). Eventually
+     * consistent - see [PlaylistMembership]. Null signed out or on failure.
+     */
+    suspend fun getPlaylistsContaining(videoId: String): Set<String>? = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext null
+        val body = org.json.JSONObject()
+            .put("context", webContext())
+            .put("videoIds", org.json.JSONArray().put(videoId))
+            .put("excludeWatchLater", false)
+        postWatchApi("playlist/get_add_to_playlist", body)?.let(::parsePlaylistsContaining)
     }
 
     /**
@@ -7158,18 +7560,35 @@ class YouTubeRepository(private val context: Context) {
         if (!mayWriteVideoHistory()) return@withContext null
         try {
             val cpn = generateCpn()
+            // postWatchApi has already logged the HTTP failure or the changed login.
             val raw = postWatchApi("player", org.json.JSONObject()
-                .put("context", webContext()).put("videoId", videoId).put("cpn", cpn))
-                ?: return@withContext null
-            val tracking = org.json.JSONObject(raw).optJSONObject("playbackTracking")
-                ?: return@withContext null
-            val playback = tracking.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
-            val watchtime = tracking.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")
-            if (playback.isNullOrBlank() || watchtime.isNullOrBlank()) return@withContext null
-            val history = VideoHistorySession(videoId, session, cpn, playback, watchtime)
-            history.takeIf {
-                sendVideoHistoryPing(it, playback, positionMs, positionMs, false) == HistoryPingResult.SENT
+                .put("context", webContext()).put("videoId", videoId).put("cpn", cpn), session)
+                ?: run {
+                    KLog.w("YouTubeRepo", "Video history: no /player response for $videoId")
+                    return@withContext null
+                }
+            if (historyPlayerSignedOut(raw, session = null, "Video")) return@withContext null
+            val json = org.json.JSONObject(raw)
+            val tracking = json.optJSONObject("playbackTracking")
+            val playback = tracking?.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
+            val watchtime = tracking?.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")
+            if (playback.isNullOrBlank() || watchtime.isNullOrBlank()) {
+                val status = json.optJSONObject("playabilityStatus")
+                KLog.w(
+                    "YouTubeRepo",
+                    "Video history: no tracking URLs for $videoId " +
+                        "(playback=${!playback.isNullOrBlank()} watchtime=${!watchtime.isNullOrBlank()} " +
+                        "status=${status?.optString("status")} reason=${status?.optString("reason")})"
+                )
+                return@withContext null
             }
+            val history = VideoHistorySession(videoId, session, cpn, playback, watchtime)
+            val first = sendVideoHistoryPing(history, playback, positionMs, positionMs, false)
+            if (first != HistoryPingResult.SENT) {
+                KLog.w("YouTubeRepo", "Video history: first ping for $videoId ended $first")
+                return@withContext null
+            }
+            history
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -7195,6 +7614,26 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
+    /**
+     * True, with a log line saying so, when YouTube answered a history /player
+     * call as signed out.
+     *
+     * A session YouTube no longer accepts still gets `status: OK`, full
+     * tracking URLs and a 204 on every ping - and the play is recorded nowhere.
+     * `logged_in` in the responseContext is the only thing that tells the two
+     * apart, so the pings are skipped rather than reported as a sync that did
+     * nothing. Probed September 2026 against FEhistory and FEmusic_history.
+     *
+     * [session] is noted for the expired badge where the caller's request did
+     * not already do it (postWatchApi notes its own responses).
+     */
+    private fun historyPlayerSignedOut(raw: String, session: YouTubeSession?, surface: String): Boolean {
+        if (session != null) noteSessionState(raw, session)
+        if (LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) != "0") return false
+        KLog.w("YouTubeRepo", "$surface history: YouTube treated the session as signed out, nothing recorded")
+        return true
+    }
+
     /** The switches, as opposed to the session. Both have to hold at ping time. */
     private fun mayWriteVideoHistory(): Boolean =
         !IncognitoMode.isEnabled(context) && videoHistoryPreferences.isSaveVideoHistoryEnabled()
@@ -7206,17 +7645,24 @@ class YouTubeRepository(private val context: Context) {
         positionMs: Long,
         final: Boolean,
     ): HistoryPingResult {
-        if (!mayWriteVideoHistory()) return HistoryPingResult.FAILED
+        if (!mayWriteVideoHistory()) {
+            KLog.d("YouTubeRepo", "Video history: not sent for ${session.videoId}, history off or incognito")
+            return HistoryPingResult.FAILED
+        }
         // Deliberately not a comparison of cookie strings. Google rotates the
         // session cookies mid-video, and a string compare read every rotation
         // as a different login and silently stopped reporting for the rest of
         // the video on a perfectly valid account. This asks the question that
         // was meant - same profile, still active, still the same login - and
         // hands back the refreshed cookies to sign this ping with.
-        val live = sessionManager.currentSession(session.login) ?: return HistoryPingResult.SESSION_ENDED
+        val live = sessionManager.currentSession(session.login) ?: run {
+            KLog.w("YouTubeRepo", "Video history: login changed, reporting stops for ${session.videoId}")
+            return HistoryPingResult.SESSION_ENDED
+        }
         val url = baseUrl.toHttpUrlOrNull() ?: return HistoryPingResult.FAILED
         // Credentials only go to the YouTube tracking hosts returned by /player.
         if (url.scheme != "https" || url.host !in setOf("s.youtube.com", "www.youtube.com")) {
+            KLog.w("YouTubeRepo", "Video history: refused a tracking URL on ${url.host}")
             return HistoryPingResult.FAILED
         }
         val position = (positionMs.coerceAtLeast(0L) / 1000.0).toString()
@@ -7236,8 +7682,17 @@ class YouTubeRepository(private val context: Context) {
             .header("Referer", "https://www.youtube.com/watch?v=${session.videoId}")
             .authenticate(live, "https://www.youtube.com")
             .build()
+        // "playback" is the one that files the video in history; "watchtime"
+        // pings carry how far it was watched.
+        val kind = url.pathSegments.lastOrNull() ?: url.encodedPath
         return okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) KLog.w("YouTubeRepo", "Video history ping failed: ${response.code}")
+            val detail = "$kind ping for ${session.videoId} at ${position}s " +
+                "(from ${trackingUrl.queryParameter("st")}s, final=$final): HTTP ${response.code}"
+            if (response.isSuccessful) {
+                KLog.d("YouTubeRepo", "Video history: $detail")
+            } else {
+                KLog.w("YouTubeRepo", "Video history ping failed: $detail")
+            }
             if (response.isSuccessful) HistoryPingResult.SENT else HistoryPingResult.FAILED
         }
     }
@@ -7294,8 +7749,13 @@ class YouTubeRepository(private val context: Context) {
                         ?.takeIf { it.isNotBlank() }
                     val handle = getRunText(renderer.optJSONObject("subscriberCountText"))
                         ?.takeIf { it.startsWith("@") }
+                    // Every row carries its bell, so the list knows each level
+                    // without a request per channel (ChannelBellParser).
+                    val toggles = mutableListOf<org.json.JSONObject>()
+                    findObjectsByKey(renderer, "subscriptionNotificationToggleButtonRenderer", toggles)
+                    val bell = ChannelBellParser.fromToggle(toggles.firstOrNull(), channelId)
                     channels.add(
-                        SubscribedChannel(channelId, name, avatarUrl, subscriberCount, handle)
+                        SubscribedChannel(channelId, name, avatarUrl, subscriberCount, handle, bell)
                     )
                 }
                 val token = if (renderers.isNotEmpty()) extractContinuationToken(response) else null
@@ -7719,7 +8179,13 @@ class YouTubeRepository(private val context: Context) {
             attributionText = attributionText,
             attributionUrl = attributionUrl,
             aboutToken = aboutToken,
-            accountSubscribed = parseChannelSubscribedState(root)
+            accountSubscribed = parseChannelSubscribedState(root),
+            bell = ChannelBellParser.fromSubscribeButtons(root)[channelId] ?: run {
+                // The legacy button, as some watch pages still serve it.
+                val legacy = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "subscribeButtonRenderer", legacy)
+                legacyBell(legacy.firstOrNull { it.optString("channelId") == channelId }, channelId)
+            }
         )
     }
 
@@ -8074,19 +8540,33 @@ class YouTubeRepository(private val context: Context) {
             }
         }.orEmpty()
 
+        // The reply button and the timestamp both link to the post's own page
+        // [verified September 2026]; the reply button is the one a comments-off
+        // post may lack, so the timestamp is the backstop.
+        val replyButton = renderer.optJSONObject("actionButtons")
+            ?.optJSONObject("commentActionButtonsRenderer")
+            ?.optJSONObject("replyButton")
+            ?.optJSONObject("buttonRenderer")
+        val detailParams = listOfNotNull(
+            replyButton?.optJSONObject("navigationEndpoint"),
+            renderer.optJSONObject("publishedTimeText")?.optJSONArray("runs")
+                ?.optJSONObject(0)?.optJSONObject("navigationEndpoint")
+        ).firstNotNullOfOrNull { endpoint ->
+            endpoint.optJSONObject("browseEndpoint")
+                ?.takeIf { it.optString("browseId") == POST_DETAIL_BROWSE_ID }
+                ?.optString("params")?.takeIf { it.isNotBlank() }
+        }
+
         return ChannelPost(
             postId = postId,
             authorName = authorName,
             authorAvatarUrl = authorAvatarUrl,
             text = text,
+            detailParams = detailParams,
             publishedText = getRunText(renderer.optJSONObject("publishedTimeText")),
             voteCountText = renderer.optJSONObject("voteCount")?.optString("simpleText")
                 ?.takeIf { it.isNotBlank() },
-            replyCountText = renderer.optJSONObject("actionButtons")
-                ?.optJSONObject("commentActionButtonsRenderer")
-                ?.optJSONObject("replyButton")
-                ?.optJSONObject("buttonRenderer")
-                ?.let { getRunText(it.optJSONObject("text")) },
+            replyCountText = replyButton?.let { getRunText(it.optJSONObject("text")) },
             images = images,
             video = video,
             pollChoices = pollChoices,
@@ -8887,14 +9367,21 @@ class YouTubeRepository(private val context: Context) {
                     if (url?.startsWith("//") == true) url = "https:$url"
                     return url
                 }
+                val navigation = renderer.optJSONObject("navigationEndpoint")
+                fun endpointVideoId(key: String): String? =
+                    navigation?.optJSONObject(key)?.optString("videoId")?.takeIf { it.isNotBlank() }
+                val target = endpointVideoId("watchEndpoint")?.let { NotificationTarget.Video(it) }
+                    ?: endpointVideoId("reelWatchEndpoint")?.let { NotificationTarget.Short(it) }
+                    ?: navigation?.optJSONObject("commandMetadata")
+                        ?.optJSONObject("webCommandMetadata")?.optString("url")
+                        ?.takeIf { it.startsWith("/") }
+                        ?.let { NotificationTarget.Link("https://www.youtube.com$it") }
                 NotificationItem(
                     message = message,
                     sentTime = renderer.optJSONObject("sentTimeText")?.optString("simpleText").orEmpty(),
                     channelAvatarUrl = lastThumb("thumbnail"),
                     videoThumbnailUrl = lastThumb("videoThumbnail"),
-                    videoId = renderer.optJSONObject("navigationEndpoint")
-                        ?.optJSONObject("watchEndpoint")?.optString("videoId")
-                        ?.takeIf { it.isNotBlank() },
+                    target = target,
                     isRead = renderer.optBoolean("read", false)
                 )
             }

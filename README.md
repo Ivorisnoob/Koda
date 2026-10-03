@@ -90,7 +90,7 @@ Android will ask for permission to install an app from outside the Play Store. A
 
 ### ▶️ Music playback
 
-- Eight player styles: Classic, Gesture, Editorial, Canvas, Bento, Sticker, Morph, and Dial.
+- Nine player styles: Hero, Classic, Gesture, Editorial, Canvas, Bento, Sticker, Morph, and Dial.
 - A shared editable queue with Play next, Add to queue, drag-to-reorder, swipe-to-remove, and undo.
 - Shuffle and repeat that survive app restarts.
 - AutoMix transitions, manual crossfade durations, and short overlaps on manual skips.
@@ -105,6 +105,7 @@ Android will ask for permission to install an app from outside the Play Store. A
 - A personalized video home feed, plus local recommendations when signed out.
 - Search videos, channels, and playlists with date, duration, and sorting filters.
 - Video quality controls with available resolutions up to 2160p60.
+- Smooth motion (experimental, off by default): frame interpolation that plays 24-60 fps video at up to 120 fps, matched to your screen, using a GPU compute engine on phones with OpenGL ES 3.2 graphics.
 - Captions with remembered language and on/off state, plus adjustable size, color, and background.
 - Chapters, storyboard seek previews, playback speed, double-tap seeking, and hold-to-2x.
 - Fullscreen brightness and volume gestures, with an option to remember fullscreen brightness.
@@ -202,7 +203,7 @@ Android will ask for permission to install an app from outside the Play Store. A
 
 ## 🖼️ Screenshots
 
-> The current gallery was captured on Koda 4.4 and may differ slightly from the latest release.
+> The player styles were captured on Koda 5.1; the rest of the gallery was captured on Koda 4.4 and may differ slightly from the latest release.
 
 <details>
 <summary><b>Open the screenshot gallery</b></summary>
@@ -218,11 +219,24 @@ Android will ask for permission to install an app from outside the Play Store. A
 
 ### Player styles
 
+Nine styles to choose from. Pick one in Settings, or long-press the artwork while a song plays.
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/10-player-classic.png" width="23%" alt="Classic player"/>
-  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/03-player-editorial.png" width="23%" alt="Editorial player"/>
-  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/12-player-canvas.png" width="23%" alt="Canvas player"/>
-  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/17-player-dial.png" width="23%" alt="Dial player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/50-player-hero.png" width="30%" alt="Hero player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/03-player-editorial.png" width="30%" alt="Editorial player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/10-player-classic.png" width="30%" alt="Classic player"/>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/11-player-gesture.png" width="30%" alt="Gesture player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/12-player-canvas.png" width="30%" alt="Canvas player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/13-player-bento.png" width="30%" alt="Bento player"/>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/14-player-sticker.png" width="30%" alt="Sticker player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/15-player-morph.png" width="30%" alt="Morph player"/>
+  <img src="https://raw.githubusercontent.com/Ivorisnoob/Koda/main/Screenshots/17-player-dial.png" width="30%" alt="Dial player"/>
 </p>
 
 ### Video and subscriptions
@@ -282,6 +296,10 @@ Join the [Telegram community](https://t.me/ivorisnoob_chat) for help, beta build
 Please report vulnerabilities privately through [GitHub Security Advisories](https://github.com/Ivorisnoob/Koda/security/advisories), not through a public issue or chat. See [SECURITY.md](SECURITY.md) for details.
 
 <br/>
+
+## Acknowledgements
+
+Smooth motion draws its in-between frames with a port of [open-svpflow](https://github.com/Z1xus/open-svpflow) (Apache 2.0), an open-source reimplementation of SmoothVideo Project's frame rendering. Its motion search was written after studying AMD's [FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) (FSR 3 optical flow, MIT), and earlier engines also learned from FFmpeg's [`minterpolate`](https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/vf_minterpolate.c) filter (LGPL 2.1+). [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) says what came from each and carries the licences. The libraries Koda is built on are listed, with their licences, under Open-source licences in the app's settings.
 
 ## 📄 License
 

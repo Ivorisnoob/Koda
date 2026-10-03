@@ -65,7 +65,9 @@ data class ChannelHeader(
      * subscribed channel into an unsubscribed-looking one, so the caller treats
      * null as a reason to go and ask rather than as an answer.
      */
-    val accountSubscribed: Boolean? = null
+    val accountSubscribed: Boolean? = null,
+    /** The account bell beside Subscribe, when the header drew one (signed in). */
+    val bell: ChannelBell? = null
 ) {
     fun toLocalSubscription(): LocalSubscription = LocalSubscription(
         channelId = channelId,
@@ -190,7 +192,12 @@ data class ChannelPost(
     /** A shared video. Tapping the card plays it. */
     val video: VideoItem? = null,
     val pollChoices: List<ChannelPollChoice> = emptyList(),
-    val pollTotalText: String? = null
+    val pollTotalText: String? = null,
+    /**
+     * `params` of the post's `FEpost_detail` browse, the page its comments
+     * hang off. Null when the response carried no detail link.
+     */
+    val detailParams: String? = null
 )
 
 /**

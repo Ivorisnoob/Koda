@@ -46,6 +46,13 @@ import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.SortByAlpha
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
@@ -202,7 +209,11 @@ fun VideoPlaylistDetail(
     // A device playlist is already the user's own and has no published page
     // behind it, so keeping a reference to it would mean nothing.
     val isLocal = LocalVideoPlaylistsRepository.isLocal(playlist.playlistId)
-    val canSave = !isLocal &&
+    // A music-mode device playlist opened from the video Library: also a
+    // device list with nothing published behind it, so no Save and no Share.
+    val musicLocalIds by viewModel.localPlaylistIds.collectAsState()
+    val isMusicModePlaylist = playlist.playlistId in musicLocalIds
+    val canSave = !isLocal && !isMusicModePlaylist &&
         playlist.playlistId !in NON_SAVABLE_VIDEO_PLAYLIST_IDS &&
         (isSaved || accountPlaylists.none { it.playlistId == playlist.playlistId })
 
@@ -210,8 +221,49 @@ fun VideoPlaylistDetail(
     // and a device playlist was never published at all; only real YouTube
     // playlists have a public URL. Albums (MPRE browse ids) share as their
     // /browse/ address - a playlist URL built from a browse id is dead.
-    val isShareable = !isLocal &&
+    val isShareable = !isLocal && !isMusicModePlaylist &&
         playlist.playlistId != "WL" && playlist.playlistId != "LL"
+    // A device playlist is the user's own list, so it gets the tools music's
+    // local playlists have (feedback, September 2026): rename, sort, drag to
+    // rearrange, export, delete. Import lives on the Library's playlist list.
+    var reorderMode by remember(playlist.playlistId) { mutableStateOf(false) }
+    var showLocalMenu by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val sortedMessage = stringResource(R.string.vpl_sorted)
+    val undoLabel = stringResource(R.string.action_undo)
+    val applyOrder: (List<VideoItem>) -> Unit = { reordered ->
+        val before = videos
+        viewModel.setLocalVideoPlaylistOrder(playlist.playlistId, reordered)
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                sortedMessage, actionLabel = undoLabel, withDismissAction = true
+            )
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                viewModel.setLocalVideoPlaylistOrder(playlist.playlistId, before)
+            }
+        }
+    }
+    val exportDone = stringResource(R.string.pl_export_done)
+    val exportFailed = stringResource(R.string.pl_export_failed)
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val ok = viewModel.exportLocalVideoPlaylist(videos, uri)
+            snackbarHostState.showSnackbar(if (ok) exportDone else exportFailed)
+        }
+    }
+    val reorderKeys = remember(videos) {
+        com.ivor.ivormusic.ui.components.queueRowKeys(videos.map { it.videoId }, "vpl")
+    }
+    val reorder = com.ivor.ivormusic.ui.components.rememberQueueReorderState(
+        listState = listState,
+        keys = reorderKeys,
+        onMove = { from, to -> viewModel.moveLocalVideo(playlist.playlistId, from, to) },
+        onSettle = { viewModel.persistLocalVideoOrder(playlist.playlistId) }
+    )
+
     val shareUrl = if (playlist.playlistId.startsWith("MPRE")) {
         "https://youtube.com/browse/${playlist.playlistId}"
     } else {
@@ -438,6 +490,26 @@ fun VideoPlaylistDetail(
                                 }
                             }
                         }
+                        if (isLocal && videos.size > 1) {
+                            FilledTonalButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                    reorderMode = !reorderMode
+                                },
+                                modifier = Modifier.heightIn(min = 48.dp)
+                            ) {
+                                Icon(
+                                    if (reorderMode) Icons.Rounded.Check else Icons.Rounded.SwapVert,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (reorderMode) stringResource(R.string.action_done)
+                                    else stringResource(R.string.vpl_rearrange)
+                                )
+                            }
+                        }
                         // Saving keeps a live reference; downloading makes the
                         // videos available offline. Separate on purpose.
                         if (videos.isNotEmpty()) {
@@ -499,6 +571,43 @@ fun VideoPlaylistDetail(
                                 )
                             )
                         }
+                        if (reorderMode) {
+                            // Rearranging: occurrence-qualified keys (an index in
+                            // the key would re-key every row a dragged one passes,
+                            // leaving animateItem nothing to animate) and the
+                            // queues' drag handle in place of the options button.
+                            itemsIndexed(videos, key = { index, _ -> reorderKeys.getOrElse(index) { "vpl_$index" } }) { index, video ->
+                                val key = reorderKeys.getOrElse(index) { "vpl_$index" }
+                                val dragging = reorder.isDragging(key)
+                                Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                                    com.ivor.ivormusic.ui.components.QueueRowContainer(
+                                        isDragging = dragging,
+                                        dragOffset = reorder.offsetFor(key),
+                                        removeEnabled = false,
+                                        onRemove = {},
+                                        modifier = if (dragging) Modifier else Modifier.animateItem()
+                                    ) {
+                                        VideoPlaylistRow(
+                                            video = video,
+                                            onClick = {},
+                                            onOptions = {},
+                                            onRemove = null,
+                                            removeLabel = "",
+                                            topCorner = if (index == 0) 24.dp else 8.dp,
+                                            bottomCorner = if (index == videos.lastIndex) 24.dp else 8.dp,
+                                            trailing = {
+                                                com.ivor.ivormusic.ui.components.QueueDragHandle(
+                                                    state = reorder,
+                                                    rowKey = key,
+                                                    tint = playlistOnGround().copy(alpha = 0.78f)
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                                if (index < videos.lastIndex) Spacer(Modifier.height(2.dp))
+                            }
+                        } else
                         // Index-qualified: YouTube playlists can contain the same
                         // video twice, and duplicate LazyColumn keys crash.
                         itemsIndexed(
@@ -585,6 +694,67 @@ fun VideoPlaylistDetail(
                         }
                     },
                     actions = {
+                        if (isLocal) {
+                            Box {
+                                IconButton(onClick = { showLocalMenu = true }) {
+                                    Icon(
+                                        Icons.Rounded.MoreVert,
+                                        contentDescription = stringResource(R.string.vpl_playlist_options),
+                                        tint = playlistOnGround()
+                                    )
+                                }
+                                DropdownMenu(expanded = showLocalMenu, onDismissRequest = { showLocalMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.vpl_rename)) },
+                                        leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                                        onClick = { showLocalMenu = false; showRename = true }
+                                    )
+                                    if (videos.size > 1) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.vpl_sort_title)) },
+                                            leadingIcon = { Icon(Icons.Rounded.SortByAlpha, null) },
+                                            onClick = {
+                                                showLocalMenu = false
+                                                applyOrder(videos.sortedBy { it.title.lowercase() })
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.vpl_sort_channel)) },
+                                            leadingIcon = { Icon(Icons.Rounded.Person, null) },
+                                            onClick = {
+                                                showLocalMenu = false
+                                                applyOrder(videos.sortedBy { it.channelName.lowercase() })
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.lib_sort_reverse)) },
+                                            leadingIcon = { Icon(Icons.Rounded.SwapVert, null) },
+                                            onClick = { showLocalMenu = false; applyOrder(videos.reversed()) }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.lib_sort_shuffle)) },
+                                            leadingIcon = { Icon(Icons.Rounded.Shuffle, null) },
+                                            onClick = { showLocalMenu = false; applyOrder(videos.shuffled()) }
+                                        )
+                                    }
+                                    if (videos.isNotEmpty()) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.vpl_export)) },
+                                            leadingIcon = { Icon(Icons.Rounded.IosShare, null) },
+                                            onClick = {
+                                                showLocalMenu = false
+                                                exportLauncher.launch("${playlist.title}.m3u8")
+                                            }
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.vpl_delete)) },
+                                        leadingIcon = { Icon(Icons.Rounded.Delete, null) },
+                                        onClick = { showLocalMenu = false; confirmDelete = true }
+                                    )
+                                }
+                            }
+                        }
                         if (isShareable) {
                             IconButton(onClick = {
                                 val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -634,6 +804,64 @@ fun VideoPlaylistDetail(
                     .padding(bottom = contentPadding.calculateBottomPadding())
             )
         }
+    }
+
+    if (showRename) {
+        var name by remember { mutableStateOf(playlist.title) }
+        AlertDialog(
+            onDismissRequest = { showRename = false },
+            shape = RoundedCornerShape(32.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text(stringResource(R.string.vpl_rename)) },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.name_label)) },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.renameLocalVideoPlaylist(playlist.playlistId, name)
+                        showRename = false
+                    },
+                    enabled = name.isNotBlank()
+                ) { Text(stringResource(R.string.action_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRename = false }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        )
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            shape = RoundedCornerShape(32.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text(stringResource(R.string.vpl_delete_q)) },
+            text = { Text(stringResource(R.string.vpl_delete_body, playlist.title)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmDelete = false
+                        viewModel.deleteVideoPlaylist(playlist.playlistId)
+                        onBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) { Text(stringResource(R.string.vpl_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        )
     }
 
     videoPendingRemoval?.let { video ->
@@ -694,7 +922,7 @@ private fun VideoPlaylistHero(
     collapse: () -> Float,
 ) {
     val ground = playlistPageGround()
-    val windowHeight = LocalWindowInfo.current.containerDpSize.height
+    val windowHeight = com.ivor.ivormusic.ui.theme.windowDpSize().height
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val heroHeight: Dp = (maxWidth * (9f / 16f) + statusBarTop)
@@ -812,6 +1040,8 @@ private fun VideoPlaylistRow(
     removeLabel: String,
     topCorner: Dp,
     bottomCorner: Dp,
+    /** Replaces the options button - the drag handle while rearranging. */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val onGround = playlistOnGround()
@@ -887,7 +1117,9 @@ private fun VideoPlaylistRow(
                     )
                 }
             }
-            Box {
+            if (trailing != null) {
+                trailing()
+            } else Box {
                 IconButton(onClick = { if (onRemove != null) showMenu = true else onOptions() }) {
                     Icon(
                         imageVector = Icons.Rounded.MoreVert,

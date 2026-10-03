@@ -120,6 +120,12 @@ fun VideoHomeContent(
     shortsEnabled: Boolean = false,
     shorts: List<ShortsItem> = emptyList(),
     onShortClick: (Int) -> Unit = {},
+    /**
+     * Open Shorts that are not the Home shelf's - a Short from the
+     * notification inbox. Required, so the inbox cannot ship with Shorts
+     * that do nothing on a tap.
+     */
+    onOpenShorts: (List<ShortsItem>, Int) -> Unit,
     onProfileClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDownloadsClick: () -> Unit = {},
@@ -173,10 +179,12 @@ fun VideoHomeContent(
     val subscribedChannels by viewModel.subscribedChannels.collectAsState()
     val showOfflineDownloads = isOffline && downloadedVideos.isNotEmpty()
     val isShortsLoading by viewModel.isShortsLoading.collectAsState()
+    val listLayout = LocalVideoListLayout.current
     val shortsFeedFailed by viewModel.shortsFeedFailed.collectAsState()
 
     // Notifications sheet state
     var showNotificationsSheet by remember { mutableStateOf(false) }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val notifications by viewModel.notifications.collectAsState()
     val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
 
@@ -198,20 +206,36 @@ fun VideoHomeContent(
             notifications = notifications,
             isLoading = isNotificationsLoading,
             onNotificationClick = { notification ->
-                val videoId = notification.videoId
-                if (videoId != null) {
-                    showNotificationsSheet = false
-                    onVideoClick(
-                        VideoItem(
-                            videoId = videoId,
-                            title = notification.message,
-                            channelName = "",
-                            channelIconUrl = notification.channelAvatarUrl,
-                            thumbnailUrl = notification.videoThumbnailUrl,
-                            duration = 0L,
-                            viewCount = ""
+                when (val target = notification.target) {
+                    is com.ivor.ivormusic.data.NotificationTarget.Video -> {
+                        showNotificationsSheet = false
+                        openVideo(
+                            VideoItem(
+                                videoId = target.videoId,
+                                title = notification.message,
+                                channelName = "",
+                                channelIconUrl = notification.channelAvatarUrl,
+                                thumbnailUrl = notification.videoThumbnailUrl,
+                                duration = 0L,
+                                viewCount = ""
+                            )
                         )
-                    )
+                    }
+                    // A Short opens in the Shorts player on its own, the way a
+                    // Short does everywhere else in the app.
+                    is com.ivor.ivormusic.data.NotificationTarget.Short -> {
+                        showNotificationsSheet = false
+                        previewController?.release()
+                        onOpenShorts(listOf(com.ivor.ivormusic.data.ShortsItem(videoId = target.videoId)), 0)
+                    }
+                    // Through the in-app link handler, which keeps anything Koda
+                    // can open and hands the rest (a community post) to the
+                    // YouTube app or the browser.
+                    is com.ivor.ivormusic.data.NotificationTarget.Link -> {
+                        showNotificationsSheet = false
+                        uriHandler.openUri(target.url)
+                    }
+                    null -> Unit
                 }
             },
             onDismiss = { showNotificationsSheet = false }
@@ -333,7 +357,6 @@ fun VideoHomeContent(
                 if (showOfflineDownloads) {
                     items(downloadedVideos, key = { "download_${it.id}" }) { downloaded ->
                         VideoCard(
-                            compact = compact,
                             video = downloaded.asOfflineVideoItem(),
                             onClick = { onDownloadedVideoClick(downloaded) },
                             modifier = Modifier.padding(horizontal = 16.dp)
@@ -354,14 +377,13 @@ fun VideoHomeContent(
                         feedVideos.drop(2)
                     }
 
-                    items(leadingVideos) { video ->
+                    videoListItems(leadingVideos, listLayout, keyPrefix = "lead_") { video, cell ->
                         VideoCard(
-                            compact = compact,
                             video = video,
                             onClick = { openVideo(video) },
                             onLongClick = { onVideoLongPress(video) },
                             onOpenChannel = onOpenChannel,
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = cell
                         )
                     }
 
@@ -377,14 +399,13 @@ fun VideoHomeContent(
                         }
                     }
 
-                    items(trailingVideos) { video ->
+                    videoListItems(trailingVideos, listLayout, keyPrefix = "trail_") { video, cell ->
                         VideoCard(
-                            compact = compact,
                             video = video,
                             onClick = { openVideo(video) },
                             onLongClick = { onVideoLongPress(video) },
                             onOpenChannel = onOpenChannel,
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = cell
                         )
                     }
                 }
@@ -807,8 +828,14 @@ fun VideoCard(
     onLongClick: (() -> Unit)? = null,
     /** Opens the creator when the avatar is tapped, without invoking [onClick]. */
     onOpenChannel: ((String) -> Unit)? = null,
-    compact: Boolean = false
+    /** Null follows the app-wide [LocalVideoListLayout]. */
+    compact: Boolean? = null
 ) {
+    val layout = when (compact) {
+        true -> com.ivor.ivormusic.data.ThemePreferences.VIDEO_LAYOUT_COMPACT
+        false -> com.ivor.ivormusic.data.ThemePreferences.VIDEO_LAYOUT_CARDS
+        null -> LocalVideoListLayout.current
+    }
     val textColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val cardShape = RoundedCornerShape(16.dp)
@@ -828,8 +855,42 @@ fun VideoCard(
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 1.dp
     ) {
-        if (compact) {
+        if (layout == com.ivor.ivormusic.data.ThemePreferences.VIDEO_LAYOUT_COMPACT) {
             CompactVideoCardContent(video, openChannel, onLongClick)
+        } else if (layout == com.ivor.ivormusic.data.ThemePreferences.VIDEO_LAYOUT_GRID) {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                ) {
+                    VideoThumbnail(video = video, modifier = Modifier.fillMaxSize())
+                    VideoThumbnailBadge(
+                        video = video,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                    )
+                }
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Text(
+                        text = video.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = textColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = listOf(video.channelName, video.viewCount).filter { it.isNotBlank() }.joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .then(if (openChannel != null) Modifier.clickable(onClick = openChannel) else Modifier)
+                    )
+                }
+            }
         } else {
             Column {
                 // Rested on with previews turned on, this card plays where it

@@ -50,10 +50,11 @@ import java.util.zip.ZipOutputStream
  *
  * ## The profile split is carried structurally, not as raw keys
  *
- * Local subscriptions and the not-recommended blocklist are keyed per profile
- * through [ProfileManager.profileScopedKey], while playlists, liked songs,
- * stats and theme are device-wide. A restore that flattened that would put one
- * account's blocklist onto another.
+ * Local subscriptions, the not-recommended blocklist, watch history, upload
+ * mutes and - since format 2 - listening history, liked songs and search
+ * history are keyed per profile through [ProfileManager.profileScopedKey],
+ * while playlists, downloads and theme are device-wide. A restore that
+ * flattened that would put one account's blocklist onto another.
  *
  * Dumping the raw scoped keys would not survive the trip either, because the
  * suffix is a device-local UUID and the profile migrated from a pre-profiles
@@ -84,8 +85,18 @@ object BackupTransfer {
      * Bump only for a change a previous reader would get *wrong*. Adding a
      * preference file, a stored file or a whole new section does not qualify:
      * readers skip what they do not know, so those are free.
+     *
+     * 2 (September 2026): listening history, liked songs and search history
+     * moved out of the device-wide copy and into [BackupProfileData]. A
+     * version-1 reader would restore such a file without any of the three and
+     * say nothing, so it is refused instead. Version-1 files still restore:
+     * their device-wide copy lands on the profile the backup was using, the
+     * same rule the upgrade itself followed.
      */
-    const val FORMAT_VERSION = 1
+    const val FORMAT_VERSION = 2
+
+    /** The first format whose listening history, likes and searches are per profile. */
+    const val FORMAT_PROFILE_HISTORY = 2
 
     const val MIME_TYPE = "application/zip"
 
@@ -355,6 +366,17 @@ object BackupTransfer {
                         entry.removedFromHistory?.let { JSONArray(it.toList()) } ?: JSONObject.NULL
                     )
                     put("resumePositions", entry.resumePositions ?: JSONObject.NULL)
+                    put("playHistory", entry.playHistory ?: JSONObject.NULL)
+                    put(
+                        "likedSongIds",
+                        entry.likedSongIds?.let { JSONArray(it.toList()) } ?: JSONObject.NULL
+                    )
+                    put("likedSongs", entry.likedSongs ?: JSONObject.NULL)
+                    put("searchHistory", entry.searchHistory ?: JSONObject.NULL)
+                    put(
+                        "uploadMutes",
+                        entry.uploadMutes?.let { JSONArray(it.toList()) } ?: JSONObject.NULL
+                    )
                 })
             }
         }
@@ -364,6 +386,11 @@ object BackupTransfer {
             val entry = obj.optJSONObject(profileId) ?: return@mapNotNull null
             fun str(key: String) =
                 entry.optString(key).takeIf { it.isNotBlank() && it != "null" }
+            fun stringSet(key: String) = entry.optJSONArray(key)?.let { array ->
+                (0 until array.length())
+                    .mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
+                    .toSet()
+            }
             profileId to BackupProfileData(
                 subscriptions = str("subscriptions"),
                 subscriptionGroups = str("subscriptionGroups"),
@@ -378,7 +405,14 @@ object BackupTransfer {
                         .mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
                         .toSet()
                 },
-                resumePositions = str("resumePositions")
+                resumePositions = str("resumePositions"),
+                // The five below are absent from version-1 files, whose copies
+                // of the first four are device-wide instead (see FORMAT_VERSION).
+                playHistory = str("playHistory"),
+                likedSongIds = stringSet("likedSongIds"),
+                likedSongs = str("likedSongs"),
+                searchHistory = str("searchHistory"),
+                uploadMutes = stringSet("uploadMutes")
             )
         }.toMap()
 
@@ -510,13 +544,25 @@ data class BackupProfileData(
      * preference copy for the reason the two fields above do: the key carries
      * a device-local profile suffix that cannot be moved between devices.
      */
-    val resumePositions: String? = null
+    val resumePositions: String? = null,
+    /** This profile's listening history, the JSON `StatsRepository` writes. */
+    val playHistory: String? = null,
+    /** The ids this profile liked, including likes with no stored metadata. */
+    val likedSongIds: Set<String>? = null,
+    /** Metadata for this profile's likes, the JSON `LikedSongsRepository` writes. */
+    val likedSongs: String? = null,
+    /** This profile's recent searches, as stored ("|"-separated). */
+    val searchHistory: String? = null,
+    /** Channels this profile muted for new-upload notifications. */
+    val uploadMutes: Set<String>? = null
 ) {
     val isEmpty: Boolean
         get() = subscriptions == null && subscriptionGroups == null &&
             hiddenVideos == null && blockedChannels == null &&
             watchHistory == null && removedFromHistory == null &&
-            resumePositions == null
+            resumePositions == null && playHistory == null &&
+            likedSongIds == null && likedSongs == null &&
+            searchHistory == null && uploadMutes == null
 }
 
 /** A file copied verbatim, at a path relative to `filesDir`. */

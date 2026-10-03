@@ -23,6 +23,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -154,6 +155,7 @@ fun ShortsPlayerOverlay(
     val isBuffering by viewModel.isBuffering.collectAsState()
     val isResolving by viewModel.isResolving.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
+    val connectionAdvice by viewModel.connectionAdvice.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     // Account subscription OR device subscription - engagement only knows the
     // first, and read alone it showed "Subscribe" for locally followed channels.
@@ -392,7 +394,15 @@ fun ShortsPlayerOverlay(
                         }
                     }
 
-                    if (playbackError != null) {
+                    val advice = connectionAdvice
+                    if (playbackError != null && advice != null) {
+                        // Refused connection: network advice in place of the
+                        // failure card, whose Retry would fail the same way.
+                        com.ivor.ivormusic.ui.components.ConnectionAdviceCard(
+                            advice = advice,
+                            onRetry = { viewModel.retryCurrent() },
+                        )
+                    } else if (playbackError != null) {
                         Surface(
                             modifier = Modifier
                                 .align(Alignment.Center)
@@ -520,7 +530,8 @@ fun ShortsPlayerOverlay(
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(start = 16.dp, end = 10.dp, bottom = 18.dp),
+                // Clear of the scrub strip, which has the space below.
+                .padding(start = 16.dp, end = 10.dp, bottom = SHORTS_SCRUB_ZONE + 6.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -611,8 +622,13 @@ fun ShortsPlayerOverlay(
                     // title reads as a caption.
                     val stats = shortsStatsLine(video)
                     val hasMore = stats != null || !video.description.isNullOrBlank()
+                    // The press area reaches 6dp past the text on each side,
+                    // pulled back by the offset so the words stay on the
+                    // column's edge. With the clip flush against the text, its
+                    // top-left corner cut into the title's first letter.
                     Column(
                         modifier = Modifier
+                            .offset(x = (-6).dp)
                             .clip(RoundedCornerShape(12.dp))
                             .then(
                                 if (hasMore) {
@@ -621,7 +637,7 @@ fun ShortsPlayerOverlay(
                                     Modifier
                                 }
                             )
-                            .padding(vertical = 2.dp)
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = video.title,
@@ -747,15 +763,15 @@ fun ShortsPlayerOverlay(
         // its own amplitude `Animatable` and animates towards whatever this
         // returns, which is why the music bars settle smoothly without one.
         // Animating it here was always a second animation driving the first.
-        LinearWavyProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
+        ShortsScrubBar(
+            mediaId = currentVideo?.videoId,
+            progress = { progress },
+            durationMs = { viewModel.exoPlayer?.duration?.takeIf { it > 0L } ?: 0L },
+            isPlaying = isPlaying,
+            onSeek = { viewModel.seekTo(it, precise = false) },
             modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .align(Alignment.BottomCenter),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = Color.White.copy(alpha = 0.25f),
-            amplitude = { if (isPlaying) 1f else 0f }
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.navigationBars),
         )
     }
 
@@ -777,7 +793,11 @@ fun ShortsPlayerOverlay(
             },
             onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
             onDeleteComment = { comment -> viewModel.deleteComment(comment) },
-            onDismiss = { showCommentsSheet = false }
+            onDismiss = { showCommentsSheet = false },
+            onOpenAuthor = { channelId ->
+                showCommentsSheet = false
+                onOpenChannel(channelId)
+            }
         )
     }
 

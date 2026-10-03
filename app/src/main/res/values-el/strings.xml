@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Η βιβλιοθήκη σας είναι άδεια</string>
     <string name="library_empty_subtitle">Τραγούδια που κατεβάζετε ή σας αρέσουν θα εμφανιστούν εδώ</string>
-    <string name="library_create_playlist_hint">Δημιουργήστε μία με το κουμπί + παρακάτω</string>
     <string name="fab_downloads">Λήψεις</string>
     <string name="fab_listening_history">Ιστορικό ακρόασης</string>
     <string name="fab_statistics">Στατιστικά</string>

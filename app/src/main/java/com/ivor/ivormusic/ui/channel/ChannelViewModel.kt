@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
@@ -58,15 +59,33 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
     private val _header = MutableStateFlow<ChannelHeader?>(null)
     val header: StateFlow<ChannelHeader?> = _header.asStateFlow()
 
+    /**
+     * "Fully block Shorts" as seen by a channel page: no Shorts tab and no
+     * Shorts shelf on Home. A presentation filter over what was fetched, read
+     * fresh when the page opens - the switch lives on the settings screen's
+     * own preferences instance.
+     */
+    private val shortsBlocked = com.ivor.ivormusic.data.ThemePreferences.isShortsHardBlocked(context)
+
     private val _tabs = MutableStateFlow<List<ChannelTab>>(emptyList())
-    val tabs: StateFlow<List<ChannelTab>> = _tabs.asStateFlow()
+    val tabs: StateFlow<List<ChannelTab>> = if (!shortsBlocked) _tabs.asStateFlow() else
+        _tabs.map { tabs -> tabs.filterNot { it.kind == ChannelTabKind.SHORTS } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _selectedTab = MutableStateFlow(ChannelTabKind.HOME)
     val selectedTab: StateFlow<ChannelTabKind> = _selectedTab.asStateFlow()
 
     /** Loaded content per tab. A tab absent from the map has never been opened. */
     private val _pages = MutableStateFlow<Map<ChannelTabKind, ChannelTabPage>>(emptyMap())
-    val pages: StateFlow<Map<ChannelTabKind, ChannelTabPage>> = _pages.asStateFlow()
+    val pages: StateFlow<Map<ChannelTabKind, ChannelTabPage>> = if (!shortsBlocked) _pages.asStateFlow() else
+        _pages.map { pages ->
+            pages.mapValues { (_, page) ->
+                page.copy(
+                    shorts = emptyList(),
+                    shelves = page.shelves.map { it.copy(shorts = emptyList()) }.filterNot { it.isEmpty }
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     private val _loadingTabs = MutableStateFlow<Set<ChannelTabKind>>(emptySet())
     val loadingTabs: StateFlow<Set<ChannelTabKind>> = _loadingTabs.asStateFlow()
@@ -128,6 +147,41 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
         account || (id != null && local.any { it.channelId == id })
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    private val bellActions = com.ivor.ivormusic.data.ChannelBellActions(context, youtubeRepository)
+
+    private val _bell = MutableStateFlow<com.ivor.ivormusic.data.ChannelBell?>(null)
+
+    /**
+     * The account bell beside Subscribe, from the channel response. Offered
+     * only while the account itself subscribes: a device-only follow has no
+     * account bell, and an unsubscribe takes it away with the subscription.
+     */
+    val bell: StateFlow<com.ivor.ivormusic.data.ChannelBell?> =
+        combine(_bell, _accountSubscribed) { bell, account -> bell.takeIf { account } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _bellBusy = MutableStateFlow(false)
+
+    /** A bell write is in flight; the bell is disabled until it lands. */
+    val bellBusy: StateFlow<Boolean> = _bellBusy.asStateFlow()
+
+    /** Move the account bell to [level]; optimistic, put back when the write does not land. */
+    fun setBell(level: com.ivor.ivormusic.data.BellLevel) {
+        val bell = _bell.value ?: return
+        val name = _header.value?.name ?: bell.channelId
+        if (_bellBusy.value) return
+        _bellBusy.value = true
+        _bell.value = bell.withLevel(level)
+        viewModelScope.launch {
+            try {
+                val landed = bellActions.change(bell, level, name)
+                if (_bell.value?.channelId == bell.channelId) _bell.value = landed ?: bell
+            } finally {
+                _bellBusy.value = false
+            }
+        }
+    }
+
     val isBlocked: StateFlow<Boolean> = combine(
         notInterestedRepository.blockedChannels,
         _header
@@ -183,6 +237,7 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
             _header.value = page.header
+            _bell.value = page.header.bell
             _tabs.value = page.tabs
             _selectedTab.value = page.selectedTab
             _pages.value = mapOf(page.selectedTab to page.selectedContent)
@@ -234,6 +289,34 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
             _pages.value = _pages.value + (kind to page)
             _loadingTabs.value = _loadingTabs.value - kind
         }
+    }
+
+    /**
+     * The community post whose comments are open, and that thread. Posts
+     * answer every comment continuation on `/browse` rather than `/next`.
+     */
+    private val _commentsPost = MutableStateFlow<com.ivor.ivormusic.data.ChannelPost?>(null)
+    val commentsPost: StateFlow<com.ivor.ivormusic.data.ChannelPost?> = _commentsPost.asStateFlow()
+    val postComments = com.ivor.ivormusic.ui.video.CommentThreadController(
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        viaBrowse = true
+    )
+
+    fun openPostComments(post: com.ivor.ivormusic.data.ChannelPost) {
+        val params = post.detailParams ?: return
+        _commentsPost.value = post
+        postComments.load { youtubeRepository.getPostCommentsToken(params) }
+    }
+
+    /** Reload the open thread, e.g. after signing in, so its composer appears. */
+    fun reloadPostComments() {
+        _commentsPost.value?.let { openPostComments(it) }
+    }
+
+    fun closePostComments() {
+        _commentsPost.value = null
+        postComments.clear()
     }
 
     /** Fetches the About panel, once. */
@@ -437,6 +520,9 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
                     _accountSubscribed.value = false
                     _remotelySubscribed.value = false
                     _about.value = null
+                    // Like and delete state in an open thread is the old
+                    // identity's; close it rather than show it as the new one's.
+                    closePostComments()
                     val id = loadedChannelId ?: return@collect
                     load(id, force = true)
                 }

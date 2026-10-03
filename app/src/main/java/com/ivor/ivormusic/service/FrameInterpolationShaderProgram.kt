@@ -1,0 +1,537 @@
+package com.ivor.ivormusic.service
+
+import android.opengl.GLES20
+import androidx.media3.common.C
+import androidx.media3.common.GlObjectsProvider
+import androidx.media3.common.GlTextureInfo
+import androidx.media3.common.VideoFrameProcessingException
+import androidx.media3.common.util.GlProgram
+import androidx.media3.common.util.GlUtil
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.GlShaderProgram
+import com.ivor.ivormusic.util.KLog
+import java.util.concurrent.Executor
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
+
+/**
+ * The GPU half of [FrameInterpolationEffect]: while interpolating, emits a
+ * frame on every tick of a steady output clock ([OutputClock]); a tick that
+ * lands on a decoded frame B shows B as it is, and a tick between the kept
+ * predecessor A and B is drawn at its phase t in (0, 1) between them by a
+ * [MotionEngine].
+ *
+ * **One engine, GLES 3.2 only.** [ComputeMotionEngine] (SVP's method) runs on
+ * a GLES 3.2 context (Media3 asks for ES 3 and drivers give their highest);
+ * below that, or if the engine fails to build or throws while running,
+ * interpolation stops and frames pass through - never playback. There is no
+ * weaker fallback engine by design: the setting is only offered on GPUs that
+ * run this one ([FrameInterpolationSupport]).
+ *
+ * **Capacity: one input at a time, and only with room for all its outputs.**
+ * The final stage holds each output texture until its display time, so the
+ * pool bounds how far ahead of the screen decoding runs
+ * ([FrameInterpolationPolicy.poolCapacity]); textures are allocated lazily and
+ * a pool that shrinks releases its surplus as it comes back.
+ *
+ * Every method runs on Media3's GL thread with the pipeline's context current.
+ */
+@UnstableApi
+internal class FrameInterpolationShaderProgram(
+    private val control: FrameInterpolationControl,
+    private val useHdr: Boolean
+) : GlShaderProgram {
+
+    private var inputListener: GlShaderProgram.InputListener =
+        object : GlShaderProgram.InputListener {}
+    private var outputListener: GlShaderProgram.OutputListener =
+        object : GlShaderProgram.OutputListener {}
+    private var errorListener: GlShaderProgram.ErrorListener = GlShaderProgram.ErrorListener { }
+    private var errorExecutor: Executor = Executor { it.run() }
+
+    private var copyProgram: GlProgram? = null
+
+    /** The engine, null before it is built and after it failed. */
+    private var engine: MotionEngine? = null
+
+    /** False once the engine failed or cannot run here; frames still pass through. */
+    private var interpolationUsable = !useHdr
+    private var programsBuilt = false
+
+    private var frameWidth = 0
+    private var frameHeight = 0
+    private val bytesPerPixel = if (useHdr) 8 else 4
+
+    /** Outputs the next input may produce, and the pool sized for it. */
+    private var inputDemand = 1
+    private var poolCapacity = FrameInterpolationPolicy.poolCapacity(1, 0, 0, bytesPerPixel)
+    private val freeOutputs = ArrayDeque<GlTextureInfo>()
+    private val usedOutputs = ArrayList<GlTextureInfo>()
+    private var awaitingCapacity = false
+
+    /** Full-size copy of the last kept frame A. */
+    private var reference: GlTextureInfo? = null
+    private var hasReference = false
+    /** The engine already prepared this input as B, so it can become A without redoing it. */
+    private var currentPrepared = false
+    private var referenceTimeUs = C.TIME_UNSET
+
+    private val sourceRate = SourceRateMeter()
+
+    /** Smoothed media-time gap between decoded frames, gaps left out; 0 until measured. */
+    private val sourceIntervalUs: Double
+        get() = sourceRate.intervalUs
+    private val clock = OutputClock()
+    /** Timestamps handed downstream must strictly increase. */
+    private var lastEmittedUs = Long.MIN_VALUE
+
+    override fun setInputListener(inputListener: GlShaderProgram.InputListener) {
+        this.inputListener = inputListener
+        if (freeCapacity() >= inputDemand) {
+            inputListener.onReadyToAcceptInputFrame()
+        } else {
+            awaitingCapacity = true
+        }
+    }
+
+    override fun setOutputListener(outputListener: GlShaderProgram.OutputListener) {
+        this.outputListener = outputListener
+    }
+
+    override fun setErrorListener(executor: Executor, errorListener: GlShaderProgram.ErrorListener) {
+        errorExecutor = executor
+        this.errorListener = errorListener
+    }
+
+    override fun queueInputFrame(
+        glObjectsProvider: GlObjectsProvider,
+        inputTexture: GlTextureInfo,
+        presentationTimeUs: Long
+    ) {
+        try {
+            ensureConfigured(inputTexture.width, inputTexture.height)
+            measureSource(presentationTimeUs)
+            currentPrepared = false
+            if (interpolationUsable && control.active) {
+                queueInterpolating(inputTexture, presentationTimeUs)
+            } else {
+                passThrough()
+                emitCopy(inputTexture, presentationTimeUs)
+            }
+        } catch (e: GlUtil.GlException) {
+            reportError(e, presentationTimeUs)
+        } catch (e: VideoFrameProcessingException) {
+            reportError(e, presentationTimeUs)
+        }
+
+        inputListener.onInputFrameProcessed(inputTexture)
+        poolCapacity = FrameInterpolationPolicy.poolCapacity(
+            inputDemand, frameWidth, frameHeight, bytesPerPixel
+        )
+        if (freeCapacity() >= inputDemand) {
+            inputListener.onReadyToAcceptInputFrame()
+        } else {
+            awaitingCapacity = true
+        }
+    }
+
+    override fun releaseOutputFrame(outputTexture: GlTextureInfo) {
+        val index = usedOutputs.indexOfFirst { it.texId == outputTexture.texId }
+        if (index < 0) return
+        recycle(usedOutputs.removeAt(index))
+        if (awaitingCapacity && freeCapacity() >= inputDemand) {
+            awaitingCapacity = false
+            inputListener.onReadyToAcceptInputFrame()
+        }
+    }
+
+    override fun signalEndOfCurrentInputStream() {
+        // The stream's last decoded frame may sit between two ticks; end on it
+        // rather than on a drawn frame or one short of the end.
+        if (hasReference && referenceTimeUs > lastEmittedUs) {
+            try {
+                emitCopy(reference!!, referenceTimeUs)
+            } catch (e: GlUtil.GlException) {
+                reportError(e, referenceTimeUs)
+            }
+        }
+        // The next stream may be a different video, size or rate; never blend
+        // across, and measure it afresh.
+        passThrough()
+        sourceRate.reset()
+        lastEmittedUs = Long.MIN_VALUE
+        control.sourceFps = 0f
+        outputListener.onCurrentOutputStreamEnded()
+    }
+
+    override fun flush() {
+        // The consumer has already dropped every frame it held without
+        // releasing them, as it does for BaseGlShaderProgram. A seek stays in
+        // the same stream, so the measured rate survives it.
+        val held = ArrayList(usedOutputs)
+        usedOutputs.clear()
+        held.forEach(::recycle)
+        hasReference = false
+        engine?.forgetHistory()
+        clock.stop()
+        sourceRate.forgetLastFrame()
+        lastEmittedUs = Long.MIN_VALUE
+        awaitingCapacity = false
+        inputListener.onFlush()
+        inputListener.onReadyToAcceptInputFrame()
+    }
+
+    override fun release() {
+        try {
+            copyProgram?.delete()
+            engine?.release()
+            engine = null
+            MotionGl.releaseQuietly(reference)
+            reference = null
+            for (texture in freeOutputs) texture.release()
+            for (texture in usedOutputs) texture.release()
+            freeOutputs.clear()
+            usedOutputs.clear()
+        } catch (e: GlUtil.GlException) {
+            throw VideoFrameProcessingException(e)
+        }
+    }
+
+    // ---------------------------------------------------------------- frames
+
+    private fun measureSource(presentationTimeUs: Long) {
+        sourceRate.onFrame(presentationTimeUs)
+        if (sourceIntervalUs > 0.0) {
+            control.sourceFps = (1_000_000.0 / sourceIntervalUs).toFloat()
+        }
+    }
+
+    /** Frames go out as they came in, and nothing is kept for later. */
+    private fun passThrough() {
+        clock.stop()
+        hasReference = false
+        engine?.forgetHistory()
+        inputDemand = 1
+        control.outputFps = 0
+        control.limitedByResolution = false
+    }
+
+    /**
+     * One decoded frame B while interpolating: the ticks between the kept
+     * frame A and B are drawn, a tick on B shows B, and B is kept as the next
+     * pair's A. When the pair cannot be interpolated (the first frame, a gap,
+     * a source already as fast as the output) B goes out at its own time and
+     * the clock restarts from it if the stream still looks worth it.
+     */
+    private fun queueInterpolating(input: GlTextureInfo, presentationTimeUs: Long) {
+        val fps = FrameInterpolationPolicy.affordableFps(control.targetFps, frameWidth, frameHeight)
+        val speed = control.speed
+        val step = FrameInterpolationPolicy.outputStep(fps, speed, sourceIntervalUs)
+        val stepUs = step.stepUs
+        // A new rate or speed restarts the clock on this frame rather than
+        // bending the old one.
+        if (clock.isRunning && clock.needsRestart(stepUs)) clock.stop()
+
+        val pairUs = if (hasReference) presentationTimeUs - referenceTimeUs else C.TIME_UNSET
+        if (hasReference && clock.isRunning &&
+            FrameInterpolationPolicy.shouldInterpolate(pairUs, clock.stepUs)
+        ) {
+            // A snapped cadence is anchored on every pair: its ticks divide the
+            // pair from A, so B is always its last tick. A free-running clock
+            // drifts off the decoded frames as soon as its step is a hair off
+            // theirs, and nothing short of a 3% change would restart it; this
+            // also takes up the snapped step the moment the rate settles on
+            // one, after a gap restarted the clock on the screen's pace.
+            if (step.snapped) {
+                clock.start(
+                    referenceTimeUs,
+                    FrameInterpolationPolicy.lockedStepUs(pairUs, stepUs, step.paceStepUs)
+                )
+            }
+            emitTicks(input, presentationTimeUs)
+        } else {
+            emitCopy(input, presentationTimeUs)
+            // A gap breaks the temporal chain; its vectors describe other motion.
+            engine?.forgetHistory()
+            // Unmeasured counts as worth trying: the next pair decides.
+            val worthIt = sourceIntervalUs <= 0.0 ||
+                FrameInterpolationPolicy.shouldInterpolate(sourceIntervalUs.roundToLong(), stepUs)
+            if (worthIt && interpolationUsable) clock.start(presentationTimeUs, stepUs) else clock.stop()
+        }
+
+        if (!clock.isRunning || !interpolationUsable) {
+            // A 60 fps video on a 60 Hz screen costs one copy per frame and
+            // nothing else.
+            passThrough()
+            return
+        }
+        keepAsReference(input, presentationTimeUs)
+        if (!interpolationUsable || !hasReference) {
+            passThrough()
+            return
+        }
+        control.outputFps = (speed * 1_000_000.0 / clock.stepUs).roundToInt()
+        control.limitedByResolution = fps < control.targetFps
+        // One spare for a tick that rounding pushes into this input's span.
+        inputDemand = FrameInterpolationPolicy.outputsPerInput(sourceIntervalUs, clock.stepUs) + 1
+    }
+
+    private fun emitTicks(input: GlTextureInfo, presentationTimeUs: Long) {
+        val previousUs = referenceTimeUs
+        val spanUs = (presentationTimeUs - previousUs).toFloat()
+        // Rounding and a source a hair off its nominal rate put ticks a few
+        // microseconds either side of a decoded frame; that is the frame.
+        val toleranceUs = minOf(1_000L, (clock.stepUs / 4).toLong())
+        var motionReady = false
+        try {
+            var guard = 0
+            while (guard++ < MAX_TICKS_PER_INPUT) {
+                val tickUs = clock.nextTickUs()
+                if (tickUs >= presentationTimeUs - toleranceUs) break
+                if (tickUs > lastEmittedUs && tickUs > previousUs) {
+                    val motion = engine!!
+                    if (!motionReady) {
+                        motion.estimate(input)
+                        currentPrepared = true
+                        motionReady = true
+                        sampleMatchQuality(motion, ++control.pairs)
+                    }
+                    val output = takeOutput()
+                    try {
+                        motion.compose(
+                            reference!!, input, output,
+                            phase = (tickUs - previousUs) / spanUs,
+                            step = (clock.stepUs / spanUs).toFloat()
+                        )
+                    } catch (e: Exception) {
+                        recycle(output)
+                        throw e
+                    }
+                    emit(output, tickUs)
+                    control.synthesized++
+                }
+                clock.advance()
+            }
+        } catch (e: Exception) {
+            // GL errors, a shader some driver rejects at run time, a uniform
+            // optimised away (GlProgram throws NullPointerException for
+            // those): this engine goes, playback stays.
+            currentPrepared = false
+            engineFailed(e)
+            emitCopy(input, presentationTimeUs)
+            return
+        }
+        val tickUs = clock.nextTickUs()
+        if (tickUs <= presentationTimeUs + toleranceUs) {
+            emitCopy(input, tickUs)
+            clock.advance()
+        }
+    }
+
+    private fun keepAsReference(input: GlTextureInfo, presentationTimeUs: Long) {
+        try {
+            drawCopy(input, reference!!)
+            val motion = engine ?: return
+            if (currentPrepared) motion.promoteCurrent() else motion.prepareReference(input)
+            hasReference = true
+            referenceTimeUs = presentationTimeUs
+        } catch (e: Exception) {
+            hasReference = false
+            engineFailed(e)
+        }
+    }
+
+    /**
+     * How hard the engine judged a pair, for the log, without ever waiting for
+     * the GPU: a reading asked for every [READBACK_EVERY_PAIRS] pairs (about
+     * two seconds) is picked up by the first later pair that finds the GPU done
+     * with it, usually the next one.
+     */
+    private fun sampleMatchQuality(motion: MotionEngine, pairs: Long) {
+        try {
+            val hardness = motion.takeHardness()
+            if (hardness >= 0f) {
+                control.unmatchedPercent = (hardness * 100).roundToInt()
+                if (hardness >= CUT_HARDNESS) control.sampledCuts++
+            }
+            if (pairs % READBACK_EVERY_PAIRS == 1L) motion.requestHardness()
+        } catch (e: Exception) {
+            KLog.w(TAG, "Could not sample match quality: ${e.message}")
+        }
+    }
+
+    /** A copy of [source] out at [presentationTimeUs]; a time that would go backwards is skipped. */
+    private fun emitCopy(source: GlTextureInfo, presentationTimeUs: Long) {
+        if (presentationTimeUs <= lastEmittedUs) return
+        val output = takeOutput()
+        try {
+            drawCopy(source, output)
+        } catch (e: GlUtil.GlException) {
+            recycle(output)
+            throw e
+        }
+        emit(output, presentationTimeUs)
+    }
+
+    private fun emit(texture: GlTextureInfo, presentationTimeUs: Long) {
+        usedOutputs += texture
+        lastEmittedUs = presentationTimeUs
+        control.emitted++
+        outputListener.onOutputFrameAvailable(texture, presentationTimeUs)
+    }
+
+    private fun freeCapacity(): Int = poolCapacity - usedOutputs.size
+
+    private fun takeOutput(): GlTextureInfo =
+        freeOutputs.removeFirstOrNull() ?: MotionGl.texture(frameWidth, frameHeight, useHdr)
+
+    /** Back into the pool, or released if it is the wrong size or the pool has shrunk. */
+    private fun recycle(texture: GlTextureInfo) {
+        if (texture.width == frameWidth && texture.height == frameHeight &&
+            freeOutputs.size + usedOutputs.size < poolCapacity
+        ) {
+            freeOutputs.addLast(texture)
+        } else {
+            MotionGl.releaseQuietly(texture)
+        }
+    }
+
+    /** The engine cannot run here: interpolation stops for this player and frames pass through. */
+    private fun engineFailed(cause: Exception) {
+        val failed = engine
+        KLog.e(TAG, "Engine ${failed?.name} failed on this GPU; passing frames through", cause)
+        try {
+            failed?.release()
+        } catch (e: Exception) {
+            KLog.w(TAG, "Could not release the failed engine: ${e.message}")
+        }
+        engine = null
+        hasReference = false
+        currentPrepared = false
+        clock.stop()
+        interpolationUsable = false
+        control.unsupported = true
+        control.engine = ""
+    }
+
+    private fun reportError(cause: Exception, presentationTimeUs: Long) {
+        val exception = cause as? VideoFrameProcessingException
+            ?: VideoFrameProcessingException.from(cause, presentationTimeUs)
+        errorExecutor.execute { errorListener.onError(exception) }
+    }
+
+    // ------------------------------------------------------------- resources
+
+    private fun ensureConfigured(width: Int, height: Int) {
+        if (!programsBuilt) buildPrograms()
+        if (width == frameWidth && height == frameHeight) return
+
+        // Free outputs of the old size go now; ones still on screen go when
+        // they come back through releaseOutputFrame.
+        while (freeOutputs.isNotEmpty()) MotionGl.releaseQuietly(freeOutputs.removeFirst())
+        MotionGl.releaseQuietly(reference)
+        reference = null
+        frameWidth = width
+        frameHeight = height
+        poolCapacity = FrameInterpolationPolicy.poolCapacity(inputDemand, width, height, bytesPerPixel)
+        hasReference = false
+        clock.stop()
+
+        if (interpolationUsable) {
+            reference = MotionGl.texture(width, height)
+            try {
+                engine?.configure(width, height)
+                KLog.i(TAG, "Configured ${width}x$height on ${engine?.name}")
+            } catch (e: Exception) {
+                engineFailed(e)
+            }
+        }
+    }
+
+    /** The copy program, then the engine - on a GLES 3.2 context only. */
+    private fun buildPrograms() {
+        programsBuilt = true
+        copyProgram = GlProgram(VERTEX_SHADER, COPY_FRAGMENT).apply {
+            setBufferAttribute(
+                "aFramePosition",
+                GlUtil.getNormalizedCoordinateBounds(),
+                GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE
+            )
+        }
+        if (!interpolationUsable) return
+        val gles = MotionGl.glesVersion()
+        KLog.i(
+            TAG,
+            "GPU ${GLES20.glGetString(GLES20.GL_RENDERER)} | ${GLES20.glGetString(GLES20.GL_VERSION)}"
+        )
+        if (gles < FrameInterpolationSupport.MIN_GLES) {
+            KLog.w(TAG, "GLES ${gles / 10}.${gles % 10} context; Smooth motion needs 3.2. Passing frames through")
+            interpolationUsable = false
+            control.unsupported = true
+            return
+        }
+        val candidate = ComputeMotionEngine(control)
+        try {
+            candidate.build()
+            engine = candidate
+            control.engine = candidate.name
+            KLog.i(TAG, "Motion engine: ${candidate.name}")
+        } catch (e: Exception) {
+            KLog.e(TAG, "Engine ${candidate.name} could not build here; passing frames through", e)
+            try {
+                candidate.release()
+            } catch (ignored: Exception) {
+            }
+            interpolationUsable = false
+            control.unsupported = true
+        }
+    }
+
+    private fun drawCopy(source: GlTextureInfo, target: GlTextureInfo) {
+        val program = copyProgram!!
+        GlUtil.focusFramebufferUsingCurrentContext(target.fboId, target.width, target.height)
+        program.use()
+        program.setSamplerTexIdUniform("uTex", source.texId, 0)
+        program.bindAttributesAndUniforms()
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GlUtil.checkGlError()
+    }
+
+    private companion object {
+        const val TAG = MotionGl.TAG
+
+        /**
+         * A backstop against a runaway loop over ticks; the policy keeps a
+         * real pair to eight at most ([FrameInterpolationPolicy.MAX_OUTPUTS_PER_INPUT]).
+         */
+        const val MAX_TICKS_PER_INPUT = 32
+
+        /** One match-quality reading per this many pairs, for the log. */
+        const val READBACK_EVERY_PAIRS = 60L
+
+        /** [MotionEngine.takeHardness] at a scene cut (SVP's class 3 of 3). */
+        const val CUT_HARDNESS = 0.99f
+
+        const val VERTEX_SHADER = """
+attribute vec4 aFramePosition;
+varying vec2 vTexCoord;
+void main() {
+  gl_Position = aFramePosition;
+  vTexCoord = aFramePosition.xy * 0.5 + 0.5;
+}
+"""
+
+        const val COPY_FRAGMENT = """
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform sampler2D uTex;
+varying vec2 vTexCoord;
+void main() {
+  gl_FragColor = texture2D(uTex, vTexCoord);
+}
+"""
+    }
+}

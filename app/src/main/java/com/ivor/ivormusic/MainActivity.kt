@@ -59,6 +59,7 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.home.HomeScreen
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.ui.player.PlayerViewModel
+import kotlinx.coroutines.flow.collectLatest
 import com.ivor.ivormusic.ui.theme.IvorMusicTheme
 import com.ivor.ivormusic.ui.theme.PaletteStyle
 import com.ivor.ivormusic.ui.theme.ThemeViewModel
@@ -99,9 +100,6 @@ private val NON_EXPRESSIVE_NAV_BAR_RESERVE = 80.dp
 
 /** Height the collapsed music player occupies above the navigation bar. */
 private val MUSIC_PILL_RESERVE = 88.dp
-
-/** Gap the video mini bar keeps above the system navigation bar once the toolbar is gone. */
-private val VIDEO_MINI_RESTING_GAP = 16.dp
 
 class MainActivity : ComponentActivity() {
 
@@ -144,15 +142,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         takeSharedLink(intent)
+        // Off the main thread: publishing is a binder call into the launcher.
+        Thread { com.ivor.ivormusic.util.ModeShortcuts.publish(applicationContext) }.start()
 
         // Remove splash instantly when ready — the AVD entrance animation is the show
         splashScreen.setOnExitAnimationListener { it.remove() }
 
-        // The app is portrait-only, like YouTube: rotating the device must not
-        // rotate the app UI. The only exception is fullscreen video playback,
-        // which temporarily requests landscape from VideoPlayerContent and
-        // restores portrait when it exits.
-        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // Large screens follow the device; phones stay portrait unless
+        // Settings, Appearance, "Rotate with device" is on (AppOrientation).
+        // The video watch page still holds portrait while it is open and
+        // requests landscape for fullscreen; every exit hands back to this
+        // policy rather than to a hardcoded portrait.
+        com.ivor.ivormusic.ui.theme.AppOrientation.apply(this)
 
         enableEdgeToEdge()
         // Treat camera cutouts as usable edge-to-edge space everywhere. The
@@ -196,10 +197,15 @@ class MainActivity : ComponentActivity() {
             val playlistSwipeStartAction by themeViewModel.playlistSwipeStartAction.collectAsState()
             val playlistSwipeEndAction by themeViewModel.playlistSwipeEndAction.collectAsState()
             val shortsEnabled by themeViewModel.shortsEnabled.collectAsState()
+            val shortsHardBlock by themeViewModel.shortsHardBlock.collectAsState()
+            val returnDislike by themeViewModel.returnDislike.collectAsState()
+            val contentRegion by themeViewModel.contentRegion.collectAsState()
             val shortsHiddenActions by themeViewModel.shortsHiddenActions.collectAsState()
             val videoQualityWifi by themeViewModel.videoQualityWifi.collectAsState()
             val videoQualityMobile by themeViewModel.videoQualityMobile.collectAsState()
             val preferHdr by themeViewModel.preferHdr.collectAsState()
+            val frameInterpolation by themeViewModel.frameInterpolation.collectAsState()
+            val frameInterpolationMaxFps by themeViewModel.frameInterpolationMaxFps.collectAsState()
             val musicQualityWifi by themeViewModel.musicQualityWifi.collectAsState()
             val musicQualityMobile by themeViewModel.musicQualityMobile.collectAsState()
             val spotlightHome by themeViewModel.spotlightHome.collectAsState()
@@ -214,9 +220,19 @@ class MainActivity : ComponentActivity() {
                 themeViewModel.sponsorBlockMinDurationMs.collectAsState()
             val nonExpressiveNavigationBar by
                 themeViewModel.nonExpressiveNavigationBar.collectAsState()
+            val rotateWithDevice by themeViewModel.rotateWithDevice.collectAsState()
+            // Re-applied when the switch moves and when the device changes
+            // class under the activity (a foldable opening), which does not
+            // recreate it because smallestScreenSize is in configChanges.
+            val smallestWidthDp = androidx.compose.ui.platform.LocalConfiguration.current
+                .smallestScreenWidthDp
+            LaunchedEffect(rotateWithDevice, smallestWidthDp) {
+                com.ivor.ivormusic.ui.theme.AppOrientation.apply(this@MainActivity)
+            }
             val subscriptionSource by themeViewModel.subscriptionSource.collectAsState()
             val subscribeTarget by themeViewModel.subscribeTarget.collectAsState()
             val fastSubscriptionFeed by themeViewModel.fastSubscriptionFeed.collectAsState()
+            val subscriptionRefresh by themeViewModel.subscriptionRefresh.collectAsState()
             val excludedFolders by themeViewModel.excludedFolders.collectAsState()
             val oemFixEnabled by themeViewModel.oemFixEnabled.collectAsState()
             val manualScanEnabled by themeViewModel.manualScanEnabled.collectAsState()
@@ -237,6 +253,7 @@ class MainActivity : ComponentActivity() {
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
             val normalizeVolume by themeViewModel.normalizeVolume.collectAsState()
             val rememberVideoBrightness by themeViewModel.rememberVideoBrightness.collectAsState()
+            val pipButtons by themeViewModel.pipButtons.collectAsState()
             val hapticsLevel by themeViewModel.hapticsLevel.collectAsState()
             val uploadNotificationsEnabled by themeViewModel.uploadNotificationsEnabled.collectAsState()
             
@@ -256,6 +273,30 @@ class MainActivity : ComponentActivity() {
                 uiScale = uiScale,
                 paletteStyle = paletteStyle
             ) {
+                val videoListLayout by themeViewModel.videoListLayout.collectAsState()
+                // Every link Koda draws goes through LocalUriHandler, so this
+                // is the one place a YouTube URL is kept in the app rather than
+                // handed to the browser or the YouTube app. Anything the link
+                // parser cannot act on still leaves, as before.
+                val platformUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                val inAppUriHandler = androidx.compose.runtime.remember(platformUriHandler) {
+                    object : androidx.compose.ui.platform.UriHandler {
+                        override fun openUri(uri: String) {
+                            if (com.ivor.ivormusic.data.YouTubeLinkParser.parse(uri) != null) {
+                                openLinkInApp(uri)
+                            } else {
+                                runCatching { platformUriHandler.openUri(uri) }
+                                    .onFailure {
+                                        com.ivor.ivormusic.util.KLog.w("MainActivity", "No handler for $uri", it)
+                                    }
+                            }
+                        }
+                    }
+                }
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.ivor.ivormusic.ui.video.LocalVideoListLayout provides videoListLayout,
+                    androidx.compose.ui.platform.LocalUriHandler provides inAppUriHandler
+                ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
@@ -331,6 +372,8 @@ class MainActivity : ComponentActivity() {
                         onNonExpressiveNavigationBarToggle = {
                             themeViewModel.setNonExpressiveNavigationBar(it)
                         },
+                        rotateWithDevice = rotateWithDevice,
+                        onRotateWithDeviceToggle = themeViewModel::setRotateWithDevice,
                         playerStyle = playerStyle,
                         onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
                         saveVideoHistory = saveVideoHistory,
@@ -359,6 +402,12 @@ class MainActivity : ComponentActivity() {
                         onPlaylistSwipeEndActionChange = { themeViewModel.setPlaylistSwipeEndAction(it) },
                         shortsEnabled = shortsEnabled,
                         onShortsEnabledToggle = { themeViewModel.setShortsEnabled(it) },
+                        shortsHardBlock = shortsHardBlock,
+                        onShortsHardBlockToggle = { themeViewModel.setShortsHardBlock(it) },
+                        returnDislike = returnDislike,
+                        onReturnDislikeToggle = { themeViewModel.setReturnDislike(it) },
+                        contentRegion = contentRegion,
+                        onContentRegionChange = { themeViewModel.setContentRegion(it) },
                         shortsHiddenActions = shortsHiddenActions,
                         onShortsHiddenActionsChange = { themeViewModel.setShortsHiddenActions(it) },
                         videoQualityWifi = videoQualityWifi,
@@ -367,6 +416,10 @@ class MainActivity : ComponentActivity() {
                         onVideoQualityMobileChange = { themeViewModel.setVideoQualityMobile(it) },
                         preferHdr = preferHdr,
                         onPreferHdrToggle = { themeViewModel.setPreferHdr(it) },
+                        frameInterpolation = frameInterpolation,
+                        onFrameInterpolationToggle = { themeViewModel.setFrameInterpolation(it) },
+                        frameInterpolationMaxFps = frameInterpolationMaxFps,
+                        onFrameInterpolationMaxFpsChange = { themeViewModel.setFrameInterpolationMaxFps(it) },
                         musicQualityWifi = musicQualityWifi,
                         onMusicQualityWifiChange = { themeViewModel.setMusicQualityWifi(it) },
                         musicQualityMobile = musicQualityMobile,
@@ -377,6 +430,8 @@ class MainActivity : ComponentActivity() {
                         onSubscribeTargetChange = { themeViewModel.setSubscribeTarget(it) },
                         fastSubscriptionFeed = fastSubscriptionFeed,
                         onFastSubscriptionFeedToggle = { themeViewModel.setFastSubscriptionFeed(it) },
+                        subscriptionRefresh = subscriptionRefresh,
+                        onSubscriptionRefreshChange = { themeViewModel.setSubscriptionRefresh(it) },
                         excludedFolders = excludedFolders,
                         onAddExcludedFolder = { themeViewModel.addExcludedFolder(it) },
                         onRemoveExcludedFolder = { themeViewModel.removeExcludedFolder(it) },
@@ -423,6 +478,8 @@ class MainActivity : ComponentActivity() {
                         rememberVideoBrightness = rememberVideoBrightness,
                         onRememberVideoBrightnessToggle =
                             { themeViewModel.setRememberVideoBrightness(it) },
+                        pipButtons = pipButtons,
+                        onPipButtonsChange = { themeViewModel.setPipButtons(it) },
                         hapticsLevel = hapticsLevel,
                         onHapticsLevelChange = { themeViewModel.setHapticsLevel(it) },
                         uploadNotificationsEnabled = uploadNotificationsEnabled,
@@ -433,6 +490,7 @@ class MainActivity : ComponentActivity() {
                         localOnlyMode = localOnlyMode,
                         onLocalOnlyModeToggle = { themeViewModel.setLocalOnlyMode(it) }
                     )
+                }
                 }
             }
         }
@@ -539,6 +597,16 @@ class MainActivity : ComponentActivity() {
      */
     private fun takeSharedLink(intent: Intent?) {
         if (intent == null) return
+        // A launcher shortcut (ModeShortcuts): open in music or video mode.
+        when (intent.action) {
+            com.ivor.ivormusic.util.ModeShortcuts.ACTION_OPEN_MUSIC,
+            com.ivor.ivormusic.util.ModeShortcuts.ACTION_OPEN_VIDEOS -> {
+                val videos = intent.action == com.ivor.ivormusic.util.ModeShortcuts.ACTION_OPEN_VIDEOS
+                neutralize(intent)
+                pendingModeRequest.value = videos
+                return
+            }
+        }
         val navTarget = intent.getStringExtra("navigate_to")
         if (navTarget != null) {
             neutralize(intent)
@@ -572,6 +640,11 @@ class MainActivity : ComponentActivity() {
         pendingSharedLink = PendingSharedLink(text, ++sharedLinkCounter)
     }
 
+    /** A YouTube link tapped inside Koda, opened through the shared-link path. */
+    private fun openLinkInApp(url: String) {
+        pendingSharedLink = PendingSharedLink(url, ++sharedLinkCounter, fromApp = true)
+    }
+
     /**
      * Strip an intent of what made it actionable, so it cannot fire twice. The
      * activity is recreated on theme and locale changes and would otherwise
@@ -588,6 +661,9 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         var pendingNavigation = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+        /** Video mode (true) or music mode (false) asked for by a launcher shortcut. */
+        var pendingModeRequest = androidx.compose.runtime.mutableStateOf<Boolean?>(null)
     }
 }
 
@@ -660,6 +736,8 @@ fun MusicApp(
     onSpotlightHomeToggle: (Boolean) -> Unit,
     nonExpressiveNavigationBar: Boolean,
     onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
+    rotateWithDevice: Boolean,
+    onRotateWithDeviceToggle: (Boolean) -> Unit,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
     saveVideoHistory: Boolean,
@@ -688,6 +766,12 @@ fun MusicApp(
     onPlaylistSwipeEndActionChange: (String) -> Unit,
     shortsEnabled: Boolean,
     onShortsEnabledToggle: (Boolean) -> Unit,
+    shortsHardBlock: Boolean,
+    onShortsHardBlockToggle: (Boolean) -> Unit,
+    returnDislike: Boolean,
+    onReturnDislikeToggle: (Boolean) -> Unit,
+    contentRegion: String,
+    onContentRegionChange: (String) -> Unit,
     shortsHiddenActions: Set<String>,
     onShortsHiddenActionsChange: (Set<String>) -> Unit,
     videoQualityWifi: String,
@@ -696,6 +780,10 @@ fun MusicApp(
     onVideoQualityMobileChange: (String) -> Unit,
     preferHdr: Boolean,
     onPreferHdrToggle: (Boolean) -> Unit,
+    frameInterpolation: Boolean,
+    onFrameInterpolationToggle: (Boolean) -> Unit,
+    frameInterpolationMaxFps: Int,
+    onFrameInterpolationMaxFpsChange: (Int) -> Unit,
     musicQualityWifi: String,
     onMusicQualityWifiChange: (String) -> Unit,
     musicQualityMobile: String,
@@ -706,6 +794,8 @@ fun MusicApp(
     onSubscribeTargetChange: (String) -> Unit,
     fastSubscriptionFeed: Boolean,
     onFastSubscriptionFeedToggle: (Boolean) -> Unit,
+    subscriptionRefresh: Int,
+    onSubscriptionRefreshChange: (Int) -> Unit,
     excludedFolders: Set<String>,
     onAddExcludedFolder: (String) -> Unit,
     onRemoveExcludedFolder: (String) -> Unit,
@@ -735,6 +825,8 @@ fun MusicApp(
     onNormalizeVolumeToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
+    pipButtons: String,
+    onPipButtonsChange: (String) -> Unit,
     hapticsLevel: String,
     onHapticsLevelChange: (String) -> Unit,
     uploadNotificationsEnabled: Boolean,
@@ -820,6 +912,19 @@ fun MusicApp(
         changePlaybackMode(nextVideoMode, true)
     }
 
+    // A launcher shortcut lands on Home in the mode it names, through the same
+    // switch as the toggle: pausing the other player, never dismantling it.
+    val pendingMode by MainActivity.pendingModeRequest
+    LaunchedEffect(pendingMode) {
+        val target = pendingMode ?: return@LaunchedEffect
+        MainActivity.pendingModeRequest.value = null
+        switchPlaybackMode(target)
+        // By route, so onboarding (a different start) is left alone. Guarded:
+        // on a cold start from the shortcut this can run before the NavHost
+        // has set its graph, and there is no deeper screen to leave anyway.
+        runCatching { navController.popBackStack("home", inclusive = false) }
+    }
+
     // "Listen as music" from video playback settings: a real migration into
     // MusicService, so the track joins the music queue, notification and
     // player styles. An opened VideoQueue migrates whole (the one case where
@@ -870,15 +975,29 @@ fun MusicApp(
     // a video, which is why the control is conditional (see
     // Song.hasWatchableVideo) rather than always offered and often broken.
     //
-    // The music queue is not carried over. A video queue is an explicit
-    // ordered list the user chose, and a music queue is frequently a radio -
-    // an endless generated stream of songs, which is not a playlist and would
-    // arrive in the video player as one. The song moves; what plays next
-    // becomes video mode's ordinary related-videos behaviour, the same answer
-    // the other direction gives when it migrates a lone video.
+    // What is still to play of the music queue comes along (asked for,
+    // September 2026: the other direction already carried its queue). Not the
+    // whole thing: a music queue is often a radio that tops itself up forever,
+    // and would arrive as an endless "playlist". So it is the songs from this
+    // one on, in play order, that have a video to watch, capped at
+    // MUSIC_TO_VIDEO_QUEUE_MAX; past its end video mode's ordinary related
+    // videos take over, as they did before.
+    // Resolved in composition, so a locale change reaches it.
+    val musicQueueTitle = androidx.compose.ui.res.stringResource(R.string.vq_from_music_queue)
     val moveMusicToVideo: () -> Unit = move@{
         val song = playerViewModel.currentSong.value ?: return@move
         if (!song.hasWatchableVideo(context)) return@move
+        val playOrder = playerViewModel.playOrderQueue.value
+        val currentAt = playOrder.indexOfFirst { it.id == playerViewModel.currentQueueItemId.value }
+        val carried = (if (currentAt >= 0) playOrder.drop(currentAt + 1) else emptyList())
+            .map { it.song }
+            .filter { it.hasWatchableVideo(context) }
+            .take(MUSIC_TO_VIDEO_QUEUE_MAX - 1)
+        val videoQueue = com.ivor.ivormusic.data.VideoQueue(
+            videos = listOf(song.toVideoItem()) + carried.map { it.toVideoItem() },
+            index = 0,
+            title = musicQueueTitle
+        )
         val positionMs = playerViewModel.progress.value.coerceAtLeast(0L)
         val startPositionMs = song.duration.takeIf { it > 0L }
             ?.let { positionMs.coerceIn(0L, it) }
@@ -889,7 +1008,13 @@ fun MusicApp(
         // top of the play it was meant to precede.
         playerViewModel.pause()
         changePlaybackMode(true, true)
-        videoPlayerViewModel.playVideoAt(song.toVideoItem(), startPositionMs)
+        // The song moved, so the music player has nothing left to hold: left
+        // paused, its mini bar sat beside the video showing the same track.
+        // Its mirror closes the video player for the same reason. Unrelated
+        // content in the other player is still only paused by a mode switch.
+        playerViewModel.setPlayerExpanded(false)
+        playerViewModel.clearPlayer()
+        videoPlayerViewModel.playQueueAt(videoQueue, startPositionMs)
     }
 
     // A live broadcast that turned up in the Shorts feed. The Shorts player
@@ -988,10 +1113,16 @@ fun MusicApp(
     val currentRoute = navController.currentBackStackEntryAsState()
         .value?.destination?.route
     val onHomeRoute = currentRoute == "home"
-    val navBarReserve = if (nonExpressiveNavigationBar) {
-        NON_EXPRESSIVE_NAV_BAR_RESERVE
-    } else {
-        EXPRESSIVE_NAV_BAR_RESERVE
+    // From 600dp across Home navigates from a rail on the start edge
+    // (HomeScreen), so the bottom holds only the music pill, which rests just
+    // above the system inset there. The overlay adds its own MINI_VIDEO_MARGIN
+    // on top of this, so a rail reserves nothing: anything more rested the bar
+    // twice its side margin above the inset (#303).
+    val homeUsesRail = com.ivor.ivormusic.ui.theme.currentWindowLayout().usesNavigationRail
+    val navBarReserve = when {
+        homeUsesRail -> 0.dp
+        nonExpressiveNavigationBar -> NON_EXPRESSIVE_NAV_BAR_RESERVE
+        else -> EXPRESSIVE_NAV_BAR_RESERVE
     }
     val videoMiniBottomChrome = when {
         !onHomeRoute -> 0.dp
@@ -1008,11 +1139,17 @@ fun MusicApp(
     // read anything HomeScreen provides. Only the floating variant hides; the
     // standard NavigationBar is pinned, and off the home route there is no
     // toolbar at all.
+    //
+    // The bar travels exactly the toolbar's height, the same distance the music
+    // pill travels, and nothing more. Alone it then rests MINI_VIDEO_MARGIN
+    // above the inset - the same as its side margins and as on every other
+    // route - and stacked it stays the same gap above the music pill. Sliding
+    // by the whole chrome less a resting gap parked a lone bar 32dp up while
+    // its sides sat at 16dp (#303), and dropped a stacked bar onto the pill.
     val floatingToolbarState = androidx.compose.material3.rememberFloatingToolbarState()
     val videoMiniFollowDistancePx = with(androidx.compose.ui.platform.LocalDensity.current) {
-        if (!onHomeRoute || nonExpressiveNavigationBar) 0f
-        else (videoMiniBottomChrome - VIDEO_MINI_RESTING_GAP)
-            .coerceAtLeast(0.dp).toPx()
+        if (!onHomeRoute || nonExpressiveNavigationBar || homeUsesRail) 0f
+        else navBarReserve.toPx()
     }
     val videoMiniFollowOffsetPx: () -> Float = {
         videoMiniFollowDistancePx *
@@ -1228,6 +1365,8 @@ fun MusicApp(
                     nonExpressiveNavigationBar = nonExpressiveNavigationBar,
                     onNonExpressiveNavigationBarToggle =
                         onNonExpressiveNavigationBarToggle,
+                    rotateWithDevice = rotateWithDevice,
+                    onRotateWithDeviceToggle = onRotateWithDeviceToggle,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
                     saveVideoHistory = saveVideoHistory,
@@ -1256,6 +1395,12 @@ fun MusicApp(
                     onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
                     shortsEnabled = shortsEnabled,
                     onShortsEnabledToggle = onShortsEnabledToggle,
+                    shortsHardBlock = shortsHardBlock,
+                    onShortsHardBlockToggle = onShortsHardBlockToggle,
+                    returnDislike = returnDislike,
+                    onReturnDislikeToggle = onReturnDislikeToggle,
+                    contentRegion = contentRegion,
+                    onContentRegionChange = onContentRegionChange,
                     shortsHiddenActions = shortsHiddenActions,
                     onShortsHiddenActionsChange = onShortsHiddenActionsChange,
                     videoQualityWifi = videoQualityWifi,
@@ -1264,6 +1409,10 @@ fun MusicApp(
                     onVideoQualityMobileChange = onVideoQualityMobileChange,
                     preferHdr = preferHdr,
                     onPreferHdrToggle = onPreferHdrToggle,
+                    frameInterpolation = frameInterpolation,
+                    onFrameInterpolationToggle = onFrameInterpolationToggle,
+                    frameInterpolationMaxFps = frameInterpolationMaxFps,
+                    onFrameInterpolationMaxFpsChange = onFrameInterpolationMaxFpsChange,
                     musicQualityWifi = musicQualityWifi,
                     onMusicQualityWifiChange = onMusicQualityWifiChange,
                     musicQualityMobile = musicQualityMobile,
@@ -1274,6 +1423,8 @@ fun MusicApp(
                     onSubscribeTargetChange = onSubscribeTargetChange,
                     fastSubscriptionFeed = fastSubscriptionFeed,
                     onFastSubscriptionFeedToggle = onFastSubscriptionFeedToggle,
+                    subscriptionRefresh = subscriptionRefresh,
+                    onSubscriptionRefreshChange = onSubscriptionRefreshChange,
                     excludedFolders = excludedFolders,
                     onAddExcludedFolder = onAddExcludedFolder,
                     onRemoveExcludedFolder = onRemoveExcludedFolder,
@@ -1308,6 +1459,8 @@ fun MusicApp(
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
                     rememberVideoBrightness = rememberVideoBrightness,
                     onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
+                    pipButtons = pipButtons,
+                    onPipButtonsChange = onPipButtonsChange,
                     hapticsLevel = hapticsLevel,
                     onHapticsLevelChange = onHapticsLevelChange,
                     uploadNotificationsEnabled = uploadNotificationsEnabled,
@@ -1319,6 +1472,7 @@ fun MusicApp(
                     privateDownloadsEnabled = privateDownloadsEnabled,
                     onPrivateDownloadsEnabledToggle = onPrivateDownloadsEnabledToggle,
                     onNavigateToUpdate = { navController.navigate("update") },
+                    onNavigateToLicenses = { navController.navigate("licenses") },
                     localOnlyMode = localOnlyMode,
                     onLocalOnlyModeToggle = onLocalOnlyModeToggle,
                     uiScale = uiScale,
@@ -1532,6 +1686,15 @@ fun MusicApp(
                 )
             }
             composable(
+                route = "licenses",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.settings.LicensesScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
                 route = "report",
                 enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
                 exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
@@ -1595,15 +1758,18 @@ fun MusicApp(
             )
         }
 
-        // Undo for "don't recommend", app-wide and last in the stack.
+        // Undo for "don't recommend", and word of a song that could not be
+        // played, app-wide and last in the stack.
         //
         // One host for the whole app rather than one per screen: the action can
         // be taken from the home grid, the subscriptions feed, search, the
         // player's Up Next list and Shorts, and two of those are overlays
         // drawn above the NavHost. A per-screen snackbar would be hidden behind
         // the Shorts overlay exactly when it is needed most, and could show
-        // twice when a screen and an overlay are both alive.
-        NotInterestedUndoHost(
+        // twice when a screen and an overlay are both alive. The playback
+        // messages share it so the two can never draw over each other.
+        AppSnackbarHost(
+            playbackFailures = playerViewModel.playbackFailures,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
@@ -1666,14 +1832,18 @@ fun MusicApp(
 }
 
 /**
- * Shows "Video hidden - Undo" whenever something is dismissed.
+ * Shows "Video hidden - Undo" whenever something is dismissed, says so when a
+ * song could not be played, and confirms a channel's bell change.
  *
  * Keyed on the action's id rather than the action itself so two identical
  * dismissals in a row still re-show the snackbar instead of the second one
  * silently doing nothing.
  */
 @Composable
-private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
+private fun AppSnackbarHost(
+    playbackFailures: kotlinx.coroutines.flow.Flow<PlayerViewModel.PlaybackFailure>,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val repository = remember(context) {
         com.ivor.ivormusic.data.NotInterestedRepository(context)
@@ -1714,6 +1884,41 @@ private fun NotInterestedUndoHost(modifier: Modifier = Modifier) {
             // Timed out or was replaced. The hide stands; just stop offering
             // an undo for something the user has moved on from.
             repository.clearLastAction()
+        }
+    }
+
+    // Latest only: a newer failure replaces the one on screen, so a run of
+    // them - no connection, a whole queue refusing - reads as one message
+    // rather than a queue of snackbars to sit through.
+    LaunchedEffect(playbackFailures) {
+        playbackFailures.collectLatest { failure ->
+            val title = failure.title?.takeIf { it.isNotBlank() }
+                ?: context.getString(R.string.music_failed_untitled)
+            val message = when (failure.outcome) {
+                PlayerViewModel.PlaybackFailure.Outcome.SKIPPED ->
+                    context.getString(R.string.music_failed_skipped, title)
+                PlayerViewModel.PlaybackFailure.Outcome.STOPPED ->
+                    context.getString(R.string.music_failed_stopped, title)
+                PlayerViewModel.PlaybackFailure.Outcome.REFUSED ->
+                    context.getString(R.string.music_failed_refused)
+            }
+            snackbarHostState.showSnackbar(
+                message = message,
+                withDismissAction = false,
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
+
+    // Bell changes from the watch page, the channel page and the channel list.
+    // Latest only, like the failures above: a second pick replaces the first.
+    LaunchedEffect(Unit) {
+        com.ivor.ivormusic.data.ChannelBellActions.messages.collectLatest { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                withDismissAction = false,
+                duration = SnackbarDuration.Short,
+            )
         }
     }
 
@@ -1794,3 +1999,6 @@ private fun VideoItem.toSong(): Song = Song.fromYouTube(
     thumbnailUrl = thumbnailUrl
 )
 
+
+/** How many songs of the music queue a move to video mode carries along. */
+private const val MUSIC_TO_VIDEO_QUEUE_MAX = 50

@@ -361,6 +361,7 @@
     <string name="auto_help_note">A nomenclatura exata e a localização dessas opções variam de acordo com a marca do celular e a versão do Android Auto.</string>
     <string name="sp_recommendations">Recomendações</string>
     <string name="vhc_title">Início de Vídeos</string>
+
     <string name="vhc_summary">O feed, os destinos e a ordem deles</string>
     <string name="vhc_feed_section">Feed inicial</string>
     <string name="vhc_recommendations">Recomendações e sugestões</string>

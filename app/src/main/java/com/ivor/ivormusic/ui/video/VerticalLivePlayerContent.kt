@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.video
 import androidx.compose.ui.res.stringResource
+import com.ivor.ivormusic.data.ConnectionAdvice
 import com.ivor.ivormusic.R
 
 import android.view.ViewGroup
@@ -142,6 +143,7 @@ fun VerticalLivePlayerContent(
     isBuffering: Boolean,
     hasError: Boolean,
     errorMessage: String,
+    connectionAdvice: ConnectionAdvice?,
     progress: Float,
     bufferedProgress: Float,
     duration: Long,
@@ -263,10 +265,14 @@ fun VerticalLivePlayerContent(
                 update = { playerView ->
                     playerView.player = exoPlayer
                     playerView.resizeMode = resizeMode
+                    playerView.keepKnownAspectRatio(videoAspectRatio)
                 },
                 // Hand the surface back before this view is destroyed - the same
                 // ExoPlayer is also rendered by the mini and PiP PlayerViews.
-                onRelease = { playerView -> playerView.player = null },
+                onRelease = { playerView ->
+                    playerView.player = null
+                    playerView.releaseKnownAspectRatio()
+                },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -311,7 +317,7 @@ fun VerticalLivePlayerContent(
                 background = captionBackground
             )
 
-            if (hasError) ErrorOverlay(errorMessage, onRetry)
+            if (hasError) ErrorOverlay(errorMessage, connectionAdvice, onRetry)
 
             // Only while the controls are down. With them up the play/pause
             // button draws its own shape-morphing loader, and two spinners on

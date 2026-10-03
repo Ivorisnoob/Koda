@@ -36,7 +36,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Audiotrack
+import com.ivor.ivormusic.service.FrameInterpolationStatus
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MusicNote
@@ -193,14 +195,17 @@ fun VideoPlayerContent(
     val isCaptionsLoading by viewModel.isCaptionsLoading.collectAsState()
     val isAutoplayEnabled by viewModel.isAutoplayEnabled.collectAsState()
     val isLooping by viewModel.isLooping.collectAsState()
+    val dislikeCount by viewModel.dislikeCount.collectAsState()
     val sleepTimerEndsAt by viewModel.sleepTimerEndsAt.collectAsState()
     val sleepTimerEndOfVideo by viewModel.sleepTimerEndOfVideo.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
+    val connectionAdvice by viewModel.connectionAdvice.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     // Account subscription OR device subscription - engagement only knows the
     // first, and read alone it showed "Subscribe" for locally followed channels.
     val isSubscribedToChannel by viewModel.isSubscribedToChannel.collectAsState()
+    val bellWrites by viewModel.bellWrites.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val comments by viewModel.comments.collectAsState()
     val isCommentsLoading by viewModel.isCommentsLoading.collectAsState()
@@ -301,9 +306,12 @@ fun VideoPlayerContent(
 
     // Landscape chat column: about a third of the screen, bounded so it stays
     // readable on a small phone and does not eat a tablet.
+    // Measured in the scaled dp (windowDpSize), not Configuration's: at any
+    // interface scale but 100% the platform figure is a different unit.
     val configuration = LocalConfiguration.current
-    val landscapeChatWidth = remember(configuration.screenWidthDp) {
-        (configuration.screenWidthDp * 0.34f).dp.coerceIn(260.dp, 360.dp)
+    val windowWidth = com.ivor.ivormusic.ui.theme.windowDpSize().width
+    val landscapeChatWidth = remember(windowWidth) {
+        (windowWidth * 0.34f).coerceIn(260.dp, 360.dp)
     }
 
     /**
@@ -447,10 +455,12 @@ fun VideoPlayerContent(
         }
     }
     
-    // Fullscreen / Immersive. The app is portrait-locked (MainActivity), so
-    // fullscreen temporarily requests sensor landscape and every exit path
-    // restores PORTRAIT — never UNSPECIFIED, which used to leave the whole
-    // app free-rotating in broken half-landscape states.
+    // Fullscreen / Immersive. The watch page holds portrait while it is open
+    // and fullscreen temporarily requests sensor landscape. Leaving the page
+    // hands back to the app's own policy (AppOrientation) - never
+    // UNSPECIFIED, which used to leave the app free-rotating in broken
+    // half-landscape states, and no longer a hardcoded PORTRAIT, which would
+    // re-lock a tablet or a phone set to rotate with the device.
     DisposableEffect(isFullscreen, fullscreenIsPortrait) {
         val window = activity?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
@@ -477,7 +487,7 @@ fun VideoPlayerContent(
         }
 
         onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            activity?.let { com.ivor.ivormusic.ui.theme.AppOrientation.apply(it) }
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
             // The app is edge-to-edge (enableEdgeToEdge in MainActivity), so
             // keep decorFits false — restoring true here used to break the
@@ -670,6 +680,7 @@ fun VideoPlayerContent(
                 onToggleControls = { showControls = !showControls },
                 hasError = playbackError != null,
                 errorMessage = playbackError?.message ?: "",
+                connectionAdvice = connectionAdvice,
                 isLoading = isLoading,
                 isBuffering = isBuffering,
                 isPlaying = isPlaying,
@@ -726,6 +737,7 @@ fun VideoPlayerContent(
                 isZoomedToFill = isZoomedToFill,
                 onZoomedToFillChange = { isZoomedToFill = it },
                 zoomToFillAvailable = zoomToFillAvailable,
+                videoAspectRatio = videoAspectRatio,
                 onRetry = { viewModel.retryPlayback() }
             )
 
@@ -784,6 +796,7 @@ fun VideoPlayerContent(
                         .fillMaxHeight()
                 ) {
                     CommentsPanel(
+                        onOpenAuthor = onOpenChannel,
                         comments = comments,
                         replies = commentReplies,
                         loadingReplyIds = loadingReplyIds,
@@ -887,6 +900,7 @@ fun VideoPlayerContent(
                     isBuffering = isBuffering,
                     hasError = playbackError != null,
                     errorMessage = playbackError?.message ?: "",
+                    connectionAdvice = connectionAdvice,
                     progress = progress,
                     bufferedProgress = bufferedProgress,
                     duration = duration,
@@ -1005,6 +1019,7 @@ fun VideoPlayerContent(
                         onToggleControls = { showControls = !showControls },
                         hasError = playbackError != null,
                         errorMessage = playbackError?.message ?: "",
+                        connectionAdvice = connectionAdvice,
                         isLoading = isLoading,
                         isBuffering = isBuffering,
                         isPlaying = isPlaying,
@@ -1130,7 +1145,12 @@ fun VideoPlayerContent(
                         isSubscribed = isSubscribedToChannel,
                         onLikeClick = { requireLogin { viewModel.toggleLike() } },
                         onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
+                        dislikeCount = dislikeCount,
                         onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
+                        onBellChosen = { channelId, level ->
+                            viewModel.setChannelBell(channelId, level, currentVideo.channelName)
+                        },
+                        bellWrites = bellWrites,
                         onCommentsClick = {
                             viewModel.ensureCommentsLoaded()
                             showCommentsSheet = true
@@ -1176,6 +1196,7 @@ fun VideoPlayerContent(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         CommentsPanel(
+                            onOpenAuthor = onOpenChannel,
                             comments = comments,
                             replies = commentReplies,
                             loadingReplyIds = loadingReplyIds,
@@ -1248,12 +1269,19 @@ fun VideoPlayerContent(
     // Long-press options sheet, and the "save" action in the info area
     saveTargetVideo?.let { target ->
         val localVideoPlaylists by viewModel.localVideoPlaylists.collectAsState()
+        val accountContaining by viewModel.accountPlaylistsContainingVideo.collectAsState()
+        LaunchedEffect(target.videoId, isLoggedIn) {
+            if (isLoggedIn && !isLocalPlayback) viewModel.loadVideoPlaylistMembership(target.videoId)
+        }
         VideoOptionsSheet(
             video = target,
             playlists = videoPlaylists,
             isLoading = isVideoPlaylistsLoading,
             onSave = { playlistId, onResult ->
                 viewModel.addVideoToPlaylist(playlistId, target, onResult)
+            },
+            onRemove = { playlistId, onResult ->
+                viewModel.removeVideoFromPlaylist(playlistId, target, onResult)
             },
             onDownload = {
                 saveTargetVideo = null
@@ -1287,9 +1315,12 @@ fun VideoPlayerContent(
                     .toSet()
                 // Signed out the pinned Watch later row saves into the device
                 // list, so that is what says whether it is already there.
-                if (!isLoggedIn &&
-                    com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids
-                ) ids + "WL" else ids
+                when {
+                    !isLoggedIn &&
+                        com.ivor.ivormusic.data.LocalVideoPlaylistsRepository.WATCH_LATER_ID in ids -> ids + "WL"
+                    isLoggedIn -> ids + accountContaining
+                    else -> ids
+                }
             }
         )
     }
@@ -1316,7 +1347,8 @@ fun VideoPlayerContent(
                 keepSystemBarsHidden = isFullscreen,
                 onMove = { from, to -> viewModel.moveQueueItem(from, to) },
                 onRemove = { index -> viewModel.removeQueueItem(index) },
-                onUndoRemove = { viewModel.undoQueueRemoval() }
+                onUndoRemove = { viewModel.undoQueueRemoval() },
+                onSaveAsPlaylist = { name, onSaved -> viewModel.saveQueueAsPlaylist(name, onSaved) }
             )
         }
     }
@@ -1393,6 +1425,15 @@ fun VideoPlayerContent(
     // One settings body serves the portrait sheet and fullscreen side panel.
     // Keeping the action wiring here prevents the two surfaces from drifting
     // back into different feature sets.
+    val smoothMotionStatus by viewModel.frameInterpolationStatus.collectAsState()
+    val smoothMotionAvailable by viewModel.smoothMotionAvailable.collectAsState()
+    val smoothMotionOn by viewModel.smoothMotionOn.collectAsState()
+    val smoothMotionText = when {
+        !smoothMotionOn -> stringResource(R.string.vpc_smooth_motion_off)
+        // Switched on a moment ago: the next progress poll reports what it is doing.
+        else -> smoothMotionStatusText(smoothMotionStatus)
+            ?: stringResource(R.string.vpc_smooth_motion_measuring)
+    }
     val playbackSettingsContent: @Composable () -> Unit = {
         PlayerSettingsSections(
             isLoading = isLoading,
@@ -1467,7 +1508,11 @@ fun VideoPlayerContent(
             onListenAsMusic = {
                 showPlaybackSettings = false
                 onListenAsMusic()
-            }
+            },
+            showSmoothMotion = smoothMotionAvailable,
+            smoothMotionOn = smoothMotionOn,
+            onSmoothMotionChanged = viewModel::setSmoothMotionOn,
+            smoothMotionStatus = smoothMotionText
         )
     }
 
@@ -1577,9 +1622,9 @@ private fun PlayerSettingsSections(
     currentQuality: VideoQuality?,
     onQualitySelected: (VideoQuality) -> Unit,
     /**
-     * Audio tracks the media declares, when there is more than one to choose
-     * between. Empty for ordinary YouTube playback, so the section below simply
-     * does not appear there.
+     * Audio tracks to choose between: a device file's own tracks, or a YouTube
+     * video's original and dubs. Empty when there is only one, so the row
+     * simply does not appear.
      */
     audioTracks: List<PlayerTrackOption>,
     onAudioTrackSelected: (PlayerTrackOption) -> Unit,
@@ -1612,9 +1657,15 @@ private fun PlayerSettingsSections(
     zoomToFillActive: Boolean,
     onZoomToFillChanged: (Boolean) -> Unit,
     showListenAsMusic: Boolean,
-    onListenAsMusic: () -> Unit
+    onListenAsMusic: () -> Unit,
+    /** Smooth motion is turned on in Settings (and this GPU runs it), so the panel offers its switch. */
+    showSmoothMotion: Boolean,
+    smoothMotionOn: Boolean,
+    onSmoothMotionChanged: (Boolean) -> Unit,
+    /** What Smooth motion is doing for this video, or that it is switched off. */
+    smoothMotionStatus: String
 ) {
-    val optionColors = ToggleButtonDefaults.toggleButtonColors(
+    val optionColors = ToggleButtonDefaults.colors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -1843,6 +1894,52 @@ private fun PlayerSettingsSections(
                     }
                 }
             }
+            if (audioTracks.isNotEmpty()) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 64.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                // A picker row like quality and speed rather than a section of
+                // its own: a dubbed YouTube video can carry 25 languages, and
+                // listing them open would bury every control below.
+                PickerRow(
+                    icon = Icons.Rounded.Audiotrack,
+                    title = stringResource(R.string.vpc_audio_track),
+                    value = audioTracks.firstOrNull { it.isSelected }?.label,
+                    loading = false,
+                    expanded = expandedPicker == SettingsPicker.AUDIO,
+                    onClick = { togglePicker(SettingsPicker.AUDIO) }
+                )
+                AnimatedVisibility(
+                    visible = expandedPicker == SettingsPicker.AUDIO,
+                    enter = expandVertically(
+                        animationSpec = spring(
+                            stiffness = Spring.StiffnessMediumLow,
+                            dampingRatio = Spring.DampingRatioMediumBouncy
+                        )
+                    ) + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    // Rows rather than the chips the quality ladder uses: a track
+                    // name carries a language, a codec and a channel layout, and
+                    // any of those truncated into a chip is exactly the part that
+                    // distinguishes it from the track above it.
+                    Column {
+                        audioTracks.forEach { track ->
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 64.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant
+                            )
+                            SettingsActionRow(
+                                icon = if (track.isSelected) Icons.Rounded.Check else Icons.Rounded.Audiotrack,
+                                title = track.label,
+                                supportingText = track.detail,
+                                onClick = { if (!track.isSelected) onAudioTrackSelected(track) }
+                            )
+                        }
+                    }
+                }
+            }
             if (showEndBehavior) {
                 HorizontalDivider(
                     modifier = Modifier.padding(start = 64.dp),
@@ -1898,42 +1995,9 @@ private fun PlayerSettingsSections(
     }
     Spacer(modifier = Modifier.height(16.dp))
 
-    if (audioTracks.isNotEmpty()) {
-        Spacer(modifier = Modifier.height(16.dp))
-        SettingsSectionLabel(
-            icon = Icons.Rounded.Audiotrack,
-            label = stringResource(R.string.vpc_audio_track)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        // Rows rather than the chips the quality ladder uses: a track name
-        // carries a language, a codec and a channel layout, and any of those
-        // truncated into a chip is exactly the part that distinguishes it from
-        // the track above it.
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
-        ) {
-            Column {
-                audioTracks.forEachIndexed { index, track ->
-                    if (index > 0) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 64.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-                    }
-                    SettingsActionRow(
-                        icon = if (track.isSelected) Icons.Rounded.Check else Icons.Rounded.Audiotrack,
-                        title = track.label,
-                        supportingText = track.detail,
-                        onClick = { if (!track.isSelected) onAudioTrackSelected(track) }
-                    )
-                }
-            }
-        }
-    }
-
     val hasSecondaryActions = showPip || showComments || showQueue ||
-        showTimedComments || showLiveChat || showVerticalLive || showZoomToFill
+        showTimedComments || showLiveChat || showVerticalLive || showZoomToFill ||
+        showSmoothMotion
     if (hasSecondaryActions) {
         Spacer(modifier = Modifier.height(16.dp))
         SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "More controls")
@@ -1943,6 +2007,19 @@ private fun PlayerSettingsSections(
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Column {
+                // Settings makes Smooth motion available (behind its warning);
+                // this switch turns it on and off from the video itself and is
+                // remembered. Its supporting line answers "is it doing anything
+                // right now?". Kept open like zoom: the change shows at once.
+                if (showSmoothMotion) {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Animation,
+                        title = stringResource(R.string.vpc_smooth_motion),
+                        supportingText = smoothMotionStatus,
+                        checked = smoothMotionOn,
+                        onCheckedChange = onSmoothMotionChanged
+                    )
+                }
                 if (showZoomToFill) {
                     SettingsToggleRow(
                         icon = Icons.Rounded.ZoomIn,
@@ -2070,8 +2147,33 @@ private fun SettingsActionRow(
     ) { Text(title) }
 }
 
+/** The Smooth motion read-out for the playback settings panel, or null when the setting is off. */
+@Composable
+private fun smoothMotionStatusText(status: FrameInterpolationStatus): String? = when (status) {
+    FrameInterpolationStatus.Disabled -> null
+    FrameInterpolationStatus.NeedsRestart -> stringResource(R.string.vpc_smooth_motion_restart)
+    FrameInterpolationStatus.Measuring -> stringResource(R.string.vpc_smooth_motion_measuring)
+    is FrameInterpolationStatus.Active -> when (status.limit) {
+        FrameInterpolationStatus.RateLimit.NONE ->
+            stringResource(R.string.vpc_smooth_motion_active, status.sourceFps, status.outputFps)
+        FrameInterpolationStatus.RateLimit.RESOLUTION -> stringResource(
+            R.string.vpc_smooth_motion_active_resolution, status.sourceFps, status.outputFps, status.targetFps
+        )
+        FrameInterpolationStatus.RateLimit.SCREEN ->
+            stringResource(R.string.vpc_smooth_motion_active_screen, status.sourceFps, status.outputFps)
+    }
+    is FrameInterpolationStatus.NotNeeded ->
+        stringResource(R.string.vpc_smooth_motion_not_needed, status.playingFps)
+    FrameInterpolationStatus.Live -> stringResource(R.string.vpc_smooth_motion_live)
+    FrameInterpolationStatus.Hdr -> stringResource(R.string.vpc_smooth_motion_hdr)
+    FrameInterpolationStatus.Hot -> stringResource(R.string.vpc_smooth_motion_hot)
+    FrameInterpolationStatus.BatterySaver -> stringResource(R.string.vpc_smooth_motion_battery)
+    FrameInterpolationStatus.CannotKeepUp -> stringResource(R.string.vpc_smooth_motion_cannot_keep_up)
+    FrameInterpolationStatus.Unsupported -> stringResource(R.string.vpc_smooth_motion_unsupported)
+}
+
 /** Which inline picker is open in playback settings; accordion, at most one. */
-private enum class SettingsPicker { QUALITY, SPEED }
+private enum class SettingsPicker { QUALITY, SPEED, AUDIO }
 
 /**
  * A quality/speed row that opens its options inline rather than owning a
@@ -2104,10 +2206,16 @@ private fun PickerRow(
                     ContainedLoadingIndicator(modifier = Modifier.size(24.dp))
                 } else {
                     if (value != null) {
+                        // Capped so a long value (an audio track such as
+                        // "Chinese (Traditional)") ellipsizes instead of
+                        // squeezing the row's title.
                         Text(
                             text = value,
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 160.dp)
                         )
                     }
                     if (expandable) {

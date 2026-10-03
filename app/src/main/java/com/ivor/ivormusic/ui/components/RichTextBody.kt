@@ -2,13 +2,11 @@ package com.ivor.ivormusic.ui.components
 
 import com.ivor.ivormusic.util.KLog
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -25,9 +23,13 @@ import com.ivor.ivormusic.data.RichText
  * where a link starts - see `parseRichText`. Pass the result straight to a
  * `Text`; Compose handles hit-testing and accessibility for link annotations.
  *
- * URLs open in the browser here. Timestamps and hashtags only become clickable
- * when a handler is supplied, so a screen with nowhere to seek to renders them
- * as ordinary text rather than as a link that does nothing.
+ * URLs go through [LocalUriHandler], which `MainActivity` overrides so a
+ * YouTube link opens inside Koda and anything else leaves for the browser.
+ * A channel mention (a `UC…` browse id) opens that channel the same way when
+ * the caller supplies no [onBrowseClick]; it used to render as plain text on
+ * every screen, because none supplied one. Timestamps and hashtags only become
+ * clickable when a handler is supplied, so a screen with nowhere to seek to
+ * renders them as ordinary text rather than as a link that does nothing.
  */
 @Composable
 fun rememberLinkedText(
@@ -35,10 +37,10 @@ fun rememberLinkedText(
     onTimestampClick: ((seconds: Long) -> Unit)? = null,
     onBrowseClick: ((browseId: String) -> Unit)? = null
 ): AnnotatedString {
-    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val linkColor = MaterialTheme.colorScheme.primary
 
-    return remember(rich, linkColor, onTimestampClick, onBrowseClick) {
+    return remember(rich, linkColor, onTimestampClick, onBrowseClick, uriHandler) {
         if (rich.links.isEmpty()) return@remember AnnotatedString(rich.text)
 
         val styles = TextLinkStyles(
@@ -50,12 +52,15 @@ fun rememberLinkedText(
             rich.links.forEach { link ->
                 val handler: (() -> Unit)? = when (val target = link.target) {
                     is RichLinkTarget.Url -> {
-                        { openUrl(context, target.url) }
+                        { openUri(uriHandler, target.url) }
                     }
                     is RichLinkTarget.Timestamp ->
                         onTimestampClick?.let { seek -> { seek(target.seconds) } }
                     is RichLinkTarget.Browse ->
                         onBrowseClick?.let { browse -> { browse(target.browseId) } }
+                            ?: target.browseId.takeIf { it.startsWith("UC") }?.let { id ->
+                                { openUri(uriHandler, "https://www.youtube.com/channel/$id") }
+                            }
                 }
                 if (handler == null) return@forEach
 
@@ -73,14 +78,9 @@ fun rememberLinkedText(
     }
 }
 
-private fun openUrl(context: android.content.Context, url: String) {
+private fun openUri(uriHandler: UriHandler, url: String) {
     try {
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-    } catch (e: ActivityNotFoundException) {
-        KLog.w("RichTextBody", "No handler for $url", e)
+        uriHandler.openUri(url)
     } catch (e: Exception) {
         KLog.w("RichTextBody", "Could not open $url", e)
     }

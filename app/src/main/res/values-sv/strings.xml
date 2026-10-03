@@ -172,7 +172,6 @@
 
     <string name="library_empty_title">Ditt bibliotek är tomt</string>
     <string name="library_empty_subtitle">Låtar du laddar ned eller gillar visas här</string>
-    <string name="library_create_playlist_hint">Skapa en med +-knappen nedan</string>
     <string name="fab_downloads">Nedladdningar</string>
     <string name="fab_listening_history">Lyssningshistorik</string>
     <string name="fab_statistics">Statistik</string>
