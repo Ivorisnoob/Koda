@@ -278,7 +278,8 @@ internal enum class SettingsPage {
     LYRICS,
     LASTFM,
     SPONSORBLOCK,
-    APP_ICON
+    APP_ICON,
+    BACKUP
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -504,6 +505,14 @@ fun SettingsScreen(
     var page by remember { mutableStateOf(SettingsPage.HUB) }
     var searchQuery by remember { mutableStateOf("") }
 
+    // Backup and restore is a page like the others, so on a wide window it
+    // opens beside the hub instead of taking the whole screen. Its work runs
+    // in the page's own scope, and beside the hub another category is one tap
+    // away - which would cancel a backup half written or a restore half
+    // applied. While it is busy the page stays where it is.
+    var backupBusy by remember { mutableStateOf(false) }
+    val openPage: (SettingsPage) -> Unit = { target -> if (!backupBusy) page = target }
+
     // List-detail on a window wide enough for both: the hub stays on the
     // start side and the open category fills the rest, rather than a phone's
     // one-screen-at-a-time stack stretched across a tablet. The hub is still
@@ -693,7 +702,7 @@ fun SettingsScreen(
     // Not remembered: the closures capture callbacks that arrive as parameters,
     // and ~38 small objects per recomposition is cheaper than a stale index.
     val searchEntries = buildSettingsSearchIndex(
-        onOpenPage = { page = it },
+        onOpenPage = openPage,
         onOpenQualityPicker = { qualityDialogTarget = it },
         onOpenRoutingPicker = { subscriptionDialogTarget = it },
         onShowAbout = { showAboutDialog = true },
@@ -703,7 +712,7 @@ fun SettingsScreen(
         onNavigateToColorPalette = onNavigateToColorPalette,
         onNavigateToSubscriptions = onNavigateToSubscriptions,
         onNavigateToNotInterested = onNavigateToNotInterested,
-        onNavigateToBackup = onNavigateToBackup,
+        onNavigateToBackup = { openPage(SettingsPage.BACKUP) },
         onNavigateToReportBug = onNavigateToReportBug,
         onNavigateToTimeLimit = onNavigateToTimeLimit,
         supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
@@ -980,6 +989,16 @@ fun SettingsScreen(
                 onOpenAutoHelp = { showAutoHelpDialog = true },
                 onBack = { page = SettingsPage.HUB }
             )
+
+            SettingsPage.BACKUP -> {
+                // Leaving composition mid-work must not leave the hub locked.
+                DisposableEffect(Unit) { onDispose { backupBusy = false } }
+                BackupScreen(
+                    onBack = { page = SettingsPage.HUB },
+                    contentPadding = PaddingValues(bottom = SettingsMiniPlayerClearance),
+                    onBusyChange = { backupBusy = it }
+                )
+            }
         }
     }
 
@@ -1012,8 +1031,8 @@ fun SettingsScreen(
             canPostPromoted = canPostPromoted,
             loadLocalSongs = loadLocalSongs,
             excludedFolderCount = excludedFolders.size,
-            onOpenPage = { page = it },
-            onNavigateToBackup = onNavigateToBackup,
+            onOpenPage = openPage,
+            onNavigateToBackup = { openPage(SettingsPage.BACKUP) },
             onShowAbout = { showAboutDialog = true },
             onBackClick = onBackClick,
             selectedPage = selectedPage
@@ -1035,6 +1054,9 @@ fun SettingsScreen(
                 modifier = Modifier
                     .width((settingsWindow.width * 0.38f).coerceIn(320.dp, 420.dp))
                     .fillMaxHeight()
+                    // Its rows also lead out of Settings altogether, which
+                    // would end a backup or restore in progress the same way.
+                    .coveredBy(backupBusy)
             ) {
                 hubContent(detailPage)
             }
@@ -1713,6 +1735,7 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_backup_and_restore),
                             value = backupValue,
                             onClick = onNavigateToBackup,
+                            selected = selectedPage == SettingsPage.BACKUP,
                             iconShape = MaterialShapes.Clover8Leaf.toShape(),
                             explanation = stringResource(R.string.si_hub_backup)
                         )

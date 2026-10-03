@@ -2425,8 +2425,10 @@ private fun CaptionsSheet(
                 }
                 // A local file's subtitle tracks are known the moment it is
                 // read, so there is nothing to wait for and no spinner: an
-                // empty list here is the answer, not a pending one.
-                isLocalMedia -> item {
+                // empty list here is the answer, not a pending one. A download
+                // is local too but brings the captions saved beside it, which
+                // arrive in [tracks] and are listed below.
+                isLocalMedia && tracks.isEmpty() && !isLoading -> item {
                     Text(
                         text = stringResource(R.string.vpc_no_embedded_subtitles),
                         style = MaterialTheme.typography.bodyMedium,
