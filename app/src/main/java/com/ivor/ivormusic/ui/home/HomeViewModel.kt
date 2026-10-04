@@ -67,6 +67,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
     private val homeRecommendationCache = HomeRecommendationCache(application)
+    // Ids that have led Home this session, oldest first, so a pull to refresh
+    // can lead with something else. Above init, which runs the first load.
+    private val recentHomeLeads = ArrayDeque<String>()
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(application)
     private val localVideoRepository = com.ivor.ivormusic.data.LocalVideoRepository(application)
 
@@ -123,6 +126,53 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _pendingVideoPlaylistPage = MutableStateFlow<VideoPlaylist?>(null)
     val pendingVideoPlaylistPage: StateFlow<VideoPlaylist?> = _pendingVideoPlaylistPage.asStateFlow()
+
+    /**
+     * A Spotify playlist or album link shared into the app, waiting for the
+     * Library to open its import screen on it. The same hand-off as the
+     * playlist page above: the screen lives inside the tab system.
+     */
+    private val _pendingSpotifyImport = MutableStateFlow<String?>(null)
+    val pendingSpotifyImport: StateFlow<String?> = _pendingSpotifyImport.asStateFlow()
+
+    fun requestSpotifyImport(link: String) {
+        _pendingSpotifyImport.value = link.takeIf { it.isNotBlank() }
+    }
+
+    fun consumeSpotifyImportRequest() {
+        _pendingSpotifyImport.value = null
+    }
+
+    private val spotifyPlaylistSource = com.ivor.ivormusic.data.SpotifyPlaylistSource()
+
+    /** The songs a Spotify link names, or null when it cannot be read (private, removed, offline). */
+    suspend fun loadSpotifyCollection(ref: com.ivor.ivormusic.data.SpotifyRef): com.ivor.ivormusic.data.SpotifyCollection? =
+        try {
+            spotifyPlaylistSource.load(ref)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w("HomeViewModel", "Spotify playlist could not be read", e)
+            null
+        }
+
+    /**
+     * The same recording on YouTube Music, or null when no result is an exact
+     * match. One song search per track: the caller paces them and stops on a
+     * rate-limit hold, since a hundred searches in a row is exactly the
+     * traffic that hold exists to stop.
+     */
+    suspend fun matchSpotifyTrack(track: com.ivor.ivormusic.data.SpotifyTrack): Song? =
+        try {
+            com.ivor.ivormusic.data.SpotifyMatcher.pick(
+                track,
+                youtubeRepository.search(com.ivor.ivormusic.data.SpotifyMatcher.query(track))
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
 
     fun requestPlaylistPage(info: PlaylistPageInfo) {
         _pendingPlaylistPage.value = info.toDisplayItem()
@@ -2786,6 +2836,35 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) { }
     }
 
+    /**
+     * Put a fetched Home list on screen and in the cache. A refresh the user
+     * asked for [rotate]s it first, so it leads with songs that have not led
+     * this session; an ordinary load keeps YouTube's order. Either way the
+     * songs that end up leading are remembered for the next refresh.
+     *
+     * @return false when the fetch had nothing usable and Home was left alone.
+     */
+    private fun publishHomeRecommendations(fetched: List<Song>, rotate: Boolean): Boolean {
+        val pool = usableHomeRecommendations(
+            listOf(fetched),
+            limit = com.ivor.ivormusic.data.HOME_RECOMMENDATION_POOL
+        )
+        val ordered = if (rotate) {
+            com.ivor.ivormusic.data.rotateHomeRecommendations(pool, recentHomeLeads.toList())
+        } else pool
+        val recs = usableHomeRecommendations(listOf(ordered))
+        if (recs.isEmpty()) return false
+        val leads = recs.take(com.ivor.ivormusic.data.HOME_LEAD_SIZE).map { it.id }
+        recentHomeLeads.removeAll(leads.toSet())
+        recentHomeLeads.addAll(leads)
+        while (recentHomeLeads.size > com.ivor.ivormusic.data.HOME_RECOMMENDATION_POOL) {
+            recentHomeLeads.removeFirst()
+        }
+        _youtubeSongs.value = recs
+        homeRecommendationCache.save(recs)
+        return true
+    }
+
     fun loadYouTubeRecommendations(force: Boolean = false) {
         if (!force &&
             (recommendationsLoadJob?.isActive == true || loadedRecently(recommendationsLoadedAtMs))
@@ -2793,27 +2872,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         recommendationsLoadJob = viewModelScope.launch {
             _isLoading.value = true
             try {
-                if (sessionManager.isLoggedIn()) {
-                    val recs = usableHomeRecommendations(
-                        listOf(youtubeRepository.getRecommendations())
-                    )
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                        homeRecommendationCache.save(recs)
-                        recommendationsLoadedAtMs = System.currentTimeMillis()
-                    }
+                // Not logged in: personalize from the local taste profile
+                // (play history, likes, searches). Falls back to trending
+                // internally when there's no listening data yet.
+                val fetched = if (sessionManager.isLoggedIn()) {
+                    youtubeRepository.getRecommendations()
                 } else {
-                    // Not logged in: personalize from the local taste profile
-                    // (play history, likes, searches). Falls back to trending
-                    // internally when there's no listening data yet.
-                    val recs = usableHomeRecommendations(
-                        listOf(recommendationEngine.getHomeRecommendations())
+                    recommendationEngine.getHomeRecommendations(
+                        limit = com.ivor.ivormusic.data.HOME_RECOMMENDATION_POOL
                     )
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                        homeRecommendationCache.save(recs)
-                        recommendationsLoadedAtMs = System.currentTimeMillis()
-                    }
+                }
+                if (publishHomeRecommendations(fetched, rotate = false)) {
+                    recommendationsLoadedAtMs = System.currentTimeMillis()
                 }
             } catch (e: Exception) {
                 // The feed keeps whatever it already had - both branches above
@@ -3161,13 +3231,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     youtubeRepository.fetchAccountInfo()
                     _userAvatar.value = sessionManager.getUserAvatar()
                     
-                    // Fetch personalized recommendations (order preserved from YTM)
-                    val recs = usableHomeRecommendations(
-                        listOf(youtubeRepository.getRecommendations())
-                    )
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                        homeRecommendationCache.save(recs)
+                    // Personalized recommendations, led by songs that have
+                    // not led yet: YouTube answers a refresh with the same
+                    // list, and the same three covers read as nothing having
+                    // happened.
+                    if (publishHomeRecommendations(youtubeRepository.getRecommendations(), rotate = true)) {
                         recommendationsLoadedAtMs = System.currentTimeMillis()
                     }
 
@@ -3179,11 +3247,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     // Logged-out YouTube mode: refresh the taste-based feed too.
                     // (Gated on a non-empty feed so local-only users don't pay
                     // for network searches on every pull-to-refresh.)
-                    val recs = recommendationEngine.getHomeRecommendations()
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                        homeRecommendationCache.save(recs)
-                    }
+                    publishHomeRecommendations(
+                        recommendationEngine.getHomeRecommendations(
+                        limit = com.ivor.ivormusic.data.HOME_RECOMMENDATION_POOL
+                    ), rotate = true
+                    )
                 }
                 // Reload local songs with exclusions and playlists
                 playlistRepository.refreshPlaylists()
@@ -3903,6 +3971,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun addSongsToLocalPlaylist(playlistId: String, songs: List<Song>): Int =
         playlistRepository.addSongsToPlaylist(playlistId, songs)
+
+    /**
+     * Add a picked selection to a playlist the user owns: one batch write for
+     * a device playlist, one `edit_playlist` per song for one on the account.
+     * The account has no place for a device file, so those are left out there.
+     * One request per song rather than several actions in one, because only
+     * the single-action form of that call has been probed.
+     *
+     * @return how many songs landed.
+     */
+    suspend fun addSongsToPlaylist(playlistId: String, songs: List<Song>): Int {
+        if (playlistRepository.userPlaylists.value.any { it.id == playlistId }) {
+            return playlistRepository.addSongsToPlaylist(playlistId, songs)
+        }
+        var added = 0
+        for (song in songs.distinctBy { it.id }) {
+            if (song.source != com.ivor.ivormusic.data.SongSource.YOUTUBE) continue
+            val ok = try {
+                youtubeRepository.addToYouTubePlaylist(playlistId, song.id, music = true)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+            if (ok) added++
+        }
+        return added
+    }
 
     /**
      * Create a local playlist already holding [songs] - the playlist studio's

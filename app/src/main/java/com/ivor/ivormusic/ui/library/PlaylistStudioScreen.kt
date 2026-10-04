@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -130,6 +131,11 @@ import kotlin.random.Random
 fun PlaylistStudioScreen(
     viewModel: HomeViewModel,
     onBack: () -> Unit,
+    /**
+     * Leave for the Spotify import screen, the other way to start a playlist.
+     * No default: every host states whether it can open it.
+     */
+    onImportFromSpotify: (() -> Unit)?,
     /** The playlist exists; the caller decides where to go and show it. */
     onCreated: (PlaylistDisplayItem) -> Unit
 ) {
@@ -293,6 +299,15 @@ fun PlaylistStudioScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.cd_studio_close))
+                    }
+                },
+                actions = {
+                    if (onImportFromSpotify != null) {
+                        TextButton(onClick = onImportFromSpotify) {
+                            Icon(Icons.Rounded.Link, null, Modifier.size(18.dp))
+                            Spacer(Modifier.size(6.dp))
+                            Text(stringResource(R.string.spotify_import_title))
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

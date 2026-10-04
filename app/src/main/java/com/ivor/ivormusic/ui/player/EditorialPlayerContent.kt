@@ -117,6 +117,11 @@ import com.ivor.ivormusic.ui.components.queueDragLongPress
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.components.rememberFocusedQueueListState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameNanos
+import com.ivor.ivormusic.ui.components.UnitMorphShape
+import com.ivor.ivormusic.ui.components.fittedToCircle
+import kotlinx.coroutines.isActive
 import kotlin.math.abs
 
 /**
@@ -129,8 +134,9 @@ import kotlin.math.abs
  * size and shape only.
  *
  * Signature moves:
- * - Album art die-cut into a per-track MaterialShapes polygon that morphs to
- *   a new cut on every track change.
+ * - Album art seen through a die-cut that turns and morphs from one
+ *   MaterialShapes polygon to the next while a song plays, stretches toward a
+ *   pill under a swipe, and snaps to a new cut on every track change.
  * - Display serif italic headline, re-typeset per track like a new spread.
  * - PLAY/PAUSE word pill: the label is the icon.
  * - Wavy-played / flat-remaining progress line whose wave settles on pause.
@@ -378,10 +384,15 @@ private fun EditorialNowPlayingView(
                         onSurfaceVariantColor = accent.copy(alpha = 0.6f)
                     )
                 } else {
+                    // The cover follows the finger and is pulled out toward
+                    // a pill as it goes; the tilt it used to take is gone,
+                    // because a stretch and a tilt at once read as a wobble.
+                    val swipeThresholdPx = with(LocalDensity.current) {
+                        SwipeToSkipDefaults.Threshold.toPx()
+                    }
                     Box(
                         modifier = Modifier.graphicsLayer {
                             translationX = swipeToSkip.offset * SwipeToSkipDefaults.ArtFollow
-                            rotationZ = swipeToSkip.offset / 80f
                         }
                     ) {
                         EditorialDieCutArt(
@@ -389,7 +400,10 @@ private fun EditorialNowPlayingView(
                             isPlaying = isPlaying,
                             onTap = onPlayPause,
                             accent = accent,
-                            field = field
+                            field = field,
+                            swipeStretch = {
+                                (abs(swipeToSkip.offset) / swipeThresholdPx).coerceIn(0f, 1f)
+                            }
                         )
                     }
                 }
@@ -680,10 +694,40 @@ private fun EditorialNowPlayingView(
     }
 }
 
+/** How fast the cut-out turns while a song plays: one revolution in forty seconds. */
+private const val EDITORIAL_SPIN_DEGREES_PER_SECOND = 9f
+
+/** How long the cut-out rests on a shape, and how long it takes to reach the next. */
+private const val EDITORIAL_SHAPE_HOLD_SECONDS = 3.2f
+private const val EDITORIAL_SHAPE_MORPH_SECONDS = 1.3f
+
+/** How far a full swipe pulls the cover out sideways, and how much it thins. */
+private const val EDITORIAL_SWIPE_STRETCH = 0.16f
+private const val EDITORIAL_SWIPE_SQUASH = 0.12f
+
 /**
- * The die-cut artwork: album art clipped by a per-track MaterialShapes
- * polygon. On track change the clip morphs from the previous cut to the new
- * one; the art settles slightly smaller while paused.
+ * The die-cut artwork: album art seen through a cut-out that is never still
+ * while a song plays. The cut turns slowly and moves from one Material shape to
+ * the next, resting on each; the picture inside stays upright, so it is the
+ * frame that moves and not the cover. Paused, everything stops where it is and
+ * the art settles slightly smaller.
+ *
+ * A swipe pulls the cover out sideways - wider, thinner, its cut rounding off
+ * toward a circle, which stretched reads as a pill - and a skip lets it snap
+ * into the next shape; an abandoned swipe springs back to the one it left. A
+ * skip from a button or the end of a song takes the same step without the pull.
+ *
+ * **Nothing here jumps.** [judgement] A cut half way between two shapes has no
+ * polygon of its own to morph from, so the rounding and the snap only happen
+ * from a shape at rest; caught mid-morph, the cover stretches as it is and the
+ * cycle carries on. The alternative is a visible pop on roughly one swipe in
+ * three.
+ *
+ * Shapes are fitted to a circle and drawn from the unit square, the mini
+ * player's two rules: nothing the cut turns through leaves its bounds, and the
+ * cover does not change size from one shape to the next. Everything that moves
+ * is read in `graphicsLayer`, so a frame redraws the cover and recomposes
+ * nothing.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -692,42 +736,82 @@ private fun EditorialDieCutArt(
     isPlaying: Boolean,
     onTap: () -> Unit,
     accent: Color,
-    field: Color
+    field: Color,
+    /** How far a swipe-to-skip has been pulled, 0..1. Read in the draw phase. */
+    swipeStretch: () -> Float
 ) {
     val styleWheel = LocalPlayerStyleWheelController.current
-    val dieCuts = remember {
+    val shapes = remember {
         listOf(
             MaterialShapes.Flower,
             MaterialShapes.Clover4Leaf,
             MaterialShapes.Puffy,
             MaterialShapes.Cookie12Sided,
             MaterialShapes.SoftBurst
-        )
+        ).map(::fittedToCircle)
     }
-    val targetPolygon = remember(currentSong?.id) {
-        dieCuts[abs(currentSong?.id?.hashCode() ?: 0) % dieCuts.size]
+    val circle = remember { fittedToCircle(MaterialShapes.Circle) }
+    // Each shape to the one after it; each shape to a circle and back out of one.
+    val cycle = remember { shapes.indices.map { Morph(shapes[it], shapes[(it + 1) % shapes.size]) } }
+    val toCircle = remember { shapes.map { Morph(it, circle) } }
+    val fromCircle = remember { shapes.map { Morph(circle, it) } }
+    val step = EDITORIAL_SHAPE_HOLD_SECONDS + EDITORIAL_SHAPE_MORPH_SECONDS
+
+    val angle = remember { mutableFloatStateOf(0f) }
+    val shapeSeconds = remember {
+        // A song opens on a shape of its own, as it always has.
+        mutableFloatStateOf((abs(currentSong?.id?.hashCode() ?: 0) % shapes.size) * step)
+    }
+    // The step a skip takes: a one-off morph played on a spring, over the cycle.
+    val arrival = remember { Animatable(1f) }
+    var arrivalMorph by remember { mutableStateOf<Morph?>(null) }
+
+    fun shapeIndex(): Int = (shapeSeconds.floatValue / step).toInt().coerceIn(0, shapes.lastIndex)
+    fun cycleProgress(): Float {
+        val moving = ((shapeSeconds.floatValue - shapeIndex() * step - EDITORIAL_SHAPE_HOLD_SECONDS) /
+            EDITORIAL_SHAPE_MORPH_SECONDS).coerceIn(0f, 1f)
+        // Eased at both ends, so a shape settles rather than stops.
+        return moving * moving * (3f - 2f * moving)
     }
 
-    var morphFrom by remember { mutableStateOf(targetPolygon) }
-    var morphTo by remember { mutableStateOf(targetPolygon) }
-    val morphProgress = remember { Animatable(1f) }
-    LaunchedEffect(targetPolygon) {
-        if (targetPolygon !== morphTo) {
-            morphFrom = morphTo
-            morphTo = targetPolygon
-            morphProgress.snapTo(0f)
-            morphProgress.animateTo(
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying) return@LaunchedEffect
+        var last = withFrameNanos { it }
+        while (isActive) {
+            withFrameNanos { now ->
+                val seconds = (now - last) / 1_000_000_000f
+                last = now
+                // Held still under a finger and during a skip's snap.
+                if (swipeStretch() == 0f && arrivalMorph == null) {
+                    angle.floatValue = (angle.floatValue + seconds * EDITORIAL_SPIN_DEGREES_PER_SECOND) % 360f
+                    shapeSeconds.floatValue = (shapeSeconds.floatValue + seconds) % (step * shapes.size)
+                }
+            }
+        }
+    }
+
+    var shownSongId by remember { mutableStateOf(currentSong?.id) }
+    LaunchedEffect(currentSong?.id) {
+        if (currentSong?.id == shownSongId) return@LaunchedEffect
+        shownSongId = currentSong?.id
+        // Only from a shape at rest; see the note on jumps above.
+        if (cycleProgress() != 0f) return@LaunchedEffect
+        val from = shapeIndex()
+        val next = (from + 1) % shapes.size
+        arrivalMorph = if (swipeStretch() > 0.4f) fromCircle[next] else cycle[from]
+        shapeSeconds.floatValue = next * step
+        arrival.snapTo(0f)
+        try {
+            arrival.animateTo(
                 targetValue = 1f,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioLowBouncy,
                     stiffness = Spring.StiffnessLow
                 )
             )
+        } finally {
+            arrivalMorph = null
         }
-    }
-    val morph = remember(morphFrom, morphTo) { Morph(morphFrom, morphTo) }
-    val dieCutShape = remember(morph, morphProgress.value) {
-        EditorialMorphShape(morph, morphProgress.value)
     }
 
     // Paused art settles slightly smaller; playing art sits at full size.
@@ -745,16 +829,30 @@ private fun EditorialDieCutArt(
         contentAlignment = Alignment.Center
     ) {
         if (maxWidth < 50.dp || maxHeight < 50.dp) return@BoxWithConstraints
-        val artSize = minOf(maxWidth, maxHeight) * 0.95f
+        val artSize = minOf(maxWidth, maxHeight)
 
         Box(
             modifier = Modifier
                 .size(artSize)
+                // The pull, in screen terms: outside the turning layer, so the
+                // cover stretches sideways whichever way its cut is facing.
                 .graphicsLayer {
-                    scaleX = artScale
-                    scaleY = artScale
+                    val pull = swipeStretch()
+                    scaleX = artScale * (1f + EDITORIAL_SWIPE_STRETCH * pull)
+                    scaleY = artScale * (1f - EDITORIAL_SWIPE_SQUASH * pull)
                 }
-                .clip(dieCutShape)
+                .graphicsLayer {
+                    rotationZ = angle.floatValue
+                    val snap = arrivalMorph
+                    val pull = swipeStretch()
+                    shape = when {
+                        snap != null -> UnitMorphShape(snap, arrival.value)
+                        pull > 0f && cycleProgress() == 0f ->
+                            UnitMorphShape(toCircle[shapeIndex()], pull * pull * (3f - 2f * pull))
+                        else -> UnitMorphShape(cycle[shapeIndex()], cycleProgress())
+                    }
+                    clip = true
+                }
                 .background(accent)
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = { onTap() })
@@ -767,7 +865,11 @@ private fun EditorialDieCutArt(
                 PlayerArtwork(
                     song = artSong,
                     contentDescription = "Album Art",
-                    modifier = Modifier.fillMaxSize(),
+                    // Turned back by the same angle: the cut goes round, the
+                    // picture does not.
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { rotationZ = -angle.floatValue },
                     contentScale = ContentScale.Crop
                 )
             } else {
@@ -775,7 +877,9 @@ private fun EditorialDieCutArt(
                     imageVector = Icons.Rounded.MusicNote,
                     contentDescription = null,
                     tint = field,
-                    modifier = Modifier.size(artSize * 0.3f)
+                    modifier = Modifier
+                        .size(artSize * 0.3f)
+                        .graphicsLayer { rotationZ = -angle.floatValue }
                 )
             }
         }

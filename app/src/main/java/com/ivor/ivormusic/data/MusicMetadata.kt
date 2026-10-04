@@ -276,6 +276,96 @@ internal object MusicMetadata {
             }
     }
 
+    private fun strings(node: Any?, key: String): List<String> = buildList {
+        when (node) {
+            is JSONObject -> node.keys().forEach { name ->
+                val value = node.opt(name)
+                if (name == key && value is String) add(value) else addAll(strings(value, key))
+            }
+            is JSONArray -> for (i in 0 until node.length()) addAll(strings(node.opt(i), key))
+        }
+    }
+
+    /**
+     * Whether a row or panel is the song itself rather than a video of it:
+     * its watch endpoints carry `musicVideoType`, and the song is
+     * `MUSIC_VIDEO_TYPE_ATV` (the others are the official video, a lyric
+     * video, a user upload). Null when the row does not say.
+     * [verified October 2026 on album rows, playlist rows and `/next` panels]
+     */
+    fun isSongVersion(node: JSONObject): Boolean? {
+        val types = strings(node, "musicVideoType")
+        return if (types.isEmpty()) null else types.any { it == "MUSIC_VIDEO_TYPE_ATV" }
+    }
+
+    /**
+     * Whether an album page listed videos in place of its songs.
+     *
+     * Signed out, YouTube Music's album page gives each track that has an
+     * official video the *video's* id, under the song's title and the song's
+     * length [verified October 2026: Short n' Sweet, all twelve tracks, in
+     * US, IN and GB; signed in, the same page gives the songs]. Played as it
+     * comes, that is the video's audio - a longer cut with its own intro and
+     * ending - running past the length on screen, with lyrics timed for a
+     * recording that is not the one playing.
+     */
+    fun albumHasVideoVersions(root: JSONObject): Boolean {
+        val shelves = objects(root, "musicShelfRenderer") + objects(root, "musicPlaylistShelfRenderer")
+        return shelves.flatMap { objects(it.optJSONArray("contents"), "musicResponsiveListItemRenderer") }
+            .any { isSongVersion(it) == false }
+    }
+
+    /**
+     * The album's own audio playlist (`OLAK5uy_...`), from the header's play
+     * button. Browsed as a playlist it lists the songs themselves, signed in
+     * or out [verified October 2026].
+     */
+    fun albumAudioPlaylistId(root: JSONObject): String? {
+        val header = (objects(root, "musicResponsiveHeaderRenderer") + objects(root, "musicDetailHeaderRenderer"))
+            .firstOrNull() ?: return null
+        return strings(header, "playlistId").firstOrNull { it.startsWith("OLAK5uy_") }
+    }
+
+    /**
+     * [album] with each track's id and length taken from the same track in
+     * [audio], the album's audio playlist. Matched by position when the titles
+     * agree and by title otherwise; a track with no match keeps what it had,
+     * which is the video and still plays.
+     */
+    fun withSongVersions(album: List<Song>, audio: List<Song>): List<Song> {
+        fun key(title: String) = title.trim().lowercase()
+        val unused = audio.toMutableList()
+        return album.mapIndexed { index, track ->
+            val match = audio.getOrNull(index)?.takeIf { it in unused && key(it.title) == key(track.title) }
+                ?: unused.firstOrNull { key(it.title) == key(track.title) }
+                ?: return@mapIndexed track
+            unused.remove(match)
+            track.copy(id = match.id, duration = match.duration.takeIf { it > 0L } ?: track.duration)
+        }
+    }
+
+    /**
+     * The songs of a `/next` queue, one per entry. Signed in, an entry that
+     * exists as both a video and a song arrives as a
+     * `playlistPanelVideoWrapperRenderer` holding the two - `primaryRenderer`
+     * and `counterpart[0].counterpartRenderer` - and reading every panel in
+     * the response queued both. The song is taken when there is one.
+     * [verified October 2026]
+     */
+    fun queueSongs(root: JSONObject): List<Song> {
+        val entries = objects(root, "playlistPanelRenderer")
+            .flatMap { it.optJSONArray("contents").rows() }
+        if (entries.isEmpty()) return objects(root, "playlistPanelVideoRenderer").mapNotNull(::song)
+        return entries.mapNotNull { entry ->
+            val wrapper = entry.optJSONObject("playlistPanelVideoWrapperRenderer")
+            val versions = if (wrapper != null) {
+                objects(wrapper.optJSONObject("primaryRenderer"), "playlistPanelVideoRenderer") +
+                    objects(wrapper.optJSONArray("counterpart"), "playlistPanelVideoRenderer")
+            } else listOfNotNull(entry.optJSONObject("playlistPanelVideoRenderer"))
+            (versions.firstOrNull { isSongVersion(it) == true } ?: versions.firstOrNull())?.let(::song)
+        }
+    }
+
     /** Search and discography continuations only; never call on an artist page
      * with unrelated shelves competing for the next token. */
     fun continuation(root: JSONObject): String? =

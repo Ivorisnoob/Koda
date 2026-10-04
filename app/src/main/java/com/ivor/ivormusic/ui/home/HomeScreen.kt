@@ -185,6 +185,9 @@ private val VIDEO_SHELL_TOP_BAR_HEIGHT = 76.dp
 /** Gap the mini player keeps above the system navigation bar once the floating toolbar is gone. */
 private val MINI_PLAYER_RESTING_GAP = 16.dp
 
+/** The bubble's width plus its margin and a gap: what a bar beside it leaves free. */
+private val MINI_BUBBLE_END_RESERVE = 92.dp
+
 /** Scrolling down this far closes the music pill into its bubble. */
 private val MINI_BUBBLE_COLLAPSE_SCROLL = 56.dp
 
@@ -506,7 +509,12 @@ fun HomeScreen(
     // restore one list's index into the other.
     val videoHomeScrollState = rememberLazyListState()
     val musicHomeScrollState = rememberLazyListState()
-    val searchScrollState = rememberLazyListState()
+    // Search is one screen in both modes, but a mode switch on it has the
+    // outgoing and the incoming copy composed together for the length of the
+    // cross-fade, and a LazyListState can drive only one list (see the tab
+    // AnimatedContent below).
+    val musicSearchScrollState = rememberLazyListState()
+    val videoSearchScrollState = rememberLazyListState()
     val subscriptionsScrollState = rememberLazyListState()
     val musicLibraryScrollState = rememberLazyListState()
     val videoLibraryScrollState = rememberLazyListState()
@@ -514,7 +522,7 @@ fun HomeScreen(
     // Which of the above the visible tab is currently driving.
     val currentTabScrollState = when (selectedTab) {
         0 -> if (videoMode) videoHomeScrollState else musicHomeScrollState
-        1 -> searchScrollState
+        1 -> if (videoMode) videoSearchScrollState else musicSearchScrollState
         2 -> if (videoMode) subscriptionsScrollState else musicLibraryScrollState
         else -> videoLibraryScrollState
     }
@@ -632,6 +640,12 @@ fun HomeScreen(
             goToTab(2)
             viewModel.consumePlaylistPageRequest()
         }
+    }
+    // A shared Spotify link: the Library opens its import screen on it and
+    // consumes the request, so all this has to do is get to the music Library.
+    val pendingSpotifyImport by viewModel.pendingSpotifyImport.collectAsState()
+    LaunchedEffect(pendingSpotifyImport) {
+        if (pendingSpotifyImport != null) goToTab(2)
     }
     val pendingVideoPlaylistPage by viewModel.pendingVideoPlaylistPage.collectAsState()
     LaunchedEffect(pendingVideoPlaylistPage) {
@@ -846,6 +860,44 @@ fun HomeScreen(
         animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
         label = "bottomOverlayInset"
     )
+    // The same clearance as it moves, for a bar that floats above the content
+    // and should follow the overlays rather than stand over the gap they
+    // leave: down to the screen edge as the toolbar hides, and beside the
+    // music bubble once the pill has closed into it. With the video mini bar
+    // up, or a pinned bar or rail, nothing moves and it is the resting inset.
+    val overlaysMove by rememberUpdatedState(
+        !nonExpressiveNavigationBar && !useRail && !hasVideoMiniPlayer
+    )
+    val overlayNavInset by rememberUpdatedState(navigationOverlayInset)
+    val overlayHasMusicPill by rememberUpdatedState(musicPillVisible)
+    val overlayRestingInset = rememberUpdatedState(bottomOverlayInset)
+    val bottomOverlayMotion = remember(floatingToolbarState, bubbleDensity) {
+        com.ivor.ivormusic.ui.components.BottomOverlayMotion(
+            bottomPx = {
+                with(bubbleDensity) {
+                    val resting = overlayRestingInset.value
+                    if (!overlaysMove) {
+                        resting.toPx()
+                    } else {
+                        val hidden = floatingToolbarState.hiddenFraction()
+                        val bubble = miniBubbleFraction.value.coerceIn(0f, 1f)
+                        val nav = overlayNavInset.toPx()
+                        val base = nav + (MINI_PLAYER_RESTING_GAP.toPx() - nav) * hidden
+                        // The pill rides down with the toolbar and closes the
+                        // gap between them as it goes.
+                        val pill = (resting.toPx() - nav) * (1f - 0.12f * hidden) * (1f - bubble)
+                        base + pill
+                    }
+                }
+            },
+            endInsetPx = {
+                if (!overlaysMove || !overlayHasMusicPill) 0f
+                else with(bubbleDensity) {
+                    MINI_BUBBLE_END_RESERVE.toPx() * miniBubbleFraction.value.coerceIn(0f, 1f)
+                }
+            }
+        )
+    }
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // The one inset every tab list scrolls inside, top and bottom. It belongs
@@ -861,6 +913,7 @@ fun HomeScreen(
     // Use Box overlay instead of Scaffold for truly floating navbar
     androidx.compose.runtime.CompositionLocalProvider(
         com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset,
+        com.ivor.ivormusic.ui.components.LocalBottomOverlayMotion provides bottomOverlayMotion,
         com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher provides { showAccountSheet = true },
         com.ivor.ivormusic.ui.components.LocalNowPlaying provides
             com.ivor.ivormusic.ui.components.NowPlayingState(currentSong?.id, isPlaying)
@@ -1007,12 +1060,17 @@ fun HomeScreen(
                     // that header off with it and reads as the whole chrome
                     // leaving - when nothing about it was supposed to move.
                     // A fade leaves it apparently stationary.
+                    // The page being left also grows a touch as it goes, the
+                    // morph the mode swap has always had.
                     if (initialState.videoMode != targetState.videoMode) {
                         return@AnimatedContent androidx.compose.animation.fadeIn(
                             androidx.compose.animation.core.tween(220)
-                        ) togetherWith androidx.compose.animation.fadeOut(
+                        ) togetherWith (androidx.compose.animation.fadeOut(
                             androidx.compose.animation.core.tween(180)
-                        )
+                        ) + androidx.compose.animation.scaleOut(
+                            targetScale = 1.05f,
+                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
+                        ))
                     }
                     val initialRank = visualTabOrder.indexOf(initialState.tab).takeIf { it >= 0 }
                         ?: initialState.tab
@@ -1035,29 +1093,21 @@ fun HomeScreen(
                 }
             ) { tabKey ->
                 val targetTab = tabKey.tab
+                // Each page draws the mode it was keyed on, never the live one.
+                // A mode switch keeps the page being left composed until its
+                // fade ends; reading the live mode there made it rebuild itself
+                // as the mode being entered, so two lists shared one
+                // LazyListState for the length of the transition. The state
+                // binds to whichever list attached last and is not handed back
+                // when that list is disposed, so if the survivor was the other
+                // one it stopped scrolling until the tab was rebuilt: every
+                // drag reached it and remeasured a list no longer on screen.
+                // [scar October 2026, read out of a heap dump of a stuck Home]
+                @Suppress("NAME_SHADOWING")
+                val videoMode = tabKey.videoMode
                 when (targetTab) {
                     0 -> {
-                        // Mode swap morphs the page while the hoisted toggle
-                        // thumb keeps sliding above it. Spec is read here because
-                        // motionScheme is composable and transitionSpec is not.
-                        val modeScaleSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
-                        androidx.compose.animation.AnimatedContent(
-                            targetState = videoMode,
-                            label = "ModeTransition",
-                            transitionSpec = {
-                                (androidx.compose.animation.fadeIn(
-                                    androidx.compose.animation.core.tween(durationMillis = 260, delayMillis = 60)
-                                ) + androidx.compose.animation.scaleIn(
-                                    initialScale = 0.92f,
-                                    animationSpec = modeScaleSpec
-                                )) togetherWith (androidx.compose.animation.fadeOut(
-                                    androidx.compose.animation.core.tween(durationMillis = 160)
-                                ) + androidx.compose.animation.scaleOut(
-                                    targetScale = 1.05f,
-                                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
-                                ))
-                            }
-                        ) { videoModeContent ->
+                        videoMode.let { videoModeContent ->
                             // Video Mode: Show video content
                             if (videoModeContent && localOnly) {
                                 com.ivor.ivormusic.ui.components.LocalOnlyNotice(
@@ -1373,7 +1423,7 @@ fun HomeScreen(
                         videoMode = videoMode,
                         localOnly = localOnly,
                         requestInitialFocus = !hasExpandedVideoPlayer && !showPlayerSheet,
-                        listState = searchScrollState
+                        listState = if (videoMode) videoSearchScrollState else musicSearchScrollState
                     )
                     2 -> {
                         if (videoMode && localOnly) {
@@ -3239,7 +3289,8 @@ fun SearchContent(
                         onEnqueueSong = onEnqueueSong,
                         // Search opens other people's playlists; the import
                         // flow belongs to the Library's local ones.
-                        onAddSongsRequest = null
+                        onAddSongsRequest = null,
+                        onSearchSongsRequest = null
                     )
                 }
             }

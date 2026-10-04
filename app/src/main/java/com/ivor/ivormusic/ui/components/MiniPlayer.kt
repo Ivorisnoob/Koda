@@ -563,7 +563,7 @@ private fun MiniPlayingArtwork(
  * the cover turns through can leave the slot; the small margin covers the
  * shapes a morph passes through on the way.
  */
-private fun fittedToCircle(polygon: androidx.graphics.shapes.RoundedPolygon): androidx.graphics.shapes.RoundedPolygon {
+internal fun fittedToCircle(polygon: androidx.graphics.shapes.RoundedPolygon): androidx.graphics.shapes.RoundedPolygon {
     // The square that contains the shape at any rotation.
     val bounds = polygon.calculateMaxBounds()
     val radius = (bounds[2] - bounds[0]) / 2f
@@ -586,7 +586,7 @@ private const val MINI_SHAPE_FIT = 0.48f
  * A [Morph] between two unit-square shapes, stretched to the composable's
  * size. No bounds are measured: see the fixed-geometry note above.
  */
-private class UnitMorphShape(private val morph: Morph, private val progress: Float) : Shape {
+internal class UnitMorphShape(private val morph: Morph, private val progress: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val path = morph.toPath(progress).asComposePath()
         val matrix = Matrix()

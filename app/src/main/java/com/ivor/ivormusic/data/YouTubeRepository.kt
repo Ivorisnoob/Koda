@@ -919,7 +919,15 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getAlbumSongs(browseId: String): List<Song> = withContext(Dispatchers.IO) {
         try {
             val body = browseMusic(browseId) ?: return@withContext emptyList()
-            MusicMetadata.albumSongs(org.json.JSONObject(body), browseId)
+            val root = org.json.JSONObject(body)
+            val songs = MusicMetadata.albumSongs(root, browseId)
+            // Signed out, the page lists each track's video where it has one.
+            // The album's audio playlist has the songs; one more request, and
+            // only for an album that needs it.
+            if (songs.isEmpty() || !MusicMetadata.albumHasVideoVersions(root)) return@withContext songs
+            val audioPlaylist = MusicMetadata.albumAudioPlaylistId(root) ?: return@withContext songs
+            val audio = getBrowsePlaylistSongs(audioPlaylist)
+            if (audio.songs.isEmpty()) songs else MusicMetadata.withSongVersions(songs, audio.songs)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1654,8 +1662,10 @@ class YouTubeRepository(private val context: Context) {
             }
             
             // Parse songs from the home page response
+            // More than Home shows at once, so a refresh has songs to rotate to.
             val items = usableHomeRecommendations(
-                listOf(parseSongsFromInternalJson(jsonResponse))
+                listOf(parseSongsFromInternalJson(jsonResponse)),
+                limit = HOME_RECOMMENDATION_POOL
             )
             KLog.d("YouTubeRepo", "Parsed ${items.size} songs from recommendations")
 
@@ -1757,9 +1767,9 @@ class YouTubeRepository(private val context: Context) {
         val body = response.use { it.body?.string() }
         if (body.isNullOrEmpty()) return emptyList()
 
-        val renderers = mutableListOf<org.json.JSONObject>()
-        findObjectsByKey(org.json.JSONObject(body), "playlistPanelVideoRenderer", renderers)
-        return renderers.mapNotNull { parsePlaylistPanelVideo(it) }
+        // One song per queue entry, and the song rather than its video where
+        // YouTube offers both.
+        return MusicMetadata.queueSongs(org.json.JSONObject(body))
     }
 
     /**
@@ -1784,8 +1794,6 @@ class YouTubeRepository(private val context: Context) {
             }
         }
     }
-
-    private fun parsePlaylistPanelVideo(renderer: org.json.JSONObject): Song? = MusicMetadata.song(renderer)
 
     private fun parseDurationTextToMs(text: String?): Long {
         if (text.isNullOrBlank()) return 0L

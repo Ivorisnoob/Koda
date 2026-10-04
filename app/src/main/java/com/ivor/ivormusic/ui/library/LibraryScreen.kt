@@ -288,18 +288,32 @@ fun LibraryContent(
         }
     }
 
+    // A Spotify link shared into the app opens the import screen on it. The
+    // link is held here rather than read from the flow by the screen, so it
+    // survives being consumed.
+    var spotifyImportLink by remember { mutableStateOf<String?>(null) }
+    val pendingSpotifyImport by viewModel.pendingSpotifyImport.collectAsState()
+    LaunchedEffect(pendingSpotifyImport) {
+        pendingSpotifyImport?.let { link ->
+            spotifyImportLink = link
+            returnsToCaller = false
+            currentRoute = LibraryRoute.SpotifyImport
+            viewModel.consumeSpotifyImportRequest()
+        }
+    }
+
     // Expressive motion physics for screen pushes/pops
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
 
     // Back from any Library route: out to the tab an excursion began on, or
     // to the root. One function, so every screen's back control and the
-    // system gesture agree with each other. ImportSongs is the one two-level
-    // route: it is only ever reached from an open playlist, so back returns
-    // there - and deliberately before the excursion check, which must keep
-    // waiting for the back that leaves the playlist itself.
+    // system gesture agree with each other. ImportSongs and AddSongs are the
+    // two-level routes: they are only ever reached from an open playlist, so
+    // back returns there - and deliberately before the excursion check, which
+    // must keep waiting for the back that leaves the playlist itself.
     fun back() {
-        if (currentRoute == LibraryRoute.ImportSongs) {
+        if (currentRoute == LibraryRoute.ImportSongs || currentRoute == LibraryRoute.AddSongs) {
             currentRoute = LibraryRoute.Playlist
         } else if (returnsToCaller) {
             returnsToCaller = false
@@ -381,7 +395,8 @@ fun LibraryContent(
                         isAlbum = false,
                         onSongLongPress = onSongLongPress,
                         onEnqueueSong = onEnqueueSong,
-                        onAddSongsRequest = { currentRoute = LibraryRoute.ImportSongs }
+                        onAddSongsRequest = { currentRoute = LibraryRoute.ImportSongs },
+                        onSearchSongsRequest = { currentRoute = LibraryRoute.AddSongs }
                     )
                 }
             }
@@ -411,7 +426,8 @@ fun LibraryContent(
                         onSongLongPress = onSongLongPress,
                         onEnqueueSong = onEnqueueSong,
                         // An album is not an editable local playlist.
-                        onAddSongsRequest = null
+                        onAddSongsRequest = null,
+                        onSearchSongsRequest = null
                     )
                 }
             }
@@ -488,13 +504,18 @@ fun LibraryContent(
                     onSongLongPress = onSongLongPress,
                     onEnqueueSong = onEnqueueSong,
                     // A cache view, not an editable local playlist.
-                    onAddSongsRequest = null
+                    onAddSongsRequest = null,
+                    onSearchSongsRequest = null
                 )
             }
             LibraryRoute.CreatePlaylist -> {
                 PlaylistStudioScreen(
                     viewModel = viewModel,
                     onBack = { back() },
+                    onImportFromSpotify = {
+                        spotifyImportLink = null
+                        currentRoute = LibraryRoute.SpotifyImport
+                    },
                     onCreated = { created ->
                         // Straight onto the new playlist; back from there goes
                         // to the root, the same as any playlist opened from it.
@@ -508,6 +529,30 @@ fun LibraryContent(
                 selectedPlaylist?.let { target ->
                     PlaylistImportScreen(
                         targetPlaylist = target,
+                        viewModel = viewModel,
+                        onBack = { back() },
+                        onDone = { back() }
+                    )
+                }
+            }
+            LibraryRoute.SpotifyImport -> {
+                SpotifyImportScreen(
+                    initialLink = spotifyImportLink,
+                    viewModel = viewModel,
+                    onBack = { back() },
+                    onCreated = { created ->
+                        selectedPlaylist = created
+                        returnsToCaller = false
+                        currentRoute = LibraryRoute.Playlist
+                    }
+                )
+            }
+            LibraryRoute.AddSongs -> {
+                selectedPlaylist?.let { target ->
+                    val localIds by viewModel.localPlaylistIds.collectAsState()
+                    PlaylistAddSongsScreen(
+                        targetPlaylist = target,
+                        targetIsLocal = target.id in localIds,
                         viewModel = viewModel,
                         onBack = { back() },
                         onDone = { back() }
@@ -533,7 +578,7 @@ fun LibraryContent(
             ) {
                 // The list marks what is open beside it.
                 val openItem = when (currentRoute) {
-                    LibraryRoute.Playlist, LibraryRoute.ImportSongs ->
+                    LibraryRoute.Playlist, LibraryRoute.ImportSongs, LibraryRoute.AddSongs ->
                         LibraryOpenItem(playlistId = selectedPlaylist?.id)
                     LibraryRoute.Album -> LibraryOpenItem(albumName = selectedAlbumName)
                     LibraryRoute.Artist -> LibraryOpenItem(artistName = selectedArtistName)
@@ -572,10 +617,10 @@ fun LibraryContent(
         onBack = { back() },
         // An excursion's back lands on another tab, not on the root the peel
         // would reveal, so it is not previewed; the tab slide carries it.
-        // ImportSongs backs onto the playlist, not the root the peel shows,
-        // so it is not previewed either.
+        // ImportSongs and AddSongs back onto the playlist, not the root the
+        // peel shows, so they are not previewed either.
         previewable = currentRoute != LibraryRoute.Main && !returnsToCaller &&
-            currentRoute != LibraryRoute.ImportSongs,
+            currentRoute != LibraryRoute.ImportSongs && currentRoute != LibraryRoute.AddSongs,
         background = mainScreen
     ) { committedByGesture ->
     AnimatedContent(
@@ -612,7 +657,11 @@ enum class LibraryRoute {
     /** The immersive local-playlist creation flow (PlaylistStudioScreen). */
     CreatePlaylist,
     /** "Add from your playlists" into the open local playlist (PlaylistImportScreen). */
-    ImportSongs
+    ImportSongs,
+    /** Recents, likes and a YouTube Music search into the open playlist (PlaylistAddSongsScreen). */
+    AddSongs,
+    /** A Spotify playlist or album, matched on YouTube Music into a new device playlist (SpotifyImportScreen). */
+    SpotifyImport
 }
 
 enum class LibraryTab(val label: String) {
@@ -3217,7 +3266,14 @@ fun PlaylistDetailScreen(
      * Deliberately no default: a null default is the half-wired-feature trap,
      * so every caller states whether its surface can host the flow.
      */
-    onAddSongsRequest: (() -> Unit)?
+    onAddSongsRequest: (() -> Unit)?,
+    /**
+     * Open the add-songs screen (recents, likes, a YouTube Music search) for
+     * this playlist: the plus in the app bar. Offered wherever tracks can be
+     * added, a device playlist or one on the account. No default, for the
+     * same reason as [onAddSongsRequest].
+     */
+    onSearchSongsRequest: (() -> Unit)?
 ) {
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
@@ -3305,13 +3361,6 @@ fun PlaylistDetailScreen(
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     var isUploading by remember(playlist.id) { mutableStateOf(false) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    // Set by the layout below: the header sits in its own column beside the
-    // tracks on a wide pane, where it never scrolls away and the floating
-    // play button has nothing to stand in for.
-    var playlistWide by remember { mutableStateOf(false) }
-    val headerScrolledAway by remember {
-        derivedStateOf { !playlistWide && listState.firstVisibleItemIndex > 0 }
-    }
 
     val shareContext = LocalContext.current
 
@@ -3704,6 +3753,21 @@ fun PlaylistDetailScreen(
                             }
                         },
                         actions = {
+                            // Your Likes takes removals only: a song joins it
+                            // by being liked, not by being added.
+                            if (onSearchSongsRequest != null && !isSearchActive &&
+                                (isLocalPlaylist || canReorderRemote)
+                            ) {
+                                IconButton(onClick = {
+                                    if (isReorderMode) exitReorderMode()
+                                    onSearchSongsRequest()
+                                }) {
+                                    Icon(
+                                        Icons.Rounded.Add,
+                                        contentDescription = stringResource(R.string.import_title)
+                                    )
+                                }
+                            }
                             IconButton(onClick = {
                                 if (isReorderMode) exitReorderMode()
                                 isSearchActive = !isSearchActive
@@ -4021,36 +4085,6 @@ fun PlaylistDetailScreen(
                         bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current
                     )
                 )
-            } else if (filteredSongs.isNotEmpty()) {
-                AnimatedVisibility(
-                    visible = headerScrolledAway || isSearchActive,
-                    enter = fadeIn() + scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)),
-                    exit = fadeOut() + scaleOut(),
-                ) {
-                    // M3E split button: Play + menu (shuffle, radio). This is the
-                    // one primary action on the page.
-                    val radioSeed = filteredSongs.firstOrNull {
-                        it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE
-                    }
-                    com.ivor.ivormusic.ui.artist.PlaySplitButton(
-                        onPlay = { onPlayQueue(filteredSongs, filteredSongs.first()) },
-                        onShuffle = { onShuffleQueue(filteredSongs) },
-                        onStartRadio = if (radioSeed != null) {
-                            {
-                                scope.launch {
-                                    val radio = viewModel.getRadioSongs(radioSeed.id)
-                                    if (radio.isNotEmpty()) {
-                                        onPlayQueue(listOf(radioSeed) + radio, radioSeed)
-                                    }
-                                }
-                            }
-                        } else null,
-                        // Clear the floating nav pill and mini player(s)
-                        modifier = Modifier.padding(
-                            bottom = com.ivor.ivormusic.ui.components.LocalBottomOverlayInset.current
-                        )
-                    )
-                }
             }
         }
     ) { _ ->
@@ -4648,7 +4682,6 @@ fun PlaylistDetailScreen(
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val wide = maxWidth >= PLAYLIST_WIDE_MIN_WIDTH
-            SideEffect { playlistWide = wide }
             if (wide) {
                 // Under the transparent top bar, which the tracks scroll
                 // beneath and which fades in over them as they do.
