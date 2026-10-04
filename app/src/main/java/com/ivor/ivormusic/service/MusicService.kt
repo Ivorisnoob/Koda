@@ -813,7 +813,12 @@ class MusicService : MediaLibraryService() {
                     enableFloatOutput: Boolean,
                     enableAudioTrackPlaybackParams: Boolean,
                 ): AudioSink = DefaultAudioSink.Builder(context)
-                    .setAudioProcessors(arrayOf(transitionFilter, visualizerTap))
+                    // Koda's own chain, for its tempo change: a stretcher
+                    // made for music does the small corrections AutoMix
+                    // asks for, in place of the speech-tuned default.
+                    .setAudioProcessorChain(
+                        MusicAudioProcessorChain(arrayOf(transitionFilter, visualizerTap))
+                    )
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .build()
@@ -836,6 +841,7 @@ class MusicService : MediaLibraryService() {
             onActiveChanged = { newActive -> onEngineSwapped(newActive) },
             gainFor = { p -> gainForPlayer(p) },
             setFilterSweep = { p, amount -> transitionFilters[p]?.setSweep(amount) },
+            setEcho = { p, amount, delayMs -> transitionFilters[p]?.setEcho(amount, delayMs) },
         )
 
         audioFocus = AudioFocusController(
@@ -1437,6 +1443,15 @@ class MusicService : MediaLibraryService() {
                         prefetchingOccurrences.remove(occurrence)
                     }
                 }
+            } else {
+                // Already resolved: by an earlier round, by validation, or a
+                // local or downloaded file that never was a placeholder. The
+                // branch above is the only other place an upcoming song is
+                // analysed, so without this one such a song reached its
+                // transition with no profile and AutoMix fell back to a plain
+                // fade. A song already analysed, or being analysed, returns
+                // at once.
+                maybeProfile(item)
             }
         }
     }
@@ -3229,12 +3244,23 @@ class MusicService : MediaLibraryService() {
         if (!isCrossfadeEnabled || !isAutoMixEnabled) return
         val id = mediaItem.mediaId
         val uri = mediaItem.localConfiguration?.uri ?: return
+        if (isPlaceholder(uri)) return
+        if (audioProfileStore.peek(id) != null) return
         val factory = cacheDataSourceFactory
+        // Every way out below is logged: a song with no profile mixes as a
+        // plain fade, and a silent return made that impossible to diagnose
+        // from a log.
         val durationMs = knownDurationMs?.takeIf { it > 0L }
             ?: mediaItem.mediaMetadata.durationMs?.takeIf { it > 0L }
-            ?: return
+            ?: run {
+                KLog.d(TAG, "Profile: skipped $id, duration unknown")
+                return
+            }
         val isNetwork = uri.scheme == "http" || uri.scheme == "https"
-        if (isNetwork && factory == null) return
+        if (isNetwork && factory == null) {
+            KLog.d(TAG, "Profile: skipped $id, no cache to read through")
+            return
+        }
         if (!profilingIds.add(id)) return
 
         resolveScope.launch {
@@ -3245,9 +3271,13 @@ class MusicService : MediaLibraryService() {
                 if (audioProfileStore.get(id) != null) return@launch
                 if (isNetwork && ThemePreferences.isNetworkMetered(this@MusicService) &&
                     !CacheManager.isFullyCached(id)
-                ) return@launch
+                ) {
+                    KLog.d(TAG, "Profile: skipped $id, metered network and not fully cached")
+                    return@launch
+                }
 
-                withTimeoutOrNull(PROFILE_TIMEOUT_MS) {
+                val startedMs = SystemClock.elapsedRealtime()
+                val profile = withTimeoutOrNull(PROFILE_TIMEOUT_MS) {
                     AudioProfiler.profile(
                         songId = id,
                         context = this@MusicService,
@@ -3257,13 +3287,19 @@ class MusicService : MediaLibraryService() {
                         durationMs = durationMs,
                         budgetMs = PROFILE_TIMEOUT_MS,
                     )
-                }?.let { profile ->
+                }
+                val tookMs = SystemClock.elapsedRealtime() - startedMs
+                if (profile == null) {
+                    KLog.d(TAG, "Profile: none for $id after ${tookMs}ms (scheme=${uri.scheme})")
+                } else {
                     audioProfileStore.put(profile)
                     KLog.d(
                         TAG,
-                        "Profile: $id lead=${profile.leadInSilenceMs} " +
+                        "Profile: $id in ${tookMs}ms lead=${profile.leadInSilenceMs} " +
                             "tail=${profile.tailFadeMs} abrupt=${profile.endsAbruptly} " +
-                            "outro=${profile.outroLeadMs}"
+                            "outro=${profile.outroLeadMs} " +
+                            "bpm=${profile.bpm}@${profile.tempoConfidence} " +
+                            "outroBpm=${profile.outroBpm}@${profile.outroTempoConfidence}"
                     )
                 }
             } finally {
@@ -3437,6 +3473,8 @@ class MusicService : MediaLibraryService() {
                     incomingSpeed = plan.incomingSpeed,
                     filterSweepStrength = plan.filterSweepStrength,
                     startAtRemainingMs = prepareLeadMs,
+                    style = plan.style,
+                    echoDelayMs = plan.echoDelayMs,
                 )
                 if (started) {
                     automaticTransitionAttempt = outgoingItem to nextItem
@@ -3444,9 +3482,27 @@ class MusicService : MediaLibraryService() {
                         TAG,
                         "Crossfade: ${plan.reason} ${plan.overlapMs}ms " +
                             "lead=${plan.incomingStartMs} beatIn=${plan.incomingDownbeatDelayMs} " +
-                            "speed=${plan.incomingSpeed} " +
+                            "speed=${plan.incomingSpeed} style=${plan.style} " +
                             "key=${plan.harmonicMatch} into ${nextItem.mediaId}"
                     )
+                    // FALLBACK is three different outcomes in the planner: no
+                    // outgoing profile, no trusted common tempo, or no ending
+                    // found. What it was handed tells them apart.
+                    if (isAutoMixEnabled && plan.reason == TransitionPlan.Reason.FALLBACK) {
+                        val out = outgoingItem.mediaId.let(audioProfileStore::peek)
+                        val inc = audioProfileStore.peek(nextItem.mediaId)
+                        KLog.d(
+                            TAG,
+                            "Crossfade: fallback inputs out=" +
+                                (out?.let {
+                                    "bpm=${it.outroBpm}@${it.outroTempoConfidence} " +
+                                        "outro=${it.outroLeadMs} " +
+                                        "phrase=${it.phraseOutroLeadMs}@${it.phraseConfidence}"
+                                } ?: "none") +
+                                " in=" +
+                                (inc?.let { "bpm=${it.bpm}@${it.tempoConfidence}" } ?: "none")
+                        )
+                    }
                 }
             }
         }
