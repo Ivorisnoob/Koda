@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -76,7 +77,14 @@ data class DownloadProgress(
     val progress: Float, // 0.0 to 1.0
     val status: DownloadStatus,
     val bytesDownloaded: Long = 0,
-    val totalBytes: Long = 0
+    val totalBytes: Long = 0,
+    /**
+     * The bytes have arrived and the file is being put together: the remux for
+     * a video, tags and companions for a song. It carries no byte counts, which
+     * is exactly how the stream-resolution leg looks, so without this the tail
+     * of every download read "Preparing" at ninety percent.
+     */
+    val finishing: Boolean = false
 )
 
 /** A completed video download. */
@@ -121,6 +129,9 @@ class DownloadRepository private constructor(private val context: Context) {
         // Ranged-request chunk size. Bounded ranges are served at full CDN
         // speed where an open-ended request is paced to the media bitrate.
         private const val DOWNLOAD_CHUNK_BYTES = 10L * 1024 * 1024
+
+        /** How long a download sheet waits to learn a file's size before offering the download without it. */
+        private const val SIZE_PROBE_TIMEOUT_MS = 8_000L
 
         /** How long a finished download stays visible in the progress list. */
         private const val COMPLETION_LINGER_MS = 1_500L
@@ -557,20 +568,23 @@ class DownloadRepository private constructor(private val context: Context) {
         progress: Float,
         status: DownloadStatus,
         bytesDownloaded: Long = 0,
-        totalBytes: Long = 0
+        totalBytes: Long = 0,
+        finishing: Boolean = false
     ) {
         if (pausedRequests.containsKey(request.id) && status == DownloadStatus.DOWNLOADING) return
         val previous = _downloadProgress.value[request.id]
         if (previous != null &&
             previous.status == status &&
+            previous.finishing == finishing &&
             (previous.progress * 100).toInt() == (progress * 100).toInt()
         ) {
             return
         }
 
         val current = _downloadProgress.value.toMutableMap()
-        current[request.id] =
-            DownloadProgress(request.id, request, progress, status, bytesDownloaded, totalBytes)
+        current[request.id] = DownloadProgress(
+            request.id, request, progress, status, bytesDownloaded, totalBytes, finishing
+        )
         _downloadProgress.value = current
 
         // Terminal states get their own one-shot notification. Progress itself
@@ -807,8 +821,13 @@ class DownloadRepository private constructor(private val context: Context) {
                 job.start()
                 job.join()
 
-                activeJob = null
-                queueMutex.withLock { activeId = null }
+                // Both under the lock: resumeDownload reads the pair, and with
+                // the job cleared first it could see a finished task still
+                // named as active and have its re-queue refused as a duplicate.
+                queueMutex.withLock {
+                    activeJob = null
+                    activeId = null
+                }
             }
         } finally {
             DownloadService.stop(context)
@@ -843,6 +862,11 @@ class DownloadRepository private constructor(private val context: Context) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // Pause and cancel also cancel the HTTP call, and a read blocked
+                // on the socket reports that as an IOException rather than a
+                // cancellation. Left to fall through, a pause on the last
+                // attempt was filed as a failed download.
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 lastError = e
                 KLog.w(TAG, "Attempt $attempt/$MAX_ATTEMPTS failed for ${request.title}: ${e.message}")
             }
@@ -910,7 +934,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     audioTemp = downloadStream(request, streamUrl, "music", 0.1f, 0.82f)
 
                     ensureActive()
-                    updateProgress(request, 0.84f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.84f, DownloadStatus.DOWNLOADING, finishing = true)
 
                     val lyrics = runCatching { lyricsDeferred.await() }
                         .onFailure { KLog.w(TAG, "Lyrics unavailable for ${song.title}", it) }
@@ -921,7 +945,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     artworkTemp = artwork?.let(::writeArtworkTemp)
 
                     ensureActive()
-                    updateProgress(request, 0.88f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.88f, DownloadStatus.DOWNLOADING, finishing = true)
                     val metadataCopy = DownloadedAudioMetadata.writeCopy(
                         sourceAudio = audioTemp!!,
                         tempDirectory = context.cacheDir,
@@ -946,7 +970,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     }
 
                     ensureActive()
-                    updateProgress(request, 0.92f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.92f, DownloadStatus.DOWNLOADING, finishing = true)
 
                     val audioName = storage.buildFileName(
                         request.title,
@@ -988,7 +1012,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     }
 
                     ensureActive()
-                    updateProgress(request, 0.98f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.98f, DownloadStatus.DOWNLOADING, finishing = true)
 
                     // Publish companions first and audio last. A media scanner
                     // can never observe a finished song before everything that
@@ -1151,11 +1175,17 @@ class DownloadRepository private constructor(private val context: Context) {
                     audioTemp = downloadStream(request, chosen.audioUrl, "audio", 0.70f, 0.88f)
                     ensureActive()
 
-                    updateProgress(request, 0.9f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.9f, DownloadStatus.DOWNLOADING, finishing = true)
 
+                    // The remux of a long video runs for a while and blocks, so
+                    // it is told when to stop: otherwise Cancel did nothing
+                    // visible until the whole file had been written.
                     muxed = context.contentResolver.openFileDescriptor(target, "rw")?.use { pfd ->
-                        DownloadMuxer.mux(videoTemp, audioTemp, pfd.fileDescriptor)
+                        DownloadMuxer.mux(videoTemp, audioTemp, pfd.fileDescriptor) { isActive }
                     } ?: false
+                    // A stopped remux reports false like a refused codec does,
+                    // and must not go on to the progressive fallback.
+                    ensureActive()
 
                     if (!muxed) {
                         KLog.w(TAG, "Mux failed for ${request.title}, falling back to progressive")
@@ -1190,8 +1220,13 @@ class DownloadRepository private constructor(private val context: Context) {
                     pendingTarget = null
                 }
 
-                saveCaptions(request)
+                // The video is done once it is published and recorded, so the
+                // row finishes here. With the captions fetched first it sat in
+                // "In progress" beside its own entry under Downloaded, and a
+                // pause in that window left a paused row for a finished file
+                // that nothing could resume.
                 finishSuccess(request)
+                saveCaptions(request)
                 true
             } catch (e: kotlinx.coroutines.CancellationException) {
                 cleanUpCancelled(request, pendingTarget)
@@ -1302,23 +1337,38 @@ class DownloadRepository private constructor(private val context: Context) {
      * Content-Range. This keeps the size preview cheap and preserves the
      * repository-wide rule that media URLs are never fetched open-ended.
      */
-    private suspend fun remoteMediaSize(url: String): Long? = withContext(Dispatchers.IO) {
-        val response = runCatching {
-            client.newCall(
-                Request.Builder()
-                    .url(url)
-                    .header("User-Agent", YouTubeRepository.uaForPlaybackUri(Uri.parse(url)))
-                    .header("Range", "bytes=0-0")
-                    .build()
-            ).execute()
-        }.getOrNull() ?: return@withContext null
+    private suspend fun remoteMediaSize(url: String): Long? {
+        val call = client.newCall(
+            Request.Builder()
+                .url(url)
+                .header("User-Agent", YouTubeRepository.uaForPlaybackUri(Uri.parse(url)))
+                .header("Range", "bytes=0-0")
+                .build()
+        )
+        // The download sheets hold their button until this answers, and the
+        // transfer client waits 30s to connect and 60s to read. Enqueued rather
+        // than executed so the budget and a changed quality pill really end the
+        // request: a timeout around a blocking execute() only fires once the
+        // call has returned by itself.
+        return kotlinx.coroutines.withTimeoutOrNull(SIZE_PROBE_TIMEOUT_MS) {
+            kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : okhttp3.Callback {
+                    override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                        continuation.resumeWith(Result.success(null))
+                    }
 
-        response.use {
-            if (!it.isSuccessful) return@withContext null
-            if (it.code == 206) {
-                parseContentRangeTotal(it.header("Content-Range"))
-            } else {
-                it.body?.contentLength()?.takeIf { length -> length > 0L }
+                    override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                        val size = response.use {
+                            when {
+                                !it.isSuccessful -> null
+                                it.code == 206 -> parseContentRangeTotal(it.header("Content-Range"))
+                                else -> it.body?.contentLength()?.takeIf { length -> length > 0L }
+                            }
+                        }
+                        continuation.resumeWith(Result.success(size))
+                    }
+                })
             }
         }
     }

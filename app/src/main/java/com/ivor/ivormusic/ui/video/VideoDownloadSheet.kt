@@ -119,9 +119,14 @@ fun VideoDownloadSheet(
     val downloadedVideos by downloadRepository.downloadedVideos.collectAsState()
     val progressMap by downloadRepository.downloadProgress.collectAsState()
     val alreadyDownloaded = downloadedVideos.any { it.id == video.videoId }
-    val inFlight = progressMap[video.videoId]?.status.let {
+    val activeEntry = progressMap[video.videoId]
+    val inFlight = activeEntry?.status.let {
         it == DownloadStatus.DOWNLOADING || it == DownloadStatus.QUEUED
     }
+    // A paused download is still held by the queue, which refuses a second
+    // request for it. Offered as a fresh download, the button said "Added" and
+    // nothing happened.
+    val paused = activeEntry?.status == DownloadStatus.PAUSED
 
     fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
 
@@ -150,6 +155,8 @@ fun VideoDownloadSheet(
                 else -> downloadable.firstOrNull { height(it.resolution) in 1..targetHeight }?.resolution
                     ?: downloadable.first().resolution
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w("VideoDownloadSheet", "Failed to load qualities", e)
             options = emptyList()
@@ -419,6 +426,11 @@ fun VideoDownloadSheet(
 
             Button(
                 onClick = {
+                    if (paused) {
+                        downloadRepository.resumeDownload(video.videoId)
+                        queued = true
+                        return@Button
+                    }
                     val label = selectedLabel ?: return@Button
                     if (rememberQuality) themePreferences.setDownloadVideoQuality(label)
                     // Null while the caption list has not arrived: the
@@ -427,8 +439,10 @@ fun VideoDownloadSheet(
                     scope.launch { downloadRepository.downloadVideo(video, label, captions) }
                     queued = true
                 },
-                enabled = selectedLabel != null && !sizeLoading && sizeResolved &&
-                    !queued && !alreadyDownloaded && !inFlight,
+                // Resuming needs neither the quality ladder nor the size: the
+                // paused request already carries its choice.
+                enabled = !queued && !alreadyDownloaded && !inFlight &&
+                    (paused || (selectedLabel != null && !sizeLoading && sizeResolved)),
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -447,10 +461,31 @@ fun VideoDownloadSheet(
                     queued || inFlight -> {
                         LoadingIndicator(modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(8.dp))
+                        // What the download is really doing. This read
+                        // "Preparing" for a video waiting its turn and for one
+                        // most of the way through alike.
                         Text(
-                            text = if (queued) stringResource(R.string.vd_added) else stringResource(R.string.dl_preparing),
+                            text = when {
+                                queued -> stringResource(R.string.vd_added)
+                                activeEntry?.status == DownloadStatus.QUEUED ->
+                                    stringResource(R.string.dl_waiting)
+                                activeEntry?.finishing == true ->
+                                    stringResource(R.string.dl_finishing)
+                                (activeEntry?.totalBytes ?: 0L) > 0L ->
+                                    "${((activeEntry?.progress ?: 0f) * 100).toInt()}%"
+                                else -> stringResource(R.string.dl_preparing)
+                            },
                             fontWeight = FontWeight.SemiBold
                         )
+                    }
+                    paused -> {
+                        Icon(
+                            imageVector = Icons.Rounded.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = stringResource(R.string.dl_resume), fontWeight = FontWeight.SemiBold)
                     }
                     else -> {
                         Icon(

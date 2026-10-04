@@ -37,9 +37,19 @@ object DownloadMuxer {
     /**
      * Remux [videoFile] and, when present, [audioFile] into [output].
      *
-     * @return true when the output holds the requested video and audio tracks.
+     * [shouldContinue] is asked before every sample. A long video takes a
+     * while to copy and nothing here suspends, so this is the only way a
+     * cancelled download stops before the whole file has been written.
+     *
+     * @return true when the output holds the requested video and audio tracks;
+     * false when the muxer refused them or the copy was stopped.
      */
-    fun mux(videoFile: File, audioFile: File?, output: FileDescriptor): Boolean {
+    fun mux(
+        videoFile: File,
+        audioFile: File?,
+        output: FileDescriptor,
+        shouldContinue: () -> Boolean = { true }
+    ): Boolean {
         var muxer: MediaMuxer? = null
         var videoExtractor: MediaExtractor? = null
         var audioExtractor: MediaExtractor? = null
@@ -75,9 +85,13 @@ object DownloadMuxer {
 
             muxer.start()
 
-            copyTrack(videoExtractor, muxer, outputVideoTrack, videoFormat)
-            if (audioExtractor != null && audioFormat != null && outputAudioTrack >= 0) {
-                copyTrack(audioExtractor, muxer, outputAudioTrack, audioFormat)
+            if (!copyTrack(videoExtractor, muxer, outputVideoTrack, videoFormat, shouldContinue)) {
+                return false
+            }
+            if (audioExtractor != null && audioFormat != null && outputAudioTrack >= 0 &&
+                !copyTrack(audioExtractor, muxer, outputAudioTrack, audioFormat, shouldContinue)
+            ) {
+                return false
             }
 
             muxer.stop()
@@ -109,8 +123,9 @@ object DownloadMuxer {
         extractor: MediaExtractor,
         muxer: MediaMuxer,
         outputTrack: Int,
-        format: MediaFormat
-    ) {
+        format: MediaFormat,
+        shouldContinue: () -> Boolean
+    ): Boolean {
         val bufferSize = if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
             format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE).coerceAtLeast(DEFAULT_SAMPLE_SIZE)
         } else {
@@ -121,6 +136,7 @@ object DownloadMuxer {
         val info = MediaCodec.BufferInfo()
 
         while (true) {
+            if (!shouldContinue()) return false
             val size = extractor.readSampleData(buffer, 0)
             if (size < 0) break
 
@@ -134,5 +150,6 @@ object DownloadMuxer {
             muxer.writeSampleData(outputTrack, buffer, info)
             extractor.advance()
         }
+        return true
     }
 }

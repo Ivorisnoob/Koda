@@ -837,6 +837,7 @@
     <!-- Stats -->
     <string name="st_top_songs">Top songs</string>
     <string name="st_top_artists">Top artists</string>
+    <string name="dl_finishing">Finishing up</string>
     <string name="st_empty_title">Nothing to crunch yet</string>
     <string name="st_empty_body">Play some music and your stats will show up here</string>
     <string name="st_legend">Legend</string>
