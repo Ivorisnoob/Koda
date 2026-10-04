@@ -66,7 +66,9 @@ fun rememberArtworkColorScheme(
                     if (isDark && theming.amoled) {
                         with(com.ivor.ivormusic.ui.theme.AmoledScheme) { scheme.amoled() }
                     } else {
-                        scheme
+                        // The same re-seating the root scheme gets, so a page in
+                        // its own cover's colours has the app's page and card tones.
+                        with(com.ivor.ivormusic.ui.theme.TintedPages) { scheme.tinted(isDark) }
                     }
                 }
         } else {

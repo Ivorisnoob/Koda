@@ -269,7 +269,8 @@ fun ExpandablePlayer(
 
 
     // Derive all properties from the single progress value
-    val collapsedHeight = 80.dp
+    // The bubble's own size, so closing into it only ever changes the width.
+    val collapsedHeight = MINI_BUBBLE_SIZE
     val collapsedWidthPadding = 16.dp
     // The pill's resting width and where it starts, inside the page area. A
     // cap only ever narrows it, and the leftover is split either side so the
@@ -315,9 +316,15 @@ fun ExpandablePlayer(
 
     // Collapsed shows surface, expanded shows transparent - but opaque until
     // the content inside is solid; see containerBackdropAlpha for why.
-    val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
-        alpha = containerBackdropAlpha(expandProgress)
-    )
+    // The pill is the accent container, not a grey: it carries the palette
+    // (the album's, when album colours are on) and never competes with the
+    // page tone it floats over. It hands over to the player's own surface
+    // over the first part of the expansion.
+    val containerColor = androidx.compose.ui.graphics.lerp(
+        MaterialTheme.colorScheme.primaryContainer,
+        MaterialTheme.colorScheme.surfaceContainerHigh,
+        (expandProgress / 0.3f).coerceIn(0f, 1f)
+    ).copy(alpha = containerBackdropAlpha(expandProgress))
 
     // Swipe Logic for expand/collapse (vertical)
     var verticalDragOffset by remember { mutableFloatStateOf(0f) }
@@ -597,7 +604,8 @@ fun ExpandablePlayer(
                             skipState = miniSkip,
                             previousSong = previousItem?.song,
                             nextSong = nextItem?.song,
-                            detailAlpha = { 1f - bubbleFraction() }
+                            detailAlpha = { 1f - bubbleFraction() },
+                            durationMs = duration
                         )
                     }
                 }

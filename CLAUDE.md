@@ -281,6 +281,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Option sheets share `PlayerOptionRows` and must scroll. `SongOptionsSheet` is hosted once in `HomeScreen`.
 - Motion artwork is an opt-in hero layer with frozen quality tiers and a fallback chain.
 - Album colours are Off / Player / Whole app (default). Whole app builds the root scheme from the playing cover in music mode (`IvorMusicTheme(artworkSeed)`), fading on song change only; a page or the player builds its own complete scheme from its own cover (`LocalAlbumTheming`).
+- The music pill is `primaryContainer`, 68dp (the bubble's size), and its played part is a wave-edged fill carried between samples by `rememberSmoothProgress`; it latches into a bubble after 56dp down and reopens after 200dp up or on returning to where the scroll began.
 - The mini player's cover spins and morphs in the draw phase, fitted to a circle so no shape leaves its slot; progress is the shape's outline revealed by a fixed wedge from the top, never a trimmed path.
 
 ### Widgets -> `docs/widgets.md`
@@ -291,6 +292,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Request Google images at the drawn size (`googleImageAtSize`), layered over the original. Every video frame goes through `VideoThumbnail`, and every duration/LIVE label over one through `ThumbnailBadge` (scrim role, never a theme container - a badge on a photo must not flip with the theme).
 - Every snackbar uses `DismissibleSnackbarHost`; `Dismissed` means the action stands.
 - M3 Expressive first; springs for touch, `tween` for crossfades/progress. The interface scale is a `LocalDensity` override - never provide another one.
+- **The scheme is re-seated at the root** (`withTintedPages`): `background` is the old card tone and `surfaceContainer` is `surfaceBright`, so a screen painting `background` behind `surfaceContainer` cards gets a tinted page with brighter cards. Paint with roles and it follows; AMOLED is exempt and keeps true black.
 
 ### CI -> `docs/ci.md`
 - Three workflows, all behind an `authorize` job; fork PRs from outsiders deliberately build nothing. A red run with no logs means no runner was acquired - re-run.

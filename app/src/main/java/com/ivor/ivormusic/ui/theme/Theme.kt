@@ -59,6 +59,45 @@ private val DarkColorScheme = darkColorScheme(
  * true #000000, and the surface container ramp is compressed toward black so
  * cards keep a subtle elevation separation without the default grey wash.
  */
+/**
+ * The scheme re-seated so pages are a tinted mid tone and cards are brighter
+ * than the page they sit on - the arrangement the system Settings app and
+ * OpenStream use, applied to every screen at once. [trial October 2026]
+ *
+ * Koda's screens paint `background` behind `surfaceContainer` cards, which in
+ * a generated scheme are the two closest tones there are, so a page read as
+ * flat and showed little of the palette. Remapping the roles here moves every
+ * screen without touching one: the page takes the old card tone, the card
+ * takes `surfaceBright`, and the two containers above it are pushed further
+ * from the page so the ladder keeps its order - lighter still in a dark
+ * theme, darker in a light one, where a higher surface is a darker one.
+ *
+ * It is a remap of roles, never a new colour: everything still comes out of
+ * the scheme it was given.
+ */
+fun ColorScheme.withTintedPages(dark: Boolean): ColorScheme {
+    val page = surfaceContainer
+    val card = surfaceBright
+    val (high, highest) = if (dark) {
+        lerp(card, onSurface, 0.06f) to lerp(card, onSurface, 0.12f)
+    } else {
+        lerp(surfaceContainerHigh, onSurface, 0.05f) to lerp(surfaceContainerHighest, onSurface, 0.07f)
+    }
+    return copy(
+        background = page,
+        surface = page,
+        surfaceContainerLow = lerp(page, card, 0.5f),
+        surfaceContainer = card,
+        surfaceContainerHigh = high,
+        surfaceContainerHighest = highest,
+    )
+}
+
+/** [withTintedPages] under a name that reads at a call site outside this package. */
+object TintedPages {
+    fun ColorScheme.tinted(dark: Boolean): ColorScheme = withTintedPages(dark)
+}
+
 /** [toAmoled] for callers outside this package. */
 object AmoledScheme {
     fun ColorScheme.amoled(): ColorScheme = toAmoled()
@@ -149,12 +188,14 @@ fun IvorMusicTheme(
     // generator the preset palettes use - so it is one coherent scheme with
     // worked-out contrast, not album accents laid over palette surfaces.
     val targetScheme = remember(paletteScheme, artworkSeed, darkTheme, amoledDark, paletteStyle) {
-        if (artworkSeed == null) {
+        val scheme = if (artworkSeed == null) {
             paletteScheme
         } else {
             buildSeedColorScheme(artworkSeed, darkTheme, paletteStyle)
                 .let { if (darkTheme && amoledDark) it.toAmoled() else it }
         }
+        // AMOLED keeps its true black page: that is the whole point of it.
+        if (darkTheme && amoledDark) scheme else scheme.withTintedPages(darkTheme)
     }
     val colorScheme = rememberFadedColorScheme(targetScheme, fadeKey = artworkSeed)
     

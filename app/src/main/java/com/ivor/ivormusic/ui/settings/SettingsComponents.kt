@@ -173,7 +173,9 @@ internal fun SettingsSection(
     Column {
         Text(
             text = title.uppercase(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // The accent, not a grey: the headings are where a settings page
+            // shows the palette it is wearing.
+            color = MaterialTheme.colorScheme.primary,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 1.2.sp,
@@ -385,17 +387,31 @@ private fun SettingsRowIcon(
     tint: Color,
     shape: Shape = RoundedCornerShape(14.dp)
 ) {
+    // A solid tonal tile rather than the tint at 12%: a filled container
+    // carries the palette where a wash barely shows it. The tint names the
+    // role, and the tile takes that role's container pair; anything else
+    // (a brand colour, a muted row) keeps the wash it had.
+    val scheme = MaterialTheme.colorScheme
+    val solid = tint.copy(alpha = 1f)
+    val (container, glyph) = when (solid) {
+        scheme.primary, scheme.secondary -> scheme.secondaryContainer to scheme.onSecondaryContainer
+        scheme.tertiary -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+        scheme.error -> scheme.errorContainer to scheme.onErrorContainer
+        else -> solid.copy(alpha = 0.12f) to solid
+    }
+    // A disabled row arrives with its tint faded; the tile fades with it.
+    val fade = tint.alpha
     Box(
         modifier = Modifier
             .size(48.dp)
             .clip(shape)
-            .background(tint.copy(alpha = 0.12f)),
+            .background(container.copy(alpha = container.alpha * fade)),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = tint,
+            tint = glyph.copy(alpha = glyph.alpha * fade),
             modifier = Modifier.size(26.dp)
         )
     }

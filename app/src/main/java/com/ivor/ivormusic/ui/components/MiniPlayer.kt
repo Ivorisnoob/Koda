@@ -96,8 +96,23 @@ fun MiniPlayerContent(
      * Read in a layer, since it follows the page's scroll.
      */
     detailAlpha: () -> Float = { 1f },
+    /** The track's length, so the progress can be carried between the once-a-second samples. */
+    durationMs: Long = 0L,
 ) {
     val playerHaptics = rememberPlayerHaptics()
+    // The sampled position, extrapolated every frame at the playing speed
+    // (see rememberSmoothProgress). Read only through this lambda, inside
+    // draw blocks, so sixty updates a second redraw the pill's fill and the
+    // cover's outline without recomposing the pill.
+    val smoothProgress = com.ivor.ivormusic.ui.player.rememberSmoothProgress(
+        positionMs = (progress * durationMs).toLong(),
+        durationMs = durationMs,
+        isPlaying = isPlaying
+    )
+    val currentSampled = rememberUpdatedState(progress)
+    val progressNow: () -> Float = {
+        if (durationMs > 0L) smoothProgress.value else currentSampled.value
+    }
     val playLabel = stringResource(R.string.cd_play)
     val pauseLabel = stringResource(R.string.cd_pause)
 
@@ -118,6 +133,9 @@ fun MiniPlayerContent(
         color = Color.Transparent,
         shape = RoundedCornerShape(50) // Full pill shape
     ) {
+        // Behind everything, clipped by the pill: a Surface stacks its
+        // children, so this simply sits under the row.
+        MiniProgressFill(progress = progressNow, isPlaying = isPlaying, detailAlpha = detailAlpha)
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -177,7 +195,7 @@ fun MiniPlayerContent(
                         MiniPlayingArtwork(
                             song = currentSong,
                             isPlaying = isPlaying,
-                            progress = progress,
+                            progress = progressNow,
                             coverModifier = Modifier.scale(artworkScale)
                         )
                     }
@@ -202,7 +220,7 @@ fun MiniPlayerContent(
                     //Organic morphing loading with MaterialShapes
                     LoadingIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         polygons = listOf(
                             MaterialShapes.SoftBurst,
                             MaterialShapes.Cookie9Sided,
@@ -220,9 +238,10 @@ fun MiniPlayerContent(
                     },
                     modifier = Modifier.size(44.dp),
                     shapes = IconButtonDefaults.shapes(), // Bouncy shape morphing
+                    // The one filled control on the pill, in the strong accent.
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
                     Icon(
@@ -235,14 +254,14 @@ fun MiniPlayerContent(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Next Button with shape morphing
-            FilledIconButton(
+            // Next, as a plain icon: a second filled circle beside play gave
+            // the pill two targets of equal weight.
+            androidx.compose.material3.IconButton(
                 onClick = onNextClick,
                 modifier = Modifier.size(44.dp),
                 shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             ) {
                 Icon(
@@ -287,20 +306,97 @@ private fun MiniSongIdentity(
             Text(
                 text = song.title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = song.artist,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
+
+/**
+ * The pill fills with the song: a deeper tone of the accent runs from the
+ * start edge as far as the song has played, behind the title and the buttons,
+ * and its leading edge is a wave that travels while the song plays and lies
+ * straight when it is paused. [trial October 2026]
+ *
+ * The whole pill is the progress bar, so how far along the song is can be
+ * read from across the room without a bar being drawn anywhere.
+ *
+ * Drawn in the draw phase from states: the wave's phase is written by a frame
+ * loop and [progress] is read through an updated state, so a frame of this
+ * redraws the fill and recomposes nothing. [detailAlpha] fades it out as the
+ * pill closes into its bubble, where the cover's own outline shows progress.
+ */
+@Composable
+private fun MiniProgressFill(progress: () -> Float, isPlaying: Boolean, detailAlpha: () -> Float) {
+    val phase = remember { mutableFloatStateOf(0f) }
+    // Eased in and out, so pausing settles the wave flat rather than freezing it.
+    val amplitude = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPlaying) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 450),
+        label = "miniFillWave"
+    )
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying) return@LaunchedEffect
+        var last = withFrameNanos { it }
+        while (isActive) {
+            withFrameNanos { now ->
+                val seconds = (now - last) / 1_000_000_000f
+                last = now
+                phase.floatValue = (phase.floatValue + seconds * MINI_FILL_WAVE_SPEED) % (2f * Math.PI.toFloat())
+            }
+        }
+    }
+    val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = MINI_FILL_STRENGTH)
+    val path = remember { Path() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawBehind {
+                val fraction = progress().coerceIn(0f, 1f)
+                val strength = detailAlpha().coerceIn(0f, 1f)
+                if (fraction <= 0f || strength <= 0f) return@drawBehind
+                val edge = size.width * fraction
+                val wave = MINI_FILL_WAVE_AMPLITUDE.toPx() * amplitude.value
+                val wavelength = MINI_FILL_WAVELENGTH.toPx()
+                path.rewind()
+                path.moveTo(0f, 0f)
+                // Down the leading edge in short steps, as a travelling sine.
+                val steps = 16
+                for (step in 0..steps) {
+                    val y = size.height * step / steps
+                    val x = edge + wave * kotlin.math.sin(
+                        2f * Math.PI.toFloat() * y / wavelength + phase.floatValue
+                    )
+                    path.lineTo(x, y)
+                }
+                path.lineTo(0f, size.height)
+                path.close()
+                drawPath(path = path, color = fillColor, alpha = strength)
+            }
+    )
+}
+
+/** How strongly the played part of the pill is tinted with the accent. */
+private const val MINI_FILL_STRENGTH = 0.26f
+
+/** How far the fill's leading edge swings either side of the true position. */
+private val MINI_FILL_WAVE_AMPLITUDE = 4.dp
+
+/** The height of one wave on the leading edge. */
+private val MINI_FILL_WAVELENGTH = 34.dp
+
+/** How fast the wave travels, in radians a second. */
+private const val MINI_FILL_WAVE_SPEED = 3.2f
 
 /** The slot the playing cover and its outline share. */
 private val MINI_ARTWORK_SLOT = 52.dp
@@ -357,7 +453,7 @@ private const val MINI_SHAPE_MORPH_SECONDS = 0.9f
 private fun MiniPlayingArtwork(
     song: Song,
     isPlaying: Boolean,
-    progress: Float,
+    progress: () -> Float,
     coverModifier: Modifier = Modifier
 ) {
     // Each shape and the move to the one after it, the last back to the first.
@@ -374,7 +470,6 @@ private fun MiniPlayingArtwork(
     val angle = remember { mutableFloatStateOf(0f) }
     val shapeSeconds = remember { mutableFloatStateOf(0f) }
     val step = MINI_SHAPE_HOLD_SECONDS + MINI_SHAPE_MORPH_SECONDS
-    val currentProgress = rememberUpdatedState(progress)
 
     LaunchedEffect(isPlaying) {
         if (!isPlaying) return@LaunchedEffect
@@ -399,7 +494,7 @@ private fun MiniPlayingArtwork(
         return moving * moving * (3f - 2f * moving)
     }
 
-    val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+    val trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
     val progressColor = MaterialTheme.colorScheme.primary
     val wedge = remember { Path() }
 
@@ -420,7 +515,7 @@ private fun MiniPlayingArtwork(
 
                 rotate(turn) { drawPath(path = outline, color = trackColor, style = stroke) }
 
-                val fraction = currentProgress.value.coerceIn(0f, 1f)
+                val fraction = progress().coerceIn(0f, 1f)
                 if (fraction >= 0.999f) {
                     rotate(turn) { drawPath(path = outline, color = progressColor, style = stroke) }
                 } else if (fraction > 0f) {
