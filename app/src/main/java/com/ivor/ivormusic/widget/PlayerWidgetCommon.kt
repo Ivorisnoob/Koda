@@ -214,6 +214,11 @@ internal object PlayerWidgetReader {
             val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
             if (bitmap != null) artworkCache = key to bitmap
             bitmap
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // A newer push cancelled this one. Swallowed, it came back as "no
+            // cover", which the host then published and kept: the next push
+            // saw the same cover uri and reused the nothing it had stored.
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Widget artwork failed: ${e.message}")
             null

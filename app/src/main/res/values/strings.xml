@@ -39,6 +39,11 @@
     <string name="widget_orbit_description">A round cover in a single cell</string>
 
     <!-- Widget content descriptions and in-widget copy. -->
+    <string name="widget_vinyl_label">Vinyl</string>
+    <string name="widget_vinyl_description">A record sliding out of its sleeve, turning while your music plays</string>
+    <string name="widget_pixel_label">Pixel</string>
+    <string name="widget_pixel_description">A pixel-art turntable that spins while your music plays</string>
+    <string name="widget_action_open_app">Open Koda</string>
     <string name="widget_action_play">Play</string>
     <string name="widget_action_pause">Pause</string>
     <string name="widget_action_next">Next</string>
@@ -1987,7 +1992,33 @@
         <item quantity="one">%d entry was from a service other than YouTube and was skipped.</item>
         <item quantity="other">%d entries were from services other than YouTube and were skipped.</item>
     </plurals>
+    <string name="spotify_import_title">Import from Spotify</string>
+    <string name="spotify_import_intro">Paste a Spotify playlist or album link. Koda finds the same songs on YouTube Music and makes a playlist of them. Nothing is played from Spotify.</string>
+    <string name="spotify_import_link_hint">Spotify playlist or album link</string>
+    <string name="spotify_import_find">Find songs</string>
+    <string name="spotify_import_load_failed">Couldn\'t read that playlist</string>
+    <string name="spotify_import_load_failed_hint">It may be private or removed. Check the link and your connection.</string>
+    <string name="spotify_import_progress">Finding songs on YouTube Music: %1$d of %2$d</string>
+    <string name="spotify_import_result">%1$d of %2$d songs found. Only exact matches are added.</string>
+    <string name="spotify_import_truncated">Spotify only shares the first 100 songs of a playlist. Longer playlists stop there.</string>
+    <string name="spotify_import_rate_limited">YouTube asked Koda to slow down, so the search stopped early. You can save what was found and try the rest later.</string>
+    <string name="spotify_import_no_match">No exact match · %1$s</string>
+    <string name="spotify_import_matching">Finding songs…</string>
+    <string name="spotify_import_description">Imported from Spotify</string>
+    <plurals name="spotify_import_create_n">
+        <item quantity="one">Create playlist with %1$d song</item>
+        <item quantity="other">Create playlist with %1$d songs</item>
+    </plurals>
     <string name="import_title">Add songs</string>
+    <string name="addsongs_search_hint">Search YouTube Music</string>
+    <string name="addsongs_recent">Recently played</string>
+    <string name="addsongs_liked">From your likes</string>
+    <string name="addsongs_on_device">On this device</string>
+    <string name="addsongs_online">YouTube Music</string>
+    <string name="addsongs_start_hint">Search for songs to add. What you play and like will show up here too.</string>
+    <string name="addsongs_no_results">No songs found for \"%1$s\"</string>
+    <string name="addsongs_add_n">Add %1$d</string>
+    <string name="addsongs_failed">Couldn\'t add those songs. Check your connection and try again.</string>
     <string name="import_pick_source">Copy songs from any of your playlists into %1$s.</string>
     <string name="import_select_all">Select all</string>
     <string name="import_clear_selection">Clear</string>

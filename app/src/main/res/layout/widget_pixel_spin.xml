@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Pixel widget's turning record: eight frames of the glint on the grooves,
+    flipped by the launcher itself. A widget cannot run Compose animation, and
+    pushing a frame at a time from the service would cost a redraw of every
+    widget five times a second; a ViewFlipper that starts itself needs neither.
+    No in or out animation on purpose - pixel art changes frame, it does not
+    cross-fade.
+
+    The frames are white masks, tinted from PixelWidget with the theme's colour
+    (setColorFilter on each id), so nothing here names a colour.
+-->
+<ViewFlipper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/pixel_spin"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:autoStart="true"
+    android:flipInterval="200">
+
+    <ImageView
+        android:id="@+id/pixel_spin_0"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/px_shine_0" />
+
+    <ImageView
+        android:id="@+id/pixel_spin_1"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/px_shine_1" />
+
+    <ImageView
+        android:id="@+id/pixel_spin_2"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/px_shine_2" />
+
+    <ImageView
+        android:id="@+id/pixel_spin_3"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/px_shine_3" />
+
+    <ImageView
+        android:id="@+id/pixel_spin_4"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/px_shine_4" />
+
+    <ImageView
+        android:id="@+id/pixel_spin_5"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/px_shine_5" />
+
+    <ImageView
+        android:id="@+id/pixel_spin_6"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/px_shine_6" />
+
+    <ImageView
+        android:id="@+id/pixel_spin_7"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/px_shine_7" />
+</ViewFlipper>

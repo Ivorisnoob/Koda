@@ -86,8 +86,12 @@ internal object PlayerWidgetHost {
 
     /** Publish new state to every live composition. */
     suspend fun set(context: Context, snapshot: PlayerWidgetSnapshot) {
-        val sameCover = _state.value.snapshot.artworkUri == snapshot.artworkUri
-        val artwork = if (sameCover) _state.value.artwork else loadArtwork(context, snapshot)
+        val current = _state.value
+        // Reused only when there is one to reuse: a cover that failed to load
+        // is tried again on the next push rather than staying blank for as
+        // long as the song plays.
+        val sameCover = current.snapshot.artworkUri == snapshot.artworkUri && current.artwork != null
+        val artwork = if (sameCover) current.artwork else loadArtwork(context, snapshot)
         _state.value = PlayerWidgetUi(snapshot, artwork)
         seeded = true
     }
@@ -107,6 +111,8 @@ object PlayerWidgets {
         LineupWidgetReceiver::class.java,
         BloomWidgetReceiver::class.java,
         OrbitWidgetReceiver::class.java,
+        PixelWidgetReceiver::class.java,
+        VinylWidgetReceiver::class.java,
     )
 
     private val widgets = listOf<GlanceAppWidget>(
@@ -116,6 +122,8 @@ object PlayerWidgets {
         LineupWidget(),
         BloomWidget(),
         OrbitWidget(),
+        PixelWidget(),
+        VinylWidget(),
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -163,8 +171,15 @@ object PlayerWidgets {
 
     private suspend fun updateEveryWidget(context: Context) {
         for (widget in widgets) {
-            runCatching { widget.updateAll(context) }
-                .onFailure { KLog.w("PlayerWidgets", "Update failed: ${it.message}") }
+            try {
+                widget.updateAll(context)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // A newer push replaced this one; let it stop here rather
+                // than carry on redrawing the remaining widgets with old state.
+                throw e
+            } catch (e: Exception) {
+                KLog.w("PlayerWidgets", "Update failed: ${e.message}")
+            }
         }
     }
 

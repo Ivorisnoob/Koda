@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    2x2 pixel-art turntable, drawn with no card so the deck sits on the
+    wallpaper. The record turns while music plays and the arm parks when it
+    stops.
+
+    MusicService pushes a redraw on each playback event; the 30-minute
+    updatePeriodMillis heartbeat (the platform floor) exists only so a widget
+    frozen by an OEM force-killing the app eventually corrects itself.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="140dp"
+    android:minHeight="140dp"
+    android:minResizeWidth="140dp"
+    android:minResizeHeight="140dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:updatePeriodMillis="1800000"
+    android:description="@string/widget_pixel_description"
+    android:previewLayout="@layout/widget_preview_pixel"
+    android:previewImage="@drawable/widget_preview_pixel"
+    android:initialLayout="@layout/glance_default_loading_layout" />
