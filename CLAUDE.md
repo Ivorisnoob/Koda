@@ -40,6 +40,12 @@ Shipped consumer app with real users. The bar is "would someone using this daily
 - **Ask once, up front, batched, with 2-3 concrete options** - only where the answer changes the size of the work or leaves a real design decision open. Never ask what the code or convention settles.
 - **Do not do the minimum.** If the real problem is a layer below the symptom, fix it there and say why.
 - **Mechanical multi-file edits go through a Python script** that asserts each anchor matches exactly once and asserts post-conditions. **Read the result before compiling** - it compiling proves nothing. [scar]
+- **For look-and-feel work, run the short loop: build it, put it on the device, let the user judge it on the screen.** [judgement October 2026] A one-line request, a small change, `installDebug` when asked, a one-word verdict, the next change. It is what made the mini player, the page colours and the profiles go well:
+  - **Pick, then be corrected.** When the user says "whichever you think", choose and build rather than asking; a wrong pick seen on a screen is fixed in one pass, and a question costs a round.
+  - **Small steps, each one installed.** A design reached in eight small rounds was never far enough off to go badly wrong.
+  - **Offer alternatives as things to try, not to read.** Build option 1, wait for the verdict, build option 2. Sketch in ASCII first only when the options differ in size.
+  - **A blunt verdict points at one thing.** "Too glitchy", "not visible enough": find the cause of that one thing, say what it was, and change that.
+  - **Keep trials uncommitted** until the user has seen them, so trying three styles and dropping two costs nothing.
 - **One item, one compile, one report.** Finish the item in flight, keep a visible queue of new ones.
 - **Never commit until the user says to.** Leave finished work uncommitted and say so in the report; when told to commit, group related items (up to about 15 per commit) and keep fixes and features distinguishable in the changelog.
 - **Write the subject for whoever reads `git log` in a month**: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched; a body for the reason when it is not obvious; the `Changelog:` section whenever the change reaches an APK. AI attribution only under the rule in Hard limits.
