@@ -161,6 +161,8 @@ import kotlinx.coroutines.launch
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.video.VideoHomeContent
 import com.ivor.ivormusic.data.VideoHomeConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.ivor.ivormusic.ui.components.hiddenFraction
 import com.ivor.ivormusic.data.VideoHomeDestination
 import com.ivor.ivormusic.ui.library.LibraryContent
@@ -555,7 +557,14 @@ fun HomeScreen(
     // device-only profiles there is always something to switch between, and
     // sending a signed-out user straight to a Google login was the app assuming
     // an account is the only way to have an identity.
-    val onProfileClick: () -> Unit = { showAccountSheet = true }
+    // In music mode the profile picture opens the Koda profile; holding it,
+    // there and everywhere, is the account switcher. Video mode keeps the
+    // tap as the switcher: its profile is the account, and the screen is
+    // about listening.
+    var showProfileScreen by remember { mutableStateOf(false) }
+    val onProfileClick: () -> Unit = {
+        if (videoMode) showAccountSheet = true else showProfileScreen = true
+    }
 
     val backgroundColor = MaterialTheme.colorScheme.background
     
@@ -852,6 +861,7 @@ fun HomeScreen(
     // Use Box overlay instead of Scaffold for truly floating navbar
     androidx.compose.runtime.CompositionLocalProvider(
         com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset,
+        com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher provides { showAccountSheet = true },
         com.ivor.ivormusic.ui.components.LocalNowPlaying provides
             com.ivor.ivormusic.ui.components.NowPlayingState(currentSong?.id, isPlaying)
     ) {
@@ -1916,6 +1926,32 @@ fun HomeScreen(
                 }
             }
         }
+
+        // The Koda profile, over everything on Home including the mini
+        // player and the navigation bar: it is a full screen, hosted here
+        // rather than on a route because the switcher sheet it hands to
+        // lives in this composable.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showProfileScreen,
+            enter = androidx.compose.animation.fadeIn() +
+                androidx.compose.animation.slideInVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+                ) { it / 10 },
+            exit = androidx.compose.animation.fadeOut() +
+                androidx.compose.animation.slideOutVertically { it / 10 }
+        ) {
+            com.ivor.ivormusic.ui.profile.KodaProfileScreen(
+                onBack = { showProfileScreen = false },
+                onSwitchProfile = {
+                    showProfileScreen = false
+                    showAccountSheet = true
+                },
+                onOpenStats = {
+                    showProfileScreen = false
+                    onNavigateToStats()
+                }
+            )
+        }
     }
     }
 
@@ -2337,6 +2373,7 @@ fun TopBarSection(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val userAvatar by viewModel.userAvatar.collectAsState()
+    val profileLabel = stringResource(R.string.cd_profile)
     val downloadingIds by viewModel.downloadingIds.collectAsState()
     val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
     
@@ -2357,6 +2394,7 @@ fun TopBarSection(
             com.ivor.ivormusic.data.AccountSwitcher(context)
         }
         val isSwitching by accountSwitcher.switching.collectAsState()
+        val openAccountSwitcher = com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher.current
         Box {
             Box(
                 modifier = Modifier
@@ -2366,9 +2404,17 @@ fun TopBarSection(
                     .combinedClickable(
                         onClick = onProfileClick,
                         onLongClick = {
-                            // A long-press that does nothing reads as broken, so
-                            // this only fires when there is somewhere to go.
-                            if (accountSwitcher.quickSwitchTarget() != null) {
+                            // Holding the picture is the account switcher, now
+                            // that a tap opens the profile. Where no shell
+                            // provides it, the old flip to the last profile
+                            // stands, and only when there is one to flip to: a
+                            // long-press that does nothing reads as broken.
+                            if (openAccountSwitcher != null) {
+                                haptics.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                                )
+                                openAccountSwitcher()
+                            } else if (accountSwitcher.quickSwitchTarget() != null) {
                                 haptics.performHapticFeedback(
                                     androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
                                 )
@@ -2378,21 +2424,15 @@ fun TopBarSection(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (userAvatar != null) {
-                    AsyncImage(
-                        model = userAvatar,
-                        contentDescription = stringResource(R.string.cd_profile),
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = stringResource(R.string.cd_profile),
-                        tint = iconColor,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                // The active profile's own picture: its photo, its Koda
+                // avatar, or the account's. A device-only profile used to
+                // be a grey person icon here.
+                com.ivor.ivormusic.ui.profile.ActiveProfileAvatar(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics { contentDescription = profileLabel },
+                    accountAvatarUrl = userAvatar
+                )
                 // Progress rides on the avatar rather than blocking the screen: the
                 // switch itself is instant, but the feeds behind it are refetching,
                 // and the status belongs where the user just tapped.

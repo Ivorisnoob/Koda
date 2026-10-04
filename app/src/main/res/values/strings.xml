@@ -1025,6 +1025,36 @@
     <string name="whats_new_version">Koda %1$s</string>
     <string name="whats_new_done">Got it</string>
 
+    <!-- Koda profiles -->
+    <string name="kp_koda_profile">Koda profile</string>
+    <string name="kp_youtube_account">YouTube account</string>
+    <string name="kp_since">Listening since %1$s</string>
+    <string name="kp_edit">Edit profile</string>
+    <string name="kp_switch">Switch profile</string>
+    <string name="kp_stat_time">Hours listened</string>
+    <string name="kp_stat_plays">Songs played</string>
+    <string name="kp_stat_artists">Artists</string>
+    <string name="kp_stat_streak">Day streak</string>
+    <string name="kp_stat_liked">Liked songs</string>
+    <string name="kp_stat_following">Following</string>
+    <string name="kp_genres">Your genres</string>
+    <string name="kp_following">Artists you follow</string>
+    <string name="kp_full_stats">See all stats</string>
+    <string name="kp_name">Name</string>
+    <string name="kp_shape">Shape</string>
+    <string name="kp_color">Color</string>
+    <string name="kp_eyes">Eyes</string>
+    <string name="kp_mouth">Mouth</string>
+    <string name="kp_extra">Extras</string>
+    <string name="kp_blush">Rosy cheeks</string>
+    <string name="kp_surprise">Surprise me</string>
+    <string name="kp_photo_choose">Use a photo</string>
+    <string name="kp_photo_remove">Remove photo</string>
+    <plurals name="kp_plays">
+        <item quantity="one">%1$d play</item>
+        <item quantity="other">%1$d plays</item>
+    </plurals>
+
     <!-- Following artists (on this device) -->
     <string name="artist_follow">Follow</string>
     <string name="artist_following">Following</string>

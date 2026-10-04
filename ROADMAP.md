@@ -123,6 +123,7 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 - Album colours reach the whole app in music mode: the playing cover seeds the full scheme, fading between songs; Off / Player / Whole app in Settings.
 - The music mini player's cover spins and walks through shapes, with the progress drawn as that shape's outline.
 - The music pill is the accent container, slimmer, with one filled button, and fills with a wave-edged tone as the song plays; it closes into a bubble while the page scrolls.
+- Koda profiles: a device-only profile has its own name and picture (a drawn avatar from an avatar maker, or a photo), and a profile screen with listening stats, top artists and songs, genres and followed artists; tap the profile picture in music mode, hold it for the account switcher.
 - Pages are a tinted mid tone with brighter cards on every screen (`withTintedPages`), and settings rows lead with solid tonal icon tiles under accent headings.
 - The video player's playback settings are a control panel: value tabs over one deck, switches as tiles, shortcuts beneath; the fullscreen panel no longer dims the video.
 
