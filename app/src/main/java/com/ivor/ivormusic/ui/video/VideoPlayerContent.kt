@@ -6,9 +6,10 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.os.Build
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -21,16 +22,13 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
@@ -40,16 +38,14 @@ import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Audiotrack
 import com.ivor.ivormusic.service.FrameInterpolationStatus
 import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RepeatOne
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.StayCurrentPortrait
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -59,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -71,6 +68,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
@@ -1443,6 +1441,7 @@ fun VideoPlayerContent(
             audioTracks = audioTracks,
             onAudioTrackSelected = { viewModel.setAudioTrack(it) },
             playbackSpeed = playbackSpeed,
+            onSpeedPreview = { viewModel.setPlaybackSpeed(it, persist = false) },
             onSpeedSelected = { viewModel.setPlaybackSpeed(it) },
             showEndBehavior = !isLive,
             autoplayEnabled = isAutoplayEnabled,
@@ -1529,10 +1528,11 @@ fun VideoPlayerContent(
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
+                // No dimming: quality, zoom and Smooth motion are judged on the
+                // picture beside the panel, so the tap-to-close layer is clear.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.45f))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -1554,14 +1554,16 @@ fun VideoPlayerContent(
                         .padding(12.dp)
                         .width(360.dp),
                     shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    // The sheet's own container, so the deck and the tiles
+                    // stand off it here as they do in portrait.
+                    color = MaterialTheme.colorScheme.surfaceContainer,
                     contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                            .padding(16.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
@@ -1574,7 +1576,7 @@ fun VideoPlayerContent(
                                 Icon(Icons.Rounded.Close, contentDescription = "Close")
                             }
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         playbackSettingsContent()
                     }
                 }
@@ -1591,16 +1593,15 @@ fun VideoPlayerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 32.dp)
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp)
             ) {
                 Text(
                     text = stringResource(R.string.vpc_playback_settings),
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(vertical = 8.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 12.dp),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(12.dp))
                 playbackSettingsContent()
             }
         }
@@ -1609,10 +1610,20 @@ fun VideoPlayerContent(
 
 /**
  * Shared content for the portrait playback sheet and fullscreen side panel.
- * One Playback card holds the inline quality/speed pickers (accordion rows
- * naming the live value, options beneath), the end-behavior toggles, the
- * sleep timer and Listen as music; low-frequency actions are labeled rows in
- * a second card instead of mystery icons over video.
+ *
+ * **A control panel, the video twin of the music player's
+ * `NowPlayingOptionsSheet`.** Two blocks. The top is the **values**: quality,
+ * speed and (where there is a choice) the audio track, as a connected row of
+ * tabs that each name their live value, over one deck that shows the options
+ * for whichever tab is selected. The bottom is the **action grid**: the
+ * switches as filled tiles, then the places this panel can leave to, unfilled
+ * on the same four columns.
+ *
+ * It was one list of up to fifteen rows, with quality and speed as accordions
+ * over sideways-scrolling chip strips: two taps and a swipe to reach a rung
+ * that was off the edge, and every switch a full-width row with a sentence
+ * under it. Here the deck is already open on quality when the panel appears,
+ * every rung is on screen at once, and a switch carries its state in its fill.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -1623,12 +1634,14 @@ private fun PlayerSettingsSections(
     onQualitySelected: (VideoQuality) -> Unit,
     /**
      * Audio tracks to choose between: a device file's own tracks, or a YouTube
-     * video's original and dubs. Empty when there is only one, so the row
+     * video's original and dubs. Empty when there is only one, so the tab
      * simply does not appear.
      */
     audioTracks: List<PlayerTrackOption>,
     onAudioTrackSelected: (PlayerTrackOption) -> Unit,
     playbackSpeed: Float,
+    /** One frame of a slider drag: applied so it can be judged, not remembered. */
+    onSpeedPreview: (Float) -> Unit,
     onSpeedSelected: (Float) -> Unit,
     showEndBehavior: Boolean,
     autoplayEnabled: Boolean,
@@ -1665,44 +1678,25 @@ private fun PlayerSettingsSections(
     /** What Smooth motion is doing for this video, or that it is switched off. */
     smoothMotionStatus: String
 ) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val optionColors = ToggleButtonDefaults.colors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
-    // One row per answer to "what happens next": autoplay, loop, sleep. A
-    // labeled section of its own for the sleep row alone cost a label, a card
-    // and two gaps for what a divider does.
-    val sleepTimerRow: @Composable () -> Unit = {
-        SettingsActionRow(
-            icon = Icons.Rounded.Bedtime,
-            title = stringResource(R.string.sleep_timer_title),
-            // Coarse minutes, no ticker: the picker sheet itself counts down
-            // once opened, and this row recomposes on every state change.
-            supportingText = when {
-                sleepTimerEndOfVideo -> stringResource(R.string.sleep_timer_status_video)
-                sleepTimerEndsAt != null -> {
-                    val remainingMin = ((sleepTimerEndsAt - System.currentTimeMillis()) / 60_000L)
-                        .coerceAtLeast(1L).toInt()
-                    stringResource(R.string.minutes_short, remainingMin)
-                }
-                else -> stringResource(R.string.sleep_timer_off)
-            },
-            onClick = onSleepTimerClick
-        )
+    // Exactly one deck, quality first: it is what this panel is most often
+    // opened for, so it costs one tap rather than two.
+    var deck by remember { mutableStateOf(SettingsPicker.QUALITY) }
+    // The next video in a queue can have a single audio track, which takes the
+    // tab away under an open panel.
+    val shownDeck = if (deck == SettingsPicker.AUDIO && audioTracks.isEmpty()) {
+        SettingsPicker.QUALITY
+    } else {
+        deck
     }
 
-    // Accordion state for the inline pickers: at most one open, tap again to
-    // close. Quality and speed used to own labeled sections with wrapping
-    // pill clouds; now they are one row each naming the live value.
-    var expandedPicker by remember { mutableStateOf<SettingsPicker?>(null) }
-    fun togglePicker(picker: SettingsPicker) {
-        expandedPicker = if (expandedPicker == picker) null else picker
-    }
-
-    // Ladder split for the inline quality picker: the HDR/Standard tabs, the
-    // follow-the-source effect and the strip all live inside the expanded
-    // quality row now, so the split moves up with them.
+    // Ladder split for the quality deck: the HDR/Standard switch and the
+    // follow-the-source effect live with the rungs they filter.
     val hdrQualities = qualities.filter(VideoQuality::isHdr)
     val standardQualities = qualities.filterNot(VideoQuality::isHdr)
     val showDynamicRangePicker = hdrQualities.isNotEmpty() && standardQualities.isNotEmpty()
@@ -1724,427 +1718,624 @@ private fun PlayerSettingsSections(
         showHdrQualities -> hdrQualities
         else -> standardQualities
     }
+    // Compared by label as well as URL: every rendition of a live stream
+    // points at the same HLS manifest, so a URL comparison alone would light
+    // up the whole ladder at once.
     fun isQualitySelected(quality: VideoQuality): Boolean = currentQuality != null &&
         quality.resolution == currentQuality.resolution &&
         quality.dynamicRange == currentQuality.dynamicRange &&
         quality.url == currentQuality.url
-    val qualityStripState = rememberLazyListState()
-    LaunchedEffect(visibleQualities) {
-        qualityStripState.scrollToItem(
-            visibleQualities.indexOfFirst(::isQualitySelected).coerceAtLeast(0)
-        )
-    }
+
     val normalSpeedLabel = stringResource(R.string.vpc_normal)
     fun speedLabel(speed: Float): String = if (speed == 1f) normalSpeedLabel
         else "${speed.toString().removeSuffix(".0")}x"
-    val speedStripState = rememberLazyListState()
-    LaunchedEffect(Unit) {
-        speedStripState.scrollToItem(
-            VideoPlayerViewModel.PLAYBACK_SPEED_OPTIONS.indexOfFirst { it == playbackSpeed }
-                .coerceAtLeast(0)
-        )
-    }
 
-    val qualityPickable = !isLoading && qualities.isNotEmpty()
     val qualityValue: String? = when {
-        isLoading -> null
-        qualities.isEmpty() -> stringResource(R.string.vpc_no_qualities)
+        isLoading || qualities.isEmpty() -> null
         else -> currentQuality?.displayLabel ?: stringResource(R.string.vpc_quality_auto)
     }
 
-    SettingsSectionLabel(icon = Icons.Rounded.PlayArrow, label = "Playback")
-    Spacer(modifier = Modifier.height(8.dp))
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
-        Column {
-            PickerRow(
-                icon = Icons.Rounded.Tune,
-                title = "Quality",
-                value = qualityValue,
-                loading = isLoading,
-                expanded = expandedPicker == SettingsPicker.QUALITY,
-                expandable = qualityPickable,
-                onClick = { if (qualityPickable) togglePicker(SettingsPicker.QUALITY) }
-            )
-            AnimatedVisibility(
-                visible = expandedPicker == SettingsPicker.QUALITY && qualityPickable,
-                enter = expandVertically(
-                    animationSpec = spring(
-                        stiffness = Spring.StiffnessMediumLow,
-                        dampingRatio = Spring.DampingRatioMediumBouncy
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                val tabs = buildList {
+                    add(Triple(SettingsPicker.QUALITY, "Quality", qualityValue))
+                    add(
+                        Triple(
+                            SettingsPicker.SPEED,
+                            stringResource(R.string.song_options_speed),
+                            speedLabel(playbackSpeed)
+                        )
                     )
-                ) + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Column(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
-                ) {
-                    if (showDynamicRangePicker) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(
-                                ButtonGroupDefaults.ConnectedSpaceBetween
+                    if (audioTracks.isNotEmpty()) {
+                        add(
+                            Triple(
+                                SettingsPicker.AUDIO,
+                                stringResource(R.string.vpc_audio_track),
+                                audioTracks.firstOrNull { it.isSelected }?.label
                             )
-                        ) {
-                            listOf(
-                                true to stringResource(R.string.vpc_quality_hdr),
-                                false to stringResource(R.string.vpc_quality_standard),
-                            ).forEachIndexed { index, (showsHdr, label) ->
-                                val selected = showHdrQualities == showsHdr
-                                ToggleButton(
-                                    checked = selected,
-                                    onCheckedChange = { if (!selected) showHdrQualities = showsHdr },
-                                    modifier = Modifier.weight(1f),
-                                    shapes = if (index == 0) {
-                                        ButtonGroupDefaults.connectedLeadingButtonShapes()
-                                    } else {
-                                        ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                    },
-                                    colors = optionColors,
-                                ) {
-                                    if (selected) {
-                                        Icon(
-                                            Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                    }
-                                    Text(label)
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-                    LazyRow(
-                        state = qualityStripState,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(
-                            // URL alone is not unique: every rung of a live ladder points
-                            // at the same HLS manifest, so dimensions ride along.
-                            visibleQualities,
-                            key = { it.resolution + it.dynamicRange.toString() + it.url + it.width + "x" + it.height + "@" + it.frameRate }
-                        ) { quality ->
-                            // Compared by label, not URL: every rendition of a live
-                            // stream points at the same HLS manifest, so a URL comparison
-                            // would light up the whole ladder at once.
-                            val selected = isQualitySelected(quality)
-                            ToggleButton(
-                                checked = selected,
-                                onCheckedChange = { if (!selected) onQualitySelected(quality) },
-                                colors = optionColors
-                            ) {
-                                if (selected) {
-                                    Icon(
-                                        Icons.Rounded.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                }
-                                Text(if (showDynamicRangePicker) quality.resolution else quality.displayLabel)
-                            }
-                        }
+                        )
                     }
                 }
-            }
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 64.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
-            PickerRow(
-                icon = Icons.Rounded.Speed,
-                title = "Playback speed",
-                value = speedLabel(playbackSpeed),
-                loading = false,
-                expanded = expandedPicker == SettingsPicker.SPEED,
-                expandable = true,
-                onClick = { togglePicker(SettingsPicker.SPEED) }
-            )
-            AnimatedVisibility(
-                visible = expandedPicker == SettingsPicker.SPEED,
-                enter = expandVertically(
-                    animationSpec = spring(
-                        stiffness = Spring.StiffnessMediumLow,
-                        dampingRatio = Spring.DampingRatioMediumBouncy
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // Tabs of one height even when one value wraps.
+                        .height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(
+                        ButtonGroupDefaults.ConnectedSpaceBetween
                     )
-                ) + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                LazyRow(
-                    state = speedStripState,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
                 ) {
-                    items(
-                        VideoPlayerViewModel.PLAYBACK_SPEED_OPTIONS,
-                        key = { it.toString() }
-                    ) { speed ->
-                        val selected = speed == playbackSpeed
+                    tabs.forEachIndexed { index, (picker, label, value) ->
+                        val selected = shownDeck == picker
                         ToggleButton(
                             checked = selected,
-                            onCheckedChange = { if (!selected) onSpeedSelected(speed) },
-                            colors = optionColors
+                            onCheckedChange = {
+                                if (!selected) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                    deck = picker
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .heightIn(min = 60.dp),
+                            shapes = when (index) {
+                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                tabs.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                            },
+                            colors = optionColors,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                         ) {
-                            Text(speedLabel(speed))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (picker == SettingsPicker.QUALITY && isLoading) {
+                                    LoadingIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = LocalContentColor.current
+                                    )
+                                } else {
+                                    Text(
+                                        // A dash rather than an empty line, so a
+                                        // tab with nothing to name keeps its height.
+                                        text = value ?: "-",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
-            if (audioTracks.isNotEmpty()) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = 64.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                // A picker row like quality and speed rather than a section of
-                // its own: a dubbed YouTube video can carry 25 languages, and
-                // listing them open would bury every control below.
-                PickerRow(
-                    icon = Icons.Rounded.Audiotrack,
-                    title = stringResource(R.string.vpc_audio_track),
-                    value = audioTracks.firstOrNull { it.isSelected }?.label,
-                    loading = false,
-                    expanded = expandedPicker == SettingsPicker.AUDIO,
-                    onClick = { togglePicker(SettingsPicker.AUDIO) }
-                )
-                AnimatedVisibility(
-                    visible = expandedPicker == SettingsPicker.AUDIO,
-                    enter = expandVertically(
-                        animationSpec = spring(
-                            stiffness = Spring.StiffnessMediumLow,
-                            dampingRatio = Spring.DampingRatioMediumBouncy
+                Spacer(modifier = Modifier.height(12.dp))
+                AnimatedContent(
+                    targetState = shownDeck,
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "PlaybackSettingsDeck"
+                ) { target ->
+                    when (target) {
+                        SettingsPicker.QUALITY -> when {
+                            isLoading -> Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                ContainedLoadingIndicator()
+                            }
+                            qualities.isEmpty() -> Text(
+                                text = stringResource(R.string.vpc_no_qualities),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp)
+                            )
+                            else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (showDynamicRangePicker) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(
+                                            ButtonGroupDefaults.ConnectedSpaceBetween
+                                        )
+                                    ) {
+                                        listOf(
+                                            true to stringResource(R.string.vpc_quality_hdr),
+                                            false to stringResource(R.string.vpc_quality_standard),
+                                        ).forEachIndexed { index, (showsHdr, label) ->
+                                            val selected = showHdrQualities == showsHdr
+                                            ToggleButton(
+                                                checked = selected,
+                                                onCheckedChange = { if (!selected) showHdrQualities = showsHdr },
+                                                modifier = Modifier.weight(1f),
+                                                shapes = if (index == 0) {
+                                                    ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                                } else {
+                                                    ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                                },
+                                                colors = optionColors,
+                                            ) {
+                                                if (selected) {
+                                                    Icon(
+                                                        Icons.Rounded.Check,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                }
+                                                Text(label)
+                                            }
+                                        }
+                                    }
+                                }
+                                // The whole ladder on the panel's columns, so no
+                                // rung is hidden behind a sideways scroll.
+                                SettingsGrid(
+                                    visibleQualities.map { quality ->
+                                        { modifier ->
+                                            val selected = isQualitySelected(quality)
+                                            DeckCell(
+                                                label = if (showDynamicRangePicker) {
+                                                    quality.resolution
+                                                } else {
+                                                    quality.displayLabel
+                                                },
+                                                selected = selected,
+                                                modifier = modifier,
+                                                onClick = {
+                                                    if (!selected) {
+                                                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                                        onQualitySelected(quality)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
+                        SettingsPicker.SPEED -> SpeedDeck(
+                            playbackSpeed = playbackSpeed,
+                            speedLabel = ::speedLabel,
+                            onSpeedPreview = onSpeedPreview,
+                            onSpeedSelected = onSpeedSelected
                         )
-                    ) + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    // Rows rather than the chips the quality ladder uses: a track
-                    // name carries a language, a codec and a channel layout, and
-                    // any of those truncated into a chip is exactly the part that
-                    // distinguishes it from the track above it.
-                    Column {
-                        audioTracks.forEach { track ->
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 64.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
-                            SettingsActionRow(
-                                icon = if (track.isSelected) Icons.Rounded.Check else Icons.Rounded.Audiotrack,
-                                title = track.label,
-                                supportingText = track.detail,
-                                onClick = { if (!track.isSelected) onAudioTrackSelected(track) }
-                            )
+
+                        // Rows rather than cells: a track name carries a language,
+                        // a codec and a channel layout, and any of those truncated
+                        // into a cell is exactly the part that distinguishes it
+                        // from the track above it.
+                        SettingsPicker.AUDIO -> Column(
+                            modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                        ) {
+                            audioTracks.forEach { track ->
+                                com.ivor.ivormusic.ui.player.OptionRow(
+                                    icon = Icons.Rounded.Audiotrack,
+                                    title = track.label,
+                                    subtitle = track.detail,
+                                    trailing = if (track.isSelected) {
+                                        com.ivor.ivormusic.ui.player.OptionRowTrailing.CHECK
+                                    } else {
+                                        com.ivor.ivormusic.ui.player.OptionRowTrailing.NONE
+                                    },
+                                    onClick = { if (!track.isSelected) onAudioTrackSelected(track) }
+                                )
+                            }
                         }
                     }
                 }
             }
+        }
+
+        // The switches, as tiles whose fill is the state. Autoplay, loop and
+        // sleep lead because they answer the same question: what happens next.
+        val sleepTimerActive = sleepTimerEndOfVideo || sleepTimerEndsAt != null
+        val switches = buildList<@Composable (Modifier) -> Unit> {
             if (showEndBehavior) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = 64.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                SettingsToggleRow(
-                    icon = Icons.Rounded.PlayArrow,
-                    title = stringResource(R.string.vpc_autoplay),
-                    supportingText = if (autoplayEnabled) {
-                        stringResource(R.string.vpc_autoplay_on)
-                    } else {
-                        stringResource(R.string.vpc_autoplay_off)
+                add { modifier ->
+                    com.ivor.ivormusic.ui.player.OptionTile(
+                        icon = Icons.Rounded.PlayArrow,
+                        label = stringResource(R.string.vpc_autoplay),
+                        selected = autoplayEnabled,
+                        modifier = modifier,
+                        onClick = {
+                            haptics.performHapticFeedback(
+                                if (autoplayEnabled) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+                            )
+                            onAutoplayChanged(!autoplayEnabled)
+                        }
+                    )
+                }
+                add { modifier ->
+                    com.ivor.ivormusic.ui.player.OptionTile(
+                        icon = Icons.Rounded.RepeatOne,
+                        label = stringResource(R.string.vpc_loop),
+                        selected = isLooping,
+                        modifier = modifier,
+                        onClick = {
+                            haptics.performHapticFeedback(
+                                if (isLooping) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+                            )
+                            onLoopChanged(!isLooping)
+                        }
+                    )
+                }
+            }
+            add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionTile(
+                    icon = Icons.Rounded.Bedtime,
+                    // A running timer names what is left in place of its title.
+                    // Coarse minutes, no ticker: the picker sheet itself counts
+                    // down once opened.
+                    label = when {
+                        sleepTimerEndOfVideo -> stringResource(R.string.sleep_timer_status_video)
+                        sleepTimerEndsAt != null -> {
+                            val remainingMin = ((sleepTimerEndsAt - System.currentTimeMillis()) / 60_000L)
+                                .coerceAtLeast(1L).toInt()
+                            stringResource(R.string.minutes_short, remainingMin)
+                        }
+                        else -> stringResource(R.string.sleep_timer_title)
                     },
-                    checked = autoplayEnabled,
-                    onCheckedChange = onAutoplayChanged
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = 64.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                SettingsToggleRow(
-                    icon = Icons.Rounded.RepeatOne,
-                    title = stringResource(R.string.vpc_loop),
-                    supportingText = if (!autoplayEnabled) {
-                        stringResource(R.string.vpc_loop_note)
-                    } else if (isLooping) {
-                        stringResource(R.string.vpc_loop_off)
-                    } else {
-                        stringResource(R.string.vpc_loop_on)
-                    },
-                    checked = isLooping,
-                    onCheckedChange = onLoopChanged
+                    selected = sleepTimerActive,
+                    modifier = modifier,
+                    onClick = onSleepTimerClick
                 )
             }
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 64.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
-            )
-            sleepTimerRow()
-            if (showListenAsMusic) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = 64.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
+            if (showZoomToFill) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionTile(
+                    icon = Icons.Rounded.ZoomIn,
+                    label = stringResource(R.string.vpc_zoom_to_fill),
+                    selected = zoomToFillActive,
+                    modifier = modifier,
+                    onClick = {
+                        haptics.performHapticFeedback(
+                            if (zoomToFillActive) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+                        )
+                        onZoomToFillChanged(!zoomToFillActive)
+                    }
                 )
-                SettingsActionRow(
+            }
+            // Settings makes Smooth motion available (behind its warning); this
+            // tile turns it on and off from the video itself and is remembered.
+            if (showSmoothMotion) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionTile(
+                    icon = Icons.Rounded.Animation,
+                    label = stringResource(R.string.vpc_smooth_motion),
+                    selected = smoothMotionOn,
+                    modifier = modifier,
+                    onClick = {
+                        haptics.performHapticFeedback(
+                            if (smoothMotionOn) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+                        )
+                        onSmoothMotionChanged(!smoothMotionOn)
+                    }
+                )
+            }
+            if (showTimedComments) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionTile(
+                    icon = Icons.AutoMirrored.Rounded.Comment,
+                    label = stringResource(R.string.sp_timed_comments),
+                    selected = timedCommentsActive,
+                    modifier = modifier,
+                    onClick = {
+                        haptics.performHapticFeedback(
+                            if (timedCommentsActive) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+                        )
+                        onTimedCommentsChanged(!timedCommentsActive)
+                    }
+                )
+            }
+            if (showLiveChat) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionTile(
+                    icon = Icons.AutoMirrored.Rounded.Chat,
+                    label = stringResource(R.string.vp_live_chat),
+                    selected = liveChatActive,
+                    modifier = modifier,
+                    onClick = { onLiveChatChanged(!liveChatActive) }
+                )
+            }
+        }
+        SettingsGrid(switches)
+
+        // The one switch whose effect depends on the video, so it keeps the
+        // line that answers "is it doing anything right now?".
+        if (showSmoothMotion) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Animation,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = smoothMotionStatus,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // The places this panel leaves to, unfilled on the tiles' columns: each
+        // closes the panel behind it, so none of them has a state to show.
+        val shortcuts = buildList<@Composable (Modifier) -> Unit> {
+            if (showPip) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionUtility(
+                    icon = Icons.Rounded.PictureInPictureAlt,
+                    label = stringResource(R.string.vpc_pip),
+                    modifier = modifier,
+                    onClick = onPipClick
+                )
+            }
+            if (showQueue) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionUtility(
+                    icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                    label = stringResource(R.string.swipe_action_queue),
+                    contentDescription = stringResource(R.string.vpc_queue_sub),
+                    modifier = modifier,
+                    onClick = onQueueClick
+                )
+            }
+            if (showComments) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionUtility(
+                    icon = Icons.AutoMirrored.Rounded.Comment,
+                    label = if (commentsActive) {
+                        stringResource(R.string.cd_close_comments)
+                    } else {
+                        stringResource(R.string.cd_comments)
+                    },
+                    modifier = modifier,
+                    onClick = onCommentsClick
+                )
+            }
+            if (showListenAsMusic) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionUtility(
                     icon = Icons.Rounded.MusicNote,
-                    title = stringResource(R.string.vpc_listen_as_music),
-                    supportingText = stringResource(R.string.vpc_listen_as_music_sub),
+                    label = stringResource(R.string.vpc_listen_as_music),
+                    contentDescription = stringResource(R.string.vpc_listen_as_music_sub),
+                    modifier = modifier,
                     onClick = onListenAsMusic
                 )
             }
+            if (showVerticalLive) add { modifier ->
+                com.ivor.ivormusic.ui.player.OptionUtility(
+                    icon = Icons.Rounded.StayCurrentPortrait,
+                    label = stringResource(R.string.vpc_vertical_live),
+                    contentDescription = stringResource(R.string.vpc_vertical_live_sub),
+                    modifier = modifier,
+                    onClick = onVerticalLiveClick
+                )
+            }
+        }
+        SettingsGrid(shortcuts)
+    }
+}
+
+/**
+ * The playback rate: a slider for any value, over the four rates people
+ * actually pick as one-tap cells.
+ *
+ * The rate applies as the thumb moves and is remembered once, when the finger
+ * lifts - the rule the music player's speed slider follows, for the same
+ * reason: speed is judged by watching, and a preference write per frame of a
+ * drag is forty writes for one decision. The track is logarithmic so halving
+ * and doubling get equal travel, and it detents on 1x with a haptic because
+ * that is the one value people want to land on exactly.
+ */
+@Composable
+private fun SpeedDeck(
+    playbackSpeed: Float,
+    speedLabel: (Float) -> String,
+    onSpeedPreview: (Float) -> Unit,
+    onSpeedSelected: (Float) -> Unit
+) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    var dragging by remember { mutableStateOf(false) }
+    var sliderSpeed by remember { mutableFloatStateOf(playbackSpeed) }
+    // Follow the player while the control is at rest - a preset, a new video
+    // or a live stream can change the rate under an open panel - but never
+    // under the finger, where it would fight the drag.
+    LaunchedEffect(playbackSpeed, dragging) { if (!dragging) sliderSpeed = playbackSpeed }
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Slider(
+                value = videoSpeedToSlider(sliderSpeed),
+                onValueChange = { position ->
+                    dragging = true
+                    val snapped = snapVideoSpeed(videoSliderToSpeed(position))
+                    if (snapped != sliderSpeed) {
+                        if (snapped == 1f) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        }
+                        sliderSpeed = snapped
+                        onSpeedPreview(snapped)
+                    }
+                },
+                onValueChangeFinished = {
+                    dragging = false
+                    onSpeedSelected(sliderSpeed)
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp)
+            )
+            // Only where it leads somewhere: at 1x there is nothing to reset.
+            AnimatedVisibility(visible = sliderSpeed != 1f) {
+                IconButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        dragging = false
+                        sliderSpeed = 1f
+                        onSpeedSelected(1f)
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = stringResource(R.string.cd_speed_reset),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        SettingsGrid(
+            SPEED_PRESETS.map { preset ->
+                { modifier ->
+                    val selected = sliderSpeed == preset
+                    DeckCell(
+                        label = speedLabel(preset),
+                        selected = selected,
+                        modifier = modifier,
+                        onClick = {
+                            if (!selected) {
+                                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                dragging = false
+                                sliderSpeed = preset
+                                onSpeedSelected(preset)
+                            }
+                        }
+                    )
+                }
+            }
+        )
+    }
+}
+
+/**
+ * One option inside a deck - a quality rung, a speed preset. The selected one
+ * fills and squares off, the selection language of the tiles below it.
+ */
+@Composable
+private fun DeckCell(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val corner by animateDpAsState(
+        targetValue = if (selected) 12.dp else 24.dp,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "deckCellCorner"
+    )
+    val container by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "deckCellContainer"
+    )
+    Surface(
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp),
+        shape = RoundedCornerShape(corner),
+        color = container,
+        contentColor = if (selected) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                // Two lines: "2160p Dolby Vision" in a quarter of the panel.
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
-    Spacer(modifier = Modifier.height(16.dp))
+}
 
-    val hasSecondaryActions = showPip || showComments || showQueue ||
-        showTimedComments || showLiveChat || showVerticalLive || showZoomToFill ||
-        showSmoothMotion
-    if (hasSecondaryActions) {
-        Spacer(modifier = Modifier.height(16.dp))
-        SettingsSectionLabel(icon = Icons.Rounded.Tune, label = "More controls")
-        Spacer(modifier = Modifier.height(8.dp))
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
-        ) {
-            Column {
-                // Settings makes Smooth motion available (behind its warning);
-                // this switch turns it on and off from the video itself and is
-                // remembered. Its supporting line answers "is it doing anything
-                // right now?". Kept open like zoom: the change shows at once.
-                if (showSmoothMotion) {
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.Animation,
-                        title = stringResource(R.string.vpc_smooth_motion),
-                        supportingText = smoothMotionStatus,
-                        checked = smoothMotionOn,
-                        onCheckedChange = onSmoothMotionChanged
+/**
+ * Cells laid on the panel's four columns, a row at a time. A short last row
+ * keeps its columns and leaves the rest empty rather than stretching, so every
+ * cell in the panel sits under the one above it; cells in a row share the
+ * height of the tallest, for the label that wraps at a large font scale.
+ */
+@Composable
+private fun SettingsGrid(cells: List<@Composable (Modifier) -> Unit>) {
+    if (cells.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        cells.chunked(SETTINGS_COLUMNS).forEach { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { cell ->
+                    cell(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
                     )
                 }
-                if (showZoomToFill) {
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.ZoomIn,
-                        title = stringResource(R.string.vpc_zoom_to_fill),
-                        supportingText = stringResource(R.string.vpc_zoom_to_fill_sub),
-                        checked = zoomToFillActive,
-                        onCheckedChange = onZoomToFillChanged
-                    )
-                }
-                if (showPip) {
-                    SettingsActionRow(
-                        icon = Icons.Rounded.PictureInPictureAlt,
-                        title = stringResource(R.string.vpc_pip),
-                        supportingText = stringResource(R.string.vpc_pip_sub),
-                        onClick = onPipClick
-                    )
-                }
-                if (showComments) {
-                    SettingsActionRow(
-                        icon = Icons.AutoMirrored.Rounded.Comment,
-                        title = if (commentsActive) stringResource(R.string.cd_close_comments) else stringResource(R.string.cd_comments),
-                        supportingText = if (commentsActive) {
-                            stringResource(R.string.vpc_return_to_video)
-                        } else {
-                            stringResource(R.string.vpc_browse_conversation)
-                        },
-                        onClick = onCommentsClick
-                    )
-                }
-                if (showQueue) {
-                    SettingsActionRow(
-                        icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                        title = stringResource(R.string.your_playlists),
-                        supportingText = stringResource(R.string.vpc_queue_sub),
-                        onClick = onQueueClick
-                    )
-                }
-                if (showTimedComments) {
-                    SettingsToggleRow(
-                        icon = Icons.AutoMirrored.Rounded.Comment,
-                        title = stringResource(R.string.sp_timed_comments),
-                        supportingText = stringResource(R.string.vpc_timed_comments_sub),
-                        checked = timedCommentsActive,
-                        onCheckedChange = onTimedCommentsChanged
-                    )
-                }
-                if (showLiveChat) {
-                    SettingsToggleRow(
-                        icon = Icons.AutoMirrored.Rounded.Chat,
-                        title = stringResource(R.string.vp_live_chat),
-                        supportingText = stringResource(R.string.vpc_live_chat_sub),
-                        checked = liveChatActive,
-                        onCheckedChange = onLiveChatChanged
-                    )
-                }
-                if (showVerticalLive) {
-                    SettingsActionRow(
-                        icon = Icons.Rounded.StayCurrentPortrait,
-                        title = stringResource(R.string.vpc_vertical_live),
-                        supportingText = stringResource(R.string.vpc_vertical_live_sub),
-                        onClick = onVerticalLiveClick
-                    )
+                repeat(SETTINGS_COLUMNS - row.size) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
     }
 }
 
-@Composable
-private fun SettingsToggleRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    supportingText: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    ListItem(
-        supportingContent = { Text(supportingText) },
-        leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (checked) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        trailingContent = {
-            Switch(
-                checked = checked,
-                onCheckedChange = null
-            )
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.toggleable(
-            value = checked,
-            role = Role.Switch,
-            onValueChange = onCheckedChange
-        )
-    ) { Text(title) }
-}
+/** Which deck the playback settings are showing; exactly one, chosen by the tabs. */
+private enum class SettingsPicker { QUALITY, SPEED, AUDIO }
 
-@Composable
-private fun SettingsActionRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    /** Omitted for rows whose title already says everything, such as an audio
-     * track a container tagged with no codec or channel information. */
-    supportingText: String?,
-    onClick: () -> Unit,
-    /** Value preview plus chevron on the expandable quality/speed rows. */
-    trailing: (@Composable () -> Unit)? = null
-) {
-    ListItem(
-        supportingContent = supportingText?.let { { Text(it) } },
-        leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        trailingContent = trailing,
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(onClick = onClick)
-    ) { Text(title) }
+/** Columns in the playback settings panel: deck cells, tiles and shortcuts share them. */
+private const val SETTINGS_COLUMNS = 4
+
+/** The rates worth a one-tap cell; the slider reaches everything between and beyond. */
+private val SPEED_PRESETS = listOf(1f, 1.25f, 1.5f, 2f)
+
+/** The slider's floor, the one [VideoPlayerViewModel.setPlaybackSpeed] enforces. */
+private const val VIDEO_MIN_SPEED = 0.25f
+
+private val VIDEO_SPEED_LOG_SPAN =
+    kotlin.math.ln(com.ivor.ivormusic.data.ThemePreferences.MAX_PLAYBACK_SPEED / VIDEO_MIN_SPEED)
+
+private fun videoSpeedToSlider(speed: Float): Float = (kotlin.math.ln(
+    speed.coerceIn(VIDEO_MIN_SPEED, com.ivor.ivormusic.data.ThemePreferences.MAX_PLAYBACK_SPEED) / VIDEO_MIN_SPEED
+) / VIDEO_SPEED_LOG_SPAN).coerceIn(0f, 1f)
+
+private fun videoSliderToSpeed(position: Float): Float =
+    VIDEO_MIN_SPEED * kotlin.math.exp(position.coerceIn(0f, 1f) * VIDEO_SPEED_LOG_SPAN)
+
+/**
+ * Round a raw slider position to five percent (a quarter above 2x, where a
+ * finger moves a lot of speed), with a wider catch around 1x so a drag settles
+ * on exactly normal speed rather than on the step either side of it.
+ */
+private fun snapVideoSpeed(raw: Float): Float {
+    val bounded = raw.coerceIn(VIDEO_MIN_SPEED, com.ivor.ivormusic.data.ThemePreferences.MAX_PLAYBACK_SPEED)
+    if (kotlin.math.abs(bounded - 1f) < 0.03f) return 1f
+    return if (bounded <= 2f) (bounded * 20f).roundToInt() / 20f else (bounded * 4f).roundToInt() / 4f
 }
 
 /** The Smooth motion read-out for the playback settings panel, or null when the setting is off. */
@@ -2170,76 +2361,6 @@ private fun smoothMotionStatusText(status: FrameInterpolationStatus): String? = 
     FrameInterpolationStatus.BatterySaver -> stringResource(R.string.vpc_smooth_motion_battery)
     FrameInterpolationStatus.CannotKeepUp -> stringResource(R.string.vpc_smooth_motion_cannot_keep_up)
     FrameInterpolationStatus.Unsupported -> stringResource(R.string.vpc_smooth_motion_unsupported)
-}
-
-/** Which inline picker is open in playback settings; accordion, at most one. */
-private enum class SettingsPicker { QUALITY, SPEED, AUDIO }
-
-/**
- * A quality/speed row that opens its options inline rather than owning a
- * labeled section: the closed row names the live value, the chevron turns on
- * a spring as it opens, and the options land directly beneath it.
- */
-@Composable
-private fun PickerRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    /** Null while loading or when there is nothing to pick. */
-    value: String?,
-    loading: Boolean,
-    expanded: Boolean,
-    /** False when there is nothing to open (an empty ladder): no chevron. */
-    expandable: Boolean = true,
-    onClick: () -> Unit
-) {
-    SettingsActionRow(
-        icon = icon,
-        title = title,
-        supportingText = null,
-        onClick = onClick,
-        trailing = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                if (loading) {
-                    ContainedLoadingIndicator(modifier = Modifier.size(24.dp))
-                } else {
-                    if (value != null) {
-                        // Capped so a long value (an audio track such as
-                        // "Chinese (Traditional)") ellipsizes instead of
-                        // squeezing the row's title.
-                        Text(
-                            text = value,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = 160.dp)
-                        )
-                    }
-                    if (expandable) {
-                        val chevronRotation by animateFloatAsState(
-                            targetValue = if (expanded) 180f else 0f,
-                            animationSpec = spring(
-                                stiffness = Spring.StiffnessMediumLow,
-                                dampingRatio = Spring.DampingRatioMediumBouncy
-                            ),
-                            label = "PickerChevron"
-                        )
-                        Icon(
-                            imageVector = Icons.Rounded.ExpandMore,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .graphicsLayer { rotationZ = chevronRotation }
-                                .size(20.dp)
-                        )
-                    }
-                }
-            }
-        }
-    )
 }
 
 /**
@@ -2654,24 +2775,4 @@ internal fun formatChapterTime(millis: Long): String {
     val s = totalSeconds % 60
     return if (h > 0) String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s)
     else String.format(java.util.Locale.US, "%d:%02d", m, s)
-}
-
-@Composable
-private fun SettingsSectionLabel(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp)
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
 }

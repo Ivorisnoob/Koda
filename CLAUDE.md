@@ -102,7 +102,7 @@ Breaking one is a bug even when it compiles. Reasons: `docs/rules.md`.
 3. **Every googlevideo media fetch is a bounded ranged request** (`ChunkedStreamDataSource`). Never a plain `DefaultHttpDataSource` or unbounded GET.
 4. **Never route a live stream through the progressive path.** The HLS manifest is the only usable source.
 5. **A `MediaController` is touched only on its application thread.** From Glance, go through `withController`.
-6. **Process-wide repository state is a closed list of thirteen**: `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, `HiddenPlaylistsRepository`, `LikedSongsRepository`, `UploadCheckRepository`, `IncognitoMode`, the `visitorData` cache, `YouTubeRateLimit`, the video stream-resolution cache, and `LastFmRepository` (settings/service cancellation and queue coordination). A fourteenth needs the same justification (a write on one surface must be visible on another holding its own instance), not convenience. Shared OkHttp transport and transient buses (`VisualizerBus`, `WaveformStore`) are not repository state.
+6. **Process-wide repository state is a closed list of fourteen**: `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, `HiddenPlaylistsRepository`, `LikedSongsRepository`, `UploadCheckRepository`, `TasteProfileStore`, `IncognitoMode`, the `visitorData` cache, `YouTubeRateLimit`, the video stream-resolution cache, and `LastFmRepository` (settings/service cancellation and queue coordination). A fifteenth needs the same justification (a write on one surface must be visible on another holding its own instance), not convenience. Shared OkHttp transport and transient buses (`VisualizerBus`, `WaveformStore`) are not repository state.
 7. **A ViewModel needing a setting at decision time does a fresh pref read.** `ThemePreferences` flows do not cross instances.
 8. **`SettingsScreen`'s signature is the contract with `MainActivity`.** Add parameters; never reorder or restructure.
 9. **Persisted enum constants and stored ids are frozen** (`PlayerStyle`, `SponsorCategory.apiName`, `MotionArtworkQuality`, `IconShape` ids...). Renaming resets every user's choice.
@@ -121,6 +121,8 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | Widget content overrunning its size bucket | Silent clipping; `LocalSize.current` reports the bucket, not the cell | `widgets.md` |
 | `LazyGridScope.items` member shadows the list extension | Fails on argument names rather than falling through | `channels.md` |
 | A setting missing from `buildSettingsSearchIndex` | Unfindable by search, no compile error | `settings.md` |
+| A release-notes file whose name is not exactly `versionName` | "What's new" never appears for that release, nothing logged | section 6 below |
+| A `HomeViewModel` property declared below the init collector that touches it | Unset, or reset by its own initialiser afterwards; compiles | `subscriptions.md` |
 | A store renamed but not renamed in `BackupRepository` | Silently drops out of every backup taken afterwards | `identity.md` |
 | NewPipe's playlist extractor signed out | Returns zero items and throws nothing | `youtube-data.md` |
 | `subscription/subscribe` and `youtubei/v1/feedback` signed out | Answer HTTP 200 having done nothing | `youtube-data.md`, `subscriptions.md` |
@@ -181,6 +183,13 @@ One line each; the reasoning is in `docs/rules.md`.
 - Tests are a small JVM suite under `app/src/test/` for pure logic. `isReturnDefaultValues = true` is needed for `KLog`, and it stubs `org.json` to parse everything to nothing - `testImplementation(libs.json.unit.test)` supplies a real one, and every parser test depends on it. [scar]
 - **minSdk 30 and desugaring is load-bearing** [scar]: keep `isCoreLibraryDesugaringEnabled` with the `_nio` flavour (`desugar.jdk.libs.nio`), or NewPipe's search throws `NoSuchMethodError` on API 30-32. Anything above API 30 needs a `SDK_INT` guard and fallback.
 - Versions: `versionCode`/`versionName` in `app/build.gradle.kts`; dependencies only in `gradle/libs.versions.toml`.
+- **Every release ships its highlights, and they are written before the version is tagged.** They are what the app shows people: the "What's new" sheet on the first launch after updating, and the update dialog on every older install. The steps, in order:
+  1. Bump `versionName` and `versionCode`.
+  2. Write `app/src/main/assets/release-notes/<versionName>.md`: three to six `- ` bullets, one line each, nothing else in the file (no heading; a seventh bullet is dropped). The file name must equal `versionName` exactly, or the sheet silently shows nothing.
+  3. Write them the way the changelog is written (section 1), but pick: only what someone would update for. New things first, at most one bullet of fixes, no internals. Each bullet stands alone and is read on a phone in a glance.
+  4. Commit the file with the version bump, so the APK built for the release contains it.
+  5. When publishing the GitHub release, put the same bullets at the top of the notes under a `## Highlights` heading, then the full changelog under its own heading. Older installs read that section out of the release body; a release without it shows a generic line in place of the reasons to update.
+  6. Check both before publishing: on a debug build, Settings -> Software Update has "What's new in this version" and "Preview update dialog". Old files stay in the folder; they are a few hundred bytes each.
 - Emulator/`adb` are the user's to run (debug package `com.ivor.ivormusic.debug`, SDK at `E:\Android\Sdk`); details in `docs/workflow.md`.
 
 ---
@@ -223,6 +232,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - `VideoQueue` is index-addressed; `playQueue` establishes it and `playVideo` clears it. Resume has two stores (active session vs per-video history). Chromecast is gone; do not reintroduce a `Player` indirection.
 - Every `PlayerView` Koda draws captions over calls `disableBuiltInSubtitles()`. A video download keeps the caption tracks picked in the download sheet (`DownloadedCaptionStore`), read when it is played from disk.
 - SponsorBlock: opt-in, sends only a hash prefix, per-category skip/manual/ignore, read-only, not on live.
+- Playback settings are a control panel (`PlayerSettingsSections`): value tabs over one deck, switches as tiles, shortcuts beneath, on four shared columns; the fullscreen panel does not dim the video.
 - Live: detected by formats, not by `hlsManifestUrl`; behind-live measured from `liveTargetOffsetMs`; quality is a track cap; comments hidden on live; a live item in Shorts is handed off (emit before `close()`).
 
 ### Navigation and screens -> `docs/screens.md`
@@ -232,11 +242,13 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Device videos use `device:` ids through the local-playback path; `singleTask` exists because of PiP; quality/HDR come from the decoder.
 - **Three playlist kinds**: local, the account's own, saved (references). A `PL` prefix does not mean yours - use `savedPlaylistIds`. Local video playlists use the `localvp_` prefix; routing lives in `addVideoToPlaylist`. Hidden playlists are a filter over the merged list.
 - `VideoOptionsSheet` is two panes; every surface uses `VideoOptionsSheetHost`.
+- Taste setup is one route (`taste`), opened from the `home` route once per install (new users arrive there from onboarding) and from Settings; it marks itself seen on every way out.
 
 ### Subscriptions and blocklist -> `docs/subscriptions.md`
 - Account and device subscription stores; `SubscriptionActions` alone decides what a tap means. Unsubscribe clears both; the button binds to `isSubscribedToChannel`.
 - The account bell (`ChannelBellActions`) shows only for account subscriptions, writes YouTube's served params back, and drives `UploadCheckWorker` for channels on All.
 - The local feed is per-channel Atom RSS with a browse fallback (never on 429), 6 at a time, namespace-unaware parser.
+- Only the account feed pages (`loadMoreSubscriptionFeed`); its first page is taken whole. Community posts in Home and Subscriptions are fetched from followed channels' Posts tabs as the feed scrolls (`ensureFeedPosts`, `ui/video/FeedPosts.kt`) - the feeds themselves carry none.
 - Imports are sniffed by content (NewPipe JSON, PipePipe/NewPipe zip, Takeout CSV, OPML); handles resolve to UC ids.
 - `NotInterestedRepository` is the engine, applied as a **derived filter, never a write into the fetch** (Shorts filter on ingestion). Signed-in dismissals also go to YouTube, fire-and-forget. Music shares the store; the device library is never filtered.
 
@@ -250,12 +262,14 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - New strings go only in `values/strings.xml` (locales are partial by design).
 - Settings is a hub plus `SettingsPage` enum pages, not routes (Backup included; it locks the hub while it works). Hub rows show the live value; dialogs live in `SettingsScreen`.
 - The updater hands off to the browser and never installs. Defaults: player style `EDITORIAL`, device library off.
+- Release highlights have one source per release, `assets/release-notes/<versionName>.md`, mirrored under `## Highlights` in the GitHub release (`ReleaseHighlights`, procedure in section 6). The update dialog opens once per release and again two days after Later (`UpdatePromptStore`, deliberately not in the backup).
 
 ### Identity -> `docs/identity.md`
 - Cookies are captured from the **`music.youtube.com` jar**; writes guard on `isLoggedIn()`.
 - **A session is a login, not a cookie string** (`YouTubeSession`): Google rotates cookies mid-session, so identity is profile + generation. Authenticated requests go out through `authenticate()`, tagged with their session; anything applied on the way back (cookie refresh, `logged_in` verdict, account identity) goes through that tag, never the active profile. Re-read cookies via `currentSession` rather than replaying a held copy.
 - Switching a profile is one preference write; `SessionManager`'s API stays as it is. `AccountSwitcher` does invalidation (drops `visitorData`); consumers observe `activeProfileId` with `drop(1)`.
 - History and taste are profile-scoped (local subscriptions, blocklist, watch history, upload mutes, listening history, liked songs, search history); playlists, downloads and settings are device-wide. Listening history, likes and searches key on `historyOwnerProfileId`, not the legacy profile. Signing in from a local profile copies it into the new account profile. A new per-profile store goes in `prepareForActiveProfile`, `copyProfileScopedData` and the backup.
+- Stated taste (`TasteProfileStore`: picked and followed artists, genres, deck songs) is profile-scoped beside the history it supplements, and `RecommendationEngine` alternates it with the played artists. The taste deck previews through its own player (`TastePreviewPlayer`), never `MusicService`, so a sample is not a play.
 - Incognito is enforced inside each write store, suppresses recording only, and is persisted before the flag flips.
 - Backups copy allowlisted stores (renames silently drop out), carry profile-scoped stores structurally, restore with `commit()` and restart the process.
 
@@ -266,6 +280,8 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Three queue views share `QueueReorder`/`QueueRowContainer`: drag handle first, swaps per frame, occurrence-qualified keys, guarded auto-scroll.
 - Option sheets share `PlayerOptionRows` and must scroll. `SongOptionsSheet` is hosted once in `HomeScreen`.
 - Motion artwork is an opt-in hero layer with frozen quality tiers and a fallback chain.
+- Album colours are Off / Player / Whole app (default). Whole app builds the root scheme from the playing cover in music mode (`IvorMusicTheme(artworkSeed)`), fading on song change only; a page or the player builds its own complete scheme from its own cover (`LocalAlbumTheming`).
+- The mini player's cover spins and morphs in the draw phase, fitted to a circle so no shape leaves its slot; progress is the shape's outline revealed by a fixed wedge from the top, never a trimmed path.
 
 ### Widgets -> `docs/widgets.md`
 - Commands go through `withController` (main thread). Rendering reads the `PlayerWidgetStore` snapshot written in `MusicService.onEvents`, never a live session.

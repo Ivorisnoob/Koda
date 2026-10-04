@@ -398,6 +398,10 @@
     <string name="sp_colors">Colors</string>
     <string name="sp_album_art_colors">Album Art Colors</string>
     <string name="sp_album_art_colors_sub">Color the expanded player and playlist pages from the current cover</string>
+    <string name="sp_album_art_colors_scope_sub">Take the app\'s colors from the cover of the song that is playing</string>
+    <string name="sp_album_colors_off">Off</string>
+    <string name="sp_album_colors_player">Player</string>
+    <string name="sp_album_colors_app">Whole app</string>
     <string name="sp_playback">Playback</string>
     <string name="sp_song_transitions">Song transitions</string>
     <string name="sp_normalise_volume">Normalise volume</string>
@@ -833,11 +837,11 @@
     <string name="dl_failed">Failed</string>
     <string name="dl_waiting">Waiting</string>
     <string name="dl_preparing">Preparing</string>
+    <string name="dl_finishing">Finishing up</string>
 
     <!-- Stats -->
     <string name="st_top_songs">Top songs</string>
     <string name="st_top_artists">Top artists</string>
-    <string name="dl_finishing">Finishing up</string>
     <string name="st_empty_title">Nothing to crunch yet</string>
     <string name="st_empty_body">Play some music and your stats will show up here</string>
     <string name="st_legend">Legend</string>
@@ -1011,6 +1015,64 @@
     <string name="us_handoff_started_body">%1$s is downloading in your browser. Android will ask you to install it when it finishes.</string>
     <string name="us_handoff_no_handler">Nothing could open that link</string>
     <string name="us_handoff_no_handler_body">This device has no app registered for web links. Install a browser, or download the release on another device.</string>
+    <string name="us_whats_new_in_this_version">What\'s new in this version</string>
+    <string name="update_prompt_title">Koda %1$s is here</string>
+    <string name="update_prompt_update">Update</string>
+    <string name="update_prompt_later">Later</string>
+    <string name="update_prompt_details">Full release notes</string>
+    <string name="update_prompt_no_highlights">This release has fixes and improvements. Open the full release notes to see everything that changed.</string>
+    <string name="whats_new_title">What\'s new</string>
+    <string name="whats_new_version">Koda %1$s</string>
+    <string name="whats_new_done">Got it</string>
+
+    <!-- Following artists (on this device) -->
+    <string name="artist_follow">Follow</string>
+    <string name="artist_following">Following</string>
+    <string name="lib_following_header">Following</string>
+
+    <!-- Taste setup -->
+    <string name="taste_title_artists">Pick artists you love</string>
+    <string name="taste_sub_artists">Tap an artist and more like them appear.</string>
+    <string name="taste_search_hint">Search artists</string>
+    <string name="taste_no_artist_results">No artists found for that search.</string>
+    <string name="taste_title_genres">What do you listen to?</string>
+    <string name="taste_sub_genres">Choose as many as you like.</string>
+    <string name="taste_title_deck">Yes or no?</string>
+    <string name="taste_sub_deck">Swipe right to keep, left to pass, up to add to Liked songs.</string>
+    <string name="taste_deck_count">%1$d of %2$d</string>
+    <string name="taste_deck_loading">Finding songs for you</string>
+    <string name="taste_reason_artist">Because you picked %1$s</string>
+    <string name="taste_reason_genre">From %1$s</string>
+    <string name="taste_reason_discovery">Something new</string>
+    <string name="taste_action_no">Pass</string>
+    <string name="taste_action_yes">Keep</string>
+    <string name="taste_action_love">Add to Liked songs</string>
+    <string name="taste_preview_play">Play preview</string>
+    <string name="taste_preview_pause">Pause preview</string>
+    <string name="taste_done_title">Your taste is set</string>
+    <string name="taste_done_body">Koda will pick music for you from this. You can change it any time in Settings.</string>
+    <string name="taste_done_button">Start listening</string>
+    <string name="taste_change_picks">Change my picks</string>
+    <string name="taste_clear_all">Clear all</string>
+    <string name="taste_finish">Finish</string>
+    <string name="taste_offline_title">Can\'t load this right now</string>
+    <string name="taste_offline_body">Check your connection and try again. You can also skip this and set your taste later in Settings.</string>
+    <string name="taste_retry">Try again</string>
+    <string name="taste_settings_title">Your taste</string>
+    <string name="taste_settings_sub">Artists, genres and songs Koda recommends from</string>
+    <string name="si_taste">The artists and genres you picked, and the artists you follow. Koda uses them with your listening history to choose what to recommend. Change or clear them here at any time.</string>
+    <plurals name="taste_artists_count">
+        <item quantity="one">%1$d artist</item>
+        <item quantity="other">%1$d artists</item>
+    </plurals>
+    <plurals name="taste_genres_count">
+        <item quantity="one">%1$d genre</item>
+        <item quantity="other">%1$d genres</item>
+    </plurals>
+    <plurals name="taste_songs_kept_count">
+        <item quantity="one">%1$d song kept</item>
+        <item quantity="other">%1$d songs kept</item>
+    </plurals>
     <string name="action_show_less">Show less</string>
 
     <!-- Bug report -->

@@ -266,12 +266,31 @@ class MainActivity : ComponentActivity() {
                 }
             }
             
+            // Album colours across the app, in music mode: the playing song's
+            // cover colour becomes the seed of the whole scheme. The player
+            // ViewModel is the activity's own, the same instance MusicApp
+            // asks for below, read here because the theme sits above it.
+            val artworkColorsWholeApp by themeViewModel.artworkColorsWholeApp.collectAsState()
+            val albumThemeWholeApp = playerArtworkColors && artworkColorsWholeApp
+            val themePlayerViewModel: PlayerViewModel = viewModel {
+                PlayerViewModel(applicationContext)
+            }
+            val themeSong by themePlayerViewModel.currentSong.collectAsState()
+            val albumSeed = com.ivor.ivormusic.ui.player.rememberArtworkSeed(
+                enabled = albumThemeWholeApp && !videoMode,
+                albumArtUri = themeSong?.let { it.albumArtUri?.toString() ?: it.thumbnailUrl }
+            )
+
             IvorMusicTheme(
                 darkTheme = isDarkTheme,
                 colorPalette = colorPalette,
                 amoledDark = amoledTheme,
                 uiScale = uiScale,
-                paletteStyle = paletteStyle
+                paletteStyle = paletteStyle,
+                artworkSeed = albumSeed,
+                // Music mode only: in video mode the app keeps its palette, and
+                // a playlist page there tints its accents as it did before.
+                artworkWholeApp = albumThemeWholeApp && !videoMode
             ) {
                 val videoListLayout by themeViewModel.videoListLayout.collectAsState()
                 // Every link Koda draws goes through LocalUriHandler, so this
@@ -1263,6 +1282,24 @@ fun MusicApp(
             }
 
             composable("home") {
+                // Taste setup is offered once per install, from here for both
+                // of its unprompted entrances: a new user lands on Home out
+                // of onboarding, and someone updating lands on it at launch.
+                // It marks itself seen on every way out, so coming back to
+                // this route does not open it again. Not in Local Only:
+                // every artist on it is fetched. It opens filled in from the
+                // listening history where there is one; "Clear all" on the
+                // screen is the blank start.
+                val tasteContext = androidx.compose.ui.platform.LocalContext.current
+                LaunchedEffect(Unit) {
+                    if (!localOnlyMode &&
+                        !com.ivor.ivormusic.data.TasteProfileStore(tasteContext).setupSeen
+                    ) {
+                        navController.navigate("taste") {
+                            launchSingleTop = true
+                        }
+                    }
+                }
                 HomeScreen(
                     compactVideoHome = compactVideoHome,
                     inlinePreviews = inlinePreviews,
@@ -1333,6 +1370,7 @@ fun MusicApp(
                     paletteStyle = paletteStyle,
                     onNavigateToSubscriptions = { navController.navigate("subscriptions") },
                     onNavigateToNotInterested = { navController.navigate("not_interested") },
+                    onNavigateToTaste = { navController.navigate("taste") },
                     onNavigateToBackup = { navController.navigate("backup") },
                     onNavigateToReportBug = { navController.navigate("report") },
                     onNavigateToTimeLimit = { navController.navigate("app_time_limit") },
@@ -1667,6 +1705,22 @@ fun MusicApp(
                     onBack = { navController.popBackStack() },
                     viewModel = homeViewModel,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 160.dp)
+                )
+            }
+            composable(
+                route = "taste",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.taste.TasteSetupScreen(
+                    ignoreExisting = false,
+                    onFinished = {
+                        // Home was built from the taste as it stood before.
+                        homeViewModel.loadYouTubeRecommendations(force = true)
+                        navController.popBackStack()
+                    }
                 )
             }
             composable(

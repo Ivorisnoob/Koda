@@ -452,7 +452,9 @@ fun SettingsScreen(
     /** Opens the open-source licences screen, from the About dialog. */
     onNavigateToLicenses: () -> Unit = {},
     rotateWithDevice: Boolean = false,
-    onRotateWithDeviceToggle: (Boolean) -> Unit = {}
+    onRotateWithDeviceToggle: (Boolean) -> Unit = {},
+    /** Opens taste setup to review or change the saved picks. */
+    onNavigateToTaste: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -712,6 +714,7 @@ fun SettingsScreen(
         onNavigateToColorPalette = onNavigateToColorPalette,
         onNavigateToSubscriptions = onNavigateToSubscriptions,
         onNavigateToNotInterested = onNavigateToNotInterested,
+        onNavigateToTaste = onNavigateToTaste,
         onNavigateToBackup = { openPage(SettingsPage.BACKUP) },
         onNavigateToReportBug = onNavigateToReportBug,
         onNavigateToTimeLimit = onNavigateToTimeLimit,
@@ -880,6 +883,7 @@ fun SettingsScreen(
             shortsHiddenActions = shortsHiddenActions,
             onShowShortsButtons = { showShortsButtonsDialog = true },
             onNavigateToNotInterested = onNavigateToNotInterested,
+            onNavigateToTaste = onNavigateToTaste,
             onNavigateToVideoHome = { page = SettingsPage.VIDEO_HOME },
             onBack = { page = SettingsPage.HUB }
         )

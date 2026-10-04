@@ -330,6 +330,15 @@ fun LibraryContent(
                     returnsToCaller = false
                     currentRoute = LibraryRoute.Artist
                 },
+                // A followed artist carries the id it was followed by, so
+                // the page opens on that artist rather than on whoever a
+                // search for the name finds first.
+                onNavigateToFollowedArtist = { artist ->
+                    selectedArtistName = artist.name
+                    selectedArtistId = artist.id.takeIf { it.startsWith("UC") }
+                    returnsToCaller = false
+                    currentRoute = LibraryRoute.Artist
+                },
                 onNavigateToAlbum = { album, songs ->
                     selectedAlbumName = album
                     selectedAlbumSongs = songs
@@ -741,6 +750,7 @@ fun LibraryMainScreen(
     onDownloadsClick: () -> Unit,
     onNavigateToPlaylist: (PlaylistDisplayItem) -> Unit,
     onNavigateToArtist: (String) -> Unit,
+    onNavigateToFollowedArtist: (com.ivor.ivormusic.data.TasteArtist) -> Unit = {},
     onNavigateToAlbum: (String, List<Song>) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToHistory: () -> Unit,
@@ -1023,8 +1033,15 @@ fun LibraryMainScreen(
                     }
                     LibraryTab.Artists -> {
                         val artistSort by themePreferences.libraryArtistSort.collectAsState()
+                        val tasteContext = LocalContext.current
+                        val tasteStore = remember(tasteContext) {
+                            com.ivor.ivormusic.data.TasteProfileStore(tasteContext)
+                        }
+                        val tasteProfile by tasteStore.profile.collectAsState()
                         ArtistsGrid(
                             songs = librarySongs,
+                            followed = tasteProfile.artists,
+                            onFollowedClick = onNavigateToFollowedArtist,
                             onArtistClick = onNavigateToArtist,
                             contentPadding = contentPadding,
                             sort = LibraryGroupSort.from(artistSort),
@@ -1843,7 +1860,10 @@ fun ArtistsGrid(
     contentPadding: PaddingValues,
     sort: LibraryGroupSort = LibraryGroupSort.Name,
     onSortChange: (LibraryGroupSort) -> Unit = {},
-    playCounts: Map<String, Int> = emptyMap()
+    playCounts: Map<String, Int> = emptyMap(),
+    /** Artists followed on this device, shown above the ones the library's songs name. */
+    followed: List<com.ivor.ivormusic.data.TasteArtist> = emptyList(),
+    onFollowedClick: (com.ivor.ivormusic.data.TasteArtist) -> Unit = {}
 ) {
     val artists = remember(songs, sort, playCounts) {
         sort.apply(
@@ -1851,7 +1871,7 @@ fun ArtistsGrid(
         ) { song -> playCounts[song.id] ?: 0 }
     }
 
-    if (artists.isEmpty()) {
+    if (artists.isEmpty() && followed.isEmpty()) {
         EmptyLibraryState(
             icon = Icons.Rounded.Person,
             title = stringResource(R.string.no_artists_yet),
@@ -1872,7 +1892,70 @@ fun ArtistsGrid(
         verticalArrangement = Arrangement.spacedBy(24.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        item(key = "artists_sort", span = { GridItemSpan(maxLineSpan) }) {
+        // Following first: these are the artists the user chose by name,
+        // where the list below is whoever their songs happen to credit. An
+        // artist can be in both, and is: one says "I follow them", the other
+        // "I have their songs".
+        if (followed.isNotEmpty()) {
+            item(key = "followed_header", span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    text = stringResource(R.string.lib_following_header),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+                )
+            }
+            items(followed, key = { "followed_" + it.key }) { artist ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { onFollowedClick(artist) }
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        modifier = Modifier.size(140.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shadowElevation = 6.dp,
+                        border = libraryOpenBorder(LocalLibraryOpenItem.current?.artistName == artist.name)
+                    ) {
+                        if (!artist.thumbnailUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = artist.thumbnailUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Rounded.Person,
+                                    null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        artist.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        stringResource(R.string.artist_following),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+        if (artists.isNotEmpty()) item(key = "artists_sort", span = { GridItemSpan(maxLineSpan) }) {
             GroupSortHeader(
                 countLabel = pluralStringResource(R.plurals.lib_artist_count, artists.size, artists.size),
                 sort = sort,

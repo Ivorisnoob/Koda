@@ -54,9 +54,45 @@ fun rememberArtworkColorScheme(
     if (!enabled || current == null) return base
 
     val isDark = base.background.luminance() < 0.5f
-    return remember(base, current, isDark) {
-        base.withArtworkAccents(current.primary, current.secondary, isDark)
+    // With album colours set to the whole app, this surface takes its own
+    // cover's complete scheme the way the root takes the playing song's:
+    // accents over [base] would now be one album's buttons on another's
+    // surfaces. For the player that is the same scheme the app is wearing.
+    val theming = com.ivor.ivormusic.ui.theme.LocalAlbumTheming.current
+    return remember(base, current, isDark, theming) {
+        if (theming.wholeApp) {
+            com.ivor.ivormusic.ui.theme.buildSeedColorScheme(current.primary, isDark, theming.style)
+                .let { scheme ->
+                    if (isDark && theming.amoled) {
+                        with(com.ivor.ivormusic.ui.theme.AmoledScheme) { scheme.amoled() }
+                    } else {
+                        scheme
+                    }
+                }
+        } else {
+            base.withArtworkAccents(current.primary, current.secondary, isDark)
+        }
     }
+}
+
+/**
+ * The cover's main colour alone, for the root theme to build the app's
+ * scheme from. Keeps the previous song's colour while the next cover loads,
+ * so the app fades from album to album rather than through the palette, and
+ * is null when [enabled] is off or there is no cover to read.
+ */
+@Composable
+fun rememberArtworkSeed(enabled: Boolean, albumArtUri: String?): Color? {
+    val context = LocalContext.current
+    var seed by remember { mutableStateOf<Color?>(null) }
+    LaunchedEffect(enabled, albumArtUri) {
+        if (!enabled || albumArtUri.isNullOrBlank()) {
+            seed = null
+            return@LaunchedEffect
+        }
+        extractArtworkSeeds(context, albumArtUri)?.let { seed = it.primary }
+    }
+    return if (enabled) seed else null
 }
 
 /**

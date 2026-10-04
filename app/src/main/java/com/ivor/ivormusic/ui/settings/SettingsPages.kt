@@ -68,6 +68,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
@@ -114,6 +115,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -953,13 +955,9 @@ internal fun PlayerSettingsPage(
         item {
             SettingsSection(title = stringResource(R.string.sp_colors)) {
                 SettingsCard {
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.Palette,
-                        title = stringResource(R.string.sp_album_art_colors),
-                        subtitle = stringResource(R.string.sp_album_art_colors_sub),
-                        enabled = playerArtworkColors,
-                        onToggle = onPlayerArtworkColorsToggle,
-                        explanation = stringResource(R.string.si_artwork_colors)
+                    AlbumColorsScopeRow(
+                        albumColors = playerArtworkColors,
+                        onAlbumColorsChange = onPlayerArtworkColorsToggle
                     )
                 }
             }
@@ -1480,6 +1478,7 @@ internal fun ContentSettingsPage(
     compactVideoHome: Boolean,
     onCompactVideoHomeToggle: (Boolean) -> Unit,
     onNavigateToNotInterested: () -> Unit,
+    onNavigateToTaste: () -> Unit,
     onNavigateToVideoHome: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -1711,7 +1710,106 @@ internal fun ContentSettingsPage(
                             showChevron = true,
                             explanation = stringResource(R.string.si_not_interested)
                         )
+
+                        SettingsDivider()
+
+                        // The other half of the same question: what to
+                        // recommend, beside what not to.
+                        SettingsRow(
+                            icon = Icons.Rounded.Favorite,
+                            title = stringResource(R.string.taste_settings_title),
+                            subtitle = stringResource(R.string.taste_settings_sub),
+                            onClick = onNavigateToTaste,
+                            showChevron = true,
+                            explanation = stringResource(R.string.si_taste)
+                        )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Album colours as one three-way choice: Off, the player and album pages, or
+ * the whole app in music mode.
+ *
+ * It is stored as the switch it used to be plus how far it reaches
+ * (`ThemePreferences.artworkColorsWholeApp`), so an install that had it off
+ * stays off. The reach is read and written here through a local
+ * `ThemePreferences`: its flow follows the stored value across instances, and
+ * the root theme reads the same key.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun AlbumColorsScopeRow(albumColors: Boolean, onAlbumColorsChange: (Boolean) -> Unit) {
+    val context = LocalContext.current
+    val prefs = androidx.compose.runtime.remember(context) { ThemePreferences(context) }
+    val wholeApp = prefs.artworkColorsWholeApp.collectAsState().value
+    val selected = when {
+        !albumColors -> 0
+        wholeApp -> 2
+        else -> 1
+    }
+    val labels = listOf(
+        stringResource(R.string.sp_album_colors_off),
+        stringResource(R.string.sp_album_colors_player),
+        stringResource(R.string.sp_album_colors_app)
+    )
+    androidx.compose.foundation.layout.Column(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Rounded.Palette,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
+            androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.sp_album_art_colors),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = stringResource(R.string.sp_album_art_colors_scope_sub),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween
+            )
+        ) {
+            labels.forEachIndexed { index, label ->
+                androidx.compose.material3.ToggleButton(
+                    checked = selected == index,
+                    onCheckedChange = {
+                        when (index) {
+                            0 -> onAlbumColorsChange(false)
+                            1 -> {
+                                prefs.setArtworkColorsWholeApp(false)
+                                onAlbumColorsChange(true)
+                            }
+                            else -> {
+                                prefs.setArtworkColorsWholeApp(true)
+                                onAlbumColorsChange(true)
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        labels.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    }
+                ) {
+                    Text(text = label, maxLines = 1)
                 }
             }
         }

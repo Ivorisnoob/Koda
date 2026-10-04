@@ -60,6 +60,16 @@ data class SimilarArtist(
     val thumbnailUrl: String? = null,
 )
 
+/**
+ * The two things taste setup wants from an artist, from the one browse that
+ * carries both: who else their listeners like, and a few songs to sample them
+ * by. [ArtistPage] answers the same questions and several requests more.
+ */
+data class ArtistTasteSample(
+    val similar: List<SimilarArtist> = emptyList(),
+    val topSongs: List<Song> = emptyList()
+)
+
 /** One entry of the "Featured on" shelf. */
 data class FeaturedPlaylist(
     val id: String,

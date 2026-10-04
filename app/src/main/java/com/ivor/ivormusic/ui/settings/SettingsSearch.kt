@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -180,6 +181,7 @@ internal fun buildSettingsSearchIndex(
     onNavigateToColorPalette: () -> Unit,
     onNavigateToSubscriptions: () -> Unit,
     onNavigateToNotInterested: () -> Unit,
+    onNavigateToTaste: () -> Unit,
     onNavigateToBackup: () -> Unit,
     onNavigateToReportBug: () -> Unit,
     onNavigateToTimeLimit: () -> Unit,
@@ -530,6 +532,14 @@ internal fun buildSettingsSearchIndex(
             "blocked channels", "unhide"
         )
     ) { onNavigateToNotInterested() }
+    entry(
+        "taste", stringResource(R.string.taste_settings_title),
+        stringResource(R.string.settings_content_and_feeds), Icons.Rounded.Favorite,
+        listOf(
+            "taste", "artists", "genres", "favourite", "favorite", "recommendations",
+            "follow", "following", "swipe", "personalize", "for you", "onboarding"
+        )
+    ) { onNavigateToTaste() }
 
     // Subscriptions
     entry(

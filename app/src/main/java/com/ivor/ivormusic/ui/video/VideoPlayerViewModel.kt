@@ -1923,11 +1923,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         themePreferences.setVideoRepeatEnabled(enabled)
     }
 
-    /** Set the playback speed for the current video and remember it for the next one. */
-    fun setPlaybackSpeed(speed: Float) {
+    /**
+     * Set the playback speed for the current video and remember it for the next one.
+     *
+     * [persist] is false for one frame of a slider drag: the rate still applies,
+     * because it is judged by watching, but only the value the finger lifts on
+     * is written.
+     */
+    fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
         val bounded = speed.coerceIn(0.25f, ThemePreferences.MAX_PLAYBACK_SPEED)
         _playbackSpeed.value = bounded
         _exoPlayer?.setPlaybackSpeed(bounded)
+        if (!persist) return
         // A live broadcast always plays at 1x: a manual change there is a
         // momentary adjustment, not the rate the next VOD should reopen at.
         if (_isLive.value || _currentVideo.value?.isLive == true) return

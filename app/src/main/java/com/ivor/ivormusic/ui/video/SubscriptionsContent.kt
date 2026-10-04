@@ -69,7 +69,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -216,6 +218,51 @@ fun SubscriptionsContent(
             }.let { if (feedOrder == SubscriptionFeedOrder.NEWEST) it.reversed() else it })
             .toList()
     }
+
+    // Endless feed: ask for the account feed's next page when the last
+    // visible row is within five of the end, as Home does. Not while one
+    // creator is selected (that list is theirs, not the feed), not in
+    // oldest-first order (the end of the list is then the newest video, and
+    // older pages would land above it), and not once everything loaded is
+    // already older than the period filter: every further page would be
+    // filtered away, leaving the trigger standing and the paging running
+    // to the end of the account's history for nothing.
+    val isFeedLoadingMore by viewModel.isSubscriptionFeedLoadingMore.collectAsState()
+    val canPageFeed = remember(feed, selectedChannelId, feedPeriod, feedOrder) {
+        val now = System.currentTimeMillis()
+        val periodMs = feedPeriod.ageMs
+        selectedChannelId == null && feed.isNotEmpty() &&
+            feedOrder == SubscriptionFeedOrder.NEWEST &&
+            (periodMs == null || feed.all { video ->
+                (video.publishedAtMs ?: VideoItem.parseRelativeTime(video.uploadedDate, now))
+                    ?.let { now - it <= periodMs } == true
+            })
+    }
+    val currentCanPageFeed by rememberUpdatedState(canPageFeed)
+    LaunchedEffect(feedListState) {
+        snapshotFlow {
+            val info = feedListState.layoutInfo
+            (info.visibleItemsInfo.lastOrNull()?.index ?: -1) to info.totalItemsCount
+        }.collect { (lastVisible, totalCount) ->
+            if (currentCanPageFeed && totalCount > 0 && lastVisible >= totalCount - 5) {
+                viewModel.loadMoreSubscriptionFeed()
+            }
+        }
+    }
+
+    // Community posts from followed channels, scattered between the uploads.
+    // Not while one creator is selected: that view is a filter on one
+    // channel, and another channel's post in it would be a wrong answer.
+    val feedPosts by viewModel.feedPosts.collectAsState()
+    val postPhotoViewer = remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    FeedPostOverlays(viewModel, postPhotoViewer, onOpenChannel)
+    FeedPostDemand(
+        viewModel = viewModel,
+        listState = feedListState,
+        videoCount = visibleFeed.size,
+        postCount = feedPosts.size,
+        enabled = selectedChannelId == null
+    )
 
     LaunchedEffect(channels, selectedChannelId) {
         if (selectedChannelId != null && channels.none { it.channelId == selectedChannelId }) {
@@ -416,6 +463,7 @@ fun SubscriptionsContent(
                     if (selected != null) {
                         viewModel.loadSelectedChannelFeed(selected)
                     } else {
+                        viewModel.refreshFeedPosts()
                         viewModel.loadSubscriptionFeed(force = true)
                         viewModel.loadSubscriptions(force = true)
                     }
@@ -749,7 +797,14 @@ fun SubscriptionsContent(
                                 )
                             }
                         }
-                        videoListItems(visibleFeed, listLayout) { video, cell ->
+                        videoListItemsWithPosts(
+                            videos = visibleFeed,
+                            posts = if (selectedChannelId == null) feedPosts else emptyList(),
+                            layout = listLayout,
+                            post = { post ->
+                                FeedPostCard(post, viewModel, onVideoClick, onOpenChannel, postPhotoViewer)
+                            }
+                        ) { video, cell ->
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },
@@ -757,6 +812,21 @@ fun SubscriptionsContent(
                                 onOpenChannel = onOpenChannel,
                                 modifier = cell
                             )
+                        }
+                        if (isFeedLoadingMore) {
+                            item(key = "feed-loading-more") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    androidx.compose.material3.LoadingIndicator(
+                                        modifier = Modifier.size(36.dp),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         }
                     }
 

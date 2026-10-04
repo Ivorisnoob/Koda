@@ -130,7 +130,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ivor.ivormusic.ui.settings.openExternal
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.library.songRowClick
@@ -180,6 +182,16 @@ private val VIDEO_SHELL_TOP_BAR_HEIGHT = 76.dp
 
 /** Gap the mini player keeps above the system navigation bar once the floating toolbar is gone. */
 private val MINI_PLAYER_RESTING_GAP = 16.dp
+
+/** Scrolling down this far closes the music pill into its bubble. */
+private val MINI_BUBBLE_COLLAPSE_SCROLL = 56.dp
+
+/**
+ * Scrolling back up this far opens the bubble into the pill again: about one
+ * deliberate swipe. Less than this is somebody re-reading the row they just
+ * passed, and the pill opening and closing under that read as a twitch.
+ */
+private val MINI_BUBBLE_EXPAND_SCROLL = 200.dp
 
 /**
  * What the Home shell is currently showing. The mode rides along with the tab
@@ -632,17 +644,93 @@ fun HomeScreen(
     // Held separately so the pill's label survives its exit animation
     var latestVersion by remember { mutableStateOf("") }
 
-    // Check for updates on app launch (only for release builds)
-    LaunchedEffect(Unit) {
-        if (!BuildConfig.DEBUG) {
-            updateResult = updateRepository.checkForUpdate(
+    val updateContext = androidx.compose.ui.platform.LocalContext.current
+    val updatePrompts = remember(updateContext) {
+        com.ivor.ivormusic.data.UpdatePromptStore(updateContext)
+    }
+
+    // First launch after an update: this version's highlights, once, from
+    // the file bundled in the APK. Decided before the update check so the
+    // two never open over each other - the prompt waits for this to close.
+    var whatsNew by remember {
+        mutableStateOf(
+            updatePrompts.whatsNewVersion(BuildConfig.VERSION_NAME)?.let { version ->
+                val highlights = com.ivor.ivormusic.data.ReleaseHighlights.bundled(updateContext, version)
+                if (highlights.isEmpty()) {
+                    // A release that bundled no highlights has nothing to
+                    // show; record it so the next one is not mistaken for it.
+                    updatePrompts.markWhatsNewSeen(BuildConfig.VERSION_NAME)
+                    null
+                } else {
+                    version to highlights
+                }
+            }
+        )
+    }
+    var showUpdatePrompt by remember { mutableStateOf(false) }
+
+    // Check for updates on launch and, for an app left open for days, when
+    // it comes back to the foreground after UPDATE_RECHECK_MS. Release builds
+    // only, and never in Local Only mode: a metadata request is a request.
+    val updateLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val currentLocalOnly by rememberUpdatedState(localOnly)
+    LaunchedEffect(updateLifecycleOwner) {
+        if (BuildConfig.DEBUG) return@LaunchedEffect
+        var lastCheckAtMs = 0L
+        updateLifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (currentLocalOnly) return@repeatOnLifecycle
+            if (lastCheckAtMs != 0L && now - lastCheckAtMs < UPDATE_RECHECK_MS) return@repeatOnLifecycle
+            lastCheckAtMs = now
+            val result = updateRepository.checkForUpdate(
                 repoPath = BuildConfig.GITHUB_REPO,
                 currentVersion = BuildConfig.VERSION_NAME
             )
-            (updateResult as? UpdateResult.UpdateAvailable)?.let {
-                latestVersion = it.latestVersion
+            updateResult = result
+            if (result is UpdateResult.UpdateAvailable) {
+                latestVersion = result.latestVersion
+                if (updatePrompts.shouldPromptFor(result.latestVersion)) showUpdatePrompt = true
             }
         }
+    }
+
+    whatsNew?.let { (version, highlights) ->
+        com.ivor.ivormusic.ui.settings.WhatsNewSheet(
+            version = version,
+            highlights = highlights,
+            onDismiss = {
+                updatePrompts.markWhatsNewSeen(BuildConfig.VERSION_NAME)
+                whatsNew = null
+            }
+        )
+    }
+    (updateResult as? UpdateResult.UpdateAvailable)?.takeIf { showUpdatePrompt && whatsNew == null }?.let { update ->
+        val highlights = remember(update.releaseNotes) {
+            com.ivor.ivormusic.data.ReleaseHighlights.fromReleaseBody(update.releaseNotes)
+        }
+        // Every way out of the dialog is recorded, so it comes back in two
+        // days rather than on the next launch.
+        val closePrompt = {
+            updatePrompts.markPrompted(update.latestVersion)
+            showUpdatePrompt = false
+        }
+        com.ivor.ivormusic.ui.settings.UpdatePromptDialog(
+            installedVersion = com.ivor.ivormusic.data.ReleaseHighlights.releaseVersion(BuildConfig.VERSION_NAME),
+            latestVersion = update.latestVersion,
+            highlights = highlights,
+            onUpdate = {
+                closePrompt()
+                // The same hand-off the update screen makes. When nothing can
+                // take the link, that screen is where the reason is explained.
+                val url = UpdateRepository.findBestApk(update.apkAssets)?.downloadUrl ?: update.htmlUrl
+                if (!updateContext.openExternal(url)) onNavigateToUpdate()
+            },
+            onDetails = {
+                closePrompt()
+                onNavigateToUpdate()
+            },
+            onLater = closePrompt
+        )
     }
 
     // How much clearance bottom-anchored UI needs above the nav bar inset to
@@ -695,6 +783,50 @@ fun HomeScreen(
     val miniPlayerFollowOffsetPx: () -> Float = {
         miniPlayerFollowDistancePx * floatingToolbarState.hiddenFraction()
     }
+    // Whether the music pill is closed into its bubble. A latch with two
+    // different distances rather than the toolbar's own hidden fraction: the
+    // toolbar comes back on the first pixel of an upward scroll, which is
+    // right for navigation and made the pill open and close on every small
+    // correction. [scar October 2026] It closes after a short scroll down and
+    // opens after a deliberate scroll up, or as soon as the list is back
+    // where the downward scroll began - which is what opens it at the top of
+    // a list, where there is no further up to scroll.
+    val bubbleDensity = androidx.compose.ui.platform.LocalDensity.current
+    val miniBubbleCollapsePx = with(bubbleDensity) { MINI_BUBBLE_COLLAPSE_SCROLL.toPx() }
+    val miniBubbleExpandPx = with(bubbleDensity) { MINI_BUBBLE_EXPAND_SCROLL.toPx() }
+    var miniBubble by remember { mutableStateOf(false) }
+    // Keyed on the tab: the scroll total is shared by every tab's list, so a
+    // new tab starts as a pill, measured from wherever the total stands.
+    LaunchedEffect(floatingToolbarState, selectedTab, videoMode) {
+        miniBubble = false
+        // The content offset falls as the list scrolls down and rises as it
+        // scrolls up. `turn` is the furthest point of the current run.
+        var turn = floatingToolbarState.contentOffset
+        var downRunStart = turn
+        androidx.compose.runtime.snapshotFlow { floatingToolbarState.contentOffset }.collect { offset ->
+            if (!miniBubble) {
+                if (offset > turn) turn = offset
+                if (turn - offset >= miniBubbleCollapsePx) {
+                    downRunStart = turn
+                    turn = offset
+                    miniBubble = true
+                }
+            } else {
+                if (offset < turn) turn = offset
+                if (offset - turn >= miniBubbleExpandPx || offset >= downRunStart) {
+                    turn = offset
+                    miniBubble = false
+                }
+            }
+        }
+    }
+    // Only the floating toolbar feeds that scroll total; a pinned navigation
+    // bar or a rail leaves the pill a pill.
+    val miniBubbleFraction = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (miniBubble && !nonExpressiveNavigationBar && !useRail) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+        label = "miniBubbleFraction"
+    )
     val bottomOverlayInset by androidx.compose.animation.core.animateDpAsState(
         targetValue = when {
             musicPillVisible && hasVideoMiniPlayer -> navigationOverlayInset + 196.dp
@@ -1695,6 +1827,9 @@ fun HomeScreen(
             onPlayerStyleChange = onPlayerStyleChange,
             collapsedBottomSpacing = miniPlayerCollapsedSpacing,
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
+            // Read in the lambda, so the bubble animating does not recompose
+            // this screen.
+            collapsedBubbleFraction = { miniBubbleFraction.value.coerceIn(0f, 1f) },
             collapsedStartInset = contentStartInset,
             collapsedEndInset = contentEndInset,
             collapsedMaxWidth = if (useRail) MINI_PLAYER_MAX_WIDE_WIDTH else androidx.compose.ui.unit.Dp.Unspecified,
@@ -1753,7 +1888,9 @@ fun HomeScreen(
             Surface(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .clickable { onNavigateToUpdate() },
+                    // The pill is the way back to the dialog it replaced as
+                    // the first thing an update shows.
+                    .clickable { showUpdatePrompt = true },
                 color = MaterialTheme.colorScheme.primaryContainer,
                 tonalElevation = 4.dp,
                 shadowElevation = 4.dp,
@@ -2395,8 +2532,15 @@ fun HeroSection(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        // Left side - Title and subtitle
-        Column {
+        // Left side - Title and subtitle. Weighted, so it takes what Play
+        // leaves rather than the other way round: unweighted, a long pair of
+        // artist names was measured first at its full width and Play was
+        // squeezed into the remainder, narrower on some mixes than others.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 16.dp)
+        ) {
             Text(
                 text = stringResource(R.string.your_mix_line1),
                 style = MaterialTheme.typography.displayLarge,
@@ -3317,6 +3461,9 @@ fun PlaylistsShelfSection(
 
 /** Covers on the Classic playlists rail; the header arrow reaches the rest. */
 private const val PLAYLIST_SHELF_ITEMS = 20
+
+/** How long an app left running goes before a return to it checks for an update again. */
+private const val UPDATE_RECHECK_MS = 6L * 60L * 60L * 1000L
 
 /** Square artwork edge, and the rail's item width. */
 internal val ARTWORK_SIZE = 140.dp

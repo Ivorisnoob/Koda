@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.layout
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
@@ -63,6 +65,33 @@ private const val PLAYER_BACK_PEEK = 0.72f
  *   moves to the next or previous one in the play order (MiniSkipCarousel)
  * - Swipe DOWN on full player: Collapse to mini player
  */
+/** The collapsed pill as a bubble: its 52dp artwork slot and the 8dp round it. */
+private val MINI_BUBBLE_SIZE = 68.dp
+
+/** The share of the expansion over which a bubble widens back into the pill. */
+private const val MINI_BUBBLE_RELEASE = 0.2f
+
+/** A rounded rectangle whose radius is never more than half its own smaller side. */
+private class CappedRoundedShape(private val radius: androidx.compose.ui.unit.Dp) :
+    androidx.compose.ui.graphics.Shape {
+    override fun createOutline(
+        size: androidx.compose.ui.geometry.Size,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        density: androidx.compose.ui.unit.Density
+    ): androidx.compose.ui.graphics.Outline {
+        val capped = minOf(with(density) { radius.toPx() }, size.minDimension / 2f)
+        return androidx.compose.ui.graphics.Outline.Rounded(
+            androidx.compose.ui.geometry.RoundRect(
+                androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height),
+                androidx.compose.ui.geometry.CornerRadius(capped)
+            )
+        )
+    }
+
+    override fun equals(other: Any?): Boolean = other is CappedRoundedShape && other.radius == radius
+    override fun hashCode(): Int = radius.hashCode()
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpandablePlayer(
@@ -89,6 +118,13 @@ fun ExpandablePlayer(
      * recompose the whole player instead.
      */
     collapsedFollowOffsetPx: () -> Float = { 0f },
+    /**
+     * How far the collapsed pill has shrunk into a bubble at its bottom end
+     * corner: 0 is the full pill, 1 is a circle holding only the cover. It
+     * follows the page's scroll, so like the offset above it is a lambda
+     * read in the layout and draw phases, never in composition.
+     */
+    collapsedBubbleFraction: () -> Float = { 0f },
     /**
      * Where the page the pill floats over begins and ends: a navigation rail
      * on the start edge, and a phone on its side's cutout or system bar. The
@@ -252,6 +288,17 @@ fun ExpandablePlayer(
     // It also now matches MiniPlayerContent's inner 50% pill, so the ripple
     // and the container clip along the same outline.
     val collapsedCornerRadius = collapsedHeight / 2
+    // The bubble is the pill's own artwork slot and the 8dp round it, so the
+    // cover the pill was showing is the cover the bubble shows: nothing is
+    // swapped, the pill just closes round it.
+    val bubbleSizePx = with(density) { MINI_BUBBLE_SIZE.toPx() }
+    // Opening the player from the bubble widens it back to the pill over the
+    // first part of the expansion, so the container transform starts from the
+    // shape it has always started from.
+    val bubbleFraction: () -> Float = {
+        collapsedBubbleFraction().coerceIn(0f, 1f) *
+            (1f - (expandProgress / MINI_BUBBLE_RELEASE).coerceIn(0f, 1f))
+    }
 
     val expandedHeight = screenHeight
     val expandedWidthPadding = 0.dp
@@ -265,8 +312,6 @@ fun ExpandablePlayer(
     val bottomPadding = lerp(collapsedBottomPadding, expandedBottomPadding, expandProgress)
     val cornerRadius = lerp(collapsedCornerRadius, expandedCornerRadius, expandProgress)
         .coerceAtMost(height / 2)
-    // Soft floating-pill depth while collapsed, gone once fullscreen
-    val pillShadowElevation = lerp(8.dp, 0.dp, expandProgress)
 
     // Collapsed shows surface, expanded shows transparent - but opaque until
     // the content inside is solid; see containerBackdropAlpha for why.
@@ -352,6 +397,26 @@ fun ExpandablePlayer(
                 }
                 .fillMaxWidth()
                 .height(height.coerceAtLeast(0.dp))
+                // The pill closes toward its bottom end corner. Sized here,
+                // in layout, because the fraction moves on every scroll
+                // frame; everything below this line (the gestures, the
+                // click, the surface itself) takes the smaller bounds.
+                .layout { measurable, constraints ->
+                    val fraction = bubbleFraction()
+                    val width = androidx.compose.ui.util.lerp(
+                        constraints.maxWidth.toFloat(), bubbleSizePx, fraction
+                    ).roundToInt().coerceAtMost(constraints.maxWidth)
+                    val height = androidx.compose.ui.util.lerp(
+                        constraints.maxHeight.toFloat(), bubbleSizePx, fraction
+                    ).roundToInt().coerceAtMost(constraints.maxHeight)
+                    val placeable = measurable.measure(Constraints.fixed(width, height))
+                    layout(constraints.maxWidth, constraints.maxHeight) {
+                        placeable.placeRelative(
+                            constraints.maxWidth - width,
+                            constraints.maxHeight - height
+                        )
+                    }
+                }
                 .pointerInput(isExpanded) {
                     if (isExpanded) {
                         // Expanded: Only handle vertical drag for collapse
@@ -466,9 +531,14 @@ fun ExpandablePlayer(
                     }
                 }
                 .clickable(enabled = !isExpanded) { onExpandChange(true) },
-            shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0.dp)),
-            color = containerColor,
-            shadowElevation = pillShadowElevation.coerceAtLeast(0.dp)
+            // Capped to half the surface's own size, whatever that is this
+            // frame: the same radius is a pill at full width and a circle
+            // as a bubble, and is never larger than the shape allows.
+            shape = CappedRoundedShape(cornerRadius.coerceAtLeast(0.dp)),
+            // No drop shadow: the pill stands off the page by its container
+            // tone alone. A shadow under it read as cheap, and under the
+            // bubble as a smudge. [judgement October 2026]
+            color = containerColor
         ) {
             // Both layers are positioned in a Box sized to the current (animating)
             // Surface height, which the Surface shape clips. The expanded content
@@ -481,16 +551,38 @@ fun ExpandablePlayer(
                 // --- Mini layer: fades out over the first part of the expansion ---
                 if (expandProgress < 0.999f) {
                     val miniAlpha = containerMiniAlpha(expandProgress)
+                    val miniWidthPx = with(density) { collapsedPillWidth.roundToPx() }
+                    val miniHeightPx = with(density) { collapsedHeight.roundToPx() }
                     Box(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            // Measured once at its collapsed width, like the
-                            // full layer below. fillMaxWidth() re-measured the
-                            // bar's artwork, marquee title and progress track
-                            // against new constraints on every frame of the
-                            // expansion, for a layer that is fading out.
-                            .requiredWidth(collapsedPillWidth)
-                            .height(collapsedHeight)
+                            // Measured once at its collapsed size, like the
+                            // full layer below: re-measuring the artwork and
+                            // title against the surface's changing width on
+                            // every frame is work for a layer that is fading
+                            // or being closed over.
+                            //
+                            // Placed bottom-centre as a pill, and with its
+                            // start on the surface's start as a bubble: the
+                            // surface closes from the start side, so the cover
+                            // at the row's start rides with that edge and ends
+                            // up centred in the circle.
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(
+                                    Constraints.fixed(miniWidthPx, miniHeightPx)
+                                )
+                                val fraction = bubbleFraction()
+                                val x = androidx.compose.ui.util.lerp(
+                                    (constraints.maxWidth - miniWidthPx) / 2f, 0f, fraction
+                                )
+                                val y = androidx.compose.ui.util.lerp(
+                                    (constraints.maxHeight - miniHeightPx).toFloat(),
+                                    (constraints.maxHeight - miniHeightPx) / 2f,
+                                    fraction
+                                )
+                                layout(constraints.maxWidth, constraints.maxHeight) {
+                                    placeable.placeRelative(x.roundToInt(), y.roundToInt())
+                                }
+                            }
                             .graphicsLayer { alpha = miniAlpha }
                     ) {
                         MiniPlayerContent(
@@ -504,7 +596,8 @@ fun ExpandablePlayer(
                             onClick = { onExpandChange(true) },
                             skipState = miniSkip,
                             previousSong = previousItem?.song,
-                            nextSong = nextItem?.song
+                            nextSong = nextItem?.song,
+                            detailAlpha = { 1f - bubbleFraction() }
                         )
                     }
                 }

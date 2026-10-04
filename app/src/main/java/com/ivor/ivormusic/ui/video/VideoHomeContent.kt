@@ -252,12 +252,30 @@ fun VideoHomeContent(
         )
     }
 
+    // Community posts from followed channels, scattered between the videos.
+    val feedPosts by viewModel.feedPosts.collectAsState()
+    val postPhotoViewer = remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    FeedPostOverlays(viewModel, postPhotoViewer, onOpenChannel)
+    FeedPostDemand(
+        viewModel = viewModel,
+        listState = listState,
+        videoCount = videos.size,
+        postCount = feedPosts.size,
+        enabled = !showOfflineDownloads
+    )
+    val feedPostCard: @Composable (com.ivor.ivormusic.data.ChannelPost) -> Unit = { post ->
+        FeedPostCard(post, viewModel, openVideo, onOpenChannel, postPhotoViewer)
+    }
+
     ExpressivePullToRefresh(
         // Only let the pull-to-refresh spinner represent a refresh over existing
         // content. The empty-feed case shows its own centered indicator below, and
         // driving both off the same flag renders two spinners at once.
         isRefreshing = isLoading && (videos.isNotEmpty() || showOfflineDownloads),
-        onRefresh = onRefresh,
+        onRefresh = {
+            viewModel.refreshFeedPosts()
+            onRefresh()
+        },
         modifier = Modifier.fillMaxSize()
     ) {
         if (isLoading && videos.isEmpty() && !showOfflineDownloads) {
@@ -377,7 +395,16 @@ fun VideoHomeContent(
                         feedVideos.drop(2)
                     }
 
-                    videoListItems(leadingVideos, listLayout, keyPrefix = "lead_") { video, cell ->
+                    // Posts go in whichever run is the feed proper: after
+                    // the Shorts shelf when there is one, never between the
+                    // two videos above it.
+                    videoListItemsWithPosts(
+                        videos = leadingVideos,
+                        posts = if (shortsEnabled) emptyList() else feedPosts,
+                        layout = listLayout,
+                        keyPrefix = "lead_",
+                        post = feedPostCard
+                    ) { video, cell ->
                         VideoCard(
                             video = video,
                             onClick = { openVideo(video) },
@@ -399,7 +426,13 @@ fun VideoHomeContent(
                         }
                     }
 
-                    videoListItems(trailingVideos, listLayout, keyPrefix = "trail_") { video, cell ->
+                    videoListItemsWithPosts(
+                        videos = trailingVideos,
+                        posts = feedPosts,
+                        layout = listLayout,
+                        keyPrefix = "trail_",
+                        post = feedPostCard
+                    ) { video, cell ->
                         VideoCard(
                             video = video,
                             onClick = { openVideo(video) },

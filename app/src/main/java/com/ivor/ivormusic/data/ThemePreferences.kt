@@ -100,6 +100,9 @@ class ThemePreferences(context: Context) {
 
     private val _playerArtworkColors = MutableStateFlow(getPlayerArtworkColorsPreference())
     val playerArtworkColors: StateFlow<Boolean> = _playerArtworkColors.asStateFlow()
+
+    private val _artworkColorsWholeApp = MutableStateFlow(getArtworkColorsWholeAppPreference())
+    val artworkColorsWholeApp: StateFlow<Boolean> = _artworkColorsWholeApp.asStateFlow()
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -386,6 +389,8 @@ class ThemePreferences(context: Context) {
             KEY_MOTION_ARTWORK_QUALITY -> _motionArtworkQuality.value = getMotionArtworkQualityPreference()
             KEY_WAVEFORM_SEEK_BAR -> _waveformSeekBar.value = getWaveformSeekBarPreference()
             KEY_PLAYER_ARTWORK_COLORS -> _playerArtworkColors.value = getPlayerArtworkColorsPreference()
+            KEY_ARTWORK_COLORS_WHOLE_APP ->
+                _artworkColorsWholeApp.value = getArtworkColorsWholeAppPreference()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
             KEY_VIDEO_RECOMMENDATIONS_ENABLED,
@@ -535,6 +540,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_MOTION_ARTWORK_QUALITY = "motion_artwork_quality"
         private const val KEY_WAVEFORM_SEEK_BAR = "waveform_seek_bar"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
+        private const val KEY_ARTWORK_COLORS_WHOLE_APP = "artwork_colors_whole_app"
         private const val KEY_VIDEO_MODE = "video_mode"
         private const val KEY_LAST_MUSIC_TAB = "last_music_tab"
         private const val KEY_LAST_VIDEO_TAB = "last_video_tab"
@@ -1209,6 +1215,23 @@ class ThemePreferences(context: Context) {
     fun setPlayerArtworkColors(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_PLAYER_ARTWORK_COLORS, enabled).apply()
         _playerArtworkColors.value = enabled
+    }
+
+    /**
+     * How far album colours reach while they are on: the whole app in music
+     * mode (the default), or the player and album pages only.
+     *
+     * The second half of a three-way choice whose first half is the switch
+     * above (Off / Player / Whole app). Two booleans rather than one new
+     * value so that everyone who had album colours off keeps them off, and
+     * every existing reader of that switch still means what it meant.
+     */
+    private fun getArtworkColorsWholeAppPreference(): Boolean =
+        prefs.getBoolean(KEY_ARTWORK_COLORS_WHOLE_APP, true)
+
+    fun setArtworkColorsWholeApp(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ARTWORK_COLORS_WHOLE_APP, enabled).apply()
+        _artworkColorsWholeApp.value = enabled
     }
     
     /**

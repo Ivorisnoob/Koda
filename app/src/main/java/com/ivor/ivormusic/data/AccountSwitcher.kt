@@ -215,6 +215,7 @@ class AccountSwitcher(context: Context) {
             VideoHistoryRepository.reloadForActiveProfile(appContext)
             UploadCheckRepository.reloadForActiveProfile(appContext)
             LikedSongsRepository.reloadForActiveProfile(appContext)
+            TasteProfileStore.reloadForActiveProfile(appContext)
         }
 
         /**
@@ -238,6 +239,7 @@ class AccountSwitcher(context: Context) {
             LocalSubscriptionsRepository.copyProfileData(appContext, fromProfileId, toProfileId)
             NotInterestedRepository.copyProfileData(appContext, fromProfileId, toProfileId)
             UploadCheckRepository.copyProfileData(appContext, fromProfileId, toProfileId)
+            TasteProfileStore.copyProfileData(appContext, fromProfileId, toProfileId)
         }
     }
 }

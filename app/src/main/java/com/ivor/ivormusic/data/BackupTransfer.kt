@@ -373,6 +373,7 @@ object BackupTransfer {
                     )
                     put("likedSongs", entry.likedSongs ?: JSONObject.NULL)
                     put("searchHistory", entry.searchHistory ?: JSONObject.NULL)
+                    put("tasteProfile", entry.tasteProfile ?: JSONObject.NULL)
                     put(
                         "uploadMutes",
                         entry.uploadMutes?.let { JSONArray(it.toList()) } ?: JSONObject.NULL
@@ -412,6 +413,7 @@ object BackupTransfer {
                 likedSongIds = stringSet("likedSongIds"),
                 likedSongs = str("likedSongs"),
                 searchHistory = str("searchHistory"),
+                tasteProfile = str("tasteProfile"),
                 uploadMutes = stringSet("uploadMutes")
             )
         }.toMap()
@@ -553,6 +555,8 @@ data class BackupProfileData(
     val likedSongs: String? = null,
     /** This profile's recent searches, as stored ("|"-separated). */
     val searchHistory: String? = null,
+    /** Picked and followed artists, genres and deck songs ([TasteProfileStore]); absent from older backups. */
+    val tasteProfile: String? = null,
     /** Channels this profile muted for new-upload notifications. */
     val uploadMutes: Set<String>? = null
 ) {
@@ -562,7 +566,7 @@ data class BackupProfileData(
             watchHistory == null && removedFromHistory == null &&
             resumePositions == null && playHistory == null &&
             likedSongIds == null && likedSongs == null &&
-            searchHistory == null && uploadMutes == null
+            searchHistory == null && uploadMutes == null && tasteProfile == null
 }
 
 /** A file copied verbatim, at a path relative to `filesDir`. */

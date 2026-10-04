@@ -115,6 +115,14 @@ class YouTubeRepository(private val context: Context) {
         // browse params selecting a channel's Videos tab (protobuf: "videos")
         private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
 
+        // browse params selecting a channel's Posts tab (protobuf: "posts").
+        // The second and last hardcoded tab: the feeds sample posts from
+        // channels whose page was never opened, so there is no tab list to
+        // read it from. Identical on all five channels that had the tab, and a
+        // channel without one answers with another tab and no posts.
+        // [verified October 2026, signed in, WEB]
+        private const val CHANNEL_POSTS_TAB_PARAMS = "EgVwb3N0c_IGBAoCSgA%3D"
+
         // How many subscribed channels the local feed fetches at once. The
         // local feed costs one request per channel, so this is the only thing
         // standing between a 300-subscription refresh and 300 simultaneous
@@ -834,6 +842,35 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * An artist's "Fans might also like" shelf and top songs, from a single
+     * artist browse. [getArtistPage] reads the same response and then follows
+     * the discography and the full songs playlist; taste setup asks this of
+     * every artist tapped, where those extra requests would be wasted.
+     */
+    suspend fun getArtistTasteSample(artistId: String): ArtistTasteSample? = withContext(Dispatchers.IO) {
+        if (!artistId.startsWith("UC")) return@withContext null
+        try {
+            val root = org.json.JSONObject(browseMusic(artistId) ?: return@withContext null)
+            val songs = mutableListOf<Song>()
+            val shelves = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(root, "musicShelfRenderer", shelves)
+            shelves.firstOrNull()?.optJSONArray("contents")?.let { contents ->
+                for (i in 0 until contents.length()) {
+                    contents.optJSONObject(i)?.optJSONObject("musicResponsiveListItemRenderer")
+                        ?.let { parseResponsiveListItem(it) }
+                        ?.let(songs::add)
+                }
+            }
+            ArtistTasteSample(similar = MusicMetadata.similarArtists(root), topSongs = songs.distinctBy { it.id })
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w("YouTubeRepo", "Artist taste sample failed for $artistId", e)
+            null
+        }
+    }
+
+    /**
      * Get details for a specific artist (songs plus the merged releases).
      * Backed by [getArtistPage]; kept for callers that only need the pair.
      */
@@ -935,6 +972,28 @@ class YouTubeRepository(private val context: Context) {
                 if (params != null) put("params", params)
             })?.let(::parseMusicShelves)
         }
+
+    /**
+     * The "Top artists" of YouTube Music's charts page, for [country] (an ISO
+     * code, or `ZZ` for Global) or, when null, for wherever YouTube places the
+     * request. The country menu on that page is a form: the same browse with
+     * `formData.selectedValues` answers for the chosen country, signed out.
+     * [verified October 2026: forty artists each for the default, ZZ and US]
+     */
+    suspend fun getChartArtists(country: String? = null): List<ArtistItem> = withContext(Dispatchers.IO) {
+        val payload = org.json.JSONObject().put("browseId", "FEmusic_charts")
+        if (country != null) {
+            payload.put(
+                "formData",
+                org.json.JSONObject().put("selectedValues", org.json.JSONArray().put(country))
+            )
+        }
+        postMusicMetadata("browse", payload)?.let(::parseMusicShelves)?.shelves.orEmpty()
+            .flatMap { it.items }
+            .filterIsInstance<MusicShelfItem.Artist>()
+            .map { it.artist }
+            .distinctBy { it.id }
+    }
 
     suspend fun getMusicShelvesContinuation(token: String): MusicShelfPage? = withContext(Dispatchers.IO) {
         postMusicMetadata("browse", org.json.JSONObject().put("continuation", token))?.let(::parseMusicShelves)
@@ -3816,10 +3875,15 @@ class YouTubeRepository(private val context: Context) {
      * Parse video items from YouTube homepage JSON response.
      * Use optimized path traversal instead of recursive findAllObjects.
      */
-    private fun parseVideosFromYouTubeJson(json: String, limit: Int = 30): List<VideoItem> {
+    private fun parseVideosFromYouTubeJson(
+        json: String,
+        limit: Int = 30,
+        /** The same response already parsed, so a caller that needs the tree does not pay for it twice. */
+        parsedRoot: org.json.JSONObject? = null
+    ): List<VideoItem> {
         val videos = mutableListOf<VideoItem>()
         try {
-            val root = org.json.JSONObject(json)
+            val root = parsedRoot ?: org.json.JSONObject(json)
             
             // Locate content array
             // Normal Home: contents -> singleColumnBrowseResultsRenderer -> tabs[0] -> tabRenderer -> content -> richGridRenderer -> contents
@@ -7761,17 +7825,58 @@ class YouTubeRepository(private val context: Context) {
     /**
      * The user's subscriptions feed (FEsubscriptions): latest uploads from
      * all subscribed channels, newest first. Requires login.
+     *
+     * The first page is everything YouTube sent, not the first thirty: the
+     * token it carries continues from the page's real end, so a truncated page
+     * followed by its continuation would skip whatever was cut. Later pages come
+     * from [getVideoFeedContinuation], whose `appendContinuationItemsAction`
+     * shape this feed shares with Home. [verified October 2026, signed in: page
+     * one about a hundred lockups, the continuation 95 more and a next token]
      */
-    suspend fun getSubscriptionsFeed(): List<VideoItem> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
+    suspend fun getSubscriptionsFeedPage(): VideoFeedPage = withContext(Dispatchers.IO) {
+        if (!sessionManager.isLoggedIn()) return@withContext VideoFeedPage(emptyList())
         try {
             val raw = postWatchApi(
                 "browse",
                 org.json.JSONObject().put("context", webContext()).put("browseId", "FEsubscriptions")
-            ) ?: return@withContext emptyList()
-            parseVideosFromYouTubeJson(raw)
+            ) ?: return@withContext VideoFeedPage(emptyList())
+            val root = org.json.JSONObject(raw)
+            VideoFeedPage(
+                videos = parseVideosFromYouTubeJson(raw, limit = Int.MAX_VALUE, parsedRoot = root),
+                continuation = extractRichGridContinuation(root)
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getSubscriptionsFeed failed", e)
+            KLog.e("YouTubeRepo", "getSubscriptionsFeedPage failed", e)
+            VideoFeedPage(emptyList())
+        }
+    }
+
+    /**
+     * A channel's newest community posts, for the posts the feeds scatter
+     * between videos. One browse straight at the Posts tab, each post stamped
+     * with the channel it was asked of. Empty for a channel with no Posts tab
+     * and on any failure: a missing post is not worth an error anywhere.
+     */
+    suspend fun getChannelPosts(channelId: String): List<ChannelPost> = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", channelId)
+                    .put("params", CHANNEL_POSTS_TAB_PARAMS)
+            ) ?: return@withContext emptyList()
+            val postRenderers = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(org.json.JSONObject(raw), "backstagePostRenderer", postRenderers)
+            postRenderers.mapNotNull { parseBackstagePost(it) }
+                .distinctBy { it.postId }
+                .map { it.copy(channelId = channelId) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w("YouTubeRepo", "getChannelPosts failed for $channelId", e)
             emptyList()
         }
     }

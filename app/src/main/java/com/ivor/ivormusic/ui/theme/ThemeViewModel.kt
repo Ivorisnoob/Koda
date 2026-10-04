@@ -38,6 +38,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setWaveformSeekBar(enabled: Boolean) = themePreferences.setWaveformSeekBar(enabled)
 
     val playerArtworkColors: StateFlow<Boolean> = themePreferences.playerArtworkColors
+    val artworkColorsWholeApp: StateFlow<Boolean> = themePreferences.artworkColorsWholeApp
     val videoMode: StateFlow<Boolean> = themePreferences.videoMode
     val homeModeToggleEnabled: StateFlow<Boolean> = themePreferences.homeModeToggleEnabled
     val videoHomeConfiguration: StateFlow<com.ivor.ivormusic.data.VideoHomeConfiguration> =

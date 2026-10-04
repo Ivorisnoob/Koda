@@ -116,6 +116,13 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 - Tester feedback round: video history shows channel names again (FEhistory's one-row byline); the mini bars no longer show the song after the new one when a swipe settles; dismissing the mini player cancels radio and auto-queue fetches still in flight; radio and auto-queue respect "Don't recommend"; video Search no longer spins on an empty trending feed; a Short still loading when the phone locks waits for the app to be visible; the now-playing options sheet wears the player's colours.
 - Video downloads keep their captions: the download sheet lists the video's caption tracks as pills (the saved captions language, the phone's languages and English start ticked), the chosen ones are saved as WebVTT in app storage, and a download played from disk reads them (`DownloadedCaptionStore`).
 - Backup and restore is a Settings page, so it opens in the detail pane on wide windows.
+- Community posts from followed channels sit between the videos on Home and in Subscriptions, with their photos, shared video and comments (`ui/video/FeedPosts.kt`).
+- The Subscriptions feed pages: the account feed's next page loads as the list nears its end, and the first page is no longer cut to thirty.
+- An update is announced by a dialog with the release's highlights (once per release, again two days after Later), and the first launch after updating shows that version's own highlights; one bundled file per release feeds both (`ReleaseHighlights`).
+- Taste setup: pick artists (each pick brings more like it), pick genres, then swipe a deck of previewed songs; offered once after onboarding or updating, reopened from Settings, saved per profile and read by the recommendations (`ui/taste/`, `TasteProfileStore`).
+- Album colours reach the whole app in music mode: the playing cover seeds the full scheme, fading between songs; Off / Player / Whole app in Settings.
+- The music mini player's cover spins and walks through shapes, with the progress drawn as that shape's outline.
+- The video player's playback settings are a control panel: value tabs over one deck, switches as tiles, shortcuts beneath; the fullscreen panel no longer dims the video.
 
 ### September 2026
 
