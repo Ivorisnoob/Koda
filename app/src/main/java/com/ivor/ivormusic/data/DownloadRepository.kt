@@ -15,6 +15,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -50,7 +52,12 @@ enum class DownloadStatus {
  * [qualityLabel] is the video quality the user picked in the download sheet
  * (null = the stored default). It lives on the request so retries — which
  * re-resolve stream URLs from scratch — keep honoring the original choice.
+ *
+ * Serializable because a failed request is written to disk
+ * ([FailedDownloadStore]) and retried after a restart. That freezes the field
+ * names here and the [DownloadMediaType] constant names.
  */
+@kotlinx.serialization.Serializable
 data class DownloadRequest(
     val id: String,
     val title: String,
@@ -274,6 +281,7 @@ class DownloadRepository private constructor(private val context: Context) {
     private val activeDownloadCalls = java.util.concurrent.ConcurrentHashMap<String, okhttp3.Call>()
     private val pausedRequests = java.util.concurrent.ConcurrentHashMap<String, DownloadRequest>()
     private val checkpoints = DownloadCheckpoints(File(context.cacheDir, "download_checkpoints"))
+    private val failedStore = FailedDownloadStore(context)
 
     init {
         // Read whatever is on disk right away so consumers that touch
@@ -281,6 +289,7 @@ class DownloadRepository private constructor(private val context: Context) {
         // an empty list, then migrate in the background and reload.
         loadDownloadedSongs()
         loadDownloadedVideos()
+        restoreFailedDownloads()
         repositoryScope.launch {
             if (DownloadMigration.migrateIfNeeded(context)) {
                 loadDownloadedSongs()
@@ -296,6 +305,40 @@ class DownloadRepository private constructor(private val context: Context) {
             // back into the list, and pruning first would forget a playlist for
             // files that were about to reappear under their new paths.
             pruneEmptyDownloadedPlaylists()
+        }
+    }
+
+    /**
+     * Put the failures from the last run back in the progress list, then keep
+     * the file following that list.
+     *
+     * Written straight into the map rather than through [updateProgress],
+     * which would post a "download failed" notification for each one on every
+     * launch. Anything that has arrived since - the file was fetched another
+     * way - is no longer a failure and is dropped.
+     *
+     * The file is derived from the progress map rather than written at each
+     * place a failure is made or cleared, so a retry, a cancel, a clear and a
+     * later success all update it without having to remember to.
+     */
+    private fun restoreFailedDownloads() {
+        val restored = failedStore.read()
+            .filter { it.id.isNotBlank() && !isDownloadedOfType(it.id, it.type) }
+            .distinctBy { it.id }
+        if (restored.isNotEmpty()) {
+            _downloadProgress.value = restored.associate { request ->
+                request.id to DownloadProgress(request.id, request, 0f, DownloadStatus.FAILED)
+            }
+        }
+        repositoryScope.launch {
+            _downloadProgress
+                .map { progress ->
+                    progress.values
+                        .filter { it.status == DownloadStatus.FAILED }
+                        .map { it.request }
+                }
+                .distinctUntilChanged()
+                .collect(failedStore::write)
         }
     }
 
