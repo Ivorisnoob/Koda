@@ -106,6 +106,16 @@ class ThemePreferences(context: Context) {
 
     private val _miniPlayerProgress = MutableStateFlow(getMiniPlayerProgressPreference())
     val miniPlayerProgress: StateFlow<MiniPlayerProgress> = _miniPlayerProgress.asStateFlow()
+
+    private val _videoGestures = MutableStateFlow(readVideoGestures())
+    val videoGestures: StateFlow<VideoGestureCustomization> = _videoGestures.asStateFlow()
+
+    private val _homeNavigation = MutableStateFlow(readHomeNavigation())
+    val homeNavigation: StateFlow<HomeNavigationCustomization> = _homeNavigation.asStateFlow()
+
+    private val _miniPlayerCustomization = MutableStateFlow(readMiniPlayerCustomization())
+    val miniPlayerCustomization: StateFlow<MiniPlayerCustomization> =
+        _miniPlayerCustomization.asStateFlow()
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -398,6 +408,14 @@ class ThemePreferences(context: Context) {
             KEY_ARTWORK_COLORS_WHOLE_APP ->
                 _artworkColorsWholeApp.value = getArtworkColorsWholeAppPreference()
             KEY_MINI_PLAYER_PROGRESS -> _miniPlayerProgress.value = getMiniPlayerProgressPreference()
+            KEY_MINI_PLAYER_BUTTONS, KEY_MINI_PLAYER_COVER_TAP, KEY_MINI_PLAYER_COVER_MOTION,
+            KEY_MINI_PLAYER_SWIPE_SKIP, KEY_MINI_PLAYER_SWIPE_DISMISS, KEY_MINI_PLAYER_SHRINK,
+            KEY_MINI_PLAYER_COLOR, KEY_MINI_PLAYER_SECOND_LINE, KEY_MINI_PLAYER_LONG_PRESS ->
+                _miniPlayerCustomization.value = readMiniPlayerCustomization()
+            KEY_VIDEO_HOLD_SPEED, KEY_VIDEO_BRIGHTNESS_SWIPE, KEY_VIDEO_VOLUME_SWIPE ->
+                _videoGestures.value = readVideoGestures()
+            KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL ->
+                _homeNavigation.value = readHomeNavigation()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
             KEY_VIDEO_RECOMMENDATIONS_ENABLED,
@@ -550,6 +568,22 @@ class ThemePreferences(context: Context) {
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
         private const val KEY_ARTWORK_COLORS_WHOLE_APP = "artwork_colors_whole_app"
         private const val KEY_MINI_PLAYER_PROGRESS = "mini_player_progress"
+        private const val KEY_VIDEO_HOLD_SPEED = "video_gesture_hold_speed"
+        private const val KEY_VIDEO_BRIGHTNESS_SWIPE = "video_gesture_brightness"
+        private const val KEY_VIDEO_VOLUME_SWIPE = "video_gesture_volume"
+        private const val KEY_START_TAB = "start_tab"
+        private const val KEY_START_MODE = "start_mode"
+        private const val KEY_NAV_TAB_LABELS = "nav_tab_labels"
+        private const val KEY_NAV_BAR_HIDES_ON_SCROLL = "nav_bar_hides_on_scroll"
+        private const val KEY_MINI_PLAYER_BUTTONS = "mini_player_buttons"
+        private const val KEY_MINI_PLAYER_COVER_TAP = "mini_player_cover_tap"
+        private const val KEY_MINI_PLAYER_COVER_MOTION = "mini_player_cover_motion"
+        private const val KEY_MINI_PLAYER_SWIPE_SKIP = "mini_player_swipe_skip"
+        private const val KEY_MINI_PLAYER_SWIPE_DISMISS = "mini_player_swipe_dismiss"
+        private const val KEY_MINI_PLAYER_SHRINK = "mini_player_shrink"
+        private const val KEY_MINI_PLAYER_COLOR = "mini_player_color"
+        private const val KEY_MINI_PLAYER_SECOND_LINE = "mini_player_second_line"
+        private const val KEY_MINI_PLAYER_LONG_PRESS = "mini_player_long_press"
         private const val KEY_VIDEO_MODE = "video_mode"
         private const val KEY_LAST_MUSIC_TAB = "last_music_tab"
         private const val KEY_LAST_VIDEO_TAB = "last_video_tab"
@@ -1256,6 +1290,48 @@ class ThemePreferences(context: Context) {
         prefs.edit().putString(KEY_MINI_PLAYER_PROGRESS, progress.id).apply()
         _miniPlayerProgress.value = progress
     }
+
+    /**
+     * The mini player's buttons, gestures and look, as one snapshot. Read by
+     * the pill and by Home (which owns the bubble) and written by the Settings
+     * page, each through its own instance.
+     *
+     * The buttons are a comma-separated list of ids. Nothing stored is the
+     * default pair; an empty string is a deliberate choice of no buttons.
+     */
+    private fun readMiniPlayerCustomization(): MiniPlayerCustomization {
+        val storedButtons = prefs.getString(KEY_MINI_PLAYER_BUTTONS, null)
+        return MiniPlayerCustomization(
+            buttons = storedButtons
+                ?.split(',')
+                ?.mapNotNull { MiniPlayerButton.fromId(it.trim()) }
+                ?.distinct()
+                ?: MiniPlayerCustomization.DEFAULT_BUTTONS,
+            coverTap = MiniCoverTap.fromId(prefs.getString(KEY_MINI_PLAYER_COVER_TAP, null)),
+            coverMotion = MiniCoverMotion.fromId(prefs.getString(KEY_MINI_PLAYER_COVER_MOTION, null)),
+            swipeToSkip = prefs.getBoolean(KEY_MINI_PLAYER_SWIPE_SKIP, true),
+            swipeToDismiss = prefs.getBoolean(KEY_MINI_PLAYER_SWIPE_DISMISS, true),
+            shrink = MiniPlayerShrink.fromId(prefs.getString(KEY_MINI_PLAYER_SHRINK, null)),
+            color = MiniPlayerColor.fromId(prefs.getString(KEY_MINI_PLAYER_COLOR, null)),
+            secondLine = MiniSecondLine.fromId(prefs.getString(KEY_MINI_PLAYER_SECOND_LINE, null)),
+            longPress = MiniLongPress.fromId(prefs.getString(KEY_MINI_PLAYER_LONG_PRESS, null)),
+        )
+    }
+
+    fun setMiniPlayerCustomization(customization: MiniPlayerCustomization) {
+        prefs.edit()
+            .putString(KEY_MINI_PLAYER_BUTTONS, customization.orderedButtons.joinToString(",") { it.id })
+            .putString(KEY_MINI_PLAYER_COVER_TAP, customization.coverTap.id)
+            .putString(KEY_MINI_PLAYER_COVER_MOTION, customization.coverMotion.id)
+            .putBoolean(KEY_MINI_PLAYER_SWIPE_SKIP, customization.swipeToSkip)
+            .putBoolean(KEY_MINI_PLAYER_SWIPE_DISMISS, customization.swipeToDismiss)
+            .putString(KEY_MINI_PLAYER_SHRINK, customization.shrink.id)
+            .putString(KEY_MINI_PLAYER_COLOR, customization.color.id)
+            .putString(KEY_MINI_PLAYER_SECOND_LINE, customization.secondLine.id)
+            .putString(KEY_MINI_PLAYER_LONG_PRESS, customization.longPress.id)
+            .apply()
+        _miniPlayerCustomization.value = customization
+    }
     
     /**
      * Toggle ambient background setting.
@@ -1284,6 +1360,68 @@ class ThemePreferences(context: Context) {
      */
     fun toggleVideoMode() {
         setVideoMode(!_videoMode.value)
+    }
+
+    /** Which of the video player's gestures are on. Read by the player's gesture surface. */
+    private fun readVideoGestures(): VideoGestureCustomization = VideoGestureCustomization(
+        holdToSpeedUp = prefs.getBoolean(KEY_VIDEO_HOLD_SPEED, true),
+        brightnessSwipe = prefs.getBoolean(KEY_VIDEO_BRIGHTNESS_SWIPE, true),
+        volumeSwipe = prefs.getBoolean(KEY_VIDEO_VOLUME_SWIPE, true),
+    )
+
+    fun setVideoGestures(customization: VideoGestureCustomization) {
+        prefs.edit()
+            .putBoolean(KEY_VIDEO_HOLD_SPEED, customization.holdToSpeedUp)
+            .putBoolean(KEY_VIDEO_BRIGHTNESS_SWIPE, customization.brightnessSwipe)
+            .putBoolean(KEY_VIDEO_VOLUME_SWIPE, customization.volumeSwipe)
+            .apply()
+        _videoGestures.value = customization
+    }
+
+    /**
+     * How Koda opens and how its navigation bar behaves. Read by Home and
+     * written by the Settings page, each through its own instance.
+     */
+    private fun readHomeNavigation(): HomeNavigationCustomization = HomeNavigationCustomization(
+        startTab = StartTab.fromId(prefs.getString(KEY_START_TAB, null)),
+        startMode = StartMode.fromId(prefs.getString(KEY_START_MODE, null)),
+        tabLabels = NavTabLabels.fromId(prefs.getString(KEY_NAV_TAB_LABELS, null)),
+        barHidesOnScroll = prefs.getBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, true),
+    )
+
+    fun setHomeNavigation(customization: HomeNavigationCustomization) {
+        prefs.edit()
+            .putString(KEY_START_TAB, customization.startTab.id)
+            .putString(KEY_START_MODE, customization.startMode.id)
+            .putString(KEY_NAV_TAB_LABELS, customization.tabLabels.id)
+            .putBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, customization.barHidesOnScroll)
+            .apply()
+        _homeNavigation.value = customization
+    }
+
+    /**
+     * Put Koda in the mode the user asked it to open in. Called once, by a
+     * fresh launch from the launcher, and never while Local only is on, where
+     * video mode has nothing to show.
+     */
+    fun applyStartMode() {
+        if (getLocalOnlyModePreference()) return
+        when (readHomeNavigation().startMode) {
+            StartMode.LAST -> Unit
+            StartMode.MUSIC -> if (getVideoModePreference()) setVideoMode(false)
+            StartMode.VIDEO -> if (!getVideoModePreference()) setVideoMode(true)
+        }
+    }
+
+    /**
+     * The tab Home opens on: the user's chosen start screen, or the last one
+     * they were on. The Library sits at a different index in each mode.
+     */
+    fun getStartHomeTab(videoMode: Boolean): Int = when (readHomeNavigation().startTab) {
+        StartTab.LAST -> getLastHomeTab(videoMode)
+        StartTab.HOME -> 0
+        StartTab.SEARCH -> 1
+        StartTab.LIBRARY -> if (videoMode) VideoHomeDestination.LIBRARY.tabId else 2
     }
 
     /** Root Home destination restored after Koda is recreated. */

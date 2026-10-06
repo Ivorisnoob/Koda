@@ -426,7 +426,8 @@ fun HomeScreen(
     // effect below - otherwise a cold entry composes the hidden tab's content
     // once before the correction lands.
     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable(videoMode) {
-        val stored = homePreferences.getLastHomeTab(videoMode)
+        // The user's start screen, or the last tab they were on.
+        val stored = homePreferences.getStartHomeTab(videoMode)
         val reachable = !videoMode ||
             videoHomeConfiguration.orderedVisibleDestinations.any { it.tabId == stored }
         mutableIntStateOf(if (reachable) stored else videoRootTab)
@@ -534,6 +535,18 @@ fun HomeScreen(
     // Material owns both the offset range and the settle/fling behavior. The
     // toolbar is bottom-centred, so its exit direction is down and the Home
     // shell only needs to forward nested scroll from whichever tab is active.
+    // The user's choices for the bar: whether it hides, and when it names
+    // its tabs.
+    val homeNavigation by homePreferences.homeNavigation.collectAsState()
+    val barHidesOnScroll = homeNavigation.barHidesOnScroll
+    // A bar told to stay put is brought back if it was away, and everything
+    // that follows it (the mini player, the bars floating above) with it.
+    LaunchedEffect(barHidesOnScroll) {
+        if (!barHidesOnScroll) {
+            floatingToolbarState.offset = 0f
+            floatingToolbarState.contentOffset = 0f
+        }
+    }
     val floatingToolbarScrollBehavior = FloatingToolbarDefaults.exitAlwaysScrollBehavior(
         exitDirection = FloatingToolbarExitDirection.Bottom,
         state = floatingToolbarState
@@ -845,8 +858,20 @@ fun HomeScreen(
     }
     // Only the floating toolbar feeds that scroll total; a pinned navigation
     // bar or a rail leaves the pill a pill.
+    //
+    // The user can also pin it either way: never a bubble, or always one.
+    // Always still needs the floating toolbar, for the same reason.
+    val miniShrinkContext = androidx.compose.ui.platform.LocalContext.current
+    val miniShrink = remember(miniShrinkContext) {
+        com.ivor.ivormusic.data.ThemePreferences(miniShrinkContext)
+    }.miniPlayerCustomization.collectAsState().value.shrink
+    val miniBubbleWanted = when (miniShrink) {
+        com.ivor.ivormusic.data.MiniPlayerShrink.NEVER -> false
+        com.ivor.ivormusic.data.MiniPlayerShrink.ALWAYS -> true
+        com.ivor.ivormusic.data.MiniPlayerShrink.ON_SCROLL -> miniBubble
+    }
     val miniBubbleFraction = androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (miniBubble && !nonExpressiveNavigationBar && !useRail) 1f else 0f,
+        targetValue = if (miniBubbleWanted && !nonExpressiveNavigationBar && !useRail) 1f else 0f,
         animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
         label = "miniBubbleFraction"
     )
@@ -995,7 +1020,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(backgroundColor)
             .then(
-                if (nonExpressiveNavigationBar || useRail) Modifier
+                if (nonExpressiveNavigationBar || useRail || !barHidesOnScroll) Modifier
                 else Modifier.nestedScroll(floatingToolbarScrollBehavior)
             )
             .nestedScroll(shelfEdgeFlick)
@@ -1759,14 +1784,22 @@ fun HomeScreen(
                                 contentDescription = label
                             )
                         },
-                        label = { Text(label) }
+                        // The standard bar names every tab unless the
+                        // user asked otherwise.
+                        label = if (homeNavigation.tabLabels == com.ivor.ivormusic.data.NavTabLabels.NEVER) {
+                            null
+                        } else {
+                            { Text(label) }
+                        },
+                        alwaysShowLabel =
+                            homeNavigation.tabLabels != com.ivor.ivormusic.data.NavTabLabels.SELECTED
                     )
                 }
             }
         } else {
             HorizontalFloatingToolbar(
                 expanded = true,
-                scrollBehavior = floatingToolbarScrollBehavior,
+                scrollBehavior = if (barHidesOnScroll) floatingToolbarScrollBehavior else null,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -1822,7 +1855,13 @@ fun HomeScreen(
                                     modifier = Modifier.size(24.dp)
                                 )
                                 androidx.compose.animation.AnimatedVisibility(
-                                    visible = selected,
+                                    // The floating bar names only the open
+                                    // tab unless the user asked otherwise.
+                                    visible = when (homeNavigation.tabLabels) {
+                                        com.ivor.ivormusic.data.NavTabLabels.ALWAYS -> true
+                                        com.ivor.ivormusic.data.NavTabLabels.NEVER -> false
+                                        else -> selected
+                                    },
                                     enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(
                                         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
                                     ),
@@ -2418,8 +2457,10 @@ fun TopBarSection(
     modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
-    val iconColor = MaterialTheme.colorScheme.onSurface
-    val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    // The bar's buttons wear the secondary container, not a grey surface
+    // tone: on the tinted page a grey button read as part of the background.
+    val iconColor = MaterialTheme.colorScheme.onSecondaryContainer
+    val containerColor = MaterialTheme.colorScheme.secondaryContainer
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val userAvatar by viewModel.userAvatar.collectAsState()
@@ -2427,12 +2468,13 @@ fun TopBarSection(
     val downloadingIds by viewModel.downloadingIds.collectAsState()
     val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
     
-    Row(
+    // A Box, not a spaced Row: the mode switch sits in the true centre of
+    // the bar whatever is either side of it, so it does not shift when the
+    // buttons on the right change between music and video.
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         // Profile avatar. Tap opens the switcher; long-press flips straight
         // back to the last profile, which is the whole point of a switcher for
@@ -2445,7 +2487,7 @@ fun TopBarSection(
         }
         val isSwitching by accountSwitcher.switching.collectAsState()
         val openAccountSwitcher = com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher.current
-        Box {
+        Box(modifier = Modifier.align(Alignment.CenterStart)) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -2531,13 +2573,28 @@ fun TopBarSection(
             }
         }
         
-        // Right side icons with shape morphing
+        // Right side icons with shape morphing.
         Row(
+            modifier = Modifier.align(Alignment.CenterEnd),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Downloads Button with badge if downloading
-            Box {
+            // Music/Video mode switch: one button the size of its neighbours
+            // that changes shape, colour and icon with the mode, instead of
+            // a two-part switch twice their width. [trial October 2026] Can
+            // be hidden from Settings (Home Screen Mode Toggle).
+            if (showModeToggle) {
+                com.ivor.ivormusic.ui.components.ModeMorphButton(
+                    videoMode = videoMode,
+                    onVideoModeChange = onVideoModeToggle
+                )
+            }
+
+            // Downloads appear here only while something is downloading: the
+            // button is a status, and the downloads themselves live in the
+            // Library. A permanent button for a place visited now and then
+            // was one more grey circle in the row.
+            if (downloadingIds.isNotEmpty()) Box {
                 IconButton(
                     onClick = onDownloadsClick,
                     shapes = IconButtonDefaults.shapes(),
@@ -2581,18 +2638,21 @@ fun TopBarSection(
                     modifier = Modifier.size(22.dp)
                 )
             }
-
-            // Music/Video mode switch, anchored in the corner so it stays put
-            // when the home content swaps between modes. Can be hidden from
-            // Settings (Home Screen Mode Toggle).
-            if (showModeToggle) {
-                MusicVideoToggle(
-                    videoMode = videoMode,
-                    onVideoModeChange = onVideoModeToggle,
-                    state = modeToggleState
-                )
-            }
         }
+
+        // A greeting beside the profile picture, so the bar has something to
+        // say whether or not the mode switch is on it. It gives way to the
+        // buttons: the end padding is their width, with or without the switch.
+        com.ivor.ivormusic.ui.components.HomeGreeting(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(
+                    start = 56.dp,
+                    // One 44dp button and its gap for each button drawn.
+                    end = 56.dp * (1 + (if (showModeToggle) 1 else 0) +
+                        (if (downloadingIds.isNotEmpty()) 1 else 0))
+                )
+        )
     }
 }
 

@@ -224,7 +224,29 @@ internal fun buildSettingsSearchIndex(
         listOf("logout", "log out", "disconnect", "remove account")
     ) { onOpenPage(SettingsPage.ACCOUNT) }
 
-    // Appearance
+    // Customization
+    entry(
+        "video_player_gestures", stringResource(R.string.cz_video_player), stringResource(R.string.settings_customization), Icons.Rounded.PlayCircle,
+        listOf(
+            "video", "gesture", "swipe", "brightness", "volume", "hold", "long press", "2x", "speed up",
+            "fast forward", "disable gestures", "accidental"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "start_screen", stringResource(R.string.cz_start_screen), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("start", "startup", "launch", "open on", "default tab", "first screen", "start page", "start mode", "music mode", "video mode")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "nav_tab_labels", stringResource(R.string.cz_tab_labels), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("labels", "tab names", "text", "icons only", "navigation bar", "nav bar", "hide on scroll", "always show", "pinned")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "customization", stringResource(R.string.settings_customization), stringResource(R.string.settings_title), Icons.Rounded.Palette,
+        listOf(
+            "customize", "customise", "customization", "customisation", "personalize", "personalise",
+            "look", "feel", "appearance", "style", "layout", "design"
+        )
+    ) { onOpenPage(SettingsPage.CUSTOMIZATION) }
     entry(
         "theme", stringResource(R.string.sp_theme), stringResource(R.string.settings_appearance), Icons.Rounded.Contrast,
         listOf("dark", "light", "system", "night", "day", "mode")
@@ -274,14 +296,14 @@ internal fun buildSettingsSearchIndex(
     entry(
         "ambient", stringResource(R.string.sp_ambient_background), stringResource(R.string.settings_appearance), Icons.Rounded.Palette,
         listOf("album art", "artwork", "background", "blur", "glow")
-    ) { onOpenPage(SettingsPage.APPEARANCE) }
+    ) { onOpenPage(SettingsPage.PLAYER) }
     entry(
         "spotlight_home", stringResource(R.string.sp_spotlight_home), stringResource(R.string.settings_appearance), Icons.Rounded.Dashboard,
         listOf(
             "home", "home screen", "layout", "shortcuts", "grid", "shelves",
             "quick picks", "spotify", "feed", "classic home"
         )
-    ) { onOpenPage(SettingsPage.APPEARANCE) }
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
     entry(
         "non_expressive_navigation_bar",
         stringResource(R.string.sp_non_expressive_nav),
@@ -291,7 +313,7 @@ internal fun buildSettingsSearchIndex(
             "navigation", "navbar", "nav bar", "short navigation bar", "compact",
             "classic", "floating", "expressive"
         )
-    ) { onOpenPage(SettingsPage.APPEARANCE) }
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
     entry(
         "rotate_with_device",
         stringResource(R.string.sp_rotate_with_device),
@@ -301,7 +323,7 @@ internal fun buildSettingsSearchIndex(
             "rotate", "rotation", "landscape", "portrait", "orientation",
             "sideways", "turn", "auto rotate", "lock"
         )
-    ) { onOpenPage(SettingsPage.APPEARANCE) }
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
 
     // Player
     entry(
@@ -316,9 +338,17 @@ internal fun buildSettingsSearchIndex(
         listOf("artwork", "colour", "buttons", "tint", "cover")
     ) { onOpenPage(SettingsPage.PLAYER) }
     entry(
-        "mini_player_progress", stringResource(R.string.sp_mini_player), stringResource(R.string.settings_player), Icons.Rounded.PlayCircle,
+        "mini_player", stringResource(R.string.sp_mini_player), stringResource(R.string.settings_player), Icons.Rounded.PlayCircle,
+        listOf(
+            "mini player", "miniplayer", "pill", "bubble", "bar", "buttons", "previous", "next",
+            "like", "shuffle", "repeat", "close", "swipe", "gesture", "skip", "dismiss",
+            "cover", "spin", "morph", "color", "colour", "neutral", "accent", "shrink"
+        )
+    ) { onOpenPage(SettingsPage.MINI_PLAYER) }
+    entry(
+        "mini_player_progress", stringResource(R.string.sp_mini_progress), stringResource(R.string.sp_mini_player), Icons.Rounded.PlayCircle,
         listOf("mini player", "progress", "bar", "fill", "ring", "outline", "cover", "pill")
-    ) { onOpenPage(SettingsPage.PLAYER) }
+    ) { onOpenPage(SettingsPage.MINI_PLAYER) }
 
     entry(
         "motion_artwork", stringResource(R.string.sp_motion_artwork), stringResource(R.string.settings_player), Icons.Rounded.PlayCircle,
@@ -442,7 +472,7 @@ internal fun buildSettingsSearchIndex(
             "haptics", "vibration", "vibrate", "feedback", "touch", "buzz",
             "rumble", "feel", "silent"
         )
-    ) { onOpenPage(SettingsPage.APPEARANCE) }
+    ) { onOpenPage(SettingsPage.GESTURES) }
     entry(
         "upload_notifications", "Notify about new uploads", "Notifications",
         Icons.Rounded.NotificationsActive,
@@ -672,7 +702,7 @@ internal fun buildSettingsSearchIndex(
     entry(
         "playlist_swipe", stringResource(R.string.sp_playlist_swipe), "Local library", Icons.Rounded.SwapHoriz,
         listOf("swipe", "gesture", "dismiss", "remove song", "quick action", "playlist row", "swipe right", "swipe left", "play", "queue", "add to queue", "options")
-    ) { onOpenPage(SettingsPage.LOCAL_LIBRARY) }
+    ) { onOpenPage(SettingsPage.GESTURES) }
 
     // Advanced
     entry(

@@ -377,6 +377,96 @@ internal fun SettingsToggleRow(
 }
 
 /**
+ * The colours of a connected choice button on a settings card.
+ *
+ * [scar] Never leave a `ToggleButton` on a card to its defaults. The default
+ * unselected container is a surface tone, and the card under it is one too, so
+ * the unselected buttons vanish into the row and only the chosen one reads as
+ * a button. Unselected is a tenth of the accent, which shows on every card
+ * tone, light, dark and AMOLED; selected is the full accent.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun settingsChoiceButtonColors(
+    accent: Color = MaterialTheme.colorScheme.primary
+) = androidx.compose.material3.ToggleButtonDefaults.colors(
+    containerColor = accent.copy(alpha = 0.1f),
+    checkedContainerColor = accent,
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    checkedContentColor = MaterialTheme.colorScheme.onPrimary
+)
+
+/**
+ * A setting with a handful of answers, all on show: icon, title and subtitle
+ * over one row of connected buttons. For two to four short labels; a longer
+ * list wants a dialog.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun SettingsChoiceRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SettingsRowIcon(icon = icon, tint = tint)
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween
+            )
+        ) {
+            labels.forEachIndexed { index, label ->
+                androidx.compose.material3.ToggleButton(
+                    checked = selectedIndex == index,
+                    onCheckedChange = {
+                        if (selectedIndex != index) {
+                            haptics.confirm()
+                            onSelect(index)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    // Four labels on a narrow phone need the room the default
+                    // padding takes.
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    colors = settingsChoiceButtonColors(),
+                    shapes = when (index) {
+                        0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        labels.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    }
+                ) {
+                    Text(text = label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/**
  * The 48dp tinted icon box every settings row leads with. [shape] lets the hub
  * give each category a die-cut identity (the player-style-wheel language);
  * detail rows keep the default squircle so pages read calmer than the hub.
@@ -524,7 +614,7 @@ internal fun SettingsHubRow(
  * False while a top-level page is drawn in the detail pane beside the hub:
  * there is nothing to go back to when the list is on screen next to it, and an
  * arrow that only re-selects the first category reads as broken. Nested pages
- * (Display size, App icon) keep theirs, which returns to Appearance.
+ * (everything under Customization) keep theirs, which returns to their parent.
  */
 internal val LocalSettingsDetailShowsBack = androidx.compose.runtime.compositionLocalOf { true }
 

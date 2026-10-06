@@ -141,6 +141,17 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
 
+        // A fresh launch from the launcher opens in the mode the user chose in
+        // Settings. Not on a recreation (rotation, theme change), and not for a
+        // shortcut or a shared link, which say where they want to land.
+        if (savedInstanceState == null &&
+            intent?.action == android.content.Intent.ACTION_MAIN &&
+            intent?.hasCategory(android.content.Intent.CATEGORY_LAUNCHER) == true &&
+            intent?.data == null
+        ) {
+            com.ivor.ivormusic.data.ThemePreferences(applicationContext).applyStartMode()
+        }
+
         takeSharedLink(intent)
         // Off the main thread: publishing is a binder call into the launcher.
         Thread { com.ivor.ivormusic.util.ModeShortcuts.publish(applicationContext) }.start()

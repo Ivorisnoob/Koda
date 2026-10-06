@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.VerticalAlignBottom
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.ScreenRotation
@@ -251,37 +252,22 @@ internal fun AppearanceSettingsPage(
     paletteStyle: com.ivor.ivormusic.ui.theme.PaletteStyle,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
-    hapticsLevel: String,
-    onHapticsLevelChange: (String) -> Unit,
     colorPalette: String,
     onNavigateToColorPalette: () -> Unit,
     amoledTheme: Boolean,
     onAmoledThemeToggle: (Boolean) -> Unit,
-    ambientBackground: Boolean,
-    onAmbientBackgroundToggle: (Boolean) -> Unit,
-    spotlightHome: Boolean,
-    onSpotlightHomeToggle: (Boolean) -> Unit,
-    nonExpressiveNavigationBar: Boolean,
-    onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
-    uiScale: Float,
-    onNavigateToDisplaySize: () -> Unit,
-    rotateWithDevice: Boolean,
-    onRotateWithDeviceToggle: (Boolean) -> Unit,
-    appIcon: String = ThemePreferences.DEFAULT_APP_ICON,
-    onNavigateToAppIcon: () -> Unit = {},
     onBack: () -> Unit
 ) {
-    val currentAppIcon = remember(appIcon) { AppIcon.fromId(appIcon) }
     val paletteName = if (colorPalette == ThemePreferences.DEFAULT_COLOR_PALETTE) {
         "Dynamic (from wallpaper)"
     } else {
         com.ivor.ivormusic.ui.theme.findPalette(colorPalette)?.name ?: "Dynamic"
     }
 
-    // Regrouped from six single-row sections into four that answer real
-    // questions - "what colors", "what's on screen", "what does Home look
-    // like", "how does it feel" - instead of one section per setting.
-    SettingsDetailScaffold(title = stringResource(R.string.settings_appearance), onBack = onBack) {
+    // Colours only. The app icon, display size, Home layout and touch
+    // feedback that used to share this page each have a row of their own on
+    // the Customization page.
+    SettingsDetailScaffold(title = stringResource(R.string.settings_theme_and_colors), onBack = onBack) {
         item {
             SettingsSection(title = stringResource(R.string.sp_theme)) {
                 SettingsCard {
@@ -317,66 +303,66 @@ internal fun AppearanceSettingsPage(
                 }
             }
         }
+    }
+}
 
+/* ------------------------------------------------------------------ */
+/* Home and navigation                                                 */
+/* ------------------------------------------------------------------ */
+
+@Composable
+internal fun HomeNavigationSettingsPage(
+    spotlightHome: Boolean,
+    onSpotlightHomeToggle: (Boolean) -> Unit,
+    nonExpressiveNavigationBar: Boolean,
+    onNonExpressiveNavigationBarToggle: (Boolean) -> Unit,
+    rotateWithDevice: Boolean,
+    onRotateWithDeviceToggle: (Boolean) -> Unit,
+    onBack: () -> Unit
+) {
+    // Read and written through the page's own preferences, as the mini
+    // player's page does: Home holds an instance of its own and follows the
+    // stored value.
+    val navContext = androidx.compose.ui.platform.LocalContext.current
+    val navPrefs = remember(navContext) { ThemePreferences(navContext) }
+    val navigation = navPrefs.homeNavigation.collectAsState().value
+    SettingsDetailScaffold(title = stringResource(R.string.sp_home_and_navigation), onBack = onBack) {
         item {
-            SettingsSection(title = stringResource(R.string.sp_display_section)) {
+            SettingsSection(title = stringResource(R.string.cz_section_opening)) {
                 SettingsCard {
-                    SettingsRow(
-                        icon = Icons.Rounded.AutoAwesome,
-                        title = stringResource(R.string.sp_app_icon),
-                        subtitle = stringResource(currentAppIcon.titleRes),
-                        onClick = onNavigateToAppIcon,
-                        showChevron = true,
-                        explanation = stringResource(R.string.si_app_icon)
+                    val tabs = com.ivor.ivormusic.data.StartTab.entries
+                    SettingsChoiceRow(
+                        icon = Icons.Rounded.Home,
+                        title = stringResource(R.string.cz_start_screen),
+                        subtitle = stringResource(R.string.cz_start_screen_sub),
+                        labels = listOf(
+                            stringResource(R.string.cz_start_last),
+                            stringResource(R.string.tab_home),
+                            stringResource(R.string.tab_search),
+                            stringResource(R.string.tab_library)
+                        ),
+                        selectedIndex = tabs.indexOf(navigation.startTab),
+                        onSelect = { navPrefs.setHomeNavigation(navigation.copy(startTab = tabs[it])) }
                     )
-                    SettingsDivider()
-                    // A page rather than a slider here: the scale is worth
-                    // previewing before it is applied, and a preview needs
-                    // room the hub list does not have.
-                    SettingsRow(
-                        icon = Icons.Rounded.FormatSize,
-                        title = stringResource(R.string.sp_display_size),
-                        subtitle = "${(uiScale * 100).roundToInt()}%",
-                        onClick = onNavigateToDisplaySize,
-                        showChevron = true,
-                        explanation = stringResource(R.string.si_display_size)
-                    )
-                    SettingsDivider()
-                    // Phones only. A large screen always follows the device
-                    // (AppOrientation), so the switch would do nothing there.
-                    val context = androidx.compose.ui.platform.LocalContext.current
-                    if (!com.ivor.ivormusic.ui.theme.AppOrientation.isLargeScreen(context)) {
-                        SettingsToggleRow(
-                            icon = Icons.Rounded.ScreenRotation,
-                            title = stringResource(R.string.sp_rotate_with_device),
-                            subtitle = stringResource(
-                                if (rotateWithDevice) R.string.sp_rotate_with_device_on
-                                else R.string.sp_rotate_with_device_off
-                            ),
-                            enabled = rotateWithDevice,
-                            onToggle = onRotateWithDeviceToggle,
-                            explanation = stringResource(R.string.si_rotate_with_device)
-                        )
-                        SettingsDivider()
-                    }
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.Palette,
-                        title = stringResource(R.string.sp_ambient_background),
-                        subtitle = if (ambientBackground) {
-                            "Dynamic colors from album art"
-                        } else {
-                            "Solid background"
-                        },
-                        enabled = ambientBackground,
-                        onToggle = onAmbientBackgroundToggle,
-                        explanation = stringResource(R.string.si_ambient)
+                    val modes = com.ivor.ivormusic.data.StartMode.entries
+                    SettingsChoiceRow(
+                        icon = Icons.Rounded.VideoLibrary,
+                        title = stringResource(R.string.cz_start_mode),
+                        subtitle = stringResource(R.string.cz_start_mode_sub),
+                        labels = listOf(
+                            stringResource(R.string.cz_start_last),
+                            stringResource(R.string.cz_start_mode_music),
+                            stringResource(R.string.cz_start_mode_video)
+                        ),
+                        selectedIndex = modes.indexOf(navigation.startMode),
+                        onSelect = { navPrefs.setHomeNavigation(navigation.copy(startMode = modes[it])) }
                     )
                 }
             }
         }
 
         item {
-            SettingsSection(title = stringResource(R.string.sp_home_and_navigation)) {
+            SettingsSection(title = stringResource(R.string.cz_section_home_layout)) {
                 SettingsCard {
                     SettingsToggleRow(
                         icon = Icons.Rounded.Home,
@@ -428,9 +414,86 @@ internal fun AppearanceSettingsPage(
             }
         }
 
-        // Moved here from Playback: haptics respond to every touch in the
-        // app - drags, toggles, the nav bar - not to playback, so they belong
-        // with look and feel.
+        item {
+            SettingsSection(title = stringResource(R.string.cz_section_nav_bar)) {
+                SettingsCard {
+                    val labelChoices = com.ivor.ivormusic.data.NavTabLabels.entries
+                    SettingsChoiceRow(
+                        icon = Icons.Rounded.Dashboard,
+                        title = stringResource(R.string.cz_tab_labels),
+                        subtitle = stringResource(R.string.cz_tab_labels_sub),
+                        labels = listOf(
+                            stringResource(R.string.cz_tab_labels_auto),
+                            stringResource(R.string.cz_tab_labels_always),
+                            stringResource(R.string.cz_tab_labels_selected),
+                            stringResource(R.string.cz_tab_labels_never)
+                        ),
+                        selectedIndex = labelChoices.indexOf(navigation.tabLabels),
+                        onSelect = {
+                            navPrefs.setHomeNavigation(navigation.copy(tabLabels = labelChoices[it]))
+                        }
+                    )
+                    // Only the floating bar hides; the standard one is
+                    // pinned, so the switch has nothing to do there.
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.VerticalAlignBottom,
+                        title = stringResource(R.string.cz_bar_hides),
+                        subtitle = stringResource(
+                            if (nonExpressiveNavigationBar) R.string.cz_bar_hides_unavailable
+                            else R.string.cz_bar_hides_sub
+                        ),
+                        enabled = navigation.barHidesOnScroll && !nonExpressiveNavigationBar,
+                        onToggle = { navPrefs.setHomeNavigation(navigation.copy(barHidesOnScroll = it)) },
+                        available = !nonExpressiveNavigationBar
+                    )
+                }
+            }
+        }
+
+        item {
+            // Phones only. A large screen always follows the device
+            // (AppOrientation), so the switch would do nothing there.
+            val context = androidx.compose.ui.platform.LocalContext.current
+            if (!com.ivor.ivormusic.ui.theme.AppOrientation.isLargeScreen(context)) {
+                SettingsSection(title = stringResource(R.string.sp_display_section)) {
+                    SettingsCard {
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.ScreenRotation,
+                            title = stringResource(R.string.sp_rotate_with_device),
+                            subtitle = stringResource(
+                                if (rotateWithDevice) R.string.sp_rotate_with_device_on
+                                else R.string.sp_rotate_with_device_off
+                            ),
+                            enabled = rotateWithDevice,
+                            onToggle = onRotateWithDeviceToggle,
+                            explanation = stringResource(R.string.si_rotate_with_device)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Gestures and feedback                                               */
+/* ------------------------------------------------------------------ */
+
+@Composable
+internal fun GesturesSettingsPage(
+    hapticsLevel: String,
+    onHapticsLevelChange: (String) -> Unit,
+    playlistSwipeEnabled: Boolean,
+    onPlaylistSwipeEnabledToggle: (Boolean) -> Unit,
+    playlistSwipeStartAction: String,
+    onPlaylistSwipeStartActionChange: (String) -> Unit,
+    playlistSwipeEndAction: String,
+    onPlaylistSwipeEndActionChange: (String) -> Unit,
+    onBack: () -> Unit
+) {
+    SettingsDetailScaffold(title = stringResource(R.string.settings_gestures), onBack = onBack) {
+        // Haptics respond to every touch in the app - drags, toggles, the nav
+        // bar - so they sit with the gestures rather than with playback.
         item {
             SettingsSection(title = stringResource(R.string.sp_touch_feedback)) {
                 SettingsCard {
@@ -438,6 +501,51 @@ internal fun AppearanceSettingsPage(
                         hapticsLevel = hapticsLevel,
                         onHapticsLevelChange = onHapticsLevelChange
                     )
+                }
+            }
+        }
+
+        // Swipe actions apply to every playlist song list - local, YouTube
+        // and saved.
+        item {
+            SettingsSection(title = stringResource(R.string.sp_playlist_songs)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.SwapHoriz,
+                        title = stringResource(R.string.sp_playlist_swipe),
+                        subtitle = if (playlistSwipeEnabled) {
+                            stringResource(R.string.sp_playlist_swipe_sub_on)
+                        } else {
+                            stringResource(R.string.sp_playlist_swipe_sub_off)
+                        },
+                        enabled = playlistSwipeEnabled,
+                        onToggle = onPlaylistSwipeEnabledToggle,
+                        explanation = stringResource(R.string.si_playlist_swipe)
+                    )
+
+                    AnimatedVisibility(
+                        visible = playlistSwipeEnabled,
+                        enter = fadeIn(tween(200)) + slideInVertically(
+                            initialOffsetY = { -it / 4 },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+                        ),
+                        exit = fadeOut(tween(150))
+                    ) {
+                        Column {
+                            SettingsDivider()
+                            PlaylistSwipeActionSelector(
+                                title = stringResource(R.string.sp_playlist_swipe_right),
+                                selected = playlistSwipeStartAction,
+                                onSelect = onPlaylistSwipeStartActionChange
+                            )
+                            SettingsDivider()
+                            PlaylistSwipeActionSelector(
+                                title = stringResource(R.string.sp_playlist_swipe_left),
+                                selected = playlistSwipeEndAction,
+                                onSelect = onPlaylistSwipeEndActionChange
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -886,6 +994,8 @@ internal fun PlayerSettingsPage(
     onMotionArtworkQualityChange: (MotionArtworkQuality) -> Unit,
     waveformSeekBar: Boolean,
     onWaveformSeekBarToggle: (Boolean) -> Unit,
+    ambientBackground: Boolean,
+    onAmbientBackgroundToggle: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_player), onBack = onBack) {
@@ -959,14 +1069,19 @@ internal fun PlayerSettingsPage(
                         albumColors = playerArtworkColors,
                         onAlbumColorsChange = onPlayerArtworkColorsToggle
                     )
-                }
-            }
-        }
-
-        item {
-            SettingsSection(title = stringResource(R.string.sp_mini_player)) {
-                SettingsCard {
-                    MiniPlayerProgressRow()
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Palette,
+                        title = stringResource(R.string.sp_ambient_background),
+                        subtitle = if (ambientBackground) {
+                            "Dynamic colors from album art"
+                        } else {
+                            "Solid background"
+                        },
+                        enabled = ambientBackground,
+                        onToggle = onAmbientBackgroundToggle,
+                        explanation = stringResource(R.string.si_ambient)
+                    )
                 }
             }
         }
@@ -1836,76 +1951,10 @@ private fun AlbumColorsScopeRow(albumColors: Boolean, onAlbumColorsChange: (Bool
                         }
                     },
                     modifier = Modifier.weight(1f),
+                    colors = settingsChoiceButtonColors(),
                     shapes = when (index) {
                         0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
                         labels.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
-                        else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
-                    }
-                ) {
-                    Text(text = label, maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-/**
- * Which progress the mini player draws: the pill filling up, the outline
- * round the cover, or both.
- *
- * Read and written through a local `ThemePreferences`, as the album colours'
- * reach is above: the pill holds its own instance and its flow follows the
- * stored value, so the pill under this page changes as a choice is tapped.
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun MiniPlayerProgressRow() {
-    val context = LocalContext.current
-    val prefs = androidx.compose.runtime.remember(context) { ThemePreferences(context) }
-    val selected = prefs.miniPlayerProgress.collectAsState().value
-    val choices = listOf(
-        com.ivor.ivormusic.data.MiniPlayerProgress.BOTH to stringResource(R.string.sp_mini_progress_both),
-        com.ivor.ivormusic.data.MiniPlayerProgress.FILL to stringResource(R.string.sp_mini_progress_fill),
-        com.ivor.ivormusic.data.MiniPlayerProgress.OUTLINE to stringResource(R.string.sp_mini_progress_outline)
-    )
-    androidx.compose.foundation.layout.Column(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
-    ) {
-        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Rounded.PlayCircle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
-            androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.sp_mini_progress),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = stringResource(R.string.sp_mini_progress_sub),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
-        androidx.compose.foundation.layout.Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
-                androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween
-            )
-        ) {
-            choices.forEachIndexed { index, (choice, label) ->
-                androidx.compose.material3.ToggleButton(
-                    checked = selected == choice,
-                    onCheckedChange = { prefs.setMiniPlayerProgress(choice) },
-                    modifier = Modifier.weight(1f),
-                    shapes = when (index) {
-                        0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
-                        choices.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
                         else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
                     }
                 ) {
@@ -2646,12 +2695,6 @@ internal fun LocalLibrarySettingsPage(
     onLoadLocalSongsToggle: (Boolean) -> Unit,
     excludedFolderCount: Int,
     onOpenFolderExclusion: () -> Unit,
-    playlistSwipeEnabled: Boolean,
-    onPlaylistSwipeEnabledToggle: (Boolean) -> Unit,
-    playlistSwipeStartAction: String,
-    onPlaylistSwipeStartActionChange: (String) -> Unit,
-    playlistSwipeEndAction: String,
-    onPlaylistSwipeEndActionChange: (String) -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_local_library), onBack = onBack) {
@@ -2692,52 +2735,6 @@ internal fun LocalLibrarySettingsPage(
                                 },
                                 onClick = onOpenFolderExclusion,
                                 showChevron = true
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Swipe actions apply to every playlist song list - local, YouTube
-        // and saved - so they sit beside the library switches rather than
-        // inside the device-music section above.
-        item {
-            SettingsSection(title = stringResource(R.string.sp_playlist_songs)) {
-                SettingsCard {
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.SwapHoriz,
-                        title = stringResource(R.string.sp_playlist_swipe),
-                        subtitle = if (playlistSwipeEnabled) {
-                            stringResource(R.string.sp_playlist_swipe_sub_on)
-                        } else {
-                            stringResource(R.string.sp_playlist_swipe_sub_off)
-                        },
-                        enabled = playlistSwipeEnabled,
-                        onToggle = onPlaylistSwipeEnabledToggle,
-                        explanation = stringResource(R.string.si_playlist_swipe)
-                    )
-
-                    AnimatedVisibility(
-                        visible = playlistSwipeEnabled,
-                        enter = fadeIn(tween(200)) + slideInVertically(
-                            initialOffsetY = { -it / 4 },
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                        ),
-                        exit = fadeOut(tween(150))
-                    ) {
-                        Column {
-                            SettingsDivider()
-                            PlaylistSwipeActionSelector(
-                                title = stringResource(R.string.sp_playlist_swipe_right),
-                                selected = playlistSwipeStartAction,
-                                onSelect = onPlaylistSwipeStartActionChange
-                            )
-                            SettingsDivider()
-                            PlaylistSwipeActionSelector(
-                                title = stringResource(R.string.sp_playlist_swipe_left),
-                                selected = playlistSwipeEndAction,
-                                onSelect = onPlaylistSwipeEndActionChange
                             )
                         }
                     }
@@ -2962,7 +2959,7 @@ internal fun AdvancedSettingsPage(
 
 /** Inline explanatory banner - used for empty states and device-specific advice. */
 @Composable
-private fun SettingsNotice(
+internal fun SettingsNotice(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     text: String,
     tint: Color = MaterialTheme.colorScheme.primary

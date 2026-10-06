@@ -314,14 +314,25 @@ fun ExpandablePlayer(
     val cornerRadius = lerp(collapsedCornerRadius, expandedCornerRadius, expandProgress)
         .coerceAtMost(height / 2)
 
+    // The user's choices for the pill, read through its own preferences: the
+    // flow follows the stored value, so a change in Settings reaches it at once.
+    val miniCustomization by remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }.miniPlayerCustomization.collectAsState()
+
     // Collapsed shows surface, expanded shows transparent - but opaque until
     // the content inside is solid; see containerBackdropAlpha for why.
-    // The pill is the accent container, not a grey: it carries the palette
-    // (the album's, when album colours are on) and never competes with the
-    // page tone it floats over. It hands over to the player's own surface
-    // over the first part of the expansion.
+    // The pill is the accent container by default, not a grey: it carries the
+    // palette (the album's, when album colours are on) and never competes with
+    // the page tone it floats over. A neutral pill is the user's choice. It
+    // hands over to the player's own surface over the first part of the
+    // expansion.
     val containerColor = androidx.compose.ui.graphics.lerp(
-        MaterialTheme.colorScheme.primaryContainer,
+        if (miniCustomization.color == com.ivor.ivormusic.data.MiniPlayerColor.NEUTRAL) {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        } else {
+            MaterialTheme.colorScheme.primaryContainer
+        },
         MaterialTheme.colorScheme.surfaceContainerHigh,
         (expandProgress / 0.3f).coerceIn(0f, 1f)
     ).copy(alpha = containerBackdropAlpha(expandProgress))
@@ -450,9 +461,16 @@ fun ExpandablePlayer(
                     }
                 }
                 // Collapsed: sideways moves the song inside the pill.
-                .miniSkipGesture(miniSkip, enabled = !isExpanded)
-                .pointerInput(isExpanded, miniDismissThresholdPx, miniFlingVelocityPx) {
+                .miniSkipGesture(miniSkip, enabled = !isExpanded && miniCustomization.swipeToSkip)
+                .pointerInput(
+                    isExpanded, miniDismissThresholdPx, miniFlingVelocityPx,
+                    miniCustomization.swipeToDismiss
+                ) {
                     if (!isExpanded) {
+                        // With the dismiss turned off the pill does not follow
+                        // the finger down either: a pull that can end nowhere
+                        // should not start.
+                        val canDismiss = miniCustomization.swipeToDismiss
                         // Collapsed: up expands, down dismisses. Only the
                         // downward pull moves the pill: an expansion is its own
                         // animation, so following the finger up would promise
@@ -479,8 +497,10 @@ fun ExpandablePlayer(
                             onDragEnd = {
                                 val velocityY = velocityTracker.calculateVelocity().y
                                 val travel = verticalDragOffset
-                                val dismiss = travel > miniDismissThresholdPx ||
-                                    (travel > 0f && velocityY > miniFlingVelocityPx)
+                                val dismiss = canDismiss && (
+                                    travel > miniDismissThresholdPx ||
+                                        (travel > 0f && velocityY > miniFlingVelocityPx)
+                                    )
                                 when {
                                     travel < verticalSwipeThreshold -> {
                                         settleHome()
@@ -523,10 +543,10 @@ fun ExpandablePlayer(
                                     change.uptimeMillis,
                                     androidx.compose.ui.geometry.Offset(0f, verticalDragOffset)
                                 )
-                                miniDragY = verticalDragOffset.coerceAtLeast(0f)
+                                miniDragY = if (canDismiss) verticalDragOffset.coerceAtLeast(0f) else 0f
                                 // Only the dismiss edge ticks, and it re-arms if
                                 // the finger comes back inside it.
-                                val crossed = verticalDragOffset >= miniDismissThresholdPx
+                                val crossed = canDismiss && verticalDragOffset >= miniDismissThresholdPx
                                 if (crossed && !thresholdFeedbackSent) {
                                     thresholdFeedbackSent = true
                                     haptics.threshold()
@@ -558,6 +578,11 @@ fun ExpandablePlayer(
                 // --- Mini layer: fades out over the first part of the expansion ---
                 if (expandProgress < 0.999f) {
                     val miniAlpha = containerMiniAlpha(expandProgress)
+                    // Collected here, inside the mini layer, so a like or a
+                    // mode change recomposes the pill and not the player.
+                    val miniIsLiked by viewModel.isCurrentSongLiked.collectAsState()
+                    val miniShuffleOn by viewModel.shuffleModeEnabled.collectAsState()
+                    val miniRepeatMode by viewModel.repeatMode.collectAsState()
                     val miniWidthPx = with(density) { collapsedPillWidth.roundToPx() }
                     val miniHeightPx = with(density) { collapsedHeight.roundToPx() }
                     Box(
@@ -601,11 +626,44 @@ fun ExpandablePlayer(
                             onPlayPauseClick = onPlayPauseClick,
                             onNextClick = onNextClick,
                             onClick = { onExpandChange(true) },
+                            onLongClick = when (miniCustomization.longPress) {
+                                com.ivor.ivormusic.data.MiniLongPress.NOTHING -> null
+                                // The options sheet belongs to the open
+                                // player, so the pill opens both.
+                                com.ivor.ivormusic.data.MiniLongPress.OPTIONS -> {
+                                    {
+                                        onExpandChange(true)
+                                        nowPlayingOptionsOpen.value = true
+                                    }
+                                }
+                                com.ivor.ivormusic.data.MiniLongPress.LIKE -> {
+                                    { viewModel.toggleCurrentSongLike() }
+                                }
+                            },
                             skipState = miniSkip,
                             previousSong = previousItem?.song,
                             nextSong = nextItem?.song,
                             detailAlpha = { 1f - bubbleFraction() },
-                            durationMs = duration
+                            durationMs = duration,
+                            customization = miniCustomization,
+                            onButtonClick = { button ->
+                                when (button) {
+                                    com.ivor.ivormusic.data.MiniPlayerButton.PREVIOUS -> viewModel.skipToPrevious()
+                                    com.ivor.ivormusic.data.MiniPlayerButton.LIKE -> {
+                                        haptics.confirm()
+                                        viewModel.toggleCurrentSongLike()
+                                    }
+                                    com.ivor.ivormusic.data.MiniPlayerButton.SHUFFLE -> viewModel.toggleShuffle()
+                                    com.ivor.ivormusic.data.MiniPlayerButton.REPEAT -> viewModel.toggleRepeat()
+                                    com.ivor.ivormusic.data.MiniPlayerButton.CLOSE -> viewModel.clearPlayer()
+                                    // Play/pause and next have their own callbacks.
+                                    com.ivor.ivormusic.data.MiniPlayerButton.PLAY_PAUSE,
+                                    com.ivor.ivormusic.data.MiniPlayerButton.NEXT -> Unit
+                                }
+                            },
+                            isLiked = miniIsLiked,
+                            shuffleOn = miniShuffleOn,
+                            repeatMode = miniRepeatMode
                         )
                     }
                 }

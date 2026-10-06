@@ -556,25 +556,28 @@ internal fun VideoTopBarSection(
     showNotifications: Boolean = true
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
-    val iconColor = MaterialTheme.colorScheme.onSurface
-    val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    // The bar's buttons wear the secondary container, not a grey surface
+    // tone: on the tinted page a grey button read as part of the background.
+    val iconColor = MaterialTheme.colorScheme.onSecondaryContainer
+    val containerColor = MaterialTheme.colorScheme.secondaryContainer
     
     val userAvatar by viewModel.userAvatar.collectAsState()
     val downloadingIds by viewModel.downloadingIds.collectAsState()
     val context = LocalContext.current
     val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
     
-    Row(
+    // A Box, not a spaced Row: the mode switch sits in the true centre of
+    // the bar whatever is either side of it, so it does not shift when the
+    // buttons on the right change between music and video.
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         // Profile avatar. Incognito shows as a badge on the avatar itself
         // rather than a chip beside it, so the bar keeps its shape whether
         // history is paused or not.
-        Box {
+        Box(modifier = Modifier.align(Alignment.CenterStart)) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -632,11 +635,23 @@ internal fun VideoTopBarSection(
             }
         }
 
-        // Right side icons
+        // Right side icons.
         Row(
+            modifier = Modifier.align(Alignment.CenterEnd),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Music/Video mode switch: one button the size of its neighbours
+            // that changes shape, colour and icon with the mode, instead of
+            // a two-part switch twice their width. [trial October 2026] Can
+            // be hidden from Settings (Home Screen Mode Toggle).
+            if (showModeToggle) {
+                com.ivor.ivormusic.ui.components.ModeMorphButton(
+                    videoMode = videoMode,
+                    onVideoModeChange = onVideoModeToggle
+                )
+            }
+
             // Notifications Button
             if (showNotifications) IconButton(
                 onClick = onNotificationsClick,
@@ -654,8 +669,11 @@ internal fun VideoTopBarSection(
                 )
             }
 
-            // Downloads Button
-            Box {
+            // Downloads appear here only while something is downloading: the
+            // button is a status, and the downloads themselves live in the
+            // Library. A permanent button for a place visited now and then
+            // was one more grey circle in the row.
+            if (downloadingIds.isNotEmpty()) Box {
                 IconButton(
                     onClick = onDownloadsClick,
                     shapes = IconButtonDefaults.shapes(),
@@ -698,18 +716,22 @@ internal fun VideoTopBarSection(
                     modifier = Modifier.size(22.dp)
                 )
             }
-
-            // Music/Video mode switch, anchored in the corner so it stays put
-            // when the home content swaps between modes. Can be hidden from
-            // Settings (Home Screen Mode Toggle).
-            if (showModeToggle) {
-                MusicVideoToggle(
-                    videoMode = videoMode,
-                    onVideoModeChange = onVideoModeToggle,
-                    state = modeToggleState
-                )
-            }
         }
+
+        // A greeting beside the profile picture, so the bar has something to
+        // say whether or not the mode switch is on it. It gives way to the
+        // buttons: the end padding is their width, with or without the switch.
+        com.ivor.ivormusic.ui.components.HomeGreeting(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(
+                    start = 56.dp,
+                    // One 44dp button and its gap for each button drawn.
+                    end = 56.dp * (1 + (if (showModeToggle) 1 else 0) +
+                        (if (showNotifications) 1 else 0) +
+                        (if (downloadingIds.isNotEmpty()) 1 else 0))
+                )
+        )
     }
 }
 

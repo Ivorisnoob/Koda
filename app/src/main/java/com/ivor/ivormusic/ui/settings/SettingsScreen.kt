@@ -279,7 +279,29 @@ internal enum class SettingsPage {
     LASTFM,
     SPONSORBLOCK,
     APP_ICON,
-    BACKUP
+    BACKUP,
+    MINI_PLAYER,
+    CUSTOMIZATION,
+    HOME_NAVIGATION,
+    GESTURES,
+    VIDEO_PLAYER;
+
+    /**
+     * Where back goes from this page. Most pages are opened from the hub;
+     * a nested one returns to the page that opened it, because what it holds
+     * is usually adjusted more than once before it is right.
+     */
+    val parent: SettingsPage
+        get() = when (this) {
+            APPEARANCE, APP_ICON, DISPLAY_SIZE, PLAYER, MINI_PLAYER,
+            HOME_NAVIGATION, GESTURES, VIDEO_PLAYER -> CUSTOMIZATION
+            VIDEO_HOME -> CONTENT
+            else -> HUB
+        }
+
+    /** The hub row this page lives under: itself, or the top of its chain of parents. */
+    val root: SettingsPage
+        get() = if (this == HUB || parent == HUB) this else parent.root
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -526,7 +548,7 @@ fun SettingsScreen(
     val settingsWindow = com.ivor.ivormusic.ui.theme.currentWindowLayout()
     val twoPane = settingsWindow.supportsTwoPanes
     val detailPage = if (page == SettingsPage.HUB) SettingsPage.ACCOUNT else page
-    val nestedPage = page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON
+    val nestedPage = page != SettingsPage.HUB && page.parent != SettingsPage.HUB
 
     /**
      * Back unwinds one step at a time: an open page returns to the hub, then a
@@ -558,7 +580,7 @@ fun SettingsScreen(
     var containerWidth by remember { mutableFloatStateOf(0f) }
 
     // Side by side, back only unwinds what is stacked: a nested page returns to
-    // Appearance and a query clears. A top-level category is not "on top" of
+    // its parent and a query clears. A top-level category is not "on top" of
     // anything there, so back leaves Settings as it would from the hub.
     PredictiveBackHandler(
         enabled = if (twoPane) nestedPage || searchQuery.isNotEmpty()
@@ -567,7 +589,7 @@ fun SettingsScreen(
         if (twoPane) {
             try {
                 events.collect { }
-                if (nestedPage) page = SettingsPage.APPEARANCE else searchQuery = ""
+                if (nestedPage) page = page.parent else searchQuery = ""
             } catch (cancelled: CancellationException) {
                 // Nothing moved, so there is nothing to spring back.
             }
@@ -594,12 +616,12 @@ fun SettingsScreen(
                             stiffness = Spring.StiffnessMedium
                         )
                     )
-                    page = if (page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON) SettingsPage.APPEARANCE else SettingsPage.HUB
+                    page = page.parent
                 }
                 // A button press, or three-button navigation: no gesture to
                 // continue from, so the ordinary transition is still the right
                 // one and the peel stays out of it entirely.
-                hasPage -> page = if (page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON) SettingsPage.APPEARANCE else SettingsPage.HUB
+                hasPage -> page = page.parent
                 else -> searchQuery = ""
             }
         } catch (cancelled: CancellationException) {
@@ -651,8 +673,11 @@ fun SettingsScreen(
         }
     }
 
+    // Any landing, not only the hub: a page under Customization goes back to
+    // Customization, and a peel left committed there would hold that page in
+    // the shrunken layer the gesture drew.
     LaunchedEffect(page) {
-        if (page == SettingsPage.HUB && peelCommitted) {
+        if (peelCommitted) {
             peelCommitted = false
             isPeeling = false
             peel.snapTo(0f)
@@ -747,30 +772,51 @@ fun SettingsScreen(
             onBack = { page = SettingsPage.HUB }
         )
 
+        SettingsPage.CUSTOMIZATION -> CustomizationSettingsPage(
+            currentThemeMode = currentThemeMode,
+            colorPalette = colorPalette,
+            appIcon = appIcon,
+            uiScale = uiScale,
+            playerStyle = playerStyle,
+            spotlightHome = spotlightHome,
+            nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+            hapticsLevel = hapticsLevel,
+            onOpenPage = { page = it },
+            onBack = { page = SettingsPage.HUB }
+        )
+
         SettingsPage.APPEARANCE -> AppearanceSettingsPage(
             paletteStyle = paletteStyle,
             currentThemeMode = currentThemeMode,
             onThemeModeChange = onThemeModeChange,
-            hapticsLevel = hapticsLevel,
-            onHapticsLevelChange = onHapticsLevelChange,
             colorPalette = colorPalette,
             onNavigateToColorPalette = onNavigateToColorPalette,
             amoledTheme = amoledTheme,
             onAmoledThemeToggle = onAmoledThemeToggle,
-            ambientBackground = ambientBackground,
-            onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+            onBack = { page = SettingsPage.CUSTOMIZATION }
+        )
+
+        SettingsPage.HOME_NAVIGATION -> HomeNavigationSettingsPage(
             spotlightHome = spotlightHome,
             onSpotlightHomeToggle = onSpotlightHomeToggle,
             nonExpressiveNavigationBar = nonExpressiveNavigationBar,
             onNonExpressiveNavigationBarToggle =
                 onNonExpressiveNavigationBarToggle,
-            uiScale = uiScale,
-            onNavigateToDisplaySize = { page = SettingsPage.DISPLAY_SIZE },
             rotateWithDevice = rotateWithDevice,
             onRotateWithDeviceToggle = onRotateWithDeviceToggle,
-            appIcon = appIcon,
-            onNavigateToAppIcon = { page = SettingsPage.APP_ICON },
-            onBack = { page = SettingsPage.HUB }
+            onBack = { page = SettingsPage.CUSTOMIZATION }
+        )
+
+        SettingsPage.GESTURES -> GesturesSettingsPage(
+            hapticsLevel = hapticsLevel,
+            onHapticsLevelChange = onHapticsLevelChange,
+            playlistSwipeEnabled = playlistSwipeEnabled,
+            onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
+            playlistSwipeStartAction = playlistSwipeStartAction,
+            onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
+            playlistSwipeEndAction = playlistSwipeEndAction,
+            onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
+            onBack = { page = SettingsPage.CUSTOMIZATION }
         )
 
         SettingsPage.LASTFM -> LastFmSettingsPage(onBack = { page = SettingsPage.HUB })
@@ -794,17 +840,17 @@ fun SettingsScreen(
             onBack = { page = SettingsPage.HUB }
         )
 
-        // Back lands on Appearance rather than the hub: this page is
+        // Back lands on Customization rather than the hub: this page is
         // opened from there, and the scale is usually adjusted more
         // than once before it is right.
         SettingsPage.DISPLAY_SIZE -> DisplaySizeSettingsPage(
             uiScale = uiScale,
             onUiScaleChange = onUiScaleChange,
-            onBack = { page = SettingsPage.APPEARANCE }
+            onBack = { page = SettingsPage.CUSTOMIZATION }
         )
 
         SettingsPage.APP_ICON -> AppIconSettingsPage(
-            onBack = { page = SettingsPage.APPEARANCE }
+            onBack = { page = SettingsPage.CUSTOMIZATION }
         )
 
         SettingsPage.PLAYER -> PlayerSettingsPage(
@@ -820,7 +866,17 @@ fun SettingsScreen(
             onMotionArtworkQualityChange = onMotionArtworkQualityChange,
             waveformSeekBar = waveformSeekBar,
             onWaveformSeekBarToggle = onWaveformSeekBarToggle,
-            onBack = { page = SettingsPage.HUB }
+            ambientBackground = ambientBackground,
+            onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+            onBack = { page = SettingsPage.CUSTOMIZATION }
+        )
+
+        SettingsPage.VIDEO_PLAYER -> VideoPlayerSettingsPage(
+            onBack = { page = SettingsPage.VIDEO_PLAYER.parent }
+        )
+
+        SettingsPage.MINI_PLAYER -> MiniPlayerSettingsPage(
+            onBack = { page = SettingsPage.MINI_PLAYER.parent }
         )
 
         SettingsPage.PLAYBACK -> PlaybackSettingsPage(
@@ -980,12 +1036,6 @@ fun SettingsScreen(
             onLoadLocalSongsToggle = onLoadLocalSongsToggle,
             excludedFolderCount = excludedFolders.size,
             onOpenFolderExclusion = openFolderExclusion,
-            playlistSwipeEnabled = playlistSwipeEnabled,
-            onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
-            playlistSwipeStartAction = playlistSwipeStartAction,
-            onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
-            playlistSwipeEndAction = playlistSwipeEndAction,
-            onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
             onBack = { page = SettingsPage.HUB }
         )
 
@@ -1582,36 +1632,30 @@ private fun SettingsHub(
             item {
                 SettingsSection(title = stringResource(R.string.settings_section_look_and_feel)) {
                     SettingsCard {
+                        // One way in to everything about how Koda looks
+                        // and behaves. The page behind it is categorised
+                        // by surface; this row names the two choices most
+                        // people make there.
                         SettingsHubRow(
                             icon = Icons.Rounded.Palette,
-                            title = stringResource(R.string.settings_appearance),
+                            title = stringResource(R.string.settings_customization),
                             value = buildString {
                                 append(themeLabel)
                                 append(", ")
                                 append(paletteName)
-                                if (spotlightHome) append(", Spotlight")
+                                append(" \u00B7 ")
+                                append(playerStyleLabel)
                                 // Only when it is doing something: a "100%"
                                 // on every install is noise, not a live value.
                                 if (uiScale != UI_SCALE_DEFAULT) {
                                     append(", ${(uiScale * 100).roundToInt()}%")
                                 }
                             },
-                            onClick = { onOpenPage(SettingsPage.APPEARANCE) },
-                            selected = selectedPage == SettingsPage.APPEARANCE,
+                            onClick = { onOpenPage(SettingsPage.CUSTOMIZATION) },
+                            selected = selectedPage?.root == SettingsPage.CUSTOMIZATION,
                             tint = MaterialTheme.colorScheme.tertiary,
                             iconShape = MaterialShapes.Cookie9Sided.toShape(),
-                            explanation = stringResource(R.string.si_hub_appearance)
-                        )
-                        SettingsDivider()
-                        SettingsHubRow(
-                            icon = Icons.Rounded.PlayCircle,
-                            title = stringResource(R.string.settings_player),
-                            value = playerStyleLabel,
-                            onClick = { onOpenPage(SettingsPage.PLAYER) },
-                            selected = selectedPage == SettingsPage.PLAYER,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            iconShape = MaterialShapes.Clover4Leaf.toShape(),
-                            explanation = stringResource(R.string.si_hub_player)
+                            explanation = stringResource(R.string.si_hub_customization)
                         )
                     }
                 }
