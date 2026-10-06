@@ -100,6 +100,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val crossfadeAuto: StateFlow<Boolean> = themePreferences.crossfadeAuto
     val crossfadeDurationMs: StateFlow<Int> = themePreferences.crossfadeDurationMs
     val normalizeVolume: StateFlow<Boolean> = themePreferences.normalizeVolume
+    val discordPresence: StateFlow<Boolean> = themePreferences.discordPresence
     val rememberVideoBrightness: StateFlow<Boolean> = themePreferences.rememberVideoBrightness
     val pipButtons: StateFlow<String> = themePreferences.pipButtons
     val hapticsLevel: StateFlow<String> = themePreferences.hapticsLevel
@@ -384,6 +385,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setNormalizeVolume(enabled: Boolean) {
         themePreferences.setNormalizeVolume(enabled)
+    }
+
+    fun setDiscordPresence(enabled: Boolean) {
+        themePreferences.setDiscordPresence(enabled)
     }
 
     fun setRememberVideoBrightness(enabled: Boolean) {

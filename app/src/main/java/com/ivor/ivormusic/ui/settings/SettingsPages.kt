@@ -964,6 +964,14 @@ internal fun PlayerSettingsPage(
         }
 
         item {
+            SettingsSection(title = stringResource(R.string.sp_mini_player)) {
+                SettingsCard {
+                    MiniPlayerProgressRow()
+                }
+            }
+        }
+
+        item {
             SettingsSection(title = stringResource(R.string.sp_waveform)) {
                 SettingsCard {
                     SettingsToggleRow(
@@ -999,6 +1007,8 @@ internal fun PlaybackSettingsPage(
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
     onNormalizeVolumeToggle: (Boolean) -> Unit,
+    discordPresence: Boolean,
+    onDiscordPresenceToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
     pipButtons: String,
@@ -1176,6 +1186,29 @@ internal fun PlaybackSettingsPage(
                         enabled = saveMusicHistory,
                         onToggle = onSaveMusicHistoryToggle,
                         explanation = stringResource(R.string.si_music_history)
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.sp_integrations)) {
+                SettingsCard {
+                    // Shows what is playing on the user's Discord profile
+                    // through the Discord app itself. Needs no account in
+                    // Koda - it publishes as the Koda application - so the
+                    // copy says exactly that.
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Public,
+                        title = stringResource(R.string.sp_discord_presence),
+                        subtitle = if (discordPresence) {
+                            stringResource(R.string.sp_discord_presence_sub_on)
+                        } else {
+                            stringResource(R.string.sp_discord_presence_sub_off)
+                        },
+                        enabled = discordPresence,
+                        onToggle = onDiscordPresenceToggle,
+                        explanation = stringResource(R.string.si_discord)
                     )
                 }
             }
@@ -1806,6 +1839,73 @@ private fun AlbumColorsScopeRow(albumColors: Boolean, onAlbumColorsChange: (Bool
                     shapes = when (index) {
                         0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
                         labels.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    }
+                ) {
+                    Text(text = label, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Which progress the mini player draws: the pill filling up, the outline
+ * round the cover, or both.
+ *
+ * Read and written through a local `ThemePreferences`, as the album colours'
+ * reach is above: the pill holds its own instance and its flow follows the
+ * stored value, so the pill under this page changes as a choice is tapped.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MiniPlayerProgressRow() {
+    val context = LocalContext.current
+    val prefs = androidx.compose.runtime.remember(context) { ThemePreferences(context) }
+    val selected = prefs.miniPlayerProgress.collectAsState().value
+    val choices = listOf(
+        com.ivor.ivormusic.data.MiniPlayerProgress.BOTH to stringResource(R.string.sp_mini_progress_both),
+        com.ivor.ivormusic.data.MiniPlayerProgress.FILL to stringResource(R.string.sp_mini_progress_fill),
+        com.ivor.ivormusic.data.MiniPlayerProgress.OUTLINE to stringResource(R.string.sp_mini_progress_outline)
+    )
+    androidx.compose.foundation.layout.Column(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Rounded.PlayCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
+            androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.sp_mini_progress),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = stringResource(R.string.sp_mini_progress_sub),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                androidx.compose.material3.ButtonGroupDefaults.ConnectedSpaceBetween
+            )
+        ) {
+            choices.forEachIndexed { index, (choice, label) ->
+                androidx.compose.material3.ToggleButton(
+                    checked = selected == choice,
+                    onCheckedChange = { prefs.setMiniPlayerProgress(choice) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> androidx.compose.material3.ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        choices.lastIndex -> androidx.compose.material3.ButtonGroupDefaults.connectedTrailingButtonShapes()
                         else -> androidx.compose.material3.ButtonGroupDefaults.connectedMiddleButtonShapes()
                     }
                 ) {

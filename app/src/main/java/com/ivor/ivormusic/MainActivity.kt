@@ -252,6 +252,7 @@ class MainActivity : ComponentActivity() {
             val crossfadeAuto by themeViewModel.crossfadeAuto.collectAsState()
             val crossfadeDurationMs by themeViewModel.crossfadeDurationMs.collectAsState()
             val normalizeVolume by themeViewModel.normalizeVolume.collectAsState()
+            val discordPresence by themeViewModel.discordPresence.collectAsState()
             val rememberVideoBrightness by themeViewModel.rememberVideoBrightness.collectAsState()
             val pipButtons by themeViewModel.pipButtons.collectAsState()
             val hapticsLevel by themeViewModel.hapticsLevel.collectAsState()
@@ -494,6 +495,8 @@ class MainActivity : ComponentActivity() {
                         onCrossfadeDurationChange = { themeViewModel.setCrossfadeDuration(it) },
                         normalizeVolume = normalizeVolume,
                         onNormalizeVolumeToggle = { themeViewModel.setNormalizeVolume(it) },
+                        discordPresence = discordPresence,
+                        onDiscordPresenceToggle = { themeViewModel.setDiscordPresence(it) },
                         rememberVideoBrightness = rememberVideoBrightness,
                         onRememberVideoBrightnessToggle =
                             { themeViewModel.setRememberVideoBrightness(it) },
@@ -842,6 +845,8 @@ fun MusicApp(
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
     onNormalizeVolumeToggle: (Boolean) -> Unit,
+    discordPresence: Boolean,
+    onDiscordPresenceToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
     pipButtons: String,
@@ -1495,6 +1500,8 @@ fun MusicApp(
                     onCrossfadeDurationChange = onCrossfadeDurationChange,
                     normalizeVolume = normalizeVolume,
                     onNormalizeVolumeToggle = onNormalizeVolumeToggle,
+                    discordPresence = discordPresence,
+                    onDiscordPresenceToggle = onDiscordPresenceToggle,
                     rememberVideoBrightness = rememberVideoBrightness,
                     onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
                     pipButtons = pipButtons,

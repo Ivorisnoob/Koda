@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -100,6 +101,13 @@ fun MiniPlayerContent(
     durationMs: Long = 0L,
 ) {
     val playerHaptics = rememberPlayerHaptics()
+    // Which progress readouts to draw. A setting, read through the pill's own
+    // preferences: the flow follows the stored value, so the Settings row
+    // changes the pill behind it at once.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val progressStyle by remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }.miniPlayerProgress.collectAsState()
     // The sampled position, extrapolated every frame at the playing speed
     // (see rememberSmoothProgress). Read only through this lambda, inside
     // draw blocks, so sixty updates a second redraw the pill's fill and the
@@ -135,7 +143,9 @@ fun MiniPlayerContent(
     ) {
         // Behind everything, clipped by the pill: a Surface stacks its
         // children, so this simply sits under the row.
-        MiniProgressFill(progress = progressNow, isPlaying = isPlaying, detailAlpha = detailAlpha)
+        if (progressStyle.showsFill) {
+            MiniProgressFill(progress = progressNow, isPlaying = isPlaying, detailAlpha = detailAlpha)
+        }
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -196,6 +206,15 @@ fun MiniPlayerContent(
                             song = currentSong,
                             isPlaying = isPlaying,
                             progress = progressNow,
+                            // With the fill alone chosen, the outline still
+                            // comes in as the pill closes into its bubble:
+                            // the fill has faded by then, and the bubble
+                            // would otherwise show no progress at all.
+                            outlineAlpha = if (progressStyle.showsOutline) {
+                                { 1f }
+                            } else {
+                                { 1f - detailAlpha() }
+                            },
                             coverModifier = Modifier.scale(artworkScale)
                         )
                     }
@@ -454,6 +473,8 @@ private fun MiniPlayingArtwork(
     song: Song,
     isPlaying: Boolean,
     progress: () -> Float,
+    /** Opacity of the outline, track and played part alike. Read in the draw phase. */
+    outlineAlpha: () -> Float = { 1f },
     coverModifier: Modifier = Modifier
 ) {
     // Each shape and the move to the one after it, the last back to the first.
@@ -502,6 +523,8 @@ private fun MiniPlayingArtwork(
         modifier = Modifier
             .size(MINI_ARTWORK_SLOT)
             .drawBehind {
+                val lineAlpha = outlineAlpha().coerceIn(0f, 1f)
+                if (lineAlpha <= 0f) return@drawBehind
                 val strokeWidth = MINI_OUTLINE_WIDTH.toPx()
                 // The unit-square shape, fitted inside the slot by half a
                 // stroke so the line is not cut by the slot's edge.
@@ -513,11 +536,11 @@ private fun MiniPlayingArtwork(
                 val stroke = Stroke(width = strokeWidth, join = StrokeJoin.Round)
                 val turn = angle.floatValue
 
-                rotate(turn) { drawPath(path = outline, color = trackColor, style = stroke) }
+                rotate(turn) { drawPath(path = outline, color = trackColor, alpha = lineAlpha, style = stroke) }
 
                 val fraction = progress().coerceIn(0f, 1f)
                 if (fraction >= 0.999f) {
-                    rotate(turn) { drawPath(path = outline, color = progressColor, style = stroke) }
+                    rotate(turn) { drawPath(path = outline, color = progressColor, alpha = lineAlpha, style = stroke) }
                 } else if (fraction > 0f) {
                     // A wedge from the centre, well past the slot's corners,
                     // opening clockwise from the top. It does not turn.
@@ -532,7 +555,7 @@ private fun MiniPlayingArtwork(
                     )
                     wedge.close()
                     clipPath(wedge) {
-                        rotate(turn) { drawPath(path = outline, color = progressColor, style = stroke) }
+                        rotate(turn) { drawPath(path = outline, color = progressColor, alpha = lineAlpha, style = stroke) }
                     }
                 }
             },
@@ -563,7 +586,7 @@ private fun MiniPlayingArtwork(
  * the cover turns through can leave the slot; the small margin covers the
  * shapes a morph passes through on the way.
  */
-internal fun fittedToCircle(polygon: androidx.graphics.shapes.RoundedPolygon): androidx.graphics.shapes.RoundedPolygon {
+private fun fittedToCircle(polygon: androidx.graphics.shapes.RoundedPolygon): androidx.graphics.shapes.RoundedPolygon {
     // The square that contains the shape at any rotation.
     val bounds = polygon.calculateMaxBounds()
     val radius = (bounds[2] - bounds[0]) / 2f
@@ -586,7 +609,7 @@ private const val MINI_SHAPE_FIT = 0.48f
  * A [Morph] between two unit-square shapes, stretched to the composable's
  * size. No bounds are measured: see the fixed-geometry note above.
  */
-internal class UnitMorphShape(private val morph: Morph, private val progress: Float) : Shape {
+private class UnitMorphShape(private val morph: Morph, private val progress: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val path = morph.toPath(progress).asComposePath()
         val matrix = Matrix()

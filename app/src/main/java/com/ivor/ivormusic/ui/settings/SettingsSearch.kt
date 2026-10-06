@@ -315,6 +315,10 @@ internal fun buildSettingsSearchIndex(
         "artwork_colors", stringResource(R.string.sp_album_art_colors), stringResource(R.string.settings_player), Icons.Rounded.Palette,
         listOf("artwork", "colour", "buttons", "tint", "cover")
     ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "mini_player_progress", stringResource(R.string.sp_mini_player), stringResource(R.string.settings_player), Icons.Rounded.PlayCircle,
+        listOf("mini player", "progress", "bar", "fill", "ring", "outline", "cover", "pill")
+    ) { onOpenPage(SettingsPage.PLAYER) }
 
     entry(
         "motion_artwork", stringResource(R.string.sp_motion_artwork), stringResource(R.string.settings_player), Icons.Rounded.PlayCircle,
@@ -369,6 +373,14 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "history", "listening", "recently played", "played", "log", "track",
             "incognito", "private", "pause history", "clear history", "stats"
+        )
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "discord_presence", stringResource(R.string.sp_discord_presence), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.Public,
+        listOf(
+            "discord", "rich presence", "rpc", "now playing", "status",
+            "listening to", "profile", "integration"
         )
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(

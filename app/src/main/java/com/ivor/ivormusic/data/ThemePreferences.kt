@@ -103,6 +103,9 @@ class ThemePreferences(context: Context) {
 
     private val _artworkColorsWholeApp = MutableStateFlow(getArtworkColorsWholeAppPreference())
     val artworkColorsWholeApp: StateFlow<Boolean> = _artworkColorsWholeApp.asStateFlow()
+
+    private val _miniPlayerProgress = MutableStateFlow(getMiniPlayerProgressPreference())
+    val miniPlayerProgress: StateFlow<MiniPlayerProgress> = _miniPlayerProgress.asStateFlow()
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -273,6 +276,9 @@ class ThemePreferences(context: Context) {
     private val _normalizeVolume = MutableStateFlow(getNormalizeVolumePreference())
     val normalizeVolume: StateFlow<Boolean> = _normalizeVolume.asStateFlow()
 
+    private val _discordPresence = MutableStateFlow(getDiscordPresencePreference())
+    val discordPresence: StateFlow<Boolean> = _discordPresence.asStateFlow()
+
     private val _rememberVideoBrightness =
         MutableStateFlow(getRememberVideoBrightness())
     val rememberVideoBrightness: StateFlow<Boolean> = _rememberVideoBrightness.asStateFlow()
@@ -391,6 +397,7 @@ class ThemePreferences(context: Context) {
             KEY_PLAYER_ARTWORK_COLORS -> _playerArtworkColors.value = getPlayerArtworkColorsPreference()
             KEY_ARTWORK_COLORS_WHOLE_APP ->
                 _artworkColorsWholeApp.value = getArtworkColorsWholeAppPreference()
+            KEY_MINI_PLAYER_PROGRESS -> _miniPlayerProgress.value = getMiniPlayerProgressPreference()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
             KEY_VIDEO_RECOMMENDATIONS_ENABLED,
@@ -449,6 +456,7 @@ class ThemePreferences(context: Context) {
             KEY_CROSSFADE_AUTO -> _crossfadeAuto.value = getCrossfadeAutoPreference()
             KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
+            KEY_DISCORD_PRESENCE -> _discordPresence.value = getDiscordPresencePreference()
             KEY_REMEMBER_VIDEO_BRIGHTNESS ->
                 _rememberVideoBrightness.value = getRememberVideoBrightness()
             KEY_PIP_BUTTONS -> _pipButtons.value = getPipButtons()
@@ -541,6 +549,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_WAVEFORM_SEEK_BAR = "waveform_seek_bar"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
         private const val KEY_ARTWORK_COLORS_WHOLE_APP = "artwork_colors_whole_app"
+        private const val KEY_MINI_PLAYER_PROGRESS = "mini_player_progress"
         private const val KEY_VIDEO_MODE = "video_mode"
         private const val KEY_LAST_MUSIC_TAB = "last_music_tab"
         private const val KEY_LAST_VIDEO_TAB = "last_video_tab"
@@ -900,6 +909,7 @@ class ThemePreferences(context: Context) {
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
+        private const val KEY_DISCORD_PRESENCE = "discord_presence"
         private const val KEY_REMEMBER_VIDEO_BRIGHTNESS = "remember_video_brightness"
         private const val KEY_PIP_BUTTONS = "pip_buttons"
 
@@ -1232,6 +1242,19 @@ class ThemePreferences(context: Context) {
     fun setArtworkColorsWholeApp(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_ARTWORK_COLORS_WHOLE_APP, enabled).apply()
         _artworkColorsWholeApp.value = enabled
+    }
+
+    /**
+     * Which of the mini player's two progress readouts are drawn. Read by the
+     * pill and written by its Settings row through their own instances; the
+     * flow follows the stored value across them.
+     */
+    private fun getMiniPlayerProgressPreference(): MiniPlayerProgress =
+        MiniPlayerProgress.fromId(prefs.getString(KEY_MINI_PLAYER_PROGRESS, null))
+
+    fun setMiniPlayerProgress(progress: MiniPlayerProgress) {
+        prefs.edit().putString(KEY_MINI_PLAYER_PROGRESS, progress.id).apply()
+        _miniPlayerProgress.value = progress
     }
     
     /**
@@ -2242,6 +2265,23 @@ class ThemePreferences(context: Context) {
     fun setNormalizeVolume(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_NORMALIZE_VOLUME, enabled).apply()
         _normalizeVolume.value = enabled
+    }
+
+    /**
+     * Show what is playing on the user's Discord profile through the Discord
+     * app's own RPC service (see `presence/`). No account, token or extra
+     * permission is involved.
+     *
+     * Off by default: it puts what someone is listening to on a public
+     * profile, so it only ever starts because they turned it on.
+     */
+    private fun getDiscordPresencePreference(): Boolean {
+        return prefs.getBoolean(KEY_DISCORD_PRESENCE, false)
+    }
+
+    fun setDiscordPresence(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DISCORD_PRESENCE, enabled).apply()
+        _discordPresence.value = enabled
     }
 
     private fun getOemFixEnabledPreference(): Boolean {

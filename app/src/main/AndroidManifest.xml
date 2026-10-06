@@ -26,6 +26,14 @@
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Discord Rich Presence: package visibility for the Discord app's RPC service. -->
+    <queries>
+        <intent>
+            <action android:name="com.discord.socialsdk.rpc.IDiscordRpcService" />
+        </intent>
+        <package android:name="com.discord" />
+    </queries>
+
     <application
         android:name=".IvorMusicApplication"
         android:allowBackup="true"

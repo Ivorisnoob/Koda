@@ -61,6 +61,7 @@ import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.widget.PlayerWidgetStore
 import com.ivor.ivormusic.widget.PlayerWidgets
 import com.ivor.ivormusic.widget.toWidgetSnapshot
+import com.ivor.ivormusic.presence.DiscordPresenceManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -664,6 +665,7 @@ class MusicService : MediaLibraryService() {
         // nothing else would ever correct a playing flag left behind here.
         runCatching { PlayerWidgetStore.markStopped(this) }
         runCatching { PlayerWidgets.pushAll(this) }
+        runCatching { DiscordPresenceManager.onServiceStopped() }
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
         transitionJob?.cancel()
@@ -3514,8 +3516,11 @@ class MusicService : MediaLibraryService() {
      * which run there.
      */
     private fun publishWidgetState() {
-        runCatching { PlayerWidgets.publish(this, player.toWidgetSnapshot()) }
+        val snapshot = player.toWidgetSnapshot()
+        runCatching { PlayerWidgets.publish(this, snapshot) }
             .onFailure { KLog.w(TAG, "Widget publish failed: ${it.message}") }
+        // Discord Rich Presence reads the same snapshot; it never touches playback.
+        runCatching { DiscordPresenceManager.onSnapshot(snapshot) }
     }
 
     private fun monitorProgress() {

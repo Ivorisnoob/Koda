@@ -98,7 +98,6 @@ Decided against in September 2026; each issue's closing comment has the full rea
 - **Android TV** ([#131](https://github.com/Ivorisnoob/Koda/issues/131)): a second app that shares only the backend (D-pad focus, distance type scale, lean-back home).
 - **Standalone Wear playback** ([#171](https://github.com/Ivorisnoob/Koda/issues/171)) and **the `:core` module split** ([#133](https://github.com/Ivorisnoob/Koda/issues/133)) it would need: the phone's login cannot leave the device, and a watch battery cannot carry the extra YouTube requests.
 - **Cast** ([#132](https://github.com/Ivorisnoob/Koda/issues/132)): the first version was removed for not working; the receiver hits YouTube's client restrictions and cannot merge split streams. A rebuild would start from nothing.
-- **Discord Rich Presence** ([#243](https://github.com/Ivorisnoob/Koda/issues/243)): on Android it needs the user's Discord account token (against Discord's terms) or a registered Discord app (against the no-API-keys rule).
 - **Music-video loops behind Canvas** ([#246](https://github.com/Ivorisnoob/Koda/issues/246)): a second stream per song in data, battery and YouTube requests; motion artwork covers it.
 - **Spotify/CSV playlist import** ([#188](https://github.com/Ivorisnoob/Koda/issues/188)): text-only exports mean one search per track and confident wrong matches.
 - **ID3 tag editor** ([#238](https://github.com/Ivorisnoob/Koda/issues/238)): a system write prompt per file for a niche of a streaming app.
@@ -113,6 +112,7 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 
 ### October 2026
 
+- Discord Rich Presence ([#243](https://github.com/Ivorisnoob/Koda/issues/243)), reversed from Not planned: since August 2026 the Discord app hosts an RPC service that takes a presence with no account token (`presence/`, binder stubs checked against Social SDK 1.10.19337). Off by default, music only, hidden in Incognito, a paused card comes down after a minute. Web image URLs only: asset keys uploaded in the Discord portal do not resolve over the Android route.
 - Tester feedback round: video history shows channel names again (FEhistory's one-row byline); the mini bars no longer show the song after the new one when a swipe settles; dismissing the mini player cancels radio and auto-queue fetches still in flight; radio and auto-queue respect "Don't recommend"; video Search no longer spins on an empty trending feed; a Short still loading when the phone locks waits for the app to be visible; the now-playing options sheet wears the player's colours.
 - Video downloads keep their captions: the download sheet lists the video's caption tracks as pills (the saved captions language, the phone's languages and English start ticked), the chosen ones are saved as WebVTT in app storage, and a download played from disk reads them (`DownloadedCaptionStore`).
 - Backup and restore is a Settings page, so it opens in the detail pane on wide windows.
