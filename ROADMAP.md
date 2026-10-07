@@ -47,6 +47,8 @@ Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor a
 
 ### Interface
 
+**Customization, the rest** ([#317](https://github.com/Ivorisnoob/Koda/issues/317)). The issue holds the list by surface. Next in line: double-tap seek length in the video player, song list tap and swipe actions, Library layout, and the full player's action row (which touches all nine styles). Music tab reordering waits on the Library hand-offs no longer assuming a fixed tab number.
+
 **Comment interaction notifications.** Replies, likes and hearts on the user's comments, in the in-app sheet and as phone notifications. They arrive through the same `get_notification_menu` inbox as uploads (there is no mentions request type on WEB), and `get_unseen_count` is a cheap poll with a 30-minute suggested interval. Blocked on a probe: the probe account's whole inbox (62 items, September 2026) holds no comment interaction, so the item shape is unseen. Needs an account with replies or likes on its comments.
 
 **Community post links.** `youtube.com/post/<id>` still leaves the app: opening a post needs its `FEpost_detail` params, which come from the channel's Posts tab, so a post screen that resolves from the id alone comes first. Post comments themselves ship.
@@ -112,6 +114,8 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 
 ### October 2026
 
+- Customization ([#317](https://github.com/Ivorisnoob/Koda/issues/317), first round): one Customization row on the Settings hub opens a page sorted by surface (theme and colors, app icon, display size, player, mini player, video player, Home and navigation, gestures and feedback). New options: the mini player's buttons and their order, cover tap and movement, line under the title, touch and hold, swipes, color and bubble behaviour; start screen and start mode; tab names; a floating bar that stays put; switches for the video player's hold-to-speed-up and brightness and volume swipes.
+- Home top bar: the two-part mode switch is one button that morphs with the mode (`ModeMorphButton`), a greeting sits beside the profile picture, the buttons wear the secondary container, and the downloads button shows only while something is downloading.
 - Discord Rich Presence ([#243](https://github.com/Ivorisnoob/Koda/issues/243)), reversed from Not planned: since August 2026 the Discord app hosts an RPC service that takes a presence with no account token (`presence/`, binder stubs checked against Social SDK 1.10.19337). Off by default, music only, hidden in Incognito, a paused card comes down after a minute. Web image URLs only: asset keys uploaded in the Discord portal do not resolve over the Android route.
 - Tester feedback round: video history shows channel names again (FEhistory's one-row byline); the mini bars no longer show the song after the new one when a swipe settles; dismissing the mini player cancels radio and auto-queue fetches still in flight; radio and auto-queue respect "Don't recommend"; video Search no longer spins on an empty trending feed; a Short still loading when the phone locks waits for the app to be visible; the now-playing options sheet wears the player's colours.
 - Video downloads keep their captions: the download sheet lists the video's caption tracks as pills (the saved captions language, the phone's languages and English start ticked), the chosen ones are saved as WebVTT in app storage, and a download played from disk reads them (`DownloadedCaptionStore`).

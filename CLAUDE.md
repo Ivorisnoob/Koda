@@ -245,6 +245,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### Navigation and screens -> `docs/screens.md`
 - `NavHost` in `MainActivity`; the `home` route has its own tab system (`AnimatedContent` keyed on `HomeTabKey(tab, videoMode)`) and a floating toolbar using M3's scroll behaviour. Read `hiddenFraction()` only in deferred lambdas.
 - Both players are **overlays above the NavHost**. Something that owns the whole window must hide the other layer's mini bar (`miniBarHidden` via `isPlayerExpanded`). A mode switch pauses the other player, it does not dismantle it.
+- The Home top bars are a `Box`: profile picture, `HomeGreeting`, then `ModeMorphButton` and the buttons, with downloads shown only while downloading. The start screen (`getStartHomeTab`) and start mode (`applyStartMode`, fresh launcher launch only) are settings.
 - Library sub-screens are opened by hand-off (`initialArtist`/`initialPlaylist` + consumed callbacks).
 - Device videos use `device:` ids through the local-playback path; `singleTask` exists because of PiP; quality/HDR come from the decoder.
 - **Three playlist kinds**: local, the account's own, saved (references). A `PL` prefix does not mean yours - use `savedPlaylistIds`. Local video playlists use the `localvp_` prefix; routing lives in `addVideoToPlaylist`. Hidden playlists are a filter over the merged list.
@@ -267,6 +268,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### Settings -> `docs/settings.md`
 - A new setting threads through five files (`ThemePreferences`, `ThemeViewModel`, `MainActivity`, `SettingsScreen`, `SettingsPages`) **plus `buildSettingsSearchIndex`**. Backups need nothing.
 - New strings go only in `values/strings.xml` (locales are partial by design).
+- Look and behaviour sit behind one hub row, **Customization**, sorted by surface; a new surface gets a row there, not on the hub. Its newer pages (mini player, video player, Home opening and bar) read and write their own `ThemePreferences` snapshot (`MiniPlayerCustomization`, `HomeNavigationCustomization`, `VideoGestureCustomization`) instead of threading through `SettingsScreen`. `SettingsPage.parent` is where back goes.
 - Settings is a hub plus `SettingsPage` enum pages, not routes (Backup included; it locks the hub while it works). Hub rows show the live value; dialogs live in `SettingsScreen`.
 - The updater hands off to the browser and never installs. Defaults: player style `EDITORIAL`, device library off.
 - Release highlights have one source per release, `assets/release-notes/<versionName>.md`, mirrored under `## Highlights` in the GitHub release (`ReleaseHighlights`, procedure in section 6). The update dialog opens once per release and again two days after Later (`UpdatePromptStore`, deliberately not in the backup).
@@ -290,6 +292,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Motion artwork is an opt-in hero layer with frozen quality tiers and a fallback chain.
 - Album colours are Off / Player / Whole app (default). Whole app builds the root scheme from the playing cover in music mode (`IvorMusicTheme(artworkSeed)`), fading on song change only; a page or the player builds its own complete scheme from its own cover (`LocalAlbumTheming`).
 - The music pill is `primaryContainer`, 68dp (the bubble's size), and its played part is a wave-edged fill carried between samples by `rememberSmoothProgress`; it latches into a bubble after 56dp down and reopens after 200dp up or on returning to where the scroll began.
+- The mini player draws from `MiniPlayerCustomization` (buttons, cover tap and motion, second line, touch and hold, swipes, colour, bubble); its content colour follows its container, and Home reads only `shrink`.
 - The mini player's cover spins and morphs in the draw phase, fitted to a circle so no shape leaves its slot; progress is the shape's outline revealed by a fixed wedge from the top, never a trimmed path.
 
 ### Widgets -> `docs/widgets.md`
