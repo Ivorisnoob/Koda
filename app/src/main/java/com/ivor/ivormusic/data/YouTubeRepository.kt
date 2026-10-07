@@ -1158,17 +1158,21 @@ class YouTubeRepository(private val context: Context) {
      * tagged, so accepting either fallback would put bytes from the wrong
      * container behind an M4A filename and make metadata writing unreliable.
      */
-    suspend fun getDownloadAudioStreamUrl(videoId: String): Result<String> =
+    suspend fun getDownloadAudioStreamUrl(
+        videoId: String,
+        quality: String? = null,
+    ): Result<String> =
         withContext(Dispatchers.IO) {
+            val wanted = quality ?: ThemePreferences.currentDownloadMusicQuality(context)
             // Same order as getStreamUrl: visionOS under Koda's own identity,
             // then NewPipe, then the direct chain.
             val direct = resolveVisionOsPlayer(videoId)
-            direct.response?.streamingData?.let(::pickM4aAudioStreamUrl)?.let { url ->
+            direct.response?.streamingData?.let { pickM4aAudioStreamUrl(it, wanted) }?.let { url ->
                 clearBotCheckVerdict()
                 return@withContext Result.success(url)
             }
 
-            val newPipe = resolveM4aAudioUrlViaNewPipe(videoId)
+            val newPipe = resolveM4aAudioUrlViaNewPipe(videoId, wanted)
             val newPipeUrl = newPipe.url
             if (!newPipeUrl.isNullOrBlank()) {
                 clearBotCheckVerdict()
@@ -1176,10 +1180,47 @@ class YouTubeRepository(private val context: Context) {
             }
 
             val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked || direct.botChecked)
-                ?.let(::pickM4aAudioStreamUrl)
+                ?.let { pickM4aAudioStreamUrl(it, wanted) }
             if (!innerTubeUrl.isNullOrBlank()) return@withContext Result.success(innerTubeUrl)
 
             Result.failure(Exception("No AAC/M4A audio stream found for $videoId"))
+        }
+
+    /**
+     * The qualities a song can be downloaded at, best first, each with the
+     * size YouTube states for it.
+     *
+     * [verified October 2026, visionOS `/player`, signed out] A music id
+     * answers with two AAC/M4A audio streams: itag 140 (AAC-LC, about 128
+     * kbps, 44.1 kHz) and itag 139 (HE-AAC, about 48 kbps), both with a
+     * plain `url` and a `contentLength`. The Opus streams beside them
+     * (249/250/251) are WebM and are left out for the reason
+     * [getDownloadAudioStreamUrl] gives.
+     *
+     * One request and no size probe: the download sheet used to resolve a
+     * stream and then ask googlevideo how long it was. Only the visionOS
+     * answer is read, so an empty list means "unknown", not "unavailable" -
+     * the download itself still has the fallback chain behind it.
+     */
+    suspend fun getDownloadAudioFormats(videoId: String): List<DownloadAudioFormat> =
+        withContext(Dispatchers.IO) {
+            val streamingData = resolveVisionOsPlayer(videoId).response?.streamingData
+                ?: return@withContext emptyList()
+            val originals = m4aAudioFormats(streamingData)
+            val best = originals.maxByOrNull { it.optInt("bitrate") }
+                ?: return@withContext emptyList()
+            val smallest = originals.minByOrNull { it.optInt("bitrate") }
+            fun org.json.JSONObject.toOption(quality: String) = DownloadAudioFormat(
+                quality = quality,
+                bitrate = optInt("averageBitrate").takeIf { it > 0 } ?: optInt("bitrate"),
+                contentLength = optString("contentLength").toLongOrNull()?.takeIf { it > 0L },
+            )
+            buildList {
+                add(best.toOption(ThemePreferences.DOWNLOAD_MUSIC_QUALITY_HIGH))
+                if (smallest != null && smallest.optInt("itag") != best.optInt("itag")) {
+                    add(smallest.toOption(ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER))
+                }
+            }
         }
 
     /**
@@ -1285,7 +1326,10 @@ class YouTubeRepository(private val context: Context) {
             .take(8)
             .any { it is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException }
 
-    private suspend fun resolveM4aAudioUrlViaNewPipe(videoId: String): NewPipeAudioResult =
+    private suspend fun resolveM4aAudioUrlViaNewPipe(
+        videoId: String,
+        quality: String,
+    ): NewPipeAudioResult =
         withContext(Dispatchers.IO) {
             try {
                 val extractor = youtubeService.getStreamExtractor(
@@ -1299,11 +1343,12 @@ class YouTubeRepository(private val context: Context) {
                     stream.format?.suffix.equals("m4a", ignoreCase = true) ||
                         stream.codec?.contains("mp4a", ignoreCase = true) == true
                 }
-                NewPipeAudioResult(
-                    pickAudioStreamForCurrentQuality(m4aStreams)
-                        ?.content
-                        ?.takeIf(String::isNotBlank)
-                )
+                val picked = if (quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER) {
+                    m4aStreams.minByOrNull { it.averageBitrate }
+                } else {
+                    m4aStreams.maxByOrNull { it.averageBitrate }
+                }
+                NewPipeAudioResult(picked?.content?.takeIf(String::isNotBlank))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1324,8 +1369,19 @@ class YouTubeRepository(private val context: Context) {
             else -> streams.maxByOrNull { it.averageBitrate }
         }
 
-    private fun pickM4aAudioStreamUrl(streamingData: org.json.JSONObject): String? {
-        val formats = streamingData.optJSONArray("adaptiveFormats") ?: return null
+    private fun pickM4aAudioStreamUrl(streamingData: org.json.JSONObject, quality: String): String? {
+        val originals = m4aAudioFormats(streamingData)
+        val selected = if (quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER) {
+            originals.minByOrNull { it.optInt("bitrate") }
+        } else {
+            originals.maxByOrNull { it.optInt("bitrate") }
+        }
+        return selected?.optString("url")?.takeIf(String::isNotBlank)
+    }
+
+    /** The original soundtrack's AAC/M4A audio-only formats that carry a plain URL. */
+    private fun m4aAudioFormats(streamingData: org.json.JSONObject): List<org.json.JSONObject> {
+        val formats = streamingData.optJSONArray("adaptiveFormats") ?: return emptyList()
         val candidates = (0 until formats.length())
             .mapNotNull(formats::optJSONObject)
             .filter { format ->
@@ -1334,14 +1390,7 @@ class YouTubeRepository(private val context: Context) {
                     (mime.contains("mp4a", ignoreCase = true) || mime.contains("aac", ignoreCase = true)) &&
                     format.optString("url").isNotBlank()
             }
-        val originals = originalTrackAudioFormats(candidates)
-        val selected = when (ThemePreferences.currentMusicQuality(context)) {
-            ThemePreferences.MUSIC_QUALITY_LOW -> originals.minByOrNull { it.optInt("bitrate") }
-            ThemePreferences.MUSIC_QUALITY_NORMAL ->
-                originals.minByOrNull { kotlin.math.abs(it.optInt("bitrate") - 128_000) }
-            else -> originals.maxByOrNull { it.optInt("bitrate") }
-        }
-        return selected?.optString("url")?.takeIf(String::isNotBlank)
+        return originalTrackAudioFormats(candidates)
     }
 
     /**

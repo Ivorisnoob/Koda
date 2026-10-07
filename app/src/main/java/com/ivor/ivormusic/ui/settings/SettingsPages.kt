@@ -62,7 +62,10 @@ import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.FormatSize
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.WavingHand
+import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
@@ -147,101 +150,7 @@ import com.ivor.ivormusic.ui.theme.ThemeMode
 /* Account                                                             */
 /* ------------------------------------------------------------------ */
 
-@Composable
-internal fun AccountSettingsPage(
-    isLoggedIn: Boolean,
-    accountRefreshKey: Int,
-    sessionManager: SessionManager,
-    saveVideoHistory: Boolean,
-    onSaveVideoHistoryToggle: (Boolean) -> Unit,
-    onShowAuthDialog: () -> Unit,
-    onShowCookieSheet: () -> Unit,
-    onSignOut: () -> Unit,
-    onBack: () -> Unit
-) {
-    SettingsDetailScaffold(title = stringResource(R.string.settings_account), onBack = onBack) {
-        if (isLoggedIn) {
-            item {
-                SettingsSection(title = stringResource(R.string.settings_section_youtube_music)) {
-                    SettingsCard {
-                        key(accountRefreshKey) {
-                            ExpressiveAccountItem(
-                                sessionManager = sessionManager,
-                                textColor = MaterialTheme.colorScheme.onBackground,
-                                secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        SettingsDivider()
-                        SettingsToggleRow(
-                            icon = Icons.Rounded.CheckCircle,
-                            title = stringResource(R.string.sp_save_watch_history),
-                            subtitle = if (saveVideoHistory) {
-                                "Videos you watch are added to your YouTube history"
-                            } else {
-                                "Watching does not touch your YouTube history"
-                            },
-                            enabled = saveVideoHistory,
-                            onToggle = onSaveVideoHistoryToggle,
-                            explanation = stringResource(R.string.si_watch_history_account)
-                        )
-                        SettingsDivider()
-                        SettingsRow(
-                            icon = Icons.Rounded.Cookie,
-                            title = stringResource(R.string.sp_replace_session_cookies),
-                            subtitle = stringResource(R.string.sp_replace_session_cookies_sub),
-                            onClick = onShowCookieSheet,
-                            showChevron = true
-                        )
-                    }
-                }
-            }
-
-            item {
-                SettingsCard {
-                    SettingsRow(
-                        icon = Icons.AutoMirrored.Rounded.Logout,
-                        title = stringResource(R.string.sign_out),
-                        subtitle = stringResource(R.string.sp_sign_out_sub),
-                        onClick = onSignOut,
-                        tint = SettingsRowDefaults.destructiveTint,
-                        titleColor = SettingsRowDefaults.destructiveTint
-                    )
-                }
-            }
-        } else {
-            // Signed out is a supported state, not an error - say what signing
-            // in buys rather than nagging.
-            item {
-                SettingsNotice(
-                    icon = Icons.Rounded.Info,
-                    text = stringResource(R.string.sp_signed_out_info),
-                )
-            }
-
-            item {
-                SettingsSection(title = stringResource(R.string.settings_section_youtube_music)) {
-                    SettingsCard {
-                        SettingsRow(
-                            icon = Icons.Rounded.MusicNote,
-                            title = stringResource(R.string.sp_connect_youtube_music),
-                            subtitle = stringResource(R.string.sp_connect_youtube_music_sub),
-                            onClick = onShowAuthDialog,
-                            showChevron = true
-                        )
-                        SettingsDivider()
-                        SettingsRow(
-                            icon = Icons.Rounded.Cookie,
-                            title = stringResource(R.string.sp_sign_in_cookies),
-                            subtitle = stringResource(R.string.sp_sign_in_cookies_sub),
-                            onClick = onShowCookieSheet,
-                            showChevron = true
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
+// The Account page lives in AccountSettings.kt.
 
 /* ------------------------------------------------------------------ */
 /* Appearance                                                          */
@@ -356,6 +265,29 @@ internal fun HomeNavigationSettingsPage(
                         ),
                         selectedIndex = modes.indexOf(navigation.startMode),
                         onSelect = { navPrefs.setHomeNavigation(navigation.copy(startMode = modes[it])) }
+                    )
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.cz_section_top_bar)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.WavingHand,
+                        title = stringResource(R.string.cz_top_bar_greeting),
+                        subtitle = stringResource(R.string.cz_top_bar_greeting_sub),
+                        enabled = navigation.showGreeting,
+                        onToggle = { navPrefs.setHomeNavigation(navigation.copy(showGreeting = it)) }
+                    )
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Download,
+                        title = stringResource(R.string.cz_top_bar_downloads),
+                        subtitle = stringResource(R.string.cz_top_bar_downloads_sub),
+                        enabled = navigation.alwaysShowDownloads,
+                        onToggle = {
+                            navPrefs.setHomeNavigation(navigation.copy(alwaysShowDownloads = it))
+                        }
                     )
                 }
             }
@@ -2276,6 +2208,45 @@ internal fun StorageSettingsPage(
                         onToggle = onPrivateDownloadsEnabledToggle,
                         explanation = stringResource(R.string.si_private_downloads)
                     )
+                    // The defaults the music download sheet opens on, and what
+                    // a download started without it uses. Read and written
+                    // here directly, like the newer Customization pages,
+                    // rather than threaded through SettingsScreen.
+                    val downloadContext = androidx.compose.ui.platform.LocalContext.current
+                    var downloadQuality by remember {
+                        mutableStateOf(ThemePreferences.currentDownloadMusicQuality(downloadContext))
+                    }
+                    var downloadLyrics by remember {
+                        mutableStateOf(ThemePreferences.saveLyricsWithDownloads(downloadContext))
+                    }
+                    val downloadQualities = listOf(
+                        ThemePreferences.DOWNLOAD_MUSIC_QUALITY_HIGH,
+                        ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER
+                    )
+                    SettingsChoiceRow(
+                        icon = Icons.Rounded.GraphicEq,
+                        title = stringResource(R.string.sp_download_music_quality),
+                        subtitle = stringResource(R.string.sp_download_music_quality_sub),
+                        labels = listOf(
+                            stringResource(R.string.sd_quality_high),
+                            stringResource(R.string.sd_quality_saver)
+                        ),
+                        selectedIndex = downloadQualities.indexOf(downloadQuality),
+                        onSelect = {
+                            downloadQuality = downloadQualities[it]
+                            ThemePreferences.setDownloadMusicQuality(downloadContext, downloadQuality)
+                        }
+                    )
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Lyrics,
+                        title = stringResource(R.string.sp_download_lyrics),
+                        subtitle = stringResource(R.string.sp_download_lyrics_sub),
+                        enabled = downloadLyrics,
+                        onToggle = {
+                            downloadLyrics = it
+                            ThemePreferences.setSaveLyricsWithDownloads(downloadContext, it)
+                        }
+                    )
                 }
                 SettingsFootnote(
                     icon = Icons.Rounded.Visibility,
@@ -2993,7 +2964,7 @@ internal fun SettingsNotice(
 
 /** Quiet supporting copy that belongs to the setting above it, not a separate alert. */
 @Composable
-private fun SettingsFootnote(
+internal fun SettingsFootnote(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     text: String
 ) {

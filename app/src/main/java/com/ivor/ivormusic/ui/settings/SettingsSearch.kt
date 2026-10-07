@@ -233,6 +233,22 @@ internal fun buildSettingsSearchIndex(
         )
     ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
     entry(
+        "video_hold_rate", stringResource(R.string.cz_video_hold_rate), stringResource(R.string.cz_video_player), Icons.Rounded.PlayCircle,
+        listOf("hold speed", "long press speed", "2x", "3x", "4x", "boost", "speed up")
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_controls_hide", stringResource(R.string.cz_video_controls_hide), stringResource(R.string.cz_video_player), Icons.Rounded.PlayCircle,
+        listOf("controls", "auto hide", "hide delay", "timeout", "buttons disappear", "overlay")
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "top_bar_greeting", stringResource(R.string.cz_top_bar_greeting), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("greeting", "good morning", "hello", "top bar", "header", "home bar")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "top_bar_downloads", stringResource(R.string.cz_top_bar_downloads), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("downloads button", "top bar", "download icon", "home bar", "always show")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
         "start_screen", stringResource(R.string.cz_start_screen), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
         listOf("start", "startup", "launch", "open on", "default tab", "first screen", "start page", "start mode", "music mode", "video mode")
     ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
@@ -611,6 +627,17 @@ internal fun buildSettingsSearchIndex(
             "hidden", "hide files", "file manager", "downloads folder", "app only",
             "private storage", "gallery", "album art", "thumbnail"
         )
+    ) { onOpenPage(SettingsPage.STORAGE) }
+    entry(
+        "download_music_quality", stringResource(R.string.sp_download_music_quality), "Storage and cache", Icons.Rounded.GraphicEq,
+        listOf(
+            "download quality", "bitrate", "kbps", "aac", "data saver", "file size",
+            "offline quality", "song download"
+        )
+    ) { onOpenPage(SettingsPage.STORAGE) }
+    entry(
+        "download_lyrics", stringResource(R.string.sp_download_lyrics), "Storage and cache", Icons.Rounded.GraphicEq,
+        listOf("lyrics", "lrc", "offline lyrics", "download lyrics", "synced lyrics")
     ) { onOpenPage(SettingsPage.STORAGE) }
     entry(
         "cache_music", stringResource(R.string.sp_cache_music), "Storage and cache", Icons.Rounded.Save,

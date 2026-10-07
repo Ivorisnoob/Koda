@@ -412,9 +412,11 @@ class ThemePreferences(context: Context) {
             KEY_MINI_PLAYER_SWIPE_SKIP, KEY_MINI_PLAYER_SWIPE_DISMISS, KEY_MINI_PLAYER_SHRINK,
             KEY_MINI_PLAYER_COLOR, KEY_MINI_PLAYER_SECOND_LINE, KEY_MINI_PLAYER_LONG_PRESS ->
                 _miniPlayerCustomization.value = readMiniPlayerCustomization()
-            KEY_VIDEO_HOLD_SPEED, KEY_VIDEO_BRIGHTNESS_SWIPE, KEY_VIDEO_VOLUME_SWIPE ->
+            KEY_VIDEO_HOLD_SPEED, KEY_VIDEO_BRIGHTNESS_SWIPE, KEY_VIDEO_VOLUME_SWIPE,
+            KEY_VIDEO_HOLD_SPEED_RATE, KEY_VIDEO_CONTROLS_HIDE_SECONDS ->
                 _videoGestures.value = readVideoGestures()
-            KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL ->
+            KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL,
+            KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS ->
                 _homeNavigation.value = readHomeNavigation()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
@@ -575,6 +577,22 @@ class ThemePreferences(context: Context) {
         private const val KEY_START_MODE = "start_mode"
         private const val KEY_NAV_TAB_LABELS = "nav_tab_labels"
         private const val KEY_NAV_BAR_HIDES_ON_SCROLL = "nav_bar_hides_on_scroll"
+        private const val KEY_VIDEO_HOLD_SPEED_RATE = "video_gesture_hold_speed_rate"
+        private const val KEY_VIDEO_CONTROLS_HIDE_SECONDS = "video_controls_hide_seconds"
+        private const val KEY_HOME_GREETING = "home_top_bar_greeting"
+        private const val KEY_HOME_ALWAYS_DOWNLOADS = "home_top_bar_always_downloads"
+
+        /**
+         * How long the video controls stay up, as a fresh read: the player
+         * asks at the moment it starts the timer, through no instance of its own.
+         */
+        fun videoControlsHideMs(context: Context): Long {
+            val seconds = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, 4)
+            return seconds.takeIf { it in VideoGestureCustomization.CONTROLS_HIDE_SECONDS }
+                ?.times(1000L) ?: 4000L
+        }
+
         private const val KEY_MINI_PLAYER_BUTTONS = "mini_player_buttons"
         private const val KEY_MINI_PLAYER_COVER_TAP = "mini_player_cover_tap"
         private const val KEY_MINI_PLAYER_COVER_MOTION = "mini_player_cover_motion"
@@ -808,6 +826,53 @@ class ThemePreferences(context: Context) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val key = if (isNetworkMetered(context)) KEY_MUSIC_QUALITY_MOBILE else KEY_MUSIC_QUALITY_WIFI
             return prefs.getString(key, DEFAULT_MUSIC_QUALITY) ?: DEFAULT_MUSIC_QUALITY
+        }
+
+        private const val KEY_DOWNLOAD_MUSIC_QUALITY = "download_music_quality"
+        private const val KEY_DOWNLOAD_MUSIC_LYRICS = "download_music_lyrics"
+
+        /** Music download quality: the best AAC stream, about 128 kbps. Stored, so frozen. */
+        const val DOWNLOAD_MUSIC_QUALITY_HIGH = "high"
+
+        /** Music download quality: the smallest AAC stream, about 48 kbps. Stored, so frozen. */
+        const val DOWNLOAD_MUSIC_QUALITY_SAVER = "saver"
+
+        /**
+         * The quality a music download uses when nobody picked one for it: a
+         * playlist row, a retry, a download started without the sheet.
+         *
+         * Downloads used to follow the *streaming* quality of whichever
+         * network happened to be active, so a song saved on mobile data with
+         * streaming set to Low was kept at 48 kbps for good with nothing
+         * saying so. Until a choice is stored this still answers the way that
+         * rule did, so an existing installation keeps its behaviour.
+         */
+        fun currentDownloadMusicQuality(context: Context): String {
+            val stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_DOWNLOAD_MUSIC_QUALITY, null)
+            if (stored == DOWNLOAD_MUSIC_QUALITY_HIGH || stored == DOWNLOAD_MUSIC_QUALITY_SAVER) {
+                return stored
+            }
+            return if (currentMusicQuality(context) == MUSIC_QUALITY_LOW) {
+                DOWNLOAD_MUSIC_QUALITY_SAVER
+            } else {
+                DOWNLOAD_MUSIC_QUALITY_HIGH
+            }
+        }
+
+        fun setDownloadMusicQuality(context: Context, quality: String) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_DOWNLOAD_MUSIC_QUALITY, quality).apply()
+        }
+
+        /** Whether a music download fetches and keeps the song's lyrics. On by default. */
+        fun saveLyricsWithDownloads(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_DOWNLOAD_MUSIC_LYRICS, true)
+
+        fun setSaveLyricsWithDownloads(context: Context, enabled: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_DOWNLOAD_MUSIC_LYRICS, enabled).apply()
         }
 
         /**
@@ -1367,6 +1432,10 @@ class ThemePreferences(context: Context) {
         holdToSpeedUp = prefs.getBoolean(KEY_VIDEO_HOLD_SPEED, true),
         brightnessSwipe = prefs.getBoolean(KEY_VIDEO_BRIGHTNESS_SWIPE, true),
         volumeSwipe = prefs.getBoolean(KEY_VIDEO_VOLUME_SWIPE, true),
+        holdSpeed = prefs.getFloat(KEY_VIDEO_HOLD_SPEED_RATE, 2f)
+            .takeIf { it in VideoGestureCustomization.HOLD_SPEEDS } ?: 2f,
+        controlsHideSeconds = prefs.getInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, 4)
+            .takeIf { it in VideoGestureCustomization.CONTROLS_HIDE_SECONDS } ?: 4,
     )
 
     fun setVideoGestures(customization: VideoGestureCustomization) {
@@ -1374,6 +1443,8 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_VIDEO_HOLD_SPEED, customization.holdToSpeedUp)
             .putBoolean(KEY_VIDEO_BRIGHTNESS_SWIPE, customization.brightnessSwipe)
             .putBoolean(KEY_VIDEO_VOLUME_SWIPE, customization.volumeSwipe)
+            .putFloat(KEY_VIDEO_HOLD_SPEED_RATE, customization.holdSpeed)
+            .putInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, customization.controlsHideSeconds)
             .apply()
         _videoGestures.value = customization
     }
@@ -1387,6 +1458,8 @@ class ThemePreferences(context: Context) {
         startMode = StartMode.fromId(prefs.getString(KEY_START_MODE, null)),
         tabLabels = NavTabLabels.fromId(prefs.getString(KEY_NAV_TAB_LABELS, null)),
         barHidesOnScroll = prefs.getBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, true),
+        showGreeting = prefs.getBoolean(KEY_HOME_GREETING, true),
+        alwaysShowDownloads = prefs.getBoolean(KEY_HOME_ALWAYS_DOWNLOADS, false),
     )
 
     fun setHomeNavigation(customization: HomeNavigationCustomization) {
@@ -1395,6 +1468,8 @@ class ThemePreferences(context: Context) {
             .putString(KEY_START_MODE, customization.startMode.id)
             .putString(KEY_NAV_TAB_LABELS, customization.tabLabels.id)
             .putBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, customization.barHidesOnScroll)
+            .putBoolean(KEY_HOME_GREETING, customization.showGreeting)
+            .putBoolean(KEY_HOME_ALWAYS_DOWNLOADS, customization.alwaysShowDownloads)
             .apply()
         _homeNavigation.value = customization
     }

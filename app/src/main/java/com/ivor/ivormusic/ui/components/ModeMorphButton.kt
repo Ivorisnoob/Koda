@@ -1,14 +1,17 @@
 package com.ivor.ivormusic.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,21 +19,30 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
@@ -47,6 +59,8 @@ import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.toPath
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.HomeNavigationCustomization
+import com.ivor.ivormusic.data.ThemePreferences
 
 /**
  * The music/video switch as one button that becomes the mode it is in.
@@ -163,6 +177,72 @@ private class UnitMorph(private val morph: Morph, private val progress: Float) :
         matrix.scale(size.width, size.height)
         path.transform(matrix)
         return Outline.Generic(path)
+    }
+}
+
+/**
+ * The Home top bar's own options (greeting, downloads button), read where the
+ * bar is drawn rather than threaded through every host that draws one.
+ */
+@Composable
+fun rememberHomeTopBarOptions(): HomeNavigationCustomization {
+    val context = LocalContext.current
+    val preferences = remember(context) { ThemePreferences(context) }
+    return preferences.homeNavigation.collectAsState().value
+}
+
+/**
+ * The downloads button on a Home top bar, growing in and out of the row.
+ *
+ * It carries its own trailing gap instead of taking one from the row's
+ * spacing: a hidden `AnimatedVisibility` is still a child, and a spaced row
+ * gives a zero-width child a gap on each side, which showed as a hole between
+ * the buttons whenever nothing was downloading. Place it in a row with no
+ * spacing of its own, directly before the button that follows it.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun TopBarDownloadsButton(
+    visible: Boolean,
+    downloading: Boolean,
+    onClick: () -> Unit,
+    containerColor: Color,
+    contentColor: Color,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandHorizontally() +
+            scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) +
+            fadeIn(),
+        exit = shrinkHorizontally() + scaleOut() + fadeOut()
+    ) {
+        Box(modifier = Modifier.padding(end = 12.dp)) {
+            IconButton(
+                onClick = onClick,
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = containerColor,
+                    contentColor = contentColor
+                ),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Download,
+                    contentDescription = stringResource(R.string.cd_downloads),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            // The dot is the status; the button alone only says where downloads are.
+            if (downloading) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .align(Alignment.TopEnd)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+            }
+        }
     }
 }
 

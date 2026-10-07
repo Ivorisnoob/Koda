@@ -73,10 +73,31 @@ data class DownloadRequest(
      * playlist, a download started without the sheet) and the likely ones are
      * kept; empty means the user chose none.
      */
-    val captionKeys: Set<String>? = null
+    val captionKeys: Set<String>? = null,
+    /**
+     * The music quality picked in the download sheet, one of
+     * `ThemePreferences.DOWNLOAD_MUSIC_QUALITY_*`. Null defers to the stored
+     * default when the transfer starts.
+     */
+    val audioQuality: String? = null,
+    /** Whether to fetch and keep lyrics. Null defers to the stored default. */
+    val saveLyrics: Boolean? = null
 ) {
     val isVideo: Boolean get() = type == DownloadMediaType.VIDEO
 }
+
+/** What the music download sheet settled on for one song or one playlist. */
+data class MusicDownloadOptions(
+    val quality: String,
+    val saveLyrics: Boolean
+)
+
+/** One quality a song can be downloaded at. [contentLength] is the audio alone. */
+data class DownloadAudioFormat(
+    val quality: String,
+    val bitrate: Int,
+    val contentLength: Long?
+)
 
 data class DownloadProgress(
     val songId: String,
@@ -668,8 +689,8 @@ class DownloadRepository private constructor(private val context: Context) {
      * died when that screen's ViewModel was cleared, leaving a half-written
      * file behind.
      */
-    suspend fun downloadSong(song: Song) {
-        enqueue(listOf(song.toRequest()))
+    suspend fun downloadSong(song: Song, options: MusicDownloadOptions? = null) {
+        enqueue(listOf(song.toRequest(options)))
     }
 
     /**
@@ -678,15 +699,23 @@ class DownloadRepository private constructor(private val context: Context) {
      * fetches what is missing. Device-local originals are already offline and
      * must never be routed through YouTube stream resolution.
      */
-    suspend fun downloadPlaylist(songs: List<Song>) {
+    suspend fun downloadPlaylist(songs: List<Song>, options: MusicDownloadOptions? = null) {
         enqueue(
             songs.asSequence()
                 .filter { it.source == SongSource.YOUTUBE }
                 .distinctBy { it.id }
-                .map { it.toRequest() }
+                .map { it.toRequest(options) }
                 .toList()
         )
     }
+
+    /**
+     * The qualities [song] can be downloaded at, each with its exact audio
+     * size. Empty when the direct resolver did not answer; the sheet then
+     * falls back to [estimateSongDownloadBytes] for the chosen quality.
+     */
+    suspend fun songDownloadFormats(song: Song): List<DownloadAudioFormat> =
+        youtubeRepository.getDownloadAudioFormats(song.id)
 
     /**
      * Queue a video download. [qualityLabel] pins the quality picked in the
@@ -706,8 +735,8 @@ class DownloadRepository private constructor(private val context: Context) {
      * the confirmation UI labels this as an estimate because those small
      * companions are fetched only while the real download runs.
      */
-    suspend fun estimateSongDownloadBytes(song: Song): Long? {
-        val url = youtubeRepository.getDownloadAudioStreamUrl(song.id).getOrNull()
+    suspend fun estimateSongDownloadBytes(song: Song, quality: String? = null): Long? {
+        val url = youtubeRepository.getDownloadAudioStreamUrl(song.id, quality).getOrNull()
             ?: return null
         return remoteMediaSize(url)
     }
@@ -765,14 +794,16 @@ class DownloadRepository private constructor(private val context: Context) {
         return true
     }
 
-    private fun Song.toRequest() = DownloadRequest(
+    private fun Song.toRequest(options: MusicDownloadOptions? = null) = DownloadRequest(
         id = id,
         title = title,
         subtitle = artist,
         type = DownloadMediaType.MUSIC,
         thumbnailUrl = highResThumbnailUrl ?: thumbnailUrl ?: albumArtUri?.toString(),
         durationMs = duration,
-        song = this
+        song = this,
+        audioQuality = options?.quality,
+        saveLyrics = options?.saveLyrics
     )
 
     private fun VideoItem.toRequest(qualityLabel: String? = null) = DownloadRequest(
@@ -957,8 +988,12 @@ class DownloadRepository private constructor(private val context: Context) {
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
             try {
-                val streamUrl = youtubeRepository.getDownloadAudioStreamUrl(request.id).getOrNull()
+                val streamUrl = youtubeRepository
+                    .getDownloadAudioStreamUrl(request.id, request.audioQuality)
+                    .getOrNull()
                     ?: throw java.io.IOException("No stream URL for ${request.id}")
+                val keepLyrics = request.saveLyrics
+                    ?: ThemePreferences.saveLyricsWithDownloads(context)
 
                 ensureActive()
                 updateProgress(request, 0.1f, DownloadStatus.DOWNLOADING)
@@ -968,6 +1003,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     // transfer rather than extending every playlist item by up
                     // to two provider timeouts after its bytes have arrived.
                     val lyricsDeferred = async {
+                        if (!keepLyrics) return@async null
                         (lyricsRepository.fetchLyrics(song, allowRemote = !ThemePreferences(context).isLocalOnlyModeEnabled()) as? LyricsResult.Success)
                             ?.toDownloadLyrics()
                             ?.takeIf(String::isNotBlank)

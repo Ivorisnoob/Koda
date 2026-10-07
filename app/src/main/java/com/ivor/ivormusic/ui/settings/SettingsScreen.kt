@@ -686,12 +686,22 @@ fun SettingsScreen(
 
     // Dialog state for YouTube auth
     var showAuthDialog by remember { mutableStateOf(false) }
+    // Whether that sign-in becomes a new profile or lands on the active one.
+    var authAsNewProfile by remember { mutableStateOf(false) }
 
     // Dialog state for pasting a session cookie header by hand
     var showCookiePasteSheet by remember { mutableStateOf(false) }
     // Bumped after a session change so the account row re-reads name/avatar,
     // which SessionManager exposes as plain getters rather than a flow.
     var accountRefreshKey by remember { mutableStateOf(0) }
+    // The Account page can switch profiles, and the hub's "signed in" line
+    // would otherwise keep describing the profile that was left.
+    LaunchedEffect(Unit) {
+        com.ivor.ivormusic.data.ProfileManager(context).activeProfileId.collect {
+            isLoggedIn = sessionManager.isLoggedIn()
+            accountRefreshKey++
+        }
+    }
 
     // Dialog state for About
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -762,13 +772,39 @@ fun SettingsScreen(
             sessionManager = sessionManager,
             saveVideoHistory = saveVideoHistory,
             onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
-            onShowAuthDialog = { showAuthDialog = true },
+            onShowAuthDialog = {
+                authAsNewProfile = false
+                showAuthDialog = true
+            },
             onShowCookieSheet = { showCookiePasteSheet = true },
             onSignOut = {
                 sessionManager.clearSession()
                 isLoggedIn = false
                 onLogoutClick()
             },
+            // Google's login page auto-continues as whoever the WebView jar
+            // already holds, so both paths clear it first - and wait for the
+            // asynchronous clear, or the page recaptures the old account. Stored
+            // sessions live in EncryptedSharedPreferences and are untouched.
+            onAddYouTubeAccount = {
+                val cookieManager = android.webkit.CookieManager.getInstance()
+                cookieManager.removeAllCookies {
+                    cookieManager.flush()
+                    authAsNewProfile = true
+                    showAuthDialog = true
+                }
+            },
+            // Not as a new profile: the profile exists and is active, so the
+            // session has to land on it (docs/identity.md).
+            onReconnectProfile = {
+                val cookieManager = android.webkit.CookieManager.getInstance()
+                cookieManager.removeAllCookies {
+                    cookieManager.flush()
+                    authAsNewProfile = false
+                    showAuthDialog = true
+                }
+            },
+            onOpenPage = { page = it },
             onBack = { page = SettingsPage.HUB }
         )
 
@@ -1270,11 +1306,17 @@ fun SettingsScreen(
     // YouTube Auth Dialog
     if (showAuthDialog) {
         YouTubeAuthDialog(
-            onDismiss = { showAuthDialog = false },
+            onDismiss = {
+                showAuthDialog = false
+                authAsNewProfile = false
+            },
             onAuthSuccess = {
                 showAuthDialog = false
+                authAsNewProfile = false
                 isLoggedIn = true
-            }
+                accountRefreshKey++
+            },
+            addAsNewProfile = authAsNewProfile
         )
     }
 

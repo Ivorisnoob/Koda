@@ -2100,9 +2100,15 @@ internal fun PlayerGestureSurface(
                         onTap = { onToggleControls() },
                         onLongPress = {
                             if (enabledGestures.holdToSpeedUp) {
+                                // The rate the user asked a hold to start at.
+                                // speedBoostStart is what remembers the speed
+                                // to return to, so it still runs first.
+                                val start = enabledGestures.holdSpeed
+                                    .coerceIn(BOOST_SPEED_MIN, BOOST_SPEED_MAX)
                                 isBoosting = true
-                                boostSpeed = BOOST_SPEED_MIN
+                                boostSpeed = start
                                 speedBoostStart()
+                                if (start != BOOST_SPEED_MIN) speedBoostChange(start)
                             }
                         },
                         onPress = {

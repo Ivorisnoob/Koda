@@ -1729,10 +1729,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _pendingSongDownload.value = null
     }
 
-    fun confirmPendingSongDownload() {
+    fun confirmPendingSongDownload(options: com.ivor.ivormusic.data.MusicDownloadOptions) {
         val song = _pendingSongDownload.value ?: return
         _pendingSongDownload.value = null
-        viewModelScope.launch { downloadRepository.downloadSong(song) }
+        viewModelScope.launch { downloadRepository.downloadSong(song, options) }
     }
     
     fun isDownloaded(songId: String): Boolean {

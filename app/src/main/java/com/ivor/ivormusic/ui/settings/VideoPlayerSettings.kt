@@ -6,6 +6,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -47,6 +49,15 @@ internal fun VideoPlayerSettingsPage(onBack: () -> Unit) {
                         enabled = gestures.holdToSpeedUp,
                         onToggle = { prefs.setVideoGestures(gestures.copy(holdToSpeedUp = it)) }
                     )
+                    val holdSpeeds = com.ivor.ivormusic.data.VideoGestureCustomization.HOLD_SPEEDS
+                    SettingsChoiceRow(
+                        icon = Icons.Rounded.Speed,
+                        title = stringResource(R.string.cz_video_hold_rate),
+                        subtitle = stringResource(R.string.cz_video_hold_rate_sub),
+                        labels = holdSpeeds.map { stringResource(R.string.cz_video_hold_rate_value, it.toInt()) },
+                        selectedIndex = holdSpeeds.indexOf(gestures.holdSpeed),
+                        onSelect = { prefs.setVideoGestures(gestures.copy(holdSpeed = holdSpeeds[it])) }
+                    )
                     SettingsToggleRow(
                         icon = Icons.Rounded.LightMode,
                         title = stringResource(R.string.cz_video_brightness),
@@ -60,6 +71,23 @@ internal fun VideoPlayerSettingsPage(onBack: () -> Unit) {
                         subtitle = stringResource(R.string.cz_video_volume_sub),
                         enabled = gestures.volumeSwipe,
                         onToggle = { prefs.setVideoGestures(gestures.copy(volumeSwipe = it)) }
+                    )
+                }
+            }
+        }
+        item {
+            SettingsSection(title = stringResource(R.string.cz_video_controls)) {
+                SettingsCard {
+                    val delays = com.ivor.ivormusic.data.VideoGestureCustomization.CONTROLS_HIDE_SECONDS
+                    SettingsChoiceRow(
+                        icon = Icons.Rounded.Timer,
+                        title = stringResource(R.string.cz_video_controls_hide),
+                        subtitle = stringResource(R.string.cz_video_controls_hide_sub),
+                        labels = delays.map { stringResource(R.string.cz_video_controls_hide_value, it) },
+                        selectedIndex = delays.indexOf(gestures.controlsHideSeconds),
+                        onSelect = {
+                            prefs.setVideoGestures(gestures.copy(controlsHideSeconds = delays[it]))
+                        }
                     )
                 }
             }

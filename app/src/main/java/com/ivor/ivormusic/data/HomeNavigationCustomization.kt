@@ -50,4 +50,11 @@ data class HomeNavigationCustomization(
     val tabLabels: NavTabLabels = NavTabLabels.AUTO,
     /** Whether the floating navigation bar slides away as a page scrolls. */
     val barHidesOnScroll: Boolean = true,
+    /** The greeting beside the profile picture on the Home top bar. */
+    val showGreeting: Boolean = true,
+    /**
+     * Keep the downloads button on the Home top bar. Off, it appears only
+     * while something is downloading.
+     */
+    val alwaysShowDownloads: Boolean = false,
 )

@@ -565,7 +565,9 @@ internal fun VideoTopBarSection(
     val downloadingIds by viewModel.downloadingIds.collectAsState()
     val context = LocalContext.current
     val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
-    
+    val topBarOptions = com.ivor.ivormusic.ui.components.rememberHomeTopBarOptions()
+    val showDownloads = topBarOptions.alwaysShowDownloads || downloadingIds.isNotEmpty()
+
     // A Box, not a spaced Row: the mode switch sits in the true centre of
     // the bar whatever is either side of it, so it does not shift when the
     // buttons on the right change between music and video.
@@ -673,9 +675,19 @@ internal fun VideoTopBarSection(
             // button is a status, and the downloads themselves live in the
             // Library. A permanent button for a place visited now and then
             // was one more grey circle in the row.
-            if (downloadingIds.isNotEmpty()) Box {
-                IconButton(
+            // Customization can keep it there for good. It shares an unspaced
+            // row with Settings because it brings its own gap (see
+            // TopBarDownloadsButton).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                com.ivor.ivormusic.ui.components.TopBarDownloadsButton(
+                    visible = showDownloads,
+                    downloading = downloadingIds.isNotEmpty(),
                     onClick = onDownloadsClick,
+                    containerColor = containerColor,
+                    contentColor = iconColor
+                )
+                IconButton(
+                    onClick = onSettingsClick,
                     shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = containerColor,
@@ -684,44 +696,18 @@ internal fun VideoTopBarSection(
                     modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Download,
-                        contentDescription = stringResource(R.string.cd_downloads),
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.cd_settings),
                         modifier = Modifier.size(22.dp)
                     )
                 }
-                // Badge for active downloads
-                if (downloadingIds.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .align(Alignment.TopEnd)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
-                }
-            }
-            
-            IconButton(
-                onClick = onSettingsClick,
-                shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = containerColor,
-                    contentColor = iconColor
-                ),
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = stringResource(R.string.cd_settings),
-                    modifier = Modifier.size(22.dp)
-                )
             }
         }
 
         // A greeting beside the profile picture, so the bar has something to
         // say whether or not the mode switch is on it. It gives way to the
         // buttons: the end padding is their width, with or without the switch.
-        com.ivor.ivormusic.ui.components.HomeGreeting(
+        if (topBarOptions.showGreeting) com.ivor.ivormusic.ui.components.HomeGreeting(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .padding(
@@ -729,7 +715,7 @@ internal fun VideoTopBarSection(
                     // One 44dp button and its gap for each button drawn.
                     end = 56.dp * (1 + (if (showModeToggle) 1 else 0) +
                         (if (showNotifications) 1 else 0) +
-                        (if (downloadingIds.isNotEmpty()) 1 else 0))
+                        (if (showDownloads) 1 else 0))
                 )
         )
     }

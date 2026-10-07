@@ -421,7 +421,9 @@ fun VideoPlayerContent(
     // Auto-hide controls
     LaunchedEffect(showControls, isPlaying, isSeekScrubbing) {
         if (showControls && isPlaying && !isSeekScrubbing) {
-            delay(4000)
+            // The user's own delay, read as the timer starts so a change in
+            // Settings applies to the very next time the controls come up.
+            delay(com.ivor.ivormusic.data.ThemePreferences.videoControlsHideMs(context))
             showControls = false
         }
     }

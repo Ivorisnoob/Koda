@@ -3168,23 +3168,44 @@ class MusicService : MediaLibraryService() {
      * is deliberately *not* skipped: it is only ever handed out for a song already whole on
      * disk, which is the cheapest song there is to measure, and the analyzer reads it back
      * through the same cache under the same key without touching the network.
+     *
+     * **Once the playing song is measured, the next one is.** A waveform that arrives a few
+     * seconds into every track is one that is missing whenever somebody looks, so the song the
+     * player will reach next is measured while this one plays and its bar is there on the first
+     * frame. Only with the music cache on, where those bytes are the ones the next song then
+     * plays from; with it off that would be a whole song fetched and thrown away per track.
+     * The analyzer runs one pass at a time and a request for the playing song replaces any
+     * other, so looking ahead can never delay the bar on screen.
      */
     private suspend fun analyzeSongsWhileEnabled() {
         while (currentCoroutineContext().isActive) {
             delay(WAVEFORM_ANALYSIS_POLL_MS)
-            val item = player.currentMediaItem ?: continue
-            val songId = item.mediaId.takeIf { it.isNotBlank() } ?: continue
-            val uri = item.localConfiguration?.uri ?: continue
-            val url = uri.toString()
-            if (url.startsWith(PLACEHOLDER_PREFIX) || uri.scheme == "error") continue
-            WaveformAnalyzer.request(
-                context = this@MusicService,
-                songId = songId,
-                uri = uri,
-                durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0L },
-                musicCacheEnabled = isCacheEnabled,
-            )
+            val current = player.currentMediaItem ?: continue
+            val currentId = current.mediaId.takeIf { it.isNotBlank() } ?: continue
+            if (!WaveformStore.isComplete(this@MusicService, currentId)) {
+                requestWaveform(current, player.duration.takeIf { it != C.TIME_UNSET && it > 0L })
+                continue
+            }
+            if (!isCacheEnabled) continue
+            val nextIndex = player.nextMediaItemIndex
+            if (nextIndex == C.INDEX_UNSET || nextIndex >= player.mediaItemCount) continue
+            val next = player.getMediaItemAt(nextIndex)
+            if (next.mediaId.isBlank() || next.mediaId == currentId) continue
+            if (WaveformStore.isComplete(this@MusicService, next.mediaId)) continue
+            requestWaveform(next, durationMs = null)
         }
+    }
+
+    private fun requestWaveform(item: MediaItem, durationMs: Long?) {
+        val uri = item.localConfiguration?.uri ?: return
+        if (uri.toString().startsWith(PLACEHOLDER_PREFIX) || uri.scheme == "error") return
+        WaveformAnalyzer.request(
+            context = this@MusicService,
+            songId = item.mediaId,
+            uri = uri,
+            durationMs = durationMs,
+            musicCacheEnabled = isCacheEnabled,
+        )
     }
 
     private fun refreshTrackGain(applyNow: Boolean) {
