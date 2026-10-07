@@ -6950,6 +6950,43 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
+     * One community post, read from its own `FEpost_detail` page: what a
+     * notification about a post points at.
+     *
+     * [verified October 2026, signed in] The page's `backstage-item-section`
+     * holds exactly one `backstagePostRenderer`, the same renderer a channel's
+     * Posts tab lists, so [parseBackstagePost] reads it unchanged. The params
+     * asked for are kept as the post's [ChannelPost.detailParams] rather than
+     * re-derived from the renderer: they are known to open this page, which is
+     * what the comment thread is loaded from next.
+     */
+    suspend fun getPostDetail(detailParams: String): ChannelPost? = withContext(Dispatchers.IO) {
+        try {
+            val raw = postWatchApi(
+                "browse",
+                org.json.JSONObject()
+                    .put("context", webContext())
+                    .put("browseId", POST_DETAIL_BROWSE_ID)
+                    .put("params", detailParams)
+            ) ?: return@withContext null
+            val renderers = mutableListOf<org.json.JSONObject>()
+            findObjectsByKey(org.json.JSONObject(raw), "backstagePostRenderer", renderers)
+            val renderer = renderers.firstOrNull() ?: return@withContext null
+            parseBackstagePost(renderer)?.copy(
+                detailParams = detailParams,
+                channelId = renderer.optJSONObject("authorEndpoint")
+                    ?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?.takeIf { it.startsWith("UC") }
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e("YouTubeRepo", "getPostDetail failed", e)
+            null
+        }
+    }
+
+    /**
      * The continuation token for a community post's comments, from the post's
      * own `FEpost_detail` page ([ChannelPost.detailParams]). Null when the post
      * has comments turned off - the page then carries no comment section - or
@@ -9566,7 +9603,13 @@ class YouTubeRepository(private val context: Context) {
 
     /**
      * The user's notification inbox (new uploads from subscribed channels,
-     * replies, etc.). First page only. Requires login.
+     * replies, etc.). Requires login.
+     *
+     * [verified October 2026, signed in] This is the whole inbox, not its
+     * first page: the response is one `multiPageMenuNotificationSectionRenderer`
+     * of about a dozen items with no continuation of any kind, so there is
+     * nothing older to ask for. Anything further back is what
+     * [NotificationHistoryStore] remembers having seen.
      */
     suspend fun getNotifications(): List<NotificationItem> = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext emptyList()
@@ -9593,19 +9636,25 @@ class YouTubeRepository(private val context: Context) {
                 val navigation = renderer.optJSONObject("navigationEndpoint")
                 fun endpointVideoId(key: String): String? =
                     navigation?.optJSONObject(key)?.optString("videoId")?.takeIf { it.isNotBlank() }
+                val webUrl = navigation?.optJSONObject("commandMetadata")
+                    ?.optJSONObject("webCommandMetadata")?.optString("url")
+                    ?.takeIf { it.startsWith("/") }
+                    ?.let { "https://www.youtube.com$it" }
+                val postParams = navigation?.optJSONObject("browseEndpoint")
+                    ?.takeIf { it.optString("browseId") == POST_DETAIL_BROWSE_ID }
+                    ?.optString("params")?.takeIf { it.isNotBlank() }
                 val target = endpointVideoId("watchEndpoint")?.let { NotificationTarget.Video(it) }
                     ?: endpointVideoId("reelWatchEndpoint")?.let { NotificationTarget.Short(it) }
-                    ?: navigation?.optJSONObject("commandMetadata")
-                        ?.optJSONObject("webCommandMetadata")?.optString("url")
-                        ?.takeIf { it.startsWith("/") }
-                        ?.let { NotificationTarget.Link("https://www.youtube.com$it") }
+                    ?: postParams?.let { NotificationTarget.Post(it, webUrl) }
+                    ?: webUrl?.let { NotificationTarget.Link(it) }
                 NotificationItem(
                     message = message,
                     sentTime = renderer.optJSONObject("sentTimeText")?.optString("simpleText").orEmpty(),
                     channelAvatarUrl = lastThumb("thumbnail"),
                     videoThumbnailUrl = lastThumb("videoThumbnail"),
                     target = target,
-                    isRead = renderer.optBoolean("read", false)
+                    isRead = renderer.optBoolean("read", false),
+                    id = renderer.optString("notificationId")
                 )
             }
         } catch (e: Exception) {

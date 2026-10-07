@@ -101,6 +101,53 @@ fun FeedPostDemand(
     }
 }
 
+/**
+ * What the Video feed settings let through, for one feed.
+ *
+ * A filter over the list the feed already holds rather than a change to what
+ * is fetched, so a switch turned back on restores its rows on the next frame.
+ * [hideWatched] is passed in because Home and Subscriptions keep that choice
+ * separately; the rest is shared.
+ */
+internal class VideoFeedFilter(
+    val showPosts: Boolean,
+    private val showLive: Boolean,
+    private val hideWatched: Boolean,
+    private val watchedIds: Set<String>,
+) {
+    fun apply(videos: List<VideoItem>): List<VideoItem> {
+        if (showLive && !hideWatched) return videos
+        return videos.filter { video ->
+            (showLive || !video.isLive) && (!hideWatched || video.videoId !in watchedIds)
+        }
+    }
+}
+
+/** The Home feed's filter, following the settings and the watch history as they change. */
+@Composable
+internal fun rememberHomeFeedFilter(): VideoFeedFilter {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val options by remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }.videoFeed.collectAsState()
+    val history by remember(context) {
+        com.ivor.ivormusic.data.VideoHistoryRepository(context)
+    }.history.collectAsState()
+    return remember(options, history) {
+        VideoFeedFilter(
+            showPosts = options.showPosts,
+            showLive = options.showLive,
+            hideWatched = options.hideWatchedOnHome,
+            // Only built when it will be read: the history can be long.
+            watchedIds = if (options.hideWatchedOnHome) {
+                history.mapTo(HashSet()) { it.videoId }
+            } else {
+                emptySet()
+            },
+        )
+    }
+}
+
 /** A post as a feed row: the channel page's card, with its author a way to the channel. */
 @Composable
 fun FeedPostCard(

@@ -241,6 +241,29 @@ internal fun buildSettingsSearchIndex(
         listOf("controls", "auto hide", "hide delay", "timeout", "buttons disappear", "overlay")
     ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
     entry(
+        "video_feed", stringResource(R.string.cz_video_feed), stringResource(R.string.settings_customization), Icons.Rounded.PlayCircle,
+        listOf(
+            "feed", "home feed", "subscriptions feed", "what to show", "filter feed", "hide from feed",
+            "video home"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
+        "video_feed_posts", stringResource(R.string.cz_feed_posts), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("community posts", "posts", "polls", "hide posts", "channel posts")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
+        "video_feed_shorts", stringResource(R.string.cz_feed_shorts), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("shorts shelf", "shorts row", "hide shorts", "shorts on home")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
+        "video_feed_live", stringResource(R.string.cz_feed_live), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("live", "live streams", "hide live", "streaming now")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
+        "video_feed_watched", stringResource(R.string.cz_feed_hide_watched_home), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("watched", "hide watched", "already seen", "seen videos", "unwatched only")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
         "top_bar_greeting", stringResource(R.string.cz_top_bar_greeting), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
         listOf("greeting", "good morning", "hello", "top bar", "header", "home bar")
     ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }

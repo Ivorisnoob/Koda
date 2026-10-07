@@ -27,7 +27,9 @@ import com.ivor.ivormusic.data.usableHomeRecommendations
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
@@ -1201,6 +1203,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isNotificationsLoading = MutableStateFlow(false)
     val isNotificationsLoading: StateFlow<Boolean> = _isNotificationsLoading.asStateFlow()
 
+    // Declared here, beside the flow the profile-switch reset also clears,
+    // rather than down with the loader: a property that reset touches must
+    // not be initialised after the collector that runs it.
+    /** Everything known for the open inbox, hidden items included; [notifications] is this filtered. */
+    private var allNotifications: List<com.ivor.ivormusic.data.NotificationItem> = emptyList()
+
+    private val _hiddenNotificationCount = MutableStateFlow(0)
+    val hiddenNotificationCount: StateFlow<Int> = _hiddenNotificationCount.asStateFlow()
+
     // Video library tab state. This half is the signed-in account's own
     // playlists; the device's are merged in by [videoPlaylists] below.
     private val _videoPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>>(emptyList())
@@ -1457,6 +1468,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         notificationsJob?.cancel()
         _isNotificationsLoading.value = false
         _notifications.value = emptyList()
+        allNotifications = emptyList()
+        _hiddenNotificationCount.value = 0
         _selectedGroupId.value = null
 
         // Spotlight's YouTube Music tabs are the account's own when signed in.
@@ -1837,6 +1850,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val params = post.detailParams ?: return
         _feedCommentsPost.value = post
         feedPostComments.load { youtubeRepository.getPostCommentsToken(params) }
+    }
+
+    /** The post a notification is being opened on, so a second tap does not fetch it twice. */
+    private var notificationPostJob: Job? = null
+
+    /**
+     * Open the post a notification is about, in the same sheet a feed post's
+     * comments open in: the post pinned above its thread. [onResult] says
+     * whether it opened, so the caller can fall back to the post's web link.
+     */
+    fun openNotificationPost(detailParams: String, onResult: (opened: Boolean) -> Unit) {
+        notificationPostJob?.cancel()
+        notificationPostJob = viewModelScope.launch {
+            val post = youtubeRepository.getPostDetail(detailParams)
+            if (post != null) openFeedPostComments(post)
+            onResult(post != null)
+        }
     }
 
     /** Reload the open thread, e.g. after signing in, so its composer appears. */
@@ -2746,18 +2776,69 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private var notificationsJob: kotlinx.coroutines.Job? = null
 
-    /** Load the notification inbox. Requires login. */
+    private val notificationHistory by lazy {
+        com.ivor.ivormusic.data.NotificationHistoryStore(app)
+    }
+
+    /**
+     * Load the notification inbox. Requires login.
+     *
+     * What this device remembers is shown at once and the fresh inbox is
+     * folded into it when it arrives. The profile is read before the request
+     * and checked after it, so an inbox that lands after a switch is neither
+     * shown to nor remembered for the profile switched to.
+     */
     fun loadNotifications(force: Boolean = false) {
         if (_isNotificationsLoading.value) return
         if (_notifications.value.isNotEmpty() && !force) return
         notificationsJob = viewModelScope.launch {
             _isNotificationsLoading.value = true
             try {
-                _notifications.value = youtubeRepository.getNotifications()
+                val profileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(app)
+                if (allNotifications.isEmpty()) {
+                    publishNotifications(
+                        profileId,
+                        withContext(Dispatchers.IO) { notificationHistory.remembered(profileId) }
+                    )
+                }
+                val fresh = youtubeRepository.getNotifications()
+                if (com.ivor.ivormusic.data.ProfileManager.activeProfileId(app) != profileId) return@launch
+                // An empty answer is as likely a failed request as an empty
+                // inbox, and must not present the remembered items as gone.
+                if (fresh.isNotEmpty()) {
+                    publishNotifications(
+                        profileId,
+                        withContext(Dispatchers.IO) { notificationHistory.merge(profileId, fresh) }
+                    )
+                }
             } finally {
                 _isNotificationsLoading.value = false
             }
         }
+    }
+
+    private fun publishNotifications(
+        profileId: String,
+        items: List<com.ivor.ivormusic.data.NotificationItem>,
+    ) {
+        val hidden = notificationHistory.hiddenIds(profileId)
+        allNotifications = items
+        _notifications.value = items.filterNot { it.id in hidden }
+        _hiddenNotificationCount.value = items.count { it.id in hidden }
+    }
+
+    /** Take one notification out of the inbox on this device. YouTube is not told. */
+    fun hideNotification(item: com.ivor.ivormusic.data.NotificationItem) {
+        if (item.id.isBlank()) return
+        val profileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(app)
+        notificationHistory.hide(profileId, item.id)
+        publishNotifications(profileId, allNotifications)
+    }
+
+    fun restoreHiddenNotifications() {
+        val profileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(app)
+        notificationHistory.restoreHidden(profileId)
+        publishNotifications(profileId, allNotifications)
     }
     
     // --- Download Actions ---

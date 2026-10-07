@@ -110,6 +110,9 @@ class ThemePreferences(context: Context) {
     private val _videoGestures = MutableStateFlow(readVideoGestures())
     val videoGestures: StateFlow<VideoGestureCustomization> = _videoGestures.asStateFlow()
 
+    private val _videoFeed = MutableStateFlow(readVideoFeed())
+    val videoFeed: StateFlow<VideoFeedCustomization> = _videoFeed.asStateFlow()
+
     private val _homeNavigation = MutableStateFlow(readHomeNavigation())
     val homeNavigation: StateFlow<HomeNavigationCustomization> = _homeNavigation.asStateFlow()
 
@@ -415,6 +418,8 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_HOLD_SPEED, KEY_VIDEO_BRIGHTNESS_SWIPE, KEY_VIDEO_VOLUME_SWIPE,
             KEY_VIDEO_HOLD_SPEED_RATE, KEY_VIDEO_CONTROLS_HIDE_SECONDS ->
                 _videoGestures.value = readVideoGestures()
+            KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME ->
+                _videoFeed.value = readVideoFeed()
             KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL,
             KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS ->
                 _homeNavigation.value = readHomeNavigation()
@@ -579,6 +584,9 @@ class ThemePreferences(context: Context) {
         private const val KEY_NAV_BAR_HIDES_ON_SCROLL = "nav_bar_hides_on_scroll"
         private const val KEY_VIDEO_HOLD_SPEED_RATE = "video_gesture_hold_speed_rate"
         private const val KEY_VIDEO_CONTROLS_HIDE_SECONDS = "video_controls_hide_seconds"
+        private const val KEY_VIDEO_FEED_POSTS = "video_feed_posts"
+        private const val KEY_VIDEO_FEED_LIVE = "video_feed_live"
+        private const val KEY_VIDEO_FEED_HIDE_WATCHED_HOME = "video_feed_hide_watched_home"
         private const val KEY_HOME_GREETING = "home_top_bar_greeting"
         private const val KEY_HOME_ALWAYS_DOWNLOADS = "home_top_bar_always_downloads"
 
@@ -1447,6 +1455,22 @@ class ThemePreferences(context: Context) {
             .putInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, customization.controlsHideSeconds)
             .apply()
         _videoGestures.value = customization
+    }
+
+    /** What the video feeds show. Read by the feeds, written by the Video feed page. */
+    private fun readVideoFeed(): VideoFeedCustomization = VideoFeedCustomization(
+        showPosts = prefs.getBoolean(KEY_VIDEO_FEED_POSTS, true),
+        showLive = prefs.getBoolean(KEY_VIDEO_FEED_LIVE, true),
+        hideWatchedOnHome = prefs.getBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, false),
+    )
+
+    fun setVideoFeed(customization: VideoFeedCustomization) {
+        prefs.edit()
+            .putBoolean(KEY_VIDEO_FEED_POSTS, customization.showPosts)
+            .putBoolean(KEY_VIDEO_FEED_LIVE, customization.showLive)
+            .putBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, customization.hideWatchedOnHome)
+            .apply()
+        _videoFeed.value = customization
     }
 
     /**

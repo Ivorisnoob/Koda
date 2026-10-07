@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
@@ -156,6 +157,15 @@ internal fun CustomizationSettingsPage(
                         tint = MaterialTheme.colorScheme.secondary,
                         iconShape = MaterialShapes.Cookie6Sided.toShape(),
                         explanation = stringResource(R.string.cz_info_home)
+                    )
+                    SettingsHubRow(
+                        icon = Icons.Rounded.VideoLibrary,
+                        title = stringResource(R.string.cz_video_feed),
+                        value = videoFeedSummary(),
+                        onClick = { onOpenPage(SettingsPage.VIDEO_FEED) },
+                        tint = MaterialTheme.colorScheme.secondary,
+                        iconShape = MaterialShapes.Cookie4Sided.toShape(),
+                        explanation = stringResource(R.string.cz_info_video_feed)
                     )
                     SettingsHubRow(
                         icon = Icons.Rounded.TouchApp,

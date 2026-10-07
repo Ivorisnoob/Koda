@@ -187,6 +187,7 @@ fun VideoHomeContent(
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val notifications by viewModel.notifications.collectAsState()
     val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
+    val hiddenNotificationCount by viewModel.hiddenNotificationCount.collectAsState()
 
     // Options sheet (long-press on a video card)
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
@@ -205,6 +206,10 @@ fun VideoHomeContent(
         NotificationsSheet(
             notifications = notifications,
             isLoading = isNotificationsLoading,
+            hiddenCount = hiddenNotificationCount,
+            onHide = viewModel::hideNotification,
+            onRestoreHidden = viewModel::restoreHiddenNotifications,
+            onRefresh = { viewModel.loadNotifications(force = true) },
             onNotificationClick = { notification ->
                 when (val target = notification.target) {
                     is com.ivor.ivormusic.data.NotificationTarget.Video -> {
@@ -228,9 +233,19 @@ fun VideoHomeContent(
                         previewController?.release()
                         onOpenShorts(listOf(com.ivor.ivormusic.data.ShortsItem(videoId = target.videoId)), 0)
                     }
+                    // A community post opens here, pinned above its comments.
+                    // The inbox stays up for the moment the post takes to
+                    // arrive, so the tap is never followed by an empty screen;
+                    // only a post that cannot be read leaves for its web page.
+                    is com.ivor.ivormusic.data.NotificationTarget.Post -> {
+                        viewModel.openNotificationPost(target.detailParams) { opened ->
+                            showNotificationsSheet = false
+                            if (!opened) target.url?.let(uriHandler::openUri)
+                        }
+                    }
                     // Through the in-app link handler, which keeps anything Koda
-                    // can open and hands the rest (a community post) to the
-                    // YouTube app or the browser.
+                    // can open (a channel) and hands the rest to the YouTube
+                    // app or the browser.
                     is com.ivor.ivormusic.data.NotificationTarget.Link -> {
                         showNotificationsSheet = false
                         uriHandler.openUri(target.url)
@@ -253,15 +268,19 @@ fun VideoHomeContent(
     }
 
     // Community posts from followed channels, scattered between the videos.
-    val feedPosts by viewModel.feedPosts.collectAsState()
+    // What the Video feed settings let through. Posts that are switched off
+    // are not asked for either, since each batch costs channel browses.
+    val feedFilter = rememberHomeFeedFilter()
+    val allFeedPosts by viewModel.feedPosts.collectAsState()
+    val feedPosts = if (feedFilter.showPosts) allFeedPosts else emptyList()
     val postPhotoViewer = remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     FeedPostOverlays(viewModel, postPhotoViewer, onOpenChannel)
     FeedPostDemand(
         viewModel = viewModel,
         listState = listState,
         videoCount = videos.size,
-        postCount = feedPosts.size,
-        enabled = !showOfflineDownloads
+        postCount = allFeedPosts.size,
+        enabled = !showOfflineDownloads && feedFilter.showPosts
     )
     val feedPostCard: @Composable (com.ivor.ivormusic.data.ChannelPost) -> Unit = { post ->
         FeedPostCard(post, viewModel, openVideo, onOpenChannel, postPhotoViewer)
@@ -383,7 +402,7 @@ fun VideoHomeContent(
                 } else {
                     // Video cards, with the Shorts shelf slotted in after the
                     // first two like the YouTube home feed.
-                    val feedVideos = videos
+                    val feedVideos = feedFilter.apply(videos)
                     val leadingVideos = if (!shortsEnabled) {
                         feedVideos
                     } else {

@@ -176,6 +176,7 @@ fun SubscriptionsContent(
     val feedPeriodName by themePreferences.subscriptionFeedPeriod.collectAsState()
     val feedOrderName by themePreferences.subscriptionFeedOrder.collectAsState()
     val hideWatched by themePreferences.hideWatchedInFeed.collectAsState()
+    val feedOptions by themePreferences.videoFeed.collectAsState()
     val watchHistoryRepository = remember(context) {
         com.ivor.ivormusic.data.VideoHistoryRepository(context)
     }
@@ -198,7 +199,8 @@ fun SubscriptionsContent(
         feedPeriod,
         feedOrder,
         hideWatched,
-        watchedIds
+        watchedIds,
+        feedOptions.showLive
     ) {
         val selectedChannel = channels.firstOrNull { it.channelId == selectedChannelId }
         val sourceFeed = if (selectedChannel == null) feed else selectedChannelFeed
@@ -213,6 +215,9 @@ fun SubscriptionsContent(
             // same shape the dismissal store uses: marking something unwatched
             // has to put it back on the next frame, not on the next refresh.
             .filter { video -> !hideWatched || video.videoId !in watchedIds }
+            // The Video feed setting. Not while one creator is selected: that
+            // view is everything from one channel, live included.
+            .filter { video -> feedOptions.showLive || selectedChannel != null || !video.isLive }
             .sortedWith(compareBy<VideoItem> {
                 it.publishedAtMs ?: VideoItem.parseRelativeTime(it.uploadedDate) ?: Long.MIN_VALUE
             }.let { if (feedOrder == SubscriptionFeedOrder.NEWEST) it.reversed() else it })
@@ -261,7 +266,7 @@ fun SubscriptionsContent(
         listState = feedListState,
         videoCount = visibleFeed.size,
         postCount = feedPosts.size,
-        enabled = selectedChannelId == null
+        enabled = selectedChannelId == null && feedOptions.showPosts
     )
 
     LaunchedEffect(channels, selectedChannelId) {
@@ -799,7 +804,11 @@ fun SubscriptionsContent(
                         }
                         videoListItemsWithPosts(
                             videos = visibleFeed,
-                            posts = if (selectedChannelId == null) feedPosts else emptyList(),
+                            posts = if (selectedChannelId == null && feedOptions.showPosts) {
+                                feedPosts
+                            } else {
+                                emptyList()
+                            },
                             layout = listLayout,
                             post = { post ->
                                 FeedPostCard(post, viewModel, onVideoClick, onOpenChannel, postPhotoViewer)

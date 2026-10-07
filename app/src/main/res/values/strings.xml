@@ -524,6 +524,28 @@
     <string name="cz_video_controls_hide">Hide controls after</string>
     <string name="cz_video_controls_hide_sub">How long the buttons stay over a playing video</string>
     <string name="cz_video_controls_hide_value">%1$d s</string>
+    <string name="cz_video_feed">Video feed</string>
+    <string name="cz_info_video_feed">Choose what the Home and Subscriptions feeds show in video mode: community posts, the Shorts shelf, live streams and videos you have already watched.</string>
+    <string name="cz_feed_section_mixed_in">In the feed</string>
+    <string name="cz_feed_posts">Community posts</string>
+    <string name="cz_feed_posts_sub">Posts from channels you follow, between the videos</string>
+    <string name="cz_feed_shorts">Shorts shelf</string>
+    <string name="cz_feed_shorts_sub">A row of Shorts near the top of Home</string>
+    <string name="cz_feed_shorts_blocked">Shorts are blocked everywhere in Content settings</string>
+    <string name="cz_feed_live">Live streams</string>
+    <string name="cz_feed_live_sub">Videos that are live right now</string>
+    <string name="cz_feed_section_watched">Watched videos</string>
+    <string name="cz_feed_hide_watched_home">Hide watched on Home</string>
+    <string name="cz_feed_hide_watched_home_sub">Leave out videos you have already watched</string>
+    <string name="cz_feed_hide_watched_subs">Hide watched in Subscriptions</string>
+    <string name="cz_feed_hide_watched_subs_sub">The same switch as the chip on the Subscriptions feed</string>
+    <string name="cz_feed_watched_note">Watched means it is in this profile\'s watch history on this device.</string>
+    <string name="cz_feed_scope_note">These apply to the Home and Subscriptions feeds in video mode. Search, channel pages and playlists always show everything.</string>
+    <string name="cz_feed_summary_all">Showing everything</string>
+    <plurals name="cz_feed_summary_some">
+        <item quantity="one">%1$d thing hidden</item>
+        <item quantity="other">%1$d things hidden</item>
+    </plurals>
     <string name="cz_section_top_bar">Home top bar</string>
     <string name="cz_top_bar_greeting">Greeting</string>
     <string name="cz_top_bar_greeting_sub">A short hello beside your profile picture</string>
@@ -1533,6 +1555,23 @@
     <!-- Queue / notifications / download sheets -->
     <string name="vq_playing_from">Playing from</string>
     <string name="ns_none_yet">No notifications yet</string>
+    <string name="ns_new_count">%1$d new</string>
+    <string name="ns_refresh">Refresh notifications</string>
+    <string name="ns_filter_all">All</string>
+    <string name="ns_filter_videos">Videos</string>
+    <string name="ns_filter_shorts">Shorts</string>
+    <string name="ns_filter_posts">Posts</string>
+    <string name="ns_filter_other">Other</string>
+    <string name="ns_filter_with_count">%1$s  %2$d</string>
+    <string name="ns_section_new">New</string>
+    <string name="ns_section_earlier">Earlier</string>
+    <string name="ns_section_kept">Kept on this device</string>
+    <string name="ns_section_kept_note">YouTube only lists recent notifications. Koda keeps the ones it has seen for 60 days.</string>
+    <string name="ns_hide">Hide</string>
+    <plurals name="ns_hidden_restore">
+        <item quantity="one">%1$d hidden. Show it again</item>
+        <item quantity="other">%1$d hidden. Show them again</item>
+    </plurals>
     <string name="vd_title">Download video</string>
     <string name="vd_load_failed">Couldn\'t load qualities. Check your connection.</string>
     <string name="vd_no_stream">No downloadable stream for this video</string>
