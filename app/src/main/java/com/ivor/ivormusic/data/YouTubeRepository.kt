@@ -49,6 +49,9 @@ class YouTubeRepository(private val context: Context) {
     companion object {
         /** The browse id of a community post's own page. */
         private const val POST_DETAIL_BROWSE_ID = "FEpost_detail"
+
+        /** Pages of the notification inbox read on one open: one request each. */
+        private const val NOTIFICATION_INBOX_MAX_PAGES = 3
         private const val UPLOAD_CREATE_BATCH = 100
         private const val UPLOAD_ADD_BATCH = 50
         private const val UPLOAD_BATCH_PAUSE_MS = 400L
@@ -9605,11 +9608,16 @@ class YouTubeRepository(private val context: Context) {
      * The user's notification inbox (new uploads from subscribed channels,
      * replies, etc.). Requires login.
      *
-     * [verified October 2026, signed in] This is the whole inbox, not its
-     * first page: the response is one `multiPageMenuNotificationSectionRenderer`
-     * of about a dozen items with no continuation of any kind, so there is
-     * nothing older to ask for. Anything further back is what
-     * [NotificationHistoryStore] remembers having seen.
+     * The inbox is paged, and how far it goes depends on the account. [verified
+     * September 2026] A page is about 20 items followed by a
+     * `continuationItemRenderer` whose `getNotificationMenuEndpoint.ctoken` is
+     * posted back to the same endpoint as `{"ctoken": ...}`; that account's
+     * whole inbox was three pages. [verified October 2026] Another account's
+     * was 11 items and no continuation at all. So up to
+     * [NOTIFICATION_INBOX_MAX_PAGES] are followed, and a response without a
+     * token is simply the end. [scar] Only the first page was ever read, so
+     * the sheet stopped at 20 on an account with sixty. Whatever YouTube has
+     * dropped altogether is what [NotificationHistoryStore] remembers.
      */
     suspend fun getNotifications(): List<NotificationItem> = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext emptyList()
@@ -9620,10 +9628,26 @@ class YouTubeRepository(private val context: Context) {
                     .put("context", webContext())
                     .put("notificationsMenuRequestType", "NOTIFICATIONS_MENU_REQUEST_TYPE_INBOX")
             ) ?: return@withContext emptyList()
-            val root = org.json.JSONObject(raw)
+            var root = org.json.JSONObject(raw)
             val renderers = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(root, "notificationRenderer", renderers)
-            renderers.mapNotNull { renderer ->
+            var page = 1
+            while (true) {
+                findObjectsByKey(root, "notificationRenderer", renderers)
+                if (page >= NOTIFICATION_INBOX_MAX_PAGES) break
+                val endpoints = mutableListOf<org.json.JSONObject>()
+                findObjectsByKey(root, "getNotificationMenuEndpoint", endpoints)
+                val token = endpoints.firstNotNullOfOrNull { endpoint ->
+                    endpoint.optString("ctoken").takeIf { it.isNotBlank() }
+                } ?: break
+                // A later page that fails keeps the pages already read.
+                val next = postWatchApi(
+                    "notification/get_notification_menu",
+                    org.json.JSONObject().put("context", webContext()).put("ctoken", token)
+                ) ?: break
+                root = org.json.JSONObject(next)
+                page++
+            }
+            renderers.distinctBy { it.optString("notificationId").ifBlank { it.toString() } }.mapNotNull { renderer ->
                 val message = renderer.optJSONObject("shortMessage")?.optString("simpleText")
                     ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 fun lastThumb(key: String): String? {

@@ -1566,7 +1566,7 @@
     <string name="ns_section_new">New</string>
     <string name="ns_section_earlier">Earlier</string>
     <string name="ns_section_kept">Kept on this device</string>
-    <string name="ns_section_kept_note">YouTube only lists recent notifications. Koda keeps the ones it has seen for 60 days.</string>
+    <string name="ns_section_kept_note">No longer in your YouTube inbox. Koda keeps the ones it has seen for 60 days.</string>
     <string name="ns_hide">Hide</string>
     <plurals name="ns_hidden_restore">
         <item quantity="one">%1$d hidden. Show it again</item>

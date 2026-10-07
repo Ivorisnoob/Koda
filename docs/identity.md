@@ -47,6 +47,8 @@ Removing a profile deletes its cookies but leaves its per-profile data in place:
 
 Two more: **adding an account must clear the WebView cookie jar first** (Google's login page auto-continues as whoever the jar holds, so otherwise a second account silently hands back the first; stored sessions are untouched by the wipe), and **signing out of the last profile disconnects the account in place rather than deleting the row**, keeping the id so device-local subscriptions and blocklist survive - they never needed an account. Playback deliberately continues across a switch; streams are already resolved, and killing someone's music because they checked another account is a bad trade.
 
+**Profiles can also be switched, added and reconnected from Settings.** [October 2026] The Account page (`ui/settings/AccountSettings.kt`, see `settings.md`) lists the roster and hosts the same `AccountSwitcherSheet`, with the same two paths kept apart: add is a new profile, reconnect lands on the active one. The notification inbox's history (`NotificationHistoryStore`) is keyed by profile id but is a cache of an account's inbox rather than a profile-scoped store: it is not reloaded by `prepareForActiveProfile`, not copied by `copyProfileScopedData` and not in the backup, and a profile that is removed simply leaves its entries unreachable.
+
 ## Incognito
 
 `data/IncognitoMode.kt`, toggled from the account sheet, off by default.

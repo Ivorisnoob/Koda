@@ -148,6 +148,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | Behind-live measured from the window end rather than the target live offset | A live stream reads a permanent -0:15 and never says LIVE | `playback-video.md` |
 | A zooming `PlayerView` without `keepKnownAspectRatio` | With Smooth motion's graph the player reports no video size, so zoom-to-fill changes nothing | `playback-video.md` |
 | Removing core library desugaring | Every search throws `NoSuchMethodError` on API 30-32, compiles fine | section 6 below |
+| A swipe-to-dismiss row in a lazy list brought back under the same key | Its saved swipe state comes back with it: the row returns still swiped away, as an empty strip. Snap it to settled when composed | `screens.md` |
 | A queue index held across a suspension point | The queue is replaced under it; playback lands on the wrong track | `playback-music.md` |
 | A start song absent from the list it is played from | Clamped to index 0, so a tap on one song plays another | `playback-music.md` |
 | Catching `Exception` around a suspend body | Swallows `CancellationException`, breaks cooperative cancellation | `playback-streams.md` |
@@ -230,6 +231,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - All googlevideo bytes go through bounded ranged requests (10 MB chunks); downloads use their own ranged loop with resumable checkpoints.
 - **Music and video have separate caches.** Music is the user-sized LRU; video/Shorts is an uncapped transient cache. Turning a cache switch off makes it read-only, not bypassed; the preload switch gates work.
 - **Adaptive manifests, playlists and live segments never touch a playback cache** (`isUncacheablePlaybackUrl`). [scar]
+- Music downloads have their own quality (`currentDownloadMusicQuality`: `high` itag 140, `saver` itag 139, AAC/M4A only), carried on the request; until one is stored it follows the old streaming-quality rule.
 - Scrubs seek `CLOSEST_SYNC`, precise jumps `EXACT`. Quality ladders are highest-first; HDR is opt-in, merged from a raw visionOS `/player`, and `dynamicRange` is part of a quality's identity. `VideoStreamResolutionCache` shares ladders across surfaces.
 
 ### Video playback -> `docs/playback-video.md`
@@ -245,11 +247,12 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### Navigation and screens -> `docs/screens.md`
 - `NavHost` in `MainActivity`; the `home` route has its own tab system (`AnimatedContent` keyed on `HomeTabKey(tab, videoMode)`) and a floating toolbar using M3's scroll behaviour. Read `hiddenFraction()` only in deferred lambdas.
 - Both players are **overlays above the NavHost**. Something that owns the whole window must hide the other layer's mini bar (`miniBarHidden` via `isPlayerExpanded`). A mode switch pauses the other player, it does not dismantle it.
-- The Home top bars are a `Box`: profile picture, `HomeGreeting`, then `ModeMorphButton` and the buttons, with downloads shown only while downloading. The start screen (`getStartHomeTab`) and start mode (`applyStartMode`, fresh launcher launch only) are settings.
+- The Home top bars are a `Box`: profile picture, `HomeGreeting`, then `ModeMorphButton` and the buttons, with downloads shown only while downloading unless Customization keeps it there (`TopBarDownloadsButton`, which carries its own gap). The start screen (`getStartHomeTab`) and start mode (`applyStartMode`, fresh launcher launch only) are settings.
 - Library sub-screens are opened by hand-off (`initialArtist`/`initialPlaylist` + consumed callbacks).
 - Device videos use `device:` ids through the local-playback path; `singleTask` exists because of PiP; quality/HDR come from the decoder.
 - **Three playlist kinds**: local, the account's own, saved (references). A `PL` prefix does not mean yours - use `savedPlaylistIds`. Local video playlists use the `localvp_` prefix; routing lives in `addVideoToPlaylist`. Hidden playlists are a filter over the merged list.
 - `VideoOptionsSheet` is two panes; every surface uses `VideoOptionsSheetHost`.
+- The notification inbox reads every page YouTube offers (up to three) and shows what `NotificationHistoryStore` remembers under it; a hide is local. The video feeds are filtered where they are drawn (`VideoFeedFilter`), never in the fetch.
 - Taste setup is one route (`taste`), opened from the `home` route once per install (new users arrive there from onboarding) and from Settings; it marks itself seen on every way out.
 
 ### Subscriptions and blocklist -> `docs/subscriptions.md`
@@ -268,9 +271,10 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### Settings -> `docs/settings.md`
 - A new setting threads through five files (`ThemePreferences`, `ThemeViewModel`, `MainActivity`, `SettingsScreen`, `SettingsPages`) **plus `buildSettingsSearchIndex`**. Backups need nothing.
 - New strings go only in `values/strings.xml` (locales are partial by design).
-- Look and behaviour sit behind one hub row, **Customization**, sorted by surface; a new surface gets a row there, not on the hub. Its newer pages (mini player, video player, Home opening and bar) read and write their own `ThemePreferences` snapshot (`MiniPlayerCustomization`, `HomeNavigationCustomization`, `VideoGestureCustomization`) instead of threading through `SettingsScreen`. `SettingsPage.parent` is where back goes.
+- Look and behaviour sit behind one hub row, **Customization**, sorted by surface; a new surface gets a row there, not on the hub. Its newer pages (mini player, video player, Home opening and bar) read and write their own `ThemePreferences` snapshot (`MiniPlayerCustomization`, `HomeNavigationCustomization`, `VideoGestureCustomization`, `VideoFeedCustomization`) instead of threading through `SettingsScreen`. `SettingsPage.parent` is where back goes.
 - Settings is a hub plus `SettingsPage` enum pages, not routes (Backup included; it locks the hub while it works). Hub rows show the live value; dialogs live in `SettingsScreen`.
 - The updater hands off to the browser and never installs. Defaults: player style `EDITORIAL`, device library off.
+- The Account page (`AccountSettings.kt`) follows the profile roster rather than a signed-in flag, counts only what is already on the device, and can switch, add and reconnect profiles; `SettingsScreen` follows `activeProfileId` because of it.
 - Release highlights have one source per release, `assets/release-notes/<versionName>.md`, mirrored under `## Highlights` in the GitHub release (`ReleaseHighlights`, procedure in section 6). The update dialog opens once per release and again two days after Later (`UpdatePromptStore`, deliberately not in the backup).
 
 ### Identity -> `docs/identity.md`

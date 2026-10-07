@@ -85,8 +85,8 @@ private val NotificationItem.kind: NotificationKind
  * The notification inbox: what YouTube currently lists, and under it what this
  * device remembers from before YouTube dropped it.
  *
- * YouTube's own inbox is about a dozen recent items with nothing older to
- * fetch, so the sheet has three parts - New, Earlier, and Kept on this device -
+ * YouTube's own inbox only reaches a little way back, so the sheet has three
+ * parts - New, Earlier, and Kept on this device -
  * and a row of kind filters, because a week of history is mostly Shorts
  * uploads with the one post somebody was looking for somewhere among them.
  *

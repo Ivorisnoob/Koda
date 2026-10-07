@@ -8,10 +8,11 @@ import org.json.JSONObject
 /**
  * The notifications this device has seen, kept after YouTube stops listing them.
  *
- * YouTube's inbox is about a dozen recent items and has no older page to ask
- * for (see `YouTubeRepository.getNotifications`), so an upload from last week
- * is simply gone from it. Koda remembers each item the first time it sees it
- * and goes on showing it, under its own heading, once YouTube has dropped it.
+ * YouTube's inbox only reaches so far back - a few pages on a busy account, a
+ * dozen items on a quiet one (see `YouTubeRepository.getNotifications`) - and
+ * what falls off the end is simply gone from it. Koda remembers each item the
+ * first time it sees it and goes on showing it, under its own heading, once
+ * YouTube has dropped it.
  *
  * Keyed by profile id directly: an inbox is one account's, and two profiles on
  * a device must not see each other's. A cache rather than user data - it is
