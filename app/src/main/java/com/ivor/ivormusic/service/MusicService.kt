@@ -348,10 +348,11 @@ class MusicService : MediaLibraryService() {
 
         // Re-resolution attempts before a song is skipped. A dead or expired URL
         // is fixed by a fresh extraction or not at all, so the general ceiling
-        // stays low. A 403 on the direct InnerTube fallback is different: it is
-        // a verdict on visitorData, so each retry re-rolls that identity. Four
-        // attempts recover the large majority of those fallbacks (measured
-        // August 2026) without applying that expensive recovery to NewPipe URLs.
+        // stays low. A googlevideo 403 is different: it is a verdict on the
+        // visitorData the stream was resolved under, so each retry re-rolls
+        // that identity. Four attempts recover the large majority (measured
+        // August 2026 on ANDROID_VR, where about half of fresh tokens were
+        // refused; one in eight on visionOS in October 2026).
         private const val MAX_RETRIES = 2
         private const val MAX_FORBIDDEN_RETRIES = 4
 
@@ -1703,16 +1704,17 @@ class MusicService : MediaLibraryService() {
 
         // 5. Retry Logic (YouTube songs only)
         val retryCount = retryCounts[videoId] ?: 0
-        // Only direct InnerTube streams are tied to Koda's visitorData. The
-        // NewPipe-first path uses maintained Android/visionOS clients; a 403
-        // there needs a fresh extraction, not an unrelated identity remint.
-        val issuingClient = try {
-            uri?.getQueryParameter("c")?.uppercase()
-        } catch (_: Exception) {
-            null
-        }
-        val isVisitorDataForbidden = httpResponseCode(error) == 403 &&
-            (issuingClient == "ANDROID_VR" || issuingClient == "IOS")
+        // Any googlevideo 403, whichever client issued the URL, as the video
+        // player and downloads already treat it. This used to be limited to
+        // ANDROID_VR and IOS, from when NewPipe resolved music under its own
+        // identities. Music now resolves through visionOS under Koda's
+        // visitorData, and the verdict reaches it too [verified October 2026,
+        // `.probe/visionos_token_verdict_probe.py`: one fresh token in eight
+        // got /player OK and the opening bytes, then 403 on every range past
+        // them, for every song]. Left out of this check, such a token was
+        // re-resolved twice into the same refusal and the song skipped, and so
+        // was each song after it for the token's whole TTL.
+        val isVisitorDataForbidden = httpResponseCode(error) == 403
         val maxRetries = when {
             isVisitorDataForbidden -> MAX_FORBIDDEN_RETRIES
             uri?.scheme == "error" -> MAX_RESOLUTION_RETRIES
