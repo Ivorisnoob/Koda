@@ -107,6 +107,22 @@ class StreamCoreTest {
         assertEquals(140, data.itagOfUrl(pickAudio(data, AudioPreference.HIGHEST)?.url))
     }
 
+    @Test fun `the chosen format carries its own loudness`() {
+        val data = streamingData("player_ok")
+        assertEquals(5.39f, pickAudio(data, AudioPreference.HIGHEST)!!.loudnessDb!!, 0.001f)
+        assertEquals(5.40f, pickAudio(data, AudioPreference.BALANCED)!!.loudnessDb!!, 0.001f)
+        // visionOS states it per format and nowhere else.
+        assertFalse(JSONObject(text("player_ok")).has("playerConfig"))
+    }
+
+    @Test fun `a format that states no loudness reads as unknown, not zero`() {
+        val formats = streamingData("player_ok").getJSONArray("adaptiveFormats")
+        val video = (0 until formats.length()).map(formats::getJSONObject)
+            .first { it.getString("mimeType").startsWith("video") }
+        assertNull(formatLoudnessDb(video))
+        assertEquals(0f, formatLoudnessDb(JSONObject().put("loudnessDb", 0.0))!!, 0f)
+    }
+
     // --- original soundtrack ------------------------------------------------
 
     private fun dubbedFormats(): List<JSONObject> {

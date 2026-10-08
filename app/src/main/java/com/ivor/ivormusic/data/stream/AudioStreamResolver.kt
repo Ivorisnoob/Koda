@@ -31,6 +31,9 @@ internal sealed interface AudioResolution {
  * inside it; the two are a pair.
  * @param onResponse every `/player` response that reached status OK on the
  * third path, for the caller to harvest captions and loudness from.
+ * @param onLoudness the loudness of the format chosen on the first path,
+ * whose response states it per format rather than once; see
+ * [formatLoudnessDb].
  */
 internal class AudioStreamResolver(
     private val identity: VisitorIdentity,
@@ -39,6 +42,7 @@ internal class AudioStreamResolver(
     private val newPipe: NewPipeAudioSource,
     private val newPipeBudgetMs: Long,
     private val onResponse: (videoId: String, root: JSONObject) -> Unit,
+    private val onLoudness: (videoId: String, loudnessDb: Float) -> Unit,
 ) {
     /** The URL to play [videoId] from, chosen for [preference]. */
     suspend fun forPlayback(videoId: String, preference: AudioPreference): AudioResolution =
@@ -54,7 +58,10 @@ internal class AudioStreamResolver(
             }
 
             val direct = visionOsProbed(videoId) { pickAudioLogged(videoId, it, preference) }
-            direct.url?.let { return@withContext resolved(it, "visionOS") }
+            direct.pick?.let { pick ->
+                pick.loudnessDb?.let { onLoudness(videoId, it) }
+                return@withContext resolved(pick.url, "visionOS")
+            }
 
             val extracted = newPipe.withinBudget(videoId, preference, newPipeBudgetMs)
             extracted.url?.takeIf { it.isNotEmpty() }?.let {
@@ -66,7 +73,7 @@ internal class AudioStreamResolver(
                 botCheckedAlready = extracted.botChecked || direct.botChecked,
                 onResponse = { onResponse(videoId, it) },
             )?.let { pickAudioLogged(videoId, it.streamingData, preference) }
-            if (last != null) return@withContext resolved(last, "InnerTube fallback")
+            if (last != null) return@withContext resolved(last.url, "InnerTube fallback")
 
             KLog.e(
                 STREAM_TAG,
@@ -104,7 +111,7 @@ internal class AudioStreamResolver(
                 ?: AudioResolution.Unresolved
         }
 
-    private class Probed(val url: String?, val botChecked: Boolean)
+    private class Probed(val pick: AudioPick?, val botChecked: Boolean)
 
     /**
      * [PlayerSession.visionOs], with the token vetted before a URL resolved
@@ -116,29 +123,29 @@ internal class AudioStreamResolver(
      * nothing either way, the URL is returned as it is and playback's own 403
      * recovery remains the backstop.
      */
-    private suspend fun visionOsProbed(videoId: String, pick: (JSONObject) -> String?): Probed {
+    private suspend fun visionOsProbed(videoId: String, pick: (JSONObject) -> AudioPick?): Probed {
         for (round in 1..PROBE_ROUNDS) {
             val direct = session.visionOs(videoId)
-            val url = direct.answer?.let { pick(it.streamingData) }
+            val picked = direct.answer?.let { pick(it.streamingData) }
                 ?: return Probed(null, direct.botChecked)
             val token = direct.visitorData
-            if (token.isBlank() || identity.isVetted(token)) return Probed(url, false)
-            when (probe.servesLastByte(url)) {
+            if (token.isBlank() || identity.isVetted(token)) return Probed(picked, false)
+            when (probe.servesLastByte(picked.url)) {
                 true -> {
                     identity.markVetted(token)
-                    return Probed(url, false)
+                    return Probed(picked, false)
                 }
-                null -> return Probed(url, false)
+                null -> return Probed(picked, false)
                 false -> {
                     KLog.w(
                         STREAM_TAG,
                         "Resolve[visionOS] googlevideo refuses this visitorData past the opening " +
                             "(round $round/$PROBE_ROUNDS) videoId=$videoId",
                     )
-                    if (round == PROBE_ROUNDS) return Probed(url, false)
+                    if (round == PROBE_ROUNDS) return Probed(picked, false)
                     // Ladders other surfaces resolved under this token are as dead.
                     VideoStreamResolutionCache.clear()
-                    identity.replace(token) ?: return Probed(url, false)
+                    identity.replace(token) ?: return Probed(picked, false)
                 }
             }
         }
@@ -149,7 +156,7 @@ internal class AudioStreamResolver(
         videoId: String,
         streamingData: JSONObject,
         preference: AudioPreference,
-    ): String? {
+    ): AudioPick? {
         val pick = pickAudio(streamingData, preference)
         if (pick == null) {
             val (ciphered, total) = cipheredFormatCount(streamingData)
@@ -157,7 +164,7 @@ internal class AudioStreamResolver(
         } else if (pick.muxed) {
             KLog.w(STREAM_TAG, "Using a muxed video format videoId=$videoId (no audio-only)")
         }
-        return pick?.url
+        return pick
     }
 
     private companion object {

@@ -22,8 +22,26 @@ internal enum class AudioPreference {
     LOWEST,
 }
 
-/** A chosen stream URL, and whether it is a muxed video file standing in for audio. */
-internal class AudioPick(val url: String, val muxed: Boolean)
+/**
+ * A chosen stream: its URL, whether it is a muxed video file standing in for
+ * audio, and the loudness the format states for itself, if it states one.
+ */
+internal class AudioPick(val url: String, val muxed: Boolean, val loudnessDb: Float? = null)
+
+/**
+ * A format's own `loudnessDb`: how far the track sits above YouTube's -14
+ * LKFS target, the same quantity `playerConfig.audioConfig.loudnessDb`
+ * carries on the clients that send one.
+ *
+ * [verified October 2026] visionOS sends no `playerConfig.audioConfig` at
+ * all. Each audio format carries `loudnessDb` and `trackAbsoluteLoudnessLkfs`
+ * instead, the first being the second plus 14 (5.39 and -8.61 on the fixture
+ * song), and differing by about 0.01 between the AAC and Opus encodes.
+ * A missing key reads as unknown, never as 0.0, which is a real measurement.
+ */
+internal fun formatLoudnessDb(format: JSONObject): Float? =
+    (if (format.has("loudnessDb")) format.optDouble("loudnessDb").toFloat() else null)
+        ?.takeIf { it.isFinite() }
 
 /** `adaptiveFormats` then `formats`, as one list. */
 private fun JSONObject.allFormats(): List<JSONObject> =
@@ -56,7 +74,9 @@ internal fun pickAudio(streamingData: JSONObject, preference: AudioPreference): 
         AudioPreference.BALANCED -> audioOnly.minByOrNull { abs(it.optInt("bitrate") - 128_000) }
         AudioPreference.HIGHEST -> audioOnly.maxByOrNull { it.optInt("bitrate") }
     }
-    chosen?.optString("url")?.takeIf { it.isNotEmpty() }?.let { return AudioPick(it, muxed = false) }
+    chosen?.optString("url")?.takeIf { it.isNotEmpty() }?.let {
+        return AudioPick(it, muxed = false, loudnessDb = formatLoudnessDb(chosen))
+    }
 
     val muxed = streamingData.optJSONArray("formats")
         ?.let { array -> (0 until array.length()).mapNotNull(array::optJSONObject) }

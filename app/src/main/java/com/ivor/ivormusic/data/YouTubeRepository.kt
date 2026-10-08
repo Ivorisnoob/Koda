@@ -413,6 +413,7 @@ class YouTubeRepository(private val context: Context) {
         newPipe = NewPipeAudioSource(youtubeService, newPipeScope),
         newPipeBudgetMs = NEWPIPE_STREAM_BUDGET_MS,
         onResponse = ::harvestPlayerResponse,
+        onLoudness = ::cacheTrackLoudness,
     )
 
     private fun getRandomUserAgent(): String {
