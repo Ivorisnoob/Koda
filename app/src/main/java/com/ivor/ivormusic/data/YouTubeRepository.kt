@@ -315,6 +315,25 @@ class YouTubeRepository(private val context: Context) {
         private const val VISITOR_DATA_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
 
         /**
+         * The visitorData googlevideo has been seen serving a stream's last
+         * byte for, so it is not asked again on every song. Part of the
+         * visitorData cache, like the verdict below: it is a fact about that
+         * token, and each surface holds its own repository instance. See
+         * [resolveVisionOsAudioUrl].
+         */
+        @Volatile private var vettedVisitorData: String? = null
+
+        /** Fresh tokens one song may go through before playback's own recovery takes over. */
+        private const val TOKEN_VETTING_ROUNDS = 3
+
+        /**
+         * The shortest stream whose last byte says anything. The refused
+         * window is about the first minute of media, so a clip shorter than
+         * this could be served whole under a refused token.
+         */
+        private const val TOKEN_VETTING_MIN_DURATION_S = 120.0
+
+        /**
          * When the bot check last refused a stream in a way no fresh identity
          * could fix: a just-minted visitorData refused as well, or NewPipe
          * (which mints its own fresh token per client) refused alongside the
@@ -418,11 +437,13 @@ class YouTubeRepository(private val context: Context) {
         fun invalidateSessionScopedCaches(context: Context, commitNow: Boolean = false) {
             cachedVisitorData = null
             visitorDataFetchedAt = 0L
+            vettedVisitorData = null
             botCheckVerdictAtMs = 0L
             VideoStreamResolutionCache.clear()
             val editor = context.applicationContext
                 .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
                 .edit().remove("visitor_data").remove("visitor_data_at")
+                .remove("visitor_data_vetted")
             if (commitNow) editor.commit() else editor.apply()
         }
     }
@@ -1099,9 +1120,8 @@ class YouTubeRepository(private val context: Context) {
         // times three for the songs prefetched ahead). visionOS URLs serve the
         // whole file in bounded ranges [verified September 2026: a 141-minute
         // audio track downloaded whole], unlike ANDROID_VR's below.
-        val direct = resolveVisionOsPlayer(videoId)
-        direct.response?.streamingData
-            ?.let { pickAudioStreamUrl(videoId, it) }
+        val direct = resolveVisionOsAudioUrl(videoId)
+        direct.url
             ?.let { url ->
                 clearBotCheckVerdict()
                 KLog.i(
@@ -2480,7 +2500,111 @@ class YouTubeRepository(private val context: Context) {
      * it even after a fresh identity - which the fallbacks behind it need, so
      * they do not remint for a refusal that is already known.
      */
-    private class VisionOsResolution(val response: PlayerResponse?, val botChecked: Boolean)
+    private class VisionOsResolution(
+        val response: PlayerResponse?,
+        val botChecked: Boolean,
+        /** The token [response] was resolved under; blank when there is no response. */
+        val visitorData: String = "",
+    )
+
+    /** A song's visionOS audio URL, or none and whether the bot check was why. */
+    private class VisionOsAudio(val url: String?, val botChecked: Boolean)
+
+    /**
+     * [resolveVisionOsPlayer] for a song, with the token vetted before its URL
+     * reaches the player.
+     *
+     * A refused visitorData is invisible to resolution: `/player` answers OK
+     * and googlevideo serves the opening of the stream, then answers 403 for
+     * every range after it. [verified October 2026,
+     * `.probe/visionos_wall_probe.py`: about one fresh WEB-minted token in
+     * ten; the wall began 250 KiB to 1.1 MiB in depending on the format, about
+     * a minute of audio, and held for every song, every audio itag and a
+     * re-resolution under that token.] So a song used to play for a minute
+     * and then stall while MusicService reminted and re-resolved.
+     *
+     * The last byte is refused under such a token and served under a good one
+     * whatever the format, so one single-byte request settles it. It is spent
+     * once per token, not per song: the token is remembered as vetted, in
+     * memory and beside the token on disk. A refused one is reminted and the
+     * song resolved again, up to [TOKEN_VETTING_ROUNDS] tokens; past that, or
+     * when the request says nothing either way, the URL is returned as it is
+     * and playback's own 403 recovery remains the backstop.
+     */
+    private suspend fun resolveVisionOsAudioUrl(videoId: String): VisionOsAudio {
+        for (round in 1..TOKEN_VETTING_ROUNDS) {
+            val direct = resolveVisionOsPlayer(videoId)
+            val url = direct.response?.streamingData?.let { pickAudioStreamUrl(videoId, it) }
+                ?: return VisionOsAudio(null, direct.botChecked)
+            val token = direct.visitorData
+            if (token.isBlank() || isVisitorDataVetted(token)) return VisionOsAudio(url, false)
+            when (servesLastByte(url)) {
+                true -> {
+                    markVisitorDataVetted(token)
+                    return VisionOsAudio(url, false)
+                }
+                null -> return VisionOsAudio(url, false)
+                false -> {
+                    KLog.w(
+                        "YouTubeRepository",
+                        "Resolve[visionOS] googlevideo refuses this visitorData past the opening " +
+                            "(round $round/$TOKEN_VETTING_ROUNDS) videoId=$videoId",
+                    )
+                    if (round == TOKEN_VETTING_ROUNDS) return VisionOsAudio(url, false)
+                    // Ladders other surfaces resolved under this token are as dead.
+                    VideoStreamResolutionCache.clear()
+                    remintVisitorData(flagged = token) ?: return VisionOsAudio(url, false)
+                }
+            }
+        }
+        return VisionOsAudio(null, false)
+    }
+
+    private fun isVisitorDataVetted(token: String): Boolean {
+        if (vettedVisitorData == token) return true
+        if (visitorDataPrefs.getString("visitor_data_vetted", null) != token) return false
+        vettedVisitorData = token
+        return true
+    }
+
+    private fun markVisitorDataVetted(token: String) {
+        vettedVisitorData = token
+        visitorDataPrefs.edit().putString("visitor_data_vetted", token).apply()
+    }
+
+    /**
+     * Whether googlevideo serves the last byte of [url]: true or false when it
+     * said so (206 or 403), null when it could not be asked or the answer
+     * means nothing - no stated length, a clip short enough to sit inside the
+     * opening window, a network failure, any other status.
+     */
+    private suspend fun servesLastByte(url: String): Boolean? = withContext(Dispatchers.IO) {
+        try {
+            val uri = android.net.Uri.parse(url)
+            val length = uri.getQueryParameter("clen")?.toLongOrNull()?.takeIf { it > 0L }
+                ?: return@withContext null
+            val durationS = uri.getQueryParameter("dur")?.toDoubleOrNull()
+                ?: return@withContext null
+            if (durationS < TOKEN_VETTING_MIN_DURATION_S) return@withContext null
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", uaForPlaybackUri(uri))
+                .addHeader("Range", "bytes=${length - 1}-${length - 1}")
+                .build()
+            // The hard-capped client: this sits in front of a song starting.
+            streamResolveClient.newCall(request).execute().use { response ->
+                when (response.code) {
+                    206 -> true
+                    403 -> false
+                    else -> null
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     /**
      * Resolve a video's streams with one visionOS `/player` call carrying
@@ -2515,7 +2639,7 @@ class YouTubeRepository(private val context: Context) {
         // refusal is already known, so mint before spending the request.
         if (visitorData.isBlank()) visitorData = remintVisitorData(flagged = "").orEmpty()
         val first = fetchVisionOsPlayerResponse(videoId, visitorData)
-        if (first.streamingData != null) return VisionOsResolution(first, botChecked = false)
+        if (first.streamingData != null) return VisionOsResolution(first, botChecked = false, visitorData)
         if (!first.visitorDataSuspect) return VisionOsResolution(null, botChecked = false)
         if (isBotCheckVerdictActive()) return VisionOsResolution(null, botChecked = true)
 
@@ -2526,7 +2650,7 @@ class YouTubeRepository(private val context: Context) {
         val fresh = remintVisitorData(flagged = visitorData)
         if (fresh == null || fresh == visitorData) return VisionOsResolution(null, botChecked = false)
         val retry = fetchVisionOsPlayerResponse(videoId, fresh)
-        if (retry.streamingData != null) return VisionOsResolution(retry, botChecked = false)
+        if (retry.streamingData != null) return VisionOsResolution(retry, botChecked = false, fresh)
         if (retry.visitorDataSuspect) noteBotCheckVerdict(videoId)
         return VisionOsResolution(null, botChecked = retry.visitorDataSuspect)
     }
