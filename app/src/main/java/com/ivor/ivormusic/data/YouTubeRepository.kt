@@ -1,5 +1,21 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.data.stream.AudioPreference
+import com.ivor.ivormusic.data.stream.AudioResolution
+import com.ivor.ivormusic.data.stream.AudioStreamResolver
+import com.ivor.ivormusic.data.stream.BotCheckVerdict
+import com.ivor.ivormusic.data.stream.NewPipeAudioSource
+import com.ivor.ivormusic.data.stream.PlayerApi
+import com.ivor.ivormusic.data.stream.PlayerClient
+import com.ivor.ivormusic.data.stream.PlayerClients
+import com.ivor.ivormusic.data.stream.PlayerSession
+import com.ivor.ivormusic.data.stream.StreamProbe
+import com.ivor.ivormusic.data.stream.VisitorIdentity
+import com.ivor.ivormusic.data.stream.isNewPipeBotCheck
+import com.ivor.ivormusic.data.stream.m4aAudioFormats
+import com.ivor.ivormusic.data.stream.okRoot
+import com.ivor.ivormusic.data.stream.originalAudioStreams
+import com.ivor.ivormusic.data.stream.userAgentForStreamClient
 import com.ivor.ivormusic.util.KLog
 
 import android.content.Context
@@ -9,12 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.withLock
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.AudioTrackType
-import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 import org.schabi.newpipe.extractor.services.youtube.YoutubeService
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
@@ -183,77 +197,16 @@ class YouTubeRepository(private val context: Context) {
         // video path's www.youtube.com is allowed as well.
         private val MUSIC_HISTORY_TRACKING_HOSTS = setOf("s.youtube.com", "www.youtube.com")
 
-        // ANDROID_VR is the client for audio extraction in 2026: it returns
-        // direct, unobfuscated stream URLs (no signatureCipher to decrypt) and
-        // needs no player JS.
-        //
-        // It no longer escapes GVS PO-Token enforcement, though, and nothing
-        // does. Measured August 2026: googlevideo serves the first ~1.1 MiB of
-        // a stream and answers 403 for every byte past it, on ANDROID_VR and
-        // IOS alike. The verdict is keyed on the visitorData the /player call
-        // carried, not on the video or the client: it is stable for a given
-        // token and roughly half of freshly minted tokens are refused. So a
-        // single unlucky mint breaks every uncached stream for the whole
-        // VISITOR_DATA_TTL_MS, which is what refreshVisitorDataAfterPlaybackFailure
-        // exists to undo. Do not read a 403 here as a UA or client problem.
-        private const val ANDROID_VR_VERSION = "1.65.10"
-        private const val ANDROID_VR_USER_AGENT =
-            "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
-        private const val ANDROID_VR_CLIENT_ID = 28
-
-        // IOS used as a secondary fallback when ANDROID_VR is rejected (rare).
-        private const val IOS_VERSION = "21.02.3"
-        const val IOS_USER_AGENT =
-            "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)"
-        private const val IOS_CLIENT_ID = 5
-
-        // Default UA used when a URL has no recognisable `?c=` client tag.
-        // Most callers should use uaForPlaybackUri() instead, which picks the UA
-        // matching the URL's issuing client so YouTube doesn't 403 on UA mismatch.
-        const val PLAYBACK_USER_AGENT = IOS_USER_AGENT
-
-        // These match the clients used by NewPipe Extractor v0.26.5. Stream
-        // URLs carry the client name in `c=` and GVS can reject a request whose
-        // User-Agent belongs to a different client family.
-        private const val NEWPIPE_ANDROID_USER_AGENT =
-            "com.google.android.youtube/21.03.36 (Linux; U; Android 15; GB) gzip"
-        private const val VISIONOS_CLIENT_VERSION = "1.02"
-        private const val VISIONOS_CLIENT_ID = 101
-        private const val VISIONOS_USER_AGENT =
-            "com.google.visionos.youtube/1.02(RealityDevice14,1; U; CPU visionOS " +
-                "25_6_0 like Mac OS X; GB)"
-        private const val NEWPIPE_VISIONOS_USER_AGENT = VISIONOS_USER_AGENT
-
         /**
-         * Returns the User-Agent ExoPlayer must use when fetching a googlevideo
-         * URL. YouTube binds resolved stream URLs to the client tagged in the
-         * `?c=` query param and answers 403 if the playback request's UA doesn't
-         * look like that client. Pick the UA per URL, not globally.
+         * The User-Agent a player must send when fetching a googlevideo URL:
+         * the one belonging to the client that resolved it, read from the
+         * URL's `c=`. See [PlayerClient].
          */
         fun uaForPlaybackUri(uri: android.net.Uri): String {
-            val c = try { uri.getQueryParameter("c") } catch (_: Exception) { null }
-            return when (c?.uppercase()) {
-                "IOS" -> IOS_USER_AGENT
-                "ANDROID_VR" -> ANDROID_VR_USER_AGENT
-                "ANDROID", "ANDROID_TESTSUITE", "ANDROID_MUSIC" ->
-                    NEWPIPE_ANDROID_USER_AGENT
-                "VISIONOS" -> NEWPIPE_VISIONOS_USER_AGENT
-                "TVHTML5_SIMPLY_EMBEDDED_PLAYER", "TVHTML5_SIMPLY_EMBEDDED", "TVHTML5" ->
-                    TV_EMBED_USER_AGENT
-                "WEB_EMBEDDED_PLAYER", "WEB", "WEB_REMIX" -> BROWSER_USER_AGENT
-                else -> BROWSER_USER_AGENT
-            }
+            val client = try { uri.getQueryParameter("c") } catch (_: Exception) { null }
+            return userAgentForStreamClient(client, BROWSER_USER_AGENT)
         }
 
-        // UA kept only for uaForPlaybackUri: previously-resolved TV-client URLs
-        // may still live in the player queue / URI cache and need a matching UA.
-        private const val TV_EMBED_USER_AGENT =
-            "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
-
-        // visitorData cache is companion-level: repositories are created per
-        // ViewModel (no DI), so instance-level storage would make every VM pay
-        // the youtube.com bootstrap download once. Shared storage means one
-        // fetch warms it for the whole process.
         /**
          * Shared HTTP cache for the plain GETs this app makes - the channel
          * Atom feeds above all, which carry ETag/Last-Modified and are
@@ -309,73 +262,12 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
-        @Volatile private var cachedVisitorData: String? = null
-        @Volatile private var visitorDataFetchedAt: Long = 0L
-        private val visitorDataMutex = kotlinx.coroutines.sync.Mutex()
-        private const val VISITOR_DATA_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
-
-        /**
-         * The visitorData googlevideo has been seen serving a stream's last
-         * byte for, so it is not asked again on every song. Part of the
-         * visitorData cache, like the verdict below: it is a fact about that
-         * token, and each surface holds its own repository instance. See
-         * [resolveVisionOsAudioUrl].
-         */
-        @Volatile private var vettedVisitorData: String? = null
-
-        /** Fresh tokens one song may go through before playback's own recovery takes over. */
-        private const val TOKEN_VETTING_ROUNDS = 3
-
-        /**
-         * The shortest stream whose last byte says anything. The refused
-         * window is about the first minute of media, so a clip shorter than
-         * this could be served whole under a refused token.
-         */
-        private const val TOKEN_VETTING_MIN_DURATION_S = 120.0
-
-        /**
-         * When the bot check last refused a stream in a way no fresh identity
-         * could fix: a just-minted visitorData refused as well, or NewPipe
-         * (which mints its own fresh token per client) refused alongside the
-         * direct chain. Part of the visitorData cache rather than new state:
-         * it is the verdict on that identity, and MusicService, the video
-         * players and downloads each hold their own repository instance.
-         *
-         * [verified September 2026] A tester's signed-in session hit this at
-         * the IP level: a remint, then both clients refused again within 300ms,
-         * three times across two videos. Account cookies cannot help (the
-         * stream clients reject them; see docs/youtube-data.md). What the
-         * verdict changes is only the *automatic* work that repeats a refusal -
-         * remint-and-retry, playback retries, speculative prefetch. A request
-         * the user makes still goes out, as with [YouTubeRateLimit].
-         */
-        @Volatile private var botCheckVerdictAtMs: Long = 0L
-        private const val BOT_CHECK_VERDICT_MS = 3 * 60 * 1000L
-
         /**
          * Whether stream resolution was refused by the bot check recently
          * enough that repeating it automatically would only add requests.
          * Never a reason to refuse a request the user made.
          */
-        fun isBotCheckVerdictActive(): Boolean {
-            val at = botCheckVerdictAtMs
-            if (at == 0L) return false
-            val age = System.currentTimeMillis() - at
-            // A negative age is a clock that moved backwards: expire it rather
-            // than pin the verdict.
-            return age in 0 until BOT_CHECK_VERDICT_MS
-        }
-
-        private fun noteBotCheckVerdict(videoId: String) {
-            if (!isBotCheckVerdictActive()) {
-                KLog.w(
-                    "YouTubeRepository",
-                    "Bot check refused videoId=$videoId with a fresh identity; " +
-                        "holding automatic retries and prefetch for ${BOT_CHECK_VERDICT_MS / 1000}s",
-                )
-            }
-            botCheckVerdictAtMs = System.currentTimeMillis()
-        }
+        fun isBotCheckVerdictActive(): Boolean = BotCheckVerdict.isActive()
 
         /**
          * The device moved to a different network, so the verdicts YouTube
@@ -384,16 +276,9 @@ class YouTubeRepository(private val context: Context) {
          * old address. The caller remints visitorData on the new one.
          */
         fun forgetConnectionVerdicts() {
-            botCheckVerdictAtMs = 0L
+            BotCheckVerdict.reset()
             YouTubeRateLimit.clear()
             VideoStreamResolutionCache.clear()
-        }
-
-        private fun clearBotCheckVerdict() {
-            if (botCheckVerdictAtMs != 0L) {
-                botCheckVerdictAtMs = 0L
-                KLog.i("YouTubeRepository", "Stream resolved; bot-check verdict cleared")
-            }
         }
 
         private class CachedCaptions(val tracks: List<CaptionTrack>, val fetchedAt: Long)
@@ -435,16 +320,9 @@ class YouTubeRepository(private val context: Context) {
          * visitorData persisted and re-read on the next start.
          */
         fun invalidateSessionScopedCaches(context: Context, commitNow: Boolean = false) {
-            cachedVisitorData = null
-            visitorDataFetchedAt = 0L
-            vettedVisitorData = null
-            botCheckVerdictAtMs = 0L
+            VisitorIdentity.forget(context, commitNow)
+            BotCheckVerdict.reset()
             VideoStreamResolutionCache.clear()
-            val editor = context.applicationContext
-                .getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
-                .edit().remove("visitor_data").remove("visitor_data_at")
-                .remove("visitor_data_vetted")
-            if (commitNow) editor.commit() else editor.apply()
         }
     }
 
@@ -497,7 +375,7 @@ class YouTubeRepository(private val context: Context) {
     // worst case, and because the thread is blocked inside execute() no
     // coroutine timeout above it can cut it short. A per-request wall-clock cap
     // is the only thing that bounds one of those requests at all; what bounds
-    // the *wait* is resolveAudioUrlWithinBudget, which is where playback
+    // the *wait* is NewPipeAudioSource.withinBudget, which is where playback
     // responsiveness actually comes from.
     private val newPipeClient = okHttpClient.newBuilder()
         .callTimeout(NEWPIPE_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -512,6 +390,29 @@ class YouTubeRepository(private val context: Context) {
     // cancel the scope every later one needs.
     private val newPipeScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + Dispatchers.IO,
+    )
+
+    // Stream resolution lives in data/stream. The repository builds the
+    // pieces and keeps the public calls where callers already find them.
+    private val visitorIdentity = VisitorIdentity(
+        context = context,
+        quickHttp = streamResolveClient,
+        pageHttp = okHttpClient,
+        webClientVersion = WEB_VERSION,
+        browserUserAgent = BROWSER_USER_AGENT,
+        region = ::contentRegion,
+    )
+    private val playerSession = PlayerSession(
+        visitorIdentity,
+        PlayerApi(streamResolveClient, INNER_TUBE_API_KEY),
+    )
+    private val audioStreams = AudioStreamResolver(
+        identity = visitorIdentity,
+        session = playerSession,
+        probe = StreamProbe(streamResolveClient, BROWSER_USER_AGENT),
+        newPipe = NewPipeAudioSource(youtubeService, newPipeScope),
+        newPipeBudgetMs = NEWPIPE_STREAM_BUDGET_MS,
+        onResponse = ::harvestPlayerResponse,
     )
 
     private fun getRandomUserAgent(): String {
@@ -1036,7 +937,7 @@ class YouTubeRepository(private val context: Context) {
             val session = sessionManager.captureSession()
             val client = org.json.JSONObject().put("clientName", "WEB_REMIX")
                 .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", contentRegion())
-            cachedVisitorDataOrNull()?.let { client.put("visitorData", it) }
+            visitorIdentity.cachedOrNull()?.let { client.put("visitorData", it) }
             payload.put("context", org.json.JSONObject().put("client", client))
             val builder = okhttp3.Request.Builder()
                 .url("https://music.youtube.com/youtubei/v1/$endpoint")
@@ -1045,7 +946,7 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("X-YouTube-Client-Name", "67")
                 .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
-            cachedVisitorDataOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
+            visitorIdentity.cachedOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
             builder.authenticate(session)
             okHttpClient.newCall(builder.build()).execute().use { response ->
                 val body = response.body?.string().orEmpty()
@@ -1111,67 +1012,20 @@ class YouTubeRepository(private val context: Context) {
      * @param videoId The YouTube video ID
      * @return Result containing stream URL or error
      */
-    suspend fun getStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
-        val startMs = System.currentTimeMillis()
-
-        // Primary: one visionOS /player under Koda's own visitorData, the same
-        // resolver video and Shorts use - see resolveVisionOsPlayer for why it
-        // replaced NewPipe (eight requests and three fresh visitor ids per song,
-        // times three for the songs prefetched ahead). visionOS URLs serve the
-        // whole file in bounded ranges [verified September 2026: a 141-minute
-        // audio track downloaded whole], unlike ANDROID_VR's below.
-        val direct = resolveVisionOsAudioUrl(videoId)
-        direct.url
-            ?.let { url ->
-                clearBotCheckVerdict()
-                KLog.i(
-                    "YouTubeRepository",
-                    "Resolve[visionOS] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
-                )
-                return@withContext Result.success(url)
-            }
-
-        // Fallback: NewPipe's maintained Android/visionOS client chain, with
-        // identities of its own.
-        //
-        // Bounded, because being slow here used to be indistinguishable from
-        // failing: the extraction is eight blocking requests (see newPipeClient)
-        // and the caller's own timeout could not interrupt one, so a stalled
-        // path ran out MusicService's whole resolution budget and the song
-        // resolved to an error URI and was skipped - with a working fallback
-        // sitting unused behind it.
-        val newPipe = resolveAudioUrlWithinBudget(videoId)
-        val newPipeUrl = newPipe.url
-        if (!newPipeUrl.isNullOrEmpty()) {
-            clearBotCheckVerdict()
-            KLog.i(
-                "YouTubeRepository",
-                "Resolve[NewPipe fallback] OK videoId=$videoId dt=${System.currentTimeMillis() - startMs}ms",
-            )
-            return@withContext Result.success(newPipeUrl)
+    suspend fun getStreamUrl(videoId: String): Result<String> =
+        when (val resolution = audioStreams.forPlayback(videoId, currentAudioPreference())) {
+            is AudioResolution.Resolved -> Result.success(resolution.url)
+            AudioResolution.Unresolved ->
+                Result.failure(Exception("No audio stream found for $videoId"))
         }
 
-        // Last resort: the ANDROID_VR -> IOS chain. It can still cover a
-        // client-specific failure, but never the normal path: ANDROID_VR URLs
-        // can start and then hit googlevideo's progressive byte ceiling on long
-        // media, so a long song fails after it has already been playing.
-        val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked || direct.botChecked)
-            ?.let { pickAudioStreamUrl(videoId, it) }
-        val dt = System.currentTimeMillis() - startMs
-        if (!innerTubeUrl.isNullOrEmpty()) {
-            KLog.i(
-                "YouTubeRepository",
-                "Resolve[InnerTube fallback] OK videoId=$videoId dt=${dt}ms",
-            )
-            Result.success(innerTubeUrl)
-        } else {
-            KLog.e(
-                "YouTubeRepository",
-                "Resolve FAIL videoId=$videoId all clients exhausted (NewPipe + InnerTube) dt=${dt}ms",
-            )
-            Result.failure(Exception("No audio stream found for $videoId"))
+    /** The per-network music quality setting, read fresh for each resolution. */
+    private fun currentAudioPreference(): AudioPreference =
+        when (ThemePreferences.currentMusicQuality(context)) {
+            ThemePreferences.MUSIC_QUALITY_LOW -> AudioPreference.LOWEST
+            ThemePreferences.MUSIC_QUALITY_NORMAL -> AudioPreference.BALANCED
+            else -> AudioPreference.HIGHEST
         }
-    }
 
     /**
      * Resolve an AAC/M4A audio-only stream for a file download.
@@ -1184,30 +1038,15 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getDownloadAudioStreamUrl(
         videoId: String,
         quality: String? = null,
-    ): Result<String> =
-        withContext(Dispatchers.IO) {
-            val wanted = quality ?: ThemePreferences.currentDownloadMusicQuality(context)
-            // Same order as getStreamUrl: visionOS under Koda's own identity,
-            // then NewPipe, then the direct chain.
-            val direct = resolveVisionOsPlayer(videoId)
-            direct.response?.streamingData?.let { pickM4aAudioStreamUrl(it, wanted) }?.let { url ->
-                clearBotCheckVerdict()
-                return@withContext Result.success(url)
-            }
-
-            val newPipe = resolveM4aAudioUrlViaNewPipe(videoId, wanted)
-            val newPipeUrl = newPipe.url
-            if (!newPipeUrl.isNullOrBlank()) {
-                clearBotCheckVerdict()
-                return@withContext Result.success(newPipeUrl)
-            }
-
-            val innerTubeUrl = resolvePlayerStreamingData(videoId, newPipe.botChecked || direct.botChecked)
-                ?.let { pickM4aAudioStreamUrl(it, wanted) }
-            if (!innerTubeUrl.isNullOrBlank()) return@withContext Result.success(innerTubeUrl)
-
-            Result.failure(Exception("No AAC/M4A audio stream found for $videoId"))
+    ): Result<String> {
+        val wanted = quality ?: ThemePreferences.currentDownloadMusicQuality(context)
+        val smallest = wanted == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER
+        return when (val resolution = audioStreams.forDownload(videoId, smallest)) {
+            is AudioResolution.Resolved -> Result.success(resolution.url)
+            AudioResolution.Unresolved ->
+                Result.failure(Exception("No AAC/M4A audio stream found for $videoId"))
         }
+    }
 
     /**
      * The qualities a song can be downloaded at, best first, each with the
@@ -1227,7 +1066,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getDownloadAudioFormats(videoId: String): List<DownloadAudioFormat> =
         withContext(Dispatchers.IO) {
-            val streamingData = resolveVisionOsPlayer(videoId).response?.streamingData
+            val streamingData = playerSession.visionOs(videoId).answer?.streamingData
                 ?: return@withContext emptyList()
             val originals = m4aAudioFormats(streamingData)
             val best = originals.maxByOrNull { it.optInt("bitrate") }
@@ -1246,453 +1085,29 @@ class YouTubeRepository(private val context: Context) {
             }
         }
 
+    // --- Identity -----------------------------------------------------------
+    // The visitorData token itself lives in VisitorIdentity.
+
+    /** Warm the identity off the critical path; see [VisitorIdentity.prefetch]. */
+    suspend fun prefetchVisitorData() = visitorIdentity.prefetch()
+
     /**
-     * Run [resolveAudioUrlViaNewPipe] with a wall-clock budget the caller can
-     * actually rely on.
+     * Replace the identity because *playback* failed, not resolution.
      *
-     * NewPipe's `fetchPage()` is blocking and uninterruptible, so wrapping it in
-     * `withTimeout` where it runs achieves nothing: `coroutineScope` will not
-     * return until the blocking child returns, timeout or no timeout. The work
-     * therefore starts on [newPipeScope], which is not a child of the caller,
-     * and only the *await* is bounded. When the budget expires the caller moves
-     * on to the InnerTube fallback while the extraction finishes in the
-     * background, capped by [newPipeClient]'s own per-request timeout.
+     * Resolution only replaces a token when `/player` itself shows the bot
+     * check. The other signature is a `/player` that answers OK with URLs
+     * googlevideo then refuses with HTTP 403: the player sees that,
+     * resolution never does, so without this entry point the refused token
+     * sits in prefs and is replayed for its whole TTL - "restarting and
+     * clearing cache don't help, clearing data does".
      *
-     * Abandoning it rather than cancelling it is deliberate: nothing is written
-     * outside the returned value, and a resolution that arrives late is simply
-     * discarded.
-     */
-    private suspend fun resolveAudioUrlWithinBudget(videoId: String): NewPipeAudioResult {
-        val extraction = newPipeScope.async { resolveAudioUrlViaNewPipe(videoId) }
-        return try {
-            kotlinx.coroutines.withTimeoutOrNull(NEWPIPE_STREAM_BUDGET_MS) { extraction.await() }
-                ?: run {
-                    // Cancelling cannot interrupt a thread already inside
-                    // fetchPage() - only newPipeClient's per-request cap ends
-                    // that - but it marks the work abandoned so nothing runs
-                    // after it and a queued extraction never starts at all.
-                    extraction.cancel()
-                    KLog.w(
-                        "YouTubeRepository",
-                        "Resolve[NewPipe] over ${NEWPIPE_STREAM_BUDGET_MS}ms budget " +
-                            "videoId=$videoId, falling back to InnerTube",
-                    )
-                    NewPipeAudioResult.NONE
-                }
-        } catch (e: CancellationException) {
-            // The caller went away rather than the budget expiring. Abandon the
-            // extraction the same way and let the cancellation propagate.
-            extraction.cancel()
-            throw e
-        }
-    }
-
-    /**
-     * Resolve an audio stream URL through NewPipe's maintained client chain.
-     * Applies the same per-network music quality policy as [pickAudioStreamUrl]
-     * (NewPipe's averageBitrate is in kbps), and falls back to a muxed
-     * video+audio URL when no audio-only URL exists. The resulting googlevideo
-     * URL is tagged with its issuing client, so playback selects the matching
-     * user agent through [uaForPlaybackUri].
-     */
-    private suspend fun resolveAudioUrlViaNewPipe(videoId: String): NewPipeAudioResult = withContext(Dispatchers.IO) {
-        try {
-            val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
-            streamExtractor.fetchPage()
-
-            // Generated manifest content shares the Stream model with direct
-            // URLs. Only the latter can be handed to Media3 as a URI.
-            val audioStreams = originalTrackAudioStreams(
-                streamExtractor.audioStreams.filter { it.isUrl },
-            )
-            pickAudioStreamForCurrentQuality(audioStreams)
-                ?.content
-                ?.takeIf { it.isNotBlank() }
-                ?.let { return@withContext NewPipeAudioResult(it) }
-
-            // No audio-only stream — a muxed stream still carries an audio track.
-            NewPipeAudioResult(
-                streamExtractor.videoStreams
-                    .asSequence()
-                    .filter { it.isUrl }
-                    .mapNotNull { it.content?.takeIf(String::isNotBlank) }
-                    .firstOrNull()
-            )
-        } catch (e: CancellationException) {
-            // The budget in resolveAudioUrlWithinBudget expired, or the caller
-            // went away. Either way this is not an extraction failure and must
-            // not be reported as one.
-            throw e
-        } catch (e: Exception) {
-            KLog.w(
-                "YouTubeRepository",
-                "Resolve[NewPipe] failed videoId=$videoId: ${e.message}",
-            )
-            NewPipeAudioResult(url = null, botChecked = e.isNewPipeBotCheck())
-        }
-    }
-
-    /**
-     * A NewPipe audio resolution, and whether it failed on the bot check. The
-     * direct fallback needs the second half: NewPipe mints a fresh visitorData
-     * per client, so its refusal already says a remint will not help.
-     */
-    private class NewPipeAudioResult(val url: String?, val botChecked: Boolean = false) {
-        companion object {
-            val NONE = NewPipeAudioResult(null)
-        }
-    }
-
-    private fun Throwable.isNewPipeBotCheck(): Boolean =
-        generateSequence(this) { it.cause }
-            .take(8)
-            .any { it is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException }
-
-    private suspend fun resolveM4aAudioUrlViaNewPipe(
-        videoId: String,
-        quality: String,
-    ): NewPipeAudioResult =
-        withContext(Dispatchers.IO) {
-            try {
-                val extractor = youtubeService.getStreamExtractor(
-                    "https://www.youtube.com/watch?v=$videoId"
-                )
-                extractor.fetchPage()
-
-                val m4aStreams = originalTrackAudioStreams(
-                    extractor.audioStreams.filter { it.isUrl }
-                ).filter { stream ->
-                    stream.format?.suffix.equals("m4a", ignoreCase = true) ||
-                        stream.codec?.contains("mp4a", ignoreCase = true) == true
-                }
-                val picked = if (quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER) {
-                    m4aStreams.minByOrNull { it.averageBitrate }
-                } else {
-                    m4aStreams.maxByOrNull { it.averageBitrate }
-                }
-                NewPipeAudioResult(picked?.content?.takeIf(String::isNotBlank))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                KLog.w(
-                    "YouTubeRepository",
-                    "Resolve[M4A/NewPipe] failed videoId=$videoId: ${e.message}"
-                )
-                NewPipeAudioResult(url = null, botChecked = e.isNewPipeBotCheck())
-            }
-        }
-
-    private fun pickAudioStreamForCurrentQuality(streams: List<AudioStream>): AudioStream? =
-        when (ThemePreferences.currentMusicQuality(context)) {
-            ThemePreferences.MUSIC_QUALITY_LOW ->
-                streams.minByOrNull { it.averageBitrate }
-            ThemePreferences.MUSIC_QUALITY_NORMAL ->
-                streams.minByOrNull { kotlin.math.abs(it.averageBitrate - 128) }
-            else -> streams.maxByOrNull { it.averageBitrate }
-        }
-
-    private fun pickM4aAudioStreamUrl(streamingData: org.json.JSONObject, quality: String): String? {
-        val originals = m4aAudioFormats(streamingData)
-        val selected = if (quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER) {
-            originals.minByOrNull { it.optInt("bitrate") }
-        } else {
-            originals.maxByOrNull { it.optInt("bitrate") }
-        }
-        return selected?.optString("url")?.takeIf(String::isNotBlank)
-    }
-
-    /** The original soundtrack's AAC/M4A audio-only formats that carry a plain URL. */
-    private fun m4aAudioFormats(streamingData: org.json.JSONObject): List<org.json.JSONObject> {
-        val formats = streamingData.optJSONArray("adaptiveFormats") ?: return emptyList()
-        val candidates = (0 until formats.length())
-            .mapNotNull(formats::optJSONObject)
-            .filter { format ->
-                val mime = format.optString("mimeType")
-                mime.startsWith("audio/mp4") &&
-                    (mime.contains("mp4a", ignoreCase = true) || mime.contains("aac", ignoreCase = true)) &&
-                    format.optString("url").isNotBlank()
-            }
-        return originalTrackAudioFormats(candidates)
-    }
-
-    /**
-     * Keep YouTube's original soundtrack when it exposes alternate dubbed,
-     * descriptive, or secondary audio tracks.
-     *
-     * Older/single-track responses do not carry `audioTrackType`; those
-     * untyped streams are safe as the compatibility fallback. If YouTube
-     * explicitly labels every stream as non-original, return no audio-only
-     * stream and let the caller use its muxed fallback instead of knowingly
-     * selecting a dub.
-     */
-    private fun originalTrackAudioStreams(streams: List<AudioStream>): List<AudioStream> {
-        val originals = streams.filter { it.audioTrackType == AudioTrackType.ORIGINAL }
-        if (originals.isNotEmpty()) return originals
-        return streams.filter { it.audioTrackType == null }
-    }
-
-    /** The direct InnerTube equivalent of [originalTrackAudioStreams]. */
-    private fun originalTrackAudioFormats(
-        formats: List<org.json.JSONObject>
-    ): List<org.json.JSONObject> {
-        val typed = formats.map { it to audioTrackType(it) }
-        val originals = typed.filter { it.second == AudioTrackType.ORIGINAL }.map { it.first }
-        if (originals.isNotEmpty()) return originals
-        return typed.filter { it.second == null }.map { it.first }
-    }
-
-    private fun audioTrackType(format: org.json.JSONObject): AudioTrackType? {
-        val xtags = format.optString("xtags").takeIf { it.isNotBlank() } ?: return null
-        return runCatching { YoutubeParsingHelper.extractAudioTrackType(xtags) }.getOrNull()
-    }
-
-    // --- Fresh visitorData (anti-bot) ---------------------------------------
-    // YouTube's /player bot check keys off visitorData: a stale or shared value
-    // gets flagged (LOGIN_REQUIRED). A visitorData freshly minted from the
-    // youtube.com bootstrap passes. We cache it (companion-level, see there),
-    // refresh on a TTL, persist the last good token per install, and remint
-    // immediately when a /player response shows the current token got flagged
-    // mid-TTL (remintVisitorData) — otherwise every resolution keeps failing
-    // for hours, which users experience as "music suddenly stops playing".
-
-    /**
-     * Warm the visitorData cache off the critical path, so the first
-     * playback of a session doesn't pay for the mint (or the bootstrap
-     * fallback download) before its /player call can go out.
-     */
-    suspend fun prefetchVisitorData() {
-        try {
-            getVisitorData()
-        } catch (e: Exception) {
-            KLog.w("YouTubeRepository", "visitorData prefetch failed: ${e.message}")
-        }
-    }
-
-    private suspend fun getVisitorData(): String {
-        val now = System.currentTimeMillis()
-        cachedVisitorData?.let { if (now - visitorDataFetchedAt < VISITOR_DATA_TTL_MS) return it }
-        return visitorDataMutex.withLock {
-            val nowInner = System.currentTimeMillis()
-            cachedVisitorData?.let { if (nowInner - visitorDataFetchedAt < VISITOR_DATA_TTL_MS) return it }
-            // A token persisted by an earlier process start stays valid for
-            // the full TTL: adopt it instead of re-minting on every app
-            // start, which put a network fetch on the first resolution of
-            // each session.
-            // A negative age means the clock moved backwards since the mint
-            // (timezone/NTP correction, manual change). Treat that as expired
-            // rather than "forever fresh", which would pin a token for good.
-            val persistedAt = visitorDataPrefs.getLong("visitor_data_at", 0L)
-            if (nowInner - persistedAt in 0 until VISITOR_DATA_TTL_MS) {
-                loadPersistedVisitorData()?.let {
-                    cachedVisitorData = it
-                    visitorDataFetchedAt = persistedAt
-                    return it
-                }
-            }
-            val fresh = fetchVisitorData()
-            if (!fresh.isNullOrEmpty()) {
-                cachedVisitorData = fresh
-                visitorDataFetchedAt = nowInner
-                persistVisitorData(fresh)
-                KLog.i("YouTubeRepository", "visitorData refreshed (len=${fresh.length})")
-                fresh
-            } else {
-                // Reuse a previously-good value: this session's, else the last
-                // one this install successfully minted. Never a token shared
-                // across installs — the bot check flags shared visitorData,
-                // which kills all stream resolution.
-                //
-                // Empty is a real answer, not a soft one. It used to mean "send
-                // the /player call without visitorData, which mostly still
-                // works"; that is no longer true. [verified September 2026:
-                // ANDROID_VR and VISIONOS answer a token-less /player with
-                // LOGIN_REQUIRED, "Sign in to confirm you're not a bot", on
-                // most videos, while IOS still answers OK.] Callers must treat
-                // a blank token as a mint that has to happen before the chain
-                // is worth running - see resolvePlayerStreamingData.
-                cachedVisitorData ?: loadPersistedVisitorData() ?: ""
-            }
-        }
-    }
-
-    /**
-     * Drop [flagged] from the in-memory and persisted caches and mint a fresh
-     * visitorData right now. Called when a /player response shows YouTube's
-     * bot check rejected the current token (LOGIN_REQUIRED / missing
-     * streamingData). Returns null when the bootstrap fetch fails.
-     */
-    private suspend fun remintVisitorData(flagged: String): String? =
-        visitorDataMutex.withLock {
-            // A concurrent resolution may have already reminted while this one
-            // waited on the lock — reuse its token instead of re-fetching.
-            cachedVisitorData?.takeIf { it != flagged }?.let { return@withLock it }
-            cachedVisitorData = null
-            visitorDataFetchedAt = 0L
-            clearPersistedVisitorData(flagged)
-            val fresh = fetchVisitorData()
-            if (!fresh.isNullOrEmpty()) {
-                cachedVisitorData = fresh
-                visitorDataFetchedAt = System.currentTimeMillis()
-                persistVisitorData(fresh)
-                KLog.i("YouTubeRepository", "visitorData reminted after bot-check flag")
-                fresh
-            } else {
-                KLog.w("YouTubeRepository", "visitorData remint failed (bootstrap fetch)")
-                null
-            }
-        }
-
-    /**
-     * Drop the current visitorData and mint a new one because *playback* failed,
-     * not resolution.
-     *
-     * [resolvePlayerStreamingData] only remints when the /player call itself
-     * shows the bot check (LOGIN_REQUIRED / missing streamingData). The other
-     * signature is a /player that answers 200 OK with URLs googlevideo then
-     * refuses with HTTP 403 — the token is flagged at the media layer only. The
-     * player sees that, resolution never does, so without this entry point the
-     * flagged token sits in prefs and is replayed on every launch for the whole
-     * 6h TTL: "restarting and clearing cache don't help, clearing data does".
-     *
-     * Safe to call speculatively; a no-op when there is no token to replace.
+     * Safe to call speculatively; without a token there is nothing to replace.
      */
     suspend fun refreshVisitorDataAfterPlaybackFailure() {
-        // Every cached ladder contains signed URLs minted before the failure.
-        // They must not win the retry after identity or network conditions
-        // change, even when there is no persisted visitor token to replace.
+        // Every cached ladder holds URLs signed before the failure. They must
+        // not win the retry, even when there is no token to replace.
         VideoStreamResolutionCache.clear()
-        val flagged = cachedVisitorData ?: loadPersistedVisitorData() ?: return
-        try {
-            remintVisitorData(flagged)
-        } catch (e: Exception) {
-            KLog.w(
-                "YouTubeRepository",
-                "visitorData remint after playback failure failed: ${e.message}",
-            )
-        }
-    }
-
-    // Last successfully minted token, persisted per install so a cold start on
-    // a flaky network still has a usable, install-unique token to fall back on.
-    private val visitorDataPrefs by lazy {
-        context.getSharedPreferences("ivor_visitor_data", Context.MODE_PRIVATE)
-    }
-
-    private fun loadPersistedVisitorData(): String? =
-        visitorDataPrefs.getString("visitor_data", null)?.takeIf { it.isNotBlank() }
-
-    /**
-     * The visitorData this install already has, without minting one.
-     *
-     * The browse/next/search helpers are not suspending and are called from
-     * paths that must not block on a network round trip, so they take whatever
-     * the cache and prefs already hold and send nothing when that is empty -
-     * which is exactly what they did before this existed, so an empty cache is
-     * a no-op rather than a regression.
-     *
-     * It is normally warm: [prefetchVisitorData] runs at `MusicService.onCreate`
-     * and at `VideoPlayerViewModel.init`. Deliberately ignores the TTL - a token
-     * slightly past six hours is still a far better identity for a browse call
-     * than no token at all, and /player's own path re-mints on the bot-check
-     * signal regardless.
-     */
-    private fun cachedVisitorDataOrNull(): String? =
-        cachedVisitorData ?: loadPersistedVisitorData()
-
-    private fun persistVisitorData(value: String) {
-        visitorDataPrefs.edit()
-            .putString("visitor_data", value)
-            .putLong("visitor_data_at", System.currentTimeMillis())
-            .apply()
-    }
-
-    private fun clearPersistedVisitorData(flagged: String) {
-        if (visitorDataPrefs.getString("visitor_data", null) == flagged) {
-            visitorDataPrefs.edit()
-                .remove("visitor_data")
-                .remove("visitor_data_at")
-                .apply()
-        }
-    }
-
-    /**
-     * Mint a fresh visitorData token. Primary: the dedicated
-     * `youtubei/v1/visitor_id` endpoint — a few hundred bytes and one round
-     * trip. Fallback: scraping the youtube.com bootstrap HTML (~1.5 MB),
-     * which is what this used to do on every mint. Verified July 2026.
-     */
-    private suspend fun fetchVisitorData(): String? = withContext(Dispatchers.IO) {
-        fetchVisitorDataFromApi() ?: fetchVisitorDataFromBootstrap()
-    }
-
-    /**
-     * `visitor_id` responses URL-encode the token's base64 padding (`%3D`);
-     * unescape it since the /player payload wants the raw token.
-     */
-    private fun fetchVisitorDataFromApi(): String? {
-        return try {
-            val body = org.json.JSONObject().put(
-                "context",
-                org.json.JSONObject().put(
-                    "client",
-                    org.json.JSONObject().apply {
-                        put("clientName", "WEB")
-                        put("clientVersion", WEB_VERSION)
-                        put("hl", "en")
-                        put("gl", contentRegion())
-                    }
-                )
-            ).toString()
-            val request = okhttp3.Request.Builder()
-                .url("https://www.youtube.com/youtubei/v1/visitor_id?prettyPrint=false")
-                .post(body.toRequestBody("application/json".toMediaType()))
-                .addHeader("User-Agent", BROWSER_USER_AGENT)
-                .build()
-            // Tiny response — the hard-capped stream client keeps a dead
-            // network from stalling the mint for 30s.
-            val response = streamResolveClient.newCall(request).execute()
-            val json = response.body?.string().orEmpty()
-            response.close()
-            org.json.JSONObject(json)
-                .optJSONObject("responseContext")
-                ?.optString("visitorData")
-                ?.replace("%3D", "=")
-                ?.replace("%3d", "=")
-                ?.takeIf { it.isNotEmpty() }
-        } catch (e: Exception) {
-            KLog.w("YouTubeRepository", "visitor_id mint failed: ${e.message}")
-            null
-        }
-    }
-
-    /**
-     * Scrape a visitorData token from the youtube.com bootstrap HTML. The
-     * token is JSON-escaped in the page (e.g. `=` for `=`), so unescape
-     * the two characters that actually appear in base64url visitorData.
-     */
-    private fun fetchVisitorDataFromBootstrap(): String? {
-        return try {
-            val request = okhttp3.Request.Builder()
-                .url("https://www.youtube.com/")
-                .addHeader("User-Agent", BROWSER_USER_AGENT)
-                .addHeader("Accept-Language", "en-US,en;q=0.9")
-                .build()
-            // The bootstrap page is ~1.5 MB — use the general 30s client, not
-            // streamResolveClient whose 8s callTimeout kills the download on
-            // slow connections and left those users without a usable token.
-            val response = okHttpClient.newCall(request).execute()
-            val html = response.body?.string().orEmpty()
-            response.close()
-            Regex("\"visitorData\":\"(.*?)\"").find(html)
-                ?.groupValues?.get(1)
-                ?.replace("\\u003d", "=")
-                ?.replace("\\u0026", "&")
-                ?.takeIf { it.isNotEmpty() }
-        } catch (e: Exception) {
-            KLog.w("YouTubeRepository", "bootstrap visitorData scrape failed: ${e.message}")
-            null
-        }
+        visitorIdentity.replaceCurrent()
     }
 
     /**
@@ -2362,561 +1777,28 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Outcome of one InnerTube /player call. [visitorDataSuspect] is true when
-     * the response indicates YouTube's bot check flagged our visitorData:
-     * playability LOGIN_REQUIRED ("Sign in to confirm you're not a bot"), or a
-     * 200/OK response with streamingData missing (stale/missing visitorData).
+     * Keep what a `/player` response carries besides its streams: the caption
+     * tracklist, so a later CC tap is free, and the track's loudness.
      */
-    private class PlayerResponse(
-        val streamingData: org.json.JSONObject?,
-        val visitorDataSuspect: Boolean,
-        val captionTracks: List<CaptionTrack> = emptyList(),
-        /**
-         * `playerConfig.audioConfig.loudnessDb`: how far this track's master
-         * sits above YouTube's -14 LKFS target, so the playback correction is a
-         * gain of the negation. See [TrackLoudnessStore]. Null when the
-         * response carried no audioConfig, which is every response that failed
-         * playability.
-         */
-        val loudnessDb: Float? = null,
-        /** The scrub-preview storyboard from `storyboards`; see [parseStoryboardSeekPreview]. */
-        val seekPreview: VideoSeekPreview? = null,
-    )
-
-    /**
-     * Resolve /player streamingData for [videoId], reminting the visitorData
-     * and retrying once when the responses show the current token has been
-     * flagged by YouTube's bot check. Without the remint, a token flagged
-     * mid-TTL poisons every resolution until it expires — the "music played
-     * fine, then nothing plays anymore" failure mode.
-     *
-     * The remint is skipped when a fresh identity has already been refused,
-     * because then the verdict is on the network rather than the token:
-     * [newPipeBotChecked] means NewPipe, which mints a new visitorData for each
-     * of its clients, was just refused for this video, and an active
-     * [isBotCheckVerdictActive] means a remint was refused moments ago. Minting
-     * again there cost a mint plus two more refused /player calls per
-     * resolution, on every song or video the player moved on to.
-     */
-    private suspend fun resolvePlayerStreamingData(
-        videoId: String,
-        newPipeBotChecked: Boolean = false,
-    ): org.json.JSONObject? {
-        var visitorData = getVisitorData()
-        // A blank token is not "no identity, carry on": the bot check refuses
-        // ANDROID_VR and VISIONOS outright without one (see getVisitorData).
-        // Running the chain first would spend both clients on a refusal that is
-        // already known, so mint before it rather than after.
-        if (visitorData.isBlank()) {
-            visitorData = remintVisitorData(flagged = "").orEmpty()
-            if (visitorData.isBlank()) {
-                KLog.w(
-                    "YouTubeRepository",
-                    "Resolve: no visitorData available for videoId=$videoId, bot check will refuse",
-                )
-            }
-        }
-        val first = runPlayerClientChain(videoId, visitorData)
-        first.streamingData?.let {
-            clearBotCheckVerdict()
-            return it
-        }
-        if (!first.visitorDataSuspect) return null
-
-        if (newPipeBotChecked || isBotCheckVerdictActive()) {
-            KLog.w(
-                "YouTubeRepository",
-                "Resolve: bot check refused a fresh identity already, not reminting videoId=$videoId",
-            )
-            noteBotCheckVerdict(videoId)
-            return null
-        }
-
-        KLog.w(
-            "YouTubeRepository",
-            "Resolve: visitorData flagged by bot check, reminting and retrying videoId=$videoId",
-        )
-        val fresh = remintVisitorData(flagged = visitorData) ?: return null
-        if (fresh == visitorData) return null
-        val retry = runPlayerClientChain(videoId, fresh)
-        retry.streamingData?.let {
-            clearBotCheckVerdict()
-            return it
-        }
-        if (retry.visitorDataSuspect) noteBotCheckVerdict(videoId)
-        return null
+    private fun harvestPlayerResponse(videoId: String, root: org.json.JSONObject) {
+        cacheCaptionTracks(videoId, parseCaptionTracks(root))
+        cacheTrackLoudness(videoId, playerLoudnessDb(root))
     }
 
     /**
-     * The two-client /player chain.
-     *
-     * ANDROID_VR is the primary client: it answers signed out, needs no player
-     * JS, and returns unciphered URLs. It used to be the one client whose URLs
-     * served a whole file without a GVS PO Token; as of August 2026 it is not,
-     * and the ~1 MiB cutoff that used to be IOS-only now applies to both. Which
-     * client resolved the stream no longer decides whether it can be fetched -
-     * the visitorData does (see the ANDROID_VR constants).
-     *
-     * IOS stays only as a last-ditch fallback for the rare videos ANDROID_VR
-     * can't serve (e.g. "made for kids", which ANDROID_VR omits).
-     *
-     * Each call is hard-capped by streamResolveClient's callTimeout, so the
-     * worst case is bounded regardless of coroutine cancellability.
+     * `playerConfig.audioConfig.loudnessDb`: how far the track's master sits
+     * above YouTube's -14 LKFS target, so the playback correction is a gain of
+     * the negation. See [TrackLoudnessStore]. Present on every OK response
+     * probed (August 2026), but a missing key must read as unknown rather than
+     * 0.0, which is a real measurement meaning "already at target".
      */
-    private fun androidVrClientFields(): org.json.JSONObject = org.json.JSONObject().apply {
-        put("androidSdkVersion", 32)
-        put("deviceMake", "Oculus")
-        put("deviceModel", "Quest 3")
-        put("osName", "Android")
-        put("osVersion", "12L")
-    }
-
-    private fun iosClientFields(): org.json.JSONObject = org.json.JSONObject().apply {
-        put("deviceMake", "Apple")
-        put("deviceModel", "iPhone16,2")
-        put("osName", "iPhone")
-        put("osVersion", "18.1.0.22B83")
-    }
-
-    private fun visionOsClientFields(): org.json.JSONObject = org.json.JSONObject().apply {
-        put("clientScreen", "WATCH")
-        put("platform", "MOBILE")
-        put("deviceMake", "Apple")
-        put("deviceModel", "RealityDevice14,1")
-        put("osName", "visionOS")
-        put("osVersion", "25.6.0.23O471")
-    }
-
-    private fun nativeClientNonce(length: Int): String {
-        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-        val random = java.security.SecureRandom()
-        return buildString(length) {
-            repeat(length) { append(alphabet[random.nextInt(alphabet.length)]) }
-        }
-    }
-
-    /**
-     * A direct visionOS `/player` resolution, and whether the bot check refused
-     * it even after a fresh identity - which the fallbacks behind it need, so
-     * they do not remint for a refusal that is already known.
-     */
-    private class VisionOsResolution(
-        val response: PlayerResponse?,
-        val botChecked: Boolean,
-        /** The token [response] was resolved under; blank when there is no response. */
-        val visitorData: String = "",
-    )
-
-    /** A song's visionOS audio URL, or none and whether the bot check was why. */
-    private class VisionOsAudio(val url: String?, val botChecked: Boolean)
-
-    /**
-     * [resolveVisionOsPlayer] for a song, with the token vetted before its URL
-     * reaches the player.
-     *
-     * A refused visitorData is invisible to resolution: `/player` answers OK
-     * and googlevideo serves the opening of the stream, then answers 403 for
-     * every range after it. [verified October 2026,
-     * `.probe/visionos_wall_probe.py`: about one fresh WEB-minted token in
-     * ten; the wall began 250 KiB to 1.1 MiB in depending on the format, about
-     * a minute of audio, and held for every song, every audio itag and a
-     * re-resolution under that token.] So a song used to play for a minute
-     * and then stall while MusicService reminted and re-resolved.
-     *
-     * The last byte is refused under such a token and served under a good one
-     * whatever the format, so one single-byte request settles it. It is spent
-     * once per token, not per song: the token is remembered as vetted, in
-     * memory and beside the token on disk. A refused one is reminted and the
-     * song resolved again, up to [TOKEN_VETTING_ROUNDS] tokens; past that, or
-     * when the request says nothing either way, the URL is returned as it is
-     * and playback's own 403 recovery remains the backstop.
-     */
-    private suspend fun resolveVisionOsAudioUrl(videoId: String): VisionOsAudio {
-        for (round in 1..TOKEN_VETTING_ROUNDS) {
-            val direct = resolveVisionOsPlayer(videoId)
-            val url = direct.response?.streamingData?.let { pickAudioStreamUrl(videoId, it) }
-                ?: return VisionOsAudio(null, direct.botChecked)
-            val token = direct.visitorData
-            if (token.isBlank() || isVisitorDataVetted(token)) return VisionOsAudio(url, false)
-            when (servesLastByte(url)) {
-                true -> {
-                    markVisitorDataVetted(token)
-                    return VisionOsAudio(url, false)
-                }
-                null -> return VisionOsAudio(url, false)
-                false -> {
-                    KLog.w(
-                        "YouTubeRepository",
-                        "Resolve[visionOS] googlevideo refuses this visitorData past the opening " +
-                            "(round $round/$TOKEN_VETTING_ROUNDS) videoId=$videoId",
-                    )
-                    if (round == TOKEN_VETTING_ROUNDS) return VisionOsAudio(url, false)
-                    // Ladders other surfaces resolved under this token are as dead.
-                    VideoStreamResolutionCache.clear()
-                    remintVisitorData(flagged = token) ?: return VisionOsAudio(url, false)
-                }
+    private fun playerLoudnessDb(root: org.json.JSONObject): Float? =
+        root.optJSONObject("playerConfig")
+            ?.optJSONObject("audioConfig")
+            ?.let { audio ->
+                if (audio.has("loudnessDb")) audio.optDouble("loudnessDb").toFloat() else null
             }
-        }
-        return VisionOsAudio(null, false)
-    }
-
-    private fun isVisitorDataVetted(token: String): Boolean {
-        if (vettedVisitorData == token) return true
-        if (visitorDataPrefs.getString("visitor_data_vetted", null) != token) return false
-        vettedVisitorData = token
-        return true
-    }
-
-    private fun markVisitorDataVetted(token: String) {
-        vettedVisitorData = token
-        visitorDataPrefs.edit().putString("visitor_data_vetted", token).apply()
-    }
-
-    /**
-     * Whether googlevideo serves the last byte of [url]: true or false when it
-     * said so (206 or 403), null when it could not be asked or the answer
-     * means nothing - no stated length, a clip short enough to sit inside the
-     * opening window, a network failure, any other status.
-     */
-    private suspend fun servesLastByte(url: String): Boolean? = withContext(Dispatchers.IO) {
-        try {
-            val uri = android.net.Uri.parse(url)
-            val length = uri.getQueryParameter("clen")?.toLongOrNull()?.takeIf { it > 0L }
-                ?: return@withContext null
-            val durationS = uri.getQueryParameter("dur")?.toDoubleOrNull()
-                ?: return@withContext null
-            if (durationS < TOKEN_VETTING_MIN_DURATION_S) return@withContext null
-            val request = okhttp3.Request.Builder()
-                .url(url)
-                .addHeader("User-Agent", uaForPlaybackUri(uri))
-                .addHeader("Range", "bytes=${length - 1}-${length - 1}")
-                .build()
-            // The hard-capped client: this sits in front of a song starting.
-            streamResolveClient.newCall(request).execute().use { response ->
-                when (response.code) {
-                    206 -> true
-                    403 -> false
-                    else -> null
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /**
-     * Resolve a video's streams with one visionOS `/player` call carrying
-     * Koda's own persisted visitorData.
-     *
-     * This is the primary video and Shorts resolver because of what it does
-     * not do. A NewPipe v0.26.5 extraction is eight requests and mints three
-     * brand-new anonymous visitor ids every time [verified September 2026 on
-     * device through YouTubeRequestLedger: visitor_id(ANDROID),
-     * reel_item_watch, visitor_id(VISIONOS), player(VISIONOS), visitor_id(WEB),
-     * player(WEB), next, and sw.js once per process] - so every video opened
-     * and every Short swiped showed YouTube three new visitors from one
-     * address, the pattern its bot check is built to catch. One call under the
-     * identity Koda already holds is the same work without that signature.
-     *
-     * [verified September 2026, `.probe/visionos_reuse_probe.py`] One WEB-minted
-     * visitorData reused across videos: visionOS answered OK with a plain URL
-     * on every format (none ciphered, none SABR-only) for ordinary, 2-hour and
-     * live videos; bounded ranges were served at 0/25/50/90% and the tail of
-     * audio and 1080p video, 3.7 GB into a 2-hour file; a 141-minute audio
-     * track downloaded whole in 10 MB ranges; live returned an HLS master with
-     * every variant; HDR itags 330-337 were present with ranges served to 95%;
-     * and its caption URLs serve WebVTT without a PO token. NewPipe's own dev
-     * branch dropped every stream client except visionOS in August 2026.
-     *
-     * The same response carries HDR, captions and the storyboard, so the HDR
-     * augmentation call and a CC tap's `/player` both disappear with it.
-     */
-    private suspend fun resolveVisionOsPlayer(videoId: String): VisionOsResolution {
-        var visitorData = getVisitorData()
-        // Same reasoning as resolvePlayerStreamingData: without a token the
-        // refusal is already known, so mint before spending the request.
-        if (visitorData.isBlank()) visitorData = remintVisitorData(flagged = "").orEmpty()
-        val first = fetchVisionOsPlayerResponse(videoId, visitorData)
-        if (first.streamingData != null) return VisionOsResolution(first, botChecked = false, visitorData)
-        if (!first.visitorDataSuspect) return VisionOsResolution(null, botChecked = false)
-        if (isBotCheckVerdictActive()) return VisionOsResolution(null, botChecked = true)
-
-        KLog.w(
-            "YouTubeRepository",
-            "Resolve[visionOS] visitorData flagged by bot check, reminting videoId=$videoId",
-        )
-        val fresh = remintVisitorData(flagged = visitorData)
-        if (fresh == null || fresh == visitorData) return VisionOsResolution(null, botChecked = false)
-        val retry = fetchVisionOsPlayerResponse(videoId, fresh)
-        if (retry.streamingData != null) return VisionOsResolution(retry, botChecked = false, fresh)
-        if (retry.visitorDataSuspect) noteBotCheckVerdict(videoId)
-        return VisionOsResolution(null, botChecked = retry.visitorDataSuspect)
-    }
-
-    private suspend fun fetchVisionOsPlayerResponse(
-        videoId: String,
-        visitorData: String,
-    ): PlayerResponse = fetchPlayerResponse(
-        videoId = videoId,
-        clientName = "VISIONOS",
-        clientVersion = VISIONOS_CLIENT_VERSION,
-        clientNameId = VISIONOS_CLIENT_ID,
-        userAgent = VISIONOS_USER_AGENT,
-        visitorData = visitorData,
-        extraClientFields = visionOsClientFields(),
-        contentPlaybackNonce = nativeClientNonce(16),
-        mobileTParameter = nativeClientNonce(12),
-    )
-
-    private suspend fun runPlayerClientChain(videoId: String, visitorData: String): PlayerResponse {
-        val vr = fetchPlayerResponse(
-            videoId = videoId,
-            clientName = "ANDROID_VR",
-            clientVersion = ANDROID_VR_VERSION,
-            clientNameId = ANDROID_VR_CLIENT_ID,
-            userAgent = ANDROID_VR_USER_AGENT,
-            visitorData = visitorData,
-            extraClientFields = androidVrClientFields(),
-        )
-        // The /player response carries the caption tracklist alongside the
-        // streams, so harvesting it here makes a later CC tap free.
-        cacheCaptionTracks(videoId, vr.captionTracks)
-        cacheTrackLoudness(videoId, vr.loudnessDb)
-        vr.streamingData?.let { return vr }
-
-        val ios = fetchPlayerResponse(
-            videoId = videoId,
-            clientName = "IOS",
-            clientVersion = IOS_VERSION,
-            clientNameId = IOS_CLIENT_ID,
-            userAgent = IOS_USER_AGENT,
-            visitorData = visitorData,
-            extraClientFields = iosClientFields(),
-        )
-        cacheCaptionTracks(videoId, ios.captionTracks)
-        cacheTrackLoudness(videoId, ios.loudnessDb)
-        return PlayerResponse(
-            streamingData = ios.streamingData,
-            visitorDataSuspect = vr.visitorDataSuspect || ios.visitorDataSuspect,
-            captionTracks = vr.captionTracks.ifEmpty { ios.captionTracks },
-            // The measurement is the track's, not the client's, so whichever
-            // response carried one is as good as the other.
-            loudnessDb = vr.loudnessDb ?: ios.loudnessDb,
-        )
-    }
-
-    /**
-     * Select the audio URL from a /player streamingData object, honoring the
-     * per-network music quality setting (fresh read at resolution time). Falls
-     * back to muxed video formats (e.g. itag 18) when no audio-only format is
-     * available — ExoPlayer extracts the audio track from the MP4 container,
-     * which is critical because ANDROID_VR can return only format 18 since
-     * March 2026 (see yt-dlp issue #16150).
-     */
-    private fun pickAudioStreamUrl(
-        videoId: String,
-        streamingData: org.json.JSONObject,
-    ): String? {
-        val formats = mutableListOf<org.json.JSONObject>()
-        streamingData.optJSONArray("adaptiveFormats")?.let { arr ->
-            for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
-        }
-        streamingData.optJSONArray("formats")?.let { arr ->
-            for (i in 0 until arr.length()) formats.add(arr.getJSONObject(i))
-        }
-
-        fun hasPlayableUrl(f: org.json.JSONObject): Boolean = !f.optString("url").isNullOrEmpty()
-
-        val audioFormats = originalTrackAudioFormats(
-            formats.filter {
-                it.optString("mimeType").contains("audio") && hasPlayableUrl(it)
-            }
-        )
-        KLog.d(
-            "YouTubeRepository",
-            "Resolve[InnerTube] formats=${formats.size} audioOnly=${audioFormats.size} videoId=$videoId",
-        )
-
-        // Per-network music quality (fresh static read — see ThemePreferences):
-        // high takes the best bitrate, normal the track closest to ~128 kbps,
-        // low the smallest stream.
-        val musicQuality = ThemePreferences.currentMusicQuality(context)
-        val pickedAudio = when (musicQuality) {
-            ThemePreferences.MUSIC_QUALITY_LOW ->
-                audioFormats.minByOrNull { it.optInt("bitrate") }
-            ThemePreferences.MUSIC_QUALITY_NORMAL ->
-                audioFormats.minByOrNull { kotlin.math.abs(it.optInt("bitrate") - 128_000) }
-            else -> audioFormats.maxByOrNull { it.optInt("bitrate") }
-        }
-        pickedAudio?.optString("url")
-            ?.takeIf { it.isNotEmpty() }?.let { return it }
-
-        // No audio-only stream available — fall back to a muxed MP4 (itag 18 etc.).
-        // ExoPlayer happily plays just the audio track of these. Only
-        // `formats` is muxed: every video/ entry in adaptiveFormats is
-        // video-only, and the lowest-bitrate one used to win here - a silent
-        // 144p stream. [verified September 2026: visionOS returns an empty
-        // `formats`, so on the primary path this fallback finds nothing rather
-        // than something silent.]
-        val muxedFormats = streamingData.optJSONArray("formats")
-            ?.let { arr -> (0 until arr.length()).mapNotNull(arr::optJSONObject) }
-            .orEmpty()
-            .filter { it.optString("mimeType").startsWith("video/") && hasPlayableUrl(it) }
-        muxedFormats.minByOrNull { it.optInt("bitrate") }?.optString("url")
-            ?.takeIf { it.isNotEmpty() }?.let {
-                KLog.w(
-                    "YouTubeRepository",
-                    "Resolve[InnerTube] using muxed video format videoId=$videoId (no audio-only)",
-                )
-                return it
-            }
-
-        val cipheredCount = formats.count {
-            !it.optString("signatureCipher").isNullOrEmpty() ||
-                !it.optString("cipher").isNullOrEmpty()
-        }
-        KLog.w(
-            "YouTubeRepository",
-            "Resolve[InnerTube] no usable URL videoId=$videoId ciphered=${cipheredCount}/${formats.size}",
-        )
-        return null
-    }
-
-    /**
-     * Single-client InnerTube /player call returning the raw streamingData
-     * object plus a bot-check verdict (see [PlayerResponse]). Shared by audio
-     * resolution and video quality listing.
-     */
-    private suspend fun fetchPlayerResponse(
-        videoId: String,
-        clientName: String,
-        clientVersion: String,
-        clientNameId: Int,
-        userAgent: String,
-        visitorData: String,
-        extraClientFields: org.json.JSONObject = org.json.JSONObject(),
-        contentPlaybackNonce: String? = null,
-        mobileTParameter: String? = null,
-    ): PlayerResponse = withContext(Dispatchers.IO) {
-        try {
-            val clientObj = org.json.JSONObject().apply {
-                put("clientName", clientName)
-                put("clientVersion", clientVersion)
-                put("hl", "en")
-                put("gl", "US")
-                put("utcOffsetMinutes", 0)
-                if (visitorData.isNotBlank()) put("visitorData", visitorData)
-                val keys = extraClientFields.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    put(k, extraClientFields.get(k))
-                }
-            }
-            val contextObj = org.json.JSONObject().put("client", clientObj)
-            // No playbackContext.signatureTimestamp: the native clients used
-            // here (ANDROID_VR / IOS) return unciphered URLs and play without
-            // it. WEB and WEB_REMIX are different - their /player refuses every
-            // video without one (PlayerSignatureTimestamp).
-            val jsonBody = org.json.JSONObject().apply {
-                put("videoId", videoId)
-                put("context", contextObj)
-                if (contentPlaybackNonce != null) put("contentPlaybackNonce", contentPlaybackNonce)
-                if (mobileTParameter != null) put("t", mobileTParameter)
-                put("contentCheckOk", true)
-                put("racyCheckOk", true)
-            }.toString()
-
-            val url = "https://youtubei.googleapis.com/youtubei/v1/player?key=$INNER_TUBE_API_KEY&prettyPrint=false"
-
-            val requestBuilder = okhttp3.Request.Builder()
-                .url(url)
-                .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .addHeader("User-Agent", userAgent)
-                .addHeader("X-Goog-Api-Format-Version", "2")
-                .addHeader("X-YouTube-Client-Name", clientNameId.toString())
-                .addHeader("X-YouTube-Client-Version", clientVersion)
-                .addHeader("Origin", "https://www.youtube.com")
-                .addHeader("Accept", "application/json")
-            if (visitorData.isNotBlank()) {
-                requestBuilder.addHeader("X-Goog-Visitor-Id", visitorData)
-            }
-            val request = requestBuilder.build()
-
-            val response = streamResolveClient.newCall(request).execute()
-            val code = response.code
-            val json = response.body?.string().orEmpty()
-            response.close()
-
-            if (code !in 200..299) {
-                KLog.w(
-                    "YouTubeRepository",
-                    "Resolve[InnerTube/$clientName] HTTP $code videoId=$videoId",
-                )
-                return@withContext PlayerResponse(null, false)
-            }
-            if (json.isEmpty()) {
-                KLog.w(
-                    "YouTubeRepository",
-                    "Resolve[InnerTube/$clientName] empty body videoId=$videoId",
-                )
-                return@withContext PlayerResponse(null, false)
-            }
-
-            val root = org.json.JSONObject(json)
-
-            val playability = root.optJSONObject("playabilityStatus")
-            val status = playability?.optString("status").orEmpty()
-            if (status.isNotEmpty() && status != "OK") {
-                KLog.w(
-                    "YouTubeRepository",
-                    "Resolve[InnerTube/$clientName] playability=$status reason=${playability?.optString("reason")} videoId=$videoId",
-                )
-                // LOGIN_REQUIRED here is the bot check rejecting our
-                // visitorData ("Sign in to confirm you're not a bot").
-                return@withContext PlayerResponse(null, status == "LOGIN_REQUIRED")
-            }
-
-            val captionTracks = parseCaptionTracks(root)
-            val loudnessDb = root.optJSONObject("playerConfig")
-                ?.optJSONObject("audioConfig")
-                ?.let { audio ->
-                    // Present on every OK response probed (August 2026), but a
-                    // missing key must read as "unknown" rather than 0.0, which
-                    // is a real measurement meaning "already at target".
-                    if (audio.has("loudnessDb")) audio.optDouble("loudnessDb").toFloat() else null
-                }
-                ?.takeIf { it.isFinite() }
-
-            val streamingData = root.optJSONObject("streamingData")
-            if (streamingData == null) {
-                KLog.w(
-                    "YouTubeRepository",
-                    "Resolve[InnerTube/$clientName] no streamingData videoId=$videoId",
-                )
-                // Status OK with no streamingData is the other known signature
-                // of a stale/missing visitorData.
-                return@withContext PlayerResponse(null, true, captionTracks, loudnessDb)
-            }
-            // Best-effort, like the NewPipe path it replaces: a malformed spec
-            // costs the scrub preview, never the stream.
-            val seekPreview = runCatching { parseStoryboardSeekPreview(root) }.getOrNull()
-            PlayerResponse(streamingData, false, captionTracks, loudnessDb, seekPreview)
-        } catch (e: CancellationException) {
-            // Swallowing this would report a cancelled call as a client that
-            // has no streams, sending the chain on to the next client inside a
-            // coroutine that is already dead.
-            throw e
-        } catch (e: Exception) {
-            KLog.e(
-                "YouTubeRepository",
-                "Resolve[InnerTube/$clientName] exception videoId=$videoId",
-                e,
-            )
-            PlayerResponse(null, false)
-        }
-    }
+            ?.takeIf { it.isFinite() }
 
     // --- Internal API Helper ---
 
@@ -2975,7 +1857,7 @@ class YouTubeRepository(private val context: Context) {
             .addHeader("X-YouTube-Client-Name", "67")
             .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
             .apply {
-                cachedVisitorDataOrNull()?.let { addHeader("X-Goog-Visitor-Id", it) }
+                visitorIdentity.cachedOrNull()?.let { addHeader("X-Goog-Visitor-Id", it) }
             }
             .build()
 
@@ -3376,7 +2258,7 @@ class YouTubeRepository(private val context: Context) {
             // play). Never a fallback literal: a hardcoded visitor id is a
             // stranger's session, and without a token the play is skipped
             // rather than filed under one.
-            val visitorData = getVisitorData().ifEmpty {
+            val visitorData = visitorIdentity.current().ifEmpty {
                 KLog.w("YouTubeRepo", "History sync: no visitorData, skipped $videoId")
                 return@withContext
             }
@@ -5315,7 +4197,7 @@ class YouTubeRepository(private val context: Context) {
         val session = sessionManager.captureSession()
         val url = "https://www.youtube.com/youtubei/v1/browse?key=$INNER_TUBE_API_KEY"
 
-        val visitorData = cachedVisitorDataOrNull()
+        val visitorData = visitorIdentity.cachedOrNull()
 
         // Built through JSONObject rather than string interpolation so the
         // optional visitorData cannot produce malformed JSON.
@@ -5441,19 +4323,17 @@ class YouTubeRepository(private val context: Context) {
         includeHdr: Boolean = false,
     ): VideoStreamResult = withContext(Dispatchers.IO) {
         // Primary: one visionOS /player under Koda's own visitorData. See
-        // resolveVisionOsPlayer for why this is not NewPipe any more. The
+        // PlayerSession.visionOs for why this is not NewPipe any more. The
         // direct parser keeps HDR itags 330-337 that NewPipe v0.26.5's ItagItem
         // table drops, so HDR comes from this same response rather than from a
         // second request merged into NewPipe's ladder as it used to.
-        val direct = resolveVisionOsPlayer(videoId)
-        direct.response?.let { response ->
-            val qualities = response.streamingData
-                ?.let { parseQualitiesFromStreamingData(it, includeHdr) }
-                .orEmpty()
+        val direct = playerSession.visionOs(videoId)
+        direct.answer?.let { answer ->
+            val qualities = parseQualitiesFromStreamingData(answer.streamingData, includeHdr)
             if (qualities.isNotEmpty()) {
-                clearBotCheckVerdict()
+                BotCheckVerdict.clearOnSuccess()
                 // Makes a CC tap free: getCaptionTracks reads this cache first.
-                cacheCaptionTracks(videoId, response.captionTracks)
+                cacheCaptionTracks(videoId, parseCaptionTracks(answer.root))
                 KLog.i(
                     "YouTubeRepo",
                     "Video qualities via visionOS: ${qualities.size} for $videoId" +
@@ -5464,9 +4344,13 @@ class YouTubeRepository(private val context: Context) {
                 val audioTracks = if (qualities.any(VideoQuality::isLive)) {
                     emptyList()
                 } else {
-                    response.streamingData?.let(::parseDirectAudioTracks).orEmpty()
+                    parseDirectAudioTracks(answer.streamingData)
                 }
-                return@withContext VideoStreamResult(qualities, response.seekPreview, audioTracks)
+                // Best-effort: a malformed spec costs the scrub preview, never
+                // the stream.
+                val seekPreview =
+                    runCatching { parseStoryboardSeekPreview(answer.root) }.getOrNull()
+                return@withContext VideoStreamResult(qualities, seekPreview, audioTracks)
             }
             KLog.w("YouTubeRepo", "visionOS answered with no usable formats for $videoId")
         }
@@ -5479,7 +4363,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             val extracted = getVideoStreamsFromNewPipe(videoId)
             if (extracted.qualities.isNotEmpty()) {
-                clearBotCheckVerdict()
+                BotCheckVerdict.clearOnSuccess()
                 KLog.i(
                     "YouTubeRepo",
                     "Video qualities via NewPipe fallback: ${extracted.qualities.size} for $videoId",
@@ -5594,7 +4478,7 @@ class YouTubeRepository(private val context: Context) {
         // Progressive live entries are segment endpoints, not complete files.
         if (isLiveStream) return VideoStreamResult(qualities)
 
-        val bestAudio = originalTrackAudioStreams(extractedAudioStreams)
+        val bestAudio = originalAudioStreams(extractedAudioStreams)
             .asSequence()
             .filter { it.isUrl }
             // MP4 downloads are remuxed on-device. Prefer AAC/M4A over the
@@ -5716,8 +4600,9 @@ class YouTubeRepository(private val context: Context) {
         includeHdr: Boolean = false,
         newPipeBotChecked: Boolean = false,
     ): List<VideoQuality> {
-        val streamingData = resolvePlayerStreamingData(videoId, newPipeBotChecked)
-            ?: return emptyList()
+        val streamingData = playerSession.nativeFallback(videoId, newPipeBotChecked) {
+            harvestPlayerResponse(videoId, it)
+        }?.streamingData ?: return emptyList()
         return parseQualitiesFromStreamingData(streamingData, includeHdr)
     }
 
@@ -5746,7 +4631,7 @@ class YouTubeRepository(private val context: Context) {
             
             // 2. Adaptive Streams
             val videoOnlyStreams = streamExtractor.videoOnlyStreams
-            val audioStreams = originalTrackAudioStreams(streamExtractor.audioStreams)
+            val audioStreams = originalAudioStreams(streamExtractor.audioStreams)
             val bestAudio = audioStreams.maxByOrNull { it.averageBitrate }
             
             if (bestAudio != null) {
@@ -5850,7 +4735,7 @@ class YouTubeRepository(private val context: Context) {
     /**
      * The WEB client context for www.youtube.com calls.
      *
-     * Carries [cachedVisitorDataOrNull] when there is one. The app mints a
+     * Carries [VisitorIdentity.cachedOrNull] when there is one. The app mints a
      * visitorData, persists it, TTLs it and re-mints it when the bot check
      * flags it - and for a long time used it on exactly one endpoint family
      * (/player). Every browse, next, search and engagement call went out with
@@ -5868,7 +4753,7 @@ class YouTubeRepository(private val context: Context) {
                 .put("hl", "en")
                 .put("gl", contentRegion())
                 .apply {
-                    cachedVisitorDataOrNull()?.let { put("visitorData", it) }
+                    visitorIdentity.cachedOrNull()?.let { put("visitorData", it) }
                 }
         )
 
@@ -5894,7 +4779,7 @@ class YouTubeRepository(private val context: Context) {
             .addHeader("X-YouTube-Client-Name", "1")
             .addHeader("X-YouTube-Client-Version", WEB_VERSION)
 
-        cachedVisitorDataOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
+        visitorIdentity.cachedOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
 
         builder.authenticate(currentSession, "https://www.youtube.com")
 
@@ -6621,34 +5506,16 @@ class YouTubeRepository(private val context: Context) {
      * captions block at all, so every signed-out user saw an empty CC menu.
      * The native clients answer with the full tracklist either way.
      *
-     * Normally free: [runPlayerClientChain] already caches the tracklist from
-     * the /player response fetched to start playback, so this only hits the
-     * network when that cache missed or went stale.
+     * Normally free: the tracklist is cached from the /player response
+     * fetched to start playback, so this only hits the network when that
+     * cache missed or went stale.
      */
     suspend fun getCaptionTracks(videoId: String): List<CaptionTrack> = withContext(Dispatchers.IO) {
         cachedCaptionTracks(videoId)?.let { return@withContext it }
         try {
-            val visitorData = getVisitorData()
-            val vr = fetchPlayerResponse(
-                videoId = videoId,
-                clientName = "ANDROID_VR",
-                clientVersion = ANDROID_VR_VERSION,
-                clientNameId = ANDROID_VR_CLIENT_ID,
-                userAgent = ANDROID_VR_USER_AGENT,
-                visitorData = visitorData,
-                extraClientFields = androidVrClientFields(),
-            )
-            val tracks = vr.captionTracks.ifEmpty {
-                fetchPlayerResponse(
-                    videoId = videoId,
-                    clientName = "IOS",
-                    clientVersion = IOS_VERSION,
-                    clientNameId = IOS_CLIENT_ID,
-                    userAgent = IOS_USER_AGENT,
-                    visitorData = visitorData,
-                    extraClientFields = iosClientFields(),
-                ).captionTracks
-            }
+            suspend fun via(client: PlayerClient): List<CaptionTrack> =
+                playerSession.single(videoId, client).okRoot()?.let(::parseCaptionTracks).orEmpty()
+            val tracks = via(PlayerClients.ANDROID_VR).ifEmpty { via(PlayerClients.IOS) }
             cacheCaptionTracks(videoId, tracks)
             tracks
         } catch (e: Exception) {
