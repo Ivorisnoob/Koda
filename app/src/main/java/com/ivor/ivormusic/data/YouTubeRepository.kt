@@ -442,6 +442,9 @@ class YouTubeRepository(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    /** What the history /player calls must carry; see [PlayerSignatureTimestamp]. */
+    private val playerSignatureTimestamp = PlayerSignatureTimestamp(context, okHttpClient)
+
     // Dedicated client for stream resolution. callTimeout is a hard wall-clock
     // cap enforced by OkHttp itself — unlike withTimeoutOrNull, it cannot be
     // defeated by a thread blocked inside execute().
@@ -2569,10 +2572,10 @@ class YouTubeRepository(private val context: Context) {
                 }
             }
             val contextObj = org.json.JSONObject().put("client", clientObj)
-            // No playbackContext.signatureTimestamp: that field is the player-JS
-            // "sts" value, which only matters for ciphered WEB streams. The
-            // native clients used here (ANDROID_VR / IOS) return unciphered
-            // URLs and don't need it.
+            // No playbackContext.signatureTimestamp: the native clients used
+            // here (ANDROID_VR / IOS) return unciphered URLs and play without
+            // it. WEB and WEB_REMIX are different - their /player refuses every
+            // video without one (PlayerSignatureTimestamp).
             val jsonBody = org.json.JSONObject().apply {
                 put("videoId", videoId)
                 put("context", contextObj)
@@ -3139,55 +3142,64 @@ class YouTubeRepository(private val context: Context) {
             val clientName = "WEB_REMIX"
             val clientVersion = WEB_REMIX_VERSION
 
-            // Step 1: Call player endpoint to get tracking URLs
-            val playerUrl = "https://music.youtube.com/youtubei/v1/player"
-            val jsonBody = """
-                {
-                    "context": {
-                        "client": {
-                            "clientName": "$clientName",
-                            "clientVersion": "$clientVersion",
-                            "hl": "en",
-                            "gl": "${contentRegion()}",
-                            "visitorData": "$visitorData"
+            // Step 1: Call player endpoint to get tracking URLs. It must carry
+            // the player's signatureTimestamp: without one, every video answers
+            // "Video unavailable" with no playbackTracking (October 2026).
+            fun postPlayer(signatureTimestamp: Int): String? {
+                val jsonBody = org.json.JSONObject()
+                    .put("context", org.json.JSONObject().put("client", org.json.JSONObject()
+                        .put("clientName", clientName)
+                        .put("clientVersion", clientVersion)
+                        .put("hl", "en")
+                        .put("gl", contentRegion())
+                        .put("visitorData", visitorData)))
+                    .put("videoId", videoId)
+                    .put("cpn", cpn)
+                    .put("playbackContext", org.json.JSONObject().put("contentPlaybackContext",
+                        org.json.JSONObject().put("signatureTimestamp", signatureTimestamp)))
+                    .toString()
+                val playerRequest = okhttp3.Request.Builder()
+                    .url("https://music.youtube.com/youtubei/v1/player")
+                    .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                    .authenticate(session)
+                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .addHeader("Origin", "https://music.youtube.com")
+                    .addHeader("Referer", "https://music.youtube.com/")
+                    .addHeader("X-Goog-Api-Format-Version", "1")
+                    .addHeader("X-YouTube-Client-Name", "67") // WEB_REMIX numeric ID
+                    .addHeader("X-YouTube-Client-Version", clientVersion)
+                    .addHeader("X-Goog-Visitor-Id", visitorData)
+                    .build()
+                return okHttpClient.newCall(playerRequest).execute().use { response ->
+                    response.body?.string().also {
+                        if (it.isNullOrEmpty()) {
+                            KLog.e("YouTubeRepo", "History sync: /player HTTP ${response.code} with an empty body for $videoId")
                         }
-                    },
-                    "videoId": "$videoId",
-                    "cpn": "$cpn"
+                    }
                 }
-            """.trimIndent()
-            // No playbackContext.signatureTimestamp: that field is the
-            // player-JS version, not a clock, and the tracking URLs do not need
-            // it - the video history /player sends none either.
-
-            val playerRequest = okhttp3.Request.Builder()
-                .url(playerUrl)
-                .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .authenticate(session)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .addHeader("Origin", "https://music.youtube.com")
-                .addHeader("Referer", "https://music.youtube.com/")
-                .addHeader("X-Goog-Api-Format-Version", "1")
-                .addHeader("X-YouTube-Client-Name", "67") // WEB_REMIX numeric ID
-                .addHeader("X-YouTube-Client-Version", clientVersion)
-                .addHeader("X-Goog-Visitor-Id", visitorData)
-                .build()
-
-            val playerResponse = okHttpClient.newCall(playerRequest).execute()
-            val playerCode = playerResponse.code
-            val playerResponseBody = playerResponse.body?.string()
-            playerResponse.close()
-
-            if (playerResponseBody.isNullOrEmpty()) {
-                KLog.e("YouTubeRepo", "History sync: /player HTTP $playerCode with an empty body for $videoId")
-                return@withContext
             }
+
+            val sentTimestamp = playerSignatureTimestamp.current()
+            var playerResponseBody = postPlayer(sentTimestamp)
+                ?.takeIf { it.isNotEmpty() } ?: return@withContext
             if (historyPlayerSignedOut(playerResponseBody, session, "Music")) return@withContext
+            var playerJson = org.json.JSONObject(playerResponseBody)
+            if (playerJson.optJSONObject("playbackTracking") == null) {
+                // A signatureTimestamp YouTube no longer accepts looks exactly
+                // like this; retry once if a fresh read gives another value.
+                val retry = playerSignatureTimestamp.refreshAfterRejection(sentTimestamp)
+                if (retry != null) {
+                    KLog.w("YouTubeRepo", "History sync: no playbackTracking with sts $sentTimestamp, retrying with $retry")
+                    playerResponseBody = postPlayer(retry)
+                        ?.takeIf { it.isNotEmpty() } ?: return@withContext
+                    if (historyPlayerSignedOut(playerResponseBody, session, "Music")) return@withContext
+                    playerJson = org.json.JSONObject(playerResponseBody)
+                }
+            }
 
             // Parse response to extract playback tracking URL
-            val playerJson = org.json.JSONObject(playerResponseBody)
             val playbackTracking = playerJson.optJSONObject("playbackTracking")
-            
+
             if (playbackTracking == null) {
                 // Log more details about the error
                 val playabilityStatus = playerJson.optJSONObject("playabilityStatus")
@@ -7560,15 +7572,34 @@ class YouTubeRepository(private val context: Context) {
         if (!mayWriteVideoHistory()) return@withContext null
         try {
             val cpn = generateCpn()
-            // postWatchApi has already logged the HTTP failure or the changed login.
-            val raw = postWatchApi("player", org.json.JSONObject()
-                .put("context", webContext()).put("videoId", videoId).put("cpn", cpn), session)
-                ?: run {
-                    KLog.w("YouTubeRepo", "Video history: no /player response for $videoId")
-                    return@withContext null
-                }
+            // signatureTimestamp is required: without one, WEB /player answers
+            // every video "Video unavailable" with no playbackTracking
+            // (verified October 2026; see PlayerSignatureTimestamp).
+            fun postPlayer(signatureTimestamp: Int): String? =
+                // postWatchApi has already logged the HTTP failure or the changed login.
+                postWatchApi("player", org.json.JSONObject()
+                    .put("context", webContext()).put("videoId", videoId).put("cpn", cpn)
+                    .put("playbackContext", org.json.JSONObject().put("contentPlaybackContext",
+                        org.json.JSONObject().put("signatureTimestamp", signatureTimestamp))), session)
+                    ?: run {
+                        KLog.w("YouTubeRepo", "Video history: no /player response for $videoId")
+                        null
+                    }
+            val sentTimestamp = playerSignatureTimestamp.current()
+            var raw = postPlayer(sentTimestamp) ?: return@withContext null
             if (historyPlayerSignedOut(raw, session = null, "Video")) return@withContext null
-            val json = org.json.JSONObject(raw)
+            var json = org.json.JSONObject(raw)
+            if (json.optJSONObject("playbackTracking") == null) {
+                // A signatureTimestamp YouTube no longer accepts looks exactly
+                // like this; retry once if a fresh read gives another value.
+                val retry = playerSignatureTimestamp.refreshAfterRejection(sentTimestamp)
+                if (retry != null) {
+                    KLog.w("YouTubeRepo", "Video history: no playbackTracking with sts $sentTimestamp, retrying with $retry")
+                    raw = postPlayer(retry) ?: return@withContext null
+                    if (historyPlayerSignedOut(raw, session = null, "Video")) return@withContext null
+                    json = org.json.JSONObject(raw)
+                }
+            }
             val tracking = json.optJSONObject("playbackTracking")
             val playback = tracking?.optJSONObject("videostatsPlaybackUrl")?.optString("baseUrl")
             val watchtime = tracking?.optJSONObject("videostatsWatchtimeUrl")?.optString("baseUrl")
