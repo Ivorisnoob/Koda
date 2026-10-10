@@ -158,6 +158,8 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | An `<activity-alias>` addressed with `context.packageName` as its class package | Apply is a no-op on any build with an `applicationIdSuffix`, works on release | `settings.md` |
 | A preview drawable using a platform-styled widget | Draws in the device's accent, differs on every phone | `widgets.md` |
 | `LocalWindowInfo.containerDpSize` or `Configuration.screenWidthDp` used as a layout size | Right at 100%, wrong at any other in-app Display size: the player drew as a box short of the screen (#291). Use `windowDpSize()` | `ui-conventions.md` |
+| A parser writing "Unknown ..." where a response named nothing | Screens test `isNotBlank()`, so the made-up text is drawn as a real channel and can be blocked or searched on. Leave it blank (`isMissingChannelName`); songs use `UNKNOWN_ARTIST` / `UNKNOWN_TITLE` | `youtube-data.md` |
+| `findObjectsByKey(root, ...)` then the first hit, for something with one home | Returns another object once the key appears twice (a featured channel's Subscribe state comes before the header's); nothing logged. Use `firstObjectByKey(container, root, key)`, and `entityKeyNames` for entities | `youtube-data.md` |
 | `coerceIn(low, high)` where `low` can pass `high` | Throws an empty-range `IllegalArgumentException` on a degenerate input | general |
 
 ---
@@ -214,6 +216,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - **`visitorData` rides on every InnerTube call**; a missing one now gets `LOGIN_REQUIRED`, and a googlevideo 403 means remint (`refreshVisitorDataAfterPlaybackFailure`), not a UA problem.
 - Music metadata comes from **links and page types** (`MUSIC_PAGE_TYPE_ARTIST/ALBUM`), never subtitle positions; release type/year are data (`Song.albumId`, `releaseType`, `releaseYear`).
 - Signed out: public browse ids work anonymously, **account browse ids return a valid empty shell** (gate on `isLoggedIn()`), playlists come back as `lockupViewModel`s. Continuations answer under `appendContinuationItemsAction` (`continuationItemsOrNull`), and token scoping matters.
+- **Missing text is blank, never invented**, and a value with one home is read from its container (`firstObjectByKey`), an entity by its key (`entityKeyNames`); `findObjectsByKey` is for collecting a list.
 - **Only HTTP 429 arms `YouTubeRateLimit`**, which gates discretionary fan-out and Shorts prefetch only. One `/next` feeds many features - be frugal per user action.
 
 ### Music playback -> `docs/playback-music.md`
