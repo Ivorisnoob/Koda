@@ -6,6 +6,7 @@ import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 /**
  * The signed-in account itself: who it is, and its notification inbox.
@@ -26,18 +27,18 @@ internal class YouTubeAccount(
             val jsonResponse = musicApi.fetchInternalApi("account/account_menu")
 
             if (jsonResponse.isEmpty()) {
-                KLog.w("YouTubeRepo", "fetchAccountInfo: empty response from account/account_menu")
+                KLog.w(YOUTUBE_TAG, "fetchAccountInfo: empty response from account/account_menu")
                 return@withContext
             }
             // Account payloads include identity details. Keep them out of the
             // release diagnostic ring buffer; success/failure is enough here.
-            KLog.d("YouTubeRepo", "fetchAccountInfo response received")
+            KLog.d(YOUTUBE_TAG, "fetchAccountInfo response received")
             
             var avatarUrl: String? = null
             var userName: String? = null
             
             try {
-                val root = org.json.JSONObject(jsonResponse)
+                val root = JSONObject(jsonResponse)
                 
                 // Navigate to the account section
                 // Usually: actions -> openPopupAction -> popup -> multiPageMenuRenderer -> header -> activeAccountHeaderRenderer
@@ -93,7 +94,7 @@ internal class YouTubeAccount(
                 // Ignore
             }
             
-            KLog.d("YouTubeRepo", "fetchAccountInfo parsed name=$userName avatar=$avatarUrl")
+            KLog.d(YOUTUBE_TAG, "fetchAccountInfo parsed name=$userName avatar=$avatarUrl")
 
             // Save avatar if found
             if (!avatarUrl.isNullOrEmpty()) {
@@ -122,7 +123,7 @@ internal class YouTubeAccount(
             // duplicate row, and a restored backup can tell that an account in
             // the file is the one already signed in here.
             runCatching {
-                org.json.JSONObject(jsonResponse)
+                JSONObject(jsonResponse)
                     .optJSONObject("responseContext")
                     ?.optJSONObject("mainAppWebResponseContext")
                     ?.optString("datasyncId")
@@ -131,7 +132,7 @@ internal class YouTubeAccount(
             }
             
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Account identity refresh failed", e)
+            KLog.e(YOUTUBE_TAG, "Account identity refresh failed", e)
         }
     }
 
@@ -155,17 +156,17 @@ internal class YouTubeAccount(
         try {
             val raw = webApi.postWatchApi(
                 "notification/get_notification_menu",
-                org.json.JSONObject()
+                JSONObject()
                     .put("context", webApi.webContext())
                     .put("notificationsMenuRequestType", "NOTIFICATIONS_MENU_REQUEST_TYPE_INBOX")
             ) ?: return@withContext emptyList()
-            var root = org.json.JSONObject(raw)
-            val renderers = mutableListOf<org.json.JSONObject>()
+            var root = JSONObject(raw)
+            val renderers = mutableListOf<JSONObject>()
             var page = 1
             while (true) {
                 findObjectsByKey(root, "notificationRenderer", renderers)
                 if (page >= NOTIFICATION_INBOX_MAX_PAGES) break
-                val endpoints = mutableListOf<org.json.JSONObject>()
+                val endpoints = mutableListOf<JSONObject>()
                 findObjectsByKey(root, "getNotificationMenuEndpoint", endpoints)
                 val token = endpoints.firstNotNullOfOrNull { endpoint ->
                     endpoint.optString("ctoken").takeIf { it.isNotBlank() }
@@ -173,9 +174,9 @@ internal class YouTubeAccount(
                 // A later page that fails keeps the pages already read.
                 val next = webApi.postWatchApi(
                     "notification/get_notification_menu",
-                    org.json.JSONObject().put("context", webApi.webContext()).put("ctoken", token)
+                    JSONObject().put("context", webApi.webContext()).put("ctoken", token)
                 ) ?: break
-                root = org.json.JSONObject(next)
+                root = JSONObject(next)
                 page++
             }
             renderers.distinctBy { it.optString("notificationId").ifBlank { it.toString() } }.mapNotNull { renderer ->
@@ -213,7 +214,7 @@ internal class YouTubeAccount(
                 )
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getNotifications failed", e)
+            KLog.e(YOUTUBE_TAG, "getNotifications failed", e)
             emptyList()
         }
     }

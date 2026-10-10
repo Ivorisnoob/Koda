@@ -7,6 +7,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** How an upload went: [uploaded] of [total] songs reached [playlistId]. */
 data class PlaylistUpload(val playlistId: String, val uploaded: Int, val total: Int)
@@ -37,15 +39,15 @@ internal class PlaylistEditing(
         videoIds: List<String> = emptyList()
     ): String? = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext null
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", playlistContext(music))
             .put("title", title)
         if (videoIds.isNotEmpty()) {
-            body.put("videoIds", org.json.JSONArray(videoIds))
+            body.put("videoIds", JSONArray(videoIds))
         }
         val raw = postPlaylistApi(music, "playlist/create", body) ?: return@withContext null
         try {
-            org.json.JSONObject(raw).optString("playlistId").takeIf { it.isNotBlank() }
+            JSONObject(raw).optString("playlistId").takeIf { it.isNotBlank() }
         } catch (e: Exception) {
             null
         }
@@ -65,23 +67,23 @@ internal class PlaylistEditing(
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn() || videoIds.isEmpty()) return@withContext null
             val first = videoIds.take(UPLOAD_CREATE_BATCH)
-            val createBody = org.json.JSONObject()
+            val createBody = JSONObject()
                 .put("context", musicApi.musicContext())
                 .put("title", title)
                 .put("privacyStatus", "PRIVATE")
-                .put("videoIds", org.json.JSONArray(first))
+                .put("videoIds", JSONArray(first))
             val playlistId = musicApi.postMusicApi("playlist/create", createBody)
-                ?.let { runCatching { org.json.JSONObject(it).optString("playlistId") }.getOrNull() }
+                ?.let { runCatching { JSONObject(it).optString("playlistId") }.getOrNull() }
                 ?.takeIf { it.isNotBlank() }
                 ?: return@withContext null
             var uploaded = first.size
             for (batch in videoIds.drop(UPLOAD_CREATE_BATCH).chunked(UPLOAD_ADD_BATCH)) {
                 kotlinx.coroutines.delay(UPLOAD_BATCH_PAUSE_MS)
-                val actions = org.json.JSONArray()
+                val actions = JSONArray()
                 batch.forEach {
-                    actions.put(org.json.JSONObject().put("action", "ACTION_ADD_VIDEO").put("addedVideoId", it))
+                    actions.put(JSONObject().put("action", "ACTION_ADD_VIDEO").put("addedVideoId", it))
                 }
-                val body = org.json.JSONObject()
+                val body = JSONObject()
                     .put("context", musicApi.musicContext())
                     .put("playlistId", playlistId)
                     .put("actions", actions)
@@ -105,19 +107,19 @@ internal class PlaylistEditing(
         description: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext false
-        val actions = org.json.JSONArray().put(
-            org.json.JSONObject()
+        val actions = JSONArray().put(
+            JSONObject()
                 .put("action", "ACTION_SET_PLAYLIST_NAME")
                 .put("playlistName", title)
         )
         if (description != null) {
             actions.put(
-                org.json.JSONObject()
+                JSONObject()
                     .put("action", "ACTION_SET_PLAYLIST_DESCRIPTION")
                     .put("playlistDescription", description)
             )
         }
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", playlistContext(music))
             .put("playlistId", normalizePlaylistId(playlistId))
             .put("actions", actions)
@@ -128,13 +130,13 @@ internal class PlaylistEditing(
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext false
             val id = normalizePlaylistId(playlistId)
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", playlistContext(music))
                 .put("playlistId", id)
             if (postPlaylistApi(music, "playlist/delete", body) != null) return@withContext true
-            val unlikeBody = org.json.JSONObject()
+            val unlikeBody = JSONObject()
                 .put("context", playlistContext(music))
-                .put("target", org.json.JSONObject().put("playlistId", id))
+                .put("target", JSONObject().put("playlistId", id))
             postPlaylistApi(music, "like/removelike", unlikeBody) != null
         }
 
@@ -147,9 +149,9 @@ internal class PlaylistEditing(
     suspend fun setPlaylistInLibrary(playlistId: String, saved: Boolean): Boolean =
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext false
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", playlistContext(true))
-                .put("target", org.json.JSONObject().put("playlistId", normalizePlaylistId(playlistId)))
+                .put("target", JSONObject().put("playlistId", normalizePlaylistId(playlistId)))
             postPlaylistApi(true, if (saved) "like/like" else "like/removelike", body) != null
         }
 
@@ -162,13 +164,13 @@ internal class PlaylistEditing(
         music: Boolean
     ): Boolean = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext false
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", playlistContext(music))
             .put("playlistId", normalizePlaylistId(playlistId))
             .put(
                 "actions",
-                org.json.JSONArray().put(
-                    org.json.JSONObject()
+                JSONArray().put(
+                    JSONObject()
                         .put("action", "ACTION_ADD_VIDEO")
                         .put("addedVideoId", videoId)
                 )
@@ -189,18 +191,18 @@ internal class PlaylistEditing(
         if (!sessionManager.isLoggedIn()) return@withContext false
         val id = normalizePlaylistId(playlistId)
         if (id == "LL" || id == "LM") {
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", playlistContext(music))
-                .put("target", org.json.JSONObject().put("videoId", videoId))
+                .put("target", JSONObject().put("videoId", videoId))
             return@withContext postPlaylistApi(music, "like/removelike", body) != null
         }
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", playlistContext(music))
             .put("playlistId", id)
             .put(
                 "actions",
-                org.json.JSONArray().put(
-                    org.json.JSONObject()
+                JSONArray().put(
+                    JSONObject()
                         .put("action", "ACTION_REMOVE_VIDEO_BY_VIDEO_ID")
                         .put("removedVideoId", videoId)
                 )
@@ -223,16 +225,16 @@ internal class PlaylistEditing(
         music: Boolean
     ): Boolean = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext false
-        val action = org.json.JSONObject()
+        val action = JSONObject()
             .put("action", "ACTION_MOVE_VIDEO_BEFORE")
             .put("setVideoId", setVideoId)
         if (successorSetVideoId != null) {
             action.put("movedSetVideoIdSuccessor", successorSetVideoId)
         }
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", playlistContext(music))
             .put("playlistId", normalizePlaylistId(playlistId))
-            .put("actions", org.json.JSONArray().put(action))
+            .put("actions", JSONArray().put(action))
         editStatusOk(postPlaylistApi(music, "browse/edit_playlist", body))
     }
 
@@ -243,9 +245,9 @@ internal class PlaylistEditing(
      */
     suspend fun getPlaylistsContaining(videoId: String): Set<String>? = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext null
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", webApi.webContext())
-            .put("videoIds", org.json.JSONArray().put(videoId))
+            .put("videoIds", JSONArray().put(videoId))
             .put("excludeWatchLater", false)
         webApi.postWatchApi("playlist/get_add_to_playlist", body)?.let(::parsePlaylistsContaining)
     }
@@ -270,9 +272,9 @@ internal class PlaylistEditing(
                 while (true) {
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     if (raw.isBlank()) return@withContext emptyMap()
-                    val root = org.json.JSONObject(raw)
+                    val root = JSONObject(raw)
                     if (root.has("error")) return@withContext emptyMap()
-                    val rows = mutableListOf<org.json.JSONObject>()
+                    val rows = mutableListOf<JSONObject>()
                     findObjectsByKey(root, "musicResponsiveListItemRenderer", rows)
                     for (row in rows) {
                         val itemData = row.optJSONObject("playlistItemData") ?: continue
@@ -283,7 +285,7 @@ internal class PlaylistEditing(
                     }
                     val token = extractPlaylistContinuationToken(raw) ?: break
                     if (!seenTokens.add(token)) {
-                        KLog.w("YouTubeRepo", "Repeated playlist row-id continuation for $playlistId")
+                        KLog.w(YOUTUBE_TAG, "Repeated playlist row-id continuation for $playlistId")
                         return@withContext emptyMap()
                     }
                     raw = musicApi.fetchContinuation(token)
@@ -292,15 +294,15 @@ internal class PlaylistEditing(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "getPlaylistSetVideoIds failed", e)
+                KLog.e(YOUTUBE_TAG, "getPlaylistSetVideoIds failed", e)
                 emptyMap()
             }
         }
 
-    private fun postPlaylistApi(music: Boolean, endpoint: String, body: org.json.JSONObject): String? =
+    private fun postPlaylistApi(music: Boolean, endpoint: String, body: JSONObject): String? =
         if (music) musicApi.postMusicApi(endpoint, body) else webApi.postWatchApi(endpoint, body)
 
-    private fun playlistContext(music: Boolean): org.json.JSONObject =
+    private fun playlistContext(music: Boolean): JSONObject =
         if (music) musicApi.musicContext() else webApi.webContext()
 
     /** Playlist ids sometimes carry the VL browse prefix — edit calls need it stripped. */
@@ -310,7 +312,7 @@ internal class PlaylistEditing(
     private fun editStatusOk(raw: String?): Boolean {
         if (raw == null) return false
         return try {
-            org.json.JSONObject(raw).optString("status") == "STATUS_SUCCEEDED"
+            JSONObject(raw).optString("status") == "STATUS_SUCCEEDED"
         } catch (e: Exception) {
             false
         }

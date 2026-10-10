@@ -5,6 +5,7 @@ import com.ivor.ivormusic.data.ChannelPost
 import com.ivor.ivormusic.data.RichLink
 import com.ivor.ivormusic.data.RichLinkTarget
 import com.ivor.ivormusic.data.RichText
+import org.json.JSONObject
 
 // Community posts (backstagePostRenderer) and the rich text inside them. Pure.
 
@@ -19,7 +20,7 @@ internal const val POST_DETAIL_BROWSE_ID = "FEpost_detail"
  * here - a post is full of links to videos and channels, and flattening it
  * to a String would throw all of them away.
  */
-internal fun parseBackstagePost(renderer: org.json.JSONObject): ChannelPost? {
+internal fun parseBackstagePost(renderer: JSONObject): ChannelPost? {
     val postId = renderer.optString("postId").takeIf { it.isNotBlank() } ?: return null
     val authorName = getRunText(renderer.optJSONObject("authorText")).orEmpty()
     val authorAvatarUrl = bestThumbnail(
@@ -102,7 +103,7 @@ internal fun parseBackstagePost(renderer: org.json.JSONObject): ChannelPost? {
  * UTF-16 indexing [parseRichText] documents - Kotlin's String indices are
  * UTF-16 code units, so an emoji in a post does not shift the spans.
  */
-private fun parseRunListAsRichText(node: org.json.JSONObject?): RichText {
+private fun parseRunListAsRichText(node: JSONObject?): RichText {
     val runs = node?.optJSONArray("runs")
         ?: return RichText(node?.optString("simpleText").orEmpty())
     val builder = StringBuilder()
@@ -122,7 +123,7 @@ private fun parseRunListAsRichText(node: org.json.JSONObject?): RichText {
     return RichText(builder.toString(), links)
 }
 
-private fun parseRunLinkTarget(command: org.json.JSONObject): RichLinkTarget? {
+private fun parseRunLinkTarget(command: JSONObject): RichLinkTarget? {
     command.optJSONObject("watchEndpoint")?.optString("videoId")
         ?.takeIf { it.isNotBlank() }
         ?.let { return RichLinkTarget.Url("https://www.youtube.com/watch?v=$it") }

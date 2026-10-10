@@ -13,6 +13,7 @@ import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 /**
  * Video playlists on www.youtube.com: the account's own list, a playlist's
@@ -41,14 +42,14 @@ internal class VideoPlaylists(
         try {
             val json = webApi.fetchYouTubeBrowse("FEplaylist_aggregation")
                 .takeIf { it.isNotEmpty() } ?: return@withContext emptyList()
-            val root = org.json.JSONObject(json)
-            val lockups = mutableListOf<org.json.JSONObject>()
+            val root = JSONObject(json)
+            val lockups = mutableListOf<JSONObject>()
             findObjectsByKey(root, "lockupViewModel", lockups)
             lockups.mapNotNull { parsePlaylistLockup(it) }
                 .filter { it.playlistId != "LL" && it.playlistId != "WL" }
                 .distinctBy { it.playlistId }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getVideoPlaylists failed", e)
+            KLog.e(YOUTUBE_TAG, "getVideoPlaylists failed", e)
             emptyList()
         }
     }
@@ -82,11 +83,11 @@ internal class VideoPlaylists(
             try {
                 val json = webApi.fetchYouTubeBrowse("VL$listId").takeIf { it.isNotEmpty() }
                     ?: return@withContext null
-                val root = org.json.JSONObject(json)
+                val root = JSONObject(json)
                 parseModernPlaylistHeader(root, listId)
                     ?: parseLegacyPlaylistHeader(root, listId)
             } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "getPlaylistHeader failed for $playlistId", e)
+                KLog.e(YOUTUBE_TAG, "getPlaylistHeader failed for $playlistId", e)
                 null
             }
         }
@@ -112,18 +113,18 @@ internal class VideoPlaylists(
                     page.nextPage?.takeIf { page.hasNextPage() }
                         ?.let { VideoPlaylistCursor.NewPipe(continuation.extractor, it) })
             }
-            val body = org.json.JSONObject().put("context", webApi.webContext())
+            val body = JSONObject().put("context", webApi.webContext())
             if (continuation is VideoPlaylistCursor.Browse) body.put("continuation", continuation.token)
             else body.put("browseId", if (playlistId.startsWith("VL")) playlistId else "VL$playlistId")
             val raw = webApi.postWatchApi("browse", body, session)
-            val root = raw?.takeIf { it.isNotBlank() }?.let { org.json.JSONObject(it) }
+            val root = raw?.takeIf { it.isNotBlank() }?.let { JSONObject(it) }
                 ?.takeUnless { it.has("error") }
             if (root != null) {
                 val videos = parseVideoPlaylistRows(root)
                 val token = extractVideoPlaylistContinuationToken(root)
                 if (videos.isNotEmpty() || token != null || continuation != null ||
                     playlistId.removePrefix("VL") in setOf("WL", "LL", "LM")) {
-                    KLog.d("YouTubeRepo", "Playlist ${if (continuation == null) "first" else "next"} page: ${videos.size} videos")
+                    KLog.d(YOUTUBE_TAG, "Playlist ${if (continuation == null) "first" else "next"} page: ${videos.size} videos")
                     return@withContext VideoPlaylistPage(videos, token?.let { VideoPlaylistCursor.Browse(it) })
                 }
             }
@@ -140,7 +141,7 @@ internal class VideoPlaylists(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching video playlist page", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching video playlist page", e)
             null
         }
     }
@@ -172,7 +173,7 @@ internal class VideoPlaylists(
             val partialSize = maxOf(browseResult.videos.size, newPipeResult.videos.size)
             if (partialSize > 0) {
                 KLog.w(
-                    "YouTubeRepo",
+                    YOUTUBE_TAG,
                     "Refusing incomplete full-playlist load for $playlistId ($partialSize videos resolved)"
                 )
             }
@@ -193,18 +194,18 @@ internal class VideoPlaylists(
 
         return try {
             while (true) {
-                val root = org.json.JSONObject(json)
+                val root = JSONObject(json)
                 videos += parseVideoPlaylistRows(root)
 
                 val token = extractVideoPlaylistContinuationToken(root) ?: break
                 if (!seenTokens.add(token)) {
-                    KLog.w("YouTubeRepo", "Repeated video playlist continuation for $playlistId")
+                    KLog.w(YOUTUBE_TAG, "Repeated video playlist continuation for $playlistId")
                     return VideoPlaylistLoadResult(videos, complete = false)
                 }
                 json = webApi.fetchYouTubeBrowseContinuation(token)
                 if (json.isEmpty()) {
                     KLog.w(
-                        "YouTubeRepo",
+                        YOUTUBE_TAG,
                         "Video playlist continuation failed for $playlistId after ${videos.size} videos"
                     )
                     return VideoPlaylistLoadResult(videos, complete = false)
@@ -212,7 +213,7 @@ internal class VideoPlaylists(
             }
             VideoPlaylistLoadResult(videos, complete = true)
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Video playlist browse failed for $playlistId", e)
+            KLog.e(YOUTUBE_TAG, "Video playlist browse failed for $playlistId", e)
             VideoPlaylistLoadResult(videos, complete = false)
         }
     }
@@ -256,7 +257,7 @@ internal class VideoPlaylists(
                         videos += page.items.toVideoItems(context)
                     } catch (e: Exception) {
                         KLog.w(
-                            "YouTubeRepo",
+                            YOUTUBE_TAG,
                             "Anonymous video playlist continuation failed for $listId after ${videos.size} videos",
                             e
                         )
@@ -265,7 +266,7 @@ internal class VideoPlaylists(
                 }
                 VideoPlaylistLoadResult(videos, complete = true)
             } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "Anonymous playlist fetch failed for $listId", e)
+                KLog.e(YOUTUBE_TAG, "Anonymous playlist fetch failed for $listId", e)
                 VideoPlaylistLoadResult(emptyList(), complete = false)
             }
         }

@@ -3,22 +3,23 @@ package com.ivor.ivormusic.data.youtube
 import com.ivor.ivormusic.data.PlaylistPageInfo
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
+import org.json.JSONObject
 
 // A video playlist page on www.youtube.com: its header in both shapes, its
 // rows signed in (playlistVideoRenderer) and signed out (lockupViewModel),
 // and the playlist cards of a library or channel. Pure.
 
-internal fun parseVideoPlaylistRows(root: org.json.JSONObject): List<VideoItem> {
-    val renderers = mutableListOf<org.json.JSONObject>()
+internal fun parseVideoPlaylistRows(root: JSONObject): List<VideoItem> {
+    val renderers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "playlistVideoRenderer", renderers)
     if (renderers.isNotEmpty()) return renderers.mapNotNull { parsePlaylistVideoRenderer(it) }
-    val lockups = mutableListOf<org.json.JSONObject>()
+    val lockups = mutableListOf<JSONObject>()
     findObjectsByKey(root, "lockupViewModel", lockups)
     return lockups.mapNotNull { parseLockupViewModel(it) }
 }
 
-internal fun extractVideoPlaylistContinuationToken(root: org.json.JSONObject): String? {
-    val scopes = mutableListOf<org.json.JSONObject>()
+internal fun extractVideoPlaylistContinuationToken(root: JSONObject): String? {
+    val scopes = mutableListOf<JSONObject>()
     findObjectsByKey(root, "itemSectionRenderer", scopes)
     findObjectsByKey(root, "playlistVideoListRenderer", scopes)
     findObjectsByKey(root, "appendContinuationItemsAction", scopes)
@@ -35,7 +36,7 @@ internal fun extractVideoPlaylistContinuationToken(root: org.json.JSONObject): S
  * a combined videoInfo line ("376K views • 2 days ago"). Unavailable
  * entries (deleted/private) come with isPlayable=false and are skipped.
  */
-private fun parsePlaylistVideoRenderer(renderer: org.json.JSONObject): VideoItem? {
+private fun parsePlaylistVideoRenderer(renderer: JSONObject): VideoItem? {
     val videoId = renderer.optString("videoId").takeIf { it.length == 11 } ?: return null
     if (!renderer.optBoolean("isPlayable", true)) return null
     val title = getRunText(renderer.optJSONObject("title"))
@@ -74,7 +75,7 @@ private fun parsePlaylistVideoRenderer(renderer: org.json.JSONObject): VideoItem
  * is a thumbnailBadgeViewModel text ("28 videos") and the first metadata
  * row carries privacy/type parts ("Private", "Playlist").
  */
-internal fun parsePlaylistLockup(lockup: org.json.JSONObject): VideoPlaylist? {
+internal fun parsePlaylistLockup(lockup: JSONObject): VideoPlaylist? {
     val contentType = lockup.optString("contentType")
     if (contentType != "LOCKUP_CONTENT_TYPE_PLAYLIST" &&
         contentType != "LOCKUP_CONTENT_TYPE_PODCAST"
@@ -102,7 +103,7 @@ internal fun parsePlaylistLockup(lockup: org.json.JSONObject): VideoPlaylist? {
         }
     }
 
-    val badges = mutableListOf<org.json.JSONObject>()
+    val badges = mutableListOf<JSONObject>()
     findObjectsByKey(lockup, "thumbnailBadgeViewModel", badges)
     val videoCountText = badges.firstNotNullOfOrNull { badge ->
         badge.optString("text").takeIf { it.isNotBlank() }
@@ -142,10 +143,10 @@ internal fun parsePlaylistLockup(lockup: org.json.JSONObject): VideoPlaylist? {
  * the wrong row.
  */
 internal fun parseModernPlaylistHeader(
-    root: org.json.JSONObject,
+    root: JSONObject,
     listId: String
 ): PlaylistPageInfo? {
-    val headers = mutableListOf<org.json.JSONObject>()
+    val headers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "pageHeaderViewModel", headers)
     val header = headers.firstOrNull() ?: return null
 
@@ -205,10 +206,10 @@ internal fun parseModernPlaylistHeader(
  * this feeds already says what it is.
  */
 internal fun parseLegacyPlaylistHeader(
-    root: org.json.JSONObject,
+    root: JSONObject,
     listId: String
 ): PlaylistPageInfo? {
-    val headers = mutableListOf<org.json.JSONObject>()
+    val headers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "playlistHeaderRenderer", headers)
     val header = headers.firstOrNull() ?: return null
 

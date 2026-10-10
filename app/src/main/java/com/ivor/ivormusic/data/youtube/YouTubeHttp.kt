@@ -9,10 +9,14 @@ import com.ivor.ivormusic.data.YouTubeRequestLedger
 import com.ivor.ivormusic.data.YouTubeSession
 import com.ivor.ivormusic.data.stream.VisitorIdentity
 import com.ivor.ivormusic.util.KLog
+import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+import okhttp3.Cache
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /**
  * What every call to YouTube is made with: the HTTP clients, the visitor
@@ -35,7 +39,7 @@ internal class YouTubeHttp(
         .connectionPool(sharedConnectionPool)
         .addInterceptor { chain ->
             if (ThemePreferences.isLocalOnly(context)) {
-                throw java.io.IOException("Local only mode is on: network disabled")
+                throw IOException("Local only mode is on: network disabled")
             }
             chain.proceed(chain.request())
         }
@@ -138,7 +142,7 @@ internal class YouTubeHttp(
          * InnerTube calls are POSTs and are never cached by OkHttp, so this
          * cannot serve a stale feed or a stale playlist.
          */
-        @Volatile private var sharedHttpCache: okhttp3.Cache? = null
+        @Volatile private var sharedHttpCache: Cache? = null
         private const val HTTP_CACHE_DIR_NAME = "yt_http_cache"
         private const val HTTP_CACHE_BYTES = 10L * 1024 * 1024
         private val httpCacheLock = Any()
@@ -157,12 +161,12 @@ internal class YouTubeHttp(
             timeUnit = TimeUnit.MINUTES,
         )
 
-        private fun httpCache(context: Context): okhttp3.Cache? {
+        private fun httpCache(context: Context): Cache? {
             sharedHttpCache?.let { return it }
             return synchronized(httpCacheLock) {
                 sharedHttpCache ?: try {
-                    okhttp3.Cache(
-                        java.io.File(
+                    Cache(
+                        File(
                             context.applicationContext.cacheDir,
                             HTTP_CACHE_DIR_NAME,
                         ),
@@ -171,13 +175,19 @@ internal class YouTubeHttp(
                 } catch (e: Exception) {
                     // A cache is an optimisation; losing it must not stop the
                     // app making requests.
-                    KLog.w("YouTubeRepository", "HTTP cache unavailable: ${e.message}")
+                    KLog.w(YOUTUBE_TAG, "HTTP cache unavailable: ${e.message}")
                     null
                 }
             }
         }
     }
 }
+
+/**
+ * The log tag of everything in this package. Stream resolution logs under its
+ * own, `YouTubeStreams`, so a bug report can be read for one or the other.
+ */
+internal const val YOUTUBE_TAG = "YouTubeRepo"
 
 // YouTube's own account verdict, in the responseContext tracking params
 // of every InnerTube response: {"key":"logged_in","value":"0"|"1"}.
@@ -198,10 +208,10 @@ internal val LOGGED_IN_TRACKING_PARAM =
  * browse ids that read fine anonymously - an empty Cookie or Authorization
  * header is worse than no header at all.
  */
-internal fun okhttp3.Request.Builder.authenticate(
+internal fun Request.Builder.authenticate(
     session: YouTubeSession?,
     origin: String = "https://music.youtube.com",
-): okhttp3.Request.Builder {
+): Request.Builder {
     if (session == null) return this
     addHeader("Cookie", session.cookies)
     YouTubeAuthUtils.getAuthorizationHeader(session.cookies, origin)?.let {

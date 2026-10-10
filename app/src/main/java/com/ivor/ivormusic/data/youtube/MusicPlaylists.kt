@@ -7,8 +7,10 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.UNKNOWN_ALBUM
 import com.ivor.ivormusic.data.items
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 /**
@@ -46,7 +48,7 @@ internal class MusicPlaylists(
     suspend fun getAlbumSongs(browseId: String): List<Song> = withContext(Dispatchers.IO) {
         try {
             val body = musicApi.browseMusic(browseId) ?: return@withContext emptyList()
-            val root = org.json.JSONObject(body)
+            val root = JSONObject(body)
             val songs = MusicMetadata.albumSongs(root, browseId)
             // Signed out, the page lists each track's video where it has one.
             // The album's audio playlist has the songs; one more request, and
@@ -55,10 +57,10 @@ internal class MusicPlaylists(
             val audioPlaylist = MusicMetadata.albumAudioPlaylistId(root) ?: return@withContext songs
             val audio = getBrowsePlaylistSongs(audioPlaylist)
             if (audio.songs.isEmpty()) songs else MusicMetadata.withSongVersions(songs, audio.songs)
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching album $browseId", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching album $browseId", e)
             emptyList()
         }
     }
@@ -94,7 +96,7 @@ internal class MusicPlaylists(
                 continuationToken = extractContinuationToken(json)
                 pageCount++
                 
-                KLog.d("YouTubeRepo", "Liked songs page $pageCount: ${songs.size} songs, total: ${allSongs.size}")
+                KLog.d(YOUTUBE_TAG, "Liked songs page $pageCount: ${songs.size} songs, total: ${allSongs.size}")
                 
             } while (continuationToken != null && pageCount < maxPages)
             
@@ -102,7 +104,7 @@ internal class MusicPlaylists(
                 return@withContext allSongs.distinctBy { it.id }
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching liked music", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching liked music", e)
         }
         
         // Fallback to NewPipe method
@@ -136,7 +138,7 @@ internal class MusicPlaylists(
                 val parsed = parsePlaylistsFromInternalJson(json)
                 playlists.addAll(parsed)
                 pageCount++
-                KLog.d("YouTubeRepo", "Library playlists page $pageCount: ${parsed.size} items")
+                KLog.d(YOUTUBE_TAG, "Library playlists page $pageCount: ${parsed.size} items")
                 if (parsed.isEmpty()) break
                 val token = extractContinuationToken(json) ?: break
                 json = musicApi.fetchContinuation(token)
@@ -145,7 +147,7 @@ internal class MusicPlaylists(
             // The library grid can include "Your Likes" (VLLM) which we already synthesized
             playlists.distinctBy { it.id }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching user playlists", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching user playlists", e)
             emptyList()
         }
     }
@@ -181,7 +183,7 @@ internal class MusicPlaylists(
                 } catch (e: Exception) {
                     newPipeComplete = false
                     KLog.w(
-                        "YouTubeRepo",
+                        YOUTUBE_TAG,
                         "NewPipe playlist continuation failed for $playlistId after ${allItems.size} items",
                         e
                     )
@@ -214,7 +216,7 @@ internal class MusicPlaylists(
             .orEmpty()
         if (partial.isNotEmpty()) {
             KLog.w(
-                "YouTubeRepo",
+                YOUTUBE_TAG,
                 "Returning incomplete playlist $playlistId (${partial.size} songs) after all full-load paths failed"
             )
         }
@@ -251,13 +253,13 @@ internal class MusicPlaylists(
             val token = extractPlaylistContinuationToken(json)
                 ?: return PlaylistLoadResult(allSongs, complete = true)
             if (!seenTokens.add(token)) {
-                KLog.w("YouTubeRepo", "Repeated playlist continuation for $playlistId")
+                KLog.w(YOUTUBE_TAG, "Repeated playlist continuation for $playlistId")
                 return PlaylistLoadResult(allSongs, complete = false)
             }
             json = musicApi.fetchContinuation(token)
             if (json.isEmpty()) {
                 KLog.w(
-                    "YouTubeRepo",
+                    YOUTUBE_TAG,
                     "Authenticated playlist continuation failed for $playlistId after ${allSongs.size} songs"
                 )
                 return PlaylistLoadResult(allSongs, complete = false)

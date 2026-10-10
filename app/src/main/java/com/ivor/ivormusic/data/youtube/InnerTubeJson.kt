@@ -1,5 +1,11 @@
 package com.ivor.ivormusic.data.youtube
 
+import android.net.Uri
+import android.util.Base64
+import java.net.URLDecoder
+import org.json.JSONArray
+import org.json.JSONObject
+
 // Reading InnerTube JSON by hand: the recursive searches, text runs and
 // thumbnail pickers every parser in this package shares. All pure.
 
@@ -8,9 +14,9 @@ package com.ivor.ivormusic.data.youtube
  * Kept structure-agnostic on purpose — InnerTube nests these renderers
  * differently across response variants (queue vs. wrapper renderers).
  */
-internal fun findObjectsByKey(node: Any, key: String, results: MutableList<org.json.JSONObject>) {
+internal fun findObjectsByKey(node: Any, key: String, results: MutableList<JSONObject>) {
     when (node) {
-        is org.json.JSONObject -> {
+        is JSONObject -> {
             node.optJSONObject(key)?.let { results.add(it) }
             val keys = node.keys()
             while (keys.hasNext()) {
@@ -18,7 +24,7 @@ internal fun findObjectsByKey(node: Any, key: String, results: MutableList<org.j
                 if (k != key) findObjectsByKey(node.get(k), key, results)
             }
         }
-        is org.json.JSONArray -> {
+        is JSONArray -> {
             for (i in 0 until node.length()) {
                 findObjectsByKey(node.get(i), key, results)
             }
@@ -31,7 +37,7 @@ internal fun findObjectsByKey(node: Any, key: String, results: MutableList<org.j
  */
 internal fun extractContinuationToken(json: String): String? {
     try {
-        val root = org.json.JSONObject(json)
+        val root = JSONObject(json)
         val continuations = mutableListOf<String>()
 
         // Find all nextContinuationData or continuationEndpoint objects
@@ -45,7 +51,7 @@ internal fun extractContinuationToken(json: String): String? {
 }
 
 internal fun findContinuationTokens(node: Any, results: MutableList<String>) {
-    if (node is org.json.JSONObject) {
+    if (node is JSONObject) {
         // Check for nextContinuationData
         if (node.has("nextContinuationData")) {
             val token = node.optJSONObject("nextContinuationData")?.optString("continuation")
@@ -78,14 +84,14 @@ internal fun findContinuationTokens(node: Any, results: MutableList<String>) {
             val nextKey = keys.next()
             findContinuationTokens(node.get(nextKey), results)
         }
-    } else if (node is org.json.JSONArray) {
+    } else if (node is JSONArray) {
         for (i in 0 until node.length()) {
             findContinuationTokens(node.get(i), results)
         }
     }
 }
 
-internal fun getRunText(formattedString: org.json.JSONObject?): String? {
+internal fun getRunText(formattedString: JSONObject?): String? {
     if (formattedString == null) return null
     if (formattedString.has("simpleText")) {
         return formattedString.optString("simpleText")
@@ -118,14 +124,14 @@ internal fun extractVideoId(url: String): String {
  * Resurrected helper for deep recursive search.
  * Used sparingly for fallback scenarios where structure is unknown.
  */
-internal fun findAllObjects(json: org.json.JSONObject, key: String, results: MutableList<org.json.JSONObject>, depth: Int = 0) {
+internal fun findAllObjects(json: JSONObject, key: String, results: MutableList<JSONObject>, depth: Int = 0) {
     if (depth > 20) return // Reduced depth limit from 50
 
     if (json.has(key)) {
         val value = json.opt(key)
-        if (value is org.json.JSONObject) {
+        if (value is JSONObject) {
             results.add(value)
-        } else if (value is org.json.JSONArray) {
+        } else if (value is JSONArray) {
             for (i in 0 until value.length()) {
                 val item = value.optJSONObject(i)
                 if (item != null) results.add(item)
@@ -136,8 +142,8 @@ internal fun findAllObjects(json: org.json.JSONObject, key: String, results: Mut
     json.keys().forEach { keyName ->
         val value = json.opt(keyName)
         when (value) {
-            is org.json.JSONObject -> findAllObjects(value, key, results, depth + 1)
-            is org.json.JSONArray -> {
+            is JSONObject -> findAllObjects(value, key, results, depth + 1)
+            is JSONArray -> {
                 for (i in 0 until value.length()) {
                     val item = value.optJSONObject(i)
                     if (item != null) findAllObjects(item, key, results, depth + 1)
@@ -168,7 +174,7 @@ internal fun parseDurationToSeconds(duration: String): Long {
 }
 
 /** Widest entry of a thumbnail/source array, which is the highest quality. */
-internal fun widestThumbnailUrl(array: org.json.JSONArray?, urlKey: String): String? {
+internal fun widestThumbnailUrl(array: JSONArray?, urlKey: String): String? {
     if (array == null) return null
     var best: String? = null
     var bestWidth = -1
@@ -189,8 +195,8 @@ internal fun widestThumbnailUrl(array: org.json.JSONArray?, urlKey: String): Str
  * string for substring matching (embedded ids are plain ASCII).
  */
 internal fun decodeInnerTubeParams(params: String): String? = try {
-    val unescaped = java.net.URLDecoder.decode(params, "UTF-8")
-    val bytes = android.util.Base64.decode(unescaped, android.util.Base64.URL_SAFE)
+    val unescaped = URLDecoder.decode(params, "UTF-8")
+    val bytes = Base64.decode(unescaped, Base64.URL_SAFE)
     String(bytes, Charsets.ISO_8859_1)
 } catch (e: Exception) {
     null
@@ -204,7 +210,7 @@ internal inline fun <T, R : Any> List<T>.lastNotNullOfOrNull(transform: (T) -> R
 }
 
 /** Widest entry of a modern `image.sources` array. */
-internal fun bestImageSource(sources: org.json.JSONArray?): String? {
+internal fun bestImageSource(sources: JSONArray?): String? {
     if (sources == null) return null
     var best: String? = null
     var maxWidth = -1
@@ -221,7 +227,7 @@ internal fun bestImageSource(sources: org.json.JSONArray?): String? {
 }
 
 /** Widest entry of a legacy `thumbnails` array. */
-internal fun bestThumbnail(thumbnails: org.json.JSONArray?): String? {
+internal fun bestThumbnail(thumbnails: JSONArray?): String? {
     if (thumbnails == null) return null
     var best: String? = null
     var maxWidth = -1
@@ -245,7 +251,7 @@ internal fun bestThumbnail(thumbnails: org.json.JSONArray?): String? {
 internal fun unwrapYouTubeRedirect(url: String): String {
     if (!url.contains("/redirect?")) return url
     return try {
-        android.net.Uri.parse(url).getQueryParameter("q")?.takeIf { it.isNotBlank() } ?: url
+        Uri.parse(url).getQueryParameter("q")?.takeIf { it.isNotBlank() } ?: url
     } catch (e: Exception) {
         url
     }

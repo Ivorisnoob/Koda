@@ -13,12 +13,17 @@ import com.ivor.ivormusic.data.parseShortsSeed
 import com.ivor.ivormusic.data.parseShortsSequence
 import com.ivor.ivormusic.data.videoListContinuationToken
 import com.ivor.ivormusic.util.KLog
+import java.io.IOException
+import java.time.Year
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * The lists of videos YouTube assembles for an account: Home, Subscriptions,
@@ -49,36 +54,36 @@ internal class VideoFeeds(
      */
     suspend fun getTrendingVideos(): VideoFeedPage = withContext(Dispatchers.IO) {
         val isLoggedIn = sessionManager.isLoggedIn()
-        KLog.d("YouTubeRepo", "getTrendingVideos - isLoggedIn: $isLoggedIn")
+        KLog.d(YOUTUBE_TAG, "getTrendingVideos - isLoggedIn: $isLoggedIn")
 
         if (isLoggedIn) {
             try {
                 val page = getPersonalizedVideoRecommendations()
                 if (page.videos.isNotEmpty()) {
-                    KLog.d("YouTubeRepo", "Got ${page.videos.size} personalized videos (continuation=${page.continuation != null})")
+                    KLog.d(YOUTUBE_TAG, "Got ${page.videos.size} personalized videos (continuation=${page.continuation != null})")
                     return@withContext page
                 }
-                KLog.w("YouTubeRepo", "Personalized recommendations empty, using taste-based feed")
+                KLog.w(YOUTUBE_TAG, "Personalized recommendations empty, using taste-based feed")
             } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "Error fetching personalized videos", e)
+                KLog.e(YOUTUBE_TAG, "Error fetching personalized videos", e)
             }
         }
 
         try {
             val tasteFeed = getTasteBasedVideos()
             if (tasteFeed.isNotEmpty()) {
-                KLog.d("YouTubeRepo", "Got ${tasteFeed.size} taste-based videos")
+                KLog.d(YOUTUBE_TAG, "Got ${tasteFeed.size} taste-based videos")
                 return@withContext VideoFeedPage(tasteFeed)
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error building taste-based feed", e)
+            KLog.e(YOUTUBE_TAG, "Error building taste-based feed", e)
         }
 
         // Cold start: nothing watched yet and not logged in
         try {
-            VideoFeedPage(videoSearch.searchVideos("trending videos ${java.time.Year.now().value}"))
+            VideoFeedPage(videoSearch.searchVideos("trending videos ${Year.now().value}"))
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Cold-start search failed", e)
+            KLog.e(YOUTUBE_TAG, "Cold-start search failed", e)
             VideoFeedPage(emptyList())
         }
     }
@@ -116,7 +121,7 @@ internal class VideoFeeds(
             }
         """.trimIndent()
 
-        val request = okhttp3.Request.Builder()
+        val request = Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .authenticate(session, origin)
@@ -132,18 +137,18 @@ internal class VideoFeeds(
             // Never place Authorization material or response bodies in KLog:
             // users can deliberately attach its release ring buffer to a bug
             // report, and these values may carry account/feed information.
-            KLog.d("YouTubeRepo", "Making personalized video request")
+            KLog.d(YOUTUBE_TAG, "Making personalized video request")
             val response = http.okHttpClient.newCall(request).execute()
             val responseBody = response.body?.string() ?: return@withContext empty
             response.close()
 
-            KLog.d("YouTubeRepo", "Personalized response received")
-            val root = org.json.JSONObject(responseBody)
+            KLog.d(YOUTUBE_TAG, "Personalized response received")
+            val root = JSONObject(responseBody)
             val videos = parseVideosFromYouTubeJson(responseBody)
-            KLog.d("YouTubeRepo", "Parsed ${videos.size} personalized videos")
+            KLog.d(YOUTUBE_TAG, "Parsed ${videos.size} personalized videos")
             VideoFeedPage(videos, extractRichGridContinuation(root))
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error in getPersonalizedVideoRecommendations", e)
+            KLog.e(YOUTUBE_TAG, "Error in getPersonalizedVideoRecommendations", e)
             empty
         }
     }
@@ -190,7 +195,7 @@ internal class VideoFeeds(
             val root = watchPage.fetchWatchNextRoot(videoId) ?: return emptyList()
             parseRelatedFromWatchNext(root)
         } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "getRelatedVideosLight failed for $videoId", e)
+            KLog.w(YOUTUBE_TAG, "getRelatedVideosLight failed for $videoId", e)
             emptyList()
         }
     }
@@ -204,15 +209,15 @@ internal class VideoFeeds(
      */
     suspend fun getVideoFeedContinuation(continuation: String): VideoFeedPage = withContext(Dispatchers.IO) {
         try {
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
                 .put("continuation", continuation)
             val raw = webApi.postWatchApi("browse", body) ?: return@withContext VideoFeedPage(emptyList())
-            val root = org.json.JSONObject(raw)
+            val root = JSONObject(raw)
 
             val videos = mutableListOf<VideoItem>()
             var nextToken: String? = null
-            val actions = root.optJSONArray("onResponseReceivedActions") ?: org.json.JSONArray()
+            val actions = root.optJSONArray("onResponseReceivedActions") ?: JSONArray()
             for (i in 0 until actions.length()) {
                 val items = actions.optJSONObject(i)
                     ?.optJSONObject("appendContinuationItemsAction")
@@ -235,10 +240,10 @@ internal class VideoFeeds(
                         ?.let { nextToken = it }
                 }
             }
-            KLog.d("YouTubeRepo", "Feed continuation: ${videos.size} videos, next=${nextToken != null}")
+            KLog.d(YOUTUBE_TAG, "Feed continuation: ${videos.size} videos, next=${nextToken != null}")
             VideoFeedPage(videos.distinctBy { it.videoId }, nextToken)
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Feed continuation failed", e)
+            KLog.e(YOUTUBE_TAG, "Feed continuation failed", e)
             VideoFeedPage(emptyList())
         }
     }
@@ -259,17 +264,17 @@ internal class VideoFeeds(
         try {
             val raw = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject().put("context", webApi.webContext()).put("browseId", "FEsubscriptions")
+                JSONObject().put("context", webApi.webContext()).put("browseId", "FEsubscriptions")
             ) ?: return@withContext VideoFeedPage(emptyList())
-            val root = org.json.JSONObject(raw)
+            val root = JSONObject(raw)
             VideoFeedPage(
                 videos = parseVideosFromYouTubeJson(raw, limit = Int.MAX_VALUE, parsedRoot = root),
                 continuation = extractRichGridContinuation(root)
             )
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getSubscriptionsFeedPage failed", e)
+            KLog.e(YOUTUBE_TAG, "getSubscriptionsFeedPage failed", e)
             VideoFeedPage(emptyList())
         }
     }
@@ -281,20 +286,20 @@ internal class VideoFeeds(
     ): VideoFeedPage? = withContext(Dispatchers.IO) {
         if (session == null) return@withContext null
         try {
-            val body = org.json.JSONObject().put("context", webApi.webContext())
+            val body = JSONObject().put("context", webApi.webContext())
             if (continuation == null) body.put("browseId", "FEhistory")
             else body.put("continuation", continuation)
             val raw = webApi.postWatchApi("browse", body, session)
                 ?.takeIf { it.isNotBlank() } ?: return@withContext null
-            val root = org.json.JSONObject(raw)
+            val root = JSONObject(raw)
             if (root.has("error")) return@withContext null
             val videos = parseVideosFromYouTubeJson(raw, limit = Int.MAX_VALUE)
-            KLog.d("YouTubeRepo", "History ${if (continuation == null) "first" else "next"} page: ${videos.size} videos")
+            KLog.d(YOUTUBE_TAG, "History ${if (continuation == null) "first" else "next"} page: ${videos.size} videos")
             VideoFeedPage(videos, videoListContinuationToken(root))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching watch history page", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching watch history page", e)
             null
         }
     }
@@ -308,20 +313,20 @@ internal class VideoFeeds(
     suspend fun getShortsFeed(): List<ShortsItem> = withContext(Dispatchers.IO) {
         val session = sessionManager.captureSession()
         if (session != null) {
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
                 .put("params", "CA8%3D")
                 .put("inputType", "REEL_WATCH_INPUT_TYPE_SEEDLESS")
                 .put("disablePlayerResponse", true)
             val raw = webApi.postWatchApi("reel/reel_item_watch", body, session)
-                ?: throw java.io.IOException("Shorts recommendations request failed")
-            val root = org.json.JSONObject(raw)
+                ?: throw IOException("Shorts recommendations request failed")
+            val root = JSONObject(raw)
             if (LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) == "0") {
-                throw java.io.IOException("YouTube rejected the Shorts session")
+                throw IOException("YouTube rejected the Shorts session")
             }
             val seed = parseShortsSeed(root)
             if (sessionManager.currentSession(session) == null) {
-                throw kotlinx.coroutines.CancellationException("Shorts account changed")
+                throw CancellationException("Shorts account changed")
             }
             val page = seed.continuation?.let { requestShortsSequence(it, session) }
             val continuation = if (page != null) page.continuation else seed.continuation
@@ -334,12 +339,12 @@ internal class VideoFeeds(
         val seedChannel = videoHistoryRepository.getHistory()
             .firstOrNull { it.channelName.isNotBlank() && it.channelName != "Unknown Channel" }
             ?.channelName
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", webApi.webContext())
             .put("query", seedChannel?.let { "$it shorts" } ?: "trending shorts")
         val raw = webApi.postWatchApi("search", body)
-            ?: throw java.io.IOException("Shorts search request failed")
-        parseShortsLockups(org.json.JSONObject(raw))
+            ?: throw IOException("Shorts search request failed")
+        parseShortsLockups(JSONObject(raw))
     }
 
     /**
@@ -352,16 +357,16 @@ internal class VideoFeeds(
     }
 
     private fun requestShortsSequence(sequenceParams: String, session: YouTubeSession?): ShortsFeedPage {
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", webApi.webContext())
             .put("sequenceParams", sequenceParams)
         val raw = webApi.postWatchApi("reel/reel_watch_sequence", body, session)
-            ?: throw java.io.IOException("Shorts sequence request failed")
+            ?: throw IOException("Shorts sequence request failed")
         if (session != null &&
             LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) == "0") {
-            throw java.io.IOException("YouTube rejected the Shorts session")
+            throw IOException("YouTube rejected the Shorts session")
         }
-        return parseShortsSequence(org.json.JSONObject(raw))
+        return parseShortsSequence(JSONObject(raw))
     }
 
     /**
@@ -388,22 +393,22 @@ internal class VideoFeeds(
         if (token.isNullOrBlank()) return@withContext false
         if (!sessionManager.isLoggedIn()) return@withContext false
         try {
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
-                .put("feedbackTokens", org.json.JSONArray().put(token))
+                .put("feedbackTokens", JSONArray().put(token))
                 .put("isFeedbackTokenUnencrypted", false)
                 .put("shouldMerge", false)
             val raw = webApi.postWatchApi("feedback", body) ?: return@withContext false
-            val processed = org.json.JSONObject(raw)
+            val processed = JSONObject(raw)
                 .optJSONArray("feedbackResponses")
                 ?.optJSONObject(0)
                 ?.optBoolean("isProcessed", false) ?: false
             if (!processed) {
-                KLog.w("YouTubeRepo", "feedback token not processed")
+                KLog.w(YOUTUBE_TAG, "feedback token not processed")
             }
             processed
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "feedback failed", e)
+            KLog.e(YOUTUBE_TAG, "feedback failed", e)
             false
         }
     }

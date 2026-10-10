@@ -10,8 +10,11 @@ import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.WatchNextData
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Everything around a playing video that one `/next` carries, and the writes
@@ -43,7 +46,7 @@ internal class WatchPage(
                 engagement = try {
                     parseEngagementFromWatchNext(videoId, root)
                 } catch (e: Exception) {
-                    KLog.w("YouTubeRepo", "engagement parse failed for $videoId", e)
+                    KLog.w(YOUTUBE_TAG, "engagement parse failed for $videoId", e)
                     null
                 },
                 updatedVideoItem = parseVideoMetadataFromWatchNext(videoId, root, baseVideo),
@@ -51,13 +54,13 @@ internal class WatchPage(
                 chapters = try {
                     parseChaptersFromWatchNext(root)
                 } catch (e: Exception) {
-                    KLog.w("YouTubeRepo", "chapters parse failed for $videoId", e)
+                    KLog.w(YOUTUBE_TAG, "chapters parse failed for $videoId", e)
                     emptyList()
                 },
                 liveChatContinuation = parseLiveChatContinuation(root)
             )
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getWatchNextData failed", e)
+            KLog.e(YOUTUBE_TAG, "getWatchNextData failed", e)
             WatchNextData(null, null, emptyList())
         }
     }
@@ -71,7 +74,7 @@ internal class WatchPage(
             val root = fetchWatchNextRoot(videoId) ?: return@withContext null
             parseEngagementFromWatchNext(videoId, root)
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getVideoEngagement failed", e)
+            KLog.e(YOUTUBE_TAG, "getVideoEngagement failed", e)
             null
         }
     }
@@ -97,17 +100,17 @@ internal class WatchPage(
                 // first of them is the channel the byline leads with.
                 ?: engagement?.collaborators?.firstOrNull()?.channelId
         } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "Channel lookup failed for $videoId", e)
+            KLog.w(YOUTUBE_TAG, "Channel lookup failed for $videoId", e)
             null
         }
     }
 
-    fun fetchWatchNextRoot(videoId: String): org.json.JSONObject? {
-        val body = org.json.JSONObject()
+    fun fetchWatchNextRoot(videoId: String): JSONObject? {
+        val body = JSONObject()
             .put("context", webApi.webContext())
             .put("videoId", videoId)
         val raw = webApi.postWatchApi("next", body) ?: return null
-        return org.json.JSONObject(raw)
+        return JSONObject(raw)
     }
 
     /**
@@ -121,9 +124,9 @@ internal class WatchPage(
             LikeStatus.DISLIKE -> "like/dislike"
             LikeStatus.INDIFFERENT -> "like/removelike"
         }
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", webApi.webContext())
-            .put("target", org.json.JSONObject().put("videoId", videoId))
+            .put("target", JSONObject().put("videoId", videoId))
         webApi.postWatchApi(endpoint, body) != null
     }
 
@@ -134,9 +137,9 @@ internal class WatchPage(
     suspend fun setSubscribed(channelId: String, subscribe: Boolean): Boolean = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext false
         val endpoint = if (subscribe) "subscription/subscribe" else "subscription/unsubscribe"
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", webApi.webContext())
-            .put("channelIds", org.json.JSONArray().put(channelId))
+            .put("channelIds", JSONArray().put(channelId))
         webApi.postWatchApi(endpoint, body) != null
     }
 
@@ -159,17 +162,17 @@ internal class WatchPage(
             try {
                 val raw = webApi.postWatchApi(
                     "notification/modify_channel_preference",
-                    org.json.JSONObject().put("context", webApi.webContext()).put("params", params)
+                    JSONObject().put("context", webApi.webContext()).put("params", params)
                 ) ?: return@withContext null
-                val root = org.json.JSONObject(raw)
+                val root = JSONObject(raw)
                 val updated = ChannelBellParser.fromToggle(
                     root.optJSONObject("newNotificationButton"), bell.channelId
                 )
                 if (updated?.level != level) {
-                    KLog.w("YouTubeRepo", "Bell for ${bell.channelId} did not move to $level (reply: ${updated?.level})")
+                    KLog.w(YOUTUBE_TAG, "Bell for ${bell.channelId} did not move to $level (reply: ${updated?.level})")
                     return@withContext null
                 }
-                val toasts = mutableListOf<org.json.JSONObject>()
+                val toasts = mutableListOf<JSONObject>()
                 findObjectsByKey(root, "notificationActionRenderer", toasts)
                 ChannelBellChange(
                     // The level is the reply's; the params stay the ones the
@@ -178,10 +181,10 @@ internal class WatchPage(
                     message = getRunText(toasts.firstOrNull()?.optJSONObject("responseText"))
                         ?.takeIf { it.isNotBlank() }
                 )
-            } catch (e: kotlinx.coroutines.CancellationException) {
+            } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                KLog.w("YouTubeRepo", "setChannelBell failed", e)
+                KLog.w(YOUTUBE_TAG, "setChannelBell failed", e)
                 null
             }
         }

@@ -9,13 +9,16 @@ import com.ivor.ivormusic.data.VideoSearchDateFilter
 import com.ivor.ivormusic.data.VideoSearchSort
 import com.ivor.ivormusic.data.items
 import com.ivor.ivormusic.util.KLog
+import java.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
+import org.schabi.newpipe.extractor.search.SearchExtractor
 
 /**
  * Search on www.youtube.com: videos, playlists and channels.
@@ -33,7 +36,7 @@ internal class VideoSearch(
     private data class VideoSearchKey(val query: String, val sort: VideoSearchSort)
 
     private val videoSearchExtractorCache =
-        mutableMapOf<VideoSearchKey, org.schabi.newpipe.extractor.search.SearchExtractor>()
+        mutableMapOf<VideoSearchKey, SearchExtractor>()
 
     private val videoSearchNextPageCache = mutableMapOf<VideoSearchKey, Page?>()
 
@@ -73,7 +76,7 @@ internal class VideoSearch(
                 videoSearchContinuations[key] = sorted.continuation
                 return@withContext sorted.videos
             }
-            KLog.w("YouTubeRepo", "Sorted video search failed, falling back to relevance order")
+            KLog.w(YOUTUBE_TAG, "Sorted video search failed, falling back to relevance order")
         }
 
         try {
@@ -91,7 +94,7 @@ internal class VideoSearch(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error searching videos", e)
+            KLog.e(YOUTUBE_TAG, "Error searching videos", e)
             emptyList()
         }
     }
@@ -106,7 +109,7 @@ internal class VideoSearch(
             val key = VideoSearchKey(dateFilter.applyTo(query), sort)
             if (videoSearchContinuations.containsKey(key)) {
                 val token = videoSearchContinuations[key] ?: return@withContext emptyList()
-                val response = webApi.postWatchApi("search", org.json.JSONObject()
+                val response = webApi.postWatchApi("search", JSONObject()
                     .put("context", webApi.webContext()).put("continuation", token))
                     ?: return@withContext emptyList()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
@@ -124,7 +127,7 @@ internal class VideoSearch(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error loading more video results", e)
+            KLog.e(YOUTUBE_TAG, "Error loading more video results", e)
             emptyList()
         }
     }
@@ -137,14 +140,14 @@ internal class VideoSearch(
      */
     private fun searchVideosInnerTube(query: String, sort: VideoSearchSort): VideoFeedPage? {
         return try {
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
                 .put("query", query)
                 .put("params", buildVideoSearchParams(sort))
             val response = webApi.postWatchApi("search", body) ?: return null
             parseVideoSearchPage(response)
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "InnerTube video search failed", e)
+            KLog.e(YOUTUBE_TAG, "InnerTube video search failed", e)
             null
         }
     }
@@ -157,7 +160,7 @@ internal class VideoSearch(
      */
     private fun buildVideoSearchParams(sort: VideoSearchSort): String {
         val bytes = byteArrayOf(0x08, sort.code.toByte(), 0x12, 0x02, 0x10, 0x01)
-        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
     /**
@@ -185,7 +188,7 @@ internal class VideoSearch(
                 )
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error searching video playlists", e)
+            KLog.e(YOUTUBE_TAG, "Error searching video playlists", e)
             emptyList()
         }
     }
@@ -224,7 +227,7 @@ internal class VideoSearch(
                     }
                     .distinctBy { it.channelId }
             } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "Error searching channels", e)
+                KLog.e(YOUTUBE_TAG, "Error searching channels", e)
                 emptyList()
             }
         }

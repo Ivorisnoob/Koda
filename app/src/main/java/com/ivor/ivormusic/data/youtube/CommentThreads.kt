@@ -8,6 +8,8 @@ import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Comments under a video or a community post: reading a page, posting,
@@ -31,18 +33,18 @@ internal class CommentThreads(
         viaBrowse: Boolean = false
     ): CommentsPage? = withContext(Dispatchers.IO) {
         try {
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
                 .put("continuation", token)
             val raw = webApi.postWatchApi(if (viaBrowse) "browse" else "next", body)
                 ?: return@withContext null
-            val root = org.json.JSONObject(raw)
+            val root = JSONObject(raw)
 
             // 1. Collect entity payloads: commentId -> payload, toolbar states and
             // toolbar surfaces (like/reply actions) by their entity keys
-            val entities = mutableMapOf<String, org.json.JSONObject>()
-            val toolbarStates = mutableMapOf<String, org.json.JSONObject>()
-            val toolbarSurfaces = mutableMapOf<String, org.json.JSONObject>()
+            val entities = mutableMapOf<String, JSONObject>()
+            val toolbarStates = mutableMapOf<String, JSONObject>()
+            val toolbarSurfaces = mutableMapOf<String, JSONObject>()
             val replyParamsList = mutableListOf<String>()
             val mutations = root.optJSONObject("frameworkUpdates")
                 ?.optJSONObject("entityBatchUpdate")
@@ -63,7 +65,7 @@ internal class CommentThreads(
                     payload.optJSONObject("engagementToolbarSurfaceEntityPayload")?.let { surface ->
                         val key = surface.optString("key")
                         if (key.isNotBlank()) toolbarSurfaces[key] = surface
-                        val replyEndpoints = mutableListOf<org.json.JSONObject>()
+                        val replyEndpoints = mutableListOf<JSONObject>()
                         findObjectsByKey(surface, "createCommentReplyEndpoint", replyEndpoints)
                         replyEndpoints.firstOrNull()?.optString("createReplyParams")
                             ?.takeIf { it.isNotBlank() }?.let { replyParamsList.add(it) }
@@ -80,7 +82,7 @@ internal class CommentThreads(
             }
 
             // Params for posting a new top-level comment (present on first pages only)
-            val createEndpoints = mutableListOf<org.json.JSONObject>()
+            val createEndpoints = mutableListOf<JSONObject>()
             findObjectsByKey(root, "createCommentEndpoint", createEndpoints)
             val createCommentParams = createEndpoints.firstOrNull()
                 ?.optString("createCommentParams")?.takeIf { it.isNotBlank() }
@@ -88,7 +90,7 @@ internal class CommentThreads(
             // 2. Walk continuationItems in order to keep YouTube's comment ordering
             val comments = mutableListOf<CommentItem>()
             var nextToken: String? = null
-            val endpoints = root.optJSONArray("onResponseReceivedEndpoints") ?: org.json.JSONArray()
+            val endpoints = root.optJSONArray("onResponseReceivedEndpoints") ?: JSONArray()
             for (i in 0 until endpoints.length()) {
                 val ep = endpoints.optJSONObject(i) ?: continue
                 val items = (ep.optJSONObject("reloadContinuationItemsCommand")
@@ -126,7 +128,7 @@ internal class CommentThreads(
 
             CommentsPage(comments, nextToken, createCommentParams)
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getCommentsPage failed", e)
+            KLog.e(YOUTUBE_TAG, "getCommentsPage failed", e)
             null
         }
     }
@@ -139,7 +141,7 @@ internal class CommentThreads(
     suspend fun createComment(createCommentParams: String, text: String): CommentItem? =
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext null
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
                 .put("commentText", text)
                 .put("createCommentParams", createCommentParams)
@@ -153,7 +155,7 @@ internal class CommentThreads(
     suspend fun createCommentReply(createReplyParams: String, text: String): CommentItem? =
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext null
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
                 .put("commentText", text)
                 .put("createReplyParams", createReplyParams)
@@ -167,14 +169,14 @@ internal class CommentThreads(
      */
     suspend fun performCommentAction(action: String): Boolean = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext false
-        val body = org.json.JSONObject()
+        val body = JSONObject()
             .put("context", webApi.webContext())
-            .put("actions", org.json.JSONArray().put(action))
+            .put("actions", JSONArray().put(action))
         val raw = webApi.postWatchApi("comment/perform_comment_action", body)
             ?: return@withContext false
         try {
-            val results = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(org.json.JSONObject(raw), "actionResult", results)
+            val results = mutableListOf<JSONObject>()
+            findObjectsByKey(JSONObject(raw), "actionResult", results)
             results.isEmpty() || results.any { it.optString("status") == "STATUS_SUCCEEDED" }
         } catch (e: Exception) {
             true
@@ -196,13 +198,13 @@ internal class CommentThreads(
         try {
             val raw = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject()
+                JSONObject()
                     .put("context", webApi.webContext())
                     .put("browseId", POST_DETAIL_BROWSE_ID)
                     .put("params", detailParams)
             ) ?: return@withContext null
-            val renderers = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(org.json.JSONObject(raw), "backstagePostRenderer", renderers)
+            val renderers = mutableListOf<JSONObject>()
+            findObjectsByKey(JSONObject(raw), "backstagePostRenderer", renderers)
             val renderer = renderers.firstOrNull() ?: return@withContext null
             parseBackstagePost(renderer)?.copy(
                 detailParams = detailParams,
@@ -213,7 +215,7 @@ internal class CommentThreads(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getPostDetail failed", e)
+            KLog.e(YOUTUBE_TAG, "getPostDetail failed", e)
             null
         }
     }
@@ -231,13 +233,13 @@ internal class CommentThreads(
         try {
             val raw = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject()
+                JSONObject()
                     .put("context", webApi.webContext())
                     .put("browseId", POST_DETAIL_BROWSE_ID)
                     .put("params", detailParams)
             ) ?: return@withContext null
-            val sections = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(org.json.JSONObject(raw), "itemSectionRenderer", sections)
+            val sections = mutableListOf<JSONObject>()
+            findObjectsByKey(JSONObject(raw), "itemSectionRenderer", sections)
             val comments = sections.firstOrNull {
                 it.optString("sectionIdentifier") == "comment-item-section"
             } ?: return@withContext null
@@ -247,7 +249,7 @@ internal class CommentThreads(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getPostCommentsToken failed", e)
+            KLog.e(YOUTUBE_TAG, "getPostCommentsToken failed", e)
             null
         }
     }

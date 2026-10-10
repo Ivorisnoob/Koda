@@ -6,11 +6,14 @@ import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.items
+import java.util.Collections
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
+import org.schabi.newpipe.extractor.search.SearchExtractor
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 /**
@@ -27,7 +30,7 @@ internal class MusicSearch(
     private val newPipeGateway: NewPipeGateway,
 ) {
     // Cache extractors for pagination
-    private val searchExtractorCache = mutableMapOf<String, org.schabi.newpipe.extractor.search.SearchExtractor>()
+    private val searchExtractorCache = mutableMapOf<String, SearchExtractor>()
 
     // The next continuation Page per query. Advanced by every searchNext call
     // so repeated "Load More" presses walk pages 2, 3, 4... instead of
@@ -35,7 +38,7 @@ internal class MusicSearch(
     private val searchNextPageCache = mutableMapOf<String, Page?>()
 
     // A present null is an exhausted InnerTube search, not a NewPipe search.
-    private val musicSearchContinuations = java.util.Collections.synchronizedMap(
+    private val musicSearchContinuations = Collections.synchronizedMap(
         object : LinkedHashMap<String, String?>(32, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean = size > 32
         }
@@ -58,7 +61,7 @@ internal class MusicSearch(
         // Read album links directly: StreamInfoItem loses that relationship.
         if (filter == FILTER_SONGS) {
             musicSearchContinuations.remove(query)
-            val response = musicApi.postMusicMetadata("search", org.json.JSONObject()
+            val response = musicApi.postMusicMetadata("search", JSONObject()
                 .put("query", query).put("params", "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"))
             if (response != null) {
                 val songs = parseSongsFromInternalJson(response.toString())
@@ -105,7 +108,7 @@ internal class MusicSearch(
     suspend fun searchNext(query: String): List<Song> = withContext(Dispatchers.IO) {
         if (musicSearchContinuations.containsKey(query)) {
             val token = musicSearchContinuations[query] ?: return@withContext emptyList()
-            val root = musicApi.postMusicMetadata("search", org.json.JSONObject().put("continuation", token))
+            val root = musicApi.postMusicMetadata("search", JSONObject().put("continuation", token))
                 ?: return@withContext emptyList()
             val songs = parseSongsFromInternalJson(root.toString())
             musicSearchContinuations[query] = MusicMetadata.continuation(root)?.takeUnless { it == token }
@@ -144,7 +147,7 @@ internal class MusicSearch(
      * Note: Albums are often returned as PlaylistInfoItem in NewPipe for YouTube Music.
      */
     suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
-        musicApi.postMusicMetadata("search", org.json.JSONObject().put("query", query)
+        musicApi.postMusicMetadata("search", JSONObject().put("query", query)
             .put("params", "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"))?.let { root ->
             val releases = MusicMetadata.releaseRows(root)
             if (releases.isNotEmpty()) return@withContext releases

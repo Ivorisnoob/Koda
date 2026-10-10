@@ -4,12 +4,14 @@ import com.ivor.ivormusic.data.DismissalTokens
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.parseLockupVideoStats
 import com.ivor.ivormusic.data.parseVideoWatchProgress
+import org.json.JSONArray
+import org.json.JSONObject
 
 // The lockupViewModel: the card YouTube now sends for a video in Home,
 // Subscriptions, history, channel tabs, playlists and related lists, each
 // with a different set of rows. Pure.
 
-internal fun parseLockupViewModel(lockupViewModel: org.json.JSONObject?): VideoItem? {
+internal fun parseLockupViewModel(lockupViewModel: JSONObject?): VideoItem? {
     if (lockupViewModel == null) return null
     try {
         val contentId = lockupViewModel.optString("contentId")
@@ -28,7 +30,7 @@ internal fun parseLockupViewModel(lockupViewModel: org.json.JSONObject?): VideoI
          var viewCount = ""
          var uploadDate = ""
 
-         fun absorbVideoStats(parts: org.json.JSONArray?) {
+         fun absorbVideoStats(parts: JSONArray?) {
              if (parts == null) return
              val stats = parseLockupVideoStats(
                  (0 until parts.length()).map { index ->
@@ -73,7 +75,7 @@ internal fun parseLockupViewModel(lockupViewModel: org.json.JSONObject?): VideoI
 
                  if (firstRowIsByline) {
                      // The parts after the creator are that row's statistics.
-                     val trailingParts = org.json.JSONArray()
+                     val trailingParts = JSONArray()
                      for (index in 1 until firstRowParts.length()) {
                          trailingParts.put(firstRowParts.opt(index))
                      }
@@ -147,7 +149,7 @@ internal fun parseLockupViewModel(lockupViewModel: org.json.JSONObject?): VideoI
          val decoratedAvatar = lockupImage?.optJSONObject("decoratedAvatarViewModel")
          val avatarStack = lockupImage?.optJSONObject("avatarStackViewModel")
 
-         fun bestSourceUrl(sources: org.json.JSONArray?): String? {
+         fun bestSourceUrl(sources: JSONArray?): String? {
              if (sources == null) return null
              var bestUrl: String? = null
              var maxWidth = -1
@@ -319,7 +321,7 @@ internal fun parseLockupViewModel(lockupViewModel: org.json.JSONObject?): VideoI
  * it would silently stop working for most of the world. Verified against
  * live /next, FEwhat_to_watch and FEsubscriptions responses, August 2026.
  */
-private fun parseDismissalTokens(metadata: org.json.JSONObject?): DismissalTokens? {
+private fun parseDismissalTokens(metadata: JSONObject?): DismissalTokens? {
     val listItems = metadata
         ?.optJSONObject("menuButton")
         ?.optJSONObject("buttonViewModel")
@@ -380,7 +382,7 @@ private fun parseDismissalTokens(metadata: org.json.JSONObject?): DismissalToken
  * The undo token YouTube pre-bakes into a feedback endpoint's own
  * "Video removed - Undo" notification, so undo needs no extra request.
  */
-private fun parseUndoToken(feedbackEndpoint: org.json.JSONObject): String? =
+private fun parseUndoToken(feedbackEndpoint: JSONObject): String? =
     feedbackEndpoint
         .optJSONArray("actions")
         ?.optJSONObject(0)

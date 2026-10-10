@@ -5,7 +5,9 @@ import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeSession
 import com.ivor.ivormusic.util.KLog
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 
 /**
  * InnerTube on www.youtube.com as the WEB client: browse, next, search,
@@ -31,10 +33,10 @@ internal class WebApi(
      * part of what makes a device's standing degrade over a session rather than
      * all at once.
      */
-    fun webContext(): org.json.JSONObject =
-        org.json.JSONObject().put(
+    fun webContext(): JSONObject =
+        JSONObject().put(
             "client",
-            org.json.JSONObject()
+            JSONObject()
                 .put("clientName", "WEB")
                 .put("clientVersion", WEB_VERSION)
                 .put("hl", "en")
@@ -50,11 +52,11 @@ internal class WebApi(
      */
     fun postWatchApi(
         endpoint: String,
-        body: org.json.JSONObject,
+        body: JSONObject,
         session: YouTubeSession? = sessionManager.captureSession()
     ): String? {
         val currentSession = session?.let { sessionManager.currentSession(it) ?: return null }
-        val builder = okhttp3.Request.Builder()
+        val builder = Request.Builder()
             .url("https://www.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .addHeader("User-Agent", BROWSER_USER_AGENT)
@@ -80,12 +82,12 @@ internal class WebApi(
                         "watch api $endpoint",
                         response.header("Retry-After"),
                     )
-                    KLog.w("YouTubeRepo", "watch api $endpoint HTTP ${response.code}")
+                    KLog.w(YOUTUBE_TAG, "watch api $endpoint HTTP ${response.code}")
                     null
                 }
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "watch api $endpoint failed", e)
+            KLog.e(YOUTUBE_TAG, "watch api $endpoint failed", e)
             null
         }
     }
@@ -113,12 +115,12 @@ internal class WebApi(
 
         // Built through JSONObject rather than string interpolation so the
         // optional visitorData cannot produce malformed JSON.
-        val jsonBody = org.json.JSONObject()
+        val jsonBody = JSONObject()
             .put(
                 "context",
-                org.json.JSONObject().put(
+                JSONObject().put(
                     "client",
-                    org.json.JSONObject()
+                    JSONObject()
                         .put("clientName", "WEB")
                         .put("clientVersion", WEB_VERSION)
                         .put("hl", "en")
@@ -129,7 +131,7 @@ internal class WebApi(
             .put("browseId", browseId)
             .toString()
 
-        val request = okhttp3.Request.Builder()
+        val request = Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("User-Agent", BROWSER_USER_AGENT)
@@ -157,13 +159,13 @@ internal class WebApi(
                         "browse $browseId",
                         response.header("Retry-After"),
                     )
-                    KLog.w("YouTubeRepo", "browse $browseId HTTP ${response.code}")
+                    KLog.w(YOUTUBE_TAG, "browse $browseId HTTP ${response.code}")
                     return ""
                 }
                 response.body?.string() ?: ""
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error in fetchYouTubeBrowse", e)
+            KLog.e(YOUTUBE_TAG, "Error in fetchYouTubeBrowse", e)
             ""
         }
     }
@@ -171,7 +173,7 @@ internal class WebApi(
     fun fetchYouTubeBrowseContinuation(token: String): String =
         postWatchApi(
             "browse",
-            org.json.JSONObject()
+            JSONObject()
                 .put("context", webContext())
                 .put("continuation", token)
         ).orEmpty()

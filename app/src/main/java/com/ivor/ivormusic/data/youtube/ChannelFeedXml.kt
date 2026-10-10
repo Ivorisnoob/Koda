@@ -1,6 +1,10 @@
 package com.ivor.ivormusic.data.youtube
 
 import com.ivor.ivormusic.data.VideoItem
+import java.io.StringReader
+import java.time.OffsetDateTime
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
 
 // A channel's public Atom feed read into videos. Pure.
 
@@ -16,10 +20,10 @@ import com.ivor.ivormusic.data.VideoItem
  */
 internal fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoItem> {
     val videos = mutableListOf<VideoItem>()
-    val parser = org.xmlpull.v1.XmlPullParserFactory.newInstance()
+    val parser = XmlPullParserFactory.newInstance()
         .apply { isNamespaceAware = false }
         .newPullParser()
-    parser.setInput(java.io.StringReader(xml))
+    parser.setInput(StringReader(xml))
 
     var inEntry = false
     var inAuthor = false
@@ -38,9 +42,9 @@ internal fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoIte
     }
 
     var event = parser.eventType
-    while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+    while (event != XmlPullParser.END_DOCUMENT) {
         when (event) {
-            org.xmlpull.v1.XmlPullParser.START_TAG -> when (parser.name) {
+            XmlPullParser.START_TAG -> when (parser.name) {
                 "entry" -> { inEntry = true; reset() }
                 "author" -> inAuthor = true
                 "yt:videoId" -> if (inEntry) videoId = parser.nextText().trim()
@@ -51,7 +55,7 @@ internal fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoIte
                 "name" -> if (inEntry && inAuthor) author = parser.nextText().trim()
                 "published" -> if (inEntry) {
                     publishedAtMs = runCatching {
-                        java.time.OffsetDateTime.parse(parser.nextText().trim())
+                        OffsetDateTime.parse(parser.nextText().trim())
                             .toInstant().toEpochMilli()
                     }.getOrNull()
                 }
@@ -66,7 +70,7 @@ internal fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoIte
                 }
             }
 
-            org.xmlpull.v1.XmlPullParser.END_TAG -> when (parser.name) {
+            XmlPullParser.END_TAG -> when (parser.name) {
                 "author" -> inAuthor = false
                 "entry" -> {
                     inEntry = false

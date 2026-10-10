@@ -5,6 +5,7 @@ import com.ivor.ivormusic.data.DownloadAudioFormat
 import com.ivor.ivormusic.data.ThemePreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 /**
  * A song's audio as the app asks for it: the stream to play at the quality
@@ -82,7 +83,7 @@ internal class SongStreams(
             val best = originals.maxByOrNull { it.optInt("bitrate") }
                 ?: return@withContext emptyList()
             val smallest = originals.minByOrNull { it.optInt("bitrate") }
-            fun org.json.JSONObject.toOption(quality: String) = DownloadAudioFormat(
+            fun JSONObject.toOption(quality: String) = DownloadAudioFormat(
                 quality = quality,
                 bitrate = optInt("averageBitrate").takeIf { it > 0 } ?: optInt("bitrate"),
                 contentLength = optString("contentLength").toLongOrNull()?.takeIf { it > 0L },

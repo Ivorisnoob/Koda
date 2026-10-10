@@ -2,6 +2,7 @@ package com.ivor.ivormusic.data.youtube
 
 import com.ivor.ivormusic.data.VideoCollaborator
 import com.ivor.ivormusic.util.KLog
+import org.json.JSONObject
 
 // The channels behind a collaboration. A collab upload names no single
 // owner; every collaborator comes inside a dialog command, and the nesting
@@ -36,7 +37,7 @@ import com.ivor.ivormusic.util.KLog
  * A feed lockup carries the same dialog under a different host - see
  * [collaboratorsFromDialogHost], which both entry points share.
  */
-internal fun parseCollaborators(owner: org.json.JSONObject?): List<VideoCollaborator> =
+internal fun parseCollaborators(owner: JSONObject?): List<VideoCollaborator> =
     collaboratorsFromDialogHost(owner)
 
 /**
@@ -57,10 +58,10 @@ internal fun parseCollaborators(owner: org.json.JSONObject?): List<VideoCollabor
  * [host] is always the creator block itself, never a whole response, which
  * is what keeps that search from reaching an unrelated dialog.
  */
-internal fun collaboratorsFromDialogHost(host: org.json.JSONObject?): List<VideoCollaborator> {
+internal fun collaboratorsFromDialogHost(host: JSONObject?): List<VideoCollaborator> {
     if (host == null) return emptyList()
     return try {
-        val dialogs = mutableListOf<org.json.JSONObject>()
+        val dialogs = mutableListOf<JSONObject>()
         findObjectsByKey(host, "dialogViewModel", dialogs)
         val items = dialogs.firstNotNullOfOrNull { dialog ->
             dialog.optJSONObject("customContent")
@@ -119,13 +120,13 @@ internal fun collaboratorsFromDialogHost(host: org.json.JSONObject?): List<Video
             )
         }
     } catch (e: Exception) {
-        KLog.w("YouTubeRepo", "collaborator parse failed", e)
+        KLog.w(YOUTUBE_TAG, "collaborator parse failed", e)
         emptyList()
     }
 }
 
 /** True when an attributed title carries YouTube's verified-badge glyph. */
-private fun hasVerifiedAttachment(titleObj: org.json.JSONObject?): Boolean {
+private fun hasVerifiedAttachment(titleObj: JSONObject?): Boolean {
     val runs = titleObj?.optJSONArray("attachmentRuns") ?: return false
     for (i in 0 until runs.length()) {
         val sources = runs.optJSONObject(i)

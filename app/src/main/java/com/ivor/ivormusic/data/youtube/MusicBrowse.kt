@@ -17,11 +17,15 @@ import com.ivor.ivormusic.data.newestReleasesFirst
 import com.ivor.ivormusic.data.parseMusicShelves
 import com.ivor.ivormusic.data.usableHomeRecommendations
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * The pages of YouTube Music that are browsed rather than searched: Home and
@@ -41,17 +45,17 @@ internal class MusicBrowse(
      */
     suspend fun getRecommendations(): List<Song> = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) {
-            KLog.d("YouTubeRepo", "Not logged in, falling back to popular search")
+            KLog.d(YOUTUBE_TAG, "Not logged in, falling back to popular search")
             return@withContext musicSearch.search("trending music 2026", FILTER_SONGS)
         }
 
         try {
             // Fetch personalized home page content
-            KLog.d("YouTubeRepo", "Fetching personalized recommendations from FEmusic_home")
+            KLog.d(YOUTUBE_TAG, "Fetching personalized recommendations from FEmusic_home")
             val jsonResponse = musicApi.fetchInternalApi("FEmusic_home")
             
             if (jsonResponse.isEmpty()) {
-                KLog.e("YouTubeRepo", "Empty response from FEmusic_home")
+                KLog.e(YOUTUBE_TAG, "Empty response from FEmusic_home")
                 return@withContext fillHomeRecommendations(emptyList())
             }
             
@@ -61,16 +65,16 @@ internal class MusicBrowse(
                 listOf(parseSongsFromInternalJson(jsonResponse)),
                 limit = HOME_RECOMMENDATION_POOL
             )
-            KLog.d("YouTubeRepo", "Parsed ${items.size} songs from recommendations")
+            KLog.d(YOUTUBE_TAG, "Parsed ${items.size} songs from recommendations")
 
             // Classic Home needs three valid entries for its three artwork
             // shapes. A partially parsed response is still useful, but it must
             // be filled rather than accepted as complete.
             fillHomeRecommendations(items)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching recommendations", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching recommendations", e)
             fillHomeRecommendations(emptyList())
         }
     }
@@ -78,13 +82,13 @@ internal class MusicBrowse(
     private suspend fun fillHomeRecommendations(primary: List<Song>): List<Song> {
         if (primary.size >= 3) return primary
 
-        KLog.d("YouTubeRepo", "Home has ${primary.size} usable songs; filling from library")
+        KLog.d(YOUTUBE_TAG, "Home has ${primary.size} usable songs; filling from library")
         val liked = try {
             musicPlaylists.getLikedMusic()
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "Could not use liked songs as Home fallback", e)
+            KLog.w(YOUTUBE_TAG, "Could not use liked songs as Home fallback", e)
             emptyList()
         }
         val withLiked = usableHomeRecommendations(listOf(primary, liked))
@@ -92,10 +96,10 @@ internal class MusicBrowse(
 
         val trending = try {
             musicSearch.search("trending music 2026", FILTER_SONGS)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "Could not use search as Home fallback", e)
+            KLog.w(YOUTUBE_TAG, "Could not use search as Home fallback", e)
             emptyList()
         }
         return usableHomeRecommendations(listOf(withLiked, trending))
@@ -105,13 +109,13 @@ internal class MusicBrowse(
     /** A YouTube Music browse page (FEmusic_home, _explore, _charts, _new_releases, a mood) as shelves. */
     suspend fun getMusicShelves(browseId: String, params: String? = null): MusicShelfPage? =
         withContext(Dispatchers.IO) {
-            musicApi.postMusicMetadata("browse", org.json.JSONObject().put("browseId", browseId).apply {
+            musicApi.postMusicMetadata("browse", JSONObject().put("browseId", browseId).apply {
                 if (params != null) put("params", params)
             })?.let(::parseMusicShelves)
         }
 
     suspend fun getMusicShelvesContinuation(token: String): MusicShelfPage? = withContext(Dispatchers.IO) {
-        musicApi.postMusicMetadata("browse", org.json.JSONObject().put("continuation", token))?.let(::parseMusicShelves)
+        musicApi.postMusicMetadata("browse", JSONObject().put("continuation", token))?.let(::parseMusicShelves)
     }
 
     /**
@@ -122,11 +126,11 @@ internal class MusicBrowse(
      * [verified October 2026: forty artists each for the default, ZZ and US]
      */
     suspend fun getChartArtists(country: String? = null): List<ArtistItem> = withContext(Dispatchers.IO) {
-        val payload = org.json.JSONObject().put("browseId", "FEmusic_charts")
+        val payload = JSONObject().put("browseId", "FEmusic_charts")
         if (country != null) {
             payload.put(
                 "formData",
-                org.json.JSONObject().put("selectedValues", org.json.JSONArray().put(country))
+                JSONObject().put("selectedValues", JSONArray().put(country))
             )
         }
         musicApi.postMusicMetadata("browse", payload)?.let(::parseMusicShelves)?.shelves.orEmpty()
@@ -156,7 +160,7 @@ internal class MusicBrowse(
         try {
             val body = musicApi.browseMusic(artistId)
                 ?: return@withContext null
-            val root = org.json.JSONObject(body)
+            val root = JSONObject(body)
 
             val header = MusicMetadata.artistHeader(root)
             val artistName = header?.name.orEmpty()
@@ -169,7 +173,7 @@ internal class MusicBrowse(
             // The shelf itself only holds ~5 entries; its bottomEndpoint links
             // the artist's full songs playlist which we fetch below.
             var songsPlaylistBrowseId: String? = null
-            val shelves = mutableListOf<org.json.JSONObject>()
+            val shelves = mutableListOf<JSONObject>()
             findObjectsByKey(root, "musicShelfRenderer", shelves)
             shelves.firstOrNull()?.let { shelf ->
                 songsPlaylistBrowseId = shelf.optJSONObject("bottomEndpoint")
@@ -208,17 +212,17 @@ internal class MusicBrowse(
                     ?: continue
                 val moreId = more.optString("browseId").takeIf { it.isNotBlank() } ?: continue
                 var page = musicApi.browseMusic(moreId, more.optString("params").takeIf { it.isNotBlank() })
-                    ?.let { org.json.JSONObject(it) } ?: continue
+                    ?.let { JSONObject(it) } ?: continue
                 val seen = mutableSetOf<String>()
                 while (true) {
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     target.addAll(MusicMetadata.releaseRows(page, defaultType, artistName))
                     val token = MusicMetadata.continuation(page) ?: break
                     if (!seen.add(token)) {
-                        KLog.w("YouTubeRepo", "Repeated music discography continuation for $artistId")
+                        KLog.w(YOUTUBE_TAG, "Repeated music discography continuation for $artistId")
                         break
                     }
-                    page = musicApi.postMusicMetadata("browse", org.json.JSONObject().put("continuation", token)) ?: break
+                    page = musicApi.postMusicMetadata("browse", JSONObject().put("continuation", token)) ?: break
                 }
             }
 
@@ -229,7 +233,7 @@ internal class MusicBrowse(
             songsPlaylistBrowseId?.let { browseId ->
                 val fullList = try {
                     musicPlaylists.getPlaylistInternal(browseId.removePrefix("VL"))
-                } catch (e: kotlinx.coroutines.CancellationException) {
+                } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     emptyList()
@@ -243,7 +247,7 @@ internal class MusicBrowse(
             }
 
             KLog.d(
-                "YouTubeRepo",
+                YOUTUBE_TAG,
                 "Artist $artistId: ${songs.size} songs, ${albums.size} albums, ${singles.size} singles"
             )
             val releases = (albums + singles).distinctBy { it.id }.newestReleasesFirst()
@@ -269,10 +273,10 @@ internal class MusicBrowse(
                 featuredOn = MusicMetadata.featuredPlaylists(root),
                 songsPlaylistBrowseId = songsPlaylistBrowseId,
             )
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching artist page", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching artist page", e)
             null
         }
     }
@@ -284,10 +288,10 @@ internal class MusicBrowse(
     suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> {
         val page = try {
             getArtistPage(artistId)
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching artist details", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching artist details", e)
             null
         } ?: return Pair(emptyList(), emptyList())
         // The page already carries the full song list and the merged,
@@ -305,9 +309,9 @@ internal class MusicBrowse(
     suspend fun getArtistTasteSample(artistId: String): ArtistTasteSample? = withContext(Dispatchers.IO) {
         if (!artistId.startsWith("UC")) return@withContext null
         try {
-            val root = org.json.JSONObject(musicApi.browseMusic(artistId) ?: return@withContext null)
+            val root = JSONObject(musicApi.browseMusic(artistId) ?: return@withContext null)
             val songs = mutableListOf<Song>()
-            val shelves = mutableListOf<org.json.JSONObject>()
+            val shelves = mutableListOf<JSONObject>()
             findObjectsByKey(root, "musicShelfRenderer", shelves)
             shelves.firstOrNull()?.optJSONArray("contents")?.let { contents ->
                 for (i in 0 until contents.length()) {
@@ -317,10 +321,10 @@ internal class MusicBrowse(
                 }
             }
             ArtistTasteSample(similar = MusicMetadata.similarArtists(root), topSongs = songs.distinctBy { it.id })
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "Artist taste sample failed for $artistId", e)
+            KLog.w(YOUTUBE_TAG, "Artist taste sample failed for $artistId", e)
             null
         }
     }
@@ -333,17 +337,17 @@ internal class MusicBrowse(
      */
     suspend fun getSongAlbumRef(videoId: String): SongAlbumRef? = withContext(Dispatchers.IO) {
         try {
-            val root = musicApi.postMusicMetadata("next", org.json.JSONObject().put("videoId", videoId))
+            val root = musicApi.postMusicMetadata("next", JSONObject().put("videoId", videoId))
                 ?: return@withContext null
             val panels = MusicMetadata.objects(root, "playlistPanelVideoRenderer")
             val self = panels.firstOrNull {
                 it.optJSONObject("playlistItemData")?.optString("videoId") == videoId
             } ?: panels.firstOrNull() ?: return@withContext null
             MusicMetadata.songAlbumRef(self)
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error resolving album for song $videoId", e)
+            KLog.e(YOUTUBE_TAG, "Error resolving album for song $videoId", e)
             null
         }
     }
@@ -360,8 +364,8 @@ internal class MusicBrowse(
                 .distinctBy { it.id }
                 .take(limit)
         } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            KLog.e("YouTubeRepo", "Error fetching related songs for $videoId", e)
+            if (e is CancellationException) throw e
+            KLog.e(YOUTUBE_TAG, "Error fetching related songs for $videoId", e)
             emptyList()
         }
     }
@@ -371,8 +375,8 @@ internal class MusicBrowse(
         try {
             radioPanelSongs(videoId).firstOrNull { it.id == videoId }
         } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            KLog.w("YouTubeRepo", "No panel entry for $videoId", e)
+            if (e is CancellationException) throw e
+            KLog.w(YOUTUBE_TAG, "No panel entry for $videoId", e)
             null
         }
     }
@@ -395,7 +399,7 @@ internal class MusicBrowse(
             }
         """.trimIndent()
 
-        val requestBuilder = okhttp3.Request.Builder()
+        val requestBuilder = Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/next")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("User-Agent", BROWSER_USER_AGENT)
@@ -410,6 +414,6 @@ internal class MusicBrowse(
 
         // One song per queue entry, and the song rather than its video where
         // YouTube offers both.
-        return MusicMetadata.queueSongs(org.json.JSONObject(body))
+        return MusicMetadata.queueSongs(JSONObject(body))
     }
 }

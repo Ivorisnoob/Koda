@@ -4,8 +4,11 @@ import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.YouTubeAuthUtils
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 
 /**
  * InnerTube on music.youtube.com as the WEB_REMIX client.
@@ -21,24 +24,24 @@ internal class MusicApi(
     private val http: YouTubeHttp,
     private val sessionManager: SessionManager,
 ) {
-    fun musicContext(): org.json.JSONObject =
-        org.json.JSONObject().put(
+    fun musicContext(): JSONObject =
+        JSONObject().put(
             "client",
-            org.json.JSONObject()
+            JSONObject()
                 .put("clientName", "WEB_REMIX")
                 .put("clientVersion", WEB_REMIX_VERSION)
                 .put("hl", "en")
                 .put("gl", http.contentRegion())
         )
 
-    fun postMusicMetadata(endpoint: String, payload: org.json.JSONObject): org.json.JSONObject? {
+    fun postMusicMetadata(endpoint: String, payload: JSONObject): JSONObject? {
         return try {
             val session = sessionManager.captureSession()
-            val client = org.json.JSONObject().put("clientName", "WEB_REMIX")
+            val client = JSONObject().put("clientName", "WEB_REMIX")
                 .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", http.contentRegion())
             http.visitorIdentity.cachedOrNull()?.let { client.put("visitorData", it) }
-            payload.put("context", org.json.JSONObject().put("client", client))
-            val builder = okhttp3.Request.Builder()
+            payload.put("context", JSONObject().put("client", client))
+            val builder = Request.Builder()
                 .url("https://music.youtube.com/youtubei/v1/$endpoint")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
                 .addHeader("User-Agent", BROWSER_USER_AGENT)
@@ -50,17 +53,17 @@ internal class MusicApi(
             http.okHttpClient.newCall(builder.build()).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful || body.isBlank()) {
-                    KLog.w("YouTubeRepo", "Music $endpoint HTTP ${response.code}: ${body.take(200)}")
+                    KLog.w(YOUTUBE_TAG, "Music $endpoint HTTP ${response.code}: ${body.take(200)}")
                     null
                 } else {
                     http.noteSessionState(body, session)
-                    org.json.JSONObject(body).takeUnless { it.has("error") }
+                    JSONObject(body).takeUnless { it.has("error") }
                 }
             }
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Music $endpoint metadata request failed", e)
+            KLog.e(YOUTUBE_TAG, "Music $endpoint metadata request failed", e)
             null
         }
     }
@@ -71,7 +74,7 @@ internal class MusicApi(
      * Unlike [fetchInternalApi], this does NOT require a login.
      */
     fun browseMusic(browseId: String, params: String? = null): String? =
-        postMusicMetadata("browse", org.json.JSONObject().put("browseId", browseId).apply {
+        postMusicMetadata("browse", JSONObject().put("browseId", browseId).apply {
             if (params != null) put("params", params)
         })?.toString()
 
@@ -115,7 +118,7 @@ internal class MusicApi(
             """.trimIndent()
         }
 
-        val request = okhttp3.Request.Builder()
+        val request = Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .authenticate(session)
@@ -142,13 +145,13 @@ internal class MusicApi(
                         "music browse $endpoint",
                         response.header("Retry-After"),
                     )
-                    KLog.w("YouTubeRepo", "music browse $endpoint HTTP ${response.code}")
+                    KLog.w(YOUTUBE_TAG, "music browse $endpoint HTTP ${response.code}")
                     return ""
                 }
                 (response.body?.string() ?: "").also { http.noteSessionState(it, session) }
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Music browse request failed", e)
+            KLog.e(YOUTUBE_TAG, "Music browse request failed", e)
             ""
         }
     }
@@ -179,7 +182,7 @@ internal class MusicApi(
             }
         """.trimIndent()
 
-        val request = okhttp3.Request.Builder()
+        val request = Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/browse")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .addHeader("User-Agent", BROWSER_USER_AGENT)
@@ -191,15 +194,15 @@ internal class MusicApi(
             http.okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     YouTubeRateLimit.note(response.code, request.url.toString(), response.header("Retry-After"))
-                    KLog.w("YouTubeRepo", "Music continuation failed: HTTP ${response.code}")
+                    KLog.w(YOUTUBE_TAG, "Music continuation failed: HTTP ${response.code}")
                     return ""
                 }
                 val body = response.body?.string().orEmpty()
-                if (body.isBlank() || org.json.JSONObject(body).has("error")) return ""
+                if (body.isBlank() || JSONObject(body).has("error")) return ""
                 body.also { http.noteSessionState(it, session) }
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Music continuation request failed", e)
+            KLog.e(YOUTUBE_TAG, "Music continuation request failed", e)
             ""
         }
     }
@@ -209,12 +212,12 @@ internal class MusicApi(
      * music-origin SAPISIDHASH (the hash is per-origin — a www.youtube.com
      * hash is rejected here). Returns the raw body or null on failure.
      */
-    fun postMusicApi(endpoint: String, body: org.json.JSONObject): String? {
+    fun postMusicApi(endpoint: String, body: JSONObject): String? {
         val session = sessionManager.captureSession() ?: return null
         // Signing is not optional here: these are account writes, and an
         // unsigned one answers 200 having done nothing.
         if (YouTubeAuthUtils.getSapisid(session.cookies) == null) return null
-        val request = okhttp3.Request.Builder()
+        val request = Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .authenticate(session)
@@ -227,12 +230,12 @@ internal class MusicApi(
                 if (response.isSuccessful) {
                     response.body?.string()
                 } else {
-                    KLog.w("YouTubeRepo", "music api $endpoint HTTP ${response.code}")
+                    KLog.w(YOUTUBE_TAG, "music api $endpoint HTTP ${response.code}")
                     null
                 }
             }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "music api $endpoint failed", e)
+            KLog.e(YOUTUBE_TAG, "music api $endpoint failed", e)
             null
         }
     }

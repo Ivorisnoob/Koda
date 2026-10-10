@@ -11,6 +11,7 @@ import com.ivor.ivormusic.data.ChannelTabKind
 import com.ivor.ivormusic.data.ChannelTabPage
 import com.ivor.ivormusic.data.SubscribedChannel
 import com.ivor.ivormusic.data.VideoItem
+import org.json.JSONObject
 
 // A channel page: header, the tabs the response itself lists, the selected
 // tab's grid or shelves, sort orders and the next-page token. Pure.
@@ -28,7 +29,7 @@ import com.ivor.ivormusic.data.VideoItem
  * header that parses to nothing.
  */
 internal fun parseChannelHeader(
-    root: org.json.JSONObject,
+    root: JSONObject,
     fallbackChannelId: String
 ): ChannelHeader? {
     val metadata = root.optJSONObject("metadata")?.optJSONObject("channelMetadataRenderer")
@@ -105,7 +106,7 @@ internal fun parseChannelHeader(
             ?.optJSONObject("dynamicTextViewModel")
             ?.optJSONObject("text")
             ?.optJSONArray("attachmentRuns") ?: return@runCatching false
-        val names = mutableListOf<org.json.JSONObject>()
+        val names = mutableListOf<JSONObject>()
         findObjectsByKey(attachments, "clientResource", names)
         names.any { it.optString("imageName").startsWith("CHECK_CIRCLE") }
     }.getOrDefault(false)
@@ -156,7 +157,7 @@ internal fun parseChannelHeader(
         accountSubscribed = parseChannelSubscribedState(root),
         bell = ChannelBellParser.fromSubscribeButtons(root)[channelId] ?: run {
             // The legacy button, as some watch pages still serve it.
-            val legacy = mutableListOf<org.json.JSONObject>()
+            val legacy = mutableListOf<JSONObject>()
             findObjectsByKey(root, "subscribeButtonRenderer", legacy)
             legacyBell(legacy.firstOrNull { it.optString("channelId") == channelId }, channelId)
         }
@@ -177,13 +178,13 @@ internal fun parseChannelHeader(
  * reads as "unknown" and the caller falls back to asking, instead of
  * quietly showing "Subscribe" for a channel the user follows.
  */
-private fun parseChannelSubscribedState(root: org.json.JSONObject): Boolean? {
-    val entities = mutableListOf<org.json.JSONObject>()
+private fun parseChannelSubscribedState(root: JSONObject): Boolean? {
+    val entities = mutableListOf<JSONObject>()
     findObjectsByKey(root, "subscriptionStateEntity", entities)
     entities.firstOrNull { it.has("subscribed") }
         ?.let { return it.optBoolean("subscribed") }
 
-    val legacy = mutableListOf<org.json.JSONObject>()
+    val legacy = mutableListOf<JSONObject>()
     findObjectsByKey(root, "subscribeButtonRenderer", legacy)
     legacy.firstOrNull { it.has("subscribed") }
         ?.let { return it.optBoolean("subscribed") }
@@ -200,8 +201,8 @@ private fun parseChannelSubscribedState(root: org.json.JSONObject): Boolean? {
  * are kept as [ChannelTabKind.OTHER] rather than dropped, which is what
  * lets "Store", "Courses" and "Podcasts" render without code of their own.
  */
-internal fun parseChannelTabs(root: org.json.JSONObject): List<ChannelTab> {
-    val renderers = mutableListOf<org.json.JSONObject>()
+internal fun parseChannelTabs(root: JSONObject): List<ChannelTab> {
+    val renderers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "tabRenderer", renderers)
     findObjectsByKey(root, "expandableTabRenderer", renderers)
     return renderers.mapNotNull { tab ->
@@ -243,8 +244,8 @@ private fun channelTabKind(params: String): ChannelTabKind = when {
  * items out of surfaces the user is not looking at.
  */
 internal fun parseSelectedTab(
-    root: org.json.JSONObject
-): Pair<ChannelTabKind, org.json.JSONObject>? {
+    root: JSONObject
+): Pair<ChannelTabKind, JSONObject>? {
     val tabs = root.optJSONObject("contents")
         ?.optJSONObject("twoColumnBrowseResultsRenderer")
         ?.optJSONArray("tabs") ?: return null
@@ -271,7 +272,7 @@ internal fun parseSelectedTab(
  * having taught this function about it.
  */
 internal fun parseChannelTabPage(
-    scope: org.json.JSONObject,
+    scope: JSONObject,
     header: ChannelHeader?
 ): ChannelTabPage {
     val shelves = parseChannelShelves(scope, header)
@@ -284,13 +285,13 @@ internal fun parseChannelTabPage(
     val shelvedPlaylistIds = shelves.flatMap { it.playlists }.map { it.playlistId }.toSet()
     val shelvedPostIds = shelves.flatMap { it.posts }.map { it.postId }.toSet()
 
-    val lockups = mutableListOf<org.json.JSONObject>()
+    val lockups = mutableListOf<JSONObject>()
     findObjectsByKey(scope, "lockupViewModel", lockups)
-    val legacyVideos = mutableListOf<org.json.JSONObject>()
+    val legacyVideos = mutableListOf<JSONObject>()
     findObjectsByKey(scope, "videoRenderer", legacyVideos)
-    val shortLockups = mutableListOf<org.json.JSONObject>()
+    val shortLockups = mutableListOf<JSONObject>()
     findObjectsByKey(scope, "shortsLockupViewModel", shortLockups)
-    val postRenderers = mutableListOf<org.json.JSONObject>()
+    val postRenderers = mutableListOf<JSONObject>()
     findObjectsByKey(scope, "backstagePostRenderer", postRenderers)
 
     val videos = (
@@ -316,7 +317,7 @@ internal fun parseChannelTabPage(
     val featured = scope.optJSONObject("channelVideoPlayerRenderer")
         ?.let { parseChannelFeaturedVideo(it, header) }
         ?: run {
-            val players = mutableListOf<org.json.JSONObject>()
+            val players = mutableListOf<JSONObject>()
             findObjectsByKey(scope, "channelVideoPlayerRenderer", players)
             players.firstOrNull()?.let { parseChannelFeaturedVideo(it, header) }
         }
@@ -367,7 +368,7 @@ private fun stitchChannelIdentity(item: VideoItem, header: ChannelHeader?): Vide
 
 /** The video a channel pins to the top of its Home tab. */
 private fun parseChannelFeaturedVideo(
-    renderer: org.json.JSONObject,
+    renderer: JSONObject,
     header: ChannelHeader?
 ): VideoItem? {
     val videoId = renderer.optString("videoId").takeIf { it.length == 11 } ?: return null
@@ -399,7 +400,7 @@ private fun parseChannelFeaturedVideo(
  * happens to be.
  */
 private fun parseChannelShelves(
-    scope: org.json.JSONObject,
+    scope: JSONObject,
     header: ChannelHeader?
 ): List<ChannelShelf> {
     val sections = scope.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
@@ -418,13 +419,13 @@ private fun parseChannelShelves(
                 ?: shelf.optJSONObject("title")?.optString("simpleText")
                 ?: continue
 
-            val items = mutableListOf<org.json.JSONObject>()
+            val items = mutableListOf<JSONObject>()
             findObjectsByKey(shelf, "lockupViewModel", items)
-            val shortItems = mutableListOf<org.json.JSONObject>()
+            val shortItems = mutableListOf<JSONObject>()
             findObjectsByKey(shelf, "shortsLockupViewModel", shortItems)
-            val postItems = mutableListOf<org.json.JSONObject>()
+            val postItems = mutableListOf<JSONObject>()
             findObjectsByKey(shelf, "backstagePostRenderer", postItems)
-            val channelItems = mutableListOf<org.json.JSONObject>()
+            val channelItems = mutableListOf<JSONObject>()
             findObjectsByKey(shelf, "gridChannelRenderer", channelItems)
 
             val built = ChannelShelf(
@@ -448,7 +449,7 @@ private fun parseChannelShelves(
 }
 
 /** A channel card in a "Featured channels" shelf. */
-private fun parseGridChannel(renderer: org.json.JSONObject): SubscribedChannel? {
+private fun parseGridChannel(renderer: JSONObject): SubscribedChannel? {
     val channelId = renderer.optString("channelId").takeIf { it.isNotBlank() } ?: return null
     val name = getRunText(renderer.optJSONObject("title"))
         ?: renderer.optJSONObject("title")?.optString("simpleText")
@@ -465,7 +466,7 @@ private fun parseGridChannel(renderer: org.json.JSONObject): SubscribedChannel? 
 }
 
 /** One About-panel link, unwrapped out of YouTube's redirect. */
-internal fun parseChannelExternalLink(view: org.json.JSONObject): ChannelLink? {
+internal fun parseChannelExternalLink(view: JSONObject): ChannelLink? {
     val title = view.optJSONObject("title")?.optString("content")
         ?.takeIf { it.isNotBlank() }
     val link = view.optJSONObject("link")
@@ -489,7 +490,7 @@ internal fun parseChannelExternalLink(view: org.json.JSONObject): ChannelLink? {
  * The sort orders a tab offers, from either of the two mechanisms YouTube
  * uses for them - see [ChannelSortOption] for why both are kept.
  */
-private fun parseChannelSortOptions(scope: org.json.JSONObject): List<ChannelSortOption> {
+private fun parseChannelSortOptions(scope: JSONObject): List<ChannelSortOption> {
     // Videos / Shorts / Live, current shape: plain chips carrying their
     // continuation directly. See ChannelSortChips for the shape change that
     // made the sheet branch below find nothing.
@@ -499,7 +500,7 @@ private fun parseChannelSortOptions(scope: org.json.JSONObject): List<ChannelSor
 
     // Videos / Shorts / Live, August 2026 shape: a chip that opens a sheet
     // of continuations. Kept as the fallback for a response still using it.
-    val chips = mutableListOf<org.json.JSONObject>()
+    val chips = mutableListOf<JSONObject>()
     findObjectsByKey(scope, "chipViewModel", chips)
     for (chip in chips) {
         val listItems = chip.optJSONObject("tapCommand")
@@ -534,7 +535,7 @@ private fun parseChannelSortOptions(scope: org.json.JSONObject): List<ChannelSor
     if (options.isNotEmpty()) return options.distinctBy { it.label }
 
     // Playlists: a sub-menu of browse params, re-browsing the tab.
-    val subMenus = mutableListOf<org.json.JSONObject>()
+    val subMenus = mutableListOf<JSONObject>()
     findObjectsByKey(scope, "sortFilterSubMenuRenderer", subMenus)
     for (menu in subMenus) {
         val items = menu.optJSONArray("subMenuItems") ?: continue
@@ -564,8 +565,8 @@ private fun parseChannelSortOptions(scope: org.json.JSONObject): List<ChannelSor
  * a Home tab carries one per shelf, and the page-level one that actually
  * scrolls the grid is the trailing one.
  */
-private fun parseChannelNextPageToken(scope: org.json.JSONObject): String? {
-    val renderers = mutableListOf<org.json.JSONObject>()
+private fun parseChannelNextPageToken(scope: JSONObject): String? {
+    val renderers = mutableListOf<JSONObject>()
     findObjectsByKey(scope, "continuationItemRenderer", renderers)
     return renderers.lastNotNullOfOrNull { renderer ->
         renderer.optJSONObject("continuationEndpoint")

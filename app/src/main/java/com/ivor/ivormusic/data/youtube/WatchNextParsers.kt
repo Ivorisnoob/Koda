@@ -8,6 +8,7 @@ import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.parseRichText
 import com.ivor.ivormusic.util.KLog
+import org.json.JSONObject
 
 // One /next response feeds the whole watch page: title and description,
 // likes and subscription state, chapters, related videos and the live chat
@@ -23,15 +24,15 @@ import com.ivor.ivormusic.util.KLog
  */
 internal fun parseVideoMetadataFromWatchNext(
     videoId: String,
-    root: org.json.JSONObject,
+    root: JSONObject,
     baseVideo: VideoItem?
 ): VideoItem? {
     return try {
-        val primaries = mutableListOf<org.json.JSONObject>()
+        val primaries = mutableListOf<JSONObject>()
         findObjectsByKey(root, "videoPrimaryInfoRenderer", primaries)
         val primary = primaries.firstOrNull()
 
-        val secondaries = mutableListOf<org.json.JSONObject>()
+        val secondaries = mutableListOf<JSONObject>()
         findObjectsByKey(root, "videoSecondaryInfoRenderer", secondaries)
         val secondaryInfo = secondaries.firstOrNull()
 
@@ -107,24 +108,24 @@ internal fun parseVideoMetadataFromWatchNext(
             descriptionLinks = if (description != null) richDescription.links else emptyList()
         )
     } catch (e: Exception) {
-        KLog.w("YouTubeRepo", "watch-next metadata parse failed for $videoId", e)
+        KLog.w(YOUTUBE_TAG, "watch-next metadata parse failed for $videoId", e)
         baseVideo
     }
 }
 
 internal fun parseEngagementFromWatchNext(
     videoId: String,
-    root: org.json.JSONObject
+    root: JSONObject
 ): VideoEngagement {
         // Like count + user's like status live in frameworkUpdates entities
-        val likeCounts = mutableListOf<org.json.JSONObject>()
+        val likeCounts = mutableListOf<JSONObject>()
         findObjectsByKey(root, "likeCountEntity", likeCounts)
         var likeCount = likeCounts.firstOrNull()
             ?.optJSONObject("likeCountIfIndifferent")?.optString("content")
             ?.takeIf { it.isNotBlank() }
         if (likeCount == null) {
             // Fallback: the visible title on the like toggle button ("19M")
-            val likeButtons = mutableListOf<org.json.JSONObject>()
+            val likeButtons = mutableListOf<JSONObject>()
             findObjectsByKey(root, "segmentedLikeDislikeButtonViewModel", likeButtons)
             val title = likeButtons.firstOrNull()
                 ?.optJSONObject("likeButtonViewModel")?.optJSONObject("likeButtonViewModel")
@@ -135,7 +136,7 @@ internal fun parseEngagementFromWatchNext(
             likeCount = title?.takeIf { it.isNotBlank() && it.any { c -> c.isDigit() } }
         }
 
-        val likeStatuses = mutableListOf<org.json.JSONObject>()
+        val likeStatuses = mutableListOf<JSONObject>()
         findObjectsByKey(root, "likeStatusEntity", likeStatuses)
         val likeStatus = when (likeStatuses.firstOrNull()?.optString("likeStatus")) {
             "LIKE" -> LikeStatus.LIKE
@@ -143,12 +144,12 @@ internal fun parseEngagementFromWatchNext(
             else -> LikeStatus.INDIFFERENT
         }
 
-        val subButtons = mutableListOf<org.json.JSONObject>()
+        val subButtons = mutableListOf<JSONObject>()
         findObjectsByKey(root, "subscribeButtonRenderer", subButtons)
         val subButton = subButtons.firstOrNull()
         val isSubscribed = subButton?.optBoolean("subscribed", false) ?: false
 
-        val owners = mutableListOf<org.json.JSONObject>()
+        val owners = mutableListOf<JSONObject>()
         findObjectsByKey(root, "videoOwnerRenderer", owners)
         val owner = owners.firstOrNull()
         val channelId = subButton?.optString("channelId")?.takeIf { it.isNotBlank() }
@@ -160,7 +161,7 @@ internal fun parseEngagementFromWatchNext(
         // Comments entry token: the itemSectionRenderer tagged comment-item-section.
         // Two tokens usually appear; the longest is the full comments panel.
         var commentsToken: String? = null
-        val sections = mutableListOf<org.json.JSONObject>()
+        val sections = mutableListOf<JSONObject>()
         findObjectsByKey(root, "itemSectionRenderer", sections)
         for (section in sections) {
             if (section.optString("sectionIdentifier") == "comment-item-section") {
@@ -197,9 +198,9 @@ internal fun parseEngagementFromWatchNext(
  * Subscribe button this way (`videoSecondaryInfoRenderer.subscribeButton`)
  * while others use `subscribeButtonViewModel`, so both are read.
  */
-internal fun legacyBell(subscribeButton: org.json.JSONObject?, channelId: String): ChannelBell? {
+internal fun legacyBell(subscribeButton: JSONObject?, channelId: String): ChannelBell? {
     if (subscribeButton == null) return null
-    val toggles = mutableListOf<org.json.JSONObject>()
+    val toggles = mutableListOf<JSONObject>()
     findObjectsByKey(subscribeButton, "subscriptionNotificationToggleButtonRenderer", toggles)
     return ChannelBellParser.fromToggle(toggles.firstOrNull(), channelId)
 }
@@ -213,8 +214,8 @@ internal fun legacyBell(subscribeButton: org.json.JSONObject?, channelId: String
  * we sort defensively and drop anything without a title. Verified against
  * the live /next API July 2026.
  */
-internal fun parseChaptersFromWatchNext(root: org.json.JSONObject): List<VideoChapter> {
-    val renderers = mutableListOf<org.json.JSONObject>()
+internal fun parseChaptersFromWatchNext(root: JSONObject): List<VideoChapter> {
+    val renderers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "chapterRenderer", renderers)
     if (renderers.isEmpty()) return emptyList()
 
@@ -240,11 +241,11 @@ internal fun parseChaptersFromWatchNext(root: org.json.JSONObject): List<VideoCh
  * Related videos from a watch-next response: lockupViewModels under
  * secondaryResults (the modern shape since 2025).
  */
-internal fun parseRelatedFromWatchNext(root: org.json.JSONObject): List<VideoItem> {
+internal fun parseRelatedFromWatchNext(root: JSONObject): List<VideoItem> {
     val secondary = root.optJSONObject("contents")
         ?.optJSONObject("twoColumnWatchNextResults")
         ?.optJSONObject("secondaryResults") ?: return emptyList()
-    val lockups = mutableListOf<org.json.JSONObject>()
+    val lockups = mutableListOf<JSONObject>()
     findObjectsByKey(secondary, "lockupViewModel", lockups)
     return lockups.mapNotNull { parseLockupViewModel(it) }
 }
@@ -259,7 +260,7 @@ internal fun parseRelatedFromWatchNext(root: org.json.JSONObject): List<VideoIte
  * same key. Nothing consumes that today - the panel is gated on isLive -
  * but it is the hook if replay chat is ever wanted.
  */
-internal fun parseLiveChatContinuation(root: org.json.JSONObject): String? {
+internal fun parseLiveChatContinuation(root: JSONObject): String? {
     val renderer = root.optJSONObject("contents")
         ?.optJSONObject("twoColumnWatchNextResults")
         ?.optJSONObject("conversationBar")

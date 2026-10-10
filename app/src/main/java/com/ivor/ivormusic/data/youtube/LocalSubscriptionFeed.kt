@@ -6,9 +6,13 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRateLimitedException
 import com.ivor.ivormusic.util.KLog
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
+import okhttp3.CacheControl
+import okhttp3.Request
 
 /**
  * Outcome of one Atom feed fetch, kept richer than a list because
@@ -63,8 +67,8 @@ internal class LocalSubscriptionFeed(
         if (YouTubeRateLimit.isHeld()) {
             throw YouTubeRateLimitedException(YouTubeRateLimit.remainingMs())
         }
-        val gate = kotlinx.coroutines.sync.Semaphore(FEED_CONCURRENCY)
-        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val gate = Semaphore(FEED_CONCURRENCY)
+        val completed = AtomicInteger(0)
         val total = channels.size
 
         val perChannel = kotlinx.coroutines.coroutineScope {
@@ -111,7 +115,7 @@ internal class LocalSubscriptionFeed(
                         }
                         videos.take(maxPerChannel)
                     } catch (e: Exception) {
-                        KLog.w("YouTubeRepo", "feed fetch failed for ${channel.channelId}", e)
+                        KLog.w(YOUTUBE_TAG, "feed fetch failed for ${channel.channelId}", e)
                         emptyList()
                     } finally {
                         gate.release()
@@ -171,7 +175,7 @@ internal class LocalSubscriptionFeed(
         forceFresh: Boolean = false,
     ): ChannelFeedResult = withContext(Dispatchers.IO) {
         try {
-            val request = okhttp3.Request.Builder()
+            val request = Request.Builder()
                 .url("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
                 .addHeader("User-Agent", BROWSER_USER_AGENT)
                 .apply { feedCacheControl(forceFresh)?.let { cacheControl(it) } }
@@ -193,14 +197,14 @@ internal class LocalSubscriptionFeed(
                     // 404 means the channel is gone or the id was never valid;
                     // the caller keeps the subscription either way, because a
                     // transient failure must not silently delete channels.
-                    KLog.w("YouTubeRepo", "channel feed $channelId HTTP ${response.code}")
+                    KLog.w(YOUTUBE_TAG, "channel feed $channelId HTTP ${response.code}")
                     return@withContext ChannelFeedResult.NoFeed
                 }
                 response.body?.string()
             } ?: return@withContext ChannelFeedResult.NoFeed
             ChannelFeedResult.Items(parseChannelFeedXml(body, avatarUrl))
         } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "getChannelFeedRss failed for $channelId", e)
+            KLog.w(YOUTUBE_TAG, "getChannelFeedRss failed for $channelId", e)
             ChannelFeedResult.Failed
         }
     }
@@ -216,8 +220,8 @@ internal class LocalSubscriptionFeed(
      * refresh revalidates and everything else - a tab revisit, a process
      * restart, the six-hourly worker - takes the cached answer.
      */
-    private fun feedCacheControl(forceFresh: Boolean): okhttp3.CacheControl? =
-        if (forceFresh) okhttp3.CacheControl.Builder().noCache().build() else null
+    private fun feedCacheControl(forceFresh: Boolean): CacheControl? =
+        if (forceFresh) CacheControl.Builder().noCache().build() else null
 
     /**
      * Builds the device-local subscriptions feed: the latest uploads across
@@ -280,8 +284,8 @@ internal class LocalSubscriptionFeed(
             return@withContext resolved to 0
         }
 
-        val gate = kotlinx.coroutines.sync.Semaphore(FEED_CONCURRENCY)
-        val completed = java.util.concurrent.atomic.AtomicInteger(resolved.size)
+        val gate = Semaphore(FEED_CONCURRENCY)
+        val completed = AtomicInteger(resolved.size)
         val total = entries.size
         onProgress?.invoke(completed.get(), total)
 
@@ -321,7 +325,7 @@ internal class LocalSubscriptionFeed(
     ): List<LocalSubscription> = withContext(Dispatchers.IO) {
         val pending = channels.filter { it.avatarUrl.isNullOrBlank() }.take(limit)
         if (pending.isEmpty()) return@withContext emptyList()
-        val gate = kotlinx.coroutines.sync.Semaphore(FEED_CONCURRENCY)
+        val gate = Semaphore(FEED_CONCURRENCY)
         kotlinx.coroutines.coroutineScope {
             pending.map { channel ->
                 async {

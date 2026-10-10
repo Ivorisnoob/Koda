@@ -5,6 +5,8 @@ import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.continuationItemsOrNull
 import com.ivor.ivormusic.util.KLog
+import org.json.JSONArray
+import org.json.JSONObject
 
 // WEB_REMIX responses read into songs and playlists: the account's library
 // pages, playlist shelves and their continuation tokens. Pure; the row-level
@@ -16,7 +18,7 @@ internal fun parseSongsFromInternalJson(
 ): List<Song> {
     val songs = mutableListOf<Song>()
     try {
-        val root = org.json.JSONObject(json)
+        val root = JSONObject(json)
 
         // OPTIMIZED: Direct traversal instead of recursive search
         // Find the SectionListRenderer which contains the shelves
@@ -49,7 +51,7 @@ internal fun parseSongsFromInternalJson(
             }
         }
     } catch (e: Exception) {
-        KLog.e("YouTubeRepo", "Could not parse music song shelf", e)
+        KLog.e(YOUTUBE_TAG, "Could not parse music song shelf", e)
     }
     return if (preserveDuplicates) songs else songs.distinctBy { it.id }
 }
@@ -57,7 +59,7 @@ internal fun parseSongsFromInternalJson(
 internal fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayItem> {
     val playlists = mutableListOf<PlaylistDisplayItem>()
     try {
-        val root = org.json.JSONObject(json)
+        val root = JSONObject(json)
 
         // OPTIMIZED: Use direct traversal
         val contentsArray = findRootContents(root) ?: return emptyList()
@@ -114,7 +116,7 @@ internal fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayI
             }
         }
     } catch (e: Exception) {
-        KLog.e("YouTubeRepo", "Could not parse music playlist shelf", e)
+        KLog.e(YOUTUBE_TAG, "Could not parse music playlist shelf", e)
     }
     return playlists 
 }
@@ -123,7 +125,7 @@ internal fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayI
  * Locates the 'contents' array within sectionListRenderer by traversing standard paths.
  * Handles: Home (Browse), Search Results, and Playlist Details.
  */
-private fun findRootContents(root: org.json.JSONObject): org.json.JSONArray? {
+private fun findRootContents(root: JSONObject): JSONArray? {
     // Path 1: Standard Browse/Home/Playlist (contents -> singleColumn... -> tabs -> tab -> content -> sectionList)
     root.optJSONObject("contents")
         ?.optJSONObject("singleColumnBrowseResultsRenderer")
@@ -194,8 +196,8 @@ private fun findRootContents(root: org.json.JSONObject): org.json.JSONArray? {
 /**
  * Extracts the list of items from a Shelf wrapper (Carousel, Shelf, or direct list).
  */
-internal fun parseItemsFromShelf(shelfWrapper: org.json.JSONObject): List<org.json.JSONObject> {
-    val items = mutableListOf<org.json.JSONObject>()
+internal fun parseItemsFromShelf(shelfWrapper: JSONObject): List<JSONObject> {
+    val items = mutableListOf<JSONObject>()
 
     // 1. musicCarouselShelfRenderer (Horizontal Scroll)
     val carousel = shelfWrapper.optJSONObject("musicCarouselShelfRenderer")
@@ -265,15 +267,15 @@ internal fun parseItemsFromShelf(shelfWrapper: org.json.JSONObject): List<org.js
     return items
 }
 
-internal fun parseResponsiveListItem(item: org.json.JSONObject): Song? = MusicMetadata.song(item)
+internal fun parseResponsiveListItem(item: JSONObject): Song? = MusicMetadata.song(item)
 
-private fun parseTwoRowItem(item: org.json.JSONObject): Song? = MusicMetadata.song(item)
+private fun parseTwoRowItem(item: JSONObject): Song? = MusicMetadata.song(item)
 
 /**
  * Extract item count from playlist subtitle.
  * The subtitle typically contains patterns like "100 songs", "50 videos", etc.
  */
-private fun extractItemCountFromSubtitle(subtitleObj: org.json.JSONObject?): Int {
+private fun extractItemCountFromSubtitle(subtitleObj: JSONObject?): Int {
     if (subtitleObj == null) return -1
 
     try {
@@ -326,8 +328,8 @@ private fun extractItemCountFromSubtitle(subtitleObj: org.json.JSONObject?): Int
  * items themselves parsed.
  */
 internal fun extractPlaylistContinuationToken(json: String): String? = try {
-    val root = org.json.JSONObject(json)
-    val scopes = mutableListOf<org.json.JSONObject>()
+    val root = JSONObject(json)
+    val scopes = mutableListOf<JSONObject>()
     findObjectsByKey(root, "musicPlaylistShelfRenderer", scopes)
     findObjectsByKey(root, "musicPlaylistShelfContinuation", scopes)
     findObjectsByKey(root, "appendContinuationItemsAction", scopes)

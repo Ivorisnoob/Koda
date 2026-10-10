@@ -86,7 +86,7 @@ internal class VideoStreamResolver(
                 // Makes a CC tap free: getCaptionTracks reads this cache first.
                 onCaptions(videoId, answer.root)
                 KLog.i(
-                    "YouTubeRepo",
+                    STREAM_TAG,
                     "Video qualities via visionOS: ${qualities.size} for $videoId" +
                         qualities.count(VideoQuality::isHdr).let { if (it > 0) " (HDR=$it)" else "" },
                 )
@@ -103,7 +103,7 @@ internal class VideoStreamResolver(
                     runCatching { parseStoryboardSeekPreview(answer.root) }.getOrNull()
                 return@withContext VideoStreamResult(qualities, seekPreview, audioTracks)
             }
-            KLog.w("YouTubeRepo", "visionOS answered with no usable formats for $videoId")
+            KLog.w(STREAM_TAG, "visionOS answered with no usable formats for $videoId")
         }
 
         // Fallback: NewPipe's maintained Android reel + visionOS chain, with
@@ -116,7 +116,7 @@ internal class VideoStreamResolver(
             if (extracted.qualities.isNotEmpty()) {
                 BotCheckVerdict.clearOnSuccess()
                 KLog.i(
-                    "YouTubeRepo",
+                    STREAM_TAG,
                     "Video qualities via NewPipe fallback: ${extracted.qualities.size} for $videoId",
                 )
                 return@withContext extracted
@@ -126,7 +126,7 @@ internal class VideoStreamResolver(
         } catch (e: Exception) {
             newPipeBotChecked = e.isNewPipeBotCheck()
             KLog.w(
-                "YouTubeRepo",
+                STREAM_TAG,
                 "NewPipe quality resolution failed, falling back to direct InnerTube",
                 e,
             )
@@ -147,7 +147,7 @@ internal class VideoStreamResolver(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error getting video stream qualities", e)
+            KLog.e(STREAM_TAG, "Error getting video stream qualities", e)
             VideoStreamResult(emptyList())
         }
     }
@@ -170,7 +170,7 @@ internal class VideoStreamResolver(
     }
 
     private fun parseQualitiesFromStreamingData(
-        streamingData: org.json.JSONObject,
+        streamingData: JSONObject,
         includeHdr: Boolean = false,
     ): List<VideoQuality> = parseDirectVideoQualities(streamingData, includeHdr)
 

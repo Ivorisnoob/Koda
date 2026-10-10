@@ -8,8 +8,11 @@ import com.ivor.ivormusic.data.LiveChatSession
 import com.ivor.ivormusic.data.LiveMetadata
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.util.KLog
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Live chat on www.youtube.com: finding a stream's chat, polling it, sending
@@ -41,7 +44,7 @@ internal class LiveChat(
             val root = watchPage.fetchWatchNextRoot(videoId) ?: return@withContext null
             parseLiveChatContinuation(root)?.let { LiveChatSession(continuation = it) }
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getLiveChatSession failed for $videoId", e)
+            KLog.e(YOUTUBE_TAG, "getLiveChatSession failed for $videoId", e)
             null
         }
     }
@@ -72,11 +75,11 @@ internal class LiveChat(
      */
     suspend fun pollLiveChat(continuation: String): LiveChatPage? = withContext(Dispatchers.IO) {
         try {
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
                 .put("continuation", continuation)
             val raw = webApi.postWatchApi("live_chat/get_live_chat", body) ?: return@withContext null
-            val chat = org.json.JSONObject(raw)
+            val chat = JSONObject(raw)
                 .optJSONObject("continuationContents")
                 ?.optJSONObject("liveChatContinuation")
                 ?: return@withContext null
@@ -169,7 +172,7 @@ internal class LiveChat(
                     ?: 200,
             )
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "pollLiveChat failed", e)
+            KLog.e(YOUTUBE_TAG, "pollLiveChat failed", e)
             null
         }
     }
@@ -193,22 +196,22 @@ internal class LiveChat(
                 return@withContext LiveChatSendResult(false, error = "Sign in to chat")
             }
             try {
-                val body = org.json.JSONObject()
+                val body = JSONObject()
                     .put("context", webApi.webContext())
                     .put("params", params)
                     .put(
                         "richMessage",
-                        org.json.JSONObject().put(
+                        JSONObject().put(
                             "textSegments",
-                            org.json.JSONArray().put(org.json.JSONObject().put("text", text))
+                            JSONArray().put(JSONObject().put("text", text))
                         )
                     )
-                    .put("clientMessageId", java.util.UUID.randomUUID().toString())
+                    .put("clientMessageId", UUID.randomUUID().toString())
                 val raw = webApi.postWatchApi("live_chat/send_message", body)
                     ?: return@withContext LiveChatSendResult(false, error = "Message not sent")
-                val root = org.json.JSONObject(raw)
+                val root = JSONObject(raw)
 
-                val results = mutableListOf<org.json.JSONObject>()
+                val results = mutableListOf<JSONObject>()
                 findObjectsByKey(root, "addChatItemAction", results)
                 val echo = results.firstNotNullOfOrNull { action ->
                     action.optJSONObject("item")?.let { parseLiveChatItem(it, fallbackOrder = 0) }
@@ -219,13 +222,13 @@ internal class LiveChat(
 
                 // A rejected message (slow mode, a word filter, a ban) answers
                 // 200 with an error string in place of the item.
-                val errors = mutableListOf<org.json.JSONObject>()
+                val errors = mutableListOf<JSONObject>()
                 findObjectsByKey(root, "errorMessage", errors)
                 val reason = errors.firstNotNullOfOrNull { getRunText(it) }
                     ?.takeIf { it.isNotBlank() }
                 LiveChatSendResult(false, error = reason ?: "Message not sent")
             } catch (e: Exception) {
-                KLog.e("YouTubeRepo", "sendLiveChatMessage failed", e)
+                KLog.e(YOUTUBE_TAG, "sendLiveChatMessage failed", e)
                 LiveChatSendResult(false, error = "Message not sent")
             }
         }
@@ -242,17 +245,17 @@ internal class LiveChat(
      */
     suspend fun getLiveMetadata(videoId: String): LiveMetadata? = withContext(Dispatchers.IO) {
         try {
-            val body = org.json.JSONObject()
+            val body = JSONObject()
                 .put("context", webApi.webContext())
                 .put("videoId", videoId)
             val raw = webApi.postWatchApi("updated_metadata", body) ?: return@withContext null
-            val root = org.json.JSONObject(raw)
+            val root = JSONObject(raw)
 
-            val viewCounts = mutableListOf<org.json.JSONObject>()
+            val viewCounts = mutableListOf<JSONObject>()
             findObjectsByKey(root, "videoViewCountRenderer", viewCounts)
             val viewCount = viewCounts.firstOrNull { it.optBoolean("isLive") } ?: viewCounts.firstOrNull()
 
-            val dateTexts = mutableListOf<org.json.JSONObject>()
+            val dateTexts = mutableListOf<JSONObject>()
             findObjectsByKey(root, "updateDateTextAction", dateTexts)
 
             LiveMetadata(
@@ -264,7 +267,7 @@ internal class LiveChat(
                     ?.takeIf { it.isNotBlank() },
             )
         } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getLiveMetadata failed for $videoId", e)
+            KLog.e(YOUTUBE_TAG, "getLiveMetadata failed for $videoId", e)
             null
         }
     }

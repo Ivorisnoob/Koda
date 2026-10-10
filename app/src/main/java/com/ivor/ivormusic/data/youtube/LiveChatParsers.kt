@@ -7,6 +7,8 @@ import com.ivor.ivormusic.data.LiveChatBanner
 import com.ivor.ivormusic.data.LiveChatMessage
 import com.ivor.ivormusic.data.LiveChatRun
 import com.ivor.ivormusic.util.KLog
+import org.json.JSONArray
+import org.json.JSONObject
 
 // Live chat actions read into messages, authors, badges and the pinned banner. Pure.
 
@@ -22,7 +24,7 @@ import com.ivor.ivormusic.util.KLog
  * [fallbackOrder] backfills a sort key for giftMessageViewModel, the one
  * item that arrives without a timestamp of its own.
  */
-internal fun parseLiveChatItem(item: org.json.JSONObject, fallbackOrder: Int): LiveChatMessage? {
+internal fun parseLiveChatItem(item: JSONObject, fallbackOrder: Int): LiveChatMessage? {
     try {
         item.optJSONObject("liveChatTextMessageRenderer")?.let { r ->
             val id = r.optString("id").takeIf { it.isNotBlank() } ?: return null
@@ -120,13 +122,13 @@ internal fun parseLiveChatItem(item: org.json.JSONObject, fallbackOrder: Int): L
 
         return null
     } catch (e: Exception) {
-        KLog.w("YouTubeRepo", "parseLiveChatItem failed", e)
+        KLog.w(YOUTUBE_TAG, "parseLiveChatItem failed", e)
         return null
     }
 }
 
 /** Author name, avatar, channel id and badges, shared by every renderer. */
-private fun parseLiveChatAuthor(renderer: org.json.JSONObject): LiveChatAuthor =
+private fun parseLiveChatAuthor(renderer: JSONObject): LiveChatAuthor =
     LiveChatAuthor(
         name = getRunText(renderer.optJSONObject("authorName")).orEmpty(),
         channelId = renderer.optString("authorExternalChannelId").takeIf { it.isNotBlank() },
@@ -142,7 +144,7 @@ private fun parseLiveChatAuthor(renderer: org.json.JSONObject): LiveChatAuthor =
  * and channel memberships as per-channel customThumbnail artwork whose
  * tooltip carries the tenure ("Member (1 year)").
  */
-private fun parseLiveChatBadges(badges: org.json.JSONArray?): List<LiveChatBadge> {
+private fun parseLiveChatBadges(badges: JSONArray?): List<LiveChatBadge> {
     if (badges == null) return emptyList()
     return (0 until badges.length()).mapNotNull { i ->
         val r = badges.optJSONObject(i)?.optJSONObject("liveChatAuthorBadgeRenderer")
@@ -172,7 +174,7 @@ private fun parseLiveChatBadges(badges: org.json.JSONArray?): List<LiveChatBadge
  * image; channel-custom emoji have an opaque id and must be drawn from the
  * thumbnail, so the two cases are distinguished rather than flattened.
  */
-private fun parseLiveChatRuns(message: org.json.JSONObject?): List<LiveChatRun> {
+private fun parseLiveChatRuns(message: JSONObject?): List<LiveChatRun> {
     if (message == null) return emptyList()
     message.optString("simpleText").takeIf { it.isNotBlank() }?.let {
         return listOf(LiveChatRun.Text(it))
@@ -206,7 +208,7 @@ private fun parseLiveChatRuns(message: org.json.JSONObject?): List<LiveChatRun> 
  * (liveChatTextMessageRenderer) or the auto-generated chat summary
  * (liveChatBannerChatSummaryRenderer).
  */
-internal fun parseLiveChatBanner(banner: org.json.JSONObject): LiveChatBanner? {
+internal fun parseLiveChatBanner(banner: JSONObject): LiveChatBanner? {
     val contents = banner.optJSONObject("contents") ?: return null
     contents.optJSONObject("liveChatBannerChatSummaryRenderer")?.let { summary ->
         return LiveChatBanner(

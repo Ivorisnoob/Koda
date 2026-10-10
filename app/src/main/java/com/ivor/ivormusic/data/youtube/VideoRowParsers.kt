@@ -7,6 +7,8 @@ import com.ivor.ivormusic.data.continuationItemsOrNull
 import com.ivor.ivormusic.data.parseShortsEndpoint
 import com.ivor.ivormusic.data.videoListContinuationToken
 import com.ivor.ivormusic.util.KLog
+import org.json.JSONArray
+import org.json.JSONObject
 
 // Lists of videos on www.youtube.com: the feed and search pages, the legacy
 // videoRenderer rows that still appear beside lockups, and Shorts shelves.
@@ -20,17 +22,17 @@ internal fun parseVideosFromYouTubeJson(
     json: String,
     limit: Int = 30,
     /** The same response already parsed, so a caller that needs the tree does not pay for it twice. */
-    parsedRoot: org.json.JSONObject? = null
+    parsedRoot: JSONObject? = null
 ): List<VideoItem> {
     val videos = mutableListOf<VideoItem>()
     try {
-        val root = parsedRoot ?: org.json.JSONObject(json)
+        val root = parsedRoot ?: JSONObject(json)
 
         // Locate content array
         // Normal Home: contents -> singleColumnBrowseResultsRenderer -> tabs[0] -> tabRenderer -> content -> richGridRenderer -> contents
         // Or sectionListRenderer -> contents
 
-        var contents: org.json.JSONArray? = null
+        var contents: JSONArray? = null
 
         // Desktop WEB responses (FEwhat_to_watch) use twoColumnBrowseResultsRenderer;
         // singleColumn is the mobile/YTM shape. Check both.
@@ -111,16 +113,16 @@ internal fun parseVideosFromYouTubeJson(
         }
 
     } catch (e: Exception) {
-        KLog.e("YouTubeRepo", "Could not parse watch history", e)
+        KLog.e(YOUTUBE_TAG, "Could not parse watch history", e)
     }
     return videos.distinctBy { it.videoId }.take(limit)
 }
 
 /** Verified September 2026: sorted pages retain a list-scoped search token. */
 internal fun parseVideoSearchPage(response: String): VideoFeedPage {
-    val root = org.json.JSONObject(response)
+    val root = JSONObject(response)
     check(!root.has("error")) { "Search returned an error body" }
-    val renderers = mutableListOf<org.json.JSONObject>()
+    val renderers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "videoRenderer", renderers)
     findObjectsByKey(root, "lockupViewModel", renderers)
     val videos = renderers.mapNotNull { renderer ->
@@ -130,7 +132,7 @@ internal fun parseVideoSearchPage(response: String): VideoFeedPage {
     return VideoFeedPage(videos, videoListContinuationToken(root, search = true))
 }
 
-internal fun parseVideoRenderer(videoRenderer: org.json.JSONObject?): VideoItem? {
+internal fun parseVideoRenderer(videoRenderer: JSONObject?): VideoItem? {
     if (videoRenderer == null) return null
     try {
         val videoId = videoRenderer.optString("videoId")
@@ -214,7 +216,7 @@ internal fun parseVideoRenderer(videoRenderer: org.json.JSONObject?): VideoItem?
         // 3. Fallback search for avatar in the whole renderer if missing
         if (channelIconUrl == null) {
             // We use the light-weight finder here since we are inside a single renderer, so recursion is shallow
-            val avatarList = mutableListOf<org.json.JSONObject>()
+            val avatarList = mutableListOf<JSONObject>()
             findAllObjects(videoRenderer, "avatar", avatarList, 0)
             for (avatar in avatarList) {
                 val thumbs = avatar.optJSONArray("thumbnails")
@@ -250,7 +252,7 @@ internal fun parseVideoRenderer(videoRenderer: org.json.JSONObject?): VideoItem?
  * continuationItemRenderer whose continuationEndpoint.continuationCommand
  * carries the token for the next /browse page. Verified July 2026.
  */
-internal fun extractRichGridContinuation(root: org.json.JSONObject): String? {
+internal fun extractRichGridContinuation(root: JSONObject): String? {
     val tabs = root.optJSONObject("contents")
         ?.optJSONObject("twoColumnBrowseResultsRenderer")
         ?.optJSONArray("tabs")
@@ -276,8 +278,8 @@ internal fun extractRichGridContinuation(root: org.json.JSONObject): String? {
 }
 
 /** All shortsLockupViewModels of a response, deduped, in shelf order. */
-internal fun parseShortsLockups(root: org.json.JSONObject): List<ShortsItem> {
-    val lockups = mutableListOf<org.json.JSONObject>()
+internal fun parseShortsLockups(root: JSONObject): List<ShortsItem> {
+    val lockups = mutableListOf<JSONObject>()
     findObjectsByKey(root, "shortsLockupViewModel", lockups)
     return lockups.mapNotNull { parseShortsLockup(it) }
         .distinctBy { it.videoId }
@@ -290,7 +292,7 @@ internal fun parseShortsLockups(root: org.json.JSONObject): List<ShortsItem> {
  * overlayMetadata.primaryText/secondaryText, portrait thumbnail in the
  * reelWatchEndpoint (1080x1920 frame0).
  */
-internal fun parseShortsLockup(lockup: org.json.JSONObject): ShortsItem? {
+internal fun parseShortsLockup(lockup: JSONObject): ShortsItem? {
     return try {
         val reel = lockup.optJSONObject("onTap")
             ?.optJSONObject("innertubeCommand")
@@ -316,11 +318,11 @@ internal fun parseShortsLockup(lockup: org.json.JSONObject): ShortsItem? {
             thumbnailUrl = lockupThumb ?: base.thumbnailUrl
         )
     } catch (e: Exception) {
-        KLog.w("YouTubeRepo", "parseShortsLockup failed", e)
+        KLog.w(YOUTUBE_TAG, "parseShortsLockup failed", e)
         null
     }
 }
 
 /** reelWatchEndpoint: videoId, portrait thumbnail and sequence seed. */
-private fun parseReelWatchEndpoint(reel: org.json.JSONObject): ShortsItem? =
+private fun parseReelWatchEndpoint(reel: JSONObject): ShortsItem? =
     parseShortsEndpoint(reel)

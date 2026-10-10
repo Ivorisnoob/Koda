@@ -5,8 +5,14 @@ import com.ivor.ivormusic.data.NewPipeDownloaderImpl
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoItem
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.localization.ContentCountry
+import org.schabi.newpipe.extractor.localization.Localization
+import org.schabi.newpipe.extractor.search.SearchExtractor
 import org.schabi.newpipe.extractor.services.youtube.YoutubeService
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
@@ -54,12 +60,12 @@ internal class NewPipeGateway(
         query: String,
         filters: List<String>,
         sort: String,
-    ): org.schabi.newpipe.extractor.search.SearchExtractor {
+    ): SearchExtractor {
         val region = http.contentRegion()
         if (region != appliedNewPipeRegion) {
             NewPipe.setupLocalization(
-                org.schabi.newpipe.extractor.localization.Localization("en", region),
-                org.schabi.newpipe.extractor.localization.ContentCountry(region)
+                Localization("en", region),
+                ContentCountry(region)
             )
             appliedNewPipeRegion = region
         }
@@ -73,8 +79,8 @@ internal class NewPipeGateway(
     // work it is trying to abandon. Detaching it is what lets the InnerTube
     // fallback start on time. SupervisorJob so one failed extraction cannot
     // cancel the scope every later one needs.
-    val newPipeScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO,
+    val newPipeScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO,
     )
 
     private companion object {
@@ -93,7 +99,7 @@ internal class NewPipeGateway(
 internal val youtubeService = YoutubeService(0)
 
 /** Map a NewPipe search page's streams to [VideoItem]s, skipping unusable rows. */
-internal fun List<org.schabi.newpipe.extractor.InfoItem>.toVideoItems(context: Context): List<VideoItem> =
+internal fun List<InfoItem>.toVideoItems(context: Context): List<VideoItem> =
     filterIsInstance<StreamInfoItem>().mapNotNull { item ->
         // "Fully block Shorts": NewPipe already knows which results are
         // Shorts, so they are dropped here rather than drawn.
