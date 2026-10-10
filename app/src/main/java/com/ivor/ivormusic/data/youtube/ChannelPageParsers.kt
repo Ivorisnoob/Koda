@@ -154,7 +154,7 @@ internal fun parseChannelHeader(
         attributionText = attributionText,
         attributionUrl = attributionUrl,
         aboutToken = aboutToken,
-        accountSubscribed = parseChannelSubscribedState(root),
+        accountSubscribed = parseChannelSubscribedState(root, channelId),
         bell = ChannelBellParser.fromSubscribeButtons(root)[channelId] ?: run {
             // The legacy button, as some watch pages still serve it.
             val legacy = mutableListOf<JSONObject>()
@@ -177,16 +177,24 @@ internal fun parseChannelHeader(
  * Returns null rather than false when neither is present, so a shape change
  * reads as "unknown" and the caller falls back to asking, instead of
  * quietly showing "Subscribe" for a channel the user follows.
+ *
+ * **Only a state that names [channelId] counts.** A channel page draws a
+ * Subscribe button for every channel it features as well as its own, and
+ * `contents` comes before `header` in the response [verified October 2026],
+ * so the first state found is a featured channel's whenever the open tab
+ * lists one. An entity is matched by its key ([entityKeyNames]) and a legacy
+ * button by its `channelId`; a page that names only other channels answers
+ * null, which costs one request and is never the wrong answer.
  */
-private fun parseChannelSubscribedState(root: JSONObject): Boolean? {
+private fun parseChannelSubscribedState(root: JSONObject, channelId: String): Boolean? {
     val entities = mutableListOf<JSONObject>()
     findObjectsByKey(root, "subscriptionStateEntity", entities)
-    entities.firstOrNull { it.has("subscribed") }
+    entities.firstOrNull { it.has("subscribed") && entityKeyNames(it.optString("key"), channelId) }
         ?.let { return it.optBoolean("subscribed") }
 
     val legacy = mutableListOf<JSONObject>()
     findObjectsByKey(root, "subscribeButtonRenderer", legacy)
-    legacy.firstOrNull { it.has("subscribed") }
+    legacy.firstOrNull { it.has("subscribed") && it.optString("channelId") == channelId }
         ?.let { return it.optBoolean("subscribed") }
 
     return null

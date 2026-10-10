@@ -33,6 +33,43 @@ internal fun findObjectsByKey(node: Any, key: String, results: MutableList<JSONO
 }
 
 /**
+ * The first object stored under [key] inside [scope], or failing that anywhere
+ * in [root].
+ *
+ * For a value that has one home in a response. Searching the whole response
+ * and taking the first hit picks a different object as soon as the key turns
+ * up somewhere else - a related card, a featured channel, an engagement panel
+ * - and nothing logs it. Naming the container makes the right one win by
+ * construction; the whole response is still searched when the container has
+ * moved, which is exactly what happened before.
+ */
+internal fun firstObjectByKey(scope: JSONObject?, root: JSONObject, key: String): JSONObject? {
+    val found = mutableListOf<JSONObject>()
+    if (scope != null) findObjectsByKey(scope, key, found)
+    if (found.isEmpty() && scope !== root) findObjectsByKey(root, key, found)
+    return found.firstOrNull()
+}
+
+/**
+ * Whether a framework entity's [key] belongs to [id].
+ *
+ * An entity key is a URL-encoded base64 blob with the id of what it describes
+ * in plain ASCII inside it: a `subscriptionStateEntity` carries its channel
+ * id, a `likeStatusEntity` and a `viewCountEntity` their video id. [verified
+ * October 2026, signed out, WEB `/next`] It is how one of several entities of
+ * a kind is told from the others, since they all sit in one list.
+ */
+internal fun entityKeyNames(key: String?, id: String): Boolean {
+    if (key.isNullOrBlank() || id.isBlank()) return false
+    return try {
+        val bytes = java.util.Base64.getUrlDecoder().decode(URLDecoder.decode(key, "UTF-8"))
+        String(bytes, Charsets.ISO_8859_1).contains(id)
+    } catch (e: IllegalArgumentException) {
+        false
+    }
+}
+
+/**
  * Extract continuation token from API response for pagination.
  */
 internal fun extractContinuationToken(json: String): String? {

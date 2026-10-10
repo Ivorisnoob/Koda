@@ -16,6 +16,19 @@ import org.json.JSONObject
 // token. Each function reads one of those out of the same root. Pure.
 
 /**
+ * The column of a watch page that describes the video itself: its title and
+ * actions, its owner and Subscribe button, and its comments section.
+ * [verified October 2026, signed out: `contents.twoColumnWatchNextResults
+ * .results.results`] Related videos, the player overlay and the engagement
+ * panels sit elsewhere and repeat some of the same renderers.
+ */
+private fun watchColumn(root: JSONObject): JSONObject? =
+    root.optJSONObject("contents")
+        ?.optJSONObject("twoColumnWatchNextResults")
+        ?.optJSONObject("results")
+        ?.optJSONObject("results")
+
+/**
  * Enriched video metadata from a watch-next response, layered over
  * [baseVideo] (feed items lack description, channel avatar and subscriber
  * count). Shapes verified against the live API July 2026:
@@ -29,13 +42,9 @@ internal fun parseVideoMetadataFromWatchNext(
     baseVideo: VideoItem?
 ): VideoItem? {
     return try {
-        val primaries = mutableListOf<JSONObject>()
-        findObjectsByKey(root, "videoPrimaryInfoRenderer", primaries)
-        val primary = primaries.firstOrNull()
-
-        val secondaries = mutableListOf<JSONObject>()
-        findObjectsByKey(root, "videoSecondaryInfoRenderer", secondaries)
-        val secondaryInfo = secondaries.firstOrNull()
+        val column = watchColumn(root)
+        val primary = firstObjectByKey(column, root, "videoPrimaryInfoRenderer")
+        val secondaryInfo = firstObjectByKey(column, root, "videoSecondaryInfoRenderer")
 
         if (primary == null && secondaryInfo == null) return baseVideo
 
@@ -118,17 +127,14 @@ internal fun parseEngagementFromWatchNext(
     videoId: String,
     root: JSONObject
 ): VideoEngagement {
-        // Like count + user's like status live in frameworkUpdates entities
-        val likeCounts = mutableListOf<JSONObject>()
-        findObjectsByKey(root, "likeCountEntity", likeCounts)
-        var likeCount = likeCounts.firstOrNull()
+        val column = watchColumn(root)
+        // The like count rides inside the video's own like button.
+        var likeCount = firstObjectByKey(column, root, "likeCountEntity")
             ?.optJSONObject("likeCountIfIndifferent")?.optString("content")
             ?.takeIf { it.isNotBlank() }
         if (likeCount == null) {
             // Fallback: the visible title on the like toggle button ("19M")
-            val likeButtons = mutableListOf<JSONObject>()
-            findObjectsByKey(root, "segmentedLikeDislikeButtonViewModel", likeButtons)
-            val title = likeButtons.firstOrNull()
+            val title = firstObjectByKey(column, root, "segmentedLikeDislikeButtonViewModel")
                 ?.optJSONObject("likeButtonViewModel")?.optJSONObject("likeButtonViewModel")
                 ?.optJSONObject("toggleButtonViewModel")?.optJSONObject("toggleButtonViewModel")
                 ?.optJSONObject("defaultButtonViewModel")?.optJSONObject("buttonViewModel")
@@ -137,22 +143,22 @@ internal fun parseEngagementFromWatchNext(
             likeCount = title?.takeIf { it.isNotBlank() && it.any { c -> c.isDigit() } }
         }
 
+        // The response holds a like status per like button drawn, and they
+        // all sit in one list: take the one whose key names this video.
         val likeStatuses = mutableListOf<JSONObject>()
         findObjectsByKey(root, "likeStatusEntity", likeStatuses)
-        val likeStatus = when (likeStatuses.firstOrNull()?.optString("likeStatus")) {
+        val ownLikeStatus = likeStatuses.firstOrNull { entityKeyNames(it.optString("key"), videoId) }
+            ?: likeStatuses.firstOrNull()
+        val likeStatus = when (ownLikeStatus?.optString("likeStatus")) {
             "LIKE" -> LikeStatus.LIKE
             "DISLIKE" -> LikeStatus.DISLIKE
             else -> LikeStatus.INDIFFERENT
         }
 
-        val subButtons = mutableListOf<JSONObject>()
-        findObjectsByKey(root, "subscribeButtonRenderer", subButtons)
-        val subButton = subButtons.firstOrNull()
+        val subButton = firstObjectByKey(column, root, "subscribeButtonRenderer")
         val isSubscribed = subButton?.optBoolean("subscribed", false) ?: false
 
-        val owners = mutableListOf<JSONObject>()
-        findObjectsByKey(root, "videoOwnerRenderer", owners)
-        val owner = owners.firstOrNull()
+        val owner = firstObjectByKey(column, root, "videoOwnerRenderer")
         val channelId = subButton?.optString("channelId")?.takeIf { it.isNotBlank() }
             ?: owner?.optJSONObject("navigationEndpoint")
                 ?.optJSONObject("browseEndpoint")?.optString("browseId")

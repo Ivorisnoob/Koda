@@ -146,9 +146,8 @@ internal fun parseModernPlaylistHeader(
     root: JSONObject,
     listId: String
 ): PlaylistPageInfo? {
-    val headers = mutableListOf<JSONObject>()
-    findObjectsByKey(root, "pageHeaderViewModel", headers)
-    val header = headers.firstOrNull() ?: return null
+    // [verified October 2026, signed out: header.pageHeaderRenderer.content]
+    val header = firstObjectByKey(root.optJSONObject("header"), root, "pageHeaderViewModel") ?: return null
 
     val title = header.optJSONObject("title")
         ?.optJSONObject("dynamicTextViewModel")

@@ -69,7 +69,120 @@ class ParserFixturesTest {
         }
     }
 
+    /**
+     * The same page with another video's owner, Subscribe button and like
+     * status planted outside the video's own column, where a related card or
+     * a panel would put them. A whole-response search can return either copy.
+     */
+    private fun watchNextWithDecoys(): JSONObject = fixture("watch_next").apply {
+        put(
+            "aRelatedCard",
+            JSONObject()
+                .put(
+                    "videoOwnerRenderer",
+                    JSONObject()
+                        .put("title", JSONObject().put("simpleText", "Someone else"))
+                        .put("subscriberCountText", JSONObject().put("simpleText", "1 subscriber"))
+                        .put(
+                            "navigationEndpoint",
+                            JSONObject().put("browseEndpoint", JSONObject().put("browseId", "UCdecoydecoydecoydecoy00")),
+                        ),
+                )
+                .put(
+                    "subscribeButtonRenderer",
+                    JSONObject().put("subscribed", true).put("channelId", "UCdecoydecoydecoydecoy00"),
+                )
+                .put(
+                    "videoPrimaryInfoRenderer",
+                    JSONObject().put("title", JSONObject().put("simpleText", "Another video")),
+                ),
+        )
+        getJSONObject("frameworkUpdates").getJSONObject("entityBatchUpdate").getJSONArray("mutations").put(
+            JSONObject().put(
+                "payload",
+                JSONObject().put(
+                    "likeStatusEntity",
+                    JSONObject().put("key", entityKeyFor("AnotherVid0")).put("likeStatus", "LIKE"),
+                ),
+            ),
+        )
+    }
+
+    private fun entityKeyFor(id: String): String =
+        java.util.Base64.getUrlEncoder().encodeToString("\u0012\u000b$id \u0003(\u0001".toByteArray(Charsets.ISO_8859_1))
+
+    @Test
+    fun watchNextReadsTheVideosOwnColumnNotTheFirstMatchAnywhere() {
+        val root = watchNextWithDecoys()
+
+        val video = parseVideoMetadataFromWatchNext("jNQXAC9IVRw", root, baseVideo = null)!!
+        assertEquals("Me at the zoo", video.title)
+        assertEquals("jawed", video.channelName)
+
+        val engagement = parseEngagementFromWatchNext("jNQXAC9IVRw", root)
+        assertEquals("UC4QobU6STFB0P71PMvOGN5A", engagement.channelId)
+        assertFalse(engagement.isSubscribed)
+        assertEquals("6.67M subscribers", engagement.subscriberCountText)
+        assertEquals(com.ivor.ivormusic.data.LikeStatus.INDIFFERENT, engagement.likeStatus)
+    }
+
+    @Test
+    fun anEntityKeyNamesWhatItBelongsTo() {
+        // Both keys are from the watch page fixture's frameworkUpdates.
+        assertTrue(entityKeyNames("EhhVQzRRb2JVNlNURkIwUDcxUE12T0dONUEgMygB", "UC4QobU6STFB0P71PMvOGN5A"))
+        assertTrue(entityKeyNames("EgtqTlFYQUM5SVZSdyA-KAE%3D", "jNQXAC9IVRw"))
+        assertFalse(entityKeyNames("EgtqTlFYQUM5SVZSdyA-KAE%3D", "UC4QobU6STFB0P71PMvOGN5A"))
+        assertFalse(entityKeyNames("not base64 !", "jNQXAC9IVRw"))
+        assertFalse(entityKeyNames(null, "jNQXAC9IVRw"))
+    }
+
     // --- /browse: a channel's Videos tab ---
+
+    private fun channelWithSubscriptionStates(vararg states: Pair<String, Boolean>): JSONObject =
+        fixture("channel_videos").apply {
+            val mutations = org.json.JSONArray()
+            states.forEach { (channelId, subscribed) ->
+                mutations.put(
+                    JSONObject().put(
+                        "payload",
+                        JSONObject().put(
+                            "subscriptionStateEntity",
+                            JSONObject().put("key", entityKeyFor(channelId)).put("subscribed", subscribed),
+                        ),
+                    ),
+                )
+            }
+            put("frameworkUpdates", JSONObject().put("entityBatchUpdate", JSONObject().put("mutations", mutations)))
+        }
+
+    @Test
+    fun subscribedStateIsTheOneNamingThisChannel() {
+        val own = "UC4QobU6STFB0P71PMvOGN5A"
+        val featured = "UCfeaturedfeaturedfeatur"
+
+        // A featured channel the account follows, on a channel it does not.
+        val notFollowed = parseChannelHeader(
+            channelWithSubscriptionStates(featured to true, own to false), fallbackChannelId = "fallback",
+        )
+        assertEquals(false, notFollowed!!.accountSubscribed)
+
+        // And the other way round.
+        val followed = parseChannelHeader(
+            channelWithSubscriptionStates(featured to false, own to true), fallbackChannelId = "fallback",
+        )
+        assertEquals(true, followed!!.accountSubscribed)
+    }
+
+    @Test
+    fun aPageNamingOnlyOtherChannelsDoesNotAnswerForThisOne() {
+        val header = parseChannelHeader(
+            channelWithSubscriptionStates("UCfeaturedfeaturedfeatur" to true), fallbackChannelId = "fallback",
+        )
+
+        // Unknown, so the caller asks, rather than "subscribed" off a
+        // featured channel's button.
+        assertEquals(null, header!!.accountSubscribed)
+    }
 
     @Test
     fun channelHeaderReadsIdentityFromThePage() {
