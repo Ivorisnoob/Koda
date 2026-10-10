@@ -53,6 +53,10 @@ import java.util.concurrent.TimeUnit
 class YouTubeRepository(private val context: Context) {
 
     private val sessionManager = SessionManager(context)
+    private val http = YouTubeHttp(context, sessionManager)
+    private val webApi = WebApi(http, sessionManager)
+    private val musicApi = MusicApi(http, sessionManager)
+    private val newPipeGateway = NewPipeGateway(http, sessionManager)
     private val videoHistoryRepository by lazy { VideoHistoryRepository(context) }
     private val videoHistoryPreferences by lazy { ThemePreferences(context) }
 
@@ -65,16 +69,7 @@ class YouTubeRepository(private val context: Context) {
         private const val UPLOAD_CREATE_BATCH = 100
         private const val UPLOAD_ADD_BATCH = 50
         private const val UPLOAD_BATCH_PAUSE_MS = 400L
-        @Volatile private var isInitialized = false
-        @Volatile private var appliedNewPipeRegion: String? = null
-        private val newPipeInitLock = Any()
 
-        // ServiceList eagerly constructs every extractor NewPipe supports. Koda
-        // only uses YouTube, so keep the equivalent service instance directly
-        // and let R8 discard the SoundCloud, PeerTube, Bandcamp and MediaCCC
-        // implementations.
-        private val youtubeService = YoutubeService(0)
-        
         // Content filters for YouTube Music search
         const val FILTER_SONGS = "music_songs"
         const val FILTER_VIDEOS = "music_videos"
@@ -106,27 +101,17 @@ class YouTubeRepository(private val context: Context) {
         // starving whatever else the app is loading.
         private const val FEED_CONCURRENCY = 6
 
-        // Two different caps, doing two different jobs.
+        // How long stream resolution waits on NewPipe before falling back, which
+        // is what playback actually feels. Deliberately small enough to leave
+        // the InnerTube chain room inside MusicService's own resolution
+        // timeout: a NewPipe path that merely takes too long must degrade to
+        // the fallback, not spend the whole budget and then resolve to nothing.
         //
-        // The budget is what playback actually feels: it bounds how long stream
-        // resolution waits on NewPipe before falling back, and is deliberately
-        // small enough to leave the InnerTube chain room inside MusicService's
-        // own resolution timeout. A NewPipe path that merely takes too long
-        // must degrade to the fallback, not spend the whole budget and then
-        // resolve to nothing.
-        //
-        // The per-request cap is only a backstop, and is generous on purpose:
-        // this same downloader serves search, playlists and channel pages,
-        // whose responses are far larger than a /player call and which had no
-        // wall-clock cap at all before. Tightening it to the budget would turn
-        // a slow connection into failed searches to fix a playback problem the
-        // budget already fixes.
-        //
-        // The budget is sized against MusicService.RESOLVE_TIMEOUT_MS (20s),
-        // which discards - and therefore skips - anything slower: 8s here
-        // leaves the 8s-capped direct /player chain room to succeed inside it.
-        // The two are a pair; moving one alone reopens the skip.
-        private const val NEWPIPE_REQUEST_TIMEOUT_SECONDS = 20L
+        // Sized against MusicService.RESOLVE_TIMEOUT_MS (20s), which discards -
+        // and therefore skips - anything slower: 8s here leaves the 8s-capped
+        // direct /player chain room to succeed inside it. The two are a pair;
+        // moving one alone reopens the skip. The per-request cap on NewPipe's
+        // own client is a separate backstop in YouTubeHttp.
         private const val NEWPIPE_STREAM_BUDGET_MS = 8_000L
 
         // The channel Atom feed only ever returns 15 entries, so this takes
@@ -143,12 +128,6 @@ class YouTubeRepository(private val context: Context) {
         // rest is picked up on later visits.
         private const val PROFILE_BACKFILL_LIMIT = 12
 
-        // YouTube's own account verdict, in the responseContext tracking params
-        // of every InnerTube response: {"key":"logged_in","value":"0"|"1"}.
-        // Tolerant of the pretty-printed spacing so it matches either form.
-        private val LOGGED_IN_TRACKING_PARAM =
-            Regex("\"logged_in\"\\s*,\\s*\"value\"\\s*:\\s*\"([01])\"")
-
         // Where a music history ping may carry the account's cookies. WEB_REMIX
         // /player returns its tracking URLs on s.youtube.com, with no cpn, c or
         // ver of their own [verified September 2026, signed-in probe]; the
@@ -163,61 +142,6 @@ class YouTubeRepository(private val context: Context) {
         fun uaForPlaybackUri(uri: android.net.Uri): String {
             val client = try { uri.getQueryParameter("c") } catch (_: Exception) { null }
             return userAgentForStreamClient(client, BROWSER_USER_AGENT)
-        }
-
-        /**
-         * Shared HTTP cache for the plain GETs this app makes - the channel
-         * Atom feeds above all, which carry ETag/Last-Modified and are
-         * re-fetched in full on every subscriptions refresh and by the
-         * six-hourly upload check. With a cache those become 304s.
-         *
-         * **Companion-level because it must be, not merely because it is
-         * cheaper.** OkHttp's Cache is a DiskLruCache holding an exclusive
-         * lock on its directory, and this app builds a YouTubeRepository per
-         * ViewModel. A per-instance cache would mean several Cache objects on
-         * one directory, which is corruption, not contention. One instance,
-         * shared by every client built from it.
-         *
-         * InnerTube calls are POSTs and are never cached by OkHttp, so this
-         * cannot serve a stale feed or a stale playlist.
-         */
-        private const val HTTP_CACHE_DIR_NAME = "yt_http_cache"
-        private const val HTTP_CACHE_BYTES = 10L * 1024 * 1024
-        @Volatile private var sharedHttpCache: okhttp3.Cache? = null
-        private val httpCacheLock = Any()
-
-        // Repository instances retain their own cookie jars and Local Only
-        // interceptors, but sockets and dispatcher threads are transport
-        // resources rather than account state. Sharing both avoids building a
-        // fresh connection pool and executor for every ViewModel.
-        private val sharedHttpDispatcher = Dispatcher().apply {
-            maxRequests = 32
-            maxRequestsPerHost = 8
-        }
-        private val sharedConnectionPool = ConnectionPool(
-            maxIdleConnections = 8,
-            keepAliveDuration = 5,
-            timeUnit = TimeUnit.MINUTES,
-        )
-
-        private fun httpCache(context: Context): okhttp3.Cache? {
-            sharedHttpCache?.let { return it }
-            return synchronized(httpCacheLock) {
-                sharedHttpCache ?: try {
-                    okhttp3.Cache(
-                        java.io.File(
-                            context.applicationContext.cacheDir,
-                            HTTP_CACHE_DIR_NAME,
-                        ),
-                        HTTP_CACHE_BYTES,
-                    ).also { sharedHttpCache = it }
-                } catch (e: Exception) {
-                    // A cache is an optimisation; losing it must not stop the
-                    // app making requests.
-                    KLog.w("YouTubeRepository", "HTTP cache unavailable: ${e.message}")
-                    null
-                }
-            }
         }
 
         /**
@@ -284,99 +208,22 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    // Local-only kill-switch: checked per request so flipping the setting
-    // needs no restart. newBuilder() copies interceptors, so this also guards
-    // streamResolveClient and the NewPipe downloader (same client instance).
-    private val okHttpClient = OkHttpClient.Builder()
-        .dispatcher(sharedHttpDispatcher)
-        .connectionPool(sharedConnectionPool)
-        .addInterceptor { chain ->
-            if (ThemePreferences.isLocalOnly(context)) {
-                throw java.io.IOException("Local only mode is on: network disabled")
-            }
-            chain.proceed(chain.request())
-        }
-        // After the kill-switch, so a request local-only mode refused is not
-        // counted as one YouTube saw.
-        .addInterceptor(YouTubeRequestLedger)
-        // Folds Google's rotated session cookies back into storage. Without it
-        // the login snapshot goes stale on its own and every authenticated
-        // endpoint quietly answers as signed out. A *network* interceptor
-        // because the rotation often rides on a 302 inside the chain, which an
-        // application interceptor never sees. See SessionRefreshInterceptor.
-        .addNetworkInterceptor(SessionRefreshInterceptor(sessionManager))
-        .apply { httpCache(context)?.let { cache(it) } }
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
     /** What the history /player calls must carry; see [PlayerSignatureTimestamp]. */
-    private val playerSignatureTimestamp = PlayerSignatureTimestamp(context, okHttpClient)
+    private val playerSignatureTimestamp = PlayerSignatureTimestamp(context, http.okHttpClient)
 
-    // Dedicated client for stream resolution. callTimeout is a hard wall-clock
-    // cap enforced by OkHttp itself — unlike withTimeoutOrNull, it cannot be
-    // defeated by a thread blocked inside execute().
-    private val streamResolveClient = okHttpClient.newBuilder()
-        .connectTimeout(4, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .callTimeout(8, TimeUnit.SECONDS)
-        .build()
-
-    // The client NewPipe's downloader runs on. It needs its own callTimeout for
-    // the same reason streamResolveClient has one, and the reason is sharper
-    // here: NewPipe's Downloader.execute() is a *blocking* call, and one
-    // extraction is many of them in sequence. [verified September 2026: a
-    // single fetchPage() of an ordinary track made eight requests — an
-    // ANDROID visitor_id mint, reel/reel_item_watch, a visionOS visitor_id and
-    // /player, sw.js, a WEB visitor_id, the WEB metadata /player and /next.]
-    // On the bare 30s connect/read budget of okHttpClient that is minutes of
-    // worst case, and because the thread is blocked inside execute() no
-    // coroutine timeout above it can cut it short. A per-request wall-clock cap
-    // is the only thing that bounds one of those requests at all; what bounds
-    // the *wait* is NewPipeAudioSource.withinBudget, which is where playback
-    // responsiveness actually comes from.
-    private val newPipeClient = okHttpClient.newBuilder()
-        .callTimeout(NEWPIPE_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        .build()
-
-    // Blocking NewPipe extractions are started here rather than in the caller's
-    // scope. A coroutine timeout can only free the *caller*: the extraction
-    // itself is uninterruptible until newPipeClient's callTimeout fires, and a
-    // child job would keep the parent's coroutineScope waiting for exactly the
-    // work it is trying to abandon. Detaching it is what lets the InnerTube
-    // fallback start on time. SupervisorJob so one failed extraction cannot
-    // cancel the scope every later one needs.
-    private val newPipeScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO,
-    )
-
-    // Stream resolution lives in data/stream. The repository builds the
-    // pieces and keeps the public calls where callers already find them.
-    private val visitorIdentity = VisitorIdentity(
-        context = context,
-        quickHttp = streamResolveClient,
-        pageHttp = okHttpClient,
-        webClientVersion = WEB_VERSION,
-        browserUserAgent = BROWSER_USER_AGENT,
-        region = ::contentRegion,
-    )
     private val playerSession = PlayerSession(
-        visitorIdentity,
-        PlayerApi(streamResolveClient, INNER_TUBE_API_KEY),
+        http.visitorIdentity,
+        PlayerApi(http.streamResolveClient, INNER_TUBE_API_KEY),
     )
     private val audioStreams = AudioStreamResolver(
-        identity = visitorIdentity,
+        identity = http.visitorIdentity,
         session = playerSession,
-        probe = StreamProbe(streamResolveClient, BROWSER_USER_AGENT),
-        newPipe = NewPipeAudioSource(youtubeService, newPipeScope),
+        probe = StreamProbe(http.streamResolveClient, BROWSER_USER_AGENT),
+        newPipe = NewPipeAudioSource(youtubeService, newPipeGateway.newPipeScope),
         newPipeBudgetMs = NEWPIPE_STREAM_BUDGET_MS,
         onResponse = ::harvestPlayerResponse,
         onLoudness = ::cacheTrackLoudness,
     )
-
-    init {
-        initializeNewPipe()
-    }
 
     /**
      * Forget everything cached in this instance that belonged to the previous
@@ -389,49 +236,6 @@ class YouTubeRepository(private val context: Context) {
         videoSearchExtractorCache.clear()
         videoSearchNextPageCache.clear()
         videoSearchContinuations.clear()
-    }
-
-    /**
-     * A NewPipe search extractor that ranks for [contentRegion].
-     *
-     * NewPipe keeps one global localization, defaulting to en-GB, so without
-     * this every NewPipe-backed search (videos, artists, albums, playlists)
-     * was British whatever the device said. Re-applied only when the region
-     * changed; the language stays English for the same reason as the InnerTube
-     * context (see ThemePreferences.resolveContentRegion).
-     */
-    private fun regionalSearchExtractor(
-        query: String,
-        filters: List<String>,
-        sort: String,
-    ): org.schabi.newpipe.extractor.search.SearchExtractor {
-        val region = contentRegion()
-        if (region != appliedNewPipeRegion) {
-            NewPipe.setupLocalization(
-                org.schabi.newpipe.extractor.localization.Localization("en", region),
-                org.schabi.newpipe.extractor.localization.ContentCountry(region)
-            )
-            appliedNewPipeRegion = region
-        }
-        return youtubeService.getSearchExtractor(query, filters, sort)
-    }
-
-    /** The country every InnerTube context and NewPipe search ranks for. */
-    private fun contentRegion(): String = ThemePreferences.resolveContentRegion(context)
-
-    private fun initializeNewPipe() {
-        if (isInitialized) return
-        synchronized(newPipeInitLock) {
-            if (!isInitialized) {
-                try {
-                    NewPipe.init(NewPipeDownloaderImpl(newPipeClient, sessionManager))
-                } catch (_: Exception) {
-                    // NewPipe may already have been initialized by another
-                    // process entry point. Its singleton is still usable.
-                }
-                isInitialized = true
-            }
-        }
     }
 
     // Cache extractors for pagination
@@ -466,7 +270,7 @@ class YouTubeRepository(private val context: Context) {
         // Read album links directly: StreamInfoItem loses that relationship.
         if (filter == FILTER_SONGS) {
             musicSearchContinuations.remove(query)
-            val response = postMusicMetadata("search", org.json.JSONObject()
+            val response = musicApi.postMusicMetadata("search", org.json.JSONObject()
                 .put("query", query).put("params", "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"))
             if (response != null) {
                 val songs = parseSongsFromInternalJson(response.toString())
@@ -480,7 +284,7 @@ class YouTubeRepository(private val context: Context) {
         }
         try {
             // YouTube Music search often uses the search extractor with specific filters
-            val searchExtractor = regionalSearchExtractor(query, listOf(filter), "")
+            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(filter), "")
             searchExtractor.fetchPage()
             
             // Cache for pagination
@@ -512,7 +316,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
+            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -534,13 +338,13 @@ class YouTubeRepository(private val context: Context) {
      * Note: Albums are often returned as PlaylistInfoItem in NewPipe for YouTube Music.
      */
     suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
-        postMusicMetadata("search", org.json.JSONObject().put("query", query)
+        musicApi.postMusicMetadata("search", org.json.JSONObject().put("query", query)
             .put("params", "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"))?.let { root ->
             val releases = MusicMetadata.releaseRows(root)
             if (releases.isNotEmpty()) return@withContext releases
         }
         try {
-            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_ALBUMS), "")
+            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_ALBUMS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -562,7 +366,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchArtists(query: String): List<ArtistItem> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_ARTISTS), "")
+            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_ARTISTS), "")
             searchExtractor.fetchPage()
             
             searchExtractor.initialPage.items.filterIsInstance<ChannelInfoItem>().mapNotNull { item ->
@@ -598,7 +402,7 @@ class YouTubeRepository(private val context: Context) {
             return@withContext null
         }
         try {
-            val body = browseMusic(artistId)
+            val body = musicApi.browseMusic(artistId)
                 ?: return@withContext null
             val root = org.json.JSONObject(body)
 
@@ -651,7 +455,7 @@ class YouTubeRepository(private val context: Context) {
                     ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
                     ?: continue
                 val moreId = more.optString("browseId").takeIf { it.isNotBlank() } ?: continue
-                var page = browseMusic(moreId, more.optString("params").takeIf { it.isNotBlank() })
+                var page = musicApi.browseMusic(moreId, more.optString("params").takeIf { it.isNotBlank() })
                     ?.let { org.json.JSONObject(it) } ?: continue
                 val seen = mutableSetOf<String>()
                 while (true) {
@@ -662,7 +466,7 @@ class YouTubeRepository(private val context: Context) {
                         KLog.w("YouTubeRepo", "Repeated music discography continuation for $artistId")
                         break
                     }
-                    page = postMusicMetadata("browse", org.json.JSONObject().put("continuation", token)) ?: break
+                    page = musicApi.postMusicMetadata("browse", org.json.JSONObject().put("continuation", token)) ?: break
                 }
             }
 
@@ -730,7 +534,7 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getArtistTasteSample(artistId: String): ArtistTasteSample? = withContext(Dispatchers.IO) {
         if (!artistId.startsWith("UC")) return@withContext null
         try {
-            val root = org.json.JSONObject(browseMusic(artistId) ?: return@withContext null)
+            val root = org.json.JSONObject(musicApi.browseMusic(artistId) ?: return@withContext null)
             val songs = mutableListOf<Song>()
             val shelves = mutableListOf<org.json.JSONObject>()
             findObjectsByKey(root, "musicShelfRenderer", shelves)
@@ -777,7 +581,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getSongAlbumRef(videoId: String): SongAlbumRef? = withContext(Dispatchers.IO) {
         try {
-            val root = postMusicMetadata("next", org.json.JSONObject().put("videoId", videoId))
+            val root = musicApi.postMusicMetadata("next", org.json.JSONObject().put("videoId", videoId))
                 ?: return@withContext null
             val panels = MusicMetadata.objects(root, "playlistPanelVideoRenderer")
             val self = panels.firstOrNull {
@@ -798,7 +602,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getAlbumSongs(browseId: String): List<Song> = withContext(Dispatchers.IO) {
         try {
-            val body = browseMusic(browseId) ?: return@withContext emptyList()
+            val body = musicApi.browseMusic(browseId) ?: return@withContext emptyList()
             val root = org.json.JSONObject(body)
             val songs = MusicMetadata.albumSongs(root, browseId)
             // Signed out, the page lists each track's video where it has one.
@@ -816,47 +620,11 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    /**
-     * POST to InnerTube /browse with the WEB_REMIX client. Works anonymously;
-     * cookies are attached when logged in so results are personalized.
-     * Unlike [fetchInternalApi], this does NOT require a login.
-     */
-    private fun browseMusic(browseId: String, params: String? = null): String? =
-        postMusicMetadata("browse", org.json.JSONObject().put("browseId", browseId).apply {
-            if (params != null) put("params", params)
-        })?.toString()
-
-    /**
-     * Bind a request to the login it is being sent for.
-     *
-     * The `Cookie` header and the per-origin SAPISIDHASH both come from the
-     * same [YouTubeSession], and the session rides along as a request tag so
-     * [SessionRefreshInterceptor] folds Google's rotated cookies back into the
-     * profile that made the call rather than into whichever profile happens to
-     * be active when the response lands.
-     *
-     * A null session sends the request signed out, which is deliberate for the
-     * browse ids that read fine anonymously - an empty Cookie or Authorization
-     * header is worse than no header at all.
-     */
-    private fun okhttp3.Request.Builder.authenticate(
-        session: YouTubeSession?,
-        origin: String = "https://music.youtube.com",
-    ): okhttp3.Request.Builder {
-        if (session == null) return this
-        addHeader("Cookie", session.cookies)
-        YouTubeAuthUtils.getAuthorizationHeader(session.cookies, origin)?.let {
-            addHeader("Authorization", it)
-            addHeader("X-Goog-AuthUser", "0")
-        }
-        return tag(YouTubeSession::class.java, session)
-    }
-
     /** Metadata-only WEB_REMIX calls, public when signed out. Never playback. */
     /** A YouTube Music browse page (FEmusic_home, _explore, _charts, _new_releases, a mood) as shelves. */
     suspend fun getMusicShelves(browseId: String, params: String? = null): MusicShelfPage? =
         withContext(Dispatchers.IO) {
-            postMusicMetadata("browse", org.json.JSONObject().put("browseId", browseId).apply {
+            musicApi.postMusicMetadata("browse", org.json.JSONObject().put("browseId", browseId).apply {
                 if (params != null) put("params", params)
             })?.let(::parseMusicShelves)
         }
@@ -876,7 +644,7 @@ class YouTubeRepository(private val context: Context) {
                 org.json.JSONObject().put("selectedValues", org.json.JSONArray().put(country))
             )
         }
-        postMusicMetadata("browse", payload)?.let(::parseMusicShelves)?.shelves.orEmpty()
+        musicApi.postMusicMetadata("browse", payload)?.let(::parseMusicShelves)?.shelves.orEmpty()
             .flatMap { it.items }
             .filterIsInstance<MusicShelfItem.Artist>()
             .map { it.artist }
@@ -884,41 +652,7 @@ class YouTubeRepository(private val context: Context) {
     }
 
     suspend fun getMusicShelvesContinuation(token: String): MusicShelfPage? = withContext(Dispatchers.IO) {
-        postMusicMetadata("browse", org.json.JSONObject().put("continuation", token))?.let(::parseMusicShelves)
-    }
-
-    private fun postMusicMetadata(endpoint: String, payload: org.json.JSONObject): org.json.JSONObject? {
-        return try {
-            val session = sessionManager.captureSession()
-            val client = org.json.JSONObject().put("clientName", "WEB_REMIX")
-                .put("clientVersion", WEB_REMIX_VERSION).put("hl", "en").put("gl", contentRegion())
-            visitorIdentity.cachedOrNull()?.let { client.put("visitorData", it) }
-            payload.put("context", org.json.JSONObject().put("client", client))
-            val builder = okhttp3.Request.Builder()
-                .url("https://music.youtube.com/youtubei/v1/$endpoint")
-                .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                .addHeader("User-Agent", BROWSER_USER_AGENT)
-                .addHeader("Origin", "https://music.youtube.com")
-                .addHeader("X-YouTube-Client-Name", "67")
-                .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
-            visitorIdentity.cachedOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
-            builder.authenticate(session)
-            okHttpClient.newCall(builder.build()).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful || body.isBlank()) {
-                    KLog.w("YouTubeRepo", "Music $endpoint HTTP ${response.code}: ${body.take(200)}")
-                    null
-                } else {
-                    noteSessionState(body, session)
-                    org.json.JSONObject(body).takeUnless { it.has("error") }
-                }
-            }
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Music $endpoint metadata request failed", e)
-            null
-        }
+        musicApi.postMusicMetadata("browse", org.json.JSONObject().put("continuation", token))?.let(::parseMusicShelves)
     }
 
     /**
@@ -927,7 +661,7 @@ class YouTubeRepository(private val context: Context) {
     suspend fun searchNext(query: String): List<Song> = withContext(Dispatchers.IO) {
         if (musicSearchContinuations.containsKey(query)) {
             val token = musicSearchContinuations[query] ?: return@withContext emptyList()
-            val root = postMusicMetadata("search", org.json.JSONObject().put("continuation", token))
+            val root = musicApi.postMusicMetadata("search", org.json.JSONObject().put("continuation", token))
                 ?: return@withContext emptyList()
             val songs = parseSongsFromInternalJson(root.toString())
             musicSearchContinuations[query] = MusicMetadata.continuation(root)?.takeUnless { it == token }
@@ -1044,7 +778,7 @@ class YouTubeRepository(private val context: Context) {
     // The visitorData token itself lives in VisitorIdentity.
 
     /** Warm the identity off the critical path; see [VisitorIdentity.prefetch]. */
-    suspend fun prefetchVisitorData() = visitorIdentity.prefetch()
+    suspend fun prefetchVisitorData() = http.visitorIdentity.prefetch()
 
     /**
      * Replace the identity because *playback* failed, not resolution.
@@ -1062,7 +796,7 @@ class YouTubeRepository(private val context: Context) {
         // Every cached ladder holds URLs signed before the failure. They must
         // not win the retry, even when there is no token to replace.
         VideoStreamResolutionCache.clear()
-        visitorIdentity.replaceCurrent()
+        http.visitorIdentity.replaceCurrent()
     }
 
 
@@ -1079,7 +813,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             // Fetch personalized home page content
             KLog.d("YouTubeRepo", "Fetching personalized recommendations from FEmusic_home")
-            val jsonResponse = fetchInternalApi("FEmusic_home")
+            val jsonResponse = musicApi.fetchInternalApi("FEmusic_home")
             
             if (jsonResponse.isEmpty()) {
                 KLog.e("YouTubeRepo", "Empty response from FEmusic_home")
@@ -1169,7 +903,7 @@ class YouTubeRepository(private val context: Context) {
                         "clientName": "WEB_REMIX",
                         "clientVersion": "$WEB_REMIX_VERSION",
                         "hl": "en",
-                        "gl": "${contentRegion()}"
+                        "gl": "${http.contentRegion()}"
                     }
                 },
                 "videoId": "$videoId",
@@ -1188,7 +922,7 @@ class YouTubeRepository(private val context: Context) {
         // Personalize the radio when logged in; anonymous works fine too.
         requestBuilder.authenticate(sessionManager.captureSession())
 
-        val response = okHttpClient.newCall(requestBuilder.build()).execute()
+        val response = http.okHttpClient.newCall(requestBuilder.build()).execute()
         val body = response.use { it.body?.string() }
         if (body.isNullOrEmpty()) return emptyList()
 
@@ -1217,7 +951,7 @@ class YouTubeRepository(private val context: Context) {
             // Fetch Library (Liked Playlists), following grid continuations so
             // large libraries come back in full rather than just the first page.
             // Note: FEmusic_liked_playlists gets playlists you've saved/liked
-            var json = fetchInternalApi("FEmusic_liked_playlists")
+            var json = musicApi.fetchInternalApi("FEmusic_liked_playlists")
             var pageCount = 0
             val maxPages = 20
             while (json.isNotEmpty() && pageCount < maxPages) {
@@ -1227,7 +961,7 @@ class YouTubeRepository(private val context: Context) {
                 KLog.d("YouTubeRepo", "Library playlists page $pageCount: ${parsed.size} items")
                 if (parsed.isEmpty()) break
                 val token = extractContinuationToken(json) ?: break
-                json = fetchContinuation(token)
+                json = musicApi.fetchContinuation(token)
             }
 
             // The library grid can include "Your Likes" (VLLM) which we already synthesized
@@ -1255,9 +989,9 @@ class YouTubeRepository(private val context: Context) {
             
             do {
                 val json = if (continuationToken == null) {
-                    fetchInternalApi("FEmusic_liked_videos")
+                    musicApi.fetchInternalApi("FEmusic_liked_videos")
                 } else {
-                    fetchContinuation(continuationToken)
+                    musicApi.fetchContinuation(continuationToken)
                 }
                 
                 if (json.isEmpty()) break
@@ -1282,57 +1016,6 @@ class YouTubeRepository(private val context: Context) {
         
         // Fallback to NewPipe method
         getPlaylistInternal("LM")
-    }
-    
-    /**
-     * Fetch continuation page using continuation token.
-     */
-    private fun fetchContinuation(continuationToken: String): String {
-        // Account headers are conditional, the call is not. [verified August
-        // 2026: a public playlist's continuation chain walks to the end with no
-        // cookies, no auth header and no visitorData.] Returning "" without a
-        // session made every signed-out continuation look like a failed fetch,
-        // which capped public playlists at their first page just as the parser
-        // gap did for signed-in ones - the same symptom from a second cause.
-        val session = sessionManager.captureSession()
-
-        val jsonBody = """
-            {
-                "context": {
-                    "client": {
-                        "clientName": "WEB_REMIX",
-                        "clientVersion": "$WEB_REMIX_VERSION",
-                        "hl": "en",
-                        "gl": "${contentRegion()}"
-                    }
-                },
-                "continuation": "$continuationToken"
-            }
-        """.trimIndent()
-
-        val request = okhttp3.Request.Builder()
-            .url("https://music.youtube.com/youtubei/v1/browse")
-            .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("User-Agent", BROWSER_USER_AGENT)
-            .addHeader("Origin", "https://music.youtube.com")
-            .authenticate(session)
-            .build()
-
-        return try {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    YouTubeRateLimit.note(response.code, request.url.toString(), response.header("Retry-After"))
-                    KLog.w("YouTubeRepo", "Music continuation failed: HTTP ${response.code}")
-                    return ""
-                }
-                val body = response.body?.string().orEmpty()
-                if (body.isBlank() || org.json.JSONObject(body).has("error")) return ""
-                body.also { noteSessionState(it, session) }
-            }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Music continuation request failed", e)
-            ""
-        }
     }
     
     suspend fun getPlaylist(playlistId: String): List<Song> = withContext(Dispatchers.IO) {
@@ -1442,7 +1125,7 @@ class YouTubeRepository(private val context: Context) {
         }
         val allSongs = mutableListOf<Song>()
         val seenTokens = mutableSetOf<String>()
-        var json = browseMusic(browseId)
+        var json = musicApi.browseMusic(browseId)
             ?: return PlaylistLoadResult(emptyList(), complete = false)
 
         while (true) {
@@ -1454,7 +1137,7 @@ class YouTubeRepository(private val context: Context) {
                 KLog.w("YouTubeRepo", "Repeated playlist continuation for $playlistId")
                 return PlaylistLoadResult(allSongs, complete = false)
             }
-            json = fetchContinuation(token)
+            json = musicApi.fetchContinuation(token)
             if (json.isEmpty()) {
                 KLog.w(
                     "YouTubeRepo",
@@ -1505,7 +1188,7 @@ class YouTubeRepository(private val context: Context) {
         val session = sessionManager.captureSession() ?: return@withContext
 
         try {
-            val jsonResponse = fetchInternalApi("account/account_menu")
+            val jsonResponse = musicApi.fetchInternalApi("account/account_menu")
 
             if (jsonResponse.isEmpty()) {
                 KLog.w("YouTubeRepo", "fetchAccountInfo: empty response from account/account_menu")
@@ -1642,84 +1325,6 @@ class YouTubeRepository(private val context: Context) {
             ?.takeIf { it.isFinite() }
 
     // --- Internal API Helper ---
-
-    private fun fetchInternalApi(endpoint: String): String {
-        val session = sessionManager.captureSession() ?: return ""
-        val isBrowse = !endpoint.contains("/") // simple check: browseId vs endpoint path
-        
-        val url = if (isBrowse) {
-            "https://music.youtube.com/youtubei/v1/browse"
-        } else {
-            "https://music.youtube.com/youtubei/v1/$endpoint"
-        }
-        
-        // Construct complete JSON body for WEB_REMIX client
-        val jsonBody = if (isBrowse) {
-            """
-                {
-                    "context": {
-                        "client": {
-                            "clientName": "WEB_REMIX",
-                            "clientVersion": "$WEB_REMIX_VERSION",
-                            "hl": "en",
-                            "gl": "${contentRegion()}"
-                        }
-                    },
-                    "browseId": "$endpoint"
-                }
-            """.trimIndent()
-        } else {
-             """
-                {
-                    "context": {
-                        "client": {
-                            "clientName": "WEB_REMIX",
-                            "clientVersion": "$WEB_REMIX_VERSION",
-                            "hl": "en",
-                            "gl": "${contentRegion()}"
-                        }
-                    }
-                }
-            """.trimIndent()
-        }
-
-        val request = okhttp3.Request.Builder()
-            .url(url)
-            .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .authenticate(session)
-            .addHeader("User-Agent", BROWSER_USER_AGENT)
-            .addHeader("Origin", "https://music.youtube.com")
-            // Client name 67 is WEB_REMIX. Sent for the same reason the WEB
-            // calls now send theirs: a client that never identifies itself is
-            // the shape anti-abuse looks for. The visitor id rides as a header
-            // rather than in the body because this endpoint's context is built
-            // from raw JSON strings in five places; the header carries the same
-            // identity without touching any of them.
-            .addHeader("X-YouTube-Client-Name", "67")
-            .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
-            .apply {
-                visitorIdentity.cachedOrNull()?.let { addHeader("X-Goog-Visitor-Id", it) }
-            }
-            .build()
-
-        return try {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    YouTubeRateLimit.note(
-                        response.code,
-                        "music browse $endpoint",
-                        response.header("Retry-After"),
-                    )
-                    KLog.w("YouTubeRepo", "music browse $endpoint HTTP ${response.code}")
-                    return ""
-                }
-                (response.body?.string() ?: "").also { noteSessionState(it, session) }
-            }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Music browse request failed", e)
-            ""
-        }
-    }
 
     private fun parseSongsFromInternalJson(
         json: String,
@@ -2055,7 +1660,7 @@ class YouTubeRepository(private val context: Context) {
             // play). Never a fallback literal: a hardcoded visitor id is a
             // stranger's session, and without a token the play is skipped
             // rather than filed under one.
-            val visitorData = visitorIdentity.current().ifEmpty {
+            val visitorData = http.visitorIdentity.current().ifEmpty {
                 KLog.w("YouTubeRepo", "History sync: no visitorData, skipped $videoId")
                 return@withContext
             }
@@ -2073,7 +1678,7 @@ class YouTubeRepository(private val context: Context) {
                         .put("clientName", clientName)
                         .put("clientVersion", clientVersion)
                         .put("hl", "en")
-                        .put("gl", contentRegion())
+                        .put("gl", http.contentRegion())
                         .put("visitorData", visitorData)))
                     .put("videoId", videoId)
                     .put("cpn", cpn)
@@ -2092,7 +1697,7 @@ class YouTubeRepository(private val context: Context) {
                     .addHeader("X-YouTube-Client-Version", clientVersion)
                     .addHeader("X-Goog-Visitor-Id", visitorData)
                     .build()
-                return okHttpClient.newCall(playerRequest).execute().use { response ->
+                return http.okHttpClient.newCall(playerRequest).execute().use { response ->
                     response.body?.string().also {
                         if (it.isNullOrEmpty()) {
                             KLog.e("YouTubeRepo", "History sync: /player HTTP ${response.code} with an empty body for $videoId")
@@ -2178,7 +1783,7 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("Referer", "https://music.youtube.com/watch?v=$videoId")
                 .build()
 
-            val trackingResponse = okHttpClient.newCall(trackingRequest).execute()
+            val trackingResponse = http.okHttpClient.newCall(trackingRequest).execute()
             if (trackingResponse.isSuccessful) {
                 KLog.d("YouTubeRepo", "History sync: ping accepted for $videoId")
             } else {
@@ -2227,7 +1832,7 @@ class YouTubeRepository(private val context: Context) {
 
         try {
             // Use YouTube videos filter (not music_videos)
-            val searchExtractor = regionalSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
+            val searchExtractor = newPipeGateway.regionalSearchExtractor(effectiveQuery, listOf(FILTER_YOUTUBE_VIDEOS), "")
             searchExtractor.fetchPage()
 
             // Cache for pagination (see searchVideosNext)
@@ -2255,8 +1860,8 @@ class YouTubeRepository(private val context: Context) {
             val key = VideoSearchKey(dateFilter.applyTo(query), sort)
             if (videoSearchContinuations.containsKey(key)) {
                 val token = videoSearchContinuations[key] ?: return@withContext emptyList()
-                val response = postWatchApi("search", org.json.JSONObject()
-                    .put("context", webContext()).put("continuation", token))
+                val response = webApi.postWatchApi("search", org.json.JSONObject()
+                    .put("context", webApi.webContext()).put("continuation", token))
                     ?: return@withContext emptyList()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 val page = parseVideoSearchPage(response)
@@ -2320,7 +1925,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun searchVideoPlaylists(query: String): List<VideoPlaylist> = withContext(Dispatchers.IO) {
         try {
-            val searchExtractor = regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
+            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
             searchExtractor.fetchPage()
 
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
@@ -2355,7 +1960,7 @@ class YouTubeRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 val searchExtractor =
-                    regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
+                    newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
                 searchExtractor.fetchPage()
 
                 searchExtractor.initialPage.items
@@ -2402,10 +2007,10 @@ class YouTubeRepository(private val context: Context) {
     private fun searchVideosInnerTube(query: String, sort: VideoSearchSort): VideoFeedPage? {
         return try {
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("query", query)
                 .put("params", buildVideoSearchParams(sort))
-            val response = postWatchApi("search", body) ?: return null
+            val response = webApi.postWatchApi("search", body) ?: return null
             parseVideoSearchPage(response)
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "InnerTube video search failed", e)
@@ -2554,7 +2159,7 @@ class YouTubeRepository(private val context: Context) {
                         "clientName": "WEB",
                         "clientVersion": "$WEB_VERSION",
                         "hl": "en",
-                        "gl": "${contentRegion()}",
+                        "gl": "${http.contentRegion()}",
                         "originalUrl": "https://www.youtube.com/",
                         "platform": "DESKTOP"
                     },
@@ -2583,7 +2188,7 @@ class YouTubeRepository(private val context: Context) {
             // users can deliberately attach its release ring buffer to a bug
             // report, and these values may carry account/feed information.
             KLog.d("YouTubeRepo", "Making personalized video request")
-            val response = okHttpClient.newCall(request).execute()
+            val response = http.okHttpClient.newCall(request).execute()
             val responseBody = response.body?.string() ?: return@withContext empty
             response.close()
 
@@ -2639,9 +2244,9 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getVideoFeedContinuation(continuation: String): VideoFeedPage = withContext(Dispatchers.IO) {
         try {
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("continuation", continuation)
-            val raw = postWatchApi("browse", body) ?: return@withContext VideoFeedPage(emptyList())
+            val raw = webApi.postWatchApi("browse", body) ?: return@withContext VideoFeedPage(emptyList())
             val root = org.json.JSONObject(raw)
 
             val videos = mutableListOf<VideoItem>()
@@ -2684,10 +2289,10 @@ class YouTubeRepository(private val context: Context) {
     ): VideoFeedPage? = withContext(Dispatchers.IO) {
         if (session == null) return@withContext null
         try {
-            val body = org.json.JSONObject().put("context", webContext())
+            val body = org.json.JSONObject().put("context", webApi.webContext())
             if (continuation == null) body.put("browseId", "FEhistory")
             else body.put("continuation", continuation)
-            val raw = postWatchApi("browse", body, session)
+            val raw = webApi.postWatchApi("browse", body, session)
                 ?.takeIf { it.isNotBlank() } ?: return@withContext null
             val root = org.json.JSONObject(raw)
             if (root.has("error")) return@withContext null
@@ -2822,11 +2427,11 @@ class YouTubeRepository(private val context: Context) {
         val session = sessionManager.captureSession()
         if (session != null) {
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("params", "CA8%3D")
                 .put("inputType", "REEL_WATCH_INPUT_TYPE_SEEDLESS")
                 .put("disablePlayerResponse", true)
-            val raw = postWatchApi("reel/reel_item_watch", body, session)
+            val raw = webApi.postWatchApi("reel/reel_item_watch", body, session)
                 ?: throw java.io.IOException("Shorts recommendations request failed")
             val root = org.json.JSONObject(raw)
             if (LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) == "0") {
@@ -2848,9 +2453,9 @@ class YouTubeRepository(private val context: Context) {
             .firstOrNull { it.channelName.isNotBlank() && it.channelName != "Unknown Channel" }
             ?.channelName
         val body = org.json.JSONObject()
-            .put("context", webContext())
+            .put("context", webApi.webContext())
             .put("query", seedChannel?.let { "$it shorts" } ?: "trending shorts")
-        val raw = postWatchApi("search", body)
+        val raw = webApi.postWatchApi("search", body)
             ?: throw java.io.IOException("Shorts search request failed")
         parseShortsLockups(org.json.JSONObject(raw))
     }
@@ -2866,9 +2471,9 @@ class YouTubeRepository(private val context: Context) {
 
     private fun requestShortsSequence(sequenceParams: String, session: YouTubeSession?): ShortsFeedPage {
         val body = org.json.JSONObject()
-            .put("context", webContext())
+            .put("context", webApi.webContext())
             .put("sequenceParams", sequenceParams)
-        val raw = postWatchApi("reel/reel_watch_sequence", body, session)
+        val raw = webApi.postWatchApi("reel/reel_watch_sequence", body, session)
             ?: throw java.io.IOException("Shorts sequence request failed")
         if (session != null &&
             LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) == "0") {
@@ -2943,7 +2548,7 @@ class YouTubeRepository(private val context: Context) {
         // signed-out shell with no playlists in it.
         if (!sessionManager.isLoggedIn()) return@withContext emptyList()
         try {
-            val json = fetchYouTubeBrowse("FEplaylist_aggregation")
+            val json = webApi.fetchYouTubeBrowse("FEplaylist_aggregation")
                 .takeIf { it.isNotEmpty() } ?: return@withContext emptyList()
             val root = org.json.JSONObject(json)
             val lockups = mutableListOf<org.json.JSONObject>()
@@ -2978,10 +2583,10 @@ class YouTubeRepository(private val context: Context) {
                     page.nextPage?.takeIf { page.hasNextPage() }
                         ?.let { VideoPlaylistCursor.NewPipe(continuation.extractor, it) })
             }
-            val body = org.json.JSONObject().put("context", webContext())
+            val body = org.json.JSONObject().put("context", webApi.webContext())
             if (continuation is VideoPlaylistCursor.Browse) body.put("continuation", continuation.token)
             else body.put("browseId", if (playlistId.startsWith("VL")) playlistId else "VL$playlistId")
-            val raw = postWatchApi("browse", body, session)
+            val raw = webApi.postWatchApi("browse", body, session)
             val root = raw?.takeIf { it.isNotBlank() }?.let { org.json.JSONObject(it) }
                 ?.takeUnless { it.has("error") }
             if (root != null) {
@@ -3063,7 +2668,7 @@ class YouTubeRepository(private val context: Context) {
         val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
         val videos = mutableListOf<VideoItem>()
         val seenTokens = mutableSetOf<String>()
-        var json = fetchYouTubeBrowse(browseId)
+        var json = webApi.fetchYouTubeBrowse(browseId)
         if (json.isEmpty()) return VideoPlaylistLoadResult(emptyList(), complete = false)
 
         return try {
@@ -3076,7 +2681,7 @@ class YouTubeRepository(private val context: Context) {
                     KLog.w("YouTubeRepo", "Repeated video playlist continuation for $playlistId")
                     return VideoPlaylistLoadResult(videos, complete = false)
                 }
-                json = fetchYouTubeBrowseContinuation(token)
+                json = webApi.fetchYouTubeBrowseContinuation(token)
                 if (json.isEmpty()) {
                     KLog.w(
                         "YouTubeRepo",
@@ -3104,14 +2709,6 @@ class YouTubeRepository(private val context: Context) {
             tokens.firstOrNull()
         }.firstOrNull()
     }
-
-    private fun fetchYouTubeBrowseContinuation(token: String): String =
-        postWatchApi(
-            "browse",
-            org.json.JSONObject()
-                .put("context", webContext())
-                .put("continuation", token)
-        ).orEmpty()
 
     /**
      * A playlist's videos through NewPipe's playlist page, as the last resort
@@ -3193,7 +2790,7 @@ class YouTubeRepository(private val context: Context) {
             val listId = playlistId.removePrefix("VL").takeIf { it.isNotBlank() }
                 ?: return@withContext null
             try {
-                val json = fetchYouTubeBrowse("VL$listId").takeIf { it.isNotEmpty() }
+                val json = webApi.fetchYouTubeBrowse("VL$listId").takeIf { it.isNotEmpty() }
                     ?: return@withContext null
                 val root = org.json.JSONObject(json)
                 parseModernPlaylistHeader(root, listId)
@@ -3909,90 +3506,12 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    /**
-     * WEB `/browse` on www.youtube.com, signed when there is a session and
-     * anonymous when there is not.
-     *
-     * **It used to return an empty string the moment cookies were missing**,
-     * which made every public read built on it look like empty content rather
-     * than a missing session: that is what left video-mode playlists reading
-     * "No videos in this playlist" for signed-out users. Public browse ids
-     * (`VL<playlistId>`, a channel id) answer 200 anonymously - verified
-     * August 2026 - so the account headers are what is conditional, not the
-     * call. Anything account-scoped (`FEplaylist_aggregation`, `FEhistory`)
-     * must gate on [SessionManager.isLoggedIn] at its own call site instead,
-     * because signed out this returns a perfectly valid shell with nothing in
-     * it rather than an error.
-     */
-    private fun fetchYouTubeBrowse(browseId: String): String {
-        val session = sessionManager.captureSession()
-        val url = "https://www.youtube.com/youtubei/v1/browse?key=$INNER_TUBE_API_KEY"
-
-        val visitorData = visitorIdentity.cachedOrNull()
-
-        // Built through JSONObject rather than string interpolation so the
-        // optional visitorData cannot produce malformed JSON.
-        val jsonBody = org.json.JSONObject()
-            .put(
-                "context",
-                org.json.JSONObject().put(
-                    "client",
-                    org.json.JSONObject()
-                        .put("clientName", "WEB")
-                        .put("clientVersion", WEB_VERSION)
-                        .put("hl", "en")
-                        .put("gl", contentRegion())
-                        .apply { visitorData?.let { put("visitorData", it) } }
-                )
-            )
-            .put("browseId", browseId)
-            .toString()
-
-        val request = okhttp3.Request.Builder()
-            .url(url)
-            .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("User-Agent", BROWSER_USER_AGENT)
-            .addHeader("Origin", "https://www.youtube.com")
-            .addHeader("X-YouTube-Client-Name", "1")
-            .addHeader("X-YouTube-Client-Version", WEB_VERSION)
-            .apply {
-                visitorData?.let { addHeader("X-Goog-Visitor-Id", it) }
-            }
-            // Signed out this attaches nothing, which is the difference between
-            // a public read and a malformed one: an empty Cookie or
-            // Authorization header is worse than no header at all.
-            .authenticate(session, "https://www.youtube.com")
-            .build()
-
-        return try {
-            okHttpClient.newCall(request).execute().use { response ->
-                // This used to return the body whatever the status, so a 429
-                // was handed to the parsers as a string, parsed to nothing, and
-                // surfaced as empty content - indistinguishable from a real
-                // empty result, and invisible to everything upstream.
-                if (!response.isSuccessful) {
-                    YouTubeRateLimit.note(
-                        response.code,
-                        "browse $browseId",
-                        response.header("Retry-After"),
-                    )
-                    KLog.w("YouTubeRepo", "browse $browseId HTTP ${response.code}")
-                    return ""
-                }
-                response.body?.string() ?: ""
-            }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error in fetchYouTubeBrowse", e)
-            ""
-        }
-    }
-
     private fun getChannelAvatarUrl(channelId: String?): String? {
         if (channelId.isNullOrBlank()) return null
         
         try {
             // Use regular YouTube browse for channels/handles
-            val json = fetchYouTubeBrowse(channelId).takeIf { it.isNotEmpty() } ?: return null
+            val json = webApi.fetchYouTubeBrowse(channelId).takeIf { it.isNotEmpty() } ?: return null
             val root = org.json.JSONObject(json)
             
             val header = root.optJSONObject("header")
@@ -4459,97 +3978,6 @@ class YouTubeRepository(private val context: Context) {
     fun isLoggedIn(): Boolean = sessionManager.isLoggedIn()
 
     /**
-     * The WEB client context for www.youtube.com calls.
-     *
-     * Carries [VisitorIdentity.cachedOrNull] when there is one. The app mints a
-     * visitorData, persists it, TTLs it and re-mints it when the bot check
-     * flags it - and for a long time used it on exactly one endpoint family
-     * (/player). Every browse, next, search and engagement call went out with
-     * no visitor identity at all, so from YouTube's side each was a brand new
-     * anonymous client, hundreds per session from one address. That is a large
-     * part of what makes a device's standing degrade over a session rather than
-     * all at once.
-     */
-    private fun webContext(): org.json.JSONObject =
-        org.json.JSONObject().put(
-            "client",
-            org.json.JSONObject()
-                .put("clientName", "WEB")
-                .put("clientVersion", WEB_VERSION)
-                .put("hl", "en")
-                .put("gl", contentRegion())
-                .apply {
-                    visitorIdentity.cachedOrNull()?.let { put("visitorData", it) }
-                }
-        )
-
-    /**
-     * POST to an InnerTube endpoint on www.youtube.com, attaching cookies and
-     * SAPISIDHASH when logged in. Returns the raw response body or null on failure.
-     */
-    private fun postWatchApi(
-        endpoint: String,
-        body: org.json.JSONObject,
-        session: YouTubeSession? = sessionManager.captureSession()
-    ): String? {
-        val currentSession = session?.let { sessionManager.currentSession(it) ?: return null }
-        val builder = okhttp3.Request.Builder()
-            .url("https://www.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .addHeader("User-Agent", BROWSER_USER_AGENT)
-            .addHeader("Origin", "https://www.youtube.com")
-            .addHeader("X-Origin", "https://www.youtube.com")
-            // A real WEB client always sends these; their absence alongside a
-            // missing visitor id is most of what makes this traffic look
-            // synthetic. Client name 1 is WEB.
-            .addHeader("X-YouTube-Client-Name", "1")
-            .addHeader("X-YouTube-Client-Version", WEB_VERSION)
-
-        visitorIdentity.cachedOrNull()?.let { builder.addHeader("X-Goog-Visitor-Id", it) }
-
-        builder.authenticate(currentSession, "https://www.youtube.com")
-
-        return try {
-            okHttpClient.newCall(builder.build()).execute().use { response ->
-                if (response.isSuccessful) {
-                    response.body?.string()?.also { noteSessionState(it, currentSession) }
-                } else {
-                    YouTubeRateLimit.note(
-                        response.code,
-                        "watch api $endpoint",
-                        response.header("Retry-After"),
-                    )
-                    KLog.w("YouTubeRepo", "watch api $endpoint HTTP ${response.code}")
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "watch api $endpoint failed", e)
-            null
-        }
-    }
-
-    /**
-     * Read YouTube's own verdict on the session out of a response.
-     *
-     * Every InnerTube response reports `logged_in` in its responseContext
-     * tracking params. When the app sent cookies and a SAPISIDHASH and still
-     * gets `0` back, the stored session is dead - which used to surface only as
-     * an empty subscriptions tab and a blank account name, with no hint that
-     * signing in again was what was needed. A `1` clears the flag, so a session
-     * revived by a cookie rotation heals itself without a round trip through
-     * the login screen.
-     */
-    private fun noteSessionState(body: String, session: YouTubeSession?) {
-        if (session == null) return
-        val match = LOGGED_IN_TRACKING_PARAM.find(body) ?: return
-        // Against the session the request went out with, not whoever is active
-        // now: a response that outlives an account switch used to badge the
-        // profile the user had just switched to as expired.
-        sessionManager.noteSessionExpired(session, match.groupValues[1] == "0")
-    }
-
-    /**
      * Fetch like count/status, subscription state and the comments entry token
      * for a video. likeStatus/isSubscribed are only meaningful when logged in.
      */
@@ -4660,9 +4088,9 @@ class YouTubeRepository(private val context: Context) {
 
     private fun fetchWatchNextRoot(videoId: String): org.json.JSONObject? {
         val body = org.json.JSONObject()
-            .put("context", webContext())
+            .put("context", webApi.webContext())
             .put("videoId", videoId)
-        val raw = postWatchApi("next", body) ?: return null
+        val raw = webApi.postWatchApi("next", body) ?: return null
         return org.json.JSONObject(raw)
     }
 
@@ -4750,9 +4178,9 @@ class YouTubeRepository(private val context: Context) {
     suspend fun pollLiveChat(continuation: String): LiveChatPage? = withContext(Dispatchers.IO) {
         try {
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("continuation", continuation)
-            val raw = postWatchApi("live_chat/get_live_chat", body) ?: return@withContext null
+            val raw = webApi.postWatchApi("live_chat/get_live_chat", body) ?: return@withContext null
             val chat = org.json.JSONObject(raw)
                 .optJSONObject("continuationContents")
                 ?.optJSONObject("liveChatContinuation")
@@ -4871,7 +4299,7 @@ class YouTubeRepository(private val context: Context) {
             }
             try {
                 val body = org.json.JSONObject()
-                    .put("context", webContext())
+                    .put("context", webApi.webContext())
                     .put("params", params)
                     .put(
                         "richMessage",
@@ -4881,7 +4309,7 @@ class YouTubeRepository(private val context: Context) {
                         )
                     )
                     .put("clientMessageId", java.util.UUID.randomUUID().toString())
-                val raw = postWatchApi("live_chat/send_message", body)
+                val raw = webApi.postWatchApi("live_chat/send_message", body)
                     ?: return@withContext LiveChatSendResult(false, error = "Message not sent")
                 val root = org.json.JSONObject(raw)
 
@@ -4920,9 +4348,9 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getLiveMetadata(videoId: String): LiveMetadata? = withContext(Dispatchers.IO) {
         try {
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("videoId", videoId)
-            val raw = postWatchApi("updated_metadata", body) ?: return@withContext null
+            val raw = webApi.postWatchApi("updated_metadata", body) ?: return@withContext null
             val root = org.json.JSONObject(raw)
 
             val viewCounts = mutableListOf<org.json.JSONObject>()
@@ -5288,7 +4716,7 @@ class YouTubeRepository(private val context: Context) {
                 .url(track.vttUrl)
                 .addHeader("User-Agent", BROWSER_USER_AGENT)
                 .build()
-            okHttpClient.newCall(request).execute().use { response ->
+            http.okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     KLog.w(
                         "YouTubeRepo",
@@ -5665,10 +5093,10 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getPostDetail(detailParams: String): ChannelPost? = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
                 org.json.JSONObject()
-                    .put("context", webContext())
+                    .put("context", webApi.webContext())
                     .put("browseId", POST_DETAIL_BROWSE_ID)
                     .put("params", detailParams)
             ) ?: return@withContext null
@@ -5700,10 +5128,10 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getPostCommentsToken(detailParams: String): String? = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
                 org.json.JSONObject()
-                    .put("context", webContext())
+                    .put("context", webApi.webContext())
                     .put("browseId", POST_DETAIL_BROWSE_ID)
                     .put("params", detailParams)
             ) ?: return@withContext null
@@ -5738,9 +5166,9 @@ class YouTubeRepository(private val context: Context) {
     ): CommentsPage? = withContext(Dispatchers.IO) {
         try {
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("continuation", token)
-            val raw = postWatchApi(if (viaBrowse) "browse" else "next", body)
+            val raw = webApi.postWatchApi(if (viaBrowse) "browse" else "next", body)
                 ?: return@withContext null
             val root = org.json.JSONObject(raw)
 
@@ -5920,9 +5348,9 @@ class YouTubeRepository(private val context: Context) {
             LikeStatus.INDIFFERENT -> "like/removelike"
         }
         val body = org.json.JSONObject()
-            .put("context", webContext())
+            .put("context", webApi.webContext())
             .put("target", org.json.JSONObject().put("videoId", videoId))
-        postWatchApi(endpoint, body) != null
+        webApi.postWatchApi(endpoint, body) != null
     }
 
     /**
@@ -5933,9 +5361,9 @@ class YouTubeRepository(private val context: Context) {
         if (!sessionManager.isLoggedIn()) return@withContext false
         val endpoint = if (subscribe) "subscription/subscribe" else "subscription/unsubscribe"
         val body = org.json.JSONObject()
-            .put("context", webContext())
+            .put("context", webApi.webContext())
             .put("channelIds", org.json.JSONArray().put(channelId))
-        postWatchApi(endpoint, body) != null
+        webApi.postWatchApi(endpoint, body) != null
     }
 
     /**
@@ -5955,9 +5383,9 @@ class YouTubeRepository(private val context: Context) {
             if (!sessionManager.isLoggedIn()) return@withContext null
             val params = bell.choices[level] ?: return@withContext null
             try {
-                val raw = postWatchApi(
+                val raw = webApi.postWatchApi(
                     "notification/modify_channel_preference",
-                    org.json.JSONObject().put("context", webContext()).put("params", params)
+                    org.json.JSONObject().put("context", webApi.webContext()).put("params", params)
                 ) ?: return@withContext null
                 val root = org.json.JSONObject(raw)
                 val updated = ChannelBellParser.fromToggle(
@@ -5995,54 +5423,11 @@ class YouTubeRepository(private val context: Context) {
     // checked for a STATUS_SUCCEEDED/playlistId, never deep-parsed.
     // ============================================================
 
-    private fun musicContext(): org.json.JSONObject =
-        org.json.JSONObject().put(
-            "client",
-            org.json.JSONObject()
-                .put("clientName", "WEB_REMIX")
-                .put("clientVersion", WEB_REMIX_VERSION)
-                .put("hl", "en")
-                .put("gl", contentRegion())
-        )
-
-    /**
-     * POST to an InnerTube endpoint on music.youtube.com with cookies and a
-     * music-origin SAPISIDHASH (the hash is per-origin — a www.youtube.com
-     * hash is rejected here). Returns the raw body or null on failure.
-     */
-    private fun postMusicApi(endpoint: String, body: org.json.JSONObject): String? {
-        val session = sessionManager.captureSession() ?: return null
-        // Signing is not optional here: these are account writes, and an
-        // unsigned one answers 200 having done nothing.
-        if (YouTubeAuthUtils.getSapisid(session.cookies) == null) return null
-        val request = okhttp3.Request.Builder()
-            .url("https://music.youtube.com/youtubei/v1/$endpoint?prettyPrint=false")
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .authenticate(session)
-            .addHeader("User-Agent", BROWSER_USER_AGENT)
-            .addHeader("Origin", "https://music.youtube.com")
-            .addHeader("X-Origin", "https://music.youtube.com")
-            .build()
-        return try {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    response.body?.string()
-                } else {
-                    KLog.w("YouTubeRepo", "music api $endpoint HTTP ${response.code}")
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "music api $endpoint failed", e)
-            null
-        }
-    }
-
     private fun postPlaylistApi(music: Boolean, endpoint: String, body: org.json.JSONObject): String? =
-        if (music) postMusicApi(endpoint, body) else postWatchApi(endpoint, body)
+        if (music) musicApi.postMusicApi(endpoint, body) else webApi.postWatchApi(endpoint, body)
 
     private fun playlistContext(music: Boolean): org.json.JSONObject =
-        if (music) musicContext() else webContext()
+        if (music) musicApi.musicContext() else webApi.webContext()
 
     /** Playlist ids sometimes carry the VL browse prefix — edit calls need it stripped. */
     private fun normalizePlaylistId(playlistId: String): String = playlistId.removePrefix("VL")
@@ -6099,11 +5484,11 @@ class YouTubeRepository(private val context: Context) {
             if (!sessionManager.isLoggedIn() || videoIds.isEmpty()) return@withContext null
             val first = videoIds.take(UPLOAD_CREATE_BATCH)
             val createBody = org.json.JSONObject()
-                .put("context", musicContext())
+                .put("context", musicApi.musicContext())
                 .put("title", title)
                 .put("privacyStatus", "PRIVATE")
                 .put("videoIds", org.json.JSONArray(first))
-            val playlistId = postMusicApi("playlist/create", createBody)
+            val playlistId = musicApi.postMusicApi("playlist/create", createBody)
                 ?.let { runCatching { org.json.JSONObject(it).optString("playlistId") }.getOrNull() }
                 ?.takeIf { it.isNotBlank() }
                 ?: return@withContext null
@@ -6115,10 +5500,10 @@ class YouTubeRepository(private val context: Context) {
                     actions.put(org.json.JSONObject().put("action", "ACTION_ADD_VIDEO").put("addedVideoId", it))
                 }
                 val body = org.json.JSONObject()
-                    .put("context", musicContext())
+                    .put("context", musicApi.musicContext())
                     .put("playlistId", playlistId)
                     .put("actions", actions)
-                if (!editStatusOk(postMusicApi("browse/edit_playlist", body))) break
+                if (!editStatusOk(musicApi.postMusicApi("browse/edit_playlist", body))) break
                 uploaded += batch.size
             }
             if (!description.isNullOrBlank()) {
@@ -6249,10 +5634,10 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getPlaylistsContaining(videoId: String): Set<String>? = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext null
         val body = org.json.JSONObject()
-            .put("context", webContext())
+            .put("context", webApi.webContext())
             .put("videoIds", org.json.JSONArray().put(videoId))
             .put("excludeWatchLater", false)
-        postWatchApi("playlist/get_add_to_playlist", body)?.let(::parsePlaylistsContaining)
+        webApi.postWatchApi("playlist/get_add_to_playlist", body)?.let(::parsePlaylistsContaining)
     }
 
     /**
@@ -6268,7 +5653,7 @@ class YouTubeRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext emptyMap()
             val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
-            var raw = browseMusic(browseId) ?: return@withContext emptyMap()
+            var raw = musicApi.browseMusic(browseId) ?: return@withContext emptyMap()
             try {
                 val idsByVideo = linkedMapOf<String, MutableList<String>>()
                 val seenTokens = mutableSetOf<String>()
@@ -6291,7 +5676,7 @@ class YouTubeRepository(private val context: Context) {
                         KLog.w("YouTubeRepo", "Repeated playlist row-id continuation for $playlistId")
                         return@withContext emptyMap()
                     }
-                    raw = fetchContinuation(token)
+                    raw = musicApi.fetchContinuation(token)
                 }
                 idsByVideo.mapValues { (_, ids) -> ids.toList() }
             } catch (e: CancellationException) {
@@ -6339,10 +5724,10 @@ class YouTubeRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext null
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("commentText", text)
                 .put("createCommentParams", createCommentParams)
-            parseCreatedComment(postWatchApi("comment/create_comment", body))
+            parseCreatedComment(webApi.postWatchApi("comment/create_comment", body))
         }
 
     /**
@@ -6353,10 +5738,10 @@ class YouTubeRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             if (!sessionManager.isLoggedIn()) return@withContext null
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("commentText", text)
                 .put("createReplyParams", createReplyParams)
-            parseCreatedComment(postWatchApi("comment/create_comment_reply", body))
+            parseCreatedComment(webApi.postWatchApi("comment/create_comment_reply", body))
         }
 
     /**
@@ -6367,9 +5752,9 @@ class YouTubeRepository(private val context: Context) {
     suspend fun performCommentAction(action: String): Boolean = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext false
         val body = org.json.JSONObject()
-            .put("context", webContext())
+            .put("context", webApi.webContext())
             .put("actions", org.json.JSONArray().put(action))
-        val raw = postWatchApi("comment/perform_comment_action", body)
+        val raw = webApi.postWatchApi("comment/perform_comment_action", body)
             ?: return@withContext false
         try {
             val results = mutableListOf<org.json.JSONObject>()
@@ -6446,8 +5831,8 @@ class YouTubeRepository(private val context: Context) {
             // (verified October 2026; see PlayerSignatureTimestamp).
             fun postPlayer(signatureTimestamp: Int): String? =
                 // postWatchApi has already logged the HTTP failure or the changed login.
-                postWatchApi("player", org.json.JSONObject()
-                    .put("context", webContext()).put("videoId", videoId).put("cpn", cpn)
+                webApi.postWatchApi("player", org.json.JSONObject()
+                    .put("context", webApi.webContext()).put("videoId", videoId).put("cpn", cpn)
                     .put("playbackContext", org.json.JSONObject().put("contentPlaybackContext",
                         org.json.JSONObject().put("signatureTimestamp", signatureTimestamp))), session)
                     ?: run {
@@ -6528,7 +5913,7 @@ class YouTubeRepository(private val context: Context) {
      * not already do it (postWatchApi notes its own responses).
      */
     private fun historyPlayerSignedOut(raw: String, session: YouTubeSession?, surface: String): Boolean {
-        if (session != null) noteSessionState(raw, session)
+        if (session != null) http.noteSessionState(raw, session)
         if (LOGGED_IN_TRACKING_PARAM.find(raw)?.groupValues?.get(1) != "0") return false
         KLog.w("YouTubeRepo", "$surface history: YouTube treated the session as signed out, nothing recorded")
         return true
@@ -6585,7 +5970,7 @@ class YouTubeRepository(private val context: Context) {
         // "playback" is the one that files the video in history; "watchtime"
         // pings carry how far it was watched.
         val kind = url.pathSegments.lastOrNull() ?: url.encodedPath
-        return okHttpClient.newCall(request).execute().use { response ->
+        return http.okHttpClient.newCall(request).execute().use { response ->
             val detail = "$kind ping for ${session.videoId} at ${position}s " +
                 "(from ${trackingUrl.queryParameter("st")}s, final=$final): HTTP ${response.code}"
             if (response.isSuccessful) {
@@ -6611,9 +5996,9 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getSubscriptionsFeedPage(): VideoFeedPage = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext VideoFeedPage(emptyList())
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject().put("context", webContext()).put("browseId", "FEsubscriptions")
+                org.json.JSONObject().put("context", webApi.webContext()).put("browseId", "FEsubscriptions")
             ) ?: return@withContext VideoFeedPage(emptyList())
             val root = org.json.JSONObject(raw)
             VideoFeedPage(
@@ -6636,10 +6021,10 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getChannelPosts(channelId: String): List<ChannelPost> = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
                 org.json.JSONObject()
-                    .put("context", webContext())
+                    .put("context", webApi.webContext())
                     .put("browseId", channelId)
                     .put("params", CHANNEL_POSTS_TAB_PARAMS)
             ) ?: return@withContext emptyList()
@@ -6664,9 +6049,9 @@ class YouTubeRepository(private val context: Context) {
         if (!sessionManager.isLoggedIn()) return@withContext emptyList()
         try {
             val channels = mutableListOf<SubscribedChannel>()
-            var response = postWatchApi(
+            var response = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject().put("context", webContext()).put("browseId", "FEchannels")
+                org.json.JSONObject().put("context", webApi.webContext()).put("browseId", "FEchannels")
             )
             var pages = 0
             while (response != null && pages < 10) {
@@ -6701,9 +6086,9 @@ class YouTubeRepository(private val context: Context) {
                 }
                 val token = if (renderers.isNotEmpty()) extractContinuationToken(response) else null
                 response = token?.let {
-                    postWatchApi(
+                    webApi.postWatchApi(
                         "browse",
-                        org.json.JSONObject().put("context", webContext()).put("continuation", it)
+                        org.json.JSONObject().put("context", webApi.webContext()).put("continuation", it)
                     )
                 }
                 pages++
@@ -6721,10 +6106,10 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getChannelVideos(channel: SubscribedChannel): List<VideoItem> = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
                 org.json.JSONObject()
-                    .put("context", webContext())
+                    .put("context", webApi.webContext())
                     .put("browseId", channel.channelId)
                     .put("params", CHANNEL_VIDEOS_TAB_PARAMS)
             ) ?: return@withContext emptyList()
@@ -6841,9 +6226,9 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getChannelPage(channelId: String): ChannelPage? = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject().put("context", webContext()).put("browseId", channelId)
+                org.json.JSONObject().put("context", webApi.webContext()).put("browseId", channelId)
             ) ?: return@withContext null
             val root = org.json.JSONObject(raw)
             val header = parseChannelHeader(root, channelId) ?: return@withContext null
@@ -6871,10 +6256,10 @@ class YouTubeRepository(private val context: Context) {
         header: ChannelHeader? = null
     ): ChannelTabPage = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
                 org.json.JSONObject()
-                    .put("context", webContext())
+                    .put("context", webApi.webContext())
                     .put("browseId", channelId)
                     .put("params", params)
             ) ?: return@withContext ChannelTabPage()
@@ -6899,9 +6284,9 @@ class YouTubeRepository(private val context: Context) {
         header: ChannelHeader? = null
     ): ChannelTabPage = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject().put("context", webContext()).put("continuation", token)
+                org.json.JSONObject().put("context", webApi.webContext()).put("continuation", token)
             ) ?: return@withContext ChannelTabPage()
             parseChannelTabPage(org.json.JSONObject(raw), header)
         } catch (e: Exception) {
@@ -6926,10 +6311,10 @@ class YouTubeRepository(private val context: Context) {
     ): ChannelTabPage = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext ChannelTabPage()
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
                 org.json.JSONObject()
-                    .put("context", webContext())
+                    .put("context", webApi.webContext())
                     .put("browseId", channelId)
                     .put("params", params)
                     .put("query", query)
@@ -6952,9 +6337,9 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getChannelAbout(token: String): ChannelAbout? = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject().put("context", webContext()).put("continuation", token)
+                org.json.JSONObject().put("context", webApi.webContext()).put("continuation", token)
             ) ?: return@withContext null
             val root = org.json.JSONObject(raw)
             val about = mutableListOf<org.json.JSONObject>()
@@ -7713,9 +7098,9 @@ class YouTubeRepository(private val context: Context) {
             else -> "https://www.youtube.com/${raw.trimStart('/')}"
         }
         try {
-            val response = postWatchApi(
+            val response = webApi.postWatchApi(
                 "navigation/resolve_url",
-                org.json.JSONObject().put("context", webContext()).put("url", url)
+                org.json.JSONObject().put("context", webApi.webContext()).put("url", url)
             ) ?: return@withContext null
             org.json.JSONObject(response)
                 .optJSONObject("endpoint")
@@ -7734,9 +7119,9 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun getChannelProfile(channelId: String): ChannelProfile? = withContext(Dispatchers.IO) {
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "browse",
-                org.json.JSONObject().put("context", webContext()).put("browseId", channelId)
+                org.json.JSONObject().put("context", webApi.webContext()).put("browseId", channelId)
             ) ?: return@withContext null
             val root = org.json.JSONObject(raw)
             val metadata = root.optJSONObject("metadata")?.optJSONObject("channelMetadataRenderer")
@@ -7842,7 +7227,7 @@ class YouTubeRepository(private val context: Context) {
                 .addHeader("User-Agent", BROWSER_USER_AGENT)
                 .apply { feedCacheControl(forceFresh)?.let { cacheControl(it) } }
                 .build()
-            val body = okHttpClient.newCall(request).execute().use { response ->
+            val body = http.okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     // 429 is a verdict on this device, not on this channel, and
                     // it is the one code the browse fallback must not answer:
@@ -8208,11 +7593,11 @@ class YouTubeRepository(private val context: Context) {
         if (!sessionManager.isLoggedIn()) return@withContext false
         try {
             val body = org.json.JSONObject()
-                .put("context", webContext())
+                .put("context", webApi.webContext())
                 .put("feedbackTokens", org.json.JSONArray().put(token))
                 .put("isFeedbackTokenUnencrypted", false)
                 .put("shouldMerge", false)
-            val raw = postWatchApi("feedback", body) ?: return@withContext false
+            val raw = webApi.postWatchApi("feedback", body) ?: return@withContext false
             val processed = org.json.JSONObject(raw)
                 .optJSONArray("feedbackResponses")
                 ?.optJSONObject(0)
@@ -8245,10 +7630,10 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getNotifications(): List<NotificationItem> = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) return@withContext emptyList()
         try {
-            val raw = postWatchApi(
+            val raw = webApi.postWatchApi(
                 "notification/get_notification_menu",
                 org.json.JSONObject()
-                    .put("context", webContext())
+                    .put("context", webApi.webContext())
                     .put("notificationsMenuRequestType", "NOTIFICATIONS_MENU_REQUEST_TYPE_INBOX")
             ) ?: return@withContext emptyList()
             var root = org.json.JSONObject(raw)
@@ -8263,9 +7648,9 @@ class YouTubeRepository(private val context: Context) {
                     endpoint.optString("ctoken").takeIf { it.isNotBlank() }
                 } ?: break
                 // A later page that fails keeps the pages already read.
-                val next = postWatchApi(
+                val next = webApi.postWatchApi(
                     "notification/get_notification_menu",
-                    org.json.JSONObject().put("context", webContext()).put("ctoken", token)
+                    org.json.JSONObject().put("context", webApi.webContext()).put("ctoken", token)
                 ) ?: break
                 root = org.json.JSONObject(next)
                 page++
