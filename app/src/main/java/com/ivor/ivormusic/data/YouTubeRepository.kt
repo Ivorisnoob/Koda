@@ -26,19 +26,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
-import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.services.youtube.YoutubeService
-import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
-import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
-import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
-import org.schabi.newpipe.extractor.ListExtractor
 import org.schabi.newpipe.extractor.Page
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -69,7 +64,6 @@ class YouTubeRepository(private val context: Context) {
         private const val UPLOAD_CREATE_BATCH = 100
         private const val UPLOAD_ADD_BATCH = 50
         private const val UPLOAD_BATCH_PAUSE_MS = 400L
-        private const val YT_MUSIC_BASE_URL = "https://music.youtube.com"
         @Volatile private var isInitialized = false
         @Volatile private var appliedNewPipeRegion: String? = null
         private val newPipeInitLock = Any()
@@ -1111,23 +1105,6 @@ class YouTubeRepository(private val context: Context) {
         visitorIdentity.replaceCurrent()
     }
 
-    /**
-     * Get stream info including metadata.
-     * @param videoId The YouTube video ID
-     * @return StreamInfo or null if not found
-     */
-    suspend fun getStreamInfo(videoId: String): StreamInfo? = withContext(Dispatchers.IO) {
-        try {
-            val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
-            streamExtractor.fetchPage()
-            // This return type might need adjustment depending on what's expected
-            null 
-        } catch (e: Exception) {
-            null
-        }
-    }
-
 
     /**
      * Get personalized recommendations (Quick Picks / Home).
@@ -1280,21 +1257,6 @@ class YouTubeRepository(private val context: Context) {
                     findObjectsByKey(node.get(i), key, results)
                 }
             }
-        }
-    }
-
-    private fun parseDurationTextToMs(text: String?): Long {
-        if (text.isNullOrBlank()) return 0L
-        return try {
-            val parts = text.split(":").map { it.trim().toLong() }
-            when (parts.size) {
-                3 -> (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000
-                2 -> (parts[0] * 60 + parts[1]) * 1000
-                1 -> parts[0] * 1000
-                else -> 0L
-            }
-        } catch (e: Exception) {
-            0L
         }
     }
 
@@ -2183,15 +2145,6 @@ class YouTubeRepository(private val context: Context) {
 
     // --- JSON Helpers ---
 
-    // Optimized replacement for recursive searching when needed
-    // Only search 1 level deep for specific keys to avoid full recursion
-    private fun findObject(node: Any, key: String): org.json.JSONObject? {
-         if (node is org.json.JSONObject) {
-            if (node.has(key)) return node.getJSONObject(key)
-         }
-         return null
-    }
-
     private fun getRunText(formattedString: org.json.JSONObject?): String? {
         if (formattedString == null) return null
         if (formattedString.has("simpleText")) {
@@ -2203,12 +2156,6 @@ class YouTubeRepository(private val context: Context) {
             sb.append(runs.optJSONObject(i)?.optString("text") ?: "")
         }
         return sb.toString()
-    }
-
-    private fun extractValueFromRuns(item: org.json.JSONObject, key: String): String? {
-        // Direct checkout instead of recursion
-        val nav = item.optJSONObject("navigationEndpoint")?.optJSONObject("watchEndpoint")
-        return nav?.optString(key)
     }
 
 
@@ -4165,20 +4112,6 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    private fun formatSubscriberCount(count: Long): String {
-        return when {
-            count >= 1_000_000_000 -> String.format("%.1fB", count / 1_000_000_000.0)
-            count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
-            count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
-            else -> count.toString()
-        }
-    }
-
-    /**
-     * Recursively find all JSON objects with a specific key and add them to the results list.
-     */
-
-
     /**
      * WEB `/browse` on www.youtube.com, signed when there is a session and
      * anonymous when there is not.
@@ -4720,11 +4653,6 @@ class YouTubeRepository(private val context: Context) {
             VideoDetails(emptyList(), emptyList())
         }
     }
-
-    /**
-     * Get available video qualities for a video.
-     */
-    suspend fun getVideoQualities(videoId: String): List<VideoQuality> = getVideoDetails(videoId).qualities
 
     // ============================================================
     // Video engagement: like/dislike, subscribe, comments
@@ -6735,16 +6663,6 @@ class YouTubeRepository(private val context: Context) {
             KLog.e("YouTubeRepo", "parseCreatedComment failed", e)
             null
         }
-    }
-
-    /**
-     * Record a regular (non-music) video playback into the user's YouTube
-     * watch history. Mirrors reportPlayback but uses the WEB client against
-     * www.youtube.com: the WEB_REMIX/music flow does not register plain
-     * videos. Requires login.
-     */
-    suspend fun reportVideoPlayback(videoId: String) {
-        beginVideoHistorySession(videoId, 0L)
     }
 
     internal suspend fun beginVideoHistorySession(
