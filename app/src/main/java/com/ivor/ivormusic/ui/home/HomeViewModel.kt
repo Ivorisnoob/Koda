@@ -4015,7 +4015,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         name: String,
         description: String?,
         songs: List<Song>,
-    ): Pair<com.ivor.ivormusic.data.YouTubeRepository.PlaylistUpload?, Int> {
+    ): Pair<com.ivor.ivormusic.data.youtube.PlaylistUpload?, Int> {
         val ids = songs.filter { it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE }
             .map { it.id }
             .distinct()
