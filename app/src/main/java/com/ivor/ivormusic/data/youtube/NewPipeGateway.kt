@@ -1,10 +1,15 @@
 package com.ivor.ivormusic.data.youtube
 
+import android.content.Context
 import com.ivor.ivormusic.data.NewPipeDownloaderImpl
 import com.ivor.ivormusic.data.SessionManager
+import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.VideoItem
 import kotlinx.coroutines.Dispatchers
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.services.youtube.YoutubeService
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.stream.StreamType
 
 /**
  * NewPipe Extractor, set up once per process and pointed at this instance's
@@ -86,3 +91,38 @@ internal class NewPipeGateway(
 // and let R8 discard the SoundCloud, PeerTube, Bandcamp and MediaCCC
 // implementations.
 internal val youtubeService = YoutubeService(0)
+
+/** Map a NewPipe search page's streams to [VideoItem]s, skipping unusable rows. */
+internal fun List<org.schabi.newpipe.extractor.InfoItem>.toVideoItems(context: Context): List<VideoItem> =
+    filterIsInstance<StreamInfoItem>().mapNotNull { item ->
+        // "Fully block Shorts": NewPipe already knows which results are
+        // Shorts, so they are dropped here rather than drawn.
+        if (item.isShortFormContent && ThemePreferences.isShortsHardBlocked(context)) {
+            return@mapNotNull null
+        }
+        try {
+            val uploaderUrl = item.uploaderUrl ?: ""
+            val channelId = when {
+                uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
+                uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
+                uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
+                else -> null
+            }
+
+            VideoItem.fromStreamInfoItem(
+                videoId = extractVideoId(item.url),
+                title = item.name ?: "Unknown",
+                channelName = item.uploaderName ?: "Unknown Channel",
+                channelId = channelId,
+                channelIconUrl = item.uploaderAvatars?.maxByOrNull { it.width }?.url,
+                thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url ?: item.thumbnails?.firstOrNull()?.url,
+                durationSeconds = item.duration,
+                viewCount = item.viewCount,
+                uploadedDate = item.textualUploadDate,
+                isLive = item.streamType == StreamType.LIVE_STREAM || item.streamType == StreamType.AUDIO_LIVE_STREAM,
+                subscriberCount = null
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }

@@ -57,24 +57,21 @@ class YouTubeRepository(private val context: Context) {
     private val webApi = WebApi(http, sessionManager)
     private val musicApi = MusicApi(http, sessionManager)
     private val newPipeGateway = NewPipeGateway(http, sessionManager)
+    private val musicSearch = MusicSearch(musicApi, newPipeGateway)
+    private val musicPlaylists = MusicPlaylists(musicApi, sessionManager)
+    private val musicBrowse = MusicBrowse(http, musicApi, musicSearch, musicPlaylists, sessionManager)
+    private val youtubeAccount = YouTubeAccount(musicApi, webApi, sessionManager)
     private val videoHistoryRepository by lazy { VideoHistoryRepository(context) }
     private val videoHistoryPreferences by lazy { ThemePreferences(context) }
 
     companion object {
+        /** The filter [search] takes for songs, which is also its default. */
+        const val FILTER_SONGS = com.ivor.ivormusic.data.youtube.FILTER_SONGS
 
-        /** Pages of the notification inbox read on one open: one request each. */
-        private const val NOTIFICATION_INBOX_MAX_PAGES = 3
         private const val UPLOAD_CREATE_BATCH = 100
         private const val UPLOAD_ADD_BATCH = 50
         private const val UPLOAD_BATCH_PAUSE_MS = 400L
 
-        // Content filters for YouTube Music search
-        const val FILTER_SONGS = "music_songs"
-        const val FILTER_VIDEOS = "music_videos"
-        const val FILTER_ALBUMS = "music_albums"
-        const val FILTER_PLAYLISTS = "music_playlists"
-        const val FILTER_ARTISTS = "music_artists"
-        
         // Regular YouTube filters
         const val FILTER_YOUTUBE_VIDEOS = "videos"
         const val FILTER_YOUTUBE_PLAYLISTS = "playlists"
@@ -228,28 +225,11 @@ class YouTubeRepository(private val context: Context) {
      * profile. The process-wide half is [invalidateSessionScopedCaches].
      */
     fun clearSessionScopedInstanceCaches() {
-        searchExtractorCache.clear()
-        searchNextPageCache.clear()
-        musicSearchContinuations.clear()
+        musicSearch.clearCaches()
         videoSearchExtractorCache.clear()
         videoSearchNextPageCache.clear()
         videoSearchContinuations.clear()
     }
-
-    // Cache extractors for pagination
-    private val searchExtractorCache = mutableMapOf<String, org.schabi.newpipe.extractor.search.SearchExtractor>()
-
-    // The next continuation Page per query. Advanced by every searchNext call
-    // so repeated "Load More" presses walk pages 2, 3, 4... instead of
-    // refetching page 2 forever. A null value means the query is exhausted.
-    private val searchNextPageCache = mutableMapOf<String, Page?>()
-
-    // A present null is an exhausted InnerTube search, not a NewPipe search.
-    private val musicSearchContinuations = java.util.Collections.synchronizedMap(
-        object : LinkedHashMap<String, String?>(32, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean = size > 32
-        }
-    )
 
     private data class VideoSearchKey(val query: String, val sort: VideoSearchSort)
     private val videoSearchExtractorCache =
@@ -258,440 +238,34 @@ class YouTubeRepository(private val context: Context) {
     // Present null means InnerTube exhausted; it must never resume NewPipe.
     private val videoSearchContinuations = mutableMapOf<VideoSearchKey, String?>()
 
-    /**
-     * Search for songs on YouTube Music.
-     * @param query The search query
-     * @param filter The content filter (FILTER_SONGS, FILTER_ALBUMS, etc.)
-     * @return List of songs matching the query
-     */
-    suspend fun search(query: String, filter: String = FILTER_SONGS): List<Song> = withContext(Dispatchers.IO) {
-        // Read album links directly: StreamInfoItem loses that relationship.
-        if (filter == FILTER_SONGS) {
-            musicSearchContinuations.remove(query)
-            val response = musicApi.postMusicMetadata("search", org.json.JSONObject()
-                .put("query", query).put("params", "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"))
-            if (response != null) {
-                val songs = parseSongsFromInternalJson(response.toString())
-                if (songs.isNotEmpty()) {
-                    musicSearchContinuations[query] = MusicMetadata.continuation(response)
-                    searchExtractorCache.remove(query)
-                    searchNextPageCache.remove(query)
-                    return@withContext songs
-                }
-            }
-        }
-        try {
-            // YouTube Music search often uses the search extractor with specific filters
-            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(filter), "")
-            searchExtractor.fetchPage()
-            
-            // Cache for pagination
-            searchExtractorCache[query] = searchExtractor
-            searchNextPageCache[query] =
-                if (searchExtractor.initialPage.hasNextPage()) searchExtractor.initialPage.nextPage else null
+    suspend fun search(query: String, filter: String = FILTER_SONGS): List<Song> = musicSearch.search(query, filter)
 
-            searchExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item: StreamInfoItem ->
-                try {
-                    Song.fromYouTube(
-                        videoId = extractVideoId(item.url),
-                        title = item.name ?: "Unknown",
-                        artist = item.uploaderName ?: "Unknown Artist",
-                        album = "",
-                        duration = item.duration * 1000L,
-                        thumbnailUrl = item.thumbnails?.firstOrNull()?.url
-                    )
-                } catch (e: Exception) {
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> = musicSearch.searchPlaylists(query)
 
-    /**
-     * Search for playlists on YouTube Music.
-     */
-    suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
-        try {
-            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
-            searchExtractor.fetchPage()
-            
-            searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
-                PlaylistDisplayItem(
-                    name = item.name ?: "Unknown Playlist",
-                    url = item.url,
-                    uploaderName = item.uploaderName ?: "Unknown",
-                    itemCount = item.streamCount.toInt(),
-                    thumbnailUrl = item.thumbnails?.firstOrNull()?.url
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> = musicSearch.searchAlbums(query)
 
-    /**
-     * Search for albums on YouTube Music.
-     * Note: Albums are often returned as PlaylistInfoItem in NewPipe for YouTube Music.
-     */
-    suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
-        musicApi.postMusicMetadata("search", org.json.JSONObject().put("query", query)
-            .put("params", "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"))?.let { root ->
-            val releases = MusicMetadata.releaseRows(root)
-            if (releases.isNotEmpty()) return@withContext releases
-        }
-        try {
-            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_ALBUMS), "")
-            searchExtractor.fetchPage()
-            
-            searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
-                PlaylistDisplayItem(
-                    name = item.name ?: "Unknown Album",
-                    url = item.url, // Album URL usually works like a playlist
-                    uploaderName = item.uploaderName ?: "Unknown Artist",
-                    itemCount = item.streamCount.toInt(),
-                    thumbnailUrl = item.thumbnails?.firstOrNull()?.url
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    suspend fun searchArtists(query: String): List<ArtistItem> = musicSearch.searchArtists(query)
 
-    /**
-     * Search for artists on YouTube Music.
-     */
-    suspend fun searchArtists(query: String): List<ArtistItem> = withContext(Dispatchers.IO) {
-        try {
-            val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_ARTISTS), "")
-            searchExtractor.fetchPage()
-            
-            searchExtractor.initialPage.items.filterIsInstance<ChannelInfoItem>().mapNotNull { item ->
-                ArtistItem(
-                    id = item.url.substringAfterLast("/"), // Extract Browse ID from URL
-                    name = item.name ?: "Unknown Artist",
-                    thumbnailUrl = item.thumbnails?.firstOrNull()?.url,
-                    subscriberCount = item.subscriberCount?.let { VideoItem.formatViewCount(it) }, // Reusing helper
-                    description = item.description,
-                    isVerified = item.isVerified
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    suspend fun getArtistPage(artistId: String): ArtistPage? = musicBrowse.getArtistPage(artistId)
 
-    /**
-     * Full artist page for a channel browse id: identity (bio, monthly
-     * audience, banner), top songs, the Albums and Singles shelves with the
-     * discography More endpoint followed, similar artists and featured
-     * playlists.
-     *
-     * Uses InnerTube /browse with the WEB_REMIX client — the same call the
-     * YT Music web app makes — because NewPipe's channel extractor only sees
-     * the plain-YouTube uploads tab (a few videos, no albums or top songs).
-     * Verified September 2026.
-     */
-    suspend fun getArtistPage(artistId: String): ArtistPage? = withContext(Dispatchers.IO) {
-        if (!artistId.startsWith("UC")) {
-            // Not a channel browse id (e.g. Library passes the artist *name*);
-            // callers fall back to a name search when we return nothing.
-            return@withContext null
-        }
-        try {
-            val body = musicApi.browseMusic(artistId)
-                ?: return@withContext null
-            val root = org.json.JSONObject(body)
+    suspend fun getArtistTasteSample(artistId: String): ArtistTasteSample? = musicBrowse.getArtistTasteSample(artistId)
 
-            val header = MusicMetadata.artistHeader(root)
-            val artistName = header?.name.orEmpty()
+    suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> =
+        musicBrowse.getArtistDetails(artistId)
 
-            val songs = mutableListOf<Song>()
-            val albums = mutableListOf<PlaylistDisplayItem>()
-            val singles = mutableListOf<PlaylistDisplayItem>()
+    suspend fun getSongAlbumRef(videoId: String): SongAlbumRef? = musicBrowse.getSongAlbumRef(videoId)
 
-            // --- Top songs shelf ("Songs") ---
-            // The shelf itself only holds ~5 entries; its bottomEndpoint links
-            // the artist's full songs playlist which we fetch below.
-            var songsPlaylistBrowseId: String? = null
-            val shelves = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(root, "musicShelfRenderer", shelves)
-            shelves.firstOrNull()?.let { shelf ->
-                songsPlaylistBrowseId = shelf.optJSONObject("bottomEndpoint")
-                    ?.optJSONObject("browseEndpoint")
-                    ?.optString("browseId")
-                    ?.takeIf { it.isNotEmpty() }
-                val contents = shelf.optJSONArray("contents")
-                if (contents != null) {
-                    for (i in 0 until contents.length()) {
-                        contents.optJSONObject(i)
-                            ?.optJSONObject("musicResponsiveListItemRenderer")
-                            ?.let { renderer ->
-                                parseResponsiveListItem(renderer)?.let { songs.add(it) }
-                            }
-                    }
-                }
-            }
+    suspend fun getAlbumSongs(browseId: String): List<Song> = musicPlaylists.getAlbumSongs(browseId)
 
-            // Verified September 2026: release cards carry year and optional
-            // type, and the shelf's More endpoint opens a paginated discography.
-            // The Albums shelf arrives complete (no More); Singles pages.
-            val carousels = MusicMetadata.objects(root, "musicCarouselShelfRenderer")
-            for (carousel in carousels) {
-                val header = carousel.optJSONObject("header")
-                    ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
-                val title = MusicMetadata.text(header?.optJSONObject("title"))
-                if (title !in listOf("Albums", "Singles & EPs", "Singles", "EPs")) continue
-                val isAlbums = title.equals("Albums", true)
-                val target = if (isAlbums) albums else singles
-                val defaultType = if (isAlbums) MusicReleaseType.ALBUM else null
-                val releases = MusicMetadata.releaseRows(carousel, defaultType, artistName)
-                if (releases.isEmpty()) continue
-                target.addAll(releases)
-                val more = header?.optJSONObject("moreContentButton")?.optJSONObject("buttonRenderer")
-                    ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
-                    ?: continue
-                val moreId = more.optString("browseId").takeIf { it.isNotBlank() } ?: continue
-                var page = musicApi.browseMusic(moreId, more.optString("params").takeIf { it.isNotBlank() })
-                    ?.let { org.json.JSONObject(it) } ?: continue
-                val seen = mutableSetOf<String>()
-                while (true) {
-                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                    target.addAll(MusicMetadata.releaseRows(page, defaultType, artistName))
-                    val token = MusicMetadata.continuation(page) ?: break
-                    if (!seen.add(token)) {
-                        KLog.w("YouTubeRepo", "Repeated music discography continuation for $artistId")
-                        break
-                    }
-                    page = musicApi.postMusicMetadata("browse", org.json.JSONObject().put("continuation", token)) ?: break
-                }
-            }
-
-            // --- Full songs list via the shelf's "More" playlist ---
-            // Shelf order is captured first: the merge below only appends,
-            // so the top-songs order survives the full fetch.
-            val topSongIds = songs.map { it.id }
-            songsPlaylistBrowseId?.let { browseId ->
-                val fullList = try {
-                    getPlaylistInternal(browseId.removePrefix("VL"))
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    emptyList()
-                }
-                fullList.forEach { song ->
-                    val index = songs.indexOfFirst { it.id == song.id }
-                    if (index < 0) songs.add(song) else if (songs[index].albumId == null && song.albumId != null) {
-                        songs[index] = song
-                    }
-                }
-            }
-
-            KLog.d(
-                "YouTubeRepo",
-                "Artist $artistId: ${songs.size} songs, ${albums.size} albums, ${singles.size} singles"
-            )
-            val releases = (albums + singles).distinctBy { it.id }.newestReleasesFirst()
-            val byId = releases.associateBy { it.id }
-            val enrichedSongs = songs.distinctBy { it.id }.map { song ->
-                val release = byId[song.albumId]
-                if (release == null) song else song.copy(
-                    releaseYear = song.releaseYear ?: release.releaseYear,
-                    releaseType = song.releaseType ?: release.releaseType,
-                )
-            }
-            ArtistPage(
-                id = artistId,
-                name = header?.name?.takeIf(String::isNotBlank) ?: artistName.takeIf(String::isNotBlank) ?: artistId,
-                bio = header?.bio,
-                monthlyAudience = header?.monthlyAudience,
-                bannerUrl = header?.bannerUrl,
-                songs = enrichedSongs,
-                topSongIds = topSongIds,
-                albums = albums.distinctBy { it.id }.newestReleasesFirst(),
-                singles = singles.distinctBy { it.id }.newestReleasesFirst(),
-                similarArtists = MusicMetadata.similarArtists(root),
-                featuredOn = MusicMetadata.featuredPlaylists(root),
-                songsPlaylistBrowseId = songsPlaylistBrowseId,
-            )
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching artist page", e)
-            null
-        }
-    }
-
-    /**
-     * An artist's "Fans might also like" shelf and top songs, from a single
-     * artist browse. [getArtistPage] reads the same response and then follows
-     * the discography and the full songs playlist; taste setup asks this of
-     * every artist tapped, where those extra requests would be wasted.
-     */
-    suspend fun getArtistTasteSample(artistId: String): ArtistTasteSample? = withContext(Dispatchers.IO) {
-        if (!artistId.startsWith("UC")) return@withContext null
-        try {
-            val root = org.json.JSONObject(musicApi.browseMusic(artistId) ?: return@withContext null)
-            val songs = mutableListOf<Song>()
-            val shelves = mutableListOf<org.json.JSONObject>()
-            findObjectsByKey(root, "musicShelfRenderer", shelves)
-            shelves.firstOrNull()?.optJSONArray("contents")?.let { contents ->
-                for (i in 0 until contents.length()) {
-                    contents.optJSONObject(i)?.optJSONObject("musicResponsiveListItemRenderer")
-                        ?.let { parseResponsiveListItem(it) }
-                        ?.let(songs::add)
-                }
-            }
-            ArtistTasteSample(similar = MusicMetadata.similarArtists(root), topSongs = songs.distinctBy { it.id })
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "Artist taste sample failed for $artistId", e)
-            null
-        }
-    }
-
-    /**
-     * Get details for a specific artist (songs plus the merged releases).
-     * Backed by [getArtistPage]; kept for callers that only need the pair.
-     */
-    suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> {
-        val page = try {
-            getArtistPage(artistId)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching artist details", e)
-            null
-        } ?: return Pair(emptyList(), emptyList())
-        // The page already carries the full song list and the merged,
-        // release-enriched tracks; this pair is the same shape as before.
-        val releases = (page.albums + page.singles).distinctBy { it.id }.newestReleasesFirst()
-        return Pair(page.songs, releases)
-    }
-
-    /**
-     * Resolve where a song lives from one music `/next` call: the first
-     * panel renderer is the song itself and its byline runs name the artist
-     * link, the album link and the year. Works anonymously. Verified
-     * September 2026.
-     */
-    suspend fun getSongAlbumRef(videoId: String): SongAlbumRef? = withContext(Dispatchers.IO) {
-        try {
-            val root = musicApi.postMusicMetadata("next", org.json.JSONObject().put("videoId", videoId))
-                ?: return@withContext null
-            val panels = MusicMetadata.objects(root, "playlistPanelVideoRenderer")
-            val self = panels.firstOrNull {
-                it.optJSONObject("playlistItemData")?.optString("videoId") == videoId
-            } ?: panels.firstOrNull() ?: return@withContext null
-            MusicMetadata.songAlbumRef(self)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error resolving album for song $videoId", e)
-            null
-        }
-    }
-
-    /**
-     * Fetch an album's tracks by its browse id (MPREb…).
-     * Album pages aren't playlists, so they must go through /browse.
-     */
-    suspend fun getAlbumSongs(browseId: String): List<Song> = withContext(Dispatchers.IO) {
-        try {
-            val body = musicApi.browseMusic(browseId) ?: return@withContext emptyList()
-            val root = org.json.JSONObject(body)
-            val songs = MusicMetadata.albumSongs(root, browseId)
-            // Signed out, the page lists each track's video where it has one.
-            // The album's audio playlist has the songs; one more request, and
-            // only for an album that needs it.
-            if (songs.isEmpty() || !MusicMetadata.albumHasVideoVersions(root)) return@withContext songs
-            val audioPlaylist = MusicMetadata.albumAudioPlaylistId(root) ?: return@withContext songs
-            val audio = getBrowsePlaylistSongs(audioPlaylist)
-            if (audio.songs.isEmpty()) songs else MusicMetadata.withSongVersions(songs, audio.songs)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching album $browseId", e)
-            emptyList()
-        }
-    }
-
-    /** Metadata-only WEB_REMIX calls, public when signed out. Never playback. */
-    /** A YouTube Music browse page (FEmusic_home, _explore, _charts, _new_releases, a mood) as shelves. */
     suspend fun getMusicShelves(browseId: String, params: String? = null): MusicShelfPage? =
-        withContext(Dispatchers.IO) {
-            musicApi.postMusicMetadata("browse", org.json.JSONObject().put("browseId", browseId).apply {
-                if (params != null) put("params", params)
-            })?.let(::parseMusicShelves)
-        }
+        musicBrowse.getMusicShelves(browseId, params)
 
-    /**
-     * The "Top artists" of YouTube Music's charts page, for [country] (an ISO
-     * code, or `ZZ` for Global) or, when null, for wherever YouTube places the
-     * request. The country menu on that page is a form: the same browse with
-     * `formData.selectedValues` answers for the chosen country, signed out.
-     * [verified October 2026: forty artists each for the default, ZZ and US]
-     */
-    suspend fun getChartArtists(country: String? = null): List<ArtistItem> = withContext(Dispatchers.IO) {
-        val payload = org.json.JSONObject().put("browseId", "FEmusic_charts")
-        if (country != null) {
-            payload.put(
-                "formData",
-                org.json.JSONObject().put("selectedValues", org.json.JSONArray().put(country))
-            )
-        }
-        musicApi.postMusicMetadata("browse", payload)?.let(::parseMusicShelves)?.shelves.orEmpty()
-            .flatMap { it.items }
-            .filterIsInstance<MusicShelfItem.Artist>()
-            .map { it.artist }
-            .distinctBy { it.id }
-    }
+    suspend fun getChartArtists(country: String? = null): List<ArtistItem> = musicBrowse.getChartArtists(country)
 
-    suspend fun getMusicShelvesContinuation(token: String): MusicShelfPage? = withContext(Dispatchers.IO) {
-        musicApi.postMusicMetadata("browse", org.json.JSONObject().put("continuation", token))?.let(::parseMusicShelves)
-    }
+    suspend fun getMusicShelvesContinuation(token: String): MusicShelfPage? =
+        musicBrowse.getMusicShelvesContinuation(token)
 
-    /**
-     * Fetch next page of results for a previous query.
-     */
-    suspend fun searchNext(query: String): List<Song> = withContext(Dispatchers.IO) {
-        if (musicSearchContinuations.containsKey(query)) {
-            val token = musicSearchContinuations[query] ?: return@withContext emptyList()
-            val root = musicApi.postMusicMetadata("search", org.json.JSONObject().put("continuation", token))
-                ?: return@withContext emptyList()
-            val songs = parseSongsFromInternalJson(root.toString())
-            musicSearchContinuations[query] = MusicMetadata.continuation(root)?.takeUnless { it == token }
-            return@withContext songs
-        }
-        try {
-            val extractor = searchExtractorCache[query] ?: return@withContext emptyList()
-
-            // Continuation cursor from the previous page; null = exhausted
-            val pageInfo = searchNextPageCache[query] ?: return@withContext emptyList()
-
-            val nextPage = extractor.getPage(pageInfo)
-            searchNextPageCache[query] = if (nextPage.hasNextPage()) nextPage.nextPage else null
-
-            nextPage.items.filterIsInstance<StreamInfoItem>().mapNotNull { item: StreamInfoItem ->
-                try {
-                    Song.fromYouTube(
-                        videoId = extractVideoId(item.url),
-                        title = item.name ?: "Unknown",
-                        artist = item.uploaderName ?: "Unknown Artist",
-                        album = "",
-                        duration = item.duration * 1000L,
-                        thumbnailUrl = item.thumbnails?.firstOrNull()?.url
-                    )
-                } catch (e: Exception) {
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    suspend fun searchNext(query: String): List<Song> = musicSearch.searchNext(query)
 
     /**
      * Get the best audio stream URL for a video.
@@ -798,472 +372,20 @@ class YouTubeRepository(private val context: Context) {
     }
 
 
-    /**
-     * Get personalized recommendations (Quick Picks / Home).
-     * Uses Internal YTM API with Cookies for personalized content.
-     */
-    suspend fun getRecommendations(): List<Song> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) {
-            KLog.d("YouTubeRepo", "Not logged in, falling back to popular search")
-            return@withContext search("trending music 2026", FILTER_SONGS)
-        }
+    suspend fun getRecommendations(): List<Song> = musicBrowse.getRecommendations()
 
-        try {
-            // Fetch personalized home page content
-            KLog.d("YouTubeRepo", "Fetching personalized recommendations from FEmusic_home")
-            val jsonResponse = musicApi.fetchInternalApi("FEmusic_home")
-            
-            if (jsonResponse.isEmpty()) {
-                KLog.e("YouTubeRepo", "Empty response from FEmusic_home")
-                return@withContext fillHomeRecommendations(emptyList())
-            }
-            
-            // Parse songs from the home page response
-            // More than Home shows at once, so a refresh has songs to rotate to.
-            val items = usableHomeRecommendations(
-                listOf(parseSongsFromInternalJson(jsonResponse)),
-                limit = HOME_RECOMMENDATION_POOL
-            )
-            KLog.d("YouTubeRepo", "Parsed ${items.size} songs from recommendations")
+    suspend fun getRelatedSongs(videoId: String, limit: Int = 25): List<Song> =
+        musicBrowse.getRelatedSongs(videoId, limit)
 
-            // Classic Home needs three valid entries for its three artwork
-            // shapes. A partially parsed response is still useful, but it must
-            // be filled rather than accepted as complete.
-            fillHomeRecommendations(items)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching recommendations", e)
-            fillHomeRecommendations(emptyList())
-        }
-    }
+    suspend fun getSongFromPanel(videoId: String): Song? = musicBrowse.getSongFromPanel(videoId)
 
-    private suspend fun fillHomeRecommendations(primary: List<Song>): List<Song> {
-        if (primary.size >= 3) return primary
+    suspend fun getUserPlaylists(): List<PlaylistDisplayItem> = musicPlaylists.getUserPlaylists()
 
-        KLog.d("YouTubeRepo", "Home has ${primary.size} usable songs; filling from library")
-        val liked = try {
-            getLikedMusic()
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "Could not use liked songs as Home fallback", e)
-            emptyList()
-        }
-        val withLiked = usableHomeRecommendations(listOf(primary, liked))
-        if (withLiked.size >= 3) return withLiked
-
-        val trending = try {
-            search("trending music 2026", FILTER_SONGS)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (e: Exception) {
-            KLog.w("YouTubeRepo", "Could not use search as Home fallback", e)
-            emptyList()
-        }
-        return usableHomeRecommendations(listOf(withLiked, trending))
-    }
-
-    /**
-     * Get related songs ("radio") for a video via the InnerTube /next endpoint —
-     * the same source YouTube Music uses for its own autoplay queue.
-     * Works anonymously; when logged in, the attached cookies personalize the mix.
-     */
-    suspend fun getRelatedSongs(videoId: String, limit: Int = 25): List<Song> = withContext(Dispatchers.IO) {
-        try {
-            radioPanelSongs(videoId)
-                .filter { it.id != videoId } // first radio item is the seed itself
-                .distinctBy { it.id }
-                .take(limit)
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            KLog.e("YouTubeRepo", "Error fetching related songs for $videoId", e)
-            emptyList()
-        }
-    }
-
-    /** The song itself as the radio panel describes it: title, artist and length. */
-    suspend fun getSongFromPanel(videoId: String): Song? = withContext(Dispatchers.IO) {
-        try {
-            radioPanelSongs(videoId).firstOrNull { it.id == videoId }
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            KLog.w("YouTubeRepo", "No panel entry for $videoId", e)
-            null
-        }
-    }
-
-    private fun radioPanelSongs(videoId: String): List<Song> {
-        val jsonBody = """
-            {
-                "context": {
-                    "client": {
-                        "clientName": "WEB_REMIX",
-                        "clientVersion": "$WEB_REMIX_VERSION",
-                        "hl": "en",
-                        "gl": "${http.contentRegion()}"
-                    }
-                },
-                "videoId": "$videoId",
-                "playlistId": "RDAMVM$videoId",
-                "isAudioOnly": true,
-                "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
-            }
-        """.trimIndent()
-
-        val requestBuilder = okhttp3.Request.Builder()
-            .url("https://music.youtube.com/youtubei/v1/next")
-            .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("User-Agent", BROWSER_USER_AGENT)
-            .addHeader("Origin", "https://music.youtube.com")
-
-        // Personalize the radio when logged in; anonymous works fine too.
-        requestBuilder.authenticate(sessionManager.captureSession())
-
-        val response = http.okHttpClient.newCall(requestBuilder.build()).execute()
-        val body = response.use { it.body?.string() }
-        if (body.isNullOrEmpty()) return emptyList()
-
-        // One song per queue entry, and the song rather than its video where
-        // YouTube offers both.
-        return MusicMetadata.queueSongs(org.json.JSONObject(body))
-    }
-
-    /**
-     * Get the user's playlists.
-     * Uses Internal YTM API with Cookies.
-     */
-    suspend fun getUserPlaylists(): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
-        
-        try {
-            val playlists = mutableListOf<PlaylistDisplayItem>()
-
-            // Likes has a real account browse id; mixes must come from the API.
-            playlists.add(PlaylistDisplayItem(
-                name = "Your Likes",
-                url = "https://music.youtube.com/playlist?list=LM",
-                uploaderName = "You"
-            ))
-
-            // Fetch Library (Liked Playlists), following grid continuations so
-            // large libraries come back in full rather than just the first page.
-            // Note: FEmusic_liked_playlists gets playlists you've saved/liked
-            var json = musicApi.fetchInternalApi("FEmusic_liked_playlists")
-            var pageCount = 0
-            val maxPages = 20
-            while (json.isNotEmpty() && pageCount < maxPages) {
-                val parsed = parsePlaylistsFromInternalJson(json)
-                playlists.addAll(parsed)
-                pageCount++
-                KLog.d("YouTubeRepo", "Library playlists page $pageCount: ${parsed.size} items")
-                if (parsed.isEmpty()) break
-                val token = extractContinuationToken(json) ?: break
-                json = musicApi.fetchContinuation(token)
-            }
-
-            // The library grid can include "Your Likes" (VLLM) which we already synthesized
-            playlists.distinctBy { it.id }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching user playlists", e)
-            emptyList()
-        }
-    }
-
-    /**
-     * Get liked music with pagination support.
-     * YouTube Music API returns paginated results, so we need to fetch all pages.
-     */
-    suspend fun getLikedMusic(): List<Song> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) {
-            return@withContext getPlaylistInternal("LM")
-        }
-        
-        try {
-            val allSongs = mutableListOf<Song>()
-            var continuationToken: String? = null
-            var pageCount = 0
-            val maxPages = 500 // Increased limit to fetch all liked songs
-            
-            do {
-                val json = if (continuationToken == null) {
-                    musicApi.fetchInternalApi("FEmusic_liked_videos")
-                } else {
-                    musicApi.fetchContinuation(continuationToken)
-                }
-                
-                if (json.isEmpty()) break
-                
-                val songs = parseSongsFromInternalJson(json)
-                allSongs.addAll(songs)
-                
-                // Extract continuation token for next page
-                continuationToken = extractContinuationToken(json)
-                pageCount++
-                
-                KLog.d("YouTubeRepo", "Liked songs page $pageCount: ${songs.size} songs, total: ${allSongs.size}")
-                
-            } while (continuationToken != null && pageCount < maxPages)
-            
-            if (allSongs.isNotEmpty()) {
-                return@withContext allSongs.distinctBy { it.id }
-            }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching liked music", e)
-        }
-        
-        // Fallback to NewPipe method
-        getPlaylistInternal("LM")
-    }
+    suspend fun getLikedMusic(): List<Song> = musicPlaylists.getLikedMusic()
     
-    suspend fun getPlaylist(playlistId: String): List<Song> = withContext(Dispatchers.IO) {
-        // For "Your Likes" playlist, use getLikedMusic which handles pagination
-        if (playlistId == "LM" || playlistId == "VLLM") {
-            return@withContext getLikedMusic()
-        }
-
-        // Album browse ids aren't playlists; they only resolve via /browse
-        if (playlistId.startsWith("MPRE")) {
-            return@withContext getAlbumSongs(playlistId)
-        }
-
-        // For other playlists, use internal method
-        getPlaylistInternal(playlistId)
-    }
+    suspend fun getPlaylist(playlistId: String): List<Song> = musicPlaylists.getPlaylist(playlistId)
     
-    /**
-     * Internal playlist fetching without the LM redirect to avoid infinite recursion.
-     */
-    private suspend fun getPlaylistInternal(playlistId: String): List<Song> = withContext(Dispatchers.IO) {
-
-        // WEB_REMIX first for both session states: NewPipe drops album links
-        // and cannot distinguish a playlist's title from a track's album.
-        val accountResult = getBrowsePlaylistSongs(playlistId)
-        if (accountResult.complete && accountResult.songs.isNotEmpty()) {
-            return@withContext accountResult.songs
-        }
-
-        var newPipeComplete = true
-        val newPipeSongs = try {
-            val urlId = if (playlistId.startsWith("VL")) playlistId.removePrefix("VL") else playlistId
-            val playlistUrl = "https://www.youtube.com/playlist?list=$urlId"
-
-            val playlistExtractor = youtubeService.getPlaylistExtractor(playlistUrl)
-            playlistExtractor.fetchPage()
-
-            val allItems = mutableListOf<StreamInfoItem>()
-            allItems.addAll(playlistExtractor.initialPage.items.filterIsInstance<StreamInfoItem>())
-
-            var currentPage = playlistExtractor.initialPage
-            while (currentPage.hasNextPage()) {
-                try {
-                    currentPage = playlistExtractor.getPage(currentPage.nextPage)
-                    allItems.addAll(currentPage.items.filterIsInstance<StreamInfoItem>())
-                } catch (e: Exception) {
-                    newPipeComplete = false
-                    KLog.w(
-                        "YouTubeRepo",
-                        "NewPipe playlist continuation failed for $playlistId after ${allItems.size} items",
-                        e
-                    )
-                    break
-                }
-            }
-
-            allItems.mapNotNull { item ->
-                Song.fromYouTube(
-                    videoId = extractVideoId(item.url),
-                    title = item.name ?: "Unknown",
-                    artist = item.uploaderName ?: "Unknown Artist",
-                    album = UNKNOWN_ALBUM,
-                    duration = item.duration * 1000L,
-                    thumbnailUrl = item.thumbnails?.firstOrNull()?.url
-                )
-            }
-        } catch (e: Exception) {
-            newPipeComplete = false
-            emptyList()
-        }
-
-        if (newPipeComplete && newPipeSongs.isNotEmpty()) return@withContext newPipeSongs
-
-        // Do not throw away useful rows if every complete path failed, but log
-        // loudly that this is degraded rather than pretending the exact page
-        // boundary is the playlist's real end.
-        val partial = listOf(accountResult.songs, newPipeSongs)
-            .maxByOrNull { it.size }
-            .orEmpty()
-        if (partial.isNotEmpty()) {
-            KLog.w(
-                "YouTubeRepo",
-                "Returning incomplete playlist $playlistId (${partial.size} songs) after all full-load paths failed"
-            )
-        }
-        partial
-    }
-
-    private data class PlaylistLoadResult(
-        val songs: List<Song>,
-        val complete: Boolean
-    )
-
-    /**
-     * WEB_REMIX playlist browse, including every continuation.
-     *
-     * Account cookies are attached by [browseMusic] and [fetchContinuation]
-     * when there is a session and omitted when there is not, so this one walker
-     * serves both: a public playlist pages to its end anonymously, and an owned
-     * or private one needs the session that those two helpers already apply.
-     */
-    private fun getBrowsePlaylistSongs(playlistId: String): PlaylistLoadResult {
-        val browseId = if (playlistId.startsWith("VL") || playlistId.startsWith("FE")) {
-            playlistId
-        } else {
-            "VL$playlistId"
-        }
-        val allSongs = mutableListOf<Song>()
-        val seenTokens = mutableSetOf<String>()
-        var json = musicApi.browseMusic(browseId)
-            ?: return PlaylistLoadResult(emptyList(), complete = false)
-
-        while (true) {
-            if (json.isBlank()) return PlaylistLoadResult(allSongs, complete = false)
-            allSongs += parseSongsFromInternalJson(json, preserveDuplicates = true)
-            val token = extractPlaylistContinuationToken(json)
-                ?: return PlaylistLoadResult(allSongs, complete = true)
-            if (!seenTokens.add(token)) {
-                KLog.w("YouTubeRepo", "Repeated playlist continuation for $playlistId")
-                return PlaylistLoadResult(allSongs, complete = false)
-            }
-            json = musicApi.fetchContinuation(token)
-            if (json.isEmpty()) {
-                KLog.w(
-                    "YouTubeRepo",
-                    "Authenticated playlist continuation failed for $playlistId after ${allSongs.size} songs"
-                )
-                return PlaylistLoadResult(allSongs, complete = false)
-            }
-        }
-    }
-
-    suspend fun fetchAccountInfo() = withContext(Dispatchers.IO) {
-        // Captured before the call so the name, avatar and datasyncId it parses
-        // land on the account that was asked, even if the user switches away
-        // while the request is out.
-        val session = sessionManager.captureSession() ?: return@withContext
-
-        try {
-            val jsonResponse = musicApi.fetchInternalApi("account/account_menu")
-
-            if (jsonResponse.isEmpty()) {
-                KLog.w("YouTubeRepo", "fetchAccountInfo: empty response from account/account_menu")
-                return@withContext
-            }
-            // Account payloads include identity details. Keep them out of the
-            // release diagnostic ring buffer; success/failure is enough here.
-            KLog.d("YouTubeRepo", "fetchAccountInfo response received")
-            
-            var avatarUrl: String? = null
-            var userName: String? = null
-            
-            try {
-                val root = org.json.JSONObject(jsonResponse)
-                
-                // Navigate to the account section
-                // Usually: actions -> openPopupAction -> popup -> multiPageMenuRenderer -> header -> activeAccountHeaderRenderer
-                val actions = root.optJSONArray("actions")
-                val popup = actions?.optJSONObject(0)
-                    ?.optJSONObject("openPopupAction")
-                    ?.optJSONObject("popup")
-                    ?.optJSONObject("multiPageMenuRenderer")
-                
-                val header = popup?.optJSONObject("header")?.optJSONObject("activeAccountHeaderRenderer")
-                
-                if (header != null) {
-                    // Extract Name
-                    userName = getRunText(header.optJSONObject("accountName"))
-                    
-                    // Extract Avatar
-                    val thumbnails = header.optJSONObject("avatar")?.optJSONArray("thumbnails")
-                    if (thumbnails != null && thumbnails.length() > 0) {
-                        avatarUrl = thumbnails.optJSONObject(thumbnails.length() - 1)?.optString("url")
-                    }
-                }
-                
-                // Fallback: Check sections if header failed
-                if (userName == null || avatarUrl == null) {
-                    val sections = popup?.optJSONArray("sections")
-                    if (sections != null) {
-                        for (i in 0 until sections.length()) {
-                            val item = sections.optJSONObject(i)
-                                ?.optJSONObject("multiPageMenuSectionRenderer")
-                                ?.optJSONArray("items")?.optJSONObject(0)
-                                ?.optJSONObject("compactLinkRenderer")
-                                
-                            // Sometimes the first item is the account link
-                            if (item != null) {
-                                val thumb = item.optJSONObject("icon")?.optJSONArray("thumbnails")
-                                if (avatarUrl == null && thumb != null) {
-                                    avatarUrl = thumb.optJSONObject(thumb.length() - 1)?.optString("url")
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Fallback: Regex for avatar hosts if parsing failed
-                // (yt3.ggpht.com and lh3.googleusercontent.com serve account avatars)
-                if (avatarUrl == null) {
-                    val avatarRegex = "\"url\"\\s*:\\s*\"(https://(?:yt3\\.ggpht\\.com|[a-z0-9]+\\.googleusercontent\\.com)/[^\"]+)\"".toRegex()
-                    val match = avatarRegex.find(jsonResponse)
-                    avatarUrl = match?.groupValues?.get(1)
-                }
-
-            } catch (jsonEx: Exception) {
-                // Ignore
-            }
-            
-            KLog.d("YouTubeRepo", "fetchAccountInfo parsed name=$userName avatar=$avatarUrl")
-
-            // Save avatar if found
-            if (!avatarUrl.isNullOrEmpty()) {
-                // Upgrade resolution
-                val highResUrl = avatarUrl
-                    .replace("=s88", "=s512")
-                    .replace("=s48", "=s512")
-                    .replace("=s96", "=s512")
-                sessionManager.updateSessionIdentity(session, avatarUrl = highResUrl)
-            }
-
-            // Save user name if found
-            if (!userName.isNullOrEmpty()) {
-                sessionManager.updateSessionIdentity(session, name = userName)
-            }
-
-            // YouTube's own account identifier, which every authenticated
-            // response carries for free (verified August 2026 against
-            // account_menu, FEsubscriptions and FEwhat_to_watch: present on all
-            // three, identical across them, alongside a `loggedOut` boolean).
-            // Stored verbatim, trailing separators included - it is only ever
-            // compared against another copy of itself.
-            //
-            // This is what lets the app recognise an account it already has:
-            // signing back in repairs that profile instead of adding a
-            // duplicate row, and a restored backup can tell that an account in
-            // the file is the one already signed in here.
-            runCatching {
-                org.json.JSONObject(jsonResponse)
-                    .optJSONObject("responseContext")
-                    ?.optJSONObject("mainAppWebResponseContext")
-                    ?.optString("datasyncId")
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { sessionManager.updateSessionIdentity(session, datasyncId = it) }
-            }
-            
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Account identity refresh failed", e)
-        }
-    }
+    suspend fun fetchAccountInfo() = youtubeAccount.fetchAccountInfo()
 
     /**
      * Keep what a `/player` response carries besides its streams: the caption
@@ -1508,7 +630,7 @@ class YouTubeRepository(private val context: Context) {
             videoSearchNextPageCache[key] =
                 if (searchExtractor.initialPage.hasNextPage()) searchExtractor.initialPage.nextPage else null
 
-            searchExtractor.initialPage.items.toVideoItems()
+            searchExtractor.initialPage.items.toVideoItems(context)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1541,7 +663,7 @@ class YouTubeRepository(private val context: Context) {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             videoSearchNextPageCache[key] =
                 if (nextPage.hasNextPage()) nextPage.nextPage else null
-            nextPage.items.toVideoItems()
+            nextPage.items.toVideoItems(context)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1549,41 +671,6 @@ class YouTubeRepository(private val context: Context) {
             emptyList()
         }
     }
-
-    /** Map a NewPipe search page's streams to [VideoItem]s, skipping unusable rows. */
-    private fun List<org.schabi.newpipe.extractor.InfoItem>.toVideoItems(): List<VideoItem> =
-        filterIsInstance<StreamInfoItem>().mapNotNull { item ->
-            // "Fully block Shorts": NewPipe already knows which results are
-            // Shorts, so they are dropped here rather than drawn.
-            if (item.isShortFormContent && ThemePreferences.isShortsHardBlocked(context)) {
-                return@mapNotNull null
-            }
-            try {
-                val uploaderUrl = item.uploaderUrl ?: ""
-                val channelId = when {
-                    uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
-                    uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
-                    uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
-                    else -> null
-                }
-
-                VideoItem.fromStreamInfoItem(
-                    videoId = extractVideoId(item.url),
-                    title = item.name ?: "Unknown",
-                    channelName = item.uploaderName ?: "Unknown Channel",
-                    channelId = channelId,
-                    channelIconUrl = item.uploaderAvatars?.maxByOrNull { it.width }?.url,
-                    thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url ?: item.thumbnails?.firstOrNull()?.url,
-                    durationSeconds = item.duration,
-                    viewCount = item.viewCount,
-                    uploadedDate = item.textualUploadDate,
-                    isLive = item.streamType == StreamType.LIVE_STREAM || item.streamType == StreamType.AUDIO_LIVE_STREAM,
-                    subscriberCount = null
-                )
-            } catch (e: Exception) {
-                null
-            }
-        }
 
     /**
      * Search for playlists on regular YouTube (video mode search). Mapped to
@@ -2034,7 +1121,7 @@ class YouTubeRepository(private val context: Context) {
         try {
             if (continuation is VideoPlaylistCursor.NewPipe) {
                 val page = continuation.extractor.getPage(continuation.page)
-                return@withContext VideoPlaylistPage(page.items.toVideoItems(),
+                return@withContext VideoPlaylistPage(page.items.toVideoItems(context),
                     page.nextPage?.takeIf { page.hasNextPage() }
                         ?.let { VideoPlaylistCursor.NewPipe(continuation.extractor, it) })
             }
@@ -2060,7 +1147,7 @@ class YouTubeRepository(private val context: Context) {
                 "https://www.youtube.com/playlist?list=${playlistId.removePrefix("VL")}")
             extractor.fetchPage()
             val page = extractor.initialPage
-            VideoPlaylistPage(page.items.toVideoItems(),
+            VideoPlaylistPage(page.items.toVideoItems(context),
                 page.nextPage?.takeIf { page.hasNextPage() }
                     ?.let { VideoPlaylistCursor.NewPipe(extractor, it) })
         } catch (e: CancellationException) {
@@ -2175,11 +1262,11 @@ class YouTubeRepository(private val context: Context) {
                 extractor.fetchPage()
                 val videos = mutableListOf<VideoItem>()
                 var page = extractor.initialPage
-                videos += page.items.toVideoItems()
+                videos += page.items.toVideoItems(context)
                 while (page.hasNextPage()) {
                     try {
                         page = extractor.getPage(page.nextPage)
-                        videos += page.items.toVideoItems()
+                        videos += page.items.toVideoItems(context)
                     } catch (e: Exception) {
                         KLog.w(
                             "YouTubeRepo",
@@ -4817,86 +3904,5 @@ class YouTubeRepository(private val context: Context) {
         }
     }
 
-    /**
-     * The user's notification inbox (new uploads from subscribed channels,
-     * replies, etc.). Requires login.
-     *
-     * The inbox is paged, and how far it goes depends on the account. [verified
-     * September 2026] A page is about 20 items followed by a
-     * `continuationItemRenderer` whose `getNotificationMenuEndpoint.ctoken` is
-     * posted back to the same endpoint as `{"ctoken": ...}`; that account's
-     * whole inbox was three pages. [verified October 2026] Another account's
-     * was 11 items and no continuation at all. So up to
-     * [NOTIFICATION_INBOX_MAX_PAGES] are followed, and a response without a
-     * token is simply the end. [scar] Only the first page was ever read, so
-     * the sheet stopped at 20 on an account with sixty. Whatever YouTube has
-     * dropped altogether is what [NotificationHistoryStore] remembers.
-     */
-    suspend fun getNotifications(): List<NotificationItem> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
-        try {
-            val raw = webApi.postWatchApi(
-                "notification/get_notification_menu",
-                org.json.JSONObject()
-                    .put("context", webApi.webContext())
-                    .put("notificationsMenuRequestType", "NOTIFICATIONS_MENU_REQUEST_TYPE_INBOX")
-            ) ?: return@withContext emptyList()
-            var root = org.json.JSONObject(raw)
-            val renderers = mutableListOf<org.json.JSONObject>()
-            var page = 1
-            while (true) {
-                findObjectsByKey(root, "notificationRenderer", renderers)
-                if (page >= NOTIFICATION_INBOX_MAX_PAGES) break
-                val endpoints = mutableListOf<org.json.JSONObject>()
-                findObjectsByKey(root, "getNotificationMenuEndpoint", endpoints)
-                val token = endpoints.firstNotNullOfOrNull { endpoint ->
-                    endpoint.optString("ctoken").takeIf { it.isNotBlank() }
-                } ?: break
-                // A later page that fails keeps the pages already read.
-                val next = webApi.postWatchApi(
-                    "notification/get_notification_menu",
-                    org.json.JSONObject().put("context", webApi.webContext()).put("ctoken", token)
-                ) ?: break
-                root = org.json.JSONObject(next)
-                page++
-            }
-            renderers.distinctBy { it.optString("notificationId").ifBlank { it.toString() } }.mapNotNull { renderer ->
-                val message = renderer.optJSONObject("shortMessage")?.optString("simpleText")
-                    ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                fun lastThumb(key: String): String? {
-                    val thumbs = renderer.optJSONObject(key)?.optJSONArray("thumbnails") ?: return null
-                    var url = thumbs.optJSONObject((thumbs.length() - 1).coerceAtLeast(0))
-                        ?.optString("url")?.takeIf { it.isNotBlank() }
-                    if (url?.startsWith("//") == true) url = "https:$url"
-                    return url
-                }
-                val navigation = renderer.optJSONObject("navigationEndpoint")
-                fun endpointVideoId(key: String): String? =
-                    navigation?.optJSONObject(key)?.optString("videoId")?.takeIf { it.isNotBlank() }
-                val webUrl = navigation?.optJSONObject("commandMetadata")
-                    ?.optJSONObject("webCommandMetadata")?.optString("url")
-                    ?.takeIf { it.startsWith("/") }
-                    ?.let { "https://www.youtube.com$it" }
-                val postParams = navigation?.optJSONObject("browseEndpoint")
-                    ?.takeIf { it.optString("browseId") == POST_DETAIL_BROWSE_ID }
-                    ?.optString("params")?.takeIf { it.isNotBlank() }
-                val target = endpointVideoId("watchEndpoint")?.let { NotificationTarget.Video(it) }
-                    ?: endpointVideoId("reelWatchEndpoint")?.let { NotificationTarget.Short(it) }
-                    ?: postParams?.let { NotificationTarget.Post(it, webUrl) }
-                    ?: webUrl?.let { NotificationTarget.Link(it) }
-                NotificationItem(
-                    message = message,
-                    sentTime = renderer.optJSONObject("sentTimeText")?.optString("simpleText").orEmpty(),
-                    channelAvatarUrl = lastThumb("thumbnail"),
-                    videoThumbnailUrl = lastThumb("videoThumbnail"),
-                    target = target,
-                    isRead = renderer.optBoolean("read", false),
-                    id = renderer.optString("notificationId")
-                )
-            }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getNotifications failed", e)
-            emptyList()
-        }
-    }
+    suspend fun getNotifications(): List<NotificationItem> = youtubeAccount.getNotifications()
 }
