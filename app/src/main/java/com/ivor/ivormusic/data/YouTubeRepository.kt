@@ -16,6 +16,7 @@ import com.ivor.ivormusic.data.stream.m4aAudioFormats
 import com.ivor.ivormusic.data.stream.okRoot
 import com.ivor.ivormusic.data.stream.originalAudioStreams
 import com.ivor.ivormusic.data.stream.userAgentForStreamClient
+import com.ivor.ivormusic.data.youtube.*
 import com.ivor.ivormusic.util.KLog
 
 import android.content.Context
@@ -86,43 +87,6 @@ class YouTubeRepository(private val context: Context) {
         const val FILTER_YOUTUBE_PLAYLISTS = "playlists"
         const val FILTER_YOUTUBE_CHANNELS = "channels"
         
-        /**
-         * Public InnerTube API Key for WEB client.
-         * 
-         * NOTE TO REVIEWERS: This is NOT a secret/private API key. This is a publicly-known,
-         * Google-generated API key that is embedded in YouTube's and YouTube Music's public
-         * JavaScript source code. It is designed to be used by web clients and is the same
-         * key used by all major open-source YouTube projects including:
-         * - NewPipe/NewPipeExtractor
-         * - yt-dlp
-         * - ytmusicapi
-         * - Invidious
-         * - and many others
-         * 
-         * This key is rate-limited by Google on a per-IP basis, not per-key, and does not
-         * grant access to any private user data. It simply identifies the client type (WEB)
-         * for the InnerTube API. Moving it to BuildConfig or environment variables would
-         * provide no security benefit as it is already public knowledge.
-         * 
-         * Reference: https://github.com/AyMaN-GhOsT/YouTube-Internal-Clients
-         */
-        /**
-         * Global Browser User-Agent to be used across the app (NewPipe, CacheManager, internal API).
-         * Must be consistent to avoid playback throttling and "Page needs to be reloaded" errors.
-         * Using a modern Chrome UA is recommended.
-         */
-        const val BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        private const val INNER_TUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
-
-        // Current InnerTube client versions. YouTube rejects clients older than
-        // a few months; bump these together when refreshing.
-        // Re-derived from the bootstrap HTML of music.youtube.com and
-        // www.youtube.com in September 2026 (INNERTUBE_CLIENT_VERSION), and
-        // both confirmed live: WEB_REMIX answers a VL<playlistId> browse with a
-        // full musicPlaylistShelfRenderer, WEB answers /next.
-        private const val WEB_REMIX_VERSION = "1.20260901.12.00"
-        private const val WEB_VERSION = "2.20260903.01.00"
-
         // browse params selecting a channel's Videos tab (protobuf: "videos")
         private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
 
@@ -409,10 +373,6 @@ class YouTubeRepository(private val context: Context) {
         onResponse = ::harvestPlayerResponse,
         onLoudness = ::cacheTrackLoudness,
     )
-
-    private fun getRandomUserAgent(): String {
-        return BROWSER_USER_AGENT
-    }
 
     init {
         initializeNewPipe()
@@ -937,7 +897,7 @@ class YouTubeRepository(private val context: Context) {
             val builder = okhttp3.Request.Builder()
                 .url("https://music.youtube.com/youtubei/v1/$endpoint")
                 .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                .addHeader("User-Agent", getRandomUserAgent())
+                .addHeader("User-Agent", BROWSER_USER_AGENT)
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("X-YouTube-Client-Name", "67")
                 .addHeader("X-YouTube-Client-Version", WEB_REMIX_VERSION)
@@ -1222,7 +1182,7 @@ class YouTubeRepository(private val context: Context) {
         val requestBuilder = okhttp3.Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/next")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("User-Agent", getRandomUserAgent())
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
             .addHeader("Origin", "https://music.youtube.com")
 
         // Personalize the radio when logged in; anonymous works fine too.
@@ -1235,29 +1195,6 @@ class YouTubeRepository(private val context: Context) {
         // One song per queue entry, and the song rather than its video where
         // YouTube offers both.
         return MusicMetadata.queueSongs(org.json.JSONObject(body))
-    }
-
-    /**
-     * Recursively collect every JSONObject stored under [key] anywhere in the tree.
-     * Kept structure-agnostic on purpose — InnerTube nests these renderers
-     * differently across response variants (queue vs. wrapper renderers).
-     */
-    private fun findObjectsByKey(node: Any, key: String, results: MutableList<org.json.JSONObject>) {
-        when (node) {
-            is org.json.JSONObject -> {
-                node.optJSONObject(key)?.let { results.add(it) }
-                val keys = node.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    if (k != key) findObjectsByKey(node.get(k), key, results)
-                }
-            }
-            is org.json.JSONArray -> {
-                for (i in 0 until node.length()) {
-                    findObjectsByKey(node.get(i), key, results)
-                }
-            }
-        }
     }
 
     /**
@@ -1376,7 +1313,7 @@ class YouTubeRepository(private val context: Context) {
         val request = okhttp3.Request.Builder()
             .url("https://music.youtube.com/youtubei/v1/browse")
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("User-Agent", getRandomUserAgent())
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
             .addHeader("Origin", "https://music.youtube.com")
             .authenticate(session)
             .build()
@@ -1395,65 +1332,6 @@ class YouTubeRepository(private val context: Context) {
         } catch (e: Exception) {
             KLog.e("YouTubeRepo", "Music continuation request failed", e)
             ""
-        }
-    }
-    
-    /**
-     * Extract continuation token from API response for pagination.
-     */
-    private fun extractContinuationToken(json: String): String? {
-        try {
-            val root = org.json.JSONObject(json)
-            val continuations = mutableListOf<String>()
-            
-            // Find all nextContinuationData or continuationEndpoint objects
-            findContinuationTokens(root, continuations)
-            
-            return continuations.firstOrNull()
-        } catch (e: Exception) {
-            // Ignore
-        }
-        return null
-    }
-    
-    private fun findContinuationTokens(node: Any, results: MutableList<String>) {
-        if (node is org.json.JSONObject) {
-            // Check for nextContinuationData
-            if (node.has("nextContinuationData")) {
-                val token = node.optJSONObject("nextContinuationData")?.optString("continuation")
-                if (!token.isNullOrEmpty()) {
-                    results.add(token)
-                    return
-                }
-            }
-            // Check for continuationEndpoint
-            if (node.has("continuationEndpoint")) {
-                val token = node.optJSONObject("continuationEndpoint")
-                    ?.optJSONObject("continuationCommand")
-                    ?.optString("token")
-                if (!token.isNullOrEmpty()) {
-                    results.add(token)
-                    return
-                }
-            }
-            // Check for direct continuationCommand
-            if (node.has("continuationCommand")) {
-                val token = node.optJSONObject("continuationCommand")?.optString("token")
-                if (!token.isNullOrEmpty()) {
-                    results.add(token)
-                    return
-                }
-            }
-            // Recurse
-            val keys = node.keys()
-            while (keys.hasNext()) {
-                val nextKey = keys.next()
-                findContinuationTokens(node.get(nextKey), results)
-            }
-        } else if (node is org.json.JSONArray) {
-            for (i in 0 until node.length()) {
-                findContinuationTokens(node.get(i), results)
-            }
         }
     }
     
@@ -1809,7 +1687,7 @@ class YouTubeRepository(private val context: Context) {
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .authenticate(session)
-            .addHeader("User-Agent", getRandomUserAgent())
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
             .addHeader("Origin", "https://music.youtube.com")
             // Client name 67 is WEB_REMIX. Sent for the same reason the WEB
             // calls now send theirs: a client that never identifies itself is
@@ -2145,35 +2023,6 @@ class YouTubeRepository(private val context: Context) {
 
     // --- JSON Helpers ---
 
-    private fun getRunText(formattedString: org.json.JSONObject?): String? {
-        if (formattedString == null) return null
-        if (formattedString.has("simpleText")) {
-            return formattedString.optString("simpleText")
-        }
-        val runs = formattedString.optJSONArray("runs") ?: return null
-        val sb = StringBuilder()
-        for (i in 0 until runs.length()) {
-            sb.append(runs.optJSONObject(i)?.optString("text") ?: "")
-        }
-        return sb.toString()
-    }
-
-
-    private fun extractVideoId(url: String): String {
-        // Extract video ID from various YouTube URL formats
-        val patterns = listOf(
-            Regex("watch\\?v=([a-zA-Z0-9_-]+)"),
-            Regex("youtu\\.be/([a-zA-Z0-9_-]+)"),
-            Regex("youtube\\.com/embed/([a-zA-Z0-9_-]+)"),
-            Regex("music\\.youtube\\.com/watch\\?v=([a-zA-Z0-9_-]+)")
-        )
-        
-        for (pattern in patterns) {
-            pattern.find(url)?.groupValues?.getOrNull(1)?.let { return it }
-        }
-        
-        return url // Fallback: return the URL as-is
-    }
 
     private fun generateCpn(): String {
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
@@ -2854,38 +2703,6 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Resurrected helper for deep recursive search.
-     * Used sparingly for fallback scenarios where structure is unknown.
-     */
-    private fun findAllObjects(json: org.json.JSONObject, key: String, results: MutableList<org.json.JSONObject>, depth: Int = 0) {
-        if (depth > 20) return // Reduced depth limit from 50
-        
-        if (json.has(key)) {
-            val value = json.opt(key)
-            if (value is org.json.JSONObject) {
-                results.add(value)
-            } else if (value is org.json.JSONArray) {
-                for (i in 0 until value.length()) {
-                    val item = value.optJSONObject(i)
-                    if (item != null) results.add(item)
-                }
-            }
-        }
-        
-        json.keys().forEach { keyName ->
-            val value = json.opt(keyName)
-            when (value) {
-                is org.json.JSONObject -> findAllObjects(value, key, results, depth + 1)
-                is org.json.JSONArray -> {
-                    for (i in 0 until value.length()) {
-                        val item = value.optJSONObject(i)
-                        if (item != null) findAllObjects(item, key, results, depth + 1)
-                    }
-                }
-            }
-        }
-    }
-    /**
      * Parse video items from YouTube homepage JSON response.
      * Use optimized path traversal instead of recursive findAllObjects.
      */
@@ -3491,12 +3308,6 @@ class YouTubeRepository(private val context: Context) {
         )
     }
 
-    /** "1,234 videos" to a number; -1 for anything with no digits in it. */
-    private fun countFromText(text: String?): Int {
-        val digits = text?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() } ?: return -1
-        return digits.toIntOrNull() ?: -1
-    }
-
     /**
      * Playlist lockup (LOCKUP_CONTENT_TYPE_PLAYLIST / PODCAST): contentId is
      * the playlist id, title lives in lockupMetadataViewModel, the video count
@@ -4099,20 +3910,6 @@ class YouTubeRepository(private val context: Context) {
     }
 
     /**
-     * Parse duration string like "3:45" or "1:23:45" to seconds.
-     */
-    private fun parseDurationToSeconds(duration: String): Long {
-        if (duration.isBlank() || duration == "0:00") return 0L
-        val parts = duration.split(":").mapNotNull { it.toLongOrNull() }
-        return when (parts.size) {
-            1 -> parts[0]
-            2 -> parts[0] * 60 + parts[1]
-            3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
-            else -> 0L
-        }
-    }
-
-    /**
      * WEB `/browse` on www.youtube.com, signed when there is a session and
      * anonymous when there is not.
      *
@@ -4154,7 +3951,7 @@ class YouTubeRepository(private val context: Context) {
         val request = okhttp3.Request.Builder()
             .url(url)
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("User-Agent", getRandomUserAgent())
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
             .addHeader("Origin", "https://www.youtube.com")
             .addHeader("X-YouTube-Client-Name", "1")
             .addHeader("X-YouTube-Client-Version", WEB_VERSION)
@@ -5069,7 +4866,7 @@ class YouTubeRepository(private val context: Context) {
      */
     suspend fun sendLiveChatMessage(params: String, text: String): LiveChatSendResult =
         withContext(Dispatchers.IO) {
-            if (!isLoggedIn()) {
+            if (!sessionManager.isLoggedIn()) {
                 return@withContext LiveChatSendResult(false, error = "Sign in to chat")
             }
             try {
@@ -5366,23 +5163,6 @@ class YouTubeRepository(private val context: Context) {
             )
         }
         return null
-    }
-
-    /** Widest entry of a thumbnail/source array, which is the highest quality. */
-    private fun widestThumbnailUrl(array: org.json.JSONArray?, urlKey: String): String? {
-        if (array == null) return null
-        var best: String? = null
-        var bestWidth = -1
-        for (i in 0 until array.length()) {
-            val entry = array.optJSONObject(i) ?: continue
-            val url = entry.optString(urlKey).takeIf { it.isNotBlank() } ?: continue
-            val width = entry.optInt("width", 0)
-            if (width >= bestWidth) {
-                bestWidth = width
-                best = url
-            }
-        }
-        return best
     }
 
     /**
@@ -6055,18 +5835,6 @@ class YouTubeRepository(private val context: Context) {
             KLog.e("YouTubeRepo", "getCommentsPage failed", e)
             null
         }
-    }
-
-    /**
-     * Decode a URL-encoded, URL-safe base64 InnerTube params blob into a
-     * string for substring matching (embedded ids are plain ASCII).
-     */
-    private fun decodeInnerTubeParams(params: String): String? = try {
-        val unescaped = java.net.URLDecoder.decode(params, "UTF-8")
-        val bytes = android.util.Base64.decode(unescaped, android.util.Base64.URL_SAFE)
-        String(bytes, Charsets.ISO_8859_1)
-    } catch (e: Exception) {
-        null
     }
 
     private fun parseCommentEntity(
@@ -7895,61 +7663,6 @@ class YouTubeRepository(private val context: Context) {
                 ?.optJSONObject("continuationCommand")
                 ?.optString("token")
                 ?.takeIf { it.isNotBlank() }
-        }
-    }
-
-    private inline fun <T, R : Any> List<T>.lastNotNullOfOrNull(transform: (T) -> R?): R? {
-        for (i in indices.reversed()) {
-            transform(this[i])?.let { return it }
-        }
-        return null
-    }
-
-    /** Widest entry of a modern `image.sources` array. */
-    private fun bestImageSource(sources: org.json.JSONArray?): String? {
-        if (sources == null) return null
-        var best: String? = null
-        var maxWidth = -1
-        for (i in 0 until sources.length()) {
-            val source = sources.optJSONObject(i) ?: continue
-            val width = source.optInt("width", 0)
-            val url = source.optString("url").takeIf { it.isNotBlank() } ?: continue
-            if (width >= maxWidth) {
-                maxWidth = width
-                best = url
-            }
-        }
-        return best?.let { if (it.startsWith("//")) "https:$it" else it }
-    }
-
-    /** Widest entry of a legacy `thumbnails` array. */
-    private fun bestThumbnail(thumbnails: org.json.JSONArray?): String? {
-        if (thumbnails == null) return null
-        var best: String? = null
-        var maxWidth = -1
-        for (i in 0 until thumbnails.length()) {
-            val thumb = thumbnails.optJSONObject(i) ?: continue
-            val width = thumb.optInt("width", 0)
-            val url = thumb.optString("url").takeIf { it.isNotBlank() } ?: continue
-            if (width >= maxWidth) {
-                maxWidth = width
-                best = url
-            }
-        }
-        return best?.let { if (it.startsWith("//")) "https:$it" else it }
-    }
-
-    /**
-     * Unwraps `youtube.com/redirect?...&q=<target>` to the real destination, so
-     * a link does not bounce through YouTube and still works once the redirect
-     * token expires. Same rule [RichText] applies to descriptions.
-     */
-    private fun unwrapYouTubeRedirect(url: String): String {
-        if (!url.contains("/redirect?")) return url
-        return try {
-            android.net.Uri.parse(url).getQueryParameter("q")?.takeIf { it.isNotBlank() } ?: url
-        } catch (e: Exception) {
-            url
         }
     }
 
