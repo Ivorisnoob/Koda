@@ -1,7 +1,7 @@
 <!--
-Pull requests go to the `beta` branch, not `main`. GitHub picks `main` by
-default: check the "base" dropdown at the top of this page and change it to
-`beta` before you open the pull request. See CONTRIBUTING.md.
+Pull requests go to the `beta` branch, not `main`. Check the "base" dropdown
+at the top of this page says `beta` before you open the pull request. See
+CONTRIBUTING.md.
 -->
 
 ## What this changes

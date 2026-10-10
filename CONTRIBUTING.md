@@ -20,7 +20,7 @@ Thank you for your interest in **Koda**.
 
 ### 3. Pull Requests
 
-1. **Branch from `beta` and open the pull request against `beta`.** GitHub picks `main` as the base by default, so change it in the "base" dropdown when you open the PR. A pull request opened against `main` will be retargeted before it is reviewed.
+1. **Branch from `beta` and open the pull request against `beta`.** `beta` is the default branch, so a fresh clone starts on it and GitHub selects it as the base when you open the PR; leave it there. A pull request opened against `main` will be retargeted before it is reviewed.
 2. **For anything bigger than a small fix, open an issue first** so the approach can be agreed before you spend time on it. [ROADMAP.md](ROADMAP.md) lists what is planned and what is deliberately out of scope.
 3. **Read [CLAUDE.md](CLAUDE.md) before you write code.** It is short, and it holds the rules that are bugs to break even when the build passes (no hardcoded colors, how streams are fetched, how a new setting is wired). The reasoning for each area is in [docs/](docs/), and UI work follows [DESIGN.md](DESIGN.md).
 4. **Keep a pull request to one topic** and fill in the template, including screenshots or a recording for anything visible.
