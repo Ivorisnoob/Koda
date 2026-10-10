@@ -362,7 +362,10 @@ internal fun SettingsToggleRow(
 
         Switch(
             checked = enabled,
-            onCheckedChange = onToggle,
+            onCheckedChange = { next ->
+                haptics.toggle(next)
+                onToggle(next)
+            },
             enabled = available,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,

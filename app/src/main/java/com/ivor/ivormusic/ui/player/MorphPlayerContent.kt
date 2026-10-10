@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.ui.components.titleMarquee
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -315,6 +316,7 @@ fun MorphPlayerSheetContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp)
+                                .titleMarquee(isPlaying)
                         )
                         val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
                             ?: "Unknown Artist"

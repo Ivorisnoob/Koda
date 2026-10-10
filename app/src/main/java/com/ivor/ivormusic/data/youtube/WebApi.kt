@@ -4,6 +4,7 @@ import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeSession
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -86,6 +87,8 @@ internal class WebApi(
                     null
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "watch api $endpoint failed", e)
             null
@@ -164,6 +167,8 @@ internal class WebApi(
                 }
                 response.body?.string() ?: ""
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Error in fetchYouTubeBrowse", e)
             ""
