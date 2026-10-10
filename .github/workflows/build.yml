@@ -130,12 +130,12 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         persist-credentials: false
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -148,7 +148,7 @@ jobs:
       run: ./gradlew assembleDebug
 
     - name: Upload Debug APK (Universal)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-debug-universal
         path: app/build/outputs/apk/debug/*universal*.apk
@@ -156,7 +156,7 @@ jobs:
         retention-days: 14
 
     - name: Upload Debug APK (arm64-v8a)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-debug-arm64-v8a
         path: app/build/outputs/apk/debug/*arm64-v8a*.apk
@@ -164,7 +164,7 @@ jobs:
         retention-days: 14
 
     - name: Upload Debug APK (armeabi-v7a)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-debug-armeabi-v7a
         path: app/build/outputs/apk/debug/*armeabi-v7a*.apk
@@ -184,7 +184,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         # Telegram changelogs are computed from the last successfully delivered
         # beta head, which can be older than checkout's default shallow history.
@@ -193,7 +193,7 @@ jobs:
         persist-credentials: false
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -217,7 +217,7 @@ jobs:
       run: ./gradlew assembleRelease
 
     - name: Upload Release APK (Universal)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-release-universal
         path: app/build/outputs/apk/release/*universal*.apk
@@ -225,7 +225,7 @@ jobs:
         retention-days: 14
 
     - name: Upload Release APK (arm64-v8a)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-release-arm64-v8a
         path: app/build/outputs/apk/release/*arm64-v8a*.apk
@@ -233,7 +233,7 @@ jobs:
         retention-days: 14
 
     - name: Upload Release APK (armeabi-v7a)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-release-armeabi-v7a
         # Was globbing *arm64-v8a*.apk, which put the arm64 APK in this
@@ -247,7 +247,7 @@ jobs:
     # the versionCode that produced them, so keep it as a retained workflow
     # artifact for maintainers rather than a public release asset.
     - name: Upload Release mapping.txt
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: app-release-mapping
         path: app/build/outputs/mapping/release/mapping.txt

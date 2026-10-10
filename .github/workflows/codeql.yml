@@ -182,7 +182,7 @@ jobs:
     # mismatch rather than on anything CodeQL found.
     - name: Set up JDK 17
       if: matrix.language == 'java-kotlin'
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -204,12 +204,17 @@ jobs:
     # assembleDebug is the command build.yml already proves works on a runner.
     # Autobuild guesses at the Gradle task, which on Android projects is the
     # usual source of "We were unable to automatically build your code".
+    # --no-build-cache is what makes the scan work on a commit that changed no
+    # Kotlin. gradle.properties turns the build cache on and setup-java restores
+    # ~/.gradle with it, so on such a commit compileDebugKotlin came back
+    # FROM-CACHE, the compiler never ran under CodeQL's tracer, and the job
+    # failed with "this run didn't build any of it".
     - name: Run manual build steps
       if: matrix.build-mode == 'manual'
       shell: bash
       run: |
         chmod +x gradlew
-        ./gradlew assembleDebug --no-daemon
+        ./gradlew assembleDebug --no-daemon --no-build-cache
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
