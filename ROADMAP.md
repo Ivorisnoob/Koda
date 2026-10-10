@@ -16,7 +16,7 @@ Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor a
 - **Identity is plural.** Several YouTube accounts and device-only profiles, switched with one preference write; incognito; whole-install backup.
 - **The interface is the product.** Nine player styles, 28 palettes plus dynamic color and AMOLED, a searchable settings hub, springs on everything touch-driven, 25 translations.
 
-`YouTubeRepository.kt` remains the single point of failure for every network path.
+`YouTubeRepository.kt` is a front over `data/youtube` and `data/stream` since October 2026 ([#314](https://github.com/Ivorisnoob/Koda/issues/314)); what that issue still owes is telling a failed request from an empty result.
 
 ---
 
@@ -110,7 +110,7 @@ Decided against in September 2026; each issue's closing comment has the full rea
 
 One line each; the reasoning is in `docs/`, and the full write-ups are in this file's git history.
 
-**Awaiting device validation** (built and unit-tested, not yet confirmed on screens): the late-September links/comments/PiP/scrub batch below (posting and liking on a post in particular were never probed); one-request playback and the connection advice card; the September batch below; playlist membership ticks; upload to YouTube Music; music Videos tab; Watch/Listen handovers; swipe-up options; Shorts scrubbing; 8x speed; shuffle order; inline previews; bot-check traffic cuts; video playlist page; Android Auto fixes; Shorts prefetch; watch-history sessions; options control panel and volume; smooth progress; Spin; Hero; artist page; album links; mini-player container transform; live edge fixes; waveform; visualizer; motion artwork; AutoMix listening; the music download quality sheet; hold speed and the controls delay; reading a notification inbox of more than one page.
+**Awaiting device validation** (built and unit-tested, not yet confirmed on screens): the late-September links/comments/PiP/scrub batch below (posting and liking on a post in particular were never probed); one-request playback and the connection advice card; the September batch below; playlist membership ticks; upload to YouTube Music; music Videos tab; Watch/Listen handovers; swipe-up options; Shorts scrubbing; 8x speed; shuffle order; inline previews; bot-check traffic cuts; video playlist page; Android Auto fixes; Shorts prefetch; watch-history sessions; options control panel and volume; smooth progress; Spin; Hero; artist page; album links; mini-player container transform; live edge fixes; waveform; visualizer; motion artwork; AutoMix listening; the music download quality sheet; hold speed and the controls delay; reading a notification inbox of more than one page; the YouTube data layer split; replacing and pre-checking a refused visitor token; Normalise volume's loudness on visionOS.
 
 ### October 2026
 

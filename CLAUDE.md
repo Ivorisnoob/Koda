@@ -8,7 +8,7 @@ Markers: **[verified <month year>]** probed live, trust until YouTube changes; *
 |---|---|
 | `docs/workflow.md` | Full operating rules, build/test detail, how docs and issues are tracked |
 | `docs/rules.md` | The reasoning behind every invariant and settled decision below |
-| `docs/youtube-data.md` | `YouTubeRepository`, InnerTube parsers, clients, visitorData, rate limiting |
+| `docs/youtube-data.md` | `data/youtube/` behind `YouTubeRepository`, InnerTube parsers, clients, visitorData, rate limiting |
 | `docs/playback-music.md` | `MusicService`, queue occurrences, crossfade/AutoMix, speed, visualizer, lyrics |
 | `docs/playback-streams.md` | Stream resolution, NewPipe budgets, ranged requests, caches, quality/HDR, seeking |
 | `docs/playback-video.md` | `VideoPlayerViewModel`, minimize transition, video queue/resume, captions, SponsorBlock, live, Shorts |
@@ -84,7 +84,7 @@ MVVM with StateFlow and **no DI framework**: ViewModels build repositories direc
 
 | Question | Code | Doc |
 |---|---|---|
-| Stream resolution, feeds, parsers | `data/YouTubeRepository.kt` | `youtube-data.md`, `playback-streams.md` |
+| Stream resolution, feeds, parsers | `data/youtube/`, `data/stream/`, behind the `data/YouTubeRepository.kt` front | `youtube-data.md`, `playback-streams.md` |
 | Music playback, queue, notification, crossfade | `service/MusicService.kt`, `CrossfadeEngine` | `playback-music.md` |
 | Video playback, PiP, captions, chapters | `ui/video/VideoPlayerViewModel.kt` | `playback-video.md` |
 | Screens, tabs, overlays | `MainActivity.kt`, `ui/home/HomeScreen.kt` | `screens.md` |
@@ -207,6 +207,7 @@ One line each; the reasoning is in `docs/rules.md`.
 The rules most often needed in each area. Each is a summary; open the doc before editing.
 
 ### YouTube data layer -> `docs/youtube-data.md`
+- **`YouTubeRepository` is a front that only delegates.** The code is in `data/youtube/` (transport, one class per area, parsers as top-level functions) and `data/stream/`; a new call goes in its area's piece plus a one-line function on the front. Parsers are pinned by `ParserFixturesTest` against reduced live responses (`.probe/parser_fixtures.py`).
 - Two mechanisms: **NewPipe** (video/artist/playlist search, stream URLs, fallbacks) and **raw InnerTube JSON over OkHttp** parsed by hand with `org.json` (`findObjectsByKey`, `findContinuationTokens`, `getRunText()`), no kotlinx-serialization.
 - **Probe first, never parse from memory**: `py .probe/probe.py <endpoint> '<json>' [--music]` (never commit `.probe/`). Signed-in probes sign SAPISIDHASH **per origin**; confirm a session by `logged_in: 1`, never HTTP 200. Note "verified <month year>" in the parser's KDoc.
 - Clients: WEB for browse/next/engagement, WEB_REMIX for music.youtube.com, **one direct visionOS `/player` under Koda's own visitorData for music, video and Shorts** (NewPipe's Android-reel/visionOS chain only as the fallback - each extraction mints three fresh visitor ids), ANDROID_VR -> IOS only as last-resort fallback and caption source. `YouTubeRequestLedger` logs per-open request counts under `YTRequests`. **Plain `ANDROID` is SABR-only - no URLs.** Pinned client versions need periodic bumps (HTTP 400 on browse = too old).
@@ -226,7 +227,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Visualizer reads Koda's own PCM (`VisualizerAudioProcessor`), so no RECORD_AUDIO. Lyrics layout belongs to `SyncedLyricsView`. `notify()` catches `SecurityException`.
 
 ### Streams, caching, quality -> `docs/playback-streams.md`
-- NewPipe `fetchPage()` blocks; **bound the wait, not the work** (`resolveAudioUrlWithinBudget` detaches on `newPipeScope`). Rethrow `CancellationException` ahead of general catches.
+- NewPipe `fetchPage()` blocks; **bound the wait, not the work** (`NewPipeAudioSource.withinBudget` detaches on `newPipeScope`). Rethrow `CancellationException` ahead of a general catch wherever the `try` body can suspend.
 - `DeferredSingleFlight`: no resolution work inside `ConcurrentHashMap.compute*`.
 - All googlevideo bytes go through bounded ranged requests (10 MB chunks); downloads use their own ranged loop with resumable checkpoints.
 - **Music and video have separate caches.** Music is the user-sized LRU; video/Shorts is an uncapped transient cache. Turning a cache switch off makes it read-only, not bypassed; the preload switch gates work.
