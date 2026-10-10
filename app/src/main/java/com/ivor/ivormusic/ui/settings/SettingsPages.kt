@@ -2045,7 +2045,10 @@ private fun VideoHomeDestinationRow(
         Spacer(Modifier.width(4.dp))
         Switch(
             checked = visible,
-            onCheckedChange = { onVisibleChange(it) },
+            onCheckedChange = { next ->
+                haptics.toggle(next)
+                onVisibleChange(next)
+            },
             enabled = canToggle,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,

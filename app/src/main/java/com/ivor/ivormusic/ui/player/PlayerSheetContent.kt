@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.player
 import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
+import com.ivor.ivormusic.ui.components.titleMarquee
 import com.ivor.ivormusic.R
 import androidx.compose.ui.res.stringResource
 
@@ -582,7 +583,8 @@ private fun ExpressiveNowPlayingView(
                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = onSurfaceColor
+                    color = onSurfaceColor,
+                    modifier = Modifier.titleMarquee(isPlaying)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 // Clickable artist name

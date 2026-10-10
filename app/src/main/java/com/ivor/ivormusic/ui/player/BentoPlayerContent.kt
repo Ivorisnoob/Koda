@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.ui.components.titleMarquee
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -348,7 +349,8 @@ fun BentoPlayerSheetContent(
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = onTile,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.titleMarquee(isPlaying)
                             )
                             val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
                                 ?: "Unknown Artist"

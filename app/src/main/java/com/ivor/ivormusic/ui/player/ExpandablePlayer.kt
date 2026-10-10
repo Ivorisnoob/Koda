@@ -34,6 +34,8 @@ import androidx.compose.ui.layout.layout
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.MiniPlayerCustomization
+import com.ivor.ivormusic.ui.components.MiniSkipState
 import com.ivor.ivormusic.ui.components.MiniPlayerContent
 import com.ivor.ivormusic.ui.components.miniSkipGesture
 import com.ivor.ivormusic.ui.components.PLAYER_CONTAINER_SPRING
@@ -101,8 +103,8 @@ fun ExpandablePlayer(
     isPlaying: Boolean,
     isBuffering: Boolean,
     playWhenReady: Boolean,
-    progress: Float,
-    duration: Long,
+    progress: Float = 0f,
+    duration: Long = 0L,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
     viewModel: PlayerViewModel,
@@ -617,53 +619,27 @@ fun ExpandablePlayer(
                             }
                             .graphicsLayer { alpha = miniAlpha }
                     ) {
-                        MiniPlayerContent(
+                        ExpandableMiniPlayerSlot(
+                            viewModel = viewModel,
+                            fallbackProgress = progress,
+                            fallbackDuration = duration,
                             currentSong = currentSong,
                             isPlaying = isPlaying,
                             isBuffering = isBuffering,
                             playWhenReady = playWhenReady,
-                            progress = progress,
                             onPlayPauseClick = onPlayPauseClick,
                             onNextClick = onNextClick,
-                            onClick = { onExpandChange(true) },
-                            onLongClick = when (miniCustomization.longPress) {
-                                com.ivor.ivormusic.data.MiniLongPress.NOTHING -> null
-                                // The options sheet belongs to the open
-                                // player, so the pill opens both.
-                                com.ivor.ivormusic.data.MiniLongPress.OPTIONS -> {
-                                    {
-                                        onExpandChange(true)
-                                        nowPlayingOptionsOpen.value = true
-                                    }
-                                }
-                                com.ivor.ivormusic.data.MiniLongPress.LIKE -> {
-                                    { viewModel.toggleCurrentSongLike() }
-                                }
-                            },
-                            skipState = miniSkip,
+                            onExpandChange = onExpandChange,
+                            miniCustomization = miniCustomization,
+                            nowPlayingOptionsOpen = nowPlayingOptionsOpen,
+                            miniSkip = miniSkip,
                             previousSong = previousItem?.song,
                             nextSong = nextItem?.song,
                             detailAlpha = { 1f - bubbleFraction() },
-                            durationMs = duration,
-                            customization = miniCustomization,
-                            onButtonClick = { button ->
-                                when (button) {
-                                    com.ivor.ivormusic.data.MiniPlayerButton.PREVIOUS -> viewModel.skipToPrevious()
-                                    com.ivor.ivormusic.data.MiniPlayerButton.LIKE -> {
-                                        haptics.confirm()
-                                        viewModel.toggleCurrentSongLike()
-                                    }
-                                    com.ivor.ivormusic.data.MiniPlayerButton.SHUFFLE -> viewModel.toggleShuffle()
-                                    com.ivor.ivormusic.data.MiniPlayerButton.REPEAT -> viewModel.toggleRepeat()
-                                    com.ivor.ivormusic.data.MiniPlayerButton.CLOSE -> viewModel.clearPlayer()
-                                    // Play/pause and next have their own callbacks.
-                                    com.ivor.ivormusic.data.MiniPlayerButton.PLAY_PAUSE,
-                                    com.ivor.ivormusic.data.MiniPlayerButton.NEXT -> Unit
-                                }
-                            },
+                            haptics = haptics,
                             isLiked = miniIsLiked,
                             shuffleOn = miniShuffleOn,
-                            repeatMode = miniRepeatMode
+                            repeatMode = miniRepeatMode,
                         )
                     }
                 }
@@ -943,4 +919,80 @@ fun ExpandablePlayer(
         }
     }
 
+}
+
+
+@Composable
+private fun ExpandableMiniPlayerSlot(
+    viewModel: PlayerViewModel,
+    fallbackProgress: Float,
+    fallbackDuration: Long,
+    currentSong: Song,
+    isPlaying: Boolean,
+    isBuffering: Boolean,
+    playWhenReady: Boolean,
+    onPlayPauseClick: () -> Unit,
+    onNextClick: () -> Unit,
+    onExpandChange: (Boolean) -> Unit,
+    miniCustomization: MiniPlayerCustomization,
+    nowPlayingOptionsOpen: MutableState<Boolean>,
+    miniSkip: MiniSkipState,
+    previousSong: Song?,
+    nextSong: Song?,
+    detailAlpha: () -> Float,
+    haptics: com.ivor.ivormusic.util.KodaHaptics,
+    isLiked: Boolean,
+    shuffleOn: Boolean,
+    repeatMode: Int,
+) {
+    val progressMs by viewModel.progress.collectAsState()
+    val durationMs by viewModel.duration.collectAsState()
+    val effectiveDuration = if (fallbackDuration > 0L) fallbackDuration else durationMs
+    val effectiveProgress = if (effectiveDuration > 0L) progressMs.toFloat() / effectiveDuration.toFloat() else fallbackProgress
+
+    MiniPlayerContent(
+        currentSong = currentSong,
+        isPlaying = isPlaying,
+        isBuffering = isBuffering,
+        playWhenReady = playWhenReady,
+        progress = effectiveProgress,
+        onPlayPauseClick = onPlayPauseClick,
+        onNextClick = onNextClick,
+        onClick = { onExpandChange(true) },
+        onLongClick = when (miniCustomization.longPress) {
+            com.ivor.ivormusic.data.MiniLongPress.NOTHING -> null
+            com.ivor.ivormusic.data.MiniLongPress.OPTIONS -> {
+                {
+                    onExpandChange(true)
+                    nowPlayingOptionsOpen.value = true
+                }
+            }
+            com.ivor.ivormusic.data.MiniLongPress.LIKE -> {
+                { viewModel.toggleCurrentSongLike() }
+            }
+        },
+        skipState = miniSkip,
+        previousSong = previousSong,
+        nextSong = nextSong,
+        detailAlpha = detailAlpha,
+        durationMs = effectiveDuration,
+        customization = miniCustomization,
+        onButtonClick = { button ->
+            when (button) {
+                com.ivor.ivormusic.data.MiniPlayerButton.PREVIOUS -> viewModel.skipToPrevious()
+                com.ivor.ivormusic.data.MiniPlayerButton.LIKE -> {
+                    haptics.confirm()
+                    viewModel.toggleCurrentSongLike()
+                }
+                com.ivor.ivormusic.data.MiniPlayerButton.SHUFFLE -> viewModel.toggleShuffle()
+                com.ivor.ivormusic.data.MiniPlayerButton.REPEAT -> viewModel.toggleRepeat()
+                com.ivor.ivormusic.data.MiniPlayerButton.CLOSE -> viewModel.clearPlayer()
+                com.ivor.ivormusic.data.MiniPlayerButton.PLAY_PAUSE,
+                com.ivor.ivormusic.data.MiniPlayerButton.NEXT -> Unit
+            }
+        },
+        isLiked = isLiked,
+        shuffleOn = shuffleOn,
+        repeatMode = repeatMode
+    )
 }

@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.ui.components.titleMarquee
 import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import com.ivor.ivormusic.R
 import androidx.compose.ui.res.stringResource
@@ -509,7 +510,8 @@ private fun GestureNowPlayingView(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = onSurfaceColor,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.titleMarquee(isPlaying)
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"

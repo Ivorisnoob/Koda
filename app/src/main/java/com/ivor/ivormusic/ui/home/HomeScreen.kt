@@ -321,10 +321,6 @@ fun HomeScreen(
     val isPlaying by playerViewModel.isPlaying.collectAsState()
     val isBuffering by playerViewModel.isBuffering.collectAsState()
     val playWhenReady by playerViewModel.playWhenReady.collectAsState()
-    val progress by playerViewModel.progress.collectAsState()
-    val duration by playerViewModel.duration.collectAsState()
-    
-    val progressFraction = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
     
     // Bottom sheet state for player - skip partial expand for direct full-screen
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1717,11 +1713,11 @@ fun HomeScreen(
         val selectNavTab: (Int) -> Unit = { index ->
             if (selectedTab == index) {
                 if (currentTabScrollState.canScrollBackward) {
-                    navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    navBarHaptics.subtle()
                     scope.launch { currentTabScrollState.scrollToTop() }
                 }
             } else {
-                navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                navBarHaptics.subtle()
                 selectedTab = index
             }
         }
@@ -1915,8 +1911,6 @@ fun HomeScreen(
             isPlaying = isPlaying,
             isBuffering = isBuffering,
             playWhenReady = playWhenReady,
-            progress = progressFraction,
-            duration = playerViewModel.duration.collectAsState().value,
             onPlayPauseClick = { playerViewModel.togglePlayPause() },
             onNextClick = { playerViewModel.skipToNext() },
             viewModel = playerViewModel,

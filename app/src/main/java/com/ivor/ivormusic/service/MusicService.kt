@@ -1018,14 +1018,16 @@ class MusicService : MediaLibraryService() {
                 if (::engine.isInitialized) {
                     val tracker = lastFmTracker
                     if (tracker != null) {
-                        tracker.sample(player)
+                        if (player.isPlaying) {
+                            tracker.sample(player)
+                        }
                     } else if (lastFmTrackerLoad == null &&
                         com.ivor.ivormusic.data.LastFmRepository.mayBeEnabled(this@MusicService)
                     ) {
                         lastFmTrackerLoad = launch { loadLastFmTracker() }
                     }
                 }
-                delay(250)
+                delay(if (::engine.isInitialized && player.isPlaying) 250 else 2000)
             }
         }
         // These flows update live across ThemePreferences instances (the
@@ -1311,6 +1313,7 @@ class MusicService : MediaLibraryService() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             super.onIsPlayingChanged(isPlaying)
+            lastFmTracker?.sample(player)
             // Single-flight: only one progress monitor coroutine ever runs. Previous
             // approach launched a fresh loop on every STATE_READY transition (which
             // fires multiple times per song due to URI resolution / replaceMediaItem),

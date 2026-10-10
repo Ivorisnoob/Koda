@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.ui.components.titleMarquee
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
@@ -323,6 +324,7 @@ fun StickerPlayerSheetContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp)
+                                .titleMarquee(isPlaying)
                         )
                         val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
                             ?: "Unknown Artist"
