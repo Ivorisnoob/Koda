@@ -139,6 +139,12 @@ data class Song(
 const val UNKNOWN_ARTIST = "Unknown Artist"
 const val UNKNOWN_ALBUM = "Unknown Album"
 
+/**
+ * The title a song carries when its source gave none: a search row without a
+ * name, or a song rebuilt from a media item with no title metadata.
+ */
+const val UNKNOWN_TITLE = "Unknown"
+
 /** MediaStore's literal for a missing tag, matched case-insensitively. */
 private const val MEDIastore_UNKNOWN_SENTINEL = "<unknown>"
 
@@ -166,10 +172,9 @@ fun isUnknownAlbum(album: String?): Boolean = isUnknownValue(album, UNKNOWN_ALBU
 
 /**
  * Whether [title] carries no real title: blank, "<unknown>", or the
- * "Unknown" placeholder written when a song is rebuilt from a media item
- * with no title metadata.
+ * [UNKNOWN_TITLE] sentinel in any casing.
  */
-fun isUnknownTitle(title: String?): Boolean = isUnknownValue(title, "Unknown")
+fun isUnknownTitle(title: String?): Boolean = isUnknownValue(title, UNKNOWN_TITLE)
 
 /**
  * Normalise a raw MediaStore / manual-scan artist to either a name or

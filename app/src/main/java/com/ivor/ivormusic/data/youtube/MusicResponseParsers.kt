@@ -83,11 +83,11 @@ internal fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayI
                              val cleanId = browseId.removePrefix("VL")
 
                              // Extract Title
-                             val title = getRunText(twoRowItem.optJSONObject("title")) ?: "Unknown Playlist"
+                             val title = getRunText(twoRowItem.optJSONObject("title")).orEmpty()
 
                              // Extract Subtitle (Uploader / Count)
                              val subtitleObj = twoRowItem.optJSONObject("subtitle")
-                             val subtitle = getRunText(subtitleObj) ?: "Unknown"
+                             val subtitle = getRunText(subtitleObj).orEmpty()
 
                              val itemCount = extractItemCountFromSubtitle(subtitleObj)
 

@@ -8,6 +8,7 @@ import com.ivor.ivormusic.data.VideoFeedPage
 import com.ivor.ivormusic.data.VideoHistoryRepository
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.YouTubeSession
+import com.ivor.ivormusic.data.isMissingChannelName
 import com.ivor.ivormusic.data.items
 import com.ivor.ivormusic.data.parseShortsSeed
 import com.ivor.ivormusic.data.parseShortsSequence
@@ -343,7 +344,7 @@ internal class VideoFeeds(
                 .map { it.copy(sequenceParams = continuation) }
         }
         val seedChannel = videoHistoryRepository.getHistory()
-            .firstOrNull { it.channelName.isNotBlank() && it.channelName != "Unknown Channel" }
+            .firstOrNull { !isMissingChannelName(it.channelName) }
             ?.channelName
         val body = JSONObject()
             .put("context", webApi.webContext())

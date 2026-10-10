@@ -116,6 +116,20 @@ class ParserFixturesTest {
         assertEquals("21 years ago", video.uploadedDate)
     }
 
+    @Test
+    fun aLockupWithNoCreatorRowNamesNoChannel() {
+        val lockups = mutableListOf<JSONObject>()
+        findObjectsByKey(fixture("channel_videos"), "lockupViewModel", lockups)
+
+        // Read on its own, before the page's header is stitched in: the row
+        // has views and a date and no creator, so the name must stay blank
+        // rather than be invented. Screens test for blank.
+        val video = parseLockupViewModel(lockups.single())!!
+        assertEquals("", video.channelName)
+        assertEquals(null, video.channelId)
+        assertEquals("Me at the zoo", video.title)
+    }
+
     // --- /browse: a playlist, signed out ---
 
     @Test

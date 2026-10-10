@@ -578,7 +578,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     DownloadedVideo(
                         id = obj.optString("id"),
                         title = obj.optString("title"),
-                        channelName = obj.optString("channelName"),
+                        channelName = cleanChannelName(obj.optString("channelName")),
                         uri = uri,
                         thumbnailUrl = obj.optString("thumbnailUrl").takeIf { it.isNotBlank() },
                         durationMs = obj.optLong("durationMs"),

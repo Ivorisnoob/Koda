@@ -43,7 +43,7 @@ private fun parsePlaylistVideoRenderer(renderer: JSONObject): VideoItem? {
         ?.takeIf { it.isNotBlank() } ?: return null
 
     val byline = renderer.optJSONObject("shortBylineText")
-    val channelName = getRunText(byline)?.takeIf { it.isNotBlank() } ?: "Unknown Channel"
+    val channelName = getRunText(byline).orEmpty()
     val channelId = byline?.optJSONArray("runs")?.optJSONObject(0)
         ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
         ?.optString("browseId")?.takeIf { it.isNotBlank() }

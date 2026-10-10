@@ -4,6 +4,8 @@ import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.MusicMetadata
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.UNKNOWN_ARTIST
+import com.ivor.ivormusic.data.UNKNOWN_TITLE
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.items
 import java.util.Collections
@@ -87,8 +89,8 @@ internal class MusicSearch(
                 try {
                     Song.fromYouTube(
                         videoId = extractVideoId(item.url),
-                        title = item.name ?: "Unknown",
-                        artist = item.uploaderName ?: "Unknown Artist",
+                        title = item.name ?: UNKNOWN_TITLE,
+                        artist = item.uploaderName ?: UNKNOWN_ARTIST,
                         album = "",
                         duration = item.duration * 1000L,
                         thumbnailUrl = item.thumbnails?.firstOrNull()?.url
@@ -127,8 +129,8 @@ internal class MusicSearch(
                 try {
                     Song.fromYouTube(
                         videoId = extractVideoId(item.url),
-                        title = item.name ?: "Unknown",
-                        artist = item.uploaderName ?: "Unknown Artist",
+                        title = item.name ?: UNKNOWN_TITLE,
+                        artist = item.uploaderName ?: UNKNOWN_ARTIST,
                         album = "",
                         duration = item.duration * 1000L,
                         thumbnailUrl = item.thumbnails?.firstOrNull()?.url
@@ -158,9 +160,9 @@ internal class MusicSearch(
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
                 PlaylistDisplayItem(
-                    name = item.name ?: "Unknown Album",
+                    name = item.name.orEmpty(),
                     url = item.url, // Album URL usually works like a playlist
-                    uploaderName = item.uploaderName ?: "Unknown Artist",
+                    uploaderName = item.uploaderName.orEmpty(),
                     itemCount = item.streamCount.toInt(),
                     thumbnailUrl = item.thumbnails?.firstOrNull()?.url
                 )
@@ -181,7 +183,7 @@ internal class MusicSearch(
             searchExtractor.initialPage.items.filterIsInstance<ChannelInfoItem>().mapNotNull { item ->
                 ArtistItem(
                     id = item.url.substringAfterLast("/"), // Extract Browse ID from URL
-                    name = item.name ?: "Unknown Artist",
+                    name = item.name.orEmpty(),
                     thumbnailUrl = item.thumbnails?.firstOrNull()?.url,
                     subscriberCount = item.subscriberCount?.let { VideoItem.formatViewCount(it) }, // Reusing helper
                     description = item.description,
@@ -203,9 +205,9 @@ internal class MusicSearch(
             
             searchExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().mapNotNull { item ->
                 PlaylistDisplayItem(
-                    name = item.name ?: "Unknown Playlist",
+                    name = item.name.orEmpty(),
                     url = item.url,
-                    uploaderName = item.uploaderName ?: "Unknown",
+                    uploaderName = item.uploaderName.orEmpty(),
                     itemCount = item.streamCount.toInt(),
                     thumbnailUrl = item.thumbnails?.firstOrNull()?.url
                 )

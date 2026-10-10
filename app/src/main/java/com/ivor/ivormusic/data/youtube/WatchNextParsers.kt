@@ -6,6 +6,7 @@ import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.cleanChannelName
 import com.ivor.ivormusic.data.parseRichText
 import com.ivor.ivormusic.util.KLog
 import org.json.JSONObject
@@ -80,14 +81,14 @@ internal fun parseVideoMetadataFromWatchNext(
         VideoItem(
             videoId = videoId,
             title = getRunText(primary?.optJSONObject("title"))?.takeIf { it.isNotBlank() }
-                ?: baseVideo?.title ?: "Unknown",
+                ?: baseVideo?.title.orEmpty(),
             channelName = getRunText(owner?.optJSONObject("title"))?.takeIf { it.isNotBlank() }
                 // A collab video names no owner; its byline ("KSI and 2
                 // more") is attributed text, already localized by YouTube,
                 // which is why it is used rather than assembled here.
                 ?: owner?.optJSONObject("attributedTitle")?.optString("content")
                     ?.takeIf { it.isNotBlank() }
-                ?: baseVideo?.channelName ?: "Unknown",
+                ?: cleanChannelName(baseVideo?.channelName),
             channelId = channelId ?: baseVideo?.channelId,
             channelIconUrl = channelIconUrl ?: baseVideo?.channelIconUrl,
             // Carried on the item as well as on the engagement so that a

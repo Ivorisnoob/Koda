@@ -180,7 +180,7 @@ internal class VideoSearch(
                     ?: return@mapNotNull null
                 VideoPlaylist(
                     playlistId = playlistId,
-                    title = item.name?.takeIf { it.isNotBlank() } ?: "Unknown Playlist",
+                    title = item.name.orEmpty(),
                     thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url
                         ?: item.thumbnails?.firstOrNull()?.url,
                     videoCountText = item.streamCount.takeIf { it > 0 }?.let { "$it videos" },

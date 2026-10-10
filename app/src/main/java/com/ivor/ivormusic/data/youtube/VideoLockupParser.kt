@@ -20,12 +20,14 @@ internal fun parseLockupViewModel(lockupViewModel: JSONObject?): VideoItem? {
 
          val metadata = lockupViewModel.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
          val titleObj = metadata?.optJSONObject("title")
-         val title = titleObj?.optString("content") ?: "Unknown Title"
+         val title = titleObj?.optString("content").orEmpty()
 
          // Get channel name and ID from metadata
          val metadataDetails = metadata?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")
          val metadataRows = metadataDetails?.optJSONArray("metadataRows")
-         var channelName = "Unknown Channel"
+         // Blank until a row names the creator. A parser never invents one:
+         // screens test for blank, and a made-up name would pass that test.
+         var channelName = ""
          var channelId: String? = null
          var viewCount = ""
          var uploadDate = ""

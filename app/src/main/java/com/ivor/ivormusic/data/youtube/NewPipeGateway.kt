@@ -117,8 +117,8 @@ internal fun List<InfoItem>.toVideoItems(context: Context): List<VideoItem> =
 
             VideoItem.fromStreamInfoItem(
                 videoId = extractVideoId(item.url),
-                title = item.name ?: "Unknown",
-                channelName = item.uploaderName ?: "Unknown Channel",
+                title = item.name.orEmpty(),
+                channelName = item.uploaderName.orEmpty(),
                 channelId = channelId,
                 channelIconUrl = item.uploaderAvatars?.maxByOrNull { it.width }?.url,
                 thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url ?: item.thumbnails?.firstOrNull()?.url,

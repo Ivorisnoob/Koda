@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.search
 
+import com.ivor.ivormusic.data.isMissingChannelName
 import com.ivor.ivormusic.ui.video.videoListItems
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -667,7 +668,7 @@ fun SearchScreen(
                             item {
                                 val video = state.video
                                 val subtitle = listOfNotNull(
-                                    video.channelName.takeIf { it.isNotBlank() && it != "Unknown" },
+                                    video.channelName.takeUnless(::isMissingChannelName),
                                     video.viewCount.takeIf { it.isNotBlank() },
                                     video.uploadedDate
                                 ).joinToString(" • ")
@@ -2422,7 +2423,10 @@ fun PlaylistResultCard(
                       Spacer(modifier = Modifier.size(6.dp))
                       val metadata = if (isAlbum) {
                           if (item.hasReleaseMetadata) item.displaySubtitle()
-                          else stringResource(R.string.album_metadata, item.uploaderName)
+                          else stringResource(
+                              R.string.album_metadata,
+                              item.uploaderName.ifBlank { stringResource(R.string.unknown_artist) },
+                          )
                       } else {
                           buildList {
                               add(stringResource(R.string.label_playlist))

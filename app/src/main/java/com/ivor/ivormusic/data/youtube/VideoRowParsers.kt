@@ -148,14 +148,14 @@ internal fun parseVideoRenderer(videoRenderer: JSONObject?): VideoItem? {
         val title = titleObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
             ?: titleObj?.optString("simpleText")
             ?: titleObj?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label")
-            ?: "Unknown Title"
+            ?: ""
 
         // Extract channel name
         val channelObj = videoRenderer.optJSONObject("ownerText")
             ?: videoRenderer.optJSONObject("shortBylineText")
             ?: videoRenderer.optJSONObject("longBylineText")
         val channelName = channelObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-            ?: "Unknown Channel"
+            ?: ""
 
         // Extract view count
         val viewCountText = videoRenderer.optJSONObject("viewCountText")?.optString("simpleText")

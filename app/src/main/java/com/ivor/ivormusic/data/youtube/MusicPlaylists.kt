@@ -5,6 +5,8 @@ import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.UNKNOWN_ALBUM
+import com.ivor.ivormusic.data.UNKNOWN_ARTIST
+import com.ivor.ivormusic.data.UNKNOWN_TITLE
 import com.ivor.ivormusic.data.items
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.CancellationException
@@ -194,8 +196,8 @@ internal class MusicPlaylists(
             allItems.mapNotNull { item ->
                 Song.fromYouTube(
                     videoId = extractVideoId(item.url),
-                    title = item.name ?: "Unknown",
-                    artist = item.uploaderName ?: "Unknown Artist",
+                    title = item.name ?: UNKNOWN_TITLE,
+                    artist = item.uploaderName ?: UNKNOWN_ARTIST,
                     album = UNKNOWN_ALBUM,
                     duration = item.duration * 1000L,
                     thumbnailUrl = item.thumbnails?.firstOrNull()?.url
