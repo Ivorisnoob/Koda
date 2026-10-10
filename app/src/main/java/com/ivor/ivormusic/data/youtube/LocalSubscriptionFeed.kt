@@ -17,7 +17,7 @@ import okhttp3.Request
 
 /**
  * Outcome of one Atom feed fetch, kept richer than a list because
- * [getLocalSubscriptionsFeed]'s browse fallback is correct for one of these
+ * [LocalSubscriptionFeed.getLocalSubscriptionsFeed]'s browse fallback is correct for one of these
  * failures and actively harmful for the other. See there.
  */
 sealed interface ChannelFeedResult {

@@ -9,7 +9,7 @@ import org.json.JSONObject
  * The notifications this device has seen, kept after YouTube stops listing them.
  *
  * YouTube's inbox only reaches so far back - a few pages on a busy account, a
- * dozen items on a quiet one (see `YouTubeRepository.getNotifications`) - and
+ * dozen items on a quiet one (see `YouTubeAccount.getNotifications`) - and
  * what falls off the end is simply gone from it. Koda remembers each item the
  * first time it sees it and goes on showing it, under its own heading, once
  * YouTube has dropped it.

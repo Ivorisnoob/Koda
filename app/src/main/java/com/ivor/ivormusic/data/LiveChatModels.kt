@@ -4,7 +4,8 @@ package com.ivor.ivormusic.data
  * Models for YouTube live chat.
  *
  * Shapes verified against the live InnerTube API August 2026 - see
- * [YouTubeRepository.pollLiveChat] for the endpoint and renderer notes.
+ * [com.ivor.ivormusic.data.youtube.LiveChat] for the endpoint and renderer
+ * notes.
  */
 
 /**

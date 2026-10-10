@@ -759,7 +759,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /**
      * Whether the current video is a live broadcast. Resolved in Phase 1 from
      * the quality list: a live stream only ever produces a single adaptive HLS
-     * entry (see YouTubeRepository.parseQualitiesFromStreamingData), so the
+     * entry (see parseDirectVideoQualities), so the
      * flag rides along with the streams instead of costing a separate call.
      */
     private val _isLive = MutableStateFlow(false)

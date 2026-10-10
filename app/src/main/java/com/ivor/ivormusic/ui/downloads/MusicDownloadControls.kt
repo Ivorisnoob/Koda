@@ -74,7 +74,7 @@ internal data class MusicQualityCardInfo(
  * playlist download sheets so the choice looks and behaves the same in both.
  *
  * Two, because that is what YouTube serves as AAC (see
- * `YouTubeRepository.getDownloadAudioFormats`); the size is on the card
+ * `SongStreams.getDownloadAudioFormats`); the size is on the card
  * because it is the only thing that tells the two apart before listening.
  */
 @Composable

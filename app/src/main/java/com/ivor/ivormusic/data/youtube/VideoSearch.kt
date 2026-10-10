@@ -199,7 +199,7 @@ internal class VideoSearch(
      * NewPipe's channel filter rather than an InnerTube search: it already
      * returns the canonical UC id, the avatar, the subscriber count and the
      * verified flag in one shape, and the channel page this feeds only needs
-     * the id. Mirrors [searchArtists], which does the same on the music side.
+     * the id. Mirrors [MusicSearch.searchArtists], which does the same on the music side.
      */
     suspend fun searchChannels(query: String): List<SubscribedChannel> =
         withContext(Dispatchers.IO) {

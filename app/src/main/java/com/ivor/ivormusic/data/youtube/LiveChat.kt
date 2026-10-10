@@ -35,7 +35,7 @@ internal class LiveChat(
      *
      * Reading chat needs no account: a signed-out poll returns the full
      * backlog. Sending does, so [LiveChatSession.sendParams] is only meaningful
-     * alongside [isLoggedIn].
+     * alongside [SessionManager.isLoggedIn].
      *
      * Verified against the live /next API August 2026.
      */

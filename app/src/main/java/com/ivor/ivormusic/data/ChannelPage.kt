@@ -4,8 +4,8 @@ package com.ivor.ivormusic.data
  * Models for a creator's channel page.
  *
  * Shapes verified against live InnerTube responses, signed out, August 2026 -
- * see [YouTubeRepository.getChannelPage] for the endpoints and the renderer
- * notes.
+ * see [com.ivor.ivormusic.data.youtube.ChannelPages] for the endpoints and
+ * the renderer notes.
  *
  * **The organising fact about this file is that a channel page describes
  * itself.** The first browse call carries the tab list with each tab's own

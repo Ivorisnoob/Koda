@@ -15,7 +15,7 @@ import java.nio.ByteBuffer
  *
  * YouTube only serves a single ready-made file at 360p; every higher quality
  * arrives as video-only plus a separate audio stream (see
- * `YouTubeRepository.parseQualitiesFromStreamingData`). Downloading anything
+ * `parseDirectVideoQualities`). Downloading anything
  * watchable therefore means remuxing.
  *
  * This is a **container copy, not a transcode** - samples are read from each

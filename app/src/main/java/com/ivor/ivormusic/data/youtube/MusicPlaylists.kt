@@ -231,7 +231,7 @@ internal class MusicPlaylists(
     /**
      * WEB_REMIX playlist browse, including every continuation.
      *
-     * Account cookies are attached by [browseMusic] and [fetchContinuation]
+     * Account cookies are attached by [MusicApi.browseMusic] and [MusicApi.fetchContinuation]
      * when there is a session and omitted when there is not, so this one walker
      * serves both: a public playlist pages to its end anonymously, and an owned
      * or private one needs the session that those two helpers already apply.
