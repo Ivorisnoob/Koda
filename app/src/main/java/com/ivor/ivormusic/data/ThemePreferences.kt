@@ -100,6 +100,25 @@ class ThemePreferences(context: Context) {
 
     private val _playerArtworkColors = MutableStateFlow(getPlayerArtworkColorsPreference())
     val playerArtworkColors: StateFlow<Boolean> = _playerArtworkColors.asStateFlow()
+
+    private val _artworkColorsWholeApp = MutableStateFlow(getArtworkColorsWholeAppPreference())
+    val artworkColorsWholeApp: StateFlow<Boolean> = _artworkColorsWholeApp.asStateFlow()
+
+    private val _miniPlayerProgress = MutableStateFlow(getMiniPlayerProgressPreference())
+    val miniPlayerProgress: StateFlow<MiniPlayerProgress> = _miniPlayerProgress.asStateFlow()
+
+    private val _videoGestures = MutableStateFlow(readVideoGestures())
+    val videoGestures: StateFlow<VideoGestureCustomization> = _videoGestures.asStateFlow()
+
+    private val _videoFeed = MutableStateFlow(readVideoFeed())
+    val videoFeed: StateFlow<VideoFeedCustomization> = _videoFeed.asStateFlow()
+
+    private val _homeNavigation = MutableStateFlow(readHomeNavigation())
+    val homeNavigation: StateFlow<HomeNavigationCustomization> = _homeNavigation.asStateFlow()
+
+    private val _miniPlayerCustomization = MutableStateFlow(readMiniPlayerCustomization())
+    val miniPlayerCustomization: StateFlow<MiniPlayerCustomization> =
+        _miniPlayerCustomization.asStateFlow()
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -270,6 +289,9 @@ class ThemePreferences(context: Context) {
     private val _normalizeVolume = MutableStateFlow(getNormalizeVolumePreference())
     val normalizeVolume: StateFlow<Boolean> = _normalizeVolume.asStateFlow()
 
+    private val _discordPresence = MutableStateFlow(getDiscordPresencePreference())
+    val discordPresence: StateFlow<Boolean> = _discordPresence.asStateFlow()
+
     private val _rememberVideoBrightness =
         MutableStateFlow(getRememberVideoBrightness())
     val rememberVideoBrightness: StateFlow<Boolean> = _rememberVideoBrightness.asStateFlow()
@@ -386,6 +408,21 @@ class ThemePreferences(context: Context) {
             KEY_MOTION_ARTWORK_QUALITY -> _motionArtworkQuality.value = getMotionArtworkQualityPreference()
             KEY_WAVEFORM_SEEK_BAR -> _waveformSeekBar.value = getWaveformSeekBarPreference()
             KEY_PLAYER_ARTWORK_COLORS -> _playerArtworkColors.value = getPlayerArtworkColorsPreference()
+            KEY_ARTWORK_COLORS_WHOLE_APP ->
+                _artworkColorsWholeApp.value = getArtworkColorsWholeAppPreference()
+            KEY_MINI_PLAYER_PROGRESS -> _miniPlayerProgress.value = getMiniPlayerProgressPreference()
+            KEY_MINI_PLAYER_BUTTONS, KEY_MINI_PLAYER_COVER_TAP, KEY_MINI_PLAYER_COVER_MOTION,
+            KEY_MINI_PLAYER_SWIPE_SKIP, KEY_MINI_PLAYER_SWIPE_DISMISS, KEY_MINI_PLAYER_SHRINK,
+            KEY_MINI_PLAYER_COLOR, KEY_MINI_PLAYER_SECOND_LINE, KEY_MINI_PLAYER_LONG_PRESS ->
+                _miniPlayerCustomization.value = readMiniPlayerCustomization()
+            KEY_VIDEO_HOLD_SPEED, KEY_VIDEO_BRIGHTNESS_SWIPE, KEY_VIDEO_VOLUME_SWIPE,
+            KEY_VIDEO_HOLD_SPEED_RATE, KEY_VIDEO_CONTROLS_HIDE_SECONDS ->
+                _videoGestures.value = readVideoGestures()
+            KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME ->
+                _videoFeed.value = readVideoFeed()
+            KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL,
+            KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS ->
+                _homeNavigation.value = readHomeNavigation()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
             KEY_VIDEO_RECOMMENDATIONS_ENABLED,
@@ -444,6 +481,7 @@ class ThemePreferences(context: Context) {
             KEY_CROSSFADE_AUTO -> _crossfadeAuto.value = getCrossfadeAutoPreference()
             KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
             KEY_NORMALIZE_VOLUME -> _normalizeVolume.value = getNormalizeVolumePreference()
+            KEY_DISCORD_PRESENCE -> _discordPresence.value = getDiscordPresencePreference()
             KEY_REMEMBER_VIDEO_BRIGHTNESS ->
                 _rememberVideoBrightness.value = getRememberVideoBrightness()
             KEY_PIP_BUTTONS -> _pipButtons.value = getPipButtons()
@@ -535,6 +573,43 @@ class ThemePreferences(context: Context) {
         private const val KEY_MOTION_ARTWORK_QUALITY = "motion_artwork_quality"
         private const val KEY_WAVEFORM_SEEK_BAR = "waveform_seek_bar"
         private const val KEY_PLAYER_ARTWORK_COLORS = "player_artwork_colors"
+        private const val KEY_ARTWORK_COLORS_WHOLE_APP = "artwork_colors_whole_app"
+        private const val KEY_MINI_PLAYER_PROGRESS = "mini_player_progress"
+        private const val KEY_VIDEO_HOLD_SPEED = "video_gesture_hold_speed"
+        private const val KEY_VIDEO_BRIGHTNESS_SWIPE = "video_gesture_brightness"
+        private const val KEY_VIDEO_VOLUME_SWIPE = "video_gesture_volume"
+        private const val KEY_START_TAB = "start_tab"
+        private const val KEY_START_MODE = "start_mode"
+        private const val KEY_NAV_TAB_LABELS = "nav_tab_labels"
+        private const val KEY_NAV_BAR_HIDES_ON_SCROLL = "nav_bar_hides_on_scroll"
+        private const val KEY_VIDEO_HOLD_SPEED_RATE = "video_gesture_hold_speed_rate"
+        private const val KEY_VIDEO_CONTROLS_HIDE_SECONDS = "video_controls_hide_seconds"
+        private const val KEY_VIDEO_FEED_POSTS = "video_feed_posts"
+        private const val KEY_VIDEO_FEED_LIVE = "video_feed_live"
+        private const val KEY_VIDEO_FEED_HIDE_WATCHED_HOME = "video_feed_hide_watched_home"
+        private const val KEY_HOME_GREETING = "home_top_bar_greeting"
+        private const val KEY_HOME_ALWAYS_DOWNLOADS = "home_top_bar_always_downloads"
+
+        /**
+         * How long the video controls stay up, as a fresh read: the player
+         * asks at the moment it starts the timer, through no instance of its own.
+         */
+        fun videoControlsHideMs(context: Context): Long {
+            val seconds = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, 4)
+            return seconds.takeIf { it in VideoGestureCustomization.CONTROLS_HIDE_SECONDS }
+                ?.times(1000L) ?: 4000L
+        }
+
+        private const val KEY_MINI_PLAYER_BUTTONS = "mini_player_buttons"
+        private const val KEY_MINI_PLAYER_COVER_TAP = "mini_player_cover_tap"
+        private const val KEY_MINI_PLAYER_COVER_MOTION = "mini_player_cover_motion"
+        private const val KEY_MINI_PLAYER_SWIPE_SKIP = "mini_player_swipe_skip"
+        private const val KEY_MINI_PLAYER_SWIPE_DISMISS = "mini_player_swipe_dismiss"
+        private const val KEY_MINI_PLAYER_SHRINK = "mini_player_shrink"
+        private const val KEY_MINI_PLAYER_COLOR = "mini_player_color"
+        private const val KEY_MINI_PLAYER_SECOND_LINE = "mini_player_second_line"
+        private const val KEY_MINI_PLAYER_LONG_PRESS = "mini_player_long_press"
         private const val KEY_VIDEO_MODE = "video_mode"
         private const val KEY_LAST_MUSIC_TAB = "last_music_tab"
         private const val KEY_LAST_VIDEO_TAB = "last_video_tab"
@@ -761,6 +836,53 @@ class ThemePreferences(context: Context) {
             return prefs.getString(key, DEFAULT_MUSIC_QUALITY) ?: DEFAULT_MUSIC_QUALITY
         }
 
+        private const val KEY_DOWNLOAD_MUSIC_QUALITY = "download_music_quality"
+        private const val KEY_DOWNLOAD_MUSIC_LYRICS = "download_music_lyrics"
+
+        /** Music download quality: the best AAC stream, about 128 kbps. Stored, so frozen. */
+        const val DOWNLOAD_MUSIC_QUALITY_HIGH = "high"
+
+        /** Music download quality: the smallest AAC stream, about 48 kbps. Stored, so frozen. */
+        const val DOWNLOAD_MUSIC_QUALITY_SAVER = "saver"
+
+        /**
+         * The quality a music download uses when nobody picked one for it: a
+         * playlist row, a retry, a download started without the sheet.
+         *
+         * Downloads used to follow the *streaming* quality of whichever
+         * network happened to be active, so a song saved on mobile data with
+         * streaming set to Low was kept at 48 kbps for good with nothing
+         * saying so. Until a choice is stored this still answers the way that
+         * rule did, so an existing installation keeps its behaviour.
+         */
+        fun currentDownloadMusicQuality(context: Context): String {
+            val stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_DOWNLOAD_MUSIC_QUALITY, null)
+            if (stored == DOWNLOAD_MUSIC_QUALITY_HIGH || stored == DOWNLOAD_MUSIC_QUALITY_SAVER) {
+                return stored
+            }
+            return if (currentMusicQuality(context) == MUSIC_QUALITY_LOW) {
+                DOWNLOAD_MUSIC_QUALITY_SAVER
+            } else {
+                DOWNLOAD_MUSIC_QUALITY_HIGH
+            }
+        }
+
+        fun setDownloadMusicQuality(context: Context, quality: String) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_DOWNLOAD_MUSIC_QUALITY, quality).apply()
+        }
+
+        /** Whether a music download fetches and keeps the song's lyrics. On by default. */
+        fun saveLyricsWithDownloads(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_DOWNLOAD_MUSIC_LYRICS, true)
+
+        fun setSaveLyricsWithDownloads(context: Context, enabled: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_DOWNLOAD_MUSIC_LYRICS, enabled).apply()
+        }
+
         /**
          * Spotlight: the alternative music Home, built from a shortcut grid,
          * paged quick picks and artwork shelves (see
@@ -894,6 +1016,7 @@ class ThemePreferences(context: Context) {
         private const val MIN_CROSSFADE_DURATION_MS = 1_000
         private const val MAX_CROSSFADE_DURATION_MS = 15_000
         private const val KEY_NORMALIZE_VOLUME = "normalize_volume"
+        private const val KEY_DISCORD_PRESENCE = "discord_presence"
         private const val KEY_REMEMBER_VIDEO_BRIGHTNESS = "remember_video_brightness"
         private const val KEY_PIP_BUTTONS = "pip_buttons"
 
@@ -1210,6 +1333,78 @@ class ThemePreferences(context: Context) {
         prefs.edit().putBoolean(KEY_PLAYER_ARTWORK_COLORS, enabled).apply()
         _playerArtworkColors.value = enabled
     }
+
+    /**
+     * How far album colours reach while they are on: the whole app in music
+     * mode (the default), or the player and album pages only.
+     *
+     * The second half of a three-way choice whose first half is the switch
+     * above (Off / Player / Whole app). Two booleans rather than one new
+     * value so that everyone who had album colours off keeps them off, and
+     * every existing reader of that switch still means what it meant.
+     */
+    private fun getArtworkColorsWholeAppPreference(): Boolean =
+        prefs.getBoolean(KEY_ARTWORK_COLORS_WHOLE_APP, true)
+
+    fun setArtworkColorsWholeApp(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ARTWORK_COLORS_WHOLE_APP, enabled).apply()
+        _artworkColorsWholeApp.value = enabled
+    }
+
+    /**
+     * Which of the mini player's two progress readouts are drawn. Read by the
+     * pill and written by its Settings row through their own instances; the
+     * flow follows the stored value across them.
+     */
+    private fun getMiniPlayerProgressPreference(): MiniPlayerProgress =
+        MiniPlayerProgress.fromId(prefs.getString(KEY_MINI_PLAYER_PROGRESS, null))
+
+    fun setMiniPlayerProgress(progress: MiniPlayerProgress) {
+        prefs.edit().putString(KEY_MINI_PLAYER_PROGRESS, progress.id).apply()
+        _miniPlayerProgress.value = progress
+    }
+
+    /**
+     * The mini player's buttons, gestures and look, as one snapshot. Read by
+     * the pill and by Home (which owns the bubble) and written by the Settings
+     * page, each through its own instance.
+     *
+     * The buttons are a comma-separated list of ids. Nothing stored is the
+     * default pair; an empty string is a deliberate choice of no buttons.
+     */
+    private fun readMiniPlayerCustomization(): MiniPlayerCustomization {
+        val storedButtons = prefs.getString(KEY_MINI_PLAYER_BUTTONS, null)
+        return MiniPlayerCustomization(
+            buttons = storedButtons
+                ?.split(',')
+                ?.mapNotNull { MiniPlayerButton.fromId(it.trim()) }
+                ?.distinct()
+                ?: MiniPlayerCustomization.DEFAULT_BUTTONS,
+            coverTap = MiniCoverTap.fromId(prefs.getString(KEY_MINI_PLAYER_COVER_TAP, null)),
+            coverMotion = MiniCoverMotion.fromId(prefs.getString(KEY_MINI_PLAYER_COVER_MOTION, null)),
+            swipeToSkip = prefs.getBoolean(KEY_MINI_PLAYER_SWIPE_SKIP, true),
+            swipeToDismiss = prefs.getBoolean(KEY_MINI_PLAYER_SWIPE_DISMISS, true),
+            shrink = MiniPlayerShrink.fromId(prefs.getString(KEY_MINI_PLAYER_SHRINK, null)),
+            color = MiniPlayerColor.fromId(prefs.getString(KEY_MINI_PLAYER_COLOR, null)),
+            secondLine = MiniSecondLine.fromId(prefs.getString(KEY_MINI_PLAYER_SECOND_LINE, null)),
+            longPress = MiniLongPress.fromId(prefs.getString(KEY_MINI_PLAYER_LONG_PRESS, null)),
+        )
+    }
+
+    fun setMiniPlayerCustomization(customization: MiniPlayerCustomization) {
+        prefs.edit()
+            .putString(KEY_MINI_PLAYER_BUTTONS, customization.orderedButtons.joinToString(",") { it.id })
+            .putString(KEY_MINI_PLAYER_COVER_TAP, customization.coverTap.id)
+            .putString(KEY_MINI_PLAYER_COVER_MOTION, customization.coverMotion.id)
+            .putBoolean(KEY_MINI_PLAYER_SWIPE_SKIP, customization.swipeToSkip)
+            .putBoolean(KEY_MINI_PLAYER_SWIPE_DISMISS, customization.swipeToDismiss)
+            .putString(KEY_MINI_PLAYER_SHRINK, customization.shrink.id)
+            .putString(KEY_MINI_PLAYER_COLOR, customization.color.id)
+            .putString(KEY_MINI_PLAYER_SECOND_LINE, customization.secondLine.id)
+            .putString(KEY_MINI_PLAYER_LONG_PRESS, customization.longPress.id)
+            .apply()
+        _miniPlayerCustomization.value = customization
+    }
     
     /**
      * Toggle ambient background setting.
@@ -1238,6 +1433,94 @@ class ThemePreferences(context: Context) {
      */
     fun toggleVideoMode() {
         setVideoMode(!_videoMode.value)
+    }
+
+    /** Which of the video player's gestures are on. Read by the player's gesture surface. */
+    private fun readVideoGestures(): VideoGestureCustomization = VideoGestureCustomization(
+        holdToSpeedUp = prefs.getBoolean(KEY_VIDEO_HOLD_SPEED, true),
+        brightnessSwipe = prefs.getBoolean(KEY_VIDEO_BRIGHTNESS_SWIPE, true),
+        volumeSwipe = prefs.getBoolean(KEY_VIDEO_VOLUME_SWIPE, true),
+        holdSpeed = prefs.getFloat(KEY_VIDEO_HOLD_SPEED_RATE, 2f)
+            .takeIf { it in VideoGestureCustomization.HOLD_SPEEDS } ?: 2f,
+        controlsHideSeconds = prefs.getInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, 4)
+            .takeIf { it in VideoGestureCustomization.CONTROLS_HIDE_SECONDS } ?: 4,
+    )
+
+    fun setVideoGestures(customization: VideoGestureCustomization) {
+        prefs.edit()
+            .putBoolean(KEY_VIDEO_HOLD_SPEED, customization.holdToSpeedUp)
+            .putBoolean(KEY_VIDEO_BRIGHTNESS_SWIPE, customization.brightnessSwipe)
+            .putBoolean(KEY_VIDEO_VOLUME_SWIPE, customization.volumeSwipe)
+            .putFloat(KEY_VIDEO_HOLD_SPEED_RATE, customization.holdSpeed)
+            .putInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, customization.controlsHideSeconds)
+            .apply()
+        _videoGestures.value = customization
+    }
+
+    /** What the video feeds show. Read by the feeds, written by the Video feed page. */
+    private fun readVideoFeed(): VideoFeedCustomization = VideoFeedCustomization(
+        showPosts = prefs.getBoolean(KEY_VIDEO_FEED_POSTS, true),
+        showLive = prefs.getBoolean(KEY_VIDEO_FEED_LIVE, true),
+        hideWatchedOnHome = prefs.getBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, false),
+    )
+
+    fun setVideoFeed(customization: VideoFeedCustomization) {
+        prefs.edit()
+            .putBoolean(KEY_VIDEO_FEED_POSTS, customization.showPosts)
+            .putBoolean(KEY_VIDEO_FEED_LIVE, customization.showLive)
+            .putBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, customization.hideWatchedOnHome)
+            .apply()
+        _videoFeed.value = customization
+    }
+
+    /**
+     * How Koda opens and how its navigation bar behaves. Read by Home and
+     * written by the Settings page, each through its own instance.
+     */
+    private fun readHomeNavigation(): HomeNavigationCustomization = HomeNavigationCustomization(
+        startTab = StartTab.fromId(prefs.getString(KEY_START_TAB, null)),
+        startMode = StartMode.fromId(prefs.getString(KEY_START_MODE, null)),
+        tabLabels = NavTabLabels.fromId(prefs.getString(KEY_NAV_TAB_LABELS, null)),
+        barHidesOnScroll = prefs.getBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, true),
+        showGreeting = prefs.getBoolean(KEY_HOME_GREETING, true),
+        alwaysShowDownloads = prefs.getBoolean(KEY_HOME_ALWAYS_DOWNLOADS, false),
+    )
+
+    fun setHomeNavigation(customization: HomeNavigationCustomization) {
+        prefs.edit()
+            .putString(KEY_START_TAB, customization.startTab.id)
+            .putString(KEY_START_MODE, customization.startMode.id)
+            .putString(KEY_NAV_TAB_LABELS, customization.tabLabels.id)
+            .putBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, customization.barHidesOnScroll)
+            .putBoolean(KEY_HOME_GREETING, customization.showGreeting)
+            .putBoolean(KEY_HOME_ALWAYS_DOWNLOADS, customization.alwaysShowDownloads)
+            .apply()
+        _homeNavigation.value = customization
+    }
+
+    /**
+     * Put Koda in the mode the user asked it to open in. Called once, by a
+     * fresh launch from the launcher, and never while Local only is on, where
+     * video mode has nothing to show.
+     */
+    fun applyStartMode() {
+        if (getLocalOnlyModePreference()) return
+        when (readHomeNavigation().startMode) {
+            StartMode.LAST -> Unit
+            StartMode.MUSIC -> if (getVideoModePreference()) setVideoMode(false)
+            StartMode.VIDEO -> if (!getVideoModePreference()) setVideoMode(true)
+        }
+    }
+
+    /**
+     * The tab Home opens on: the user's chosen start screen, or the last one
+     * they were on. The Library sits at a different index in each mode.
+     */
+    fun getStartHomeTab(videoMode: Boolean): Int = when (readHomeNavigation().startTab) {
+        StartTab.LAST -> getLastHomeTab(videoMode)
+        StartTab.HOME -> 0
+        StartTab.SEARCH -> 1
+        StartTab.LIBRARY -> if (videoMode) VideoHomeDestination.LIBRARY.tabId else 2
     }
 
     /** Root Home destination restored after Koda is recreated. */
@@ -2219,6 +2502,23 @@ class ThemePreferences(context: Context) {
     fun setNormalizeVolume(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_NORMALIZE_VOLUME, enabled).apply()
         _normalizeVolume.value = enabled
+    }
+
+    /**
+     * Show what is playing on the user's Discord profile through the Discord
+     * app's own RPC service (see `presence/`). No account, token or extra
+     * permission is involved.
+     *
+     * Off by default: it puts what someone is listening to on a public
+     * profile, so it only ever starts because they turned it on.
+     */
+    private fun getDiscordPresencePreference(): Boolean {
+        return prefs.getBoolean(KEY_DISCORD_PRESENCE, false)
+    }
+
+    fun setDiscordPresence(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DISCORD_PRESENCE, enabled).apply()
+        _discordPresence.value = enabled
     }
 
     private fun getOemFixEnabledPreference(): Boolean {

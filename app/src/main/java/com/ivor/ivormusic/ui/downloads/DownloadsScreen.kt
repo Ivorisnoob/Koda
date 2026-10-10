@@ -572,6 +572,7 @@ private fun ProgressCard(
                             failed -> stringResource(R.string.dl_failed)
                             paused -> stringResource(R.string.dl_paused)
                             queued -> stringResource(R.string.dl_waiting)
+                            item.finishing -> stringResource(R.string.dl_finishing)
                             item.totalBytes > 0 -> "%.1f / %.1f MB".format(
                                 item.bytesDownloaded / (1024 * 1024f),
                                 item.totalBytes / (1024 * 1024f)

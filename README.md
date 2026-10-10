@@ -250,6 +250,7 @@ Contributor and maintainer documentation:
 | Document | Purpose |
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | Architecture, invariants, data flows, and development rules |
+| [docs/](docs/) | One file per area with the reasoning behind the code: the YouTube data layer and its verified response shapes, playback, screens, identity, and CI |
 | [DESIGN.md](DESIGN.md) | The design system and UI conventions |
 | [ROADMAP.md](ROADMAP.md) | Planned work, known defects, and shipped milestones |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Current contribution policy and setup |

@@ -3,6 +3,8 @@ package com.ivor.ivormusic.ui.theme
 import android.app.Activity
 import android.os.Build
 import androidx.annotation.ChecksSdkIntAtLeast
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -19,10 +21,15 @@ import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -52,6 +59,50 @@ private val DarkColorScheme = darkColorScheme(
  * true #000000, and the surface container ramp is compressed toward black so
  * cards keep a subtle elevation separation without the default grey wash.
  */
+/**
+ * The scheme re-seated so pages are a tinted mid tone and cards are brighter
+ * than the page they sit on - the arrangement the system Settings app and
+ * OpenStream use, applied to every screen at once. [trial October 2026]
+ *
+ * Koda's screens paint `background` behind `surfaceContainer` cards, which in
+ * a generated scheme are the two closest tones there are, so a page read as
+ * flat and showed little of the palette. Remapping the roles here moves every
+ * screen without touching one: the page takes the old card tone, the card
+ * takes `surfaceBright`, and the two containers above it are pushed further
+ * from the page so the ladder keeps its order - lighter still in a dark
+ * theme, darker in a light one, where a higher surface is a darker one.
+ *
+ * It is a remap of roles, never a new colour: everything still comes out of
+ * the scheme it was given.
+ */
+fun ColorScheme.withTintedPages(dark: Boolean): ColorScheme {
+    val page = surfaceContainer
+    val card = surfaceBright
+    val (high, highest) = if (dark) {
+        lerp(card, onSurface, 0.06f) to lerp(card, onSurface, 0.12f)
+    } else {
+        lerp(surfaceContainerHigh, onSurface, 0.05f) to lerp(surfaceContainerHighest, onSurface, 0.07f)
+    }
+    return copy(
+        background = page,
+        surface = page,
+        surfaceContainerLow = lerp(page, card, 0.5f),
+        surfaceContainer = card,
+        surfaceContainerHigh = high,
+        surfaceContainerHighest = highest,
+    )
+}
+
+/** [withTintedPages] under a name that reads at a call site outside this package. */
+object TintedPages {
+    fun ColorScheme.tinted(dark: Boolean): ColorScheme = withTintedPages(dark)
+}
+
+/** [toAmoled] for callers outside this package. */
+object AmoledScheme {
+    fun ColorScheme.amoled(): ColorScheme = toAmoled()
+}
+
 internal fun ColorScheme.toAmoled(): ColorScheme = copy(
     background = Color.Black,
     surface = Color.Black,
@@ -116,15 +167,37 @@ fun IvorMusicTheme(
     amoledDark: Boolean = false, // Pure black backgrounds when dark theme is active
     uiScale: Float = UI_SCALE_DEFAULT, // Multiplies every dp and sp in the app
     paletteStyle: PaletteStyle = PaletteStyle.TONAL_SPOT,
+    /**
+     * The playing song's cover colour, when album colours reach the whole
+     * app: the scheme is then built from it rather than from [colorPalette].
+     * Null is the chosen palette (video mode, nothing playing, no artwork).
+     */
+    artworkSeed: Color? = null,
+    /** Album colours are set to "Whole app", whether or not a seed is in hand right now. */
+    artworkWholeApp: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
     // Configuration changes include wallpaper/UI mode changes. Rebuild then,
     // but never regenerate HCT roles on unrelated parent recompositions.
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val colorScheme = remember(context, configuration, darkTheme, colorPalette, amoledDark, paletteStyle) {
+    val paletteScheme = remember(context, configuration, darkTheme, colorPalette, amoledDark, paletteStyle) {
         kodaColorScheme(context, darkTheme, colorPalette, amoledDark, paletteStyle)
     }
+    // The whole scheme from the cover, surfaces included, through the same
+    // generator the preset palettes use - so it is one coherent scheme with
+    // worked-out contrast, not album accents laid over palette surfaces.
+    val targetScheme = remember(paletteScheme, artworkSeed, darkTheme, amoledDark, paletteStyle) {
+        val scheme = if (artworkSeed == null) {
+            paletteScheme
+        } else {
+            buildSeedColorScheme(artworkSeed, darkTheme, paletteStyle)
+                .let { if (darkTheme && amoledDark) it.toAmoled() else it }
+        }
+        // AMOLED keeps its true black page: that is the whole point of it.
+        if (darkTheme && amoledDark) scheme else scheme.withTintedPages(darkTheme)
+    }
+    val colorScheme = rememberFadedColorScheme(targetScheme, fadeKey = artworkSeed)
     
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -161,11 +234,108 @@ fun IvorMusicTheme(
         // which is invisible in dark theme.
         CompositionLocalProvider(
             LocalAppColorScheme provides colorScheme,
+            LocalAlbumTheming provides AlbumTheming(artworkWholeApp, paletteStyle, darkTheme && amoledDark),
             androidx.compose.material3.LocalContentColor provides colorScheme.onBackground,
         ) {
             ScaledDensity(uiScale, content)
         }
     }
+}
+
+/**
+ * How a scheme built from a cover should be made, for the places that build
+ * their own: the expanded player and the album and playlist pages.
+ *
+ * With [wholeApp] those take a complete scheme from *their* cover, as the root
+ * does from the playing song's, instead of laying cover accents over the
+ * ambient surfaces. That keeps the rule that a surface takes one scheme whole:
+ * a playlist page is its own artwork's colours while the app around it is the
+ * playing album's, and neither borrows roles from the other.
+ */
+data class AlbumTheming(val wholeApp: Boolean, val style: PaletteStyle, val amoled: Boolean)
+
+val LocalAlbumTheming = staticCompositionLocalOf { AlbumTheming(false, PaletteStyle.TONAL_SPOT, false) }
+
+/** How long the app takes to move from one song's colours to the next. */
+private const val ALBUM_FADE_MS = 500
+
+/**
+ * [target], reached by a short fade when [fadeKey] is what changed.
+ *
+ * Only a change of song fades. A theme switch, a new palette or AMOLED mode
+ * is a choice the user just made and lands at once, as it always did; fading
+ * dark to light would pass through a grey nobody asked for.
+ *
+ * Every frame of the fade is a new scheme, and so a recomposition of whatever
+ * reads a colour. That is the cost of the whole app changing colour, and why
+ * the fade is short.
+ */
+@Composable
+private fun rememberFadedColorScheme(target: ColorScheme, fadeKey: Color?): ColorScheme {
+    var from by remember { mutableStateOf(target) }
+    var to by remember { mutableStateOf(target) }
+    var lastKey by remember { mutableStateOf(fadeKey) }
+    val progress = remember { Animatable(1f) }
+
+    LaunchedEffect(target) {
+        if (target === to) return@LaunchedEffect
+        val songChanged = fadeKey != lastKey
+        lastKey = fadeKey
+        if (!songChanged) {
+            from = target
+            to = target
+            progress.snapTo(1f)
+            return@LaunchedEffect
+        }
+        // From wherever an interrupted fade had got to, not from its start.
+        from = lerpColorScheme(from, to, progress.value)
+        to = target
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(ALBUM_FADE_MS))
+    }
+
+    val fraction = progress.value
+    return if (fraction >= 1f) to else lerpColorScheme(from, to, fraction)
+}
+
+/** The roles screens draw with, blended; the rest are taken from [stop]. */
+private fun lerpColorScheme(start: ColorScheme, stop: ColorScheme, fraction: Float): ColorScheme {
+    if (fraction <= 0f) return start
+    if (fraction >= 1f) return stop
+    fun mix(a: Color, b: Color) = lerp(a, b, fraction)
+    return stop.copy(
+        primary = mix(start.primary, stop.primary),
+        onPrimary = mix(start.onPrimary, stop.onPrimary),
+        primaryContainer = mix(start.primaryContainer, stop.primaryContainer),
+        onPrimaryContainer = mix(start.onPrimaryContainer, stop.onPrimaryContainer),
+        inversePrimary = mix(start.inversePrimary, stop.inversePrimary),
+        secondary = mix(start.secondary, stop.secondary),
+        onSecondary = mix(start.onSecondary, stop.onSecondary),
+        secondaryContainer = mix(start.secondaryContainer, stop.secondaryContainer),
+        onSecondaryContainer = mix(start.onSecondaryContainer, stop.onSecondaryContainer),
+        tertiary = mix(start.tertiary, stop.tertiary),
+        onTertiary = mix(start.onTertiary, stop.onTertiary),
+        tertiaryContainer = mix(start.tertiaryContainer, stop.tertiaryContainer),
+        onTertiaryContainer = mix(start.onTertiaryContainer, stop.onTertiaryContainer),
+        background = mix(start.background, stop.background),
+        onBackground = mix(start.onBackground, stop.onBackground),
+        surface = mix(start.surface, stop.surface),
+        onSurface = mix(start.onSurface, stop.onSurface),
+        surfaceVariant = mix(start.surfaceVariant, stop.surfaceVariant),
+        onSurfaceVariant = mix(start.onSurfaceVariant, stop.onSurfaceVariant),
+        surfaceTint = mix(start.surfaceTint, stop.surfaceTint),
+        inverseSurface = mix(start.inverseSurface, stop.inverseSurface),
+        inverseOnSurface = mix(start.inverseOnSurface, stop.inverseOnSurface),
+        outline = mix(start.outline, stop.outline),
+        outlineVariant = mix(start.outlineVariant, stop.outlineVariant),
+        surfaceBright = mix(start.surfaceBright, stop.surfaceBright),
+        surfaceDim = mix(start.surfaceDim, stop.surfaceDim),
+        surfaceContainer = mix(start.surfaceContainer, stop.surfaceContainer),
+        surfaceContainerHigh = mix(start.surfaceContainerHigh, stop.surfaceContainerHigh),
+        surfaceContainerHighest = mix(start.surfaceContainerHighest, stop.surfaceContainerHighest),
+        surfaceContainerLow = mix(start.surfaceContainerLow, stop.surfaceContainerLow),
+        surfaceContainerLowest = mix(start.surfaceContainerLowest, stop.surfaceContainerLowest),
+    )
 }
 
 /**

@@ -61,6 +61,7 @@ import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.widget.PlayerWidgetStore
 import com.ivor.ivormusic.widget.PlayerWidgets
 import com.ivor.ivormusic.widget.toWidgetSnapshot
+import com.ivor.ivormusic.presence.DiscordPresenceManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -347,10 +348,11 @@ class MusicService : MediaLibraryService() {
 
         // Re-resolution attempts before a song is skipped. A dead or expired URL
         // is fixed by a fresh extraction or not at all, so the general ceiling
-        // stays low. A 403 on the direct InnerTube fallback is different: it is
-        // a verdict on visitorData, so each retry re-rolls that identity. Four
-        // attempts recover the large majority of those fallbacks (measured
-        // August 2026) without applying that expensive recovery to NewPipe URLs.
+        // stays low. A googlevideo 403 is different: it is a verdict on the
+        // visitorData the stream was resolved under, so each retry re-rolls
+        // that identity. Four attempts recover the large majority (measured
+        // August 2026 on ANDROID_VR, where about half of fresh tokens were
+        // refused; one in eight on visionOS in October 2026).
         private const val MAX_RETRIES = 2
         private const val MAX_FORBIDDEN_RETRIES = 4
 
@@ -664,6 +666,7 @@ class MusicService : MediaLibraryService() {
         // nothing else would ever correct a playing flag left behind here.
         runCatching { PlayerWidgetStore.markStopped(this) }
         runCatching { PlayerWidgets.pushAll(this) }
+        runCatching { DiscordPresenceManager.onServiceStopped() }
         fadeVolumeJob?.cancel()
         progressJob?.cancel()
         transitionJob?.cancel()
@@ -813,7 +816,12 @@ class MusicService : MediaLibraryService() {
                     enableFloatOutput: Boolean,
                     enableAudioTrackPlaybackParams: Boolean,
                 ): AudioSink = DefaultAudioSink.Builder(context)
-                    .setAudioProcessors(arrayOf(transitionFilter, visualizerTap))
+                    // Koda's own chain, for its tempo change: a stretcher
+                    // made for music does the small corrections AutoMix
+                    // asks for, in place of the speech-tuned default.
+                    .setAudioProcessorChain(
+                        MusicAudioProcessorChain(arrayOf(transitionFilter, visualizerTap))
+                    )
                     .setEnableFloatOutput(false)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .build()
@@ -836,6 +844,7 @@ class MusicService : MediaLibraryService() {
             onActiveChanged = { newActive -> onEngineSwapped(newActive) },
             gainFor = { p -> gainForPlayer(p) },
             setFilterSweep = { p, amount -> transitionFilters[p]?.setSweep(amount) },
+            setEcho = { p, amount, delayMs -> transitionFilters[p]?.setEcho(amount, delayMs) },
         )
 
         audioFocus = AudioFocusController(
@@ -1437,6 +1446,15 @@ class MusicService : MediaLibraryService() {
                         prefetchingOccurrences.remove(occurrence)
                     }
                 }
+            } else {
+                // Already resolved: by an earlier round, by validation, or a
+                // local or downloaded file that never was a placeholder. The
+                // branch above is the only other place an upcoming song is
+                // analysed, so without this one such a song reached its
+                // transition with no profile and AutoMix fell back to a plain
+                // fade. A song already analysed, or being analysed, returns
+                // at once.
+                maybeProfile(item)
             }
         }
     }
@@ -1686,16 +1704,17 @@ class MusicService : MediaLibraryService() {
 
         // 5. Retry Logic (YouTube songs only)
         val retryCount = retryCounts[videoId] ?: 0
-        // Only direct InnerTube streams are tied to Koda's visitorData. The
-        // NewPipe-first path uses maintained Android/visionOS clients; a 403
-        // there needs a fresh extraction, not an unrelated identity remint.
-        val issuingClient = try {
-            uri?.getQueryParameter("c")?.uppercase()
-        } catch (_: Exception) {
-            null
-        }
-        val isVisitorDataForbidden = httpResponseCode(error) == 403 &&
-            (issuingClient == "ANDROID_VR" || issuingClient == "IOS")
+        // Any googlevideo 403, whichever client issued the URL, as the video
+        // player and downloads already treat it. This used to be limited to
+        // ANDROID_VR and IOS, from when NewPipe resolved music under its own
+        // identities. Music now resolves through visionOS under Koda's
+        // visitorData, and the verdict reaches it too [verified October 2026,
+        // `.probe/visionos_token_verdict_probe.py`: one fresh token in eight
+        // got /player OK and the opening bytes, then 403 on every range past
+        // them, for every song]. Left out of this check, such a token was
+        // re-resolved twice into the same refusal and the song skipped, and so
+        // was each song after it for the token's whole TTL.
+        val isVisitorDataForbidden = httpResponseCode(error) == 403
         val maxRetries = when {
             isVisitorDataForbidden -> MAX_FORBIDDEN_RETRIES
             uri?.scheme == "error" -> MAX_RESOLUTION_RETRIES
@@ -3151,23 +3170,44 @@ class MusicService : MediaLibraryService() {
      * is deliberately *not* skipped: it is only ever handed out for a song already whole on
      * disk, which is the cheapest song there is to measure, and the analyzer reads it back
      * through the same cache under the same key without touching the network.
+     *
+     * **Once the playing song is measured, the next one is.** A waveform that arrives a few
+     * seconds into every track is one that is missing whenever somebody looks, so the song the
+     * player will reach next is measured while this one plays and its bar is there on the first
+     * frame. Only with the music cache on, where those bytes are the ones the next song then
+     * plays from; with it off that would be a whole song fetched and thrown away per track.
+     * The analyzer runs one pass at a time and a request for the playing song replaces any
+     * other, so looking ahead can never delay the bar on screen.
      */
     private suspend fun analyzeSongsWhileEnabled() {
         while (currentCoroutineContext().isActive) {
             delay(WAVEFORM_ANALYSIS_POLL_MS)
-            val item = player.currentMediaItem ?: continue
-            val songId = item.mediaId.takeIf { it.isNotBlank() } ?: continue
-            val uri = item.localConfiguration?.uri ?: continue
-            val url = uri.toString()
-            if (url.startsWith(PLACEHOLDER_PREFIX) || uri.scheme == "error") continue
-            WaveformAnalyzer.request(
-                context = this@MusicService,
-                songId = songId,
-                uri = uri,
-                durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0L },
-                musicCacheEnabled = isCacheEnabled,
-            )
+            val current = player.currentMediaItem ?: continue
+            val currentId = current.mediaId.takeIf { it.isNotBlank() } ?: continue
+            if (!WaveformStore.isComplete(this@MusicService, currentId)) {
+                requestWaveform(current, player.duration.takeIf { it != C.TIME_UNSET && it > 0L })
+                continue
+            }
+            if (!isCacheEnabled) continue
+            val nextIndex = player.nextMediaItemIndex
+            if (nextIndex == C.INDEX_UNSET || nextIndex >= player.mediaItemCount) continue
+            val next = player.getMediaItemAt(nextIndex)
+            if (next.mediaId.isBlank() || next.mediaId == currentId) continue
+            if (WaveformStore.isComplete(this@MusicService, next.mediaId)) continue
+            requestWaveform(next, durationMs = null)
         }
+    }
+
+    private fun requestWaveform(item: MediaItem, durationMs: Long?) {
+        val uri = item.localConfiguration?.uri ?: return
+        if (uri.toString().startsWith(PLACEHOLDER_PREFIX) || uri.scheme == "error") return
+        WaveformAnalyzer.request(
+            context = this@MusicService,
+            songId = item.mediaId,
+            uri = uri,
+            durationMs = durationMs,
+            musicCacheEnabled = isCacheEnabled,
+        )
     }
 
     private fun refreshTrackGain(applyNow: Boolean) {
@@ -3229,12 +3269,23 @@ class MusicService : MediaLibraryService() {
         if (!isCrossfadeEnabled || !isAutoMixEnabled) return
         val id = mediaItem.mediaId
         val uri = mediaItem.localConfiguration?.uri ?: return
+        if (isPlaceholder(uri)) return
+        if (audioProfileStore.peek(id) != null) return
         val factory = cacheDataSourceFactory
+        // Every way out below is logged: a song with no profile mixes as a
+        // plain fade, and a silent return made that impossible to diagnose
+        // from a log.
         val durationMs = knownDurationMs?.takeIf { it > 0L }
             ?: mediaItem.mediaMetadata.durationMs?.takeIf { it > 0L }
-            ?: return
+            ?: run {
+                KLog.d(TAG, "Profile: skipped $id, duration unknown")
+                return
+            }
         val isNetwork = uri.scheme == "http" || uri.scheme == "https"
-        if (isNetwork && factory == null) return
+        if (isNetwork && factory == null) {
+            KLog.d(TAG, "Profile: skipped $id, no cache to read through")
+            return
+        }
         if (!profilingIds.add(id)) return
 
         resolveScope.launch {
@@ -3245,9 +3296,13 @@ class MusicService : MediaLibraryService() {
                 if (audioProfileStore.get(id) != null) return@launch
                 if (isNetwork && ThemePreferences.isNetworkMetered(this@MusicService) &&
                     !CacheManager.isFullyCached(id)
-                ) return@launch
+                ) {
+                    KLog.d(TAG, "Profile: skipped $id, metered network and not fully cached")
+                    return@launch
+                }
 
-                withTimeoutOrNull(PROFILE_TIMEOUT_MS) {
+                val startedMs = SystemClock.elapsedRealtime()
+                val profile = withTimeoutOrNull(PROFILE_TIMEOUT_MS) {
                     AudioProfiler.profile(
                         songId = id,
                         context = this@MusicService,
@@ -3257,13 +3312,19 @@ class MusicService : MediaLibraryService() {
                         durationMs = durationMs,
                         budgetMs = PROFILE_TIMEOUT_MS,
                     )
-                }?.let { profile ->
+                }
+                val tookMs = SystemClock.elapsedRealtime() - startedMs
+                if (profile == null) {
+                    KLog.d(TAG, "Profile: none for $id after ${tookMs}ms (scheme=${uri.scheme})")
+                } else {
                     audioProfileStore.put(profile)
                     KLog.d(
                         TAG,
-                        "Profile: $id lead=${profile.leadInSilenceMs} " +
+                        "Profile: $id in ${tookMs}ms lead=${profile.leadInSilenceMs} " +
                             "tail=${profile.tailFadeMs} abrupt=${profile.endsAbruptly} " +
-                            "outro=${profile.outroLeadMs}"
+                            "outro=${profile.outroLeadMs} " +
+                            "bpm=${profile.bpm}@${profile.tempoConfidence} " +
+                            "outroBpm=${profile.outroBpm}@${profile.outroTempoConfidence}"
                     )
                 }
             } finally {
@@ -3437,6 +3498,8 @@ class MusicService : MediaLibraryService() {
                     incomingSpeed = plan.incomingSpeed,
                     filterSweepStrength = plan.filterSweepStrength,
                     startAtRemainingMs = prepareLeadMs,
+                    style = plan.style,
+                    echoDelayMs = plan.echoDelayMs,
                 )
                 if (started) {
                     automaticTransitionAttempt = outgoingItem to nextItem
@@ -3444,9 +3507,27 @@ class MusicService : MediaLibraryService() {
                         TAG,
                         "Crossfade: ${plan.reason} ${plan.overlapMs}ms " +
                             "lead=${plan.incomingStartMs} beatIn=${plan.incomingDownbeatDelayMs} " +
-                            "speed=${plan.incomingSpeed} " +
+                            "speed=${plan.incomingSpeed} style=${plan.style} " +
                             "key=${plan.harmonicMatch} into ${nextItem.mediaId}"
                     )
+                    // FALLBACK is three different outcomes in the planner: no
+                    // outgoing profile, no trusted common tempo, or no ending
+                    // found. What it was handed tells them apart.
+                    if (isAutoMixEnabled && plan.reason == TransitionPlan.Reason.FALLBACK) {
+                        val out = outgoingItem.mediaId.let(audioProfileStore::peek)
+                        val inc = audioProfileStore.peek(nextItem.mediaId)
+                        KLog.d(
+                            TAG,
+                            "Crossfade: fallback inputs out=" +
+                                (out?.let {
+                                    "bpm=${it.outroBpm}@${it.outroTempoConfidence} " +
+                                        "outro=${it.outroLeadMs} " +
+                                        "phrase=${it.phraseOutroLeadMs}@${it.phraseConfidence}"
+                                } ?: "none") +
+                                " in=" +
+                                (inc?.let { "bpm=${it.bpm}@${it.tempoConfidence}" } ?: "none")
+                        )
+                    }
                 }
             }
         }
@@ -3458,8 +3539,11 @@ class MusicService : MediaLibraryService() {
      * which run there.
      */
     private fun publishWidgetState() {
-        runCatching { PlayerWidgets.publish(this, player.toWidgetSnapshot()) }
+        val snapshot = player.toWidgetSnapshot()
+        runCatching { PlayerWidgets.publish(this, snapshot) }
             .onFailure { KLog.w(TAG, "Widget publish failed: ${it.message}") }
+        // Discord Rich Presence reads the same snapshot; it never touches playback.
+        runCatching { DiscordPresenceManager.onSnapshot(snapshot) }
     }
 
     private fun monitorProgress() {

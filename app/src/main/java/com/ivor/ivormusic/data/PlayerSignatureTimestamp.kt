@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data
 
 import android.content.Context
+import com.ivor.ivormusic.data.youtube.BROWSER_USER_AGENT
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -123,7 +124,7 @@ internal class PlayerSignatureTimestamp(
     private fun fetch(url: String): String? {
         val request = Request.Builder()
             .url(url)
-            .addHeader("User-Agent", YouTubeRepository.BROWSER_USER_AGENT)
+            .addHeader("User-Agent", BROWSER_USER_AGENT)
             .build()
         return client.newCall(request).execute().use { response ->
             if (response.isSuccessful) response.body?.string() else null

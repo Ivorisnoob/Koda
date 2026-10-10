@@ -135,6 +135,9 @@ class DownloadNotificationHelper(private val context: Context) {
         // Picks the tracker icon. A plain flag for now; this becomes part of the
         // download model proper once video downloads land.
         isVideo: Boolean = false,
+        // The bytes are in and the file is being put together. Like stream
+        // resolution it has no byte counts, so it needs saying apart.
+        finishing: Boolean = false,
         // Album art / video thumbnail. Null until it has been fetched, so the
         // notification shows immediately and gains the artwork on the next
         // update rather than waiting on the network.
@@ -207,6 +210,7 @@ class DownloadNotificationHelper(private val context: Context) {
         builder.setSubText(
             when {
                 queuedCount > 0 -> "$queuedCount more in queue"
+                finishing -> "Finishing up"
                 totalBytes > 0 -> "%.1f / %.1f MB".format(
                     bytesDownloaded / (1024 * 1024f),
                     totalBytes / (1024 * 1024f)

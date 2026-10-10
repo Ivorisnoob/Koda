@@ -2052,6 +2052,12 @@ internal fun PlayerGestureSurface(
     }
 
     val themePreferences = remember(context) { ThemePreferences(context) }
+    // Which gestures the user has left on. Read through a state holder for
+    // the same reason as the callbacks above: the detectors must not
+    // restart when a setting changes under a finger.
+    val enabledGestures by rememberUpdatedState(
+        themePreferences.videoGestures.collectAsState().value
+    )
 
     // The brightness gesture overrides the window brightness: re-apply the
     // level the user last dialed in so every fullscreen video looks the same,
@@ -2093,9 +2099,17 @@ internal fun PlayerGestureSurface(
                     detectTapGestures(
                         onTap = { onToggleControls() },
                         onLongPress = {
-                            isBoosting = true
-                            boostSpeed = BOOST_SPEED_MIN
-                            speedBoostStart()
+                            if (enabledGestures.holdToSpeedUp) {
+                                // The rate the user asked a hold to start at.
+                                // speedBoostStart is what remembers the speed
+                                // to return to, so it still runs first.
+                                val start = enabledGestures.holdSpeed
+                                    .coerceIn(BOOST_SPEED_MIN, BOOST_SPEED_MAX)
+                                isBoosting = true
+                                boostSpeed = start
+                                speedBoostStart()
+                                if (start != BOOST_SPEED_MIN) speedBoostChange(start)
+                            }
                         },
                         onPress = {
                             // Suspends until the finger lifts (or the gesture is
@@ -2333,7 +2347,11 @@ internal fun PlayerGestureSurface(
                                             // even above the exit lane's guard.
                                             if (inCentreColumn && exitFullscreenEnabled) {
                                                 if (inExitZone) mode = 3
-                                            } else if (inDragZone) {
+                                            } else if (inDragZone && (
+                                                    if (leftSide) enabledGestures.brightnessSwipe
+                                                    else enabledGestures.volumeSwipe
+                                                    )
+                                            ) {
                                                 mode = 1
                                                 level = if (leftSide) {
                                                     activity?.let { currentWindowBrightness(it) } ?: 0.5f

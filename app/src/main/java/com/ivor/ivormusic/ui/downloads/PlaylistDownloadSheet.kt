@@ -29,8 +29,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material3.Button
@@ -76,6 +78,7 @@ import com.ivor.ivormusic.data.DownloadMediaType
 import com.ivor.ivormusic.data.DownloadProgress
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.DownloadStatus
+import com.ivor.ivormusic.data.MusicDownloadOptions
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
@@ -203,10 +206,16 @@ fun MusicPlaylistDownloadAction(
             kind = PlaylistDownloadKind.MUSIC,
             playlistItemCountLabel = itemCountLabel(songs.size, PlaylistDownloadKind.MUSIC),
             snapshot = snapshot,
+            // Only when every song still to fetch states its length: a total
+            // built from half the list would be a confident underestimate.
+            remainingMusicDurationMs = eligibleSongs
+                .filter { it.id in snapshot.remainingIds }
+                .takeIf { remaining -> remaining.isNotEmpty() && remaining.all { it.duration > 0L } }
+                ?.sumOf { it.duration },
             onDismiss = { showSheet = false },
-            onQueue = {
+            onQueue = { _, music ->
                 if (repository.rememberDownloadedPlaylist(playlistId, playlistTitle, artworkUrl, songs)) {
-                    repository.downloadPlaylist(eligibleSongs)
+                    repository.downloadPlaylist(eligibleSongs, music)
                     true
                 } else false
             }
@@ -278,7 +287,7 @@ fun VideoPlaylistDownloadAction(
                 else itemCountLabel(videos.size, PlaylistDownloadKind.VIDEO),
             snapshot = snapshot,
             onDismiss = { showSheet = false },
-            onQueue = { quality ->
+            onQueue = { quality, _ ->
                 repository.downloadVideoPlaylist(playlistId, eligibleVideos, quality)
             }
         )
@@ -364,7 +373,8 @@ private fun PlaylistDownloadSheet(
     playlistItemCountLabel: String,
     snapshot: PlaylistDownloadSnapshot,
     onDismiss: () -> Unit,
-    onQueue: suspend (qualityLabel: String?) -> Boolean
+    remainingMusicDurationMs: Long? = null,
+    onQueue: suspend (qualityLabel: String?, music: MusicDownloadOptions?) -> Boolean
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -378,6 +388,12 @@ private fun PlaylistDownloadSheet(
         mutableStateOf(preferences.getDownloadVideoQuality())
     }
     var rememberQuality by remember { mutableStateOf(false) }
+    var musicQuality by remember {
+        mutableStateOf(ThemePreferences.currentDownloadMusicQuality(context))
+    }
+    var saveLyrics by remember {
+        mutableStateOf(ThemePreferences.saveLyricsWithDownloads(context))
+    }
     var queued by remember { mutableStateOf(false) }
     var queueing by remember { mutableStateOf(false) }
     var queueFailed by remember { mutableStateOf(false) }
@@ -588,14 +604,59 @@ private fun PlaylistDownloadSheet(
                     }
                 } else {
                     item {
-                        val musicQuality = remember {
-                            ThemePreferences.currentMusicQuality(context)
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.sd_quality),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            val highDetail = musicBitrateLabel(
+                                nominalMusicBitrate(ThemePreferences.DOWNLOAD_MUSIC_QUALITY_HIGH)
+                            )
+                            val saverDetail = musicBitrateLabel(
+                                nominalMusicBitrate(ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER)
+                            )
+                            val aboutSize = stringResource(R.string.sd_about_size)
+                            MusicQualityPicker(
+                                selected = musicQuality,
+                                onSelect = { musicQuality = it },
+                                info = { option ->
+                                    MusicQualityCardInfo(
+                                        detail = if (option == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER) {
+                                            saverDetail
+                                        } else highDetail,
+                                        // Length times the nominal bitrate: the
+                                        // real streams are within a few percent
+                                        // of it, and resolving every song to
+                                        // ask would cost a request apiece.
+                                        size = remainingMusicDurationMs?.let { ms ->
+                                            aboutSize.format(
+                                                formatDownloadSize(
+                                                    ms / 1000L * nominalMusicBitrate(option) / 8L
+                                                )
+                                            )
+                                        }
+                                    )
+                                }
+                            )
+                            DownloadOptionSwitch(
+                                icon = Icons.Rounded.Lyrics,
+                                title = stringResource(R.string.sd_lyrics),
+                                subtitle = stringResource(R.string.sd_lyrics_sub),
+                                checked = saveLyrics,
+                                onCheckedChange = { saveLyrics = it }
+                            )
+                            DownloadOptionSwitch(
+                                icon = Icons.Rounded.Bookmark,
+                                title = stringResource(R.string.sd_remember),
+                                subtitle = stringResource(R.string.sd_remember_sub),
+                                checked = rememberQuality,
+                                onCheckedChange = { rememberQuality = it }
+                            )
                         }
-                        Text(
-                            text = "Music uses your ${musicQuality.replaceFirstChar { it.uppercase() }} quality setting for this network.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
 
@@ -686,12 +747,18 @@ private fun PlaylistDownloadSheet(
                         queueFailed = false
                         scope.launch {
                             val success = onQueue(
-                                selectedQuality.takeIf { kind == PlaylistDownloadKind.VIDEO }
+                                selectedQuality.takeIf { kind == PlaylistDownloadKind.VIDEO },
+                                MusicDownloadOptions(musicQuality, saveLyrics)
+                                    .takeIf { kind == PlaylistDownloadKind.MUSIC }
                             )
                             queueing = false
                             if (success) {
                                 if (kind == PlaylistDownloadKind.VIDEO && rememberQuality) {
                                     preferences.setDownloadVideoQuality(selectedQuality)
+                                }
+                                if (kind == PlaylistDownloadKind.MUSIC && rememberQuality) {
+                                    ThemePreferences.setDownloadMusicQuality(context, musicQuality)
+                                    ThemePreferences.setSaveLyricsWithDownloads(context, saveLyrics)
                                 }
                                 queued = true
                             } else {

@@ -15,7 +15,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -49,7 +52,12 @@ enum class DownloadStatus {
  * [qualityLabel] is the video quality the user picked in the download sheet
  * (null = the stored default). It lives on the request so retries — which
  * re-resolve stream URLs from scratch — keep honoring the original choice.
+ *
+ * Serializable because a failed request is written to disk
+ * ([FailedDownloadStore]) and retried after a restart. That freezes the field
+ * names here and the [DownloadMediaType] constant names.
  */
+@kotlinx.serialization.Serializable
 data class DownloadRequest(
     val id: String,
     val title: String,
@@ -58,10 +66,38 @@ data class DownloadRequest(
     val thumbnailUrl: String? = null,
     val durationMs: Long = 0,
     val song: Song? = null,
-    val qualityLabel: String? = null
+    val qualityLabel: String? = null,
+    /**
+     * The caption tracks picked in the download sheet, as
+     * [DownloadedCaptionStore.keyOf] keys. Null where nobody was asked (a
+     * playlist, a download started without the sheet) and the likely ones are
+     * kept; empty means the user chose none.
+     */
+    val captionKeys: Set<String>? = null,
+    /**
+     * The music quality picked in the download sheet, one of
+     * `ThemePreferences.DOWNLOAD_MUSIC_QUALITY_*`. Null defers to the stored
+     * default when the transfer starts.
+     */
+    val audioQuality: String? = null,
+    /** Whether to fetch and keep lyrics. Null defers to the stored default. */
+    val saveLyrics: Boolean? = null
 ) {
     val isVideo: Boolean get() = type == DownloadMediaType.VIDEO
 }
+
+/** What the music download sheet settled on for one song or one playlist. */
+data class MusicDownloadOptions(
+    val quality: String,
+    val saveLyrics: Boolean
+)
+
+/** One quality a song can be downloaded at. [contentLength] is the audio alone. */
+data class DownloadAudioFormat(
+    val quality: String,
+    val bitrate: Int,
+    val contentLength: Long?
+)
 
 data class DownloadProgress(
     val songId: String,
@@ -69,7 +105,14 @@ data class DownloadProgress(
     val progress: Float, // 0.0 to 1.0
     val status: DownloadStatus,
     val bytesDownloaded: Long = 0,
-    val totalBytes: Long = 0
+    val totalBytes: Long = 0,
+    /**
+     * The bytes have arrived and the file is being put together: the remux for
+     * a video, tags and companions for a song. It carries no byte counts, which
+     * is exactly how the stream-resolution leg looks, so without this the tail
+     * of every download read "Preparing" at ninety percent.
+     */
+    val finishing: Boolean = false
 )
 
 /** A completed video download. */
@@ -114,6 +157,9 @@ class DownloadRepository private constructor(private val context: Context) {
         // Ranged-request chunk size. Bounded ranges are served at full CDN
         // speed where an open-ended request is paced to the media bitrate.
         private const val DOWNLOAD_CHUNK_BYTES = 10L * 1024 * 1024
+
+        /** How long a download sheet waits to learn a file's size before offering the download without it. */
+        private const val SIZE_PROBE_TIMEOUT_MS = 8_000L
 
         /** How long a finished download stays visible in the progress list. */
         private const val COMPLETION_LINGER_MS = 1_500L
@@ -225,6 +271,8 @@ class DownloadRepository private constructor(private val context: Context) {
     private val _downloadProgress = MutableStateFlow<Map<String, DownloadProgress>>(emptyMap())
     val downloadProgress: StateFlow<Map<String, DownloadProgress>> = _downloadProgress.asStateFlow()
 
+    private val captionStore = DownloadedCaptionStore(context)
+
     private val _downloadedVideos = MutableStateFlow<List<DownloadedVideo>>(emptyList())
     val downloadedVideos: StateFlow<List<DownloadedVideo>> = _downloadedVideos.asStateFlow()
 
@@ -254,6 +302,7 @@ class DownloadRepository private constructor(private val context: Context) {
     private val activeDownloadCalls = java.util.concurrent.ConcurrentHashMap<String, okhttp3.Call>()
     private val pausedRequests = java.util.concurrent.ConcurrentHashMap<String, DownloadRequest>()
     private val checkpoints = DownloadCheckpoints(File(context.cacheDir, "download_checkpoints"))
+    private val failedStore = FailedDownloadStore(context)
 
     init {
         // Read whatever is on disk right away so consumers that touch
@@ -261,6 +310,7 @@ class DownloadRepository private constructor(private val context: Context) {
         // an empty list, then migrate in the background and reload.
         loadDownloadedSongs()
         loadDownloadedVideos()
+        restoreFailedDownloads()
         repositoryScope.launch {
             if (DownloadMigration.migrateIfNeeded(context)) {
                 loadDownloadedSongs()
@@ -276,6 +326,40 @@ class DownloadRepository private constructor(private val context: Context) {
             // back into the list, and pruning first would forget a playlist for
             // files that were about to reappear under their new paths.
             pruneEmptyDownloadedPlaylists()
+        }
+    }
+
+    /**
+     * Put the failures from the last run back in the progress list, then keep
+     * the file following that list.
+     *
+     * Written straight into the map rather than through [updateProgress],
+     * which would post a "download failed" notification for each one on every
+     * launch. Anything that has arrived since - the file was fetched another
+     * way - is no longer a failure and is dropped.
+     *
+     * The file is derived from the progress map rather than written at each
+     * place a failure is made or cleared, so a retry, a cancel, a clear and a
+     * later success all update it without having to remember to.
+     */
+    private fun restoreFailedDownloads() {
+        val restored = failedStore.read()
+            .filter { it.id.isNotBlank() && !isDownloadedOfType(it.id, it.type) }
+            .distinctBy { it.id }
+        if (restored.isNotEmpty()) {
+            _downloadProgress.value = restored.associate { request ->
+                request.id to DownloadProgress(request.id, request, 0f, DownloadStatus.FAILED)
+            }
+        }
+        repositoryScope.launch {
+            _downloadProgress
+                .map { progress ->
+                    progress.values
+                        .filter { it.status == DownloadStatus.FAILED }
+                        .map { it.request }
+                }
+                .distinctUntilChanged()
+                .collect(failedStore::write)
         }
     }
 
@@ -484,6 +568,8 @@ class DownloadRepository private constructor(private val context: Context) {
                     ?.takeIf { it in liveUris }
 
                 if (uri == null) {
+                    // The file was removed outside Koda; its captions go with it.
+                    obj.optString("id").takeIf { it.isNotBlank() }?.let(captionStore::delete)
                     prunedAny = true
                     continue
                 }
@@ -492,7 +578,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     DownloadedVideo(
                         id = obj.optString("id"),
                         title = obj.optString("title"),
-                        channelName = obj.optString("channelName"),
+                        channelName = cleanChannelName(obj.optString("channelName")),
                         uri = uri,
                         thumbnailUrl = obj.optString("thumbnailUrl").takeIf { it.isNotBlank() },
                         durationMs = obj.optLong("durationMs"),
@@ -546,20 +632,23 @@ class DownloadRepository private constructor(private val context: Context) {
         progress: Float,
         status: DownloadStatus,
         bytesDownloaded: Long = 0,
-        totalBytes: Long = 0
+        totalBytes: Long = 0,
+        finishing: Boolean = false
     ) {
         if (pausedRequests.containsKey(request.id) && status == DownloadStatus.DOWNLOADING) return
         val previous = _downloadProgress.value[request.id]
         if (previous != null &&
             previous.status == status &&
+            previous.finishing == finishing &&
             (previous.progress * 100).toInt() == (progress * 100).toInt()
         ) {
             return
         }
 
         val current = _downloadProgress.value.toMutableMap()
-        current[request.id] =
-            DownloadProgress(request.id, request, progress, status, bytesDownloaded, totalBytes)
+        current[request.id] = DownloadProgress(
+            request.id, request, progress, status, bytesDownloaded, totalBytes, finishing
+        )
         _downloadProgress.value = current
 
         // Terminal states get their own one-shot notification. Progress itself
@@ -600,8 +689,8 @@ class DownloadRepository private constructor(private val context: Context) {
      * died when that screen's ViewModel was cleared, leaving a half-written
      * file behind.
      */
-    suspend fun downloadSong(song: Song) {
-        enqueue(listOf(song.toRequest()))
+    suspend fun downloadSong(song: Song, options: MusicDownloadOptions? = null) {
+        enqueue(listOf(song.toRequest(options)))
     }
 
     /**
@@ -610,22 +699,34 @@ class DownloadRepository private constructor(private val context: Context) {
      * fetches what is missing. Device-local originals are already offline and
      * must never be routed through YouTube stream resolution.
      */
-    suspend fun downloadPlaylist(songs: List<Song>) {
+    suspend fun downloadPlaylist(songs: List<Song>, options: MusicDownloadOptions? = null) {
         enqueue(
             songs.asSequence()
                 .filter { it.source == SongSource.YOUTUBE }
                 .distinctBy { it.id }
-                .map { it.toRequest() }
+                .map { it.toRequest(options) }
                 .toList()
         )
     }
 
     /**
+     * The qualities [song] can be downloaded at, each with its exact audio
+     * size. Empty when the direct resolver did not answer; the sheet then
+     * falls back to [estimateSongDownloadBytes] for the chosen quality.
+     */
+    suspend fun songDownloadFormats(song: Song): List<DownloadAudioFormat> =
+        youtubeRepository.getDownloadAudioFormats(song.id)
+
+    /**
      * Queue a video download. [qualityLabel] pins the quality picked in the
      * download sheet; null defers to the stored default at transfer time.
      */
-    suspend fun downloadVideo(video: VideoItem, qualityLabel: String? = null) {
-        enqueue(listOf(video.toRequest(qualityLabel)))
+    suspend fun downloadVideo(
+        video: VideoItem,
+        qualityLabel: String? = null,
+        captionKeys: Set<String>? = null,
+    ) {
+        enqueue(listOf(video.toRequest(qualityLabel).copy(captionKeys = captionKeys)))
     }
 
     /**
@@ -634,8 +735,8 @@ class DownloadRepository private constructor(private val context: Context) {
      * the confirmation UI labels this as an estimate because those small
      * companions are fetched only while the real download runs.
      */
-    suspend fun estimateSongDownloadBytes(song: Song): Long? {
-        val url = youtubeRepository.getDownloadAudioStreamUrl(song.id).getOrNull()
+    suspend fun estimateSongDownloadBytes(song: Song, quality: String? = null): Long? {
+        val url = youtubeRepository.getDownloadAudioStreamUrl(song.id, quality).getOrNull()
             ?: return null
         return remoteMediaSize(url)
     }
@@ -693,14 +794,16 @@ class DownloadRepository private constructor(private val context: Context) {
         return true
     }
 
-    private fun Song.toRequest() = DownloadRequest(
+    private fun Song.toRequest(options: MusicDownloadOptions? = null) = DownloadRequest(
         id = id,
         title = title,
         subtitle = artist,
         type = DownloadMediaType.MUSIC,
         thumbnailUrl = highResThumbnailUrl ?: thumbnailUrl ?: albumArtUri?.toString(),
         durationMs = duration,
-        song = this
+        song = this,
+        audioQuality = options?.quality,
+        saveLyrics = options?.saveLyrics
     )
 
     private fun VideoItem.toRequest(qualityLabel: String? = null) = DownloadRequest(
@@ -792,8 +895,13 @@ class DownloadRepository private constructor(private val context: Context) {
                 job.start()
                 job.join()
 
-                activeJob = null
-                queueMutex.withLock { activeId = null }
+                // Both under the lock: resumeDownload reads the pair, and with
+                // the job cleared first it could see a finished task still
+                // named as active and have its re-queue refused as a duplicate.
+                queueMutex.withLock {
+                    activeJob = null
+                    activeId = null
+                }
             }
         } finally {
             DownloadService.stop(context)
@@ -828,6 +936,11 @@ class DownloadRepository private constructor(private val context: Context) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // Pause and cancel also cancel the HTTP call, and a read blocked
+                // on the socket reports that as an IOException rather than a
+                // cancellation. Left to fall through, a pause on the last
+                // attempt was filed as a failed download.
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 lastError = e
                 KLog.w(TAG, "Attempt $attempt/$MAX_ATTEMPTS failed for ${request.title}: ${e.message}")
             }
@@ -875,8 +988,12 @@ class DownloadRepository private constructor(private val context: Context) {
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
             try {
-                val streamUrl = youtubeRepository.getDownloadAudioStreamUrl(request.id).getOrNull()
+                val streamUrl = youtubeRepository
+                    .getDownloadAudioStreamUrl(request.id, request.audioQuality)
+                    .getOrNull()
                     ?: throw java.io.IOException("No stream URL for ${request.id}")
+                val keepLyrics = request.saveLyrics
+                    ?: ThemePreferences.saveLyricsWithDownloads(context)
 
                 ensureActive()
                 updateProgress(request, 0.1f, DownloadStatus.DOWNLOADING)
@@ -886,6 +1003,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     // transfer rather than extending every playlist item by up
                     // to two provider timeouts after its bytes have arrived.
                     val lyricsDeferred = async {
+                        if (!keepLyrics) return@async null
                         (lyricsRepository.fetchLyrics(song, allowRemote = !ThemePreferences(context).isLocalOnlyModeEnabled()) as? LyricsResult.Success)
                             ?.toDownloadLyrics()
                             ?.takeIf(String::isNotBlank)
@@ -895,7 +1013,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     audioTemp = downloadStream(request, streamUrl, "music", 0.1f, 0.82f)
 
                     ensureActive()
-                    updateProgress(request, 0.84f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.84f, DownloadStatus.DOWNLOADING, finishing = true)
 
                     val lyrics = runCatching { lyricsDeferred.await() }
                         .onFailure { KLog.w(TAG, "Lyrics unavailable for ${song.title}", it) }
@@ -906,7 +1024,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     artworkTemp = artwork?.let(::writeArtworkTemp)
 
                     ensureActive()
-                    updateProgress(request, 0.88f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.88f, DownloadStatus.DOWNLOADING, finishing = true)
                     val metadataCopy = DownloadedAudioMetadata.writeCopy(
                         sourceAudio = audioTemp!!,
                         tempDirectory = context.cacheDir,
@@ -931,7 +1049,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     }
 
                     ensureActive()
-                    updateProgress(request, 0.92f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.92f, DownloadStatus.DOWNLOADING, finishing = true)
 
                     val audioName = storage.buildFileName(
                         request.title,
@@ -973,7 +1091,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     }
 
                     ensureActive()
-                    updateProgress(request, 0.98f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.98f, DownloadStatus.DOWNLOADING, finishing = true)
 
                     // Publish companions first and audio last. A media scanner
                     // can never observe a finished song before everything that
@@ -1136,11 +1254,17 @@ class DownloadRepository private constructor(private val context: Context) {
                     audioTemp = downloadStream(request, chosen.audioUrl, "audio", 0.70f, 0.88f)
                     ensureActive()
 
-                    updateProgress(request, 0.9f, DownloadStatus.DOWNLOADING)
+                    updateProgress(request, 0.9f, DownloadStatus.DOWNLOADING, finishing = true)
 
+                    // The remux of a long video runs for a while and blocks, so
+                    // it is told when to stop: otherwise Cancel did nothing
+                    // visible until the whole file had been written.
                     muxed = context.contentResolver.openFileDescriptor(target, "rw")?.use { pfd ->
-                        DownloadMuxer.mux(videoTemp, audioTemp, pfd.fileDescriptor)
+                        DownloadMuxer.mux(videoTemp, audioTemp, pfd.fileDescriptor) { isActive }
                     } ?: false
+                    // A stopped remux reports false like a refused codec does,
+                    // and must not go on to the progressive fallback.
+                    ensureActive()
 
                     if (!muxed) {
                         KLog.w(TAG, "Mux failed for ${request.title}, falling back to progressive")
@@ -1175,7 +1299,13 @@ class DownloadRepository private constructor(private val context: Context) {
                     pendingTarget = null
                 }
 
+                // The video is done once it is published and recorded, so the
+                // row finishes here. With the captions fetched first it sat in
+                // "In progress" beside its own entry under Downloaded, and a
+                // pause in that window left a paused row for a finished file
+                // that nothing could resume.
                 finishSuccess(request)
+                saveCaptions(request)
                 true
             } catch (e: kotlinx.coroutines.CancellationException) {
                 cleanUpCancelled(request, pendingTarget)
@@ -1286,23 +1416,38 @@ class DownloadRepository private constructor(private val context: Context) {
      * Content-Range. This keeps the size preview cheap and preserves the
      * repository-wide rule that media URLs are never fetched open-ended.
      */
-    private suspend fun remoteMediaSize(url: String): Long? = withContext(Dispatchers.IO) {
-        val response = runCatching {
-            client.newCall(
-                Request.Builder()
-                    .url(url)
-                    .header("User-Agent", YouTubeRepository.uaForPlaybackUri(Uri.parse(url)))
-                    .header("Range", "bytes=0-0")
-                    .build()
-            ).execute()
-        }.getOrNull() ?: return@withContext null
+    private suspend fun remoteMediaSize(url: String): Long? {
+        val call = client.newCall(
+            Request.Builder()
+                .url(url)
+                .header("User-Agent", YouTubeRepository.uaForPlaybackUri(Uri.parse(url)))
+                .header("Range", "bytes=0-0")
+                .build()
+        )
+        // The download sheets hold their button until this answers, and the
+        // transfer client waits 30s to connect and 60s to read. Enqueued rather
+        // than executed so the budget and a changed quality pill really end the
+        // request: a timeout around a blocking execute() only fires once the
+        // call has returned by itself.
+        return kotlinx.coroutines.withTimeoutOrNull(SIZE_PROBE_TIMEOUT_MS) {
+            kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : okhttp3.Callback {
+                    override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                        continuation.resumeWith(Result.success(null))
+                    }
 
-        response.use {
-            if (!it.isSuccessful) return@withContext null
-            if (it.code == 206) {
-                parseContentRangeTotal(it.header("Content-Range"))
-            } else {
-                it.body?.contentLength()?.takeIf { length -> length > 0L }
+                    override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                        val size = response.use {
+                            when {
+                                !it.isSuccessful -> null
+                                it.code == 206 -> parseContentRangeTotal(it.header("Content-Range"))
+                                else -> it.body?.contentLength()?.takeIf { length -> length > 0L }
+                            }
+                        }
+                        continuation.resumeWith(Result.success(size))
+                    }
+                })
             }
         }
     }
@@ -1331,6 +1476,50 @@ class DownloadRepository private constructor(private val context: Context) {
     /** Total size out of a "bytes 0-1023/4096" Content-Range; null when absent. */
     private fun parseContentRangeTotal(contentRange: String?): Long? =
         contentRange?.substringAfterLast('/')?.toLongOrNull()?.takeIf { it > 0 }
+
+    /**
+     * Keep the video's caption tracks beside it, so they are there offline.
+     *
+     * After the video is published and recorded, and best-effort throughout:
+     * the download is the video, and a caption track that will not fetch must
+     * never turn a finished file into a failed download. The track list is
+     * normally already in memory - the stream resolution a few lines up reads
+     * the same /player response - so this costs one small request per track.
+     *
+     * Which tracks is the user's choice where the download sheet asked for
+     * one, and [DownloadedCaptionStore.preferredTracks] where nothing did.
+     */
+    private suspend fun saveCaptions(request: DownloadRequest) {
+        val chosen = request.captionKeys
+        // The user was asked and wanted none.
+        if (chosen != null && chosen.isEmpty()) return
+        try {
+            val available = youtubeRepository.getCaptionTracks(request.id)
+            if (available.isEmpty()) return
+            val wanted = if (chosen != null) {
+                available.filter { DownloadedCaptionStore.keyOf(it) in chosen }
+            } else {
+                val locales = context.resources.configuration.locales
+                DownloadedCaptionStore.preferredTracks(
+                    available = available,
+                    savedLanguage = ThemePreferences(context).getCaptionLanguageCode(),
+                    deviceLanguages = (0 until locales.size()).map { locales[it].language },
+                )
+            }
+            var saved = 0
+            for (track in wanted) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val vtt = youtubeRepository.getCaptionVtt(track) ?: continue
+                captionStore.save(request.id, track, vtt)
+                saved++
+            }
+            KLog.d(TAG, "Saved $saved of ${wanted.size} wanted caption tracks for ${request.title}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w(TAG, "Captions not saved for ${request.title}: ${e.message}")
+        }
+    }
 
     private fun recordVideo(request: DownloadRequest, uri: Uri, quality: String?) {
         _downloadedVideos.value = _downloadedVideos.value + DownloadedVideo(
@@ -1476,6 +1665,7 @@ class DownloadRepository private constructor(private val context: Context) {
         val current = _downloadedVideos.value
         val video = current.find { it.id == videoId } ?: return
         storage.delete(video.uri)
+        captionStore.delete(videoId)
         _downloadedVideos.value = current - video
         saveVideoMetadata()
     }

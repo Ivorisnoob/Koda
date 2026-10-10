@@ -54,6 +54,10 @@ data class PlayerWidgetSnapshot(
     val repeatMode: Int,
     /** The next few queue entries, in play order, for the Lineup widget. */
     val upNext: List<UpNextEntry>,
+    /** The playing row's media id (a YouTube video id for streams). */
+    val mediaId: String?,
+    /** The playing row's album, when the metadata carries one. */
+    val album: String?,
 ) {
     /** 0f..1f for the progress strip; 0 when the duration is unknown. */
     val progress: Float
@@ -73,6 +77,8 @@ data class PlayerWidgetSnapshot(
             shuffleEnabled = false,
             repeatMode = Player.REPEAT_MODE_OFF,
             upNext = emptyList(),
+            mediaId = null,
+            album = null,
         )
     }
 }
@@ -117,6 +123,8 @@ object PlayerWidgetStore {
             put("hasPrevious", snapshot.hasPrevious)
             put("shuffle", snapshot.shuffleEnabled)
             put("repeat", snapshot.repeatMode)
+            put("mediaId", snapshot.mediaId ?: JSONObject.NULL)
+            put("album", snapshot.album ?: JSONObject.NULL)
             put(
                 "upNext",
                 JSONArray().apply {
@@ -170,6 +178,8 @@ object PlayerWidgetStore {
                 shuffleEnabled = json.optBoolean("shuffle", false),
                 repeatMode = json.optInt("repeat", Player.REPEAT_MODE_OFF),
                 upNext = entries,
+                mediaId = json.optString("mediaId", "").takeIf { it.isNotBlank() },
+                album = json.optString("album", "").takeIf { it.isNotBlank() },
             )
         } catch (e: Exception) {
             KLog.w("PlayerWidget", "Widget state unreadable: ${e.message}")
@@ -214,6 +224,11 @@ internal object PlayerWidgetReader {
             val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
             if (bitmap != null) artworkCache = key to bitmap
             bitmap
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // A newer push cancelled this one. Swallowed, it came back as "no
+            // cover", which the host then published and kept: the next push
+            // saw the same cover uri and reused the nothing it had stored.
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Widget artwork failed: ${e.message}")
             null
@@ -257,6 +272,8 @@ internal fun Player.toWidgetSnapshot(): PlayerWidgetSnapshot {
         shuffleEnabled = shuffleModeEnabled,
         repeatMode = repeatMode,
         upNext = upcoming,
+        mediaId = currentMediaItem?.mediaId?.takeIf { it.isNotBlank() },
+        album = mediaMetadata.albumTitle?.toString()?.takeIf { it.isNotBlank() },
     )
 }
 

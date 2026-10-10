@@ -3,7 +3,8 @@ package com.ivor.ivormusic.widget
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.updateAll
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,7 @@ import kotlinx.coroutines.sync.withLock
  *
  * So the state lives in a flow that the composition collects. A push updates
  * [state]; every live session recomposes against the new value; [PlayerWidgets]
- * still calls `updateAll` so that widgets with no live session get one started.
+ * still updates each widget so that one with no live session gets one started.
  *
  * The artwork rides along with the snapshot rather than being loaded inside the
  * composition. One push decodes one cover for all six widgets, and a Glance
@@ -86,8 +87,12 @@ internal object PlayerWidgetHost {
 
     /** Publish new state to every live composition. */
     suspend fun set(context: Context, snapshot: PlayerWidgetSnapshot) {
-        val sameCover = _state.value.snapshot.artworkUri == snapshot.artworkUri
-        val artwork = if (sameCover) _state.value.artwork else loadArtwork(context, snapshot)
+        val current = _state.value
+        // Reused only when there is one to reuse: a cover that failed to load
+        // is tried again on the next push rather than staying blank for as
+        // long as the song plays.
+        val sameCover = current.snapshot.artworkUri == snapshot.artworkUri && current.artwork != null
+        val artwork = if (sameCover) current.artwork else loadArtwork(context, snapshot)
         _state.value = PlayerWidgetUi(snapshot, artwork)
         seeded = true
     }
@@ -100,22 +105,30 @@ internal object PlayerWidgetHost {
 
 object PlayerWidgets {
 
-    private val receivers = listOf(
-        PulseWidgetReceiver::class.java,
-        ConsoleWidgetReceiver::class.java,
-        DeckWidgetReceiver::class.java,
-        LineupWidgetReceiver::class.java,
-        BloomWidgetReceiver::class.java,
-        OrbitWidgetReceiver::class.java,
-    )
-
-    private val widgets = listOf<GlanceAppWidget>(
-        PulseWidget(),
-        ConsoleWidget(),
-        DeckWidget(),
-        LineupWidget(),
-        BloomWidget(),
-        OrbitWidget(),
+    /**
+     * Each widget with the receiver the manifest declares for it. The pairing
+     * is written out here, and a push asks the platform which ids belong to a
+     * receiver, rather than using Glance's `updateAll`.
+     *
+     * `updateAll` finds a widget's ids through a table Glance keeps on disk,
+     * receiver name to widget class name, refreshed only when a receiver next
+     * gets `APPWIDGET_UPDATE`. A release build renames the widget classes and
+     * the names move between builds, so after an app update a row written by
+     * the old build can carry the name the new build gave a different widget.
+     * The push then drew that widget into the other one's cell: a widget added
+     * while nothing played stayed right, and turned into another of the family
+     * the moment a song started. Receiver names are manifest components and
+     * are never renamed.
+     */
+    private val family: List<Pair<GlanceAppWidget, Class<out GlanceAppWidgetReceiver>>> = listOf(
+        PulseWidget() to PulseWidgetReceiver::class.java,
+        ConsoleWidget() to ConsoleWidgetReceiver::class.java,
+        DeckWidget() to DeckWidgetReceiver::class.java,
+        LineupWidget() to LineupWidgetReceiver::class.java,
+        BloomWidget() to BloomWidgetReceiver::class.java,
+        OrbitWidget() to OrbitWidgetReceiver::class.java,
+        PixelWidget() to PixelWidgetReceiver::class.java,
+        VinylWidget() to VinylWidgetReceiver::class.java,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -162,18 +175,28 @@ object PlayerWidgets {
     }
 
     private suspend fun updateEveryWidget(context: Context) {
-        for (widget in widgets) {
-            runCatching { widget.updateAll(context) }
-                .onFailure { KLog.w("PlayerWidgets", "Update failed: ${it.message}") }
+        val glanceIds = GlanceAppWidgetManager(context)
+        for ((widget, receiver) in family) {
+            for (appWidgetId in appWidgetIds(context, receiver)) {
+                try {
+                    widget.update(context, glanceIds.getGlanceIdBy(appWidgetId))
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // A newer push replaced this one; let it stop here rather
+                    // than carry on redrawing the remaining widgets with old state.
+                    throw e
+                } catch (e: Exception) {
+                    KLog.w("PlayerWidgets", "Update failed: ${e.message}")
+                }
+            }
         }
     }
 
+    private fun appWidgetIds(context: Context, receiver: Class<out GlanceAppWidgetReceiver>): IntArray =
+        runCatching {
+            android.appwidget.AppWidgetManager.getInstance(context)
+                .getAppWidgetIds(android.content.ComponentName(context, receiver))
+        }.getOrNull() ?: IntArray(0)
+
     private fun anyInstalled(context: Context): Boolean =
-        receivers.any { receiver ->
-            runCatching {
-                android.appwidget.AppWidgetManager.getInstance(context)
-                    .getAppWidgetIds(android.content.ComponentName(context, receiver))
-                    .isNotEmpty()
-            }.getOrDefault(false)
-        }
+        family.any { (_, receiver) -> appWidgetIds(context, receiver).isNotEmpty() }
 }

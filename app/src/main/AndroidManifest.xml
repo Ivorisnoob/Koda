@@ -26,6 +26,14 @@
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Discord Rich Presence: package visibility for the Discord app's RPC service. -->
+    <queries>
+        <intent>
+            <action android:name="com.discord.socialsdk.rpc.IDiscordRpcService" />
+        </intent>
+        <package android:name="com.discord" />
+    </queries>
+
     <application
         android:name=".IvorMusicApplication"
         android:allowBackup="true"
@@ -434,6 +442,30 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/bloom_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.VinylWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_vinyl_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/vinyl_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.PixelWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_pixel_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/pixel_widget_info" />
         </receiver>
 
         <receiver

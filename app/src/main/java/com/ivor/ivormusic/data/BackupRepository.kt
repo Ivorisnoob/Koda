@@ -289,6 +289,7 @@ class BackupRepository(context: Context) {
         val liked = appContext.getSharedPreferences(LikedSongsRepository.PREFS_NAME, Context.MODE_PRIVATE)
         val searches = appContext.getSharedPreferences(SearchHistoryRepository.PREFS_NAME, Context.MODE_PRIVATE)
         val uploads = appContext.getSharedPreferences(UploadCheckRepository.PREFS_NAME, Context.MODE_PRIVATE)
+        val taste = appContext.getSharedPreferences(TasteProfileStore.PREFS_NAME, Context.MODE_PRIVATE)
 
         fun scoped(base: String, profileId: String) =
             ProfileManager.profileScopedKey(base, profileId, legacyId)
@@ -325,6 +326,10 @@ class BackupRepository(context: Context) {
                 likedSongs = readText(LikedSongsRepository.songsFileFor(appContext, profile.id)),
                 searchHistory = searches.getString(
                     SearchHistoryRepository.keyFor(appContext, profile.id),
+                    null
+                )?.takeIf { it.isNotBlank() },
+                tasteProfile = taste.getString(
+                    TasteProfileStore.keyFor(appContext, profile.id),
                     null
                 )?.takeIf { it.isNotBlank() },
                 uploadMutes = uploads.getStringSet(
@@ -613,6 +618,10 @@ class BackupRepository(context: Context) {
 
         val likedEditor = liked.edit().clear()
         val searchEditor = searches.edit().clear()
+        // Only a backup that knows about taste replaces it: an older one says
+        // nothing either way, and clearing on its word would lose the picks.
+        val tasteEditor = appContext
+            .getSharedPreferences(TasteProfileStore.PREFS_NAME, Context.MODE_PRIVATE).edit()
         val uploadEditor = uploads.edit()
         if (perProfile) {
             uploads.all.keys.filter(UploadCheckRepository::isMutedKey).forEach(uploadEditor::remove)
@@ -641,6 +650,9 @@ class BackupRepository(context: Context) {
                 data.searchHistory?.let {
                     searchEditor.putString(SearchHistoryRepository.keyFor(appContext, localId), it)
                 }
+                data.tasteProfile?.let {
+                    tasteEditor.putString(TasteProfileStore.keyFor(appContext, localId), it)
+                }
                 data.uploadMutes?.let {
                     uploadEditor.putStringSet(UploadCheckRepository.mutedKeyFor(appContext, localId), it)
                 }
@@ -665,6 +677,7 @@ class BackupRepository(context: Context) {
 
         likedEditor.commit()
         searchEditor.commit()
+        tasteEditor.commit()
         uploadEditor.commit()
     }
 

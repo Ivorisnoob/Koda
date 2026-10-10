@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.data
 
+import com.ivor.ivormusic.data.youtube.BROWSER_USER_AGENT
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.schabi.newpipe.extractor.downloader.Downloader
@@ -54,7 +55,7 @@ class NewPipeDownloaderImpl(
             // Use the shared Browser UA to ensure consistency with playback
             requestBuilder.addHeader(
                 "User-Agent",
-                YouTubeRepository.BROWSER_USER_AGENT
+                BROWSER_USER_AGENT
             )
         }
 

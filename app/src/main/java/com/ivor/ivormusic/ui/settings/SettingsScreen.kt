@@ -278,7 +278,31 @@ internal enum class SettingsPage {
     LYRICS,
     LASTFM,
     SPONSORBLOCK,
-    APP_ICON
+    APP_ICON,
+    BACKUP,
+    MINI_PLAYER,
+    CUSTOMIZATION,
+    HOME_NAVIGATION,
+    GESTURES,
+    VIDEO_PLAYER,
+    VIDEO_FEED;
+
+    /**
+     * Where back goes from this page. Most pages are opened from the hub;
+     * a nested one returns to the page that opened it, because what it holds
+     * is usually adjusted more than once before it is right.
+     */
+    val parent: SettingsPage
+        get() = when (this) {
+            APPEARANCE, APP_ICON, DISPLAY_SIZE, PLAYER, MINI_PLAYER,
+            HOME_NAVIGATION, GESTURES, VIDEO_PLAYER, VIDEO_FEED -> CUSTOMIZATION
+            VIDEO_HOME -> CONTENT
+            else -> HUB
+        }
+
+    /** The hub row this page lives under: itself, or the top of its chain of parents. */
+    val root: SettingsPage
+        get() = if (this == HUB || parent == HUB) this else parent.root
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -415,6 +439,8 @@ fun SettingsScreen(
     onCrossfadeDurationChange: (Int) -> Unit,
     normalizeVolume: Boolean,
     onNormalizeVolumeToggle: (Boolean) -> Unit,
+    discordPresence: Boolean,
+    onDiscordPresenceToggle: (Boolean) -> Unit,
     rememberVideoBrightness: Boolean,
     onRememberVideoBrightnessToggle: (Boolean) -> Unit,
     pipButtons: String,
@@ -451,7 +477,9 @@ fun SettingsScreen(
     /** Opens the open-source licences screen, from the About dialog. */
     onNavigateToLicenses: () -> Unit = {},
     rotateWithDevice: Boolean = false,
-    onRotateWithDeviceToggle: (Boolean) -> Unit = {}
+    onRotateWithDeviceToggle: (Boolean) -> Unit = {},
+    /** Opens taste setup to review or change the saved picks. */
+    onNavigateToTaste: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
@@ -504,6 +532,14 @@ fun SettingsScreen(
     var page by remember { mutableStateOf(SettingsPage.HUB) }
     var searchQuery by remember { mutableStateOf("") }
 
+    // Backup and restore is a page like the others, so on a wide window it
+    // opens beside the hub instead of taking the whole screen. Its work runs
+    // in the page's own scope, and beside the hub another category is one tap
+    // away - which would cancel a backup half written or a restore half
+    // applied. While it is busy the page stays where it is.
+    var backupBusy by remember { mutableStateOf(false) }
+    val openPage: (SettingsPage) -> Unit = { target -> if (!backupBusy) page = target }
+
     // List-detail on a window wide enough for both: the hub stays on the
     // start side and the open category fills the rest, rather than a phone's
     // one-screen-at-a-time stack stretched across a tablet. The hub is still
@@ -513,7 +549,7 @@ fun SettingsScreen(
     val settingsWindow = com.ivor.ivormusic.ui.theme.currentWindowLayout()
     val twoPane = settingsWindow.supportsTwoPanes
     val detailPage = if (page == SettingsPage.HUB) SettingsPage.ACCOUNT else page
-    val nestedPage = page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON
+    val nestedPage = page != SettingsPage.HUB && page.parent != SettingsPage.HUB
 
     /**
      * Back unwinds one step at a time: an open page returns to the hub, then a
@@ -545,7 +581,7 @@ fun SettingsScreen(
     var containerWidth by remember { mutableFloatStateOf(0f) }
 
     // Side by side, back only unwinds what is stacked: a nested page returns to
-    // Appearance and a query clears. A top-level category is not "on top" of
+    // its parent and a query clears. A top-level category is not "on top" of
     // anything there, so back leaves Settings as it would from the hub.
     PredictiveBackHandler(
         enabled = if (twoPane) nestedPage || searchQuery.isNotEmpty()
@@ -554,7 +590,7 @@ fun SettingsScreen(
         if (twoPane) {
             try {
                 events.collect { }
-                if (nestedPage) page = SettingsPage.APPEARANCE else searchQuery = ""
+                if (nestedPage) page = page.parent else searchQuery = ""
             } catch (cancelled: CancellationException) {
                 // Nothing moved, so there is nothing to spring back.
             }
@@ -581,12 +617,12 @@ fun SettingsScreen(
                             stiffness = Spring.StiffnessMedium
                         )
                     )
-                    page = if (page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON) SettingsPage.APPEARANCE else SettingsPage.HUB
+                    page = page.parent
                 }
                 // A button press, or three-button navigation: no gesture to
                 // continue from, so the ordinary transition is still the right
                 // one and the peel stays out of it entirely.
-                hasPage -> page = if (page == SettingsPage.DISPLAY_SIZE || page == SettingsPage.APP_ICON) SettingsPage.APPEARANCE else SettingsPage.HUB
+                hasPage -> page = page.parent
                 else -> searchQuery = ""
             }
         } catch (cancelled: CancellationException) {
@@ -638,8 +674,11 @@ fun SettingsScreen(
         }
     }
 
+    // Any landing, not only the hub: a page under Customization goes back to
+    // Customization, and a peel left committed there would hold that page in
+    // the shrunken layer the gesture drew.
     LaunchedEffect(page) {
-        if (page == SettingsPage.HUB && peelCommitted) {
+        if (peelCommitted) {
             peelCommitted = false
             isPeeling = false
             peel.snapTo(0f)
@@ -648,12 +687,22 @@ fun SettingsScreen(
 
     // Dialog state for YouTube auth
     var showAuthDialog by remember { mutableStateOf(false) }
+    // Whether that sign-in becomes a new profile or lands on the active one.
+    var authAsNewProfile by remember { mutableStateOf(false) }
 
     // Dialog state for pasting a session cookie header by hand
     var showCookiePasteSheet by remember { mutableStateOf(false) }
     // Bumped after a session change so the account row re-reads name/avatar,
     // which SessionManager exposes as plain getters rather than a flow.
     var accountRefreshKey by remember { mutableStateOf(0) }
+    // The Account page can switch profiles, and the hub's "signed in" line
+    // would otherwise keep describing the profile that was left.
+    LaunchedEffect(Unit) {
+        com.ivor.ivormusic.data.ProfileManager(context).activeProfileId.collect {
+            isLoggedIn = sessionManager.isLoggedIn()
+            accountRefreshKey++
+        }
+    }
 
     // Dialog state for About
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -693,7 +742,7 @@ fun SettingsScreen(
     // Not remembered: the closures capture callbacks that arrive as parameters,
     // and ~38 small objects per recomposition is cheaper than a stale index.
     val searchEntries = buildSettingsSearchIndex(
-        onOpenPage = { page = it },
+        onOpenPage = openPage,
         onOpenQualityPicker = { qualityDialogTarget = it },
         onOpenRoutingPicker = { subscriptionDialogTarget = it },
         onShowAbout = { showAboutDialog = true },
@@ -703,7 +752,8 @@ fun SettingsScreen(
         onNavigateToColorPalette = onNavigateToColorPalette,
         onNavigateToSubscriptions = onNavigateToSubscriptions,
         onNavigateToNotInterested = onNavigateToNotInterested,
-        onNavigateToBackup = onNavigateToBackup,
+        onNavigateToTaste = onNavigateToTaste,
+        onNavigateToBackup = { openPage(SettingsPage.BACKUP) },
         onNavigateToReportBug = onNavigateToReportBug,
         onNavigateToTimeLimit = onNavigateToTimeLimit,
         supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
@@ -723,13 +773,52 @@ fun SettingsScreen(
             sessionManager = sessionManager,
             saveVideoHistory = saveVideoHistory,
             onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
-            onShowAuthDialog = { showAuthDialog = true },
+            onShowAuthDialog = {
+                authAsNewProfile = false
+                showAuthDialog = true
+            },
             onShowCookieSheet = { showCookiePasteSheet = true },
             onSignOut = {
                 sessionManager.clearSession()
                 isLoggedIn = false
                 onLogoutClick()
             },
+            // Google's login page auto-continues as whoever the WebView jar
+            // already holds, so both paths clear it first - and wait for the
+            // asynchronous clear, or the page recaptures the old account. Stored
+            // sessions live in EncryptedSharedPreferences and are untouched.
+            onAddYouTubeAccount = {
+                val cookieManager = android.webkit.CookieManager.getInstance()
+                cookieManager.removeAllCookies {
+                    cookieManager.flush()
+                    authAsNewProfile = true
+                    showAuthDialog = true
+                }
+            },
+            // Not as a new profile: the profile exists and is active, so the
+            // session has to land on it (docs/identity.md).
+            onReconnectProfile = {
+                val cookieManager = android.webkit.CookieManager.getInstance()
+                cookieManager.removeAllCookies {
+                    cookieManager.flush()
+                    authAsNewProfile = false
+                    showAuthDialog = true
+                }
+            },
+            onOpenPage = { page = it },
+            onBack = { page = SettingsPage.HUB }
+        )
+
+        SettingsPage.CUSTOMIZATION -> CustomizationSettingsPage(
+            currentThemeMode = currentThemeMode,
+            colorPalette = colorPalette,
+            appIcon = appIcon,
+            uiScale = uiScale,
+            playerStyle = playerStyle,
+            spotlightHome = spotlightHome,
+            nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+            hapticsLevel = hapticsLevel,
+            onOpenPage = { page = it },
             onBack = { page = SettingsPage.HUB }
         )
 
@@ -737,26 +826,34 @@ fun SettingsScreen(
             paletteStyle = paletteStyle,
             currentThemeMode = currentThemeMode,
             onThemeModeChange = onThemeModeChange,
-            hapticsLevel = hapticsLevel,
-            onHapticsLevelChange = onHapticsLevelChange,
             colorPalette = colorPalette,
             onNavigateToColorPalette = onNavigateToColorPalette,
             amoledTheme = amoledTheme,
             onAmoledThemeToggle = onAmoledThemeToggle,
-            ambientBackground = ambientBackground,
-            onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+            onBack = { page = SettingsPage.CUSTOMIZATION }
+        )
+
+        SettingsPage.HOME_NAVIGATION -> HomeNavigationSettingsPage(
             spotlightHome = spotlightHome,
             onSpotlightHomeToggle = onSpotlightHomeToggle,
             nonExpressiveNavigationBar = nonExpressiveNavigationBar,
             onNonExpressiveNavigationBarToggle =
                 onNonExpressiveNavigationBarToggle,
-            uiScale = uiScale,
-            onNavigateToDisplaySize = { page = SettingsPage.DISPLAY_SIZE },
             rotateWithDevice = rotateWithDevice,
             onRotateWithDeviceToggle = onRotateWithDeviceToggle,
-            appIcon = appIcon,
-            onNavigateToAppIcon = { page = SettingsPage.APP_ICON },
-            onBack = { page = SettingsPage.HUB }
+            onBack = { page = SettingsPage.CUSTOMIZATION }
+        )
+
+        SettingsPage.GESTURES -> GesturesSettingsPage(
+            hapticsLevel = hapticsLevel,
+            onHapticsLevelChange = onHapticsLevelChange,
+            playlistSwipeEnabled = playlistSwipeEnabled,
+            onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
+            playlistSwipeStartAction = playlistSwipeStartAction,
+            onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
+            playlistSwipeEndAction = playlistSwipeEndAction,
+            onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
+            onBack = { page = SettingsPage.CUSTOMIZATION }
         )
 
         SettingsPage.LASTFM -> LastFmSettingsPage(onBack = { page = SettingsPage.HUB })
@@ -780,17 +877,17 @@ fun SettingsScreen(
             onBack = { page = SettingsPage.HUB }
         )
 
-        // Back lands on Appearance rather than the hub: this page is
+        // Back lands on Customization rather than the hub: this page is
         // opened from there, and the scale is usually adjusted more
         // than once before it is right.
         SettingsPage.DISPLAY_SIZE -> DisplaySizeSettingsPage(
             uiScale = uiScale,
             onUiScaleChange = onUiScaleChange,
-            onBack = { page = SettingsPage.APPEARANCE }
+            onBack = { page = SettingsPage.CUSTOMIZATION }
         )
 
         SettingsPage.APP_ICON -> AppIconSettingsPage(
-            onBack = { page = SettingsPage.APPEARANCE }
+            onBack = { page = SettingsPage.CUSTOMIZATION }
         )
 
         SettingsPage.PLAYER -> PlayerSettingsPage(
@@ -806,7 +903,21 @@ fun SettingsScreen(
             onMotionArtworkQualityChange = onMotionArtworkQualityChange,
             waveformSeekBar = waveformSeekBar,
             onWaveformSeekBarToggle = onWaveformSeekBarToggle,
-            onBack = { page = SettingsPage.HUB }
+            ambientBackground = ambientBackground,
+            onAmbientBackgroundToggle = onAmbientBackgroundToggle,
+            onBack = { page = SettingsPage.CUSTOMIZATION }
+        )
+
+        SettingsPage.VIDEO_PLAYER -> VideoPlayerSettingsPage(
+            onBack = { page = SettingsPage.VIDEO_PLAYER.parent }
+        )
+
+        SettingsPage.VIDEO_FEED -> VideoFeedSettingsPage(
+            onBack = { page = SettingsPage.VIDEO_FEED.parent }
+        )
+
+        SettingsPage.MINI_PLAYER -> MiniPlayerSettingsPage(
+            onBack = { page = SettingsPage.MINI_PLAYER.parent }
         )
 
         SettingsPage.PLAYBACK -> PlaybackSettingsPage(
@@ -818,6 +929,8 @@ fun SettingsScreen(
             onCrossfadeDurationChange = onCrossfadeDurationChange,
             normalizeVolume = normalizeVolume,
             onNormalizeVolumeToggle = onNormalizeVolumeToggle,
+            discordPresence = discordPresence,
+            onDiscordPresenceToggle = onDiscordPresenceToggle,
             rememberVideoBrightness = rememberVideoBrightness,
             onRememberVideoBrightnessToggle = onRememberVideoBrightnessToggle,
             pipButtons = pipButtons,
@@ -871,6 +984,7 @@ fun SettingsScreen(
             shortsHiddenActions = shortsHiddenActions,
             onShowShortsButtons = { showShortsButtonsDialog = true },
             onNavigateToNotInterested = onNavigateToNotInterested,
+            onNavigateToTaste = onNavigateToTaste,
             onNavigateToVideoHome = { page = SettingsPage.VIDEO_HOME },
             onBack = { page = SettingsPage.HUB }
         )
@@ -963,12 +1077,6 @@ fun SettingsScreen(
             onLoadLocalSongsToggle = onLoadLocalSongsToggle,
             excludedFolderCount = excludedFolders.size,
             onOpenFolderExclusion = openFolderExclusion,
-            playlistSwipeEnabled = playlistSwipeEnabled,
-            onPlaylistSwipeEnabledToggle = onPlaylistSwipeEnabledToggle,
-            playlistSwipeStartAction = playlistSwipeStartAction,
-            onPlaylistSwipeStartActionChange = onPlaylistSwipeStartActionChange,
-            playlistSwipeEndAction = playlistSwipeEndAction,
-            onPlaylistSwipeEndActionChange = onPlaylistSwipeEndActionChange,
             onBack = { page = SettingsPage.HUB }
         )
 
@@ -980,6 +1088,16 @@ fun SettingsScreen(
                 onOpenAutoHelp = { showAutoHelpDialog = true },
                 onBack = { page = SettingsPage.HUB }
             )
+
+            SettingsPage.BACKUP -> {
+                // Leaving composition mid-work must not leave the hub locked.
+                DisposableEffect(Unit) { onDispose { backupBusy = false } }
+                BackupScreen(
+                    onBack = { page = SettingsPage.HUB },
+                    contentPadding = PaddingValues(bottom = SettingsMiniPlayerClearance),
+                    onBusyChange = { backupBusy = it }
+                )
+            }
         }
     }
 
@@ -1012,8 +1130,8 @@ fun SettingsScreen(
             canPostPromoted = canPostPromoted,
             loadLocalSongs = loadLocalSongs,
             excludedFolderCount = excludedFolders.size,
-            onOpenPage = { page = it },
-            onNavigateToBackup = onNavigateToBackup,
+            onOpenPage = openPage,
+            onNavigateToBackup = { openPage(SettingsPage.BACKUP) },
             onShowAbout = { showAboutDialog = true },
             onBackClick = onBackClick,
             selectedPage = selectedPage
@@ -1035,6 +1153,9 @@ fun SettingsScreen(
                 modifier = Modifier
                     .width((settingsWindow.width * 0.38f).coerceIn(320.dp, 420.dp))
                     .fillMaxHeight()
+                    // Its rows also lead out of Settings altogether, which
+                    // would end a backup or restore in progress the same way.
+                    .coveredBy(backupBusy)
             ) {
                 hubContent(detailPage)
             }
@@ -1190,11 +1311,17 @@ fun SettingsScreen(
     // YouTube Auth Dialog
     if (showAuthDialog) {
         YouTubeAuthDialog(
-            onDismiss = { showAuthDialog = false },
+            onDismiss = {
+                showAuthDialog = false
+                authAsNewProfile = false
+            },
             onAuthSuccess = {
                 showAuthDialog = false
+                authAsNewProfile = false
                 isLoggedIn = true
-            }
+                accountRefreshKey++
+            },
+            addAsNewProfile = authAsNewProfile
         )
     }
 
@@ -1552,36 +1679,30 @@ private fun SettingsHub(
             item {
                 SettingsSection(title = stringResource(R.string.settings_section_look_and_feel)) {
                     SettingsCard {
+                        // One way in to everything about how Koda looks
+                        // and behaves. The page behind it is categorised
+                        // by surface; this row names the two choices most
+                        // people make there.
                         SettingsHubRow(
                             icon = Icons.Rounded.Palette,
-                            title = stringResource(R.string.settings_appearance),
+                            title = stringResource(R.string.settings_customization),
                             value = buildString {
                                 append(themeLabel)
                                 append(", ")
                                 append(paletteName)
-                                if (spotlightHome) append(", Spotlight")
+                                append(" \u00B7 ")
+                                append(playerStyleLabel)
                                 // Only when it is doing something: a "100%"
                                 // on every install is noise, not a live value.
                                 if (uiScale != UI_SCALE_DEFAULT) {
                                     append(", ${(uiScale * 100).roundToInt()}%")
                                 }
                             },
-                            onClick = { onOpenPage(SettingsPage.APPEARANCE) },
-                            selected = selectedPage == SettingsPage.APPEARANCE,
+                            onClick = { onOpenPage(SettingsPage.CUSTOMIZATION) },
+                            selected = selectedPage?.root == SettingsPage.CUSTOMIZATION,
                             tint = MaterialTheme.colorScheme.tertiary,
                             iconShape = MaterialShapes.Cookie9Sided.toShape(),
-                            explanation = stringResource(R.string.si_hub_appearance)
-                        )
-                        SettingsDivider()
-                        SettingsHubRow(
-                            icon = Icons.Rounded.PlayCircle,
-                            title = stringResource(R.string.settings_player),
-                            value = playerStyleLabel,
-                            onClick = { onOpenPage(SettingsPage.PLAYER) },
-                            selected = selectedPage == SettingsPage.PLAYER,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            iconShape = MaterialShapes.Clover4Leaf.toShape(),
-                            explanation = stringResource(R.string.si_hub_player)
+                            explanation = stringResource(R.string.si_hub_customization)
                         )
                     }
                 }
@@ -1713,6 +1834,7 @@ private fun SettingsHub(
                             title = stringResource(R.string.settings_backup_and_restore),
                             value = backupValue,
                             onClick = onNavigateToBackup,
+                            selected = selectedPage == SettingsPage.BACKUP,
                             iconShape = MaterialShapes.Clover8Leaf.toShape(),
                             explanation = stringResource(R.string.si_hub_backup)
                         )

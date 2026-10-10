@@ -230,7 +230,11 @@ fun ShortsPlayerOverlay(
     DisposableEffect(activity, viewModel) {
         val lifecycle = activity?.lifecycle
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) viewModel.pause()
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> viewModel.onEnterBackground()
+                androidx.lifecycle.Lifecycle.Event.ON_START -> viewModel.onEnterForeground()
+                else -> Unit
+            }
         }
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }

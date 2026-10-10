@@ -338,13 +338,25 @@ data class VideoQuality(
 }
 
 /**
- * Complete video details including qualities and related videos.
+ * What parsers wrote into [VideoItem.channelName] before October 2026 when a
+ * response named no channel. Watch history, the subscriptions cache, saved
+ * playlists and downloads written by older builds still hold it.
  */
-data class VideoDetails(
-    val qualities: List<VideoQuality>,
-    val relatedVideos: List<VideoItem>,
-    val updatedVideoItem: VideoItem? = null
-)
+private const val LEGACY_UNKNOWN_CHANNEL = "Unknown Channel"
+
+/**
+ * Whether [name] names no channel.
+ *
+ * A parser leaves the name blank when the response carries none and never
+ * invents one, so blank is the whole test for anything parsed now; the old
+ * placeholder is recognised for what was stored before. An exact match on
+ * purpose: a channel may really be called "Unknown".
+ */
+fun isMissingChannelName(name: String?): Boolean =
+    name.isNullOrBlank() || name.trim().equals(LEGACY_UNKNOWN_CHANNEL, ignoreCase = true)
+
+/** [raw] as a channel name: blank when it is missing or the old placeholder. */
+fun cleanChannelName(raw: String?): String = raw?.takeUnless(::isMissingChannelName).orEmpty()
 
 /**
  * A single chapter marker in a video, parsed from the watch-next player bar

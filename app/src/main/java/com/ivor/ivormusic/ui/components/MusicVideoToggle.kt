@@ -27,6 +27,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -85,7 +87,8 @@ fun MusicVideoToggle(
     modifier: Modifier = Modifier
 ) {
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
-    val segmentWidth = 38.dp
+    // Wider than tall, so the pair reads as a switch and not two buttons.
+    val segmentWidth = 44.dp
     val segmentHeight = 36.dp
 
     Surface(

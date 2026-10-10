@@ -4,8 +4,8 @@ package com.ivor.ivormusic.data
  * Models for a creator's channel page.
  *
  * Shapes verified against live InnerTube responses, signed out, August 2026 -
- * see [YouTubeRepository.getChannelPage] for the endpoints and the renderer
- * notes.
+ * see [com.ivor.ivormusic.data.youtube.ChannelPages] for the endpoints and
+ * the renderer notes.
  *
  * **The organising fact about this file is that a channel page describes
  * itself.** The first browse call carries the tab list with each tab's own
@@ -197,7 +197,12 @@ data class ChannelPost(
      * `params` of the post's `FEpost_detail` browse, the page its comments
      * hang off. Null when the response carried no detail link.
      */
-    val detailParams: String? = null
+    val detailParams: String? = null,
+    /**
+     * The channel the post was fetched from. Set only where a post is shown
+     * away from its channel page (the feeds), so its author can be opened.
+     */
+    val channelId: String? = null
 )
 
 /**
