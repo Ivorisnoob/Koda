@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -282,7 +283,12 @@ fun ProfileAvatar(
             model = accountAvatarUrl,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = modifier.clip(CircleShape)
+            // An account's picture arrives over the network, so it has a
+            // disc to sit on while it loads. Callers do not draw one: a
+            // disc behind a Koda avatar shows through its outline.
+            modifier = modifier
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
         )
         else -> KodaAvatarView(KodaAvatar.forSeed(profile.id), modifier)
     }

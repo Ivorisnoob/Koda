@@ -2456,7 +2456,6 @@ fun TopBarSection(
     showModeToggle: Boolean = true,
     modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
-    val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
     // The bar's buttons wear the secondary container, not a grey surface
     // tone: on the tinted page a grey button read as part of the background.
     val iconColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -2493,9 +2492,15 @@ fun TopBarSection(
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(CircleShape)
-                    .background(surfaceColor)
+                    // No circle clip and no disc behind it: a Koda avatar has
+                    // an outline of its own (a flower, a clover, a cookie),
+                    // and a round frame cut its points off. The picture is
+                    // drawn to its own shape; only the press ripple is round.
                     .combinedClickable(
+                        interactionSource = remember {
+                            androidx.compose.foundation.interaction.MutableInteractionSource()
+                        },
+                        indication = androidx.compose.material3.ripple(bounded = false, radius = 22.dp),
                         onClick = onProfileClick,
                         onLongClick = {
                             // Holding the picture is the account switcher, now
