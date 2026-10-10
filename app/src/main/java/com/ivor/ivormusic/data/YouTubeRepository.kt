@@ -9,7 +9,9 @@ import com.ivor.ivormusic.data.stream.PlayerApi
 import com.ivor.ivormusic.data.stream.PlayerClient
 import com.ivor.ivormusic.data.stream.PlayerClients
 import com.ivor.ivormusic.data.stream.PlayerSession
+import com.ivor.ivormusic.data.stream.SongStreams
 import com.ivor.ivormusic.data.stream.StreamProbe
+import com.ivor.ivormusic.data.stream.VideoStreamResolver
 import com.ivor.ivormusic.data.stream.VisitorIdentity
 import com.ivor.ivormusic.data.stream.isNewPipeBotCheck
 import com.ivor.ivormusic.data.stream.m4aAudioFormats
@@ -118,23 +120,6 @@ class YouTubeRepository(private val context: Context) {
             VideoStreamResolutionCache.clear()
         }
 
-        private class CachedCaptions(val tracks: List<CaptionTrack>, val fetchedAt: Long)
-
-        // Caption tracklists harvested from the /player response already made to
-        // start playback, so tapping CC costs no extra request. Companion-level
-        // for the same reason visitorData is: the player VM and the repository
-        // that resolved the stream can be different instances. Timedtext URLs
-        // are signed with a ~6h expiry, so entries are dropped well before that.
-        private const val CAPTION_CACHE_TTL_MS = 30 * 60 * 1000L // 30 minutes
-        private const val CAPTION_CACHE_MAX_ENTRIES = 16
-        private val captionCache = java.util.Collections.synchronizedMap(
-            object : LinkedHashMap<String, CachedCaptions>(CAPTION_CACHE_MAX_ENTRIES, 0.75f, true) {
-                override fun removeEldestEntry(
-                    eldest: MutableMap.MutableEntry<String, CachedCaptions>,
-                ): Boolean = size > CAPTION_CACHE_MAX_ENTRIES
-            }
-        )
-
         /**
          * Drop the process-wide caches that belong to one profile, so a switch
          * cannot serve the previous account's identity.
@@ -167,14 +152,23 @@ class YouTubeRepository(private val context: Context) {
         http.visitorIdentity,
         PlayerApi(http.streamResolveClient, INNER_TUBE_API_KEY),
     )
+    private val captionTracks = CaptionTracks(playerSession, http)
+    private val playerHarvest = PlayerResponseHarvest(context, captionTracks)
     private val audioStreams = AudioStreamResolver(
         identity = http.visitorIdentity,
         session = playerSession,
         probe = StreamProbe(http.streamResolveClient, BROWSER_USER_AGENT),
         newPipe = NewPipeAudioSource(youtubeService, newPipeGateway.newPipeScope),
         newPipeBudgetMs = NEWPIPE_STREAM_BUDGET_MS,
-        onResponse = ::harvestPlayerResponse,
-        onLoudness = ::cacheTrackLoudness,
+        onResponse = playerHarvest::harvestPlayerResponse,
+        onLoudness = playerHarvest::cacheTrackLoudness,
+    )
+    private val songStreams = SongStreams(context, audioStreams, playerSession)
+    private val videoStreams = VideoStreamResolver(
+        playerSession = playerSession,
+        youtubeService = youtubeService,
+        onCaptions = { videoId, root -> captionTracks.cacheCaptionTracks(videoId, parseCaptionTracks(root)) },
+        onResponse = playerHarvest::harvestPlayerResponse,
     )
 
     /**
@@ -215,84 +209,13 @@ class YouTubeRepository(private val context: Context) {
 
     suspend fun searchNext(query: String): List<Song> = musicSearch.searchNext(query)
 
-    /**
-     * Get the best audio stream URL for a video.
-     * Note: These URLs expire, so call this right before playback.
-     * @param videoId The YouTube video ID
-     * @return Result containing stream URL or error
-     */
-    suspend fun getStreamUrl(videoId: String): Result<String> =
-        when (val resolution = audioStreams.forPlayback(videoId, currentAudioPreference())) {
-            is AudioResolution.Resolved -> Result.success(resolution.url)
-            AudioResolution.Unresolved ->
-                Result.failure(Exception("No audio stream found for $videoId"))
-        }
+    suspend fun getStreamUrl(videoId: String): Result<String> = songStreams.getStreamUrl(videoId)
 
-    /** The per-network music quality setting, read fresh for each resolution. */
-    private fun currentAudioPreference(): AudioPreference =
-        when (ThemePreferences.currentMusicQuality(context)) {
-            ThemePreferences.MUSIC_QUALITY_LOW -> AudioPreference.LOWEST
-            ThemePreferences.MUSIC_QUALITY_NORMAL -> AudioPreference.BALANCED
-            else -> AudioPreference.HIGHEST
-        }
+    suspend fun getDownloadAudioStreamUrl(videoId: String, quality: String? = null): Result<String> =
+        songStreams.getDownloadAudioStreamUrl(videoId, quality)
 
-    /**
-     * Resolve an AAC/M4A audio-only stream for a file download.
-     *
-     * Playback may consume Opus/WebM or a muxed video fallback because Media3
-     * only needs a playable track. Downloads are published as `.m4a` and then
-     * tagged, so accepting either fallback would put bytes from the wrong
-     * container behind an M4A filename and make metadata writing unreliable.
-     */
-    suspend fun getDownloadAudioStreamUrl(
-        videoId: String,
-        quality: String? = null,
-    ): Result<String> {
-        val wanted = quality ?: ThemePreferences.currentDownloadMusicQuality(context)
-        val smallest = wanted == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER
-        return when (val resolution = audioStreams.forDownload(videoId, smallest)) {
-            is AudioResolution.Resolved -> Result.success(resolution.url)
-            AudioResolution.Unresolved ->
-                Result.failure(Exception("No AAC/M4A audio stream found for $videoId"))
-        }
-    }
-
-    /**
-     * The qualities a song can be downloaded at, best first, each with the
-     * size YouTube states for it.
-     *
-     * [verified October 2026, visionOS `/player`, signed out] A music id
-     * answers with two AAC/M4A audio streams: itag 140 (AAC-LC, about 128
-     * kbps, 44.1 kHz) and itag 139 (HE-AAC, about 48 kbps), both with a
-     * plain `url` and a `contentLength`. The Opus streams beside them
-     * (249/250/251) are WebM and are left out for the reason
-     * [getDownloadAudioStreamUrl] gives.
-     *
-     * One request and no size probe: the download sheet used to resolve a
-     * stream and then ask googlevideo how long it was. Only the visionOS
-     * answer is read, so an empty list means "unknown", not "unavailable" -
-     * the download itself still has the fallback chain behind it.
-     */
     suspend fun getDownloadAudioFormats(videoId: String): List<DownloadAudioFormat> =
-        withContext(Dispatchers.IO) {
-            val streamingData = playerSession.visionOs(videoId).answer?.streamingData
-                ?: return@withContext emptyList()
-            val originals = m4aAudioFormats(streamingData)
-            val best = originals.maxByOrNull { it.optInt("bitrate") }
-                ?: return@withContext emptyList()
-            val smallest = originals.minByOrNull { it.optInt("bitrate") }
-            fun org.json.JSONObject.toOption(quality: String) = DownloadAudioFormat(
-                quality = quality,
-                bitrate = optInt("averageBitrate").takeIf { it > 0 } ?: optInt("bitrate"),
-                contentLength = optString("contentLength").toLongOrNull()?.takeIf { it > 0L },
-            )
-            buildList {
-                add(best.toOption(ThemePreferences.DOWNLOAD_MUSIC_QUALITY_HIGH))
-                if (smallest != null && smallest.optInt("itag") != best.optInt("itag")) {
-                    add(smallest.toOption(ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER))
-                }
-            }
-        }
+        songStreams.getDownloadAudioFormats(videoId)
 
     // --- Identity -----------------------------------------------------------
     // The visitorData token itself lives in VisitorIdentity.
@@ -334,30 +257,6 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getPlaylist(playlistId: String): List<Song> = musicPlaylists.getPlaylist(playlistId)
     
     suspend fun fetchAccountInfo() = youtubeAccount.fetchAccountInfo()
-
-    /**
-     * Keep what a `/player` response carries besides its streams: the caption
-     * tracklist, so a later CC tap is free, and the track's loudness.
-     */
-    private fun harvestPlayerResponse(videoId: String, root: org.json.JSONObject) {
-        cacheCaptionTracks(videoId, parseCaptionTracks(root))
-        cacheTrackLoudness(videoId, playerLoudnessDb(root))
-    }
-
-    /**
-     * `playerConfig.audioConfig.loudnessDb`: how far the track's master sits
-     * above YouTube's -14 LKFS target, so the playback correction is a gain of
-     * the negation. See [TrackLoudnessStore]. Present on every OK response
-     * probed (August 2026), but a missing key must read as unknown rather than
-     * 0.0, which is a real measurement meaning "already at target".
-     */
-    private fun playerLoudnessDb(root: org.json.JSONObject): Float? =
-        root.optJSONObject("playerConfig")
-            ?.optJSONObject("audioConfig")
-            ?.let { audio ->
-                if (audio.has("loudnessDb")) audio.optDouble("loudnessDb").toFloat() else null
-            }
-            ?.takeIf { it.isFinite() }
 
     // --- Internal API Helper ---
 
@@ -438,469 +337,13 @@ class YouTubeRepository(private val context: Context) {
 
     // --- Video Parsing Helpers ---
 
-    private fun getChannelAvatarUrl(channelId: String?): String? {
-        if (channelId.isNullOrBlank()) return null
-        
-        try {
-            // Use regular YouTube browse for channels/handles
-            val json = webApi.fetchYouTubeBrowse(channelId).takeIf { it.isNotEmpty() } ?: return null
-            val root = org.json.JSONObject(json)
-            
-            val header = root.optJSONObject("header")
-            
-            // 1. C4TabbedHeaderRenderer
-            val c4Header = header?.optJSONObject("c4TabbedHeaderRenderer")
-            if (c4Header != null) {
-                val thumbs = c4Header.optJSONObject("avatar")?.optJSONArray("thumbnails")
-                return thumbs?.optJSONObject(thumbs.length() - 1)?.optString("url")
-            }
-            
-            // 2. PageHeader (New UI)
-            val pageHeader = header?.optJSONObject("pageHeaderRenderer")?.optJSONObject("content")
-                ?.optJSONObject("pageHeaderViewModel")?.optJSONObject("image")
-                ?.optJSONObject("decoratedAvatarViewModel")?.optJSONObject("avatar")
-                ?.optJSONObject("avatarViewModel")?.optJSONObject("image")
-                
-            val sources = pageHeader?.optJSONArray("sources")
-            if (sources != null && sources.length() > 0) {
-                return sources.optJSONObject(sources.length() - 1)?.optString("url")
-            }
-            
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error fetching channel avatar", e)
-        }
-        return null
-    }
+    suspend fun getVideoStreamQualities(videoId: String, includeHdr: Boolean = false): List<VideoQuality> =
+        videoStreams.getVideoStreamQualities(videoId, includeHdr)
 
-    /**
-     * FAST: Get only video stream qualities for immediate playback.
-     * Does NOT fetch channel avatar, related videos, or extra metadata.
-     * Use this to start playback ASAP, then call getVideoDetails() for the rest.
-     */
-    suspend fun getVideoStreamQualities(
-        videoId: String,
-        includeHdr: Boolean = false,
-    ): List<VideoQuality> = getVideoStreamResult(videoId, includeHdr).qualities
+    suspend fun getVideoStreamResult(videoId: String, includeHdr: Boolean = false): VideoStreamResult =
+        videoStreams.getVideoStreamResult(videoId, includeHdr)
 
-    /**
-     * Resolve the quality ladder and the storyboard harvested by that exact
-     * extraction as one value. Callers that render a scrub preview must use
-     * this API instead of trying to coordinate two independently mutable reads.
-     */
-    suspend fun getVideoStreamResult(
-        videoId: String,
-        includeHdr: Boolean = false,
-    ): VideoStreamResult =
-        VideoStreamResolutionCache.getOrResolve(videoId, includeHdr) {
-            resolveVideoStreamResult(videoId, includeHdr)
-        }
-
-    /** Forget a failed ladder before retrying the same video. */
-    fun invalidateVideoStreamResult(videoId: String) {
-        VideoStreamResolutionCache.invalidate(videoId)
-    }
-
-    private suspend fun resolveVideoStreamResult(
-        videoId: String,
-        includeHdr: Boolean = false,
-    ): VideoStreamResult = withContext(Dispatchers.IO) {
-        // Primary: one visionOS /player under Koda's own visitorData. See
-        // PlayerSession.visionOs for why this is not NewPipe any more. The
-        // direct parser keeps HDR itags 330-337 that NewPipe v0.26.5's ItagItem
-        // table drops, so HDR comes from this same response rather than from a
-        // second request merged into NewPipe's ladder as it used to.
-        val direct = playerSession.visionOs(videoId)
-        direct.answer?.let { answer ->
-            val qualities = parseQualitiesFromStreamingData(answer.streamingData, includeHdr)
-            if (qualities.isNotEmpty()) {
-                BotCheckVerdict.clearOnSuccess()
-                // Makes a CC tap free: getCaptionTracks reads this cache first.
-                cacheCaptionTracks(videoId, parseCaptionTracks(answer.root))
-                KLog.i(
-                    "YouTubeRepo",
-                    "Video qualities via visionOS: ${qualities.size} for $videoId" +
-                        qualities.count(VideoQuality::isHdr).let { if (it > 0) " (HDR=$it)" else "" },
-                )
-                // Dubs ride the same response. Live has one soundtrack in its
-                // HLS master, so only a VOD ladder offers a choice.
-                val audioTracks = if (qualities.any(VideoQuality::isLive)) {
-                    emptyList()
-                } else {
-                    parseDirectAudioTracks(answer.streamingData)
-                }
-                // Best-effort: a malformed spec costs the scrub preview, never
-                // the stream.
-                val seekPreview =
-                    runCatching { parseStoryboardSeekPreview(answer.root) }.getOrNull()
-                return@withContext VideoStreamResult(qualities, seekPreview, audioTracks)
-            }
-            KLog.w("YouTubeRepo", "visionOS answered with no usable formats for $videoId")
-        }
-
-        // Fallback: NewPipe's maintained Android reel + visionOS chain, with
-        // identities of its own. It no longer carries the HDR augmentation - a
-        // video that reaches this far is already a failure being covered, and
-        // the augmentation was the same visionOS call that just failed.
-        var newPipeBotChecked = false
-        try {
-            val extracted = getVideoStreamsFromNewPipe(videoId)
-            if (extracted.qualities.isNotEmpty()) {
-                BotCheckVerdict.clearOnSuccess()
-                KLog.i(
-                    "YouTubeRepo",
-                    "Video qualities via NewPipe fallback: ${extracted.qualities.size} for $videoId",
-                )
-                return@withContext extracted
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            newPipeBotChecked = e.isNewPipeBotCheck()
-            KLog.w(
-                "YouTubeRepo",
-                "NewPipe quality resolution failed, falling back to direct InnerTube",
-                e,
-            )
-        }
-
-        // Last resort: the ANDROID_VR -> IOS chain. Still useful for a
-        // client-specific edge case, but never the normal VOD path: ANDROID_VR
-        // URLs hit googlevideo's progressive byte ceiling on long videos even
-        // though /player succeeds, so the source starts and then dies part-way.
-        try {
-            VideoStreamResult(
-                getVideoQualitiesFromInnerTube(
-                    videoId,
-                    includeHdr,
-                    newPipeBotChecked || direct.botChecked,
-                )
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error getting video stream qualities", e)
-            VideoStreamResult(emptyList())
-        }
-    }
-
-    /**
-     * Resolve playable URLs through the maintained NewPipe client chain.
-     *
-     * Only actual URL streams are admitted. NewPipe can also expose generated
-     * DASH manifest text through the same Stream model (`isUrl == false`); that
-     * content is not a URI and handing it to Media3's progressive source fails
-     * before the first frame.
-     */
-    private fun getVideoStreamsFromNewPipe(videoId: String): VideoStreamResult {
-        val extractor = youtubeService.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
-        extractor.fetchPage()
-
-        // Storyboards ride the same extraction as the stream URLs. Prefer the
-        // largest usable frameset so a fullscreen scrub preview stays sharp;
-        // failure is best-effort and must never hold playback resolution up.
-        val seekPreview = runCatching {
-            extractor.frames
-                .asSequence()
-                .filter {
-                    it.urls.isNotEmpty() && it.frameWidth > 0 && it.frameHeight > 0 &&
-                        it.framesPerPageX > 0 && it.framesPerPageY > 0 &&
-                        it.totalCount > 0 && it.durationPerFrame > 0
-                }
-                .maxByOrNull { it.frameWidth * it.frameHeight }
-                ?.let {
-                    VideoSeekPreview(
-                        pageUrls = it.urls,
-                        frameWidthPx = it.frameWidth,
-                        frameHeightPx = it.frameHeight,
-                        framesPerPageX = it.framesPerPageX,
-                        framesPerPageY = it.framesPerPageY,
-                        totalFrameCount = it.totalCount,
-                        durationPerFrameMs = it.durationPerFrame,
-                    )
-                }
-        }.getOrNull()
-
-        val videoOnlyStreams = extractor.videoOnlyStreams
-        val muxedStreams = extractor.videoStreams
-        val isLiveStream = extractor.streamType == StreamType.LIVE_STREAM ||
-            extractor.streamType == StreamType.AUDIO_LIVE_STREAM
-        val sourceAspect = (videoOnlyStreams + muxedStreams)
-            .filter { it.width > 0 && it.height > 0 }
-            .maxByOrNull { it.height }
-            ?.let { it.width.toFloat() / it.height.toFloat() }
-
-        val extractedAudioStreams = extractor.audioStreams
-        val hasAlternateAudioTracks = extractedAudioStreams.any {
-            it.audioTrackType != null && it.audioTrackType != AudioTrackType.ORIGINAL
-        }
-        val qualities = mutableListOf<VideoQuality>()
-        // Live progressive endpoints are unusable: a live broadcast is only
-        // playable through its HLS master playlist, including its audio
-        // rendition. Never let a live DASH URL win merely because NewPipe
-        // happened to expose both manifest fields.
-        val manifest = if (isLiveStream) {
-            extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { "HLS" to it }
-        } else {
-            extractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { "DASH" to it }
-                ?: extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { "HLS" to it }
-        }
-        manifest?.let { (format, url) ->
-            qualities.add(
-                VideoQuality(
-                    resolution = if (format == "HLS") "Auto (HLS)" else "Auto (Best)",
-                    url = url,
-                    format = format,
-                    isDASH = true,
-                    isLive = isLiveStream,
-                    sourceAspectRatio = sourceAspect,
-                )
-            )
-        }
-
-        // Progressive live entries are segment endpoints, not complete files.
-        if (isLiveStream) return VideoStreamResult(qualities)
-
-        val bestAudio = originalAudioStreams(extractedAudioStreams)
-            .asSequence()
-            .filter { it.isUrl }
-            // MP4 downloads are remuxed on-device. Prefer AAC/M4A over the
-            // usually-higher-bitrate Opus stream, which MediaMuxer cannot put
-            // into an MP4 container reliably.
-            .maxWithOrNull(
-                compareBy<AudioStream>(
-                    {
-                        if (it.format?.suffix.equals("m4a", ignoreCase = true) ||
-                            it.codec?.contains("mp4a", ignoreCase = true) == true
-                        ) 1 else 0
-                    },
-                    { it.averageBitrate },
-                )
-            )
-        val hasOriginalAdaptivePair = bestAudio != null && videoOnlyStreams.any { it.isUrl }
-        if (hasAlternateAudioTracks && hasOriginalAdaptivePair) {
-            // A manifest or muxed stream lets its issuing YouTube client pick
-            // the default language again. When alternate tracks exist and we
-            // have a known-original separate stream, expose only that
-            // deterministic path—even for the "Auto" quality choice.
-            qualities.removeAll { it.isDASH }
-        }
-        if (bestAudio != null) {
-            videoOnlyStreams.asSequence()
-                .filter { it.isUrl }
-                .mapNotNull { stream ->
-                    stream.resolution?.takeIf { it.isNotBlank() }?.let { resolution ->
-                        VideoQuality(
-                            resolution = resolution,
-                            url = stream.content,
-                            format = stream.format?.suffix,
-                            isDASH = false,
-                            audioUrl = bestAudio.content,
-                            sourceAspectRatio = sourceAspect,
-                            codec = stream.codec,
-                        )
-                    }
-                }
-                .forEach(qualities::add)
-        }
-
-        if (!hasAlternateAudioTracks || !hasOriginalAdaptivePair) {
-            muxedStreams.asSequence()
-                .filter { it.isUrl }
-                .mapNotNull { stream ->
-                    stream.resolution?.takeIf { it.isNotBlank() }?.let { resolution ->
-                        VideoQuality(
-                            resolution = resolution,
-                            url = stream.content,
-                            format = stream.format?.suffix,
-                            isDASH = false,
-                            sourceAspectRatio = sourceAspect,
-                            codec = stream.codec,
-                        )
-                    }
-                }
-                .forEach(qualities::add)
-        }
-
-        // NewPipe exposes several codecs and delivery types for the same
-        // visible label. Collapse codec alternatives, but retain both a split
-        // local-playback entry and a muxed download entry when both exist.
-        return VideoStreamResult(
-            deduplicateVideoQualityVariants(qualities),
-            seekPreview,
-            newPipeAudioTracks(extractedAudioStreams, hasOriginalAdaptivePair),
-        )
-    }
-
-    /**
-     * The same soundtrack menu as [parseDirectAudioTracks], built from NewPipe's
-     * streams when the direct call failed. Offered only when the qualities are
-     * split pairs, because the dub replaces a pair's audio half; a muxed or
-     * manifest ladder has no half to replace. NewPipe folds machine dubs into
-     * DUBBED, so this path cannot label them.
-     */
-    private fun newPipeAudioTracks(
-        streams: List<AudioStream>,
-        hasOriginalAdaptivePair: Boolean,
-    ): List<YouTubeAudioTrack> {
-        if (!hasOriginalAdaptivePair) return emptyList()
-        val byTrack = streams
-            .filter { it.isUrl && !it.audioTrackId.isNullOrBlank() }
-            .groupBy { it.audioTrackId!! }
-        if (byTrack.size < 2) return emptyList()
-        return byTrack.mapNotNull { (id, group) ->
-            val best = group.maxWithOrNull(
-                compareBy<AudioStream>(
-                    { if (it.codec?.contains("mp4a", ignoreCase = true) == true) 1 else 0 },
-                    { it.averageBitrate },
-                )
-            ) ?: return@mapNotNull null
-            YouTubeAudioTrack(
-                id = id,
-                displayName = best.audioTrackName?.takeIf { it.isNotBlank() } ?: id,
-                languageTag = best.audioLocale?.toLanguageTag()
-                    ?: id.substringBefore('.').takeIf { it.isNotBlank() },
-                kind = when (best.audioTrackType) {
-                    AudioTrackType.ORIGINAL -> YouTubeAudioTrackKind.ORIGINAL
-                    AudioTrackType.DUBBED -> YouTubeAudioTrackKind.DUBBED
-                    AudioTrackType.DESCRIPTIVE -> YouTubeAudioTrackKind.DESCRIPTIVE
-                    AudioTrackType.SECONDARY -> YouTubeAudioTrackKind.SECONDARY
-                    null -> YouTubeAudioTrackKind.UNKNOWN
-                },
-                url = best.content,
-            )
-        }.sortedForMenu()
-    }
-
-    /**
-     * Resolve the full video quality ladder via InnerTube: ANDROID_VR first
-     * (no PO token, unciphered URLs), IOS as fallback, with a one-shot
-     * visitorData remint when the bot check flags the current token. Returns
-     * an empty list when neither client yields usable streamingData.
-     */
-    private suspend fun getVideoQualitiesFromInnerTube(
-        videoId: String,
-        includeHdr: Boolean = false,
-        newPipeBotChecked: Boolean = false,
-    ): List<VideoQuality> {
-        val streamingData = playerSession.nativeFallback(videoId, newPipeBotChecked) {
-            harvestPlayerResponse(videoId, it)
-        }?.streamingData ?: return emptyList()
-        return parseQualitiesFromStreamingData(streamingData, includeHdr)
-    }
-
-    private fun parseQualitiesFromStreamingData(
-        streamingData: org.json.JSONObject,
-        includeHdr: Boolean = false,
-    ): List<VideoQuality> = parseDirectVideoQualities(streamingData, includeHdr)
-
-    /**
-     * Get video details including qualities and related videos.
-     */
-    suspend fun getVideoDetails(videoId: String): VideoDetails = withContext(Dispatchers.IO) {
-        try {
-            val streamUrl = "https://www.youtube.com/watch?v=$videoId"
-            val streamExtractor = youtubeService.getStreamExtractor(streamUrl)
-            streamExtractor.fetchPage()
-            
-            val qualities = mutableListOf<VideoQuality>()
-            
-            // 1. DASH/HLS
-            streamExtractor.dashMpdUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                qualities.add(VideoQuality("Auto (Best)", url, "DASH", true))
-            } ?: streamExtractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                qualities.add(VideoQuality("Auto (HLS)", url, "HLS", true))
-            }
-            
-            // 2. Adaptive Streams
-            val videoOnlyStreams = streamExtractor.videoOnlyStreams
-            val audioStreams = originalAudioStreams(streamExtractor.audioStreams)
-            val bestAudio = audioStreams.maxByOrNull { it.averageBitrate }
-            
-            if (bestAudio != null) {
-                qualities.addAll(videoOnlyStreams
-                    .mapNotNull { stream ->
-                        val res = stream.resolution ?: return@mapNotNull null
-                        val url = stream.content ?: return@mapNotNull null
-                        VideoQuality(res, url, stream.format?.name, false, bestAudio.content)
-                    }
-                )
-            }
-
-            // 3. Muxed Streams
-            qualities.addAll(streamExtractor.videoStreams
-                .mapNotNull { stream ->
-                    val res = stream.resolution ?: return@mapNotNull null
-                    val url = stream.content ?: return@mapNotNull null
-                    VideoQuality(res, url, stream.format?.name, false)
-                }
-            )
-            
-            val finalQualities = deduplicateVideoQualityVariants(qualities)
-            
-            // Related Videos
-            val relatedItems = streamExtractor.relatedItems?.items ?: emptyList()
-            val related = relatedItems.mapNotNull { item: InfoItem ->
-                if (item is StreamInfoItem) {
-                    VideoItem.fromStreamInfoItem(
-                        videoId = item.url.replace("https://www.youtube.com/watch?v=", ""),
-                        title = item.name ?: "Unknown",
-                        channelName = item.uploaderName ?: "Unknown",
-                        channelIconUrl = null,
-                        thumbnailUrl = item.thumbnails?.maxByOrNull { it.width }?.url,
-                        durationSeconds = item.duration,
-                        viewCount = item.viewCount,
-                        uploadedDate = item.uploadDate?.let { try { it.offsetDateTime().toString() } catch(e:Exception){ null } },
-                        isLive = item.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM
-                    )
-                } else null
-            }
-            
-            // Channel Info
-            val channelName = streamExtractor.uploaderName ?: "Unknown"
-            val uploaderUrl = streamExtractor.uploaderUrl ?: ""
-            
-            // Clean extraction of Channel ID or Handle
-            val channelId = when {
-                uploaderUrl.contains("/channel/") -> uploaderUrl.substringAfter("/channel/")
-                uploaderUrl.contains("/@") -> uploaderUrl.substringAfter("/@").let { "@$it" }
-                uploaderUrl.contains("/user/") -> uploaderUrl.substringAfter("/user/")
-                else -> null
-            }
-            
-            // 🌟 Try to fetch channel avatar - Priority 1: From Extractor directly
-            var channelIconUrl = try {
-                 streamExtractor.uploaderAvatars?.maxByOrNull { it.width }?.url
-            } catch (e: Exception) { null }
-            
-            // Priority 2: From InnerTube Browse API
-            if (channelIconUrl.isNullOrEmpty()) {
-                channelIconUrl = getChannelAvatarUrl(channelId)
-            }
-            
-            val subCount = streamExtractor.uploaderSubscriberCount
-            
-            // Create updated video item (using original videoId)
-            val updatedVideoItem = VideoItem(
-                videoId = videoId,
-                title = streamExtractor.name ?: "Unknown",
-                channelName = channelName,
-                channelId = channelId,
-                channelIconUrl = channelIconUrl,
-                thumbnailUrl = streamExtractor.thumbnails?.maxByOrNull { it.width }?.url, // Use high res if available
-                duration = streamExtractor.length,
-                viewCount = VideoItem.formatViewCount(streamExtractor.viewCount),
-                uploadedDate = streamExtractor.uploadDate?.let { try { it.offsetDateTime().toString() } catch(e:Exception){ null } },
-                isLive = streamExtractor.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM,
-                description = streamExtractor.description?.content,
-                subscriberCount = if (subCount != null && subCount >= 0) VideoItem.formatViewCount(subCount).replace("views", "subscribers") else null
-            )
-
-            VideoDetails(finalQualities, related, updatedVideoItem)
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Error getting video details", e)
-            VideoDetails(emptyList(), emptyList())
-        }
-    }
+    fun invalidateVideoStreamResult(videoId: String) = videoStreams.invalidateVideoStreamResult(videoId)
 
     // ============================================================
     // Video engagement: like/dislike, subscribe, comments
@@ -929,146 +372,11 @@ class YouTubeRepository(private val context: Context) {
 
     suspend fun getLiveMetadata(videoId: String): LiveMetadata? = liveChat.getLiveMetadata(videoId)
 
-    /**
-     * Parse captions.playerCaptionsTracklistRenderer.captionTracks out of a
-     * /player response. Each entry carries a signed timedtext baseUrl, a
-     * languageCode, a display name (runs on the native clients, simpleText on
-     * WEB) and, for auto-captions, kind == "asr" / a vssId prefixed "a.".
-     * Manually authored tracks are listed before auto-generated ones.
-     * Verified against the live /player API July 2026.
-     */
-    private fun parseCaptionTracks(root: org.json.JSONObject): List<CaptionTrack> {
-        return try {
-            val tracks = root.optJSONObject("captions")
-                ?.optJSONObject("playerCaptionsTracklistRenderer")
-                ?.optJSONArray("captionTracks")
-                ?: return emptyList()
+    suspend fun getCaptionTracks(videoId: String): List<CaptionTrack> = captionTracks.getCaptionTracks(videoId)
 
-            (0 until tracks.length()).mapNotNull { i ->
-                val t = tracks.optJSONObject(i) ?: return@mapNotNull null
-                val baseUrl = t.optString("baseUrl").takeIf { it.isNotBlank() }
-                    ?: return@mapNotNull null
-                val languageCode = t.optString("languageCode").takeIf { it.isNotBlank() }
-                    ?: return@mapNotNull null
-                val name = getRunText(t.optJSONObject("name"))?.takeIf { it.isNotBlank() }
-                    ?: languageCode
-                CaptionTrack(
-                    languageCode = languageCode,
-                    name = name,
-                    baseUrl = baseUrl,
-                    // vssId is the more reliable marker: the native clients
-                    // sometimes omit "kind" while still prefixing vssId "a.".
-                    isAutoGenerated = t.optString("kind") == "asr" ||
-                        t.optString("vssId").startsWith("a."),
-                )
-            }
-                .distinctBy { it.languageCode to it.isAutoGenerated }
-                .sortedBy { it.isAutoGenerated }
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "parseCaptionTracks failed", e)
-            emptyList()
-        }
-    }
+    suspend fun getCaptionCues(track: CaptionTrack): List<VttCue> = captionTracks.getCaptionCues(track)
 
-    /**
-     * Caption/subtitle tracks for a video.
-     *
-     * Resolved with the ANDROID_VR client (IOS as fallback) — the same chain
-     * used for streams, and deliberately *not* WEB: a WEB /player call without
-     * account cookies comes back UNPLAYABLE ("Video unavailable") with no
-     * captions block at all, so every signed-out user saw an empty CC menu.
-     * The native clients answer with the full tracklist either way.
-     *
-     * Normally free: the tracklist is cached from the /player response
-     * fetched to start playback, so this only hits the network when that
-     * cache missed or went stale.
-     */
-    suspend fun getCaptionTracks(videoId: String): List<CaptionTrack> = withContext(Dispatchers.IO) {
-        cachedCaptionTracks(videoId)?.let { return@withContext it }
-        try {
-            suspend fun via(client: PlayerClient): List<CaptionTrack> =
-                playerSession.single(videoId, client).okRoot()?.let(::parseCaptionTracks).orEmpty()
-            val tracks = via(PlayerClients.ANDROID_VR).ifEmpty { via(PlayerClients.IOS) }
-            cacheCaptionTracks(videoId, tracks)
-            tracks
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "getCaptionTracks failed for $videoId", e)
-            emptyList()
-        }
-    }
-
-    private fun cachedCaptionTracks(videoId: String): List<CaptionTrack>? {
-        val entry = captionCache[videoId] ?: return null
-        if (System.currentTimeMillis() - entry.fetchedAt > CAPTION_CACHE_TTL_MS) {
-            captionCache.remove(videoId)
-            return null
-        }
-        return entry.tracks
-    }
-
-    private fun cacheCaptionTracks(videoId: String, tracks: List<CaptionTrack>) {
-        if (tracks.isEmpty()) return
-        captionCache[videoId] = CachedCaptions(tracks, System.currentTimeMillis())
-    }
-
-    /**
-     * Persist the track's loudness alongside the captions harvested from the
-     * same response.
-     *
-     * Written here rather than at the caller because this is the one place
-     * every `/player` response passes through, and because a song that is
-     * already fully cached never comes back this way - see
-     * [TrackLoudnessStore] for why that makes persistence the point.
-     */
-    private fun cacheTrackLoudness(videoId: String, loudnessDb: Float?) {
-        TrackLoudnessStore.put(context, videoId, loudnessDb ?: return)
-    }
-
-    /**
-     * Download and parse one caption track into cues the player overlay can
-     * render itself.
-     *
-     * Captions deliberately do not travel through ExoPlayer as a sideloaded
-     * text track: that made them part of the media source, so turning captions
-     * on or off rebuilt the source and discarded the entire video buffer. The
-     * timedtext endpoint lives on www.youtube.com rather than googlevideo, so a
-     * plain browser User-Agent is enough and no ranged chunking is needed - the
-     * payload is a few tens of KB.
-     *
-     * Returns an empty list on any failure; captions are best-effort and must
-     * never take playback down with them.
-     */
-    suspend fun getCaptionCues(track: CaptionTrack): List<VttCue> =
-        getCaptionVtt(track)?.let { WebVttParser.parse(it) }.orEmpty()
-
-    /**
-     * One caption track as the WebVTT document timedtext serves, unparsed, or
-     * null on any failure. The player parses it straight away; a video download
-     * keeps it as it is, to be parsed when the file is watched offline.
-     */
-    suspend fun getCaptionVtt(track: CaptionTrack): String? = withContext(Dispatchers.IO) {
-        try {
-            val request = okhttp3.Request.Builder()
-                .url(track.vttUrl)
-                .addHeader("User-Agent", BROWSER_USER_AGENT)
-                .build()
-            http.okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    KLog.w(
-                        "YouTubeRepo",
-                        "Caption fetch failed for ${track.languageCode}: HTTP ${response.code}"
-                    )
-                    return@withContext null
-                }
-                response.body?.string()?.takeIf { it.isNotBlank() }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            KLog.e("YouTubeRepo", "Caption fetch failed for ${track.languageCode}", e)
-            null
-        }
-    }
+    suspend fun getCaptionVtt(track: CaptionTrack): String? = captionTracks.getCaptionVtt(track)
 
     suspend fun getPostDetail(detailParams: String): ChannelPost? = commentThreads.getPostDetail(detailParams)
 

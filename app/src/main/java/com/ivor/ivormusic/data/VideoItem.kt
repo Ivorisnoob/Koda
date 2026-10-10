@@ -338,15 +338,6 @@ data class VideoQuality(
 }
 
 /**
- * Complete video details including qualities and related videos.
- */
-data class VideoDetails(
-    val qualities: List<VideoQuality>,
-    val relatedVideos: List<VideoItem>,
-    val updatedVideoItem: VideoItem? = null
-)
-
-/**
  * A single chapter marker in a video, parsed from the watch-next player bar
  * (multiMarkersPlayerBarRenderer -> markersMap -> chapterRenderer).
  */
