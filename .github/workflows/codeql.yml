@@ -12,10 +12,11 @@
 name: "CodeQL Advanced"
 
 on:
+  # Pull requests target beta (see build.yml), so it is scanned like main.
   push:
-    branches: [ "main" ]
+    branches: [ "main", "beta" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "beta" ]
   schedule:
     - cron: '20 21 * * 2'
   workflow_dispatch:

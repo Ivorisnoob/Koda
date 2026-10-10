@@ -2,7 +2,7 @@
 
 Thank you for your interest in **Koda**.
 
-> **External contributions are temporarily paused.** The project is not accepting new external pull requests until the author has completed the planned work in [ROADMAP.md](ROADMAP.md) in full. This gives the architecture and product direction time to settle before outside changes are reviewed. Bug reports, feature requests, discussion, and private security reports remain welcome.
+> **Pull requests are open again, and they go to the `beta` branch, not `main`.** `beta` is where new work lands and what beta testers get builds from; `main` only moves when a tested `beta` is released. See [Pull Requests](#3-pull-requests) below.
 
 ## How Can I Contribute?
 
@@ -20,7 +20,20 @@ Thank you for your interest in **Koda**.
 
 ### 3. Pull Requests
 
-Please do not open a new external pull request during the temporary pause above. The contribution workflow and technical requirements will be restored here when the author has completed the roadmap in full.
+1. **Branch from `beta` and open the pull request against `beta`.** GitHub picks `main` as the base by default, so change it in the "base" dropdown when you open the PR. A pull request opened against `main` will be retargeted before it is reviewed.
+2. **For anything bigger than a small fix, open an issue first** so the approach can be agreed before you spend time on it. [ROADMAP.md](ROADMAP.md) lists what is planned and what is deliberately out of scope.
+3. **Read [CLAUDE.md](CLAUDE.md) before you write code.** It is short, and it holds the rules that are bugs to break even when the build passes (no hardcoded colors, how streams are fetched, how a new setting is wired). The reasoning for each area is in [docs/](docs/), and UI work follows [DESIGN.md](DESIGN.md).
+4. **Keep a pull request to one topic** and fill in the template, including screenshots or a recording for anything visible.
+5. **If someone using the app would notice your change, end the commit message with a `Changelog:` section**: one `- ` bullet per change, each on a single line, in plain words. Those bullets are sent to beta testers with the build, so write them for a person using the app.
+
+```text
+Fix the queue jumping back to the top after a reorder
+
+Changelog:
+- Fixed the queue scrolling back to the top after you move a song.
+```
+
+A pull request from a fork does not get a CI build on its own; that is deliberate, because building it means running the fork's Gradle build with the project's runners. A maintainer builds it when reviewing. Once it is merged into `beta`, a signed build goes to the beta testers in the [Telegram chat](https://t.me/ivorisnoob_chat).
 
 ## Development Setup
 

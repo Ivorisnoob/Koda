@@ -253,14 +253,14 @@ Contributor and maintainer documentation:
 | [docs/](docs/) | One file per area with the reasoning behind the code: the YouTube data layer and its verified response shapes, playback, screens, identity, and CI |
 | [DESIGN.md](DESIGN.md) | The design system and UI conventions |
 | [ROADMAP.md](ROADMAP.md) | Planned work, known defects, and shipped milestones |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Current contribution policy and setup |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, where pull requests go, and setup |
 | [SECURITY.md](SECURITY.md) | Security scope and private reporting |
 
 ## Community and contributing
 
 Join the [Telegram community](https://t.me/ivorisnoob_chat) for help, beta builds, and discussion. Use [GitHub Issues](https://github.com/Ivorisnoob/Koda/issues) for bug reports and feature requests so they remain trackable.
 
-External pull requests are temporarily paused while the planned work in [ROADMAP.md](ROADMAP.md) is completed. Discussion and issue reports remain welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the current policy and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
+Pull requests are welcome. Open them against the `beta` branch, not `main`: `beta` is where new work lands and what beta testers get builds from. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
 
 ## Security
 

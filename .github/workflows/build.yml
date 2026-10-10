@@ -1,10 +1,13 @@
 name: Build APKs
 
 on:
+  # beta is the branch testers follow: work lands there first and a push to it
+  # is the only thing that posts an APK. main moves through the beta -> main
+  # pull request and is what releases are cut from.
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, beta ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, beta ]
   workflow_dispatch:
 
 # Least privilege by default: no job gets a token unless it asks for one below.
@@ -16,10 +19,6 @@ concurrency:
 
 env:
   TELEGRAM_APK_CHAT_ID: "@ivorisnoob_chat"
-  # The repository owner's name is rendered as a link to this. A PR author who
-  # is anybody else stays plain text: this is a personal site, not a generic
-  # "whoever opened the PR" link.
-  OWNER_URL: "https://ivorisnoob.lol"
 
 jobs:
   # Nothing builds until this job says the run was started by someone with write
@@ -188,7 +187,8 @@ jobs:
       uses: actions/checkout@v4
       with:
         # Telegram changelogs are computed from the last successfully delivered
-        # PR head, which can be older than checkout's default shallow history.
+        # beta head, which can be older than checkout's default shallow history.
+        # Full depth also brings origin/main, the fallback starting point.
         fetch-depth: 0
         persist-credentials: false
 
@@ -254,21 +254,24 @@ jobs:
         if-no-files-found: error
         retention-days: 90
 
+    # Testers follow one branch. A pull request builds its APKs as artifacts and
+    # posts nothing; the post happens when the work lands on beta. Posting per
+    # pull request meant two open ones took turns being "Latest beta", each
+    # without the other's changes and each with a changelog measured from its
+    # own last build rather than from the APK the tester had installed.
     - name: Send Release APKs to Telegram
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/beta'
       env:
         BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         CHAT_ID: ${{ env.TELEGRAM_APK_CHAT_ID }}
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
-        REPO_OWNER: ${{ github.repository_owner }}
         RUN_ID: ${{ github.run_id }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        PR_URL: ${{ github.event.pull_request.html_url }}
-        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        BETA_BRANCH: ${{ github.ref_name }}
+        HEAD_SHA: ${{ github.sha }}
+        # Where a beta's changelog starts when there is no earlier delivery to
+        # measure from: everything beta has that this branch does not.
+        RELEASE_BRANCH: main
       run: |
         set -euo pipefail
 
@@ -290,41 +293,25 @@ jobs:
           fi
         }
 
-        # Author: the owner links to their portfolio, everybody else is a name.
-        # Same rule as telegram-notify.yml.
-        author_html() {
-          local login="$1" safe
-          safe=$(esc "$login")
-          if [ "${login,,}" = "${REPO_OWNER,,}" ]; then
-            printf '<b><a href="%s">%s</a></b>' "$OWNER_URL" "$safe"
-          else
-            printf '<b>%s</b>' "$safe"
-          fi
-        }
-
         VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts || echo "unknown")
         RUN_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
 
-        CONTEXT="Build for PR <a href=\"${PR_URL}\">#${PR_NUMBER}</a>
-        By: $(author_html "$PR_AUTHOR")"
-
         CAPTION="<b>Latest beta</b> · Koda v${VERSION}
 
-        ${CONTEXT}
-        SHA: <code>${PR_HEAD_SHA::7}</code>
+        SHA: <code>${HEAD_SHA::7}</code>
         <a href=\"${RUN_URL}\">Workflow Run</a>"
 
-        # Find the head SHA from the last successful run for this same-repo PR
+        # Find the head SHA from the last successful push run on the beta
         # branch. Canceled and failed runs are deliberately absent, so their
         # commit changelogs roll forward into the next APK that is delivered.
-        ENCODED_HEAD_REF=$(jq -rn --arg value "$PR_HEAD_REF" '$value | @uri')
-        RUNS_URL="${GITHUB_API_URL}/repos/${REPO}/actions/workflows/build.yml/runs?event=pull_request&status=success&branch=${ENCODED_HEAD_REF}&per_page=100"
+        ENCODED_BRANCH=$(jq -rn --arg value "$BETA_BRANCH" '$value | @uri')
+        RUNS_URL="${GITHUB_API_URL}/repos/${REPO}/actions/workflows/build.yml/runs?event=push&status=success&branch=${ENCODED_BRANCH}&per_page=100"
         if ! RUNS_JSON=$(curl -fsSL \
           -H "Accept: application/vnd.github+json" \
           -H "Authorization: Bearer ${GH_TOKEN}" \
           -H "X-GitHub-Api-Version: 2022-11-28" \
           "$RUNS_URL"); then
-          echo "Could not read workflow history; falling back to every commit currently on the PR."
+          echo "Could not read workflow history; falling back to everything ${BETA_BRANCH} has over ${RELEASE_BRANCH}."
           RUNS_JSON='{"workflow_runs":[]}'
         fi
 
@@ -341,14 +328,32 @@ jobs:
 
         if [ -n "$LAST_SENT_SHA" ] \
           && git cat-file -e "${LAST_SENT_SHA}^{commit}" 2>/dev/null \
-          && git merge-base --is-ancestor "$LAST_SENT_SHA" "$PR_HEAD_SHA"; then
+          && git merge-base --is-ancestor "$LAST_SENT_SHA" "$HEAD_SHA"; then
           CHANGELOG_START_SHA="$LAST_SENT_SHA"
           echo "Collecting Telegram changelogs after successful run head ${LAST_SENT_SHA:0:7}."
         else
-          # First delivery, unavailable history, or a rebased/force-pushed PR:
-          # include the whole current PR. Repeating an entry is safer than losing it.
-          CHANGELOG_START_SHA=$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")
-          echo "Collecting Telegram changelogs from PR merge base ${CHANGELOG_START_SHA:0:7}."
+          # First delivery, unavailable history, or a rewritten beta: include
+          # everything beta has that the release branch does not. Repeating an
+          # entry is safer than losing it.
+          CHANGELOG_START_SHA=$(git merge-base "origin/${RELEASE_BRANCH}" "$HEAD_SHA" 2>/dev/null || true)
+          echo "Collecting Telegram changelogs from the ${RELEASE_BRANCH} merge base ${CHANGELOG_START_SHA:0:7}."
+        fi
+
+        if [ -n "$CHANGELOG_START_SHA" ]; then
+          mapfile -t NEW_COMMITS < <(git rev-list --reverse "${CHANGELOG_START_SHA}..${HEAD_SHA}")
+        else
+          # No shared history with the release branch to measure from. Deliver
+          # the APK with the head commit's entry rather than nothing.
+          NEW_COMMITS=("$HEAD_SHA")
+        fi
+
+        # Nothing has landed since the last delivery: beta was created or
+        # fast-forwarded onto a commit testers already have. Posting it again
+        # would only move the pin onto an identical APK.
+        if [ "${#NEW_COMMITS[@]}" -eq 0 ]; then
+          echo "No commits since ${CHANGELOG_START_SHA:0:7}; testers already have this build. Nothing posted."
+          echo "Beta post skipped: no commits since the last delivered APK." >> "$GITHUB_STEP_SUMMARY"
+          exit 0
         fi
 
         extract_changelog() {
@@ -373,7 +378,6 @@ jobs:
 
         CHANGELOG_FILE=$(mktemp)
         trap 'rm -f "$CHANGELOG_FILE"' EXIT
-        mapfile -t NEW_COMMITS < <(git rev-list --reverse "${CHANGELOG_START_SHA}..${PR_HEAD_SHA}")
         ENTRY_COUNT=0
         printf 'Changes since the last APK\n' > "$CHANGELOG_FILE"
 
@@ -386,6 +390,22 @@ jobs:
           printf '\n%s (%s)\n%s\n' "$SUBJECT" "${commit:0:7}" "$CHANGELOG" >> "$CHANGELOG_FILE"
           ENTRY_COUNT=$((ENTRY_COUNT + 1))
         done
+
+        # Commits that say nothing to testers and touch nothing an APK is built
+        # from (docs, workflows, README art) would only move the pin onto a
+        # build identical to the one already there. Any path not listed counts
+        # as an app change, so a gap in this list posts rather than skips, and
+        # a range with a changelog entry is always delivered.
+        if [ "$ENTRY_COUNT" -eq 0 ] && [ -n "$CHANGELOG_START_SHA" ]; then
+          CHANGED_PATHS=$(git diff --name-only "$CHANGELOG_START_SHA" "$HEAD_SHA")
+          APP_PATHS=$(grep -Ev '^(docs/|\.github/|Screenshots/|[^/]+\.md$|LICENSE$|\.gitignore$)' \
+            <<< "$CHANGED_PATHS" || true)
+          if [ -z "${APP_PATHS//[[:space:]]/}" ]; then
+            echo "Only docs and workflow files changed since ${CHANGELOG_START_SHA:0:7}. Nothing posted."
+            echo "Beta post skipped: nothing in the APK changed since the last delivered one." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+        fi
 
         if [ "$ENTRY_COUNT" -eq 0 ]; then
           printf '\nNo public changelog entries were included in the new commits.\n' >> "$CHANGELOG_FILE"

@@ -1,8 +1,7 @@
 <!--
-External contributions are temporarily paused until the project author has
-completed the planned work in ROADMAP.md in full. Please do not open a new
-external pull request during this pause. Bug reports and feature requests remain
-welcome through the issue templates.
+Pull requests go to the `beta` branch, not `main`. GitHub picks `main` by
+default: check the "base" dropdown at the top of this page and change it to
+`beta` before you open the pull request. See CONTRIBUTING.md.
 -->
 
 ## What this changes
