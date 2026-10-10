@@ -48,6 +48,8 @@ internal class CaptionTracks(
             val tracks = via(PlayerClients.ANDROID_VR).ifEmpty { via(PlayerClients.IOS) }
             cacheCaptionTracks(videoId, tracks)
             tracks
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getCaptionTracks failed for $videoId", e)
             emptyList()

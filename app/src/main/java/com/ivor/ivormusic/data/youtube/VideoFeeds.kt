@@ -64,6 +64,8 @@ internal class VideoFeeds(
                     return@withContext page
                 }
                 KLog.w(YOUTUBE_TAG, "Personalized recommendations empty, using taste-based feed")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e(YOUTUBE_TAG, "Error fetching personalized videos", e)
             }
@@ -75,6 +77,8 @@ internal class VideoFeeds(
                 KLog.d(YOUTUBE_TAG, "Got ${tasteFeed.size} taste-based videos")
                 return@withContext VideoFeedPage(tasteFeed)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Error building taste-based feed", e)
         }
@@ -82,6 +86,8 @@ internal class VideoFeeds(
         // Cold start: nothing watched yet and not logged in
         try {
             VideoFeedPage(videoSearch.searchVideos("trending videos ${Year.now().value}"))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Cold-start search failed", e)
             VideoFeedPage(emptyList())

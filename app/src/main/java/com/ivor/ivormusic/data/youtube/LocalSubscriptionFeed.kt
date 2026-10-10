@@ -7,6 +7,7 @@ import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRateLimitedException
 import com.ivor.ivormusic.util.KLog
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Semaphore
@@ -114,6 +115,8 @@ internal class LocalSubscriptionFeed(
                             channelVideosWithTimestamps(channel)
                         }
                         videos.take(maxPerChannel)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         KLog.w(YOUTUBE_TAG, "feed fetch failed for ${channel.channelId}", e)
                         emptyList()
@@ -338,6 +341,8 @@ internal class LocalSubscriptionFeed(
                                 handle = profile.handle ?: channel.handle
                             )
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         null
                     } finally {
