@@ -69,6 +69,7 @@ jobs:
     if: >-
       github.repository == 'Ivorisnoob/Koda'
       && github.event_name == 'release'
+      && !github.event.release.prerelease
       && (github.event.release.author.login == github.repository_owner
           || contains(format(' {0} ', vars.TRUSTED_ACTORS), format(' {0} ', github.event.release.author.login)))
     runs-on: ubuntu-latest
@@ -83,7 +84,6 @@ jobs:
           RELEASE_NAME: ${{ github.event.release.name }}
           RELEASE_AUTHOR: ${{ github.event.release.author.login }}
           RELEASE_URL: ${{ github.event.release.html_url }}
-          IS_PRERELEASE: ${{ github.event.release.prerelease }}
           # Release notes and asset metadata are attacker-shaped free text in the
           # general case, so they arrive as environment variables and are never
           # interpolated into this script by the expression engine.
@@ -130,11 +130,7 @@ jobs:
             HEADLINE="<b>$(esc "$RELEASE_NAME")</b>  <code>$(esc "$TAG_NAME")</code>"
           fi
 
-          if [ "${IS_PRERELEASE}" = "true" ]; then
-            TOP="<b>Koda</b> | New Pre-release"
-          else
-            TOP="<b>Koda</b> | New Release"
-          fi
+          TOP="<b>Koda</b> | New Release"
 
           HEAD_PART="${TOP}
 
