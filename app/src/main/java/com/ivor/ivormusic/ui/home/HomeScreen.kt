@@ -321,7 +321,7 @@ fun HomeScreen(
     val isPlaying by playerViewModel.isPlaying.collectAsState()
     val isBuffering by playerViewModel.isBuffering.collectAsState()
     val playWhenReady by playerViewModel.playWhenReady.collectAsState()
-    
+
     // Bottom sheet state for player - skip partial expand for direct full-screen
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showPlayerSheet by remember { mutableStateOf(false) }

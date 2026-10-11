@@ -231,9 +231,23 @@ fun MiniPlayerContent(
                 nextLabel = stringResource(R.string.cd_next),
                 previous = previousSong,
                 next = nextSong,
-                neighbour = { song -> MiniSongIdentity(song, secondLineOf(song, false), contentColor, detailAlpha, isPlaying = false) },
+                neighbour = { song ->
+                    MiniSongIdentity(
+                        song = song,
+                        subtitle = secondLineOf(song, false),
+                        contentColor = contentColor,
+                        detailAlpha = detailAlpha,
+                        isPlaying = false,
+                    )
+                },
             ) {
-                MiniSongIdentity(currentSong, secondLineOf(currentSong, true), contentColor, detailAlpha, isPlaying = isPlaying) {
+                MiniSongIdentity(
+                    song = currentSong,
+                    subtitle = secondLineOf(currentSong, true),
+                    contentColor = contentColor,
+                    detailAlpha = detailAlpha,
+                    isPlaying = isPlaying,
+                ) {
                     // Album Art with Circular Progress Ring - doubles as the
                     // play/pause target, so the most-hit part of the pill
                     // toggles playback instead of only expanding the player.
@@ -454,8 +468,9 @@ private fun MiniSongIdentity(
     /** The line under the title: the artist, the album or the time left. */
     subtitle: String,
     contentColor: Color,
+    /** Whether the title scrolls: a marquee only moves while the song plays. */
+    isPlaying: Boolean,
     detailAlpha: () -> Float = { 1f },
-    isPlaying: Boolean = false,
     artwork: @Composable () -> Unit = {
         Box(modifier = Modifier.size(52.dp), contentAlignment = Alignment.Center) {
             MiniSongArtwork(song)

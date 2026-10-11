@@ -19,6 +19,20 @@ internal class LastFmPlaybackTracker(
 
     fun reset() { clock.reset(); announced = null }
 
+    /**
+     * Retries a drain while nothing is playing. `sample` is the tracker's only
+     * other caller of it and stops while the player is paused, so an offline
+     * queue would otherwise sit until the next play. Shares `sample`'s
+     * five-minute cooldown: the two are one budget, not two.
+     */
+    fun retryPendingSync() {
+        val elapsed = monotonicMillis()
+        if (elapsed - lastRetry >= 300_000) {
+            lastRetry = elapsed
+            repository.syncPending()
+        }
+    }
+
     fun sample(player: Player) {
         val session = repository.state.value
         if (generation != repository.recordingGeneration) {

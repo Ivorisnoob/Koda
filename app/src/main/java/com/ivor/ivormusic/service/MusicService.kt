@@ -1020,6 +1020,12 @@ class MusicService : MediaLibraryService() {
                     if (tracker != null) {
                         if (player.isPlaying) {
                             tracker.sample(player)
+                        } else {
+                            // A paused player stops accumulating listening, but the service
+                            // is still the queue's only background retry (docs/lastfm.md):
+                            // anything that failed to drain must keep retrying on the
+                            // slower tick.
+                            tracker.retryPendingSync()
                         }
                     } else if (lastFmTrackerLoad == null &&
                         com.ivor.ivormusic.data.LastFmRepository.mayBeEnabled(this@MusicService)

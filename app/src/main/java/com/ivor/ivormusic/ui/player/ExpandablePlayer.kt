@@ -103,8 +103,6 @@ fun ExpandablePlayer(
     isPlaying: Boolean,
     isBuffering: Boolean,
     playWhenReady: Boolean,
-    progress: Float = 0f,
-    duration: Long = 0L,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
     viewModel: PlayerViewModel,
@@ -621,8 +619,6 @@ fun ExpandablePlayer(
                     ) {
                         ExpandableMiniPlayerSlot(
                             viewModel = viewModel,
-                            fallbackProgress = progress,
-                            fallbackDuration = duration,
                             currentSong = currentSong,
                             isPlaying = isPlaying,
                             isBuffering = isBuffering,
@@ -921,12 +917,17 @@ fun ExpandablePlayer(
 
 }
 
-
+/**
+ * The pill in its own leaf.
+ *
+ * Collecting [PlayerViewModel.progress] and [PlayerViewModel.duration] here
+ * rather than in [HomeScreen] is what keeps the once-a-second position sample
+ * from recomposing the screen behind the player: the states are read where
+ * they are drawn, and the pill is the only thing that re-runs.
+ */
 @Composable
 private fun ExpandableMiniPlayerSlot(
     viewModel: PlayerViewModel,
-    fallbackProgress: Float,
-    fallbackDuration: Long,
     currentSong: Song,
     isPlaying: Boolean,
     isBuffering: Boolean,
@@ -947,15 +948,14 @@ private fun ExpandableMiniPlayerSlot(
 ) {
     val progressMs by viewModel.progress.collectAsState()
     val durationMs by viewModel.duration.collectAsState()
-    val effectiveDuration = if (fallbackDuration > 0L) fallbackDuration else durationMs
-    val effectiveProgress = if (effectiveDuration > 0L) progressMs.toFloat() / effectiveDuration.toFloat() else fallbackProgress
+    val progressFraction = if (durationMs > 0L) progressMs.toFloat() / durationMs.toFloat() else 0f
 
     MiniPlayerContent(
         currentSong = currentSong,
         isPlaying = isPlaying,
         isBuffering = isBuffering,
         playWhenReady = playWhenReady,
-        progress = effectiveProgress,
+        progress = progressFraction,
         onPlayPauseClick = onPlayPauseClick,
         onNextClick = onNextClick,
         onClick = { onExpandChange(true) },
@@ -975,7 +975,7 @@ private fun ExpandableMiniPlayerSlot(
         previousSong = previousSong,
         nextSong = nextSong,
         detailAlpha = detailAlpha,
-        durationMs = effectiveDuration,
+        durationMs = durationMs,
         customization = miniCustomization,
         onButtonClick = { button ->
             when (button) {

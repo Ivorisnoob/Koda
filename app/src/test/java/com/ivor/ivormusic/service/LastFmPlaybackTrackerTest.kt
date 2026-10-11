@@ -70,4 +70,25 @@ class LastFmPlaybackTrackerTest {
         verify(repository).enqueue("Artist", "Song", "", 60_000, 1000)
         verify(repository).enqueue("Artist", "Song", "", 60_000, 1031)
     }
+
+    /**
+     * The service's loop only samples while the player is playing, so the
+     * idle branch's retry is what keeps an unsent queue draining. It shares
+     * the sample's five-minute cooldown rather than opening a second one.
+     */
+    @Test fun retryPendingSyncDrainsOnCooldownEvenWhilePaused() {
+        setup()
+        `when`(player.isPlaying).thenReturn(false)
+        ticks(3)
+        verify(repository, never()).syncPending()
+
+        time += 300_000
+        tracker.retryPendingSync()
+        verify(repository, times(1)).syncPending()
+
+        // Still inside the five minutes it just opened.
+        time += 60_000
+        tracker.retryPendingSync()
+        verify(repository, times(1)).syncPending()
+    }
 }
