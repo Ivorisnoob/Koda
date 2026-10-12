@@ -58,6 +58,18 @@ internal class PlayerSignatureTimestamp(
     }
 
     /**
+     * The base.js URL of the last player this instance read, for running that
+     * script locally (see `data.js.LocalJsDecipher`). A pure preference read:
+     * it never fetches, so a caller that only deciphers spends no request. Null
+     * until the weekly live read has stored a player id; the decipher then
+     * waits rather than guessing a URL.
+     */
+    fun playerBaseJsUrl(): String? =
+        prefs.getString(KEY_PLAYER_ID, null)?.takeIf { it.isNotBlank() }?.let { playerId ->
+            "https://www.youtube.com/s/player/$playerId/player_ias.vflset/en_US/base.js"
+        }
+
+    /**
      * After a `/player` came back without tracking URLs. Returns a value worth
      * retrying with, or null when it would only repeat [rejected] (a video that
      * is really unavailable must not cost a second `/player`). Rate-limited, so

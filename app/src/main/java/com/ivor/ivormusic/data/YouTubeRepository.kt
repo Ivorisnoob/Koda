@@ -91,12 +91,17 @@ class YouTubeRepository(private val context: Context) {
     )
     private val captionTracks = CaptionTracks(playerSession, http)
     private val playerHarvest = PlayerResponseHarvest(context, captionTracks)
+    // The player script URL for local decipher only. Same SharedPreferences
+    // as PlaybackHistory's instance, so no new process-wide state; this one
+    // only ever reads the stored player id and never refreshes it.
+    private val playerSts = PlayerSignatureTimestamp(context, http.okHttpClient)
     private val audioStreams = AudioStreamResolver(
         identity = http.visitorIdentity,
         session = playerSession,
         probe = StreamProbe(http.streamResolveClient, BROWSER_USER_AGENT),
         newPipe = NewPipeAudioSource(youtubeService, newPipeGateway.newPipeScope),
         newPipeBudgetMs = NEWPIPE_STREAM_BUDGET_MS,
+        playerJsUrl = playerSts::playerBaseJsUrl,
         onResponse = playerHarvest::harvestPlayerResponse,
         onLoudness = playerHarvest::cacheTrackLoudness,
     )
@@ -104,6 +109,7 @@ class YouTubeRepository(private val context: Context) {
     private val videoStreams = VideoStreamResolver(
         playerSession = playerSession,
         youtubeService = youtubeService,
+        playerJsUrl = playerSts::playerBaseJsUrl,
         onCaptions = { videoId, root -> captionTracks.cacheCaptionTracks(videoId, parseCaptionTracks(root)) },
         onResponse = playerHarvest::harvestPlayerResponse,
     )

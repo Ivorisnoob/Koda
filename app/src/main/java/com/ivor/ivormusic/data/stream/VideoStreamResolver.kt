@@ -7,6 +7,7 @@ import com.ivor.ivormusic.data.VideoStreamResult
 import com.ivor.ivormusic.data.YouTubeAudioTrack
 import com.ivor.ivormusic.data.YouTubeAudioTrackKind
 import com.ivor.ivormusic.data.deduplicateVideoQualityVariants
+import com.ivor.ivormusic.data.js.LocalJsDecipher
 import com.ivor.ivormusic.data.parseDirectAudioTracks
 import com.ivor.ivormusic.data.parseDirectVideoQualities
 import com.ivor.ivormusic.data.parseStoryboardSeekPreview
@@ -31,6 +32,9 @@ import org.schabi.newpipe.extractor.stream.StreamType
  * a preview and a download of the same video resolve it once.
  *
  * @param youtubeService NewPipe's YouTube service, for the fallback path.
+ * @param playerJsUrl the known YouTube player script URL, if any, for running
+ * a ciphered answer's decipher locally ([LocalJsDecipher]) instead of
+ * spending another extraction on it. A pure preference read, never a fetch.
  * @param onCaptions called with the visionOS response of a resolved video, so
  * its caption tracklist can be kept and a later CC tap costs nothing.
  * @param onResponse called with a last-resort response, which is harvested
@@ -39,6 +43,7 @@ import org.schabi.newpipe.extractor.stream.StreamType
 internal class VideoStreamResolver(
     private val playerSession: PlayerSession,
     private val youtubeService: StreamingService,
+    private val playerJsUrl: () -> String? = { null },
     private val onCaptions: (videoId: String, root: JSONObject) -> Unit,
     private val onResponse: (videoId: String, root: JSONObject) -> Unit,
 ) {
@@ -80,7 +85,20 @@ internal class VideoStreamResolver(
         // second request merged into NewPipe's ladder as it used to.
         val direct = playerSession.visionOs(videoId)
         direct.answer?.let { answer ->
-            val qualities = parseQualitiesFromStreamingData(answer.streamingData, includeHdr)
+            // A ciphered answer is not an unplayable video: run its decipher
+            // on this device before paying for an extraction. Costs no
+            // request, and the dub menu below reads the deciphered data.
+            var effective = answer.streamingData
+            var qualities = parseQualitiesFromStreamingData(effective, includeHdr)
+            if (qualities.isEmpty()) {
+                LocalJsDecipher.decipheredStreamingDataOrNull(effective, playerJsUrl())?.let { deciphered ->
+                    effective = deciphered
+                    qualities = parseQualitiesFromStreamingData(effective, includeHdr)
+                    if (qualities.isNotEmpty()) {
+                        KLog.i(STREAM_TAG, "Video qualities via visionOS+localJS for $videoId")
+                    }
+                }
+            }
             if (qualities.isNotEmpty()) {
                 BotCheckVerdict.clearOnSuccess()
                 // Makes a CC tap free: getCaptionTracks reads this cache first.
@@ -95,7 +113,7 @@ internal class VideoStreamResolver(
                 val audioTracks = if (qualities.any(VideoQuality::isLive)) {
                     emptyList()
                 } else {
-                    parseDirectAudioTracks(answer.streamingData)
+                    parseDirectAudioTracks(effective)
                 }
                 // Best-effort: a malformed spec costs the scrub preview, never
                 // the stream.
@@ -166,7 +184,16 @@ internal class VideoStreamResolver(
         val streamingData = playerSession.nativeFallback(videoId, newPipeBotChecked) {
             onResponse(videoId, it)
         }?.streamingData ?: return emptyList()
-        return parseQualitiesFromStreamingData(streamingData, includeHdr)
+        parseQualitiesFromStreamingData(streamingData, includeHdr)
+            .takeIf { it.isNotEmpty() }
+            ?.let { return it }
+        // Last resort deciphered locally before giving up: same rule as the
+        // visionOS branch, no new request.
+        val deciphered = LocalJsDecipher.decipheredStreamingDataOrNull(streamingData, playerJsUrl())
+            ?: return emptyList()
+        return parseQualitiesFromStreamingData(deciphered, includeHdr).also {
+            if (it.isNotEmpty()) KLog.i(STREAM_TAG, "Video qualities via InnerTube+localJS for $videoId")
+        }
     }
 
     private fun parseQualitiesFromStreamingData(

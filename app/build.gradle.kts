@@ -221,6 +221,11 @@ dependencies {
         // adapter has no call sites in either the extractor or Koda.
         exclude(group = "org.mozilla", module = "rhino-engine")
     }
+    // The JS engine, owned directly at the version NewPipe already pulls: it
+    // executes YouTube's player script locally (signature and throttling
+    // decipher through data.js.LocalJsDecipher) so a protected stream costs
+    // local compute instead of another round of requests from this address.
+    implementation(libs.rhino)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)

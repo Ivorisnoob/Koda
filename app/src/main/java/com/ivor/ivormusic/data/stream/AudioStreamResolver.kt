@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data.stream
 
 import com.ivor.ivormusic.data.VideoStreamResolutionCache
+import com.ivor.ivormusic.data.js.LocalJsDecipher
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,6 +30,9 @@ internal sealed interface AudioResolution {
  * @param newPipeBudgetMs how long playback waits on NewPipe. Sized against
  * the player's own resolution timeout so the third path still has room
  * inside it; the two are a pair.
+ * @param playerJsUrl the known YouTube player script URL, if any, for running
+ * a ciphered answer's decipher locally ([LocalJsDecipher]) instead of
+ * spending another extraction on it. A pure preference read, never a fetch.
  * @param onResponse every `/player` response that reached status OK on the
  * third path, for the caller to harvest captions and loudness from.
  * @param onLoudness the loudness of the format chosen on the first path,
@@ -41,6 +45,7 @@ internal class AudioStreamResolver(
     private val probe: StreamProbe,
     private val newPipe: NewPipeAudioSource,
     private val newPipeBudgetMs: Long,
+    private val playerJsUrl: () -> String? = { null },
     private val onResponse: (videoId: String, root: JSONObject) -> Unit,
     private val onLoudness: (videoId: String, loudnessDb: Float) -> Unit,
 ) {
@@ -61,6 +66,15 @@ internal class AudioStreamResolver(
             direct.pick?.let { pick ->
                 pick.loudnessDb?.let { onLoudness(videoId, it) }
                 return@withContext resolved(pick.url, "visionOS")
+            }
+
+            // A ciphered answer is not an unplayable song: run its decipher on
+            // this device before paying for an extraction. Costs no request.
+            direct.streamingData?.let { streamingData ->
+                deciphered(videoId, streamingData) { pickAudioLogged(videoId, it, preference) }
+            }?.let { pick ->
+                pick.loudnessDb?.let { onLoudness(videoId, it) }
+                return@withContext resolved(pick.url, "visionOS+localJS")
             }
 
             val extracted = newPipe.withinBudget(videoId, preference, newPipeBudgetMs)
@@ -90,9 +104,16 @@ internal class AudioStreamResolver(
     suspend fun forDownload(videoId: String, smallest: Boolean): AudioResolution =
         withContext(Dispatchers.IO) {
             val direct = session.visionOs(videoId)
-            direct.answer?.let { pickM4aUrl(it.streamingData, smallest) }?.let {
+            val directData = direct.answer?.streamingData
+            directData?.let { pickM4aUrl(it, smallest) }?.let {
                 BotCheckVerdict.clearOnSuccess()
                 return@withContext AudioResolution.Resolved(it, "visionOS")
+            }
+            directData?.let { streamingData ->
+                deciphered(videoId, streamingData) { pickM4aUrl(it, smallest) }
+            }?.let {
+                BotCheckVerdict.clearOnSuccess()
+                return@withContext AudioResolution.Resolved(it, "visionOS+localJS")
             }
 
             val extracted = newPipe.m4aUrl(videoId, smallest)
@@ -111,7 +132,7 @@ internal class AudioStreamResolver(
                 ?: AudioResolution.Unresolved
         }
 
-    private class Probed(val pick: AudioPick?, val botChecked: Boolean)
+    private class Probed(val pick: AudioPick?, val botChecked: Boolean, val streamingData: JSONObject?)
 
     /**
      * [PlayerSession.visionOs], with the token vetted before a URL resolved
@@ -122,34 +143,38 @@ internal class AudioStreamResolver(
      * for up to [PROBE_ROUNDS] tokens. Past that, or when the probe says
      * nothing either way, the URL is returned as it is and playback's own 403
      * recovery remains the backstop.
+     *
+     * The answered `streamingData` rides along so a ciphered answer can be
+     * deciphered locally ([deciphered]) without a second `/player`.
      */
     private suspend fun visionOsProbed(videoId: String, pick: (JSONObject) -> AudioPick?): Probed {
         for (round in 1..PROBE_ROUNDS) {
             val direct = session.visionOs(videoId)
-            val picked = direct.answer?.let { pick(it.streamingData) }
-                ?: return Probed(null, direct.botChecked)
+            val streamingData = direct.answer?.streamingData
+            val picked = streamingData?.let { pick(it) }
+                ?: return Probed(null, direct.botChecked, streamingData)
             val token = direct.visitorData
-            if (token.isBlank() || identity.isVetted(token)) return Probed(picked, false)
+            if (token.isBlank() || identity.isVetted(token)) return Probed(picked, false, streamingData)
             when (probe.servesLastByte(picked.url)) {
                 true -> {
                     identity.markVetted(token)
-                    return Probed(picked, false)
+                    return Probed(picked, false, streamingData)
                 }
-                null -> return Probed(picked, false)
+                null -> return Probed(picked, false, streamingData)
                 false -> {
                     KLog.w(
                         STREAM_TAG,
                         "Resolve[visionOS] googlevideo refuses this visitorData past the opening " +
                             "(round $round/$PROBE_ROUNDS) videoId=$videoId",
                     )
-                    if (round == PROBE_ROUNDS) return Probed(picked, false)
+                    if (round == PROBE_ROUNDS) return Probed(picked, false, streamingData)
                     // Ladders other surfaces resolved under this token are as dead.
                     VideoStreamResolutionCache.clear()
-                    identity.replace(token) ?: return Probed(picked, false)
+                    identity.replace(token) ?: return Probed(picked, false, streamingData)
                 }
             }
         }
-        return Probed(null, false)
+        return Probed(null, false, null)
     }
 
     private fun pickAudioLogged(
@@ -165,6 +190,25 @@ internal class AudioStreamResolver(
             KLog.w(STREAM_TAG, "Using a muxed video format videoId=$videoId (no audio-only)")
         }
         return pick
+    }
+
+    /**
+     * Re-run [pick] over [streamingData] with its ciphered formats deciphered
+     * on this device. Null when there was no player URL, nothing ciphered, or
+     * nothing recovered - the caller falls through to its next path, having
+     * spent no request.
+     */
+    private fun <T> deciphered(
+        videoId: String,
+        streamingData: JSONObject,
+        pick: (JSONObject) -> T?,
+    ): T? {
+        val playerUrl = playerJsUrl() ?: return null
+        val deciphered = LocalJsDecipher.decipheredStreamingDataOrNull(streamingData, playerUrl)
+            ?: return null
+        return pick(deciphered)?.also {
+            KLog.i(STREAM_TAG, "Resolve[localJS] recovered a stream without a new request videoId=$videoId")
+        }
     }
 
     private companion object {
