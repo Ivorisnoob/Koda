@@ -43,6 +43,8 @@ import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.MoneyOff
@@ -200,6 +202,10 @@ internal fun buildSettingsSearchIndex(
         "lyrics_providers", stringResource(R.string.lyrics_settings_title), "Lyrics", Icons.Rounded.MusicNote,
         listOf("lyrics", "providers", "priority", "order", "karaoke", "synced", "plain text", "offline", "YouLyPlus", "BetterLyrics", "NetEase", "SimpMusic", "LRCLIB", "KuGou", "Unison")
     ) { onOpenPage(SettingsPage.LYRICS) }
+    entry(
+        "lyrics_alignment", stringResource(R.string.lyrics_alignment), stringResource(R.string.lyrics_settings_title), Icons.Rounded.MusicNote,
+        listOf("lyrics", "align", "alignment", "left", "centre", "center", "centered", "justify", "layout")
+    ) { onOpenPage(SettingsPage.LYRICS) }
 
     entry("lastfm", stringResource(R.string.lastfm_title), "Last.fm", Icons.Rounded.History,
         listOf("lastfm", "last.fm", "scrobble", "scrobbling", "sync", "api key", "login", "listening history")) {
@@ -240,6 +246,36 @@ internal fun buildSettingsSearchIndex(
         "video_controls_hide", stringResource(R.string.cz_video_controls_hide), stringResource(R.string.cz_video_player), Icons.Rounded.PlayCircle,
         listOf("controls", "auto hide", "hide delay", "timeout", "buttons disappear", "overlay")
     ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "standby", stringResource(R.string.standby_title), stringResource(R.string.settings_customization), Icons.Rounded.Bedtime,
+        listOf(
+            "standby", "stand by", "bedside", "nightstand", "clock", "desk", "dock", "charging",
+            "full screen", "fullscreen", "lyrics", "screensaver", "night", "dim", "always on"
+        )
+    ) { onOpenPage(SettingsPage.STANDBY) }
+    entry(
+        "standby_suggest", stringResource(R.string.cz_standby_suggest), stringResource(R.string.standby_title), Icons.Rounded.BatteryChargingFull,
+        listOf("charging", "charger", "suggest", "offer", "sideways", "landscape", "set down")
+    ) { onOpenPage(SettingsPage.STANDBY) }
+    entry(
+        "video_shaders", stringResource(R.string.sp_video_shaders), stringResource(R.string.settings_customization), Icons.Rounded.AutoAwesome,
+        listOf(
+            "shader", "shaders", "effects", "filter", "filters", "look", "preset", "presets",
+            "vivid", "clarity", "film", "cinematic", "noir", "black and white", "anime", "neon",
+            "dream", "vintage", "vhs", "crt", "retro", "pixel", "comic", "sketch", "night vision"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_SHADERS) }
+    entry(
+        "video_shaders_picture", stringResource(R.string.sp_video_shaders_picture), stringResource(R.string.sp_video_shaders), Icons.Rounded.Contrast,
+        listOf(
+            "sharpen", "sharpness", "upscale", "upscaling", "cas", "enhance", "detail",
+            "brightness", "contrast", "saturation", "colour", "color", "picture"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_SHADERS) }
+    entry(
+        "video_shaders_custom", stringResource(R.string.sp_video_shaders_custom), stringResource(R.string.sp_video_shaders), Icons.Rounded.Code,
+        listOf("custom shader", "glsl", "code", "fragment shader", "editor", "write", "programmable")
+    ) { onOpenPage(SettingsPage.VIDEO_SHADERS) }
     entry(
         "video_feed", stringResource(R.string.cz_video_feed), stringResource(R.string.settings_customization), Icons.Rounded.PlayCircle,
         listOf(

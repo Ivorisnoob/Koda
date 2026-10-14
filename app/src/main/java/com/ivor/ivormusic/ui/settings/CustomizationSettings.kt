@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Palette
@@ -130,12 +131,30 @@ internal fun CustomizationSettingsPage(
                         explanation = stringResource(R.string.cz_info_mini_player)
                     )
                     SettingsHubRow(
+                        icon = Icons.Rounded.Bedtime,
+                        title = stringResource(R.string.standby_title),
+                        value = standbySummary(),
+                        onClick = { onOpenPage(SettingsPage.STANDBY) },
+                        iconShape = MaterialShapes.Arch.toShape(),
+                        explanation = stringResource(R.string.cz_info_standby)
+                    )
+                    SettingsHubRow(
                         icon = Icons.Rounded.SmartDisplay,
                         title = stringResource(R.string.cz_video_player),
                         value = videoPlayerSummary(),
                         onClick = { onOpenPage(SettingsPage.VIDEO_PLAYER) },
                         iconShape = MaterialShapes.Gem.toShape(),
                         explanation = stringResource(R.string.cz_info_video_player)
+                    )
+                    // Always here, reading Off, rather than appearing once
+                    // it is on: this row is the only way to the switch.
+                    SettingsHubRow(
+                        icon = Icons.Rounded.AutoAwesome,
+                        title = stringResource(R.string.sp_video_shaders),
+                        value = videoShadersSummary(),
+                        onClick = { onOpenPage(SettingsPage.VIDEO_SHADERS) },
+                        iconShape = MaterialShapes.Burst.toShape(),
+                        explanation = stringResource(R.string.si_video_shaders)
                     )
                 }
             }

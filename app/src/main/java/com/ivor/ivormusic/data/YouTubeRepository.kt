@@ -88,13 +88,12 @@ class YouTubeRepository(private val context: Context) {
     private val playerSession = PlayerSession(
         http.visitorIdentity,
         PlayerApi(http.streamResolveClient, INNER_TUBE_API_KEY),
+        StreamProbe(http.streamResolveClient, BROWSER_USER_AGENT),
     )
     private val captionTracks = CaptionTracks(playerSession, http)
     private val playerHarvest = PlayerResponseHarvest(context, captionTracks)
     private val audioStreams = AudioStreamResolver(
-        identity = http.visitorIdentity,
         session = playerSession,
-        probe = StreamProbe(http.streamResolveClient, BROWSER_USER_AGENT),
         newPipe = NewPipeAudioSource(youtubeService, newPipeGateway.newPipeScope),
         newPipeBudgetMs = NEWPIPE_STREAM_BUDGET_MS,
         onResponse = playerHarvest::harvestPlayerResponse,
@@ -208,12 +207,20 @@ class YouTubeRepository(private val context: Context) {
      * clearing cache don't help, clearing data does".
      *
      * Safe to call speculatively; without a token there is nothing to replace.
+     *
+     * @param failedUrl the URL googlevideo refused, when the caller has it.
+     * One signed under a token already replaced changes nothing: the token
+     * held now is not the one refused, and the caller's own re-resolve is the
+     * whole fix. Null replaces the current token, which is right for a
+     * failure with no URL to trace and for a network change.
      */
-    suspend fun refreshVisitorDataAfterPlaybackFailure() {
+    suspend fun refreshVisitorDataAfterPlaybackFailure(failedUrl: String? = null) {
+        val identity = http.visitorIdentity
+        if (identity.signedBySupersededToken(failedUrl)) return
         // Every cached ladder holds URLs signed before the failure. They must
         // not win the retry, even when there is no token to replace.
         VideoStreamResolutionCache.clear()
-        http.visitorIdentity.replaceCurrent()
+        identity.replaceAfterPlaybackFailure(failedUrl)
     }
 
     // --- The account (YouTubeAccount) ---

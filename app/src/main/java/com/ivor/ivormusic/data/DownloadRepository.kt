@@ -953,9 +953,9 @@ class DownloadRepository private constructor(private val context: Context) {
                     KLog.w(TAG, "YouTube's bot check refused ${request.title}; not retrying")
                     break
                 }
-                if (isMediaForbidden(lastError)) {
+                mediaForbidden(lastError)?.let { refused ->
                     KLog.w(TAG, "googlevideo refused the media; re-minting visitorData before retry")
-                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure(refused.url)
                 }
                 if (request.isVideo) {
                     youtubeRepository.invalidateVideoStreamResult(request.id)
@@ -1362,7 +1362,7 @@ class DownloadRepository private constructor(private val context: Context) {
                         totalBytes = position
                         return@use
                     }
-                    if (!response.isSuccessful) throw MediaHttpException(response.code)
+                    if (!response.isSuccessful) throw MediaHttpException(response.code, url)
                     val body = response.body ?: throw java.io.IOException("Empty body")
                     val ranged = response.code == 206
                     if (ranged) {
@@ -1456,21 +1456,23 @@ class DownloadRepository private constructor(private val context: Context) {
      * A googlevideo media fetch that came back with a non-2xx status, carrying
      * the code so [runTask] can tell a refusal apart from an ordinary transport
      * failure. Plain IOException would flatten that back into a message string.
+     * [url] traces a refusal to the visitorData that signed it.
      */
-    private class MediaHttpException(val code: Int) : java.io.IOException("HTTP $code")
+    private class MediaHttpException(val code: Int, val url: String) : java.io.IOException("HTTP $code")
 
     /**
-     * Whether [error] is googlevideo refusing to serve the media, which is the
-     * flagged-token signature rather than anything wrong with this download.
-     * Walks the cause chain: the muxing path wraps failures on its way out.
+     * googlevideo refusing to serve the media, which is the flagged-token
+     * signature rather than anything wrong with this download; null for any
+     * other failure. Walks the cause chain: the muxing path wraps failures on
+     * its way out.
      */
-    private fun isMediaForbidden(error: Throwable?): Boolean {
+    private fun mediaForbidden(error: Throwable?): MediaHttpException? {
         var cause: Throwable? = error
         while (cause != null) {
-            if (cause is MediaHttpException && cause.code == 403) return true
+            if (cause is MediaHttpException && cause.code == 403) return cause
             cause = cause.cause
         }
-        return false
+        return null
     }
 
     /** Total size out of a "bytes 0-1023/4096" Content-Range; null when absent. */

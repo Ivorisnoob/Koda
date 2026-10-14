@@ -176,6 +176,15 @@ private class YouLyPlusProvider(
         val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
         val linesJson = root.optJSONArray("lyrics") ?: return null
         val lines = mutableListOf<LrcLine>()
+        // Who sings: each line's `element.singer`, against the cast in
+        // `metadata.agents` (`v1000` and the like are `group`: sung together).
+        val lineAgents = mutableListOf<String?>()
+        val groupAgents = mutableSetOf<String>()
+        root.optJSONObject("metadata")?.optJSONObject("agents")?.let { agents ->
+            agents.keys().forEach { id ->
+                if (agents.optJSONObject(id)?.optString("type").equals("group", ignoreCase = true)) groupAgents += id
+            }
+        }
         var hasWords = false
 
         for (index in 0 until linesJson.length()) {
@@ -215,9 +224,12 @@ private class YouLyPlusProvider(
             } else {
                 lines += LrcLine(-1L, lineText)
             }
+            lineAgents += item.optJSONObject("element")?.optNullableString("singer")
         }
 
         if (lines.isEmpty()) return null
+        val voices = assignLyricVoices(lineAgents, groupAgents)
+        lines.indices.forEach { lines[it] = lines[it].copy(voice = voices[it]) }
         val syncType = when {
             hasWords -> LyricsSyncType.WORD
             lines.any { it.timeMs >= 0L } -> LyricsSyncType.LINE

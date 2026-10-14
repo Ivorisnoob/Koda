@@ -795,9 +795,16 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
     }
 
+    /**
+     * One-shot HDR-to-SDR recovery. Not for a 403: HDR and SDR are signed
+     * under one token, so the SDR URL is refused too, and reloading it spent
+     * a second token replacement; [recoverFromSourceError] re-resolves instead.
+     * Mirrors VideoPlayerViewModel.
+     */
     private fun fallbackFromHdr(error: PlaybackException): Boolean {
         val failed = currentQuality ?: return false
         if (!failed.isHdr || hdrFallbackUsed) return false
+        if (httpResponseCode(error) == 403) return false
         val item = currentItem() ?: return false
         val qualities = cachedQualities(item.videoId).orEmpty()
         val fallback = bestSdrFallback(qualities, failed) ?: return false
@@ -809,12 +816,6 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             "HDR ${failed.displayLabel} failed; falling back to ${fallback.displayLabel}",
             error,
         )
-        if (httpResponseCode(error) == 403) {
-            invalidatePrefetchedQualities()
-            viewModelScope.launch {
-                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
-            }
-        }
         loadQuality(fallback, startAtMs = position)
         playWhenVisible()
         return true
@@ -844,7 +845,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         recoveryJob = viewModelScope.launch {
             try {
                 if (httpResponseCode(original) == 403) {
-                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure(
+                        com.ivor.ivormusic.data.httpFailureUrl(original),
+                    )
                     invalidatePrefetchedQualities()
                 } else {
                     synchronized(qualitiesCache) { qualitiesCache.remove(item.videoId) }

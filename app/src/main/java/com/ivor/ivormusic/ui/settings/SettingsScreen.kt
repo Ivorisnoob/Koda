@@ -285,7 +285,9 @@ internal enum class SettingsPage {
     HOME_NAVIGATION,
     GESTURES,
     VIDEO_PLAYER,
-    VIDEO_FEED;
+    VIDEO_FEED,
+    VIDEO_SHADERS,
+    STANDBY;
 
     /**
      * Where back goes from this page. Most pages are opened from the hub;
@@ -295,7 +297,7 @@ internal enum class SettingsPage {
     val parent: SettingsPage
         get() = when (this) {
             APPEARANCE, APP_ICON, DISPLAY_SIZE, PLAYER, MINI_PLAYER,
-            HOME_NAVIGATION, GESTURES, VIDEO_PLAYER, VIDEO_FEED -> CUSTOMIZATION
+            HOME_NAVIGATION, GESTURES, VIDEO_PLAYER, VIDEO_FEED, VIDEO_SHADERS, STANDBY -> CUSTOMIZATION
             VIDEO_HOME -> CONTENT
             else -> HUB
         }
@@ -910,6 +912,14 @@ fun SettingsScreen(
 
         SettingsPage.VIDEO_PLAYER -> VideoPlayerSettingsPage(
             onBack = { page = SettingsPage.VIDEO_PLAYER.parent }
+        )
+
+        SettingsPage.VIDEO_SHADERS -> VideoShaderSettingsPage(
+            onBack = { page = SettingsPage.VIDEO_SHADERS.parent }
+        )
+
+        SettingsPage.STANDBY -> StandbySettingsPage(
+            onBack = { page = SettingsPage.STANDBY.parent }
         )
 
         SettingsPage.VIDEO_FEED -> VideoFeedSettingsPage(

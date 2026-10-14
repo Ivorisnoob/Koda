@@ -183,6 +183,24 @@ class StreamCoreTest {
         assertEquals(99L, lastByteOffset("$base&clen=100&dur=120.000"))
     }
 
+    // --- responseKeyOf ------------------------------------------------------
+
+    @Test fun `a stream url is traced to its player response by its ei`() {
+        val url = "https://rr1---sn-fixture.googlevideo.com/videoplayback?expire=1&ei=Wg7PatTXMrmRssUPo42U-Qk&itag=251"
+        assertEquals("Wg7PatTXMrmRssUPo42U-Qk", responseKeyOf(url))
+    }
+
+    @Test fun `a manifest url carries its ei as a path segment`() {
+        val url = "https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1/ei/XA7PapajCLKwmNMPu8KckQ4/ip/1/file/index.m3u8"
+        assertEquals("XA7PapajCLKwmNMPu8KckQ4", responseKeyOf(url))
+    }
+
+    @Test fun `a url without an ei has no key`() {
+        assertNull(responseKeyOf("https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=251"))
+        assertNull(responseKeyOf("https://manifest.googlevideo.com/api/manifest/hls_variant/ei"))
+        assertNull(responseKeyOf("error://resolution_failed/abc"))
+    }
+
     // --- user agents --------------------------------------------------------
 
     @Test fun `a stream is fetched as the client that resolved it`() {

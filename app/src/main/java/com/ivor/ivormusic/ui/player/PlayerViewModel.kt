@@ -1786,6 +1786,23 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _playerExpandRequests.tryEmit(Unit)
     }
 
+    /**
+     * Standby, the full-screen bedside view of the playing song. Held here
+     * because it is opened from the player's menu, inside Home, and drawn by
+     * an overlay above everything in MainActivity; this ViewModel is the one
+     * thing both can see. Nothing to show means nothing to open.
+     */
+    private val _isStandbyOpen = MutableStateFlow(false)
+    val isStandbyOpen: StateFlow<Boolean> = _isStandbyOpen.asStateFlow()
+
+    fun openStandby() {
+        if (_currentSong.value != null) _isStandbyOpen.value = true
+    }
+
+    fun closeStandby() {
+        _isStandbyOpen.value = false
+    }
+
     fun pauseDownload(id: String) = downloadRepository.pauseDownload(id)
     fun resumeDownload(id: String) = downloadRepository.resumeDownload(id)
 

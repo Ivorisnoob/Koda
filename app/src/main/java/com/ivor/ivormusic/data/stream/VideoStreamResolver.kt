@@ -78,7 +78,14 @@ internal class VideoStreamResolver(
         // direct parser keeps HDR itags 330-337 that NewPipe v0.26.5's ItagItem
         // table drops, so HDR comes from this same response rather than from a
         // second request merged into NewPipe's ladder as it used to.
-        val direct = playerSession.visionOs(videoId)
+        // A new token is vetted on the ladder's audio, the format whose URL
+        // states the length and duration the probe needs. Unvetted, a refused
+        // token played a few seconds of video and stalled while playback's own
+        // recovery found out. A live ladder and a Short too short to say
+        // anything go unprobed; the recovery stays the backstop for them.
+        val direct = playerSession.visionOsVetted(videoId) {
+            pickAudio(it, AudioPreference.HIGHEST)?.url
+        }
         direct.answer?.let { answer ->
             val qualities = parseQualitiesFromStreamingData(answer.streamingData, includeHdr)
             if (qualities.isNotEmpty()) {

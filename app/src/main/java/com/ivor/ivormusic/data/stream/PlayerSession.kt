@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.data.stream
 
+import com.ivor.ivormusic.data.VideoStreamResolutionCache
 import com.ivor.ivormusic.util.KLog
 import org.json.JSONObject
 
@@ -27,11 +28,64 @@ internal class VisionOsOutcome(
  *
  * Shared by audio and video resolution, which read different things out of
  * the same answer.
+ *
+ * @param probe asks googlevideo whether a new token's URLs play to the end;
+ * see [visionOsVetted].
  */
 internal class PlayerSession(
     private val identity: VisitorIdentity,
     private val api: PlayerApi,
+    private val probe: StreamProbe,
 ) {
+    /**
+     * [visionOs], with a token vetted before a URL resolved under it reaches
+     * a player; see [StreamProbe] for what is being caught.
+     *
+     * The probe is spent once per token, not per video: a token that passes
+     * is remembered. A refused one is replaced and the video resolved again,
+     * for up to [PROBE_ROUNDS] tokens. Past that, or when the probe says
+     * nothing either way, the answer is returned as it is and playback's own
+     * 403 recovery remains the backstop.
+     *
+     * @param probeUrl the URL out of an answer's `streamingData` whose last
+     * byte settles it, or null to take the answer unprobed. Any format will
+     * do, since the verdict is on the token; one that states its length and
+     * duration is needed for the probe to say anything ([lastByteOffset]).
+     */
+    suspend fun visionOsVetted(
+        videoId: String,
+        probeUrl: (streamingData: JSONObject) -> String?,
+    ): VisionOsOutcome {
+        for (round in 1..PROBE_ROUNDS) {
+            val direct = visionOs(videoId)
+            val answer = direct.answer ?: return direct
+            val token = direct.visitorData
+            if (token.isBlank() || identity.isVetted(token)) return direct
+            val url = probeUrl(answer.streamingData) ?: return direct
+            when (probe.servesLastByte(url)) {
+                true -> {
+                    identity.markVetted(token)
+                    return direct
+                }
+                null -> return direct
+                false -> {
+                    KLog.w(
+                        STREAM_TAG,
+                        "Resolve[visionOS] googlevideo refuses this visitorData past the opening " +
+                            "(round $round/$PROBE_ROUNDS) videoId=$videoId",
+                    )
+                    if (round == PROBE_ROUNDS) return direct
+                    // Ladders other surfaces resolved under this token are as
+                    // dead. Not clear(): a video resolution runs this inside
+                    // the cache, and clear() would cancel it.
+                    VideoStreamResolutionCache.dropResolved()
+                    identity.replace(token) ?: return direct
+                }
+            }
+        }
+        error("unreachable: the last round always returns")
+    }
+
     /**
      * The primary resolution: one visionOS call under the identity Koda
      * already holds.
@@ -44,7 +98,7 @@ internal class PlayerSession(
      */
     suspend fun visionOs(videoId: String): VisionOsOutcome {
         val token = currentOrMinted()
-        when (val first = api.player(videoId, PlayerClients.VISION_OS, token)) {
+        when (val first = player(videoId, PlayerClients.VISION_OS, token)) {
             is PlayerAnswer.Playable -> return VisionOsOutcome(first, botChecked = false, token)
             is PlayerAnswer.IdentityRefused -> Unit
             else -> return VisionOsOutcome(null, botChecked = false)
@@ -54,7 +108,7 @@ internal class PlayerSession(
         KLog.w(STREAM_TAG, "Player[VISIONOS] visitorData refused, replacing it videoId=$videoId")
         val fresh = identity.replace(token)
         if (fresh == null || fresh == token) return VisionOsOutcome(null, botChecked = false)
-        return when (val retry = api.player(videoId, PlayerClients.VISION_OS, fresh)) {
+        return when (val retry = player(videoId, PlayerClients.VISION_OS, fresh)) {
             is PlayerAnswer.Playable -> VisionOsOutcome(retry, botChecked = false, fresh)
             is PlayerAnswer.IdentityRefused -> {
                 BotCheckVerdict.note(videoId)
@@ -113,7 +167,7 @@ internal class PlayerSession(
 
     /** One client's answer under the current identity, with no fallback or replacement. */
     suspend fun single(videoId: String, client: PlayerClient): PlayerAnswer =
-        api.player(videoId, client, identity.current())
+        player(videoId, client, identity.current())
 
     /**
      * A blank token is not "no identity, carry on": the bot check refuses a
@@ -123,6 +177,21 @@ internal class PlayerSession(
     private suspend fun currentOrMinted(): String =
         identity.current().ifBlank { identity.replace(refused = "").orEmpty() }
 
+    /**
+     * Every `/player` call made as Koda goes through here, so each playable
+     * answer's URLs are traced back to the token that signed them; see
+     * [VisitorIdentity.signedBySupersededToken].
+     */
+    private suspend fun player(videoId: String, client: PlayerClient, token: String): PlayerAnswer =
+        api.player(videoId, client, token).also {
+            if (it is PlayerAnswer.Playable) identity.noteSigned(it.streamingData, token)
+        }
+
+    private companion object {
+        /** Fresh tokens one video may go through before playback's own recovery takes over. */
+        const val PROBE_ROUNDS = 3
+    }
+
     private class PairOutcome(val playable: PlayerAnswer.Playable?, val identityRefused: Boolean)
 
     private suspend fun androidVrThenIos(
@@ -130,11 +199,11 @@ internal class PlayerSession(
         token: String,
         onResponse: (JSONObject) -> Unit,
     ): PairOutcome {
-        val vr = api.player(videoId, PlayerClients.ANDROID_VR, token)
+        val vr = player(videoId, PlayerClients.ANDROID_VR, token)
         vr.okRoot()?.let(onResponse)
         if (vr is PlayerAnswer.Playable) return PairOutcome(vr, identityRefused = false)
 
-        val ios = api.player(videoId, PlayerClients.IOS, token)
+        val ios = player(videoId, PlayerClients.IOS, token)
         ios.okRoot()?.let(onResponse)
         return PairOutcome(
             playable = ios as? PlayerAnswer.Playable,

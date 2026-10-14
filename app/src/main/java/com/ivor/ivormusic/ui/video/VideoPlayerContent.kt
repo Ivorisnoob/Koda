@@ -88,6 +88,8 @@ import com.ivor.ivormusic.data.VideoChapter
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.PlayerTrackOption
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.data.VideoShaderCustomization
+import com.ivor.ivormusic.data.VideoShaderPreset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.roundToInt
@@ -248,6 +250,18 @@ fun VideoPlayerContent(
     // always starts fitted rather than inheriting the last video's crop.
     var isZoomedToFill by remember(video?.videoId) { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
+    /**
+     * The fullscreen screen lock.
+     *
+     * Hoisted out of the fullscreen composable for two reasons: locking has to
+     * take the chrome with it (it would otherwise sit tappable until the
+     * controls' own auto-hide ran), and unlocking has to bring it back. The
+     * flag deliberately does not follow a new video - a lock is a way of
+     * watching this one - and leaving fullscreen clears it, so a pocket cannot
+     * hand a locked screen to the watch page.
+     */
+    var screenLocked by remember { mutableStateOf(false) }
+    LaunchedEffect(isFullscreen) { if (!isFullscreen) screenLocked = false }
     var showChaptersSheet by remember { mutableStateOf(false) }
     var showCaptionsSheet by remember { mutableStateOf(false) }
     // Keyed on the playlist, so the flag cannot outlive the queue it belongs to.
@@ -541,6 +555,8 @@ fun VideoPlayerContent(
     }
     
     // Playback-settings sheet state
+    val videoShaders by viewModel.videoShaders.collectAsState()
+    val videoShadersInstalled by viewModel.videoShadersInstalled.collectAsState()
     var showPlaybackSettings by remember { mutableStateOf(false) }
     val playbackSettingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -677,7 +693,15 @@ fun VideoPlayerContent(
                 exoPlayer = exoPlayer,
                 videoId = currentVideo.videoId,
                 showControls = showControls,
-                onToggleControls = { showControls = !showControls },
+                onToggleControls = { if (!screenLocked) showControls = !showControls },
+                screenLocked = screenLocked,
+                onScreenLockChange = { locked ->
+                    screenLocked = locked
+                    // Locking hides the chrome now, unlocking brings it back.
+                    // Both are one write: the auto-hide effect re-arms on the
+                    // way in, so unlocking behaves like any other reveal.
+                    showControls = !locked
+                },
                 hasError = playbackError != null,
                 errorMessage = playbackError?.message ?: "",
                 connectionAdvice = connectionAdvice,
@@ -1513,7 +1537,11 @@ fun VideoPlayerContent(
             showSmoothMotion = smoothMotionAvailable,
             smoothMotionOn = smoothMotionOn,
             onSmoothMotionChanged = viewModel::setSmoothMotionOn,
-            smoothMotionStatus = smoothMotionText
+            smoothMotionStatus = smoothMotionText,
+            videoShaders = videoShaders,
+            videoShadersInstalled = videoShadersInstalled,
+            onVideoShadersPreview = viewModel::previewVideoShaders,
+            onVideoShadersChanged = viewModel::setVideoShaders
         )
     }
 
@@ -1678,8 +1706,16 @@ private fun PlayerSettingsSections(
     smoothMotionOn: Boolean,
     onSmoothMotionChanged: (Boolean) -> Unit,
     /** What Smooth motion is doing for this video, or that it is switched off. */
-    smoothMotionStatus: String
+    smoothMotionStatus: String,
+    /** Video shaders are turned on in Settings when [VideoShaderCustomization.masterEnabled], which is what offers the tab. */
+    videoShaders: VideoShaderCustomization,
+    /** This player was built with the shader stage; without it the tab can only say to reopen the video. */
+    videoShadersInstalled: Boolean,
+    /** A slider mid-drag: drawn, not stored. */
+    onVideoShadersPreview: (VideoShaderCustomization) -> Unit,
+    onVideoShadersChanged: (VideoShaderCustomization) -> Unit
 ) {
+    val showVideoShaders = videoShaders.masterEnabled
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val optionColors = ToggleButtonDefaults.colors(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -1691,10 +1727,10 @@ private fun PlayerSettingsSections(
     var deck by remember { mutableStateOf(SettingsPicker.QUALITY) }
     // The next video in a queue can have a single audio track, which takes the
     // tab away under an open panel.
-    val shownDeck = if (deck == SettingsPicker.AUDIO && audioTracks.isEmpty()) {
-        SettingsPicker.QUALITY
-    } else {
-        deck
+    val shownDeck = when {
+        deck == SettingsPicker.AUDIO && audioTracks.isEmpty() -> SettingsPicker.QUALITY
+        deck == SettingsPicker.SHADERS && !showVideoShaders -> SettingsPicker.QUALITY
+        else -> deck
     }
 
     // Ladder split for the quality deck: the HDR/Standard switch and the
@@ -1758,6 +1794,25 @@ private fun PlayerSettingsSections(
                                 SettingsPicker.AUDIO,
                                 stringResource(R.string.vpc_audio_track),
                                 audioTracks.firstOrNull { it.isSelected }?.label
+                            )
+                        )
+                    }
+                    if (showVideoShaders) {
+                        add(
+                            Triple(
+                                SettingsPicker.SHADERS,
+                                stringResource(R.string.vpc_shaders),
+                                // Sliders moved under no preset still change
+                                // the picture, so "Original" would be untrue.
+                                stringResource(
+                                    when {
+                                        !videoShadersInstalled || !videoShaders.isEffectActive ->
+                                            R.string.vsp_preset_none
+                                        videoShaders.activePreset == VideoShaderPreset.NONE ->
+                                            R.string.vpc_shaders_adjusted
+                                        else -> videoShaders.activePreset.titleRes
+                                    }
+                                )
                             )
                         )
                     }
@@ -1938,6 +1993,13 @@ private fun PlayerSettingsSections(
                                 )
                             }
                         }
+
+                        SettingsPicker.SHADERS -> ShaderDeck(
+                            settings = videoShaders,
+                            installed = videoShadersInstalled,
+                            onPreview = onVideoShadersPreview,
+                            onChange = onVideoShadersChanged
+                        )
                     }
                 }
             }
@@ -2308,7 +2370,7 @@ private fun SettingsGrid(cells: List<@Composable (Modifier) -> Unit>) {
 }
 
 /** Which deck the playback settings are showing; exactly one, chosen by the tabs. */
-private enum class SettingsPicker { QUALITY, SPEED, AUDIO }
+private enum class SettingsPicker { QUALITY, SPEED, AUDIO, SHADERS }
 
 /** Columns in the playback settings panel: deck cells, tiles and shortcuts share them. */
 private const val SETTINGS_COLUMNS = 4
@@ -2777,4 +2839,196 @@ internal fun formatChapterTime(millis: Long): String {
     val s = totalSeconds % 60
     return if (h > 0) String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s)
     else String.format(java.util.Locale.US, "%d:%02d", m, s)
+}
+
+/**
+ * The Shaders deck: the presets on the panel's four columns, or the picture
+ * sliders that tune whichever one is chosen, one at a time behind a switch.
+ *
+ * A preset is stored on the tap. A slider is drawn as it moves and stored when
+ * the finger lifts ([ShaderPictureSliders]). The reset sits beside the switch
+ * and only while there is something to reset, as the speed deck's does.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ShaderDeck(
+    settings: VideoShaderCustomization,
+    installed: Boolean,
+    onPreview: (VideoShaderCustomization) -> Unit,
+    onChange: (VideoShaderCustomization) -> Unit
+) {
+    // The switch in Settings was turned on under this video: the stage joins
+    // the next player, and presets shown now would draw nothing.
+    if (!installed) {
+        Text(
+            text = stringResource(R.string.vpc_shaders_restart),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 16.dp)
+        )
+        return
+    }
+
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    var showPicture by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val optionColors = ToggleButtonDefaults.colors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+            ) {
+                listOf(
+                    false to stringResource(R.string.vpc_shader_deck_presets),
+                    true to stringResource(R.string.vpc_shader_deck_picture)
+                ).forEachIndexed { index, (picture, label) ->
+                    val selected = showPicture == picture
+                    ToggleButton(
+                        checked = selected,
+                        onCheckedChange = {
+                            if (!selected) {
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                showPicture = picture
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shapes = if (index == 0) {
+                            ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        } else {
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        },
+                        colors = optionColors,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
+                        if (selected) {
+                            Icon(
+                                Icons.Rounded.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            // Only where it leads somewhere: an untouched picture has nothing to reset.
+            AnimatedVisibility(visible = showPicture && !settings.isPictureNeutral) {
+                IconButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onChange(settings.withNeutralPicture())
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = stringResource(R.string.vs_reset_picture),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        if (showPicture) {
+            ShaderPictureSliders(
+                settings = settings,
+                onPreview = onPreview,
+                onChange = onChange,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        } else {
+            SettingsGrid(
+                VideoShaderPreset.entries.map { preset ->
+                    { modifier ->
+                        val selected = settings.activePreset == preset
+                        PresetCell(
+                            icon = preset.icon,
+                            label = stringResource(preset.titleRes),
+                            selected = selected,
+                            modifier = modifier,
+                            onClick = {
+                                if (!selected) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                    onChange(settings.copy(activePreset = preset))
+                                }
+                            }
+                        )
+                    }
+                }
+            )
+        }
+    }
+}
+
+/**
+ * A preset in the Shaders deck: [DeckCell]'s selection language - the chosen
+ * one fills and squares off - with the look's icon over its name, since
+ * thirteen words in a grid are read one by one and thirteen icons are found.
+ */
+@Composable
+private fun PresetCell(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val corner by animateDpAsState(
+        targetValue = if (selected) 14.dp else 24.dp,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "presetCellCorner"
+    )
+    val container by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "presetCellContainer"
+    )
+    val content = if (selected) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Surface(
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 68.dp),
+        shape = RoundedCornerShape(corner),
+        color = container,
+        contentColor = content
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) content else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                // Two lines for the two-word names; every name's words are
+                // short enough that none breaks inside one.
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }

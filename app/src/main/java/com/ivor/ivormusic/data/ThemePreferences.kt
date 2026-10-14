@@ -110,6 +110,9 @@ class ThemePreferences(context: Context) {
     private val _videoGestures = MutableStateFlow(readVideoGestures())
     val videoGestures: StateFlow<VideoGestureCustomization> = _videoGestures.asStateFlow()
 
+    private val _videoShaders = MutableStateFlow(readVideoShaders())
+    val videoShaders: StateFlow<VideoShaderCustomization> = _videoShaders.asStateFlow()
+
     private val _videoFeed = MutableStateFlow(readVideoFeed())
     val videoFeed: StateFlow<VideoFeedCustomization> = _videoFeed.asStateFlow()
 
@@ -356,6 +359,19 @@ class ThemePreferences(context: Context) {
     private val _hideWatchedInFeed = MutableStateFlow(getHideWatchedInFeedPreference())
     val hideWatchedInFeed: StateFlow<Boolean> = _hideWatchedInFeed.asStateFlow()
 
+    // Standby: whether Koda offers it when the phone is set down charging, and
+    // whether it dims itself when left alone.
+    private val _standbySuggest = MutableStateFlow(getStandbySuggestPreference())
+    val standbySuggest: StateFlow<Boolean> = _standbySuggest.asStateFlow()
+
+    private val _standbyDim = MutableStateFlow(getStandbyDimPreference())
+    val standbyDim: StateFlow<Boolean> = _standbyDim.asStateFlow()
+
+    // Lyrics are set from the start edge by default, as most music apps set
+    // them; centred is the choice. Stored as "centred" so the default is false.
+    private val _lyricsCentered = MutableStateFlow(getLyricsCenteredPreference())
+    val lyricsCentered: StateFlow<Boolean> = _lyricsCentered.asStateFlow()
+
     // Two ways the app suggests things you did not ask for. Stated as what is
     // shown rather than what is hidden, so the switch position and the sentence
     // agree - a toggle called "Hide X" that is on when X is visible is the
@@ -418,6 +434,10 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_HOLD_SPEED, KEY_VIDEO_BRIGHTNESS_SWIPE, KEY_VIDEO_VOLUME_SWIPE,
             KEY_VIDEO_HOLD_SPEED_RATE, KEY_VIDEO_CONTROLS_HIDE_SECONDS ->
                 _videoGestures.value = readVideoGestures()
+            KEY_VIDEO_SHADERS_ENABLED, KEY_VIDEO_SHADER_PRESET, KEY_VIDEO_SHADERS_SHARPNESS,
+            KEY_VIDEO_SHADERS_CONTRAST, KEY_VIDEO_SHADERS_BRIGHTNESS,
+            KEY_VIDEO_SHADERS_SATURATION, KEY_VIDEO_SHADERS_CUSTOM_CODE ->
+                _videoShaders.value = readVideoShaders()
             KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME ->
                 _videoFeed.value = readVideoFeed()
             KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL,
@@ -505,6 +525,9 @@ class ThemePreferences(context: Context) {
             KEY_SUBSCRIPTION_FEED_ORDER ->
                 _subscriptionFeedOrder.value = getSubscriptionFeedOrderPreference()
             KEY_HIDE_WATCHED_IN_FEED -> _hideWatchedInFeed.value = getHideWatchedInFeedPreference()
+            KEY_STANDBY_SUGGEST -> _standbySuggest.value = getStandbySuggestPreference()
+            KEY_STANDBY_DIM -> _standbyDim.value = getStandbyDimPreference()
+            KEY_LYRICS_CENTERED -> _lyricsCentered.value = getLyricsCenteredPreference()
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
@@ -721,6 +744,13 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_QUALITY_WIFI = "video_quality_wifi"
         private const val KEY_VIDEO_QUALITY_MOBILE = "video_quality_mobile"
         private const val KEY_PREFER_HDR = "prefer_hdr_video"
+        private const val KEY_VIDEO_SHADERS_ENABLED = "video_shaders_enabled"
+        private const val KEY_VIDEO_SHADER_PRESET = "video_shader_preset"
+        private const val KEY_VIDEO_SHADERS_SHARPNESS = "video_shaders_sharpness"
+        private const val KEY_VIDEO_SHADERS_CONTRAST = "video_shaders_contrast"
+        private const val KEY_VIDEO_SHADERS_BRIGHTNESS = "video_shaders_brightness"
+        private const val KEY_VIDEO_SHADERS_SATURATION = "video_shaders_saturation"
+        private const val KEY_VIDEO_SHADERS_CUSTOM_CODE = "video_shaders_custom_code"
         private const val KEY_FRAME_INTERPOLATION = "video_frame_interpolation"
         private const val KEY_FRAME_INTERPOLATION_MAX_FPS = "video_frame_interpolation_max_fps"
         private const val KEY_FRAME_INTERPOLATION_PLAYER_ON = "video_frame_interpolation_player_on"
@@ -1055,6 +1085,9 @@ class ThemePreferences(context: Context) {
         private const val KEY_SUBSCRIPTION_FEED_PERIOD = "subscription_feed_period"
         private const val KEY_SUBSCRIPTION_FEED_ORDER = "subscription_feed_order"
         private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
+        private const val KEY_STANDBY_SUGGEST = "standby_suggest_charging"
+        private const val KEY_STANDBY_DIM = "standby_dim_idle"
+        private const val KEY_LYRICS_CENTERED = "lyrics_centered"
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
         private const val KEY_INLINE_PREVIEWS = "inline_previews"
@@ -1455,6 +1488,39 @@ class ThemePreferences(context: Context) {
             .putInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, customization.controlsHideSeconds)
             .apply()
         _videoGestures.value = customization
+    }
+
+    /**
+     * The video shader stage: whether players are built with it, the look and
+     * the picture sliders. Written by the Video shaders page and the player's
+     * settings panel; the player reads it fresh when it is built.
+     */
+    fun readVideoShaders(): VideoShaderCustomization = VideoShaderCustomization(
+        masterEnabled = prefs.getBoolean(KEY_VIDEO_SHADERS_ENABLED, false),
+        activePreset = VideoShaderPreset.fromId(prefs.getString(KEY_VIDEO_SHADER_PRESET, null)),
+        sharpness = prefs.getFloat(KEY_VIDEO_SHADERS_SHARPNESS, VideoShaderCustomization.SHARPNESS_OFF)
+            .coerceIn(VideoShaderCustomization.SHARPNESS_RANGE),
+        contrast = prefs.getFloat(KEY_VIDEO_SHADERS_CONTRAST, VideoShaderCustomization.NEUTRAL_CONTRAST)
+            .coerceIn(VideoShaderCustomization.CONTRAST_RANGE),
+        brightness = prefs.getFloat(KEY_VIDEO_SHADERS_BRIGHTNESS, VideoShaderCustomization.NEUTRAL_BRIGHTNESS)
+            .coerceIn(VideoShaderCustomization.BRIGHTNESS_RANGE),
+        saturation = prefs.getFloat(KEY_VIDEO_SHADERS_SATURATION, VideoShaderCustomization.NEUTRAL_SATURATION)
+            .coerceIn(VideoShaderCustomization.SATURATION_RANGE),
+        customShaderSource = prefs.getString(KEY_VIDEO_SHADERS_CUSTOM_CODE, null)
+            ?: VideoShaderCustomization.DEFAULT_CUSTOM_SHADER
+    )
+
+    fun setVideoShaders(customization: VideoShaderCustomization) {
+        prefs.edit()
+            .putBoolean(KEY_VIDEO_SHADERS_ENABLED, customization.masterEnabled)
+            .putString(KEY_VIDEO_SHADER_PRESET, customization.activePreset.id)
+            .putFloat(KEY_VIDEO_SHADERS_SHARPNESS, customization.sharpness)
+            .putFloat(KEY_VIDEO_SHADERS_CONTRAST, customization.contrast)
+            .putFloat(KEY_VIDEO_SHADERS_BRIGHTNESS, customization.brightness)
+            .putFloat(KEY_VIDEO_SHADERS_SATURATION, customization.saturation)
+            .putString(KEY_VIDEO_SHADERS_CUSTOM_CODE, customization.customShaderSource)
+            .apply()
+        _videoShaders.value = customization
     }
 
     /** What the video feeds show. Read by the feeds, written by the Video feed page. */
@@ -2692,6 +2758,30 @@ class ThemePreferences(context: Context) {
     fun setHideWatchedInFeed(hide: Boolean) {
         prefs.edit().putBoolean(KEY_HIDE_WATCHED_IN_FEED, hide).apply()
         _hideWatchedInFeed.value = hide
+    }
+
+    private fun getStandbySuggestPreference(): Boolean =
+        prefs.getBoolean(KEY_STANDBY_SUGGEST, true)
+
+    fun setStandbySuggest(suggest: Boolean) {
+        prefs.edit().putBoolean(KEY_STANDBY_SUGGEST, suggest).apply()
+        _standbySuggest.value = suggest
+    }
+
+    private fun getStandbyDimPreference(): Boolean =
+        prefs.getBoolean(KEY_STANDBY_DIM, true)
+
+    fun setStandbyDim(dim: Boolean) {
+        prefs.edit().putBoolean(KEY_STANDBY_DIM, dim).apply()
+        _standbyDim.value = dim
+    }
+
+    private fun getLyricsCenteredPreference(): Boolean =
+        prefs.getBoolean(KEY_LYRICS_CENTERED, false)
+
+    fun setLyricsCentered(centered: Boolean) {
+        prefs.edit().putBoolean(KEY_LYRICS_CENTERED, centered).apply()
+        _lyricsCentered.value = centered
     }
 
     private fun getShowRecentSearchesPreference(): Boolean =

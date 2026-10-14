@@ -55,12 +55,23 @@ fun connectionAdviceFor(context: Context, error: Throwable): ConnectionAdvice? {
 }
 
 /** The HTTP status behind a Media3 source failure, if there was one. */
-private fun httpStatusOf(error: Throwable): Int? =
+private fun httpStatusOf(error: Throwable): Int? = httpFailureOf(error)?.responseCode
+
+/**
+ * The URL a Media3 HTTP status failure was for, so a refusal can be traced to
+ * the visitorData that signed it (`refreshVisitorDataAfterPlaybackFailure`).
+ */
+fun httpFailureUrl(error: Throwable): String? {
+    // A Java field, so null on an exception built without a DataSpec.
+    val dataSpec: androidx.media3.datasource.DataSpec? = httpFailureOf(error)?.dataSpec
+    return dataSpec?.uri?.toString()
+}
+
+private fun httpFailureOf(error: Throwable): HttpDataSource.InvalidResponseCodeException? =
     generateSequence(error) { it.cause }
         .take(8)
         .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
         .firstOrNull()
-        ?.responseCode
 
 /**
  * The kind of the default network, or null when there is none with internet.

@@ -1715,6 +1715,7 @@ class MusicService : MediaLibraryService() {
         // re-resolved twice into the same refusal and the song skipped, and so
         // was each song after it for the token's whole TTL.
         val isVisitorDataForbidden = httpResponseCode(error) == 403
+        val forbiddenUrl = if (isVisitorDataForbidden) com.ivor.ivormusic.data.httpFailureUrl(error) else null
         val maxRetries = when {
             isVisitorDataForbidden -> MAX_FORBIDDEN_RETRIES
             uri?.scheme == "error" -> MAX_RESOLUTION_RETRIES
@@ -1744,9 +1745,12 @@ class MusicService : MediaLibraryService() {
             // 200 and never sees this refusal, so without it the flagged
             // token stays in prefs and is replayed for its whole 6h TTL -
             // every uncached song failing until the user clears app data.
-            // Mirrors VideoPlayerViewModel.recoverFromSourceError.
+            // Mirrors VideoPlayerViewModel.recoverFromSourceError. A URL signed
+            // under a token another surface already replaced keeps the current
+            // one; the queue below is dropped either way, since it may hold
+            // URLs from before that replacement.
             if (isVisitorDataForbidden) {
-                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                youtubeRepository.refreshVisitorDataAfterPlaybackFailure(forbiddenUrl)
                 currentCoroutineContext().ensureActive()
                 if (player.currentMediaItem?.isSameQueueItemAs(currentItem) != true) {
                     return@launch

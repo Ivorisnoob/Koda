@@ -187,7 +187,18 @@ internal object LyricsParser {
                 ?.takeIf { it > 0 }
                 ?: frameRate
             val parsed = mutableListOf<LrcLine>()
+            val lineAgents = mutableListOf<String?>()
             val elements = document.getElementsByTagName("*")
+
+            // Who sings: `<ttm:agent type="person|group" xml:id="v1"/>` in the
+            // head, and `ttm:agent="v1"` on each line.
+            val groupAgents = mutableSetOf<String>()
+            for (index in 0 until elements.length) {
+                val agent = elements.item(index) as? Element ?: continue
+                if (!agent.tagName.substringAfter(':').equals("agent", ignoreCase = true)) continue
+                val id = attributeEndingWith(agent, "id") ?: continue
+                if (attributeEndingWith(agent, "type").equals("group", ignoreCase = true)) groupAgents += id
+            }
 
             for (index in 0 until elements.length) {
                 val paragraph = elements.item(index) as? Element ?: continue
@@ -227,10 +238,13 @@ internal object LyricsParser {
                     text = text,
                     contentSpans = wordSpans
                 )
+                lineAgents += attributeEndingWith(paragraph, "agent")
             }
 
             if (parsed.isEmpty()) null else {
-                val completed = completeDurations(parsed)
+                val voices = assignLyricVoices(lineAgents, groupAgents)
+                val voiced = parsed.mapIndexed { i, line -> line.copy(voice = voices[i]) }
+                val completed = completeDurations(voiced)
                 ParsedLyrics(
                     lines = completed,
                     syncType = if (completed.any { it.contentSpans.isNotEmpty() }) LyricsSyncType.WORD else LyricsSyncType.LINE

@@ -1818,6 +1818,11 @@ fun MusicApp(
             homeViewModel = homeViewModel
         )
 
+        // Standby owns the whole window while it is open, so it sits above
+        // both players and Shorts; its offer sits just under it.
+        com.ivor.ivormusic.ui.standby.StandbySuggestion(viewModel = playerViewModel)
+        com.ivor.ivormusic.ui.standby.StandbyOverlay(viewModel = playerViewModel)
+
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the
         // PlayerViewModel so a non-playing row works even when no mini player

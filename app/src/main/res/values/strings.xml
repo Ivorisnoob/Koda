@@ -959,6 +959,26 @@
     <string name="ps_lyrics">Lyrics</string>
     <string name="cd_shuffle">Shuffle</string>
     <string name="cd_previous">Previous</string>
+    <string name="standby_title">Standby</string>
+    <string name="standby_row_subtitle">The song, a clock and lyrics, full screen</string>
+    <string name="standby_close">Close Standby</string>
+    <string name="standby_cover_description">Cover of %1$s</string>
+    <string name="standby_battery_percent">%1$d%%</string>
+    <string name="standby_suggest_body">Tap to show the song full screen</string>
+    <string name="standby_suggest_dismiss">Dismiss</string>
+    <string name="cz_info_standby">The playing song full screen, with a clock and lyrics, for a phone set down on a desk or by the bed.</string>
+    <string name="cz_standby_section">Standby</string>
+    <string name="cz_standby_suggest">Offer while charging</string>
+    <string name="cz_standby_suggest_sub">When music is playing and the phone is turned on its side to charge, a small prompt appears at the top of the screen</string>
+    <string name="cz_standby_dim">Dim when left alone</string>
+    <string name="cz_standby_dim_sub">Darkens the screen after 5 minutes without a touch. The first touch only wakes it.</string>
+    <string name="cz_standby_how">Open Standby from the menu in the player. Swipe down or go back to leave.</string>
+    <string name="cz_standby_summary_suggest">Offered while charging</string>
+    <string name="cz_standby_summary_menu">From the player menu</string>
+    <string name="lyrics_alignment">Alignment</string>
+    <string name="lyrics_alignment_sub">How lyric lines line up, in the player and in Standby</string>
+    <string name="lyrics_alignment_left">Left</string>
+    <string name="lyrics_alignment_centre">Centre</string>
     <string name="cd_repeat">Repeat</string>
     <string name="cd_local_file">Local File</string>
     <string name="ps_up_next">Up Next</string>
@@ -1379,6 +1399,10 @@
 
     <!-- Video player -->
     <string name="vp_captions">Captions</string>
+    <string name="vp_lock_screen">Lock screen</string>
+    <string name="vp_screen_locked">Screen locked</string>
+    <string name="vp_unlock_screen">Unlock screen</string>
+    <string name="vp_hold_to_unlock">Hold to unlock</string>
     <string name="vp_collaborators">Collaborators</string>
     <string name="vp_rewind">Rewind 10 seconds</string>
     <string name="vp_forward">Forward 10 seconds</string>
@@ -2252,4 +2276,78 @@
     <string name="shorts_refresh_failed">Couldn’t refresh Shorts. Check your connection or account and try again.</string>
     <string name="shorts_feed_empty">No Shorts available. Try refreshing.</string>
     <string name="video_page_load_failed">Couldn’t load this page. Try again.</string>
+    <!-- Video shaders -->
+    <string name="sp_video_shaders">Video shaders</string>
+    <string name="sp_video_shaders_sub_off">Give videos a look: film, retro and drawn styles, plus sharpening and colour</string>
+    <string name="sp_video_shaders_sub_on">Change the look here, or from the video player\'s settings while you watch</string>
+    <string name="sp_video_shaders_note">Starts with the next video you open. HDR videos play in standard range while this is on.</string>
+    <string name="si_video_shaders">Draws every video frame through a shader on your phone\'s graphics chip. Pick a preset, tune sharpness and colour, or write a shader of your own. It uses a little more battery, and HDR videos play in standard range while it is on.</string>
+    <string name="sp_video_shaders_presets">Preset</string>
+    <string name="sp_video_shaders_picture">Picture</string>
+    <string name="sp_video_shaders_custom">Custom shader</string>
+    <string name="sp_video_shaders_custom_sub">Write a GLSL ES fragment shader or start from an example. Applying it makes it the Custom preset.</string>
+    <string name="sp_video_shaders_custom_guide">Read the frame from uTex at vTexCoord and write the colour to gl_FragColor. uResolution is the frame size in pixels and uTime a clock in seconds.</string>
+    <string name="sp_video_shaders_custom_template">Start from</string>
+    <string name="sp_video_shaders_custom_field">Fragment shader</string>
+    <string name="sp_video_shaders_custom_compile">Apply</string>
+    <string name="sp_video_shaders_custom_ready">Compiled. Custom is now the preset.</string>
+    <string name="sp_video_shaders_custom_error">This shader did not compile</string>
+    <string name="cz_video_shaders_off">Off</string>
+
+    <!-- The picture sliders, in Settings and in the player's settings panel -->
+    <string name="vs_sharpen">Sharpen</string>
+    <string name="vs_brightness">Brightness</string>
+    <string name="vs_contrast">Contrast</string>
+    <string name="vs_saturation">Saturation</string>
+    <string name="vs_off">Off</string>
+    <string name="vs_not_used">Not used by this preset</string>
+    <string name="vs_reset_picture">Reset picture</string>
+
+    <!-- Shaders in the player's settings panel -->
+    <string name="vpc_shaders">Shaders</string>
+    <string name="vpc_shaders_adjusted">Adjusted</string>
+    <string name="vpc_shaders_restart">Close the player and open a video again to use shaders</string>
+    <string name="vpc_shader_deck_presets">Presets</string>
+    <string name="vpc_shader_deck_picture">Picture</string>
+
+    <!-- Video shader presets. Names stay one or two short words: each is also a cell a quarter of the player's panel wide. -->
+    <string name="vsp_preset_none">Original</string>
+    <string name="vsp_preset_none_sub">The video as it is</string>
+    <string name="vsp_preset_vivid">Vivid</string>
+    <string name="vsp_preset_vivid_sub">Richer colour that leaves skin tones alone</string>
+    <string name="vsp_preset_clarity">Clarity</string>
+    <string name="vsp_preset_clarity_sub">More depth and punch in every shape</string>
+    <string name="vsp_preset_film">Film</string>
+    <string name="vsp_preset_film_sub">Teal shadows, warm light and fine grain</string>
+    <string name="vsp_preset_noir">Noir</string>
+    <string name="vsp_preset_noir_sub">High-contrast black and white</string>
+    <string name="vsp_preset_anime">Anime</string>
+    <string name="vsp_preset_anime_sub">Crisper, darker line art for animation</string>
+    <string name="vsp_preset_neon">Neon</string>
+    <string name="vsp_preset_neon_sub">Violet, magenta and cyan glow</string>
+    <string name="vsp_preset_dream">Dream</string>
+    <string name="vsp_preset_dream_sub">Soft bloom around everything bright</string>
+    <string name="vsp_preset_vintage">Vintage</string>
+    <string name="vsp_preset_vintage_sub">Faded, flickering home-movie film</string>
+    <string name="vsp_preset_vhs">VHS</string>
+    <string name="vsp_preset_vhs_sub">Tape wobble, colour bleed and tracking</string>
+    <string name="vsp_preset_crt">CRT</string>
+    <string name="vsp_preset_crt_sub">Curved glass and scanlines</string>
+    <string name="vsp_preset_pixel">Pixel</string>
+    <string name="vsp_preset_pixel_sub">Chunky blocks in a short palette</string>
+    <string name="vsp_preset_comic">Comic</string>
+    <string name="vsp_preset_comic_sub">Flat colour, ink lines and print dots</string>
+    <string name="vsp_preset_sketch">Sketch</string>
+    <string name="vsp_preset_sketch_sub">Pencil lines and hatching on paper</string>
+    <string name="vsp_preset_night">Night vision</string>
+    <string name="vsp_preset_night_sub">Green glow with sensor noise</string>
+    <string name="vsp_preset_custom">Custom</string>
+    <string name="vsp_preset_custom_sub">The shader you wrote below</string>
+
+    <!-- Custom shader examples -->
+    <string name="vst_vignette">Warm vignette</string>
+    <string name="vst_invert">Invert</string>
+    <string name="vst_sepia">Sepia</string>
+    <string name="vst_edge_glow">Edge glow</string>
+    <string name="vst_wobble">Wobble</string>
 </resources>

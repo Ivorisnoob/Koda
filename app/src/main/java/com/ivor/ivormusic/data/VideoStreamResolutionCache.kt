@@ -101,6 +101,20 @@ internal object VideoStreamResolutionCache {
         activeResolutions.forEach { it.cancel() }
     }
 
+    /**
+     * Forget every finished ladder, and let resolutions in flight finish
+     * without being cached. For a token found refused *during* a resolution:
+     * [clear] would cancel that resolution too, along with the one calling it.
+     * A ladder still in flight under the old token reaches its caller, whose
+     * 403 recovery traces it to the replaced token and re-resolves.
+     */
+    fun dropResolved() {
+        synchronized(lock) {
+            epoch.incrementAndGet()
+            cached.clear()
+        }
+    }
+
     fun clear() {
         val activeResolutions = synchronized(lock) {
             epoch.incrementAndGet()

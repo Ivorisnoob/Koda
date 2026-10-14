@@ -19,6 +19,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -28,6 +29,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -46,6 +48,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +102,8 @@ import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -169,10 +174,17 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -337,6 +349,18 @@ fun FullscreenPlayerContent(
     videoId: String,
     showControls: Boolean,
     onToggleControls: () -> Unit,
+    /**
+     * Every touch on the player is ignored: the chrome, the seek bar, the
+     * double-tap seeks, the brightness and volume lanes, pinch-zoom and the
+     * swipe out of fullscreen, with back among them. A tap fades in the
+     * unlock badge in the corner, and holding that unlocks.
+     *
+     * The host owns the flag beside its controls state - see
+     * [onScreenLockChange] - because locking has to take the chrome away
+     * immediately rather than wait for it to auto-hide.
+     */
+    screenLocked: Boolean,
+    onScreenLockChange: (Boolean) -> Unit,
     hasError: Boolean,
     errorMessage: String,
     connectionAdvice: ConnectionAdvice?,
@@ -448,6 +472,17 @@ fun FullscreenPlayerContent(
             )
         }
 
+        FilledTonalIconButton(
+            onClick = { onScreenLockChange(true) },
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = Color.Black.copy(0.5f),
+                contentColor = Color.White
+            ),
+            shapes = stableShapes
+        ) {
+            Icon(Icons.Rounded.Lock, stringResource(R.string.vp_lock_screen))
+        }
+
         FilledIconButton(
             onClick = onSettings,
             colors = IconButtonDefaults.filledIconButtonColors(
@@ -503,16 +538,69 @@ fun FullscreenPlayerContent(
     val zoomAvailableNow by rememberUpdatedState(zoomToFillAvailable)
     val zoomChangeNow by rememberUpdatedState(onZoomedToFillChange)
 
+    // The lock's own transient UI. The flag itself is the host's: it clears on
+    // leaving fullscreen, and it takes the chrome with it, so it cannot live
+    // here without the host knowing.
+    var lockConfirmed by remember(videoId) { mutableStateOf(false) }
+    var unlockBadgeVisible by remember(videoId) { mutableStateOf(false) }
+    var unlockBadgePulse by remember(videoId) { mutableIntStateOf(0) }
+    var unlockHolding by remember(videoId) { mutableStateOf(false) }
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val revealUnlockBadge = {
+        unlockBadgeVisible = true
+        unlockBadgePulse++
+    }
+
+    // Locking says so once, because the lock hides the very chrome it was
+    // pressed on: without this the first thing that happens is nothing at all.
+    // The pill is also where the gesture gets taught - a tap reveals it again.
+    LaunchedEffect(screenLocked, videoId) {
+        // Nothing the lock showed outlives it, reset first so an early reveal
+        // cannot be cut short by the pill's own timer running out. It also
+        // clears a hold the badge never reported as finished: a hold that
+        // unlocks leaves the badge exiting with the finger still down, and the
+        // badge is gone before it can say so.
+        lockConfirmed = false
+        unlockBadgeVisible = false
+        unlockHolding = false
+        if (screenLocked) {
+            lockConfirmed = true
+            delay(SCREEN_LOCK_CONFIRM_MS)
+            lockConfirmed = false
+        }
+    }
+
+    // The badge goes away on its own, and never while it is being held: the
+    // three seconds start at the reveal and again if a hold is let go, so the
+    // clock never runs out under a finger that is still working.
+    LaunchedEffect(unlockBadgeVisible, unlockBadgePulse, unlockHolding) {
+        if (unlockBadgeVisible && !unlockHolding) {
+            delay(SCREEN_LOCK_HINT_MS)
+            unlockBadgeVisible = false
+        }
+    }
+
+    // Back is the lock's other way in. It must not leave fullscreen or dismiss
+    // the player - that is half the point of locking - so it reveals the badge
+    // instead. Registered after the overlay's minimize handler from here, which
+    // is inside it, so while the lock is on this one wins.
+    BackHandler(enabled = screenLocked) { revealUnlockBadge() }
+
     // Speed captured when a hold-to-2x begins, restored when the finger lifts
     var speedBeforeBoost by remember { mutableFloatStateOf(1f) }
 
     // Hold captions off the gesture bar / bottom bezel, and lift them over the
     // bottom bar while the controls are up.
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // While the lock is on the chrome is gone and stays gone. The controls
+    // auto-hide on a timer, so a lock that left its own button tappable for the
+    // three seconds that took would not be locked; the host clears the flag
+    // when the lock is pressed, and this keeps the drawing honest either way.
+    val chromeVisible = showControls && !screenLocked
     val captionLift = animateDpAsState(
         // Portrait's bottom bar is a line taller and sits further off the edge,
         // so the clearance the landscape band needs is not enough here.
-        targetValue = if (showControls) {
+        targetValue = if (chromeVisible) {
             maxOf(if (compactChrome) FULLSCREEN_COMPACT_BOTTOM_BAR else 112.dp, navBarInset + 24.dp)
         } else {
             navBarInset + 24.dp
@@ -533,6 +621,10 @@ fun FullscreenPlayerContent(
         onSeekBackward = onSeekBackward,
         onSeekForward = onSeekForward,
         fullscreenGesturesEnabled = true,
+        // Locked, every detector stands down and a tap is reported here instead
+        // so it can reveal the unlock badge rather than do nothing at all.
+        touchLocked = screenLocked,
+        onLockedSurfaceTap = { revealUnlockBadge() },
         onZoomedToFillChange = { want ->
             // Pinching closed always lands: fit is available everywhere. A
             // pinch open past the crop threshold is ignored rather than
@@ -607,7 +699,7 @@ fun FullscreenPlayerContent(
         
         // Controls
         AnimatedVisibility(
-            visible = showControls,
+            visible = showControls && !screenLocked,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize()
@@ -867,6 +959,90 @@ fun FullscreenPlayerContent(
                     }
                 }
             }
+        }
+
+        // The lock's own feedback, centred where nothing else on the frame is.
+        // It is not interactive and not a way out: it exists because the lock
+        // hides its own button, so without it the first thing that happens on
+        // locking is nothing at all.
+        AnimatedVisibility(
+            visible = lockConfirmed,
+            enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                ),
+                initialScale = 0.85f
+            ),
+            exit = fadeOut(tween(durationMillis = 140)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            ScreenLockedPill()
+        }
+
+        // While locked this is the one thing the screen still answers. A tap
+        // (or a back press) fades it in, and holding the badge for
+        // SCREEN_LOCK_HOLD_MS unlocks. Drawn outside the gesture surface, in a
+        // subtree of its own, so it is the only hit under its own corner.
+        AnimatedVisibility(
+            visible = screenLocked && unlockBadgeVisible,
+            enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                ),
+                initialScale = 0.8f
+            ),
+            exit = fadeOut(tween(durationMillis = 140)) + scaleOut(
+                animationSpec = tween(durationMillis = 140),
+                targetScale = 0.92f
+            ),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(
+                    start = if (compactChrome) 16.dp else 24.dp,
+                    // The system bars are hidden here, so the inset reads zero:
+                    // these stand off the gesture bar the way the chrome's own
+                    // bottom row does (FULLSCREEN_COMPACT_BOTTOM_BAR).
+                    bottom = if (compactChrome) 32.dp else 20.dp
+                )
+        ) {
+            ScreenUnlockBadge(
+                onHoldChange = { unlockHolding = it },
+                onUnlock = {
+                    haptics.confirm()
+                    onScreenLockChange(false)
+                }
+            )
+        }
+
+        // A TalkBack user cannot reveal the badge: a single tap activates the
+        // focused node rather than the surface, so a badge that is not on
+        // screen is a badge they cannot reach, and a locked screen they cannot
+        // leave. While it is hidden the unlock action is carried by a node
+        // nothing can see or brush - one point of it - so the screen reader has
+        // the way out the tap gives everyone else.
+        if (screenLocked && !unlockBadgeVisible) {
+            val unlockLabel = stringResource(R.string.vp_unlock_screen)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(
+                        start = if (compactChrome) 16.dp else 24.dp,
+                        bottom = if (compactChrome) 32.dp else 20.dp
+                    )
+                    .size(1.dp)
+                    .semantics {
+                        contentDescription = unlockLabel
+                        customActions = listOf(
+                            CustomAccessibilityAction(unlockLabel) {
+                                haptics.confirm()
+                                onScreenLockChange(false)
+                                true
+                            }
+                        )
+                    }
+            )
         }
     }
 }
@@ -1918,6 +2094,30 @@ private const val BOOST_SPEED_STEP = 0.1f
 private val BOOST_SPEED_STEP_TRAVEL = 20.dp
 
 /**
+ * The fullscreen screen lock: everything the player answers to is taken away
+ * so a phone in a pocket cannot do any of it - the controls, the seek bar, the
+ * double-tap seeks, the brightness and volume lanes, pinch-zoom and the swipe
+ * out of fullscreen. Back is taken away too, because an accidental exit is
+ * half the reason anyone locks the screen.
+ *
+ * What is left is one hold-to-confirm escape hatch. A tap (or a back press)
+ * fades a badge in the corner, and holding that badge for
+ * [SCREEN_LOCK_HOLD_MS] unlocks; letting go springs the ring back empty. A tap
+ * alone is deliberately not enough: a pocket brushes the glass all the time,
+ * and a hold that has to be kept for a second and a half is not something a
+ * pocket does by accident.
+ */
+
+/** How long the "Screen locked" confirmation stays up after locking. */
+private const val SCREEN_LOCK_CONFIRM_MS = 1_800L
+
+/** How long a revealed unlock badge stays up with nothing happening. */
+private const val SCREEN_LOCK_HINT_MS = 3_000L
+
+/** Hold length that unlocks, and the ring's sweep time. */
+private const val SCREEN_LOCK_HOLD_MS = 1_500L
+
+/**
  * Wraps the video surface with tap gestures: single tap toggles the controls,
  * a double tap on the left rewinds and on the right fast-forwards (YouTube-style),
  * with an animated badge that accumulates when tapped repeatedly.
@@ -1969,6 +2169,15 @@ internal fun PlayerGestureSurface(
     onSeekForward: () -> Unit,
     modifier: Modifier = Modifier,
     fullscreenGesturesEnabled: Boolean = false,
+    /**
+     * Touches are ignored, which is what the fullscreen screen lock asks for.
+     * Every detector below stands down: no controls, no double-tap seek, no
+     * hold-to-boost, no brightness or volume, no pinch, no fullscreen swipe.
+     * The taps are still reported rather than swallowed, through
+     * [onLockedSurfaceTap], so the lock has something to show.
+     */
+    touchLocked: Boolean = false,
+    onLockedSurfaceTap: () -> Unit = {},
     onZoomedToFillChange: (Boolean) -> Unit = {},
     zoomPillMode: Boolean? = null,
     onSpeedBoostStart: () -> Unit = {},
@@ -2000,6 +2209,10 @@ internal fun PlayerGestureSurface(
     val exitFullscreen by rememberUpdatedState(onExitFullscreen)
     val enterFullscreenEnabled = onEnterFullscreen != null
     val exitFullscreenEnabled = onExitFullscreen != null
+    // Read inside the detectors keyed on Unit, so flipping the lock neither
+    // restarts a detector under a finger nor changes the gesture it is reading.
+    val touchLockedNow by rememberUpdatedState(touchLocked)
+    val lockedSurfaceTap by rememberUpdatedState(onLockedSurfaceTap)
     val speedBoostStart by rememberUpdatedState(onSpeedBoostStart)
     val speedBoostChange by rememberUpdatedState(onSpeedBoostChange)
     val speedBoostEnd by rememberUpdatedState(onSpeedBoostEnd)
@@ -2097,8 +2310,14 @@ internal fun PlayerGestureSurface(
                 .background(Color.Black)
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { onToggleControls() },
+                        onTap = {
+                            // Locked, a tap is the lock's own: it reveals the
+                            // unlock badge instead of bringing the chrome back.
+                            if (touchLockedNow) lockedSurfaceTap()
+                            else onToggleControls()
+                        },
                         onLongPress = {
+                            if (touchLockedNow) return@detectTapGestures
                             if (enabledGestures.holdToSpeedUp) {
                                 // The rate the user asked a hold to start at.
                                 // speedBoostStart is what remembers the speed
@@ -2121,6 +2340,7 @@ internal fun PlayerGestureSurface(
                             }
                         },
                         onDoubleTap = { offset ->
+                            if (touchLockedNow) return@detectTapGestures
                             val tappedSide = if (offset.x < size.width / 2f) -1 else 1
                             seconds = if (tappedSide == side) seconds + DOUBLE_TAP_SEEK_SECONDS else DOUBLE_TAP_SEEK_SECONDS
                             side = tappedSide
@@ -2205,7 +2425,8 @@ internal fun PlayerGestureSurface(
                     }
                 }
                 .then(
-                    if (fullscreenGesturesEnabled ||
+                    if (touchLocked ||
+                        fullscreenGesturesEnabled ||
                         (!minimizeDragEnabled && !enterFullscreenEnabled)
                     ) {
                         Modifier
@@ -2288,6 +2509,10 @@ internal fun PlayerGestureSurface(
                         val exitTravelPx = EXIT_FULLSCREEN_SWIPE_TRAVEL.toPx()
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
+                            // Locked: nothing on the surface moves. Return
+                            // before consuming anything, so the badge drawn
+                            // over this corner still gets the whole finger.
+                            if (touchLockedNow) return@awaitEachGesture
                             val leftSide = down.position.x < size.width / 2f
                             // The level drags only arm in the bottom 70% of the
                             // surface: a swipe from the top area is almost always
@@ -2484,6 +2709,173 @@ internal fun PlayerGestureSurface(
                     .padding(horizontal = 48.dp)
             )
         }
+    }
+}
+
+/**
+ * The one-shot confirmation that the screen is locked.
+ *
+ * Centred, brief and not a way out: the lock hides its own button, so this is
+ * the only thing that says the tap did anything. It is announced politely
+ * rather than assertively - the user just asked for it, nobody is being
+ * interrupted.
+ */
+@Composable
+private fun ScreenLockedPill(modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.55f))
+            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Lock,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = stringResource(R.string.vp_screen_locked),
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White
+        )
+    }
+}
+
+/**
+ * The unlock badge the lock leaves behind: a hold-to-confirm control rather
+ * than a button, because a tap is what a pocket does.
+ *
+ * The ring sweeps as it is held and springs back if it is let go, so the
+ * gesture reads as a commitment being made rather than a delayed click, and the
+ * lock opens as the ring closes to preview what the hold is about to do.
+ * TalkBack is offered an explicit unlock action instead, since a
+ * press-and-hold is not a gesture a screen reader performs.
+ */
+@Composable
+private fun ScreenUnlockBadge(
+    onHoldChange: (Boolean) -> Unit,
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var holding by remember { mutableStateOf(false) }
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+
+    val ring by animateFloatAsState(
+        targetValue = if (holding) 1f else 0f,
+        animationSpec = if (holding) {
+            tween(durationMillis = SCREEN_LOCK_HOLD_MS.toInt(), easing = LinearEasing)
+        } else {
+            // Let go early and the ring empties with the same spring a touch
+            // gesture would settle on, rather than snapping to nothing.
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            )
+        },
+        label = "unlockHold"
+    )
+
+    LaunchedEffect(holding) { onHoldChange(holding) }
+    // Keyed on the hold alone: releasing re-runs the effect and cancels the
+    // delay, so a hold let go a frame early unlocks nothing.
+    LaunchedEffect(holding) {
+        if (holding) {
+            delay(SCREEN_LOCK_HOLD_MS)
+            haptics.confirm()
+            onUnlock()
+        }
+    }
+
+    val unlockLabel = stringResource(R.string.vp_unlock_screen)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.55f))
+            // Before the padding, so the whole pill is the touch target rather
+            // than the strip inside its gutters.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    holding = true
+                    try {
+                        waitForUpOrCancellation()
+                    } finally {
+                        // Also runs when the gesture is cancelled rather than
+                        // released, which is the only way a cancelled hold
+                        // could leave the badge stuck mid-fill.
+                        holding = false
+                    }
+                }
+            }
+            .semantics {
+                contentDescription = unlockLabel
+                customActions = listOf(
+                    CustomAccessibilityAction(unlockLabel) {
+                        onUnlock()
+                        true
+                    }
+                )
+            }
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val stroke = 3.dp.toPx()
+                val diameter = size.minDimension - stroke
+                val topLeft = Offset(
+                    (size.width - diameter) / 2f,
+                    (size.height - diameter) / 2f
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.24f),
+                    radius = diameter / 2f,
+                    style = Stroke(stroke)
+                )
+                if (ring > 0.01f) {
+                    drawArc(
+                        color = Color.White,
+                        startAngle = -90f,
+                        sweepAngle = 360f * ring,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = Size(diameter, diameter),
+                        style = Stroke(stroke, cap = StrokeCap.Round)
+                    )
+                }
+            }
+            Crossfade(
+                targetState = ring > 0.8f,
+                animationSpec = tween(durationMillis = 120),
+                label = "unlockIcon"
+            ) { open ->
+                Icon(
+                    imageVector = if (open) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer {
+                            // Presses in a little as the hold deepens, the way
+                            // the pill's own container would under a finger.
+                            val scale = 1f - 0.12f * ring
+                            scaleX = scale
+                            scaleY = scale
+                        }
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.vp_hold_to_unlock),
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White
+        )
     }
 }
 

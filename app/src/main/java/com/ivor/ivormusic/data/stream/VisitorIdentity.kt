@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -137,12 +138,33 @@ internal class VisitorIdentity(
     }
 
     /**
-     * [replace] for a caller that only knows playback failed: a `/player`
-     * that answered OK with URLs googlevideo then refused. A no-op when there
-     * is no token to replace.
+     * Whether googlevideo refusing [failedUrl] says nothing about the token
+     * Koda holds now, because the URL was signed under one already replaced.
+     *
+     * A refusal reaches playback well after resolution: a queue, a prefetch
+     * or a quality ladder holds URLs signed under the old token, and each of
+     * them fails in turn after the first one replaced it. Replacing the
+     * current token for those threw away a good one each time - another new
+     * visitor from one address, and another roll of the dice for a refused
+     * token. False when the URL's token is unknown (a NewPipe URL, or one
+     * resolved before this process): the caller then replaces as before.
      */
-    suspend fun replaceCurrent() {
-        val refused = cachedOrNull() ?: return
+    fun signedBySupersededToken(failedUrl: String?): Boolean {
+        val signer = failedUrl?.let(::signerOf) ?: return false
+        if (signer == cachedOrNull()) return false
+        KLog.i(STREAM_TAG, "Playback refused a URL signed under a replaced visitorData; keeping the current one")
+        return true
+    }
+
+    /**
+     * [replace] for a caller that only knows playback failed: a `/player`
+     * that answered OK with URLs googlevideo then refused. Replaces the token
+     * that signed [failedUrl] when that is known, so two refusals arriving
+     * together mint once, else the current one. A no-op when there is no
+     * token to replace.
+     */
+    suspend fun replaceAfterPlaybackFailure(failedUrl: String?) {
+        val refused = failedUrl?.let(::signerOf) ?: cachedOrNull() ?: return
         try {
             replace(refused)
         } catch (e: CancellationException) {
@@ -150,6 +172,22 @@ internal class VisitorIdentity(
         } catch (e: Exception) {
             KLog.w(STREAM_TAG, "visitorData replacement after a playback failure failed: ${e.message}")
         }
+    }
+
+    /**
+     * Remember that the stream URLs in [streamingData] were signed under
+     * [token], so a refusal of one of them can be traced back to it; see
+     * [signedBySupersededToken].
+     */
+    fun noteSigned(streamingData: JSONObject, token: String) {
+        if (token.isBlank()) return
+        val key = streamUrlsOf(streamingData).firstNotNullOfOrNull(::responseKeyOf) ?: return
+        synchronized(signers) { signers[key] = token }
+    }
+
+    private fun signerOf(url: String): String? {
+        val key = responseKeyOf(url) ?: return null
+        return synchronized(signers) { signers[key] }
     }
 
     /** Whether googlevideo has been seen serving a whole stream under [token]; see [StreamProbe]. */
@@ -249,6 +287,18 @@ internal class VisitorIdentity(
         private val mutex = Mutex()
 
         /**
+         * Which token signed each recent `/player` response, keyed by
+         * [responseKeyOf]. Memory only: stream URLs do not outlive the process
+         * that resolved them. Bounded, oldest first out; a key that has aged
+         * out reads as unknown, which falls back to replacing the current token.
+         */
+        private val signers = object : LinkedHashMap<String, String>() {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) =
+                size > MAX_SIGNERS
+        }
+        private const val MAX_SIGNERS = 512
+
+        /**
          * Forget the identity, in memory and on disk, to be minted again on
          * the next call. A profile switch needs this: replaying one account's
          * token under another is the "shared value gets flagged" case.
@@ -266,5 +316,36 @@ internal class VisitorIdentity(
                 .edit().remove(KEY_TOKEN).remove(KEY_TOKEN_AT).remove(KEY_VETTED)
             if (commitNow) editor.commit() else editor.apply()
         }
+    }
+}
+
+/**
+ * The key a googlevideo URL shares with every other URL of the `/player`
+ * response it came from, and with no other response: its `ei`. [verified
+ * October 2026, visionOS, `.probe/visionos_url_provenance_probe.py`: one value
+ * across every format of a response, eight different values over eight calls,
+ * two tokens and two songs; the token itself appears nowhere in the URL.] A
+ * manifest URL carries it as a path segment (`/ei/<value>/`) instead of a query
+ * parameter. Null for anything else.
+ */
+internal fun responseKeyOf(url: String): String? {
+    val parsed = url.toHttpUrlOrNull() ?: return null
+    parsed.queryParameter("ei")?.takeIf { it.isNotBlank() }?.let { return it }
+    val segments = parsed.pathSegments
+    val at = segments.indexOf("ei")
+    if (at < 0) return null
+    return segments.getOrNull(at + 1)?.takeIf { it.isNotBlank() }
+}
+
+/** Every stream URL a `/player` response's `streamingData` hands out. */
+private fun streamUrlsOf(streamingData: JSONObject): Sequence<String> = sequence {
+    for (key in listOf("adaptiveFormats", "formats")) {
+        val formats = streamingData.optJSONArray(key) ?: continue
+        for (i in 0 until formats.length()) {
+            formats.optJSONObject(i)?.optString("url")?.takeIf { it.isNotBlank() }?.let { yield(it) }
+        }
+    }
+    for (key in listOf("hlsManifestUrl", "dashManifestUrl")) {
+        streamingData.optString(key).takeIf { it.isNotBlank() }?.let { yield(it) }
     }
 }

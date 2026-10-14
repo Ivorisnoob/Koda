@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
@@ -406,12 +407,12 @@ fun NowPlayingOptionsSheet(
                 }
             }
 
-            // Where this song came from. Rows, because the name is the label
-            // and names are as long as they are; the same container, icon edge
-            // and inset as the deck below, so the lower half of the sheet is
-            // one aligned list. Each leaves the player, so each closes the
-            // sheet ahead of the screen that replaces it.
-            if (goToArtist != null || goToAlbum != null || goToStreamingAlbum != null) {
+            // Where this song came from, then Standby. Rows, because the name
+            // is the label and names are as long as they are; the same
+            // container, icon edge and inset as the deck below, so the lower
+            // half of the sheet is one aligned list. Each leaves the player,
+            // so each closes the sheet ahead of the screen that replaces it.
+            run {
                 OptionGroup {
                     var needsDivider = false
                     if (goToArtist != null && artist != null) {
@@ -461,7 +462,22 @@ fun NowPlayingOptionsSheet(
                                 )
                             }
                         )
+                        needsDivider = true
                     }
+                    // A place too: the song full screen, for a phone set down.
+                    // Here rather than on each style's own controls, so every
+                    // player style reaches it through the one menu they share.
+                    if (needsDivider) OptionRowDivider()
+                    OptionRow(
+                        icon = Icons.Rounded.Bedtime,
+                        title = stringResource(R.string.standby_title),
+                        subtitle = stringResource(R.string.standby_row_subtitle),
+                        trailing = OptionRowTrailing.CHEVRON,
+                        onClick = {
+                            onDismiss()
+                            viewModel.openStandby()
+                        }
+                    )
                 }
             }
 
