@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.shorts
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import com.ivor.ivormusic.R
 import androidx.compose.ui.res.stringResource
 
@@ -991,7 +992,7 @@ private fun ShortsDismissSheet(
     onBlockChannel: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    androidx.compose.material3.ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = androidx.compose.material3.rememberModalBottomSheetState(
             skipPartiallyExpanded = true

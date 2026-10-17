@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.video
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -119,7 +120,7 @@ fun NotificationsSheet(
     }
     val unread = notifications.count { !it.isRead && !it.remembered }
 
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
