@@ -4,26 +4,42 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
+import androidx.glance.LocalContext
 import androidx.glance.GlanceModifier
+import androidx.glance.LocalContext
 import androidx.glance.GlanceTheme
+import androidx.glance.LocalContext
 import androidx.glance.LocalSize
+import androidx.glance.LocalContext
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.LocalContext
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.LocalContext
 import androidx.glance.appwidget.SizeMode
+import androidx.glance.LocalContext
 import androidx.glance.appwidget.provideContent
+import androidx.glance.LocalContext
 import androidx.glance.layout.Alignment
+import androidx.glance.LocalContext
 import androidx.glance.layout.Column
+import androidx.glance.LocalContext
 import androidx.glance.layout.Row
+import androidx.glance.LocalContext
 import androidx.glance.layout.Spacer
+import androidx.glance.LocalContext
 import androidx.glance.layout.fillMaxSize
+import androidx.glance.LocalContext
 import androidx.glance.layout.fillMaxWidth
+import androidx.glance.LocalContext
 import androidx.glance.layout.height
+import androidx.glance.LocalContext
 import androidx.glance.layout.padding
+import androidx.glance.LocalContext
 import androidx.glance.layout.width
+import androidx.glance.LocalContext
 import com.ivor.ivormusic.R
 
 /**
@@ -31,18 +47,13 @@ import com.ivor.ivormusic.R
  * 4x1; the same card grows a progress strip and a full transport group when
  * given a second row.
  *
- * The two buckets are different layouts rather than one squeezed - a 4x1 has
+ * Short and tall cells use different layouts rather than one squeezed - a 4x1 has
  * room for a cover, two lines and a single control at a real touch target, and
  * five controls in that space would leave every one of them under 48dp.
  */
 class PulseWidget : GlanceAppWidget() {
 
-    override val sizeMode: SizeMode = SizeMode.Responsive(
-        setOf(
-            DpSize(250.dp, 64.dp),
-            DpSize(300.dp, 140.dp),
-        )
-    )
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         PlayerWidgetHost.ensureSeeded(context)
@@ -74,14 +85,17 @@ private fun PulseContent(ui: PlayerWidgetUi) {
 /** 4x1: cover, two lines, one hero. */
 @Composable
 private fun PulseRow(ui: PlayerWidgetUi) {
+    val height = LocalSize.current.height
+    val controlSize = (height - 12.dp).coerceIn(44.dp, 72.dp)
+    val verticalPadding = ((height - controlSize) / 2).coerceAtLeast(0.dp)
     Row(
         modifier = GlanceModifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WidgetArtwork(ui.artwork, size = 48.dp, shape = ArtworkShape.CLOVER)
-        Spacer(modifier = GlanceModifier.width(12.dp))
+        WidgetArtwork(ui.artwork, size = controlSize, shape = ArtworkShape.CLOVER)
+        Spacer(modifier = GlanceModifier.width(controlSize / 4))
         Column(modifier = GlanceModifier.defaultWeight()) {
             WidgetTitle(
                 ui.snapshot.title ?: widgetString(R.string.app_name),
@@ -90,8 +104,8 @@ private fun PulseRow(ui: PlayerWidgetUi) {
             Spacer(modifier = GlanceModifier.height(2.dp))
             WidgetSubtitle(ui.snapshot.artist ?: "", fontSize = 11.sp)
         }
-        Spacer(modifier = GlanceModifier.width(8.dp))
-        HeroPlayButton(isPlaying = ui.snapshot.isPlaying, size = 48.dp)
+        Spacer(modifier = GlanceModifier.width(controlSize / 6))
+        HeroPlayButton(isPlaying = ui.snapshot.isPlaying, size = controlSize)
     }
 }
 
@@ -126,8 +140,7 @@ private fun PulseCard(ui: PlayerWidgetUi) {
                 WidgetToggleButton(
                     iconRes = R.drawable.ic_media_shuffle,
                     description = widgetString(R.string.widget_action_shuffle),
-                    action = androidx.glance.appwidget.action
-                        .actionRunCallback<ToggleShuffleAction>(),
+                    action = widgetTransportAction(WidgetActionActivity.ACTION_SHUFFLE),
                     selected = snapshot.shuffleEnabled,
                     size = 42.dp,
                 )

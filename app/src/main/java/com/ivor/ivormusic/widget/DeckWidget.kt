@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -35,16 +34,11 @@ import com.ivor.ivormusic.R
  * grouped into composables rather than flattened into the parent - the column
  * below is seven children, not thirteen - and [belowCoverHeight] is the honest
  * sum of everything under the artwork, with the cover taking the remainder.
- * That is also what lets one layout serve both size buckets.
+ * The layout reads the exact cell size so the cover uses the available space.
  */
 class DeckWidget : GlanceAppWidget() {
 
-    override val sizeMode: SizeMode = SizeMode.Responsive(
-        setOf(
-            DpSize(150.dp, 260.dp),
-            DpSize(200.dp, 340.dp),
-        )
-    )
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         PlayerWidgetHost.ensureSeeded(context)
@@ -90,7 +84,7 @@ private fun DeckContent(ui: PlayerWidgetUi) {
         val coverSize = minOf(
             size.width - CARD_PADDING * 2,
             size.height - CARD_PADDING * 2 - belowCoverHeight(roomy, hasDuration),
-        ).coerceIn(64.dp, 200.dp)
+        ).coerceAtLeast(64.dp)
 
         Column(
             modifier = GlanceModifier.fillMaxSize().padding(CARD_PADDING),

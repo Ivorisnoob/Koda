@@ -8,9 +8,9 @@ import androidx.annotation.DrawableRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
@@ -71,13 +71,10 @@ import com.ivor.ivormusic.R
  */
 class VinylWidget : GlanceAppWidget() {
 
-    override val sizeMode: SizeMode = SizeMode.Responsive(
-        setOf(
-            DpSize(250.dp, 110.dp),
-            DpSize(320.dp, 110.dp),
-            DpSize(320.dp, 180.dp),
-        )
-    )
+    // Exact (not Responsive): LocalSize is the true widget bounding box, so
+    // the layout scales dynamically to fill whatever space the launcher gives
+    // instead of snapping to 3 predefined buckets.
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         PlayerWidgetHost.ensureSeeded(context)
@@ -101,20 +98,19 @@ private fun VinylContent(ui: PlayerWidgetUi) {
 
     val size = LocalSize.current
     val playing = ui.snapshot.isPlaying
-    // Measured against the bucket, like every layout that can clip: the sleeve
+    // Measured against the actual cell, like every layout that can clip: the sleeve
     // takes the cell's height, the record shows half its width past it, the
     // arm stands a quarter of a record further out, and the transport gets
     // what is left.
     // The stage is about 1.75 sleeves wide, so the width caps the sleeve too:
-    // a tall bucket would otherwise push the buttons out of the cell.
+    // a tall cell would otherwise push the buttons out of the cell.
     val widthForStage = size.width - VINYL_PADDING * 2 - 10.dp - 56.dp
-    val sleeve = minOf(size.height - VINYL_PADDING * 2, (widthForStage + 4.dp) / 1.75f, 148.dp)
+    val sleeve = minOf(size.height - VINYL_PADDING * 2, (widthForStage + 4.dp) / 1.75f)
     val record = sleeve - 6.dp
     val armReach = record / 4
     val stage = sleeve + record / 2 + armReach
-    val roomy = sleeve >= 120.dp
-    val hero = if (roomy) 56.dp else 44.dp
-    val side = if (roomy) 48.dp else 36.dp
+    val hero = (sleeve * 0.42f).coerceIn(44.dp, 72.dp)
+    val side = (sleeve * 0.36f).coerceIn(36.dp, 64.dp)
 
     // No card, like Bloom: the sleeve, the record and the buttons are all
     // opaque and stand on the wallpaper by themselves. That is also why there
@@ -157,17 +153,26 @@ private fun VinylContent(ui: PlayerWidgetUi) {
                     modifier = GlanceModifier.fillMaxSize(),
                     contentAlignment = Alignment.CenterEnd,
                 ) {
-                    VinylArm(width = record + armReach, height = record, onRecord = playing)
+                    val accent = ui.snapshot.artworkColor?.let { ColorProvider(Color(it)) }
+                        ?: GlanceTheme.colors.primary
+                    VinylArm(
+                        width = record + armReach,
+                        height = record,
+                        onRecord = playing,
+                        accentColor = accent
+                    )
                 }
             }
             Spacer(modifier = GlanceModifier.width(10.dp))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                HeroPlayButton(isPlaying = playing, size = hero)
+                val playBg = ui.snapshot.artworkColor?.let { ColorProvider(Color(it)) }
+                    ?: GlanceTheme.colors.primary
+                HeroPlayButton(isPlaying = playing, size = hero, background = playBg)
                 Spacer(modifier = GlanceModifier.height(4.dp))
                 WidgetSquareButton(
                     iconRes = R.drawable.ic_media_next,
                     description = widgetString(R.string.widget_action_next),
-                    action = actionRunCallback<SkipNextAction>(),
+                    action = widgetTransportAction(WidgetActionActivity.ACTION_NEXT),
                     size = side,
                 )
             }
@@ -181,20 +186,20 @@ private fun VinylContent(ui: PlayerWidgetUi) {
  * cap in the accent colour.
  */
 @Composable
-private fun VinylArm(width: Dp, height: Dp, onRecord: Boolean) {
+private fun VinylArm(width: Dp, height: Dp, onRecord: Boolean, accentColor: ColorProvider) {
     val colors = GlanceTheme.colors
     val dark = KodaWidgetTheme.isDark(LocalContext.current)
     val layers = if (onRecord) {
         listOf(
             R.drawable.vinyl_arm_on_shadow to recordColor(),
             R.drawable.vinyl_arm_on_metal to (if (dark) colors.onSurface else colors.surface),
-            R.drawable.vinyl_arm_on_accent to colors.primary,
+            R.drawable.vinyl_arm_on_accent to accentColor,
         )
     } else {
         listOf(
             R.drawable.vinyl_arm_off_shadow to recordColor(),
             R.drawable.vinyl_arm_off_metal to (if (dark) colors.onSurface else colors.surface),
-            R.drawable.vinyl_arm_off_accent to colors.primary,
+            R.drawable.vinyl_arm_off_accent to accentColor,
         )
     }
     Box(modifier = GlanceModifier.width(width).height(height)) {
@@ -226,7 +231,7 @@ private fun VinylRecord(size: Dp, playing: Boolean) {
                     if (playing) R.string.widget_action_pause else R.string.widget_action_play
                 )
             }
-            .clickable(actionRunCallback<TogglePlaybackAction>()),
+            .clickable(widgetTransportAction(WidgetActionActivity.ACTION_TOGGLE)),
         contentAlignment = Alignment.Center,
     ) {
         VinylLayer(R.drawable.vinyl_disc, recordColor())

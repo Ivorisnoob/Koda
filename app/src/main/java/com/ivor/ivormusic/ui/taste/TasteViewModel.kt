@@ -401,7 +401,17 @@ class TasteViewModel(application: Application) : AndroidViewModel(application) {
             DeckVerdict.YES, DeckVerdict.LOVE -> {
                 store.addSong(TasteSong(song.id, song.title, song.artist, song.thumbnailUrl))
                 _keptCount.value += 1
-                if (verdict == DeckVerdict.LOVE && !likedSongs.isLiked(song.id)) likedSongs.toggleLike(song)
+                if (verdict == DeckVerdict.LOVE && !likedSongs.isLiked(song.id)) {
+                    likedSongs.toggleLike(song)
+                    // Mirror to YouTube Music so the like syncs across apps.
+                    if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) {
+                        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                repository.rateVideo(song.id, com.ivor.ivormusic.data.LikeStatus.LIKE)
+                            } catch (_: Exception) { }
+                        }
+                    }
+                }
             }
         }
         val next = index + 1

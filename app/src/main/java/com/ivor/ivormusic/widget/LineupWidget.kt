@@ -4,12 +4,12 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
@@ -43,19 +43,13 @@ import com.ivor.ivormusic.R
  * and a jump goes through the app's own skip-to-index command so it runs the
  * crossfade path exactly like a tap in the queue sheet.
  *
- * How many rows fit is derived from the cell rather than baked into a bucket,
+ * How many rows fit is derived from the cell rather than baked into a size,
  * and capped at four: the whole column including the header has to stay inside
  * a Glance container's ten-child limit, past which it truncates silently.
  */
 class LineupWidget : GlanceAppWidget() {
 
-    override val sizeMode: SizeMode = SizeMode.Responsive(
-        setOf(
-            DpSize(250.dp, 110.dp),
-            DpSize(250.dp, 180.dp),
-            DpSize(250.dp, 250.dp),
-        )
-    )
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         PlayerWidgetHost.ensureSeeded(context)
@@ -139,8 +133,9 @@ private fun LineupRow(entry: UpNextEntry) {
             // Both: the shape draws the row, the corner radius clips its ripple.
             .cornerRadius(12.dp)
             .clickable(
-                actionRunCallback<PlayQueueIndexAction>(
-                    actionParametersOf(PlayQueueIndexAction.QueueIndexKey to entry.index)
+                widgetTransportActionWithIndex(
+                    WidgetActionActivity.ACTION_PLAY_INDEX,
+                    entry.index
                 )
             )
             .padding(horizontal = 12.dp),

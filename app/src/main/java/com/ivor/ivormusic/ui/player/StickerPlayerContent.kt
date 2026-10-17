@@ -133,6 +133,7 @@ fun StickerPlayerSheetContent(
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.playOrderQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
@@ -190,6 +191,7 @@ fun StickerPlayerSheetContent(
         Crossfade(targetState = showQueue, label = "StickerQueueTransition") { queueVisible ->
             if (queueVisible) {
                 EditorialQueueView(
+                    isDjMixPlaying = viewModel.isDjMixPlaying.collectAsState().value,
                     queue = currentQueue,
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
@@ -457,13 +459,16 @@ fun StickerPlayerSheetContent(
                         ) {
                             LikeBurstIcon(isFavorite = isFavorite, iconSize = 20.dp)
                         }
-                        EditorialChip(
-                            checked = shuffleModeEnabled,
-                            onClick = { viewModel.toggleShuffle() },
-                            accent = chipColor,
-                            field = onChip
-                        ) {
-                            Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(20.dp))
+                        // DJ mixes are strictly ordered: no shuffle option.
+                        if (!isDjMixPlaying) {
+                            EditorialChip(
+                                checked = shuffleModeEnabled,
+                                onClick = { viewModel.toggleShuffle() },
+                                accent = chipColor,
+                                field = onChip
+                            ) {
+                                Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(20.dp))
+                            }
                         }
                         EditorialChip(
                             checked = repeatMode != Player.REPEAT_MODE_OFF,

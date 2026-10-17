@@ -212,6 +212,11 @@ internal fun buildSettingsSearchIndex(
         onOpenPage(SettingsPage.LASTFM)
     }
 
+    entry("aidj", stringResource(R.string.aidj_title), "AI DJ", Icons.Rounded.AutoAwesome,
+        listOf("ai dj", "dj", "gemini", "google ai", "api key", "prompt", "mix", "playlist generator")) {
+        onOpenPage(SettingsPage.AIDJ)
+    }
+
     // Account
     entry(
         "account", stringResource(R.string.settings_account), "Account", Icons.Rounded.AccountCircle,

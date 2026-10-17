@@ -1328,6 +1328,7 @@ fun MusicApp(
                     isDarkMode = isDarkMode,
                     onThemeToggle = onThemeToggle,
                     onNavigateToSettings = { navController.navigate("settings") },
+                    onNavigateToAiDjSettings = { navController.navigate("settings?initialPage=AIDJ") },
                     onNavigateToDownloads = { navController.navigate("downloads") },
                     onNavigateToStats = { navController.navigate("stats") },
                     onNavigateToSubscriptions = { navController.navigate("subscriptions") },
@@ -1370,13 +1371,26 @@ fun MusicApp(
                 )
             }
             composable(
-                route = "settings",
+                route = "settings?initialPage={initialPage}",
+                arguments = listOf(
+                    androidx.navigation.navArgument("initialPage") {
+                        type = androidx.navigation.NavType.StringType
+                        defaultValue = "HUB"
+                    }
+                ),
                 enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
                 exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
                 popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
                 popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
             ) {
                 com.ivor.ivormusic.ui.settings.SettingsScreen(
+                    initialPage = try {
+                        com.ivor.ivormusic.ui.settings.SettingsPage.valueOf(
+                            it.arguments?.getString("initialPage") ?: "HUB"
+                        )
+                    } catch (_: Exception) {
+                        com.ivor.ivormusic.ui.settings.SettingsPage.HUB
+                    },
                     currentThemeMode = currentThemeMode,
                     onThemeModeChange = onThemeModeChange,
                     amoledTheme = amoledTheme,

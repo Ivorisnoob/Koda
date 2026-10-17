@@ -155,6 +155,7 @@ fun EditorialPlayerSheetContent(
     // would be registered later and silently win.
 
     val currentSong by viewModel.currentSong.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val playerHaptics = rememberPlayerHaptics()
     val isBuffering by viewModel.isBuffering.collectAsState()
@@ -195,6 +196,7 @@ fun EditorialPlayerSheetContent(
         Crossfade(targetState = showQueue, label = "EditorialQueueTransition") { queueVisible ->
             if (queueVisible) {
                 EditorialQueueView(
+                    isDjMixPlaying = isDjMixPlaying,
                     queue = currentQueue,
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
@@ -839,6 +841,7 @@ internal fun EditorialChip(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun EditorialQueueView(
+    isDjMixPlaying: Boolean = false,
     queue: List<MusicQueueItem>,
     currentQueueItemId: String?,
     onQueueItemClick: (MusicQueueItem) -> Unit,
@@ -863,7 +866,8 @@ internal fun EditorialQueueView(
         listState = listState,
         keys = rowKeys,
         onMove = onMoveSong,
-        onSettle = onCommitOrder
+        onSettle = onCommitOrder,
+        dragEnabled = !isDjMixPlaying,
     )
     val removal = rememberQueueRemoval(onUndo = onUndoRemove)
     var showSaveDialog by remember { mutableStateOf(false) }

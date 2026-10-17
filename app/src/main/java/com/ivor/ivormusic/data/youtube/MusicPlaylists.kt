@@ -68,49 +68,12 @@ internal class MusicPlaylists(
     }
 
     /**
-     * Get liked music with pagination support.
-     * YouTube Music API returns paginated results, so we need to fetch all pages.
+     * Get the account's liked music through its playlist shelf. The general
+     * liked-videos browse includes other shelves and continuation tokens, so
+     * following its first token can add recommendations to the library.
      */
     suspend fun getLikedMusic(): List<Song> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) {
-            return@withContext getPlaylistInternal("LM")
-        }
-        
-        try {
-            val allSongs = mutableListOf<Song>()
-            var continuationToken: String? = null
-            var pageCount = 0
-            val maxPages = 500 // Increased limit to fetch all liked songs
-            
-            do {
-                val json = if (continuationToken == null) {
-                    musicApi.fetchInternalApi("FEmusic_liked_videos")
-                } else {
-                    musicApi.fetchContinuation(continuationToken)
-                }
-                
-                if (json.isEmpty()) break
-                
-                val songs = parseSongsFromInternalJson(json)
-                allSongs.addAll(songs)
-                
-                // Extract continuation token for next page
-                continuationToken = extractContinuationToken(json)
-                pageCount++
-                
-                KLog.d(YOUTUBE_TAG, "Liked songs page $pageCount: ${songs.size} songs, total: ${allSongs.size}")
-                
-            } while (continuationToken != null && pageCount < maxPages)
-            
-            if (allSongs.isNotEmpty()) {
-                return@withContext allSongs.distinctBy { it.id }
-            }
-        } catch (e: Exception) {
-            KLog.e(YOUTUBE_TAG, "Error fetching liked music", e)
-        }
-        
-        // Fallback to NewPipe method
-        getPlaylistInternal("LM")
+        getPlaylistInternal("LM").distinctBy { it.id }
     }
 
     /**
@@ -203,6 +166,8 @@ internal class MusicPlaylists(
                     thumbnailUrl = item.thumbnails?.firstOrNull()?.url
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             newPipeComplete = false
             emptyList()
@@ -248,10 +213,15 @@ internal class MusicPlaylists(
         val seenTokens = mutableSetOf<String>()
         var json = musicApi.browseMusic(browseId)
             ?: return PlaylistLoadResult(emptyList(), complete = false)
+        val likedSongs = playlistId == "LM" || playlistId == "VLLM"
 
         while (true) {
             if (json.isBlank()) return PlaylistLoadResult(allSongs, complete = false)
-            allSongs += parseSongsFromInternalJson(json, preserveDuplicates = true)
+            allSongs += parseSongsFromInternalJson(
+                json,
+                preserveDuplicates = !likedSongs,
+                listItemsOnly = likedSongs,
+            )
             val token = extractPlaylistContinuationToken(json)
                 ?: return PlaylistLoadResult(allSongs, complete = true)
             if (!seenTokens.add(token)) {

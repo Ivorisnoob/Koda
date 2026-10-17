@@ -165,6 +165,22 @@
             </intent-filter>
         </activity>
 
+        <!-- Transparent activity for widget button presses (Glance actionRunCallback is not firing).
+             Uses NoDisplay theme to avoid any visual flash. -->
+        <activity
+            android:name=".widget.WidgetActionActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
+
+        <!-- Background receiver for widget button presses (no UI, no flash). -->
+        <receiver
+            android:name=".widget.WidgetButtonReceiver"
+            android:exported="false" />
+
         <!-- Launcher activity aliases for dynamic app icon switching -->
         <activity-alias
             android:name=".MainActivityDefault"

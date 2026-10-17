@@ -27,6 +27,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Favorite
@@ -36,6 +37,9 @@ import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -111,6 +115,12 @@ fun SpotlightHomeContent(
     onPlaylistClick: (PlaylistDisplayItem) -> Unit = {},
     onOpenLiked: () -> Unit = {},
     onShowAllInLibrary: () -> Unit = {},
+    /** Open the DJ page (shows the cached mix if one exists). */
+    onOpenAiDj: () -> Unit = {},
+    /** Regenerate the mix right away (from the emblem). */
+    onRegenerateDj: () -> Unit = {},
+    /** True while a fresh mix is being generated. */
+    djLoading: Boolean = false,
     /** Opens Spin on the pool the quick picks are showing. */
     onSpinClick: (SpinSource) -> Unit,
     onProfileClick: () -> Unit,
@@ -209,6 +219,9 @@ fun SpotlightHomeContent(
             item(key = "chips") {
                 SpotlightFilterChips(selected = filter, onSelect = { filter = it })
             }
+
+            // AI DJ moved to a floating action button next to the nav pill
+            // (see HomeScreen) — no banner on Home anymore.
 
             // The shortcut grid only makes sense unfiltered - a two-column grid
             // of "your most reached-for things" is not a thing you scope.

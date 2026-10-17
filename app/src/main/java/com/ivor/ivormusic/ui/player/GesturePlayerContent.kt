@@ -105,6 +105,7 @@ fun GesturePlayerSheetContent(
     // would be registered later and silently win.
     
     val currentSong by viewModel.currentSong.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val playerHaptics = rememberPlayerHaptics()
     val isBuffering by viewModel.isBuffering.collectAsState()
@@ -149,6 +150,7 @@ fun GesturePlayerSheetContent(
         Crossfade(targetState = showQueue, label = "GesturePlayerQueueTransition") { isQueueVisible ->
             if (isQueueVisible) {
                 GestureQueueView(
+                    isDjMixPlaying = isDjMixPlaying,
                     queue = currentQueue,
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
@@ -1120,6 +1122,7 @@ private fun SingleAlbumArt(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun GestureQueueView(
+    isDjMixPlaying: Boolean = false,
     queue: List<MusicQueueItem>,
     currentQueueItemId: String?,
     onQueueItemClick: (MusicQueueItem) -> Unit,
@@ -1152,7 +1155,8 @@ private fun GestureQueueView(
         listState = listState,
         keys = rowKeys,
         onMove = onMoveSong,
-        onSettle = onCommitOrder
+        onSettle = onCommitOrder,
+        dragEnabled = !isDjMixPlaying,
     )
     val removal = rememberQueueRemoval(onUndo = onUndoRemove)
     var showSaveDialog by remember { mutableStateOf(false) }

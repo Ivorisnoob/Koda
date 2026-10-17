@@ -95,6 +95,7 @@ fun PlayerSheetContent(
     
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val isBuffering by viewModel.isBuffering.collectAsState()
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
@@ -141,6 +142,7 @@ fun PlayerSheetContent(
                 val isLoadingMore by viewModel.isLoadingMore.collectAsState()
                 
                 ExpressiveQueueView(
+                        isDjMixPlaying = isDjMixPlaying,
                     queue = currentQueue,
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
@@ -256,6 +258,7 @@ private fun ExpressiveNowPlayingView(
     onSurfaceVariantColor: Color,
     stableShapes: IconButtonShapes
 ) {
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     // State for toggling between album art and lyrics
     var showLyrics by remember { mutableStateOf(false) }
     val playerHaptics = rememberPlayerHaptics()
@@ -628,20 +631,23 @@ private fun ExpressiveNowPlayingView(
                 // Shuffle Toggle - with animateWidth for squishy physics
                 customItem(
                     buttonGroupContent = {
-                        FilledTonalIconToggleButton(
-                            checked = shuffleModeEnabled,
-                            onCheckedChange = { viewModel.toggleShuffle() },
-                            interactionSource = shuffleInteraction,
-                            modifier = Modifier
-                                .weight(0.8f)
-                                .fillMaxHeight()
-                                .animateWidth(shuffleInteraction)
-                        ) {
-                            Icon(
-                                Icons.Default.Shuffle,
-                                contentDescription = stringResource(R.string.cd_shuffle),
-                                modifier = Modifier.size(28.dp)
-                            )
+                        // DJ mixes are strictly ordered: no shuffle option.
+                        if (!isDjMixPlaying) {
+                            FilledTonalIconToggleButton(
+                                checked = shuffleModeEnabled,
+                                onCheckedChange = { viewModel.toggleShuffle() },
+                                interactionSource = shuffleInteraction,
+                                modifier = Modifier
+                                    .weight(0.8f)
+                                    .fillMaxHeight()
+                                    .animateWidth(shuffleInteraction)
+                            ) {
+                                Icon(
+                                    Icons.Default.Shuffle,
+                                    contentDescription = stringResource(R.string.cd_shuffle),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                         }
                     },
                     menuContent = {}
@@ -859,6 +865,7 @@ private fun ExpressiveNowPlayingView(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ExpressiveQueueView(
+    isDjMixPlaying: Boolean = false,
     queue: List<MusicQueueItem>,
     currentQueueItemId: String?,
     onQueueItemClick: (MusicQueueItem) -> Unit,
@@ -893,7 +900,8 @@ private fun ExpressiveQueueView(
         listState = listState,
         keys = rowKeys,
         onMove = onMoveSong,
-        onSettle = onCommitOrder
+        onSettle = onCommitOrder,
+        dragEnabled = !isDjMixPlaying,
     )
     val removal = rememberQueueRemoval(onUndo = onUndoRemove)
     var showSaveDialog by remember { mutableStateOf(false) }

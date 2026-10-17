@@ -40,12 +40,17 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.ivor.ivormusic.MainActivity
 import android.media.audiofx.AudioEffect
+import com.ivor.ivormusic.data.AiDjRepository
 import com.ivor.ivormusic.data.CacheManager
+import com.ivor.ivormusic.data.DjVoiceRepository
 import com.ivor.ivormusic.data.DownloadRepository
+import com.ivor.ivormusic.data.EpisodeProgressRepository
+import com.ivor.ivormusic.data.PodcastRepository
 import com.ivor.ivormusic.data.NotificationArtworkLoader
 import com.ivor.ivormusic.data.AudioProfileStore
 import com.ivor.ivormusic.data.AudioProfiler
 import com.ivor.ivormusic.data.TrackLoudnessStore
+import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.MusicQueueItem
@@ -128,6 +133,7 @@ class MusicService : MediaLibraryService() {
     private val likedSongsRepository by lazy { LikedSongsRepository(this) }
     private val statsRepository by lazy { StatsRepository(this) }
     private val songRepository by lazy { SongRepository(this) }
+    private val podcastRepository by lazy { PodcastRepository(this) }
     private val transitionFilters = ConcurrentHashMap<ExoPlayer, TransitionFilterAudioProcessor>()
 
     // --- Scopes ---
@@ -179,7 +185,7 @@ class MusicService : MediaLibraryService() {
     // own buffering for the whole prefetch window.
     private val warmSemaphore = kotlinx.coroutines.sync.Semaphore(1)
     private val profileSemaphore = kotlinx.coroutines.sync.Semaphore(1)
-    
+
     // --- Configuration ---
     private var isCrossfadeEnabled = true
     private var isAutoMixEnabled = true
@@ -448,6 +454,9 @@ class MusicService : MediaLibraryService() {
         /** The media notification's heart: like or unlike the playing song. */
         const val CMD_TOGGLE_LIKE = "com.ivor.ivormusic.TOGGLE_LIKE"
 
+        /** The media notification's shuffle button: toggle shuffle mode. */
+        const val CMD_TOGGLE_SHUFFLE = "com.ivor.ivormusic.TOGGLE_SHUFFLE"
+
         /**
          * Ask YouTube for the playing song's stream again and swap it in where
          * it was. Answers RESULT_ERROR_IO when no new stream arrived in time,
@@ -455,6 +464,9 @@ class MusicService : MediaLibraryService() {
          */
         const val CMD_REFRESH_STREAM = "com.ivor.ivormusic.REFRESH_STREAM"
         const val EXTRA_SONG_SOURCE = "com.ivor.ivormusic.SONG_SOURCE"
+
+        /** Marks a MediaItem as part of a curated AI DJ mix (strictly ordered, no shuffle). */
+        const val EXTRA_DJ_MIX = "com.ivor.ivormusic.DJ_MIX"
 
         /** Session-extras keys the timer state is published under. */
         const val EXTRA_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
@@ -737,7 +749,7 @@ class MusicService : MediaLibraryService() {
         // SMART DATA SOURCE FACTORY
         // Logic: Use CacheDataSource for network (http/https), but use valid DefaultDataSource for local files (content/file).
         // This prevents the cache from trying to grasp local content which causes playback failures on some devices.
-        
+
         // Per-URL User-Agent — googlevideo URLs are tagged with their issuing
         // client (?c=IOS, ?c=TVHTML5_SIMPLY_EMBEDDED, ...) and YouTube answers
         // 403 if the playback UA doesn't match. CacheManager.createPerClientHttpFactory()
@@ -900,7 +912,7 @@ class MusicService : MediaLibraryService() {
     }
 
     /** What the extra buttons last showed, so an unchanged state posts nothing. */
-    private var mediaButtonsState: Pair<Int, Boolean>? = null
+    private var mediaButtonsState: Pair<Triple<Int, Boolean, Boolean>, Boolean>? = null
 
     /**
      * Repeat and like, in the two slots the system media controls keep after
@@ -913,38 +925,67 @@ class MusicService : MediaLibraryService() {
         val player = session.player
         val songId = player.currentMediaItem?.mediaId
         val liked = songId != null && likedSongsRepository.isLiked(songId)
-        val state = player.repeatMode to liked
+        val shuffleOn = player.shuffleModeEnabled
+        val isDjMix = player.currentMediaItem?.mediaMetadata?.extras?.getBoolean(EXTRA_DJ_MIX) == true
+        // DJ mixes are strictly ordered: force shuffle off and hide the button.
+        if (isDjMix && shuffleOn) {
+            player.shuffleModeEnabled = false
+        }
+        // Include isDjMix in the cache key: leaving a DJ mix for a regular
+        // playlist must rebuild the buttons to restore the shuffle button,
+        // even if repeat/liked/shuffle are otherwise unchanged.
+        val state = Triple(player.repeatMode, liked, shuffleOn) to isDjMix
         if (state == mediaButtonsState) return
         mediaButtonsState = state
 
-        val repeat = CommandButton.Builder(
-            when (player.repeatMode) {
-                Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE
-                Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL
-                else -> CommandButton.ICON_REPEAT_OFF
-            }
-        )
-            .setDisplayName(
-                getString(
-                    when (player.repeatMode) {
-                        Player.REPEAT_MODE_ONE -> R.string.notification_repeat_one
-                        Player.REPEAT_MODE_ALL -> R.string.notification_repeat_all
-                        else -> R.string.notification_repeat_off
-                    }
+        val buttons = mutableListOf<CommandButton>()
+        if (!isDjMix) {
+            buttons.add(
+                CommandButton.Builder(
+                    if (shuffleOn) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF
                 )
+                    .setDisplayName(
+                        getString(
+                            if (shuffleOn) R.string.notification_shuffle_on
+                            else R.string.notification_shuffle_off
+                        )
+                    )
+                    .setSessionCommand(SessionCommand(CMD_TOGGLE_SHUFFLE, Bundle.EMPTY))
+                    .build()
             )
-            .setSessionCommand(SessionCommand(CMD_CYCLE_REPEAT, Bundle.EMPTY))
-            .build()
-        val like = CommandButton.Builder(
-            if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED
+        }
+        buttons.add(
+            CommandButton.Builder(
+                when (player.repeatMode) {
+                    Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE
+                    Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL
+                    else -> CommandButton.ICON_REPEAT_OFF
+                }
+            )
+                .setDisplayName(
+                    getString(
+                        when (player.repeatMode) {
+                            Player.REPEAT_MODE_ONE -> R.string.notification_repeat_one
+                            Player.REPEAT_MODE_ALL -> R.string.notification_repeat_all
+                            else -> R.string.notification_repeat_off
+                        }
+                    )
+                )
+                .setSessionCommand(SessionCommand(CMD_CYCLE_REPEAT, Bundle.EMPTY))
+                .build()
         )
-            .setDisplayName(
-                getString(if (liked) R.string.notification_unlike else R.string.notification_like)
+        buttons.add(
+            CommandButton.Builder(
+                if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED
             )
-            .setSessionCommand(SessionCommand(CMD_TOGGLE_LIKE, Bundle.EMPTY))
-            .setEnabled(songId != null)
-            .build()
-        session.setMediaButtonPreferences(ImmutableList.of(repeat, like))
+                .setDisplayName(
+                    getString(if (liked) R.string.notification_unlike else R.string.notification_like)
+                )
+                .setSessionCommand(SessionCommand(CMD_TOGGLE_LIKE, Bundle.EMPTY))
+                .setEnabled(songId != null)
+                .build()
+        )
+        session.setMediaButtonPreferences(ImmutableList.copyOf(buttons))
     }
 
     private fun cycleRepeatMode(player: Player) {
@@ -961,7 +1002,20 @@ class MusicService : MediaLibraryService() {
      */
     private fun toggleCurrentSongLike(player: Player) {
         val song = player.currentMediaItem?.toQueueSong() ?: return
-        likedSongsRepository.toggleLike(song)
+        val isNowLiked = likedSongsRepository.toggleLike(song)
+        // Mirror to YouTube Music so the like (and count) syncs across apps.
+        if (song.source == SongSource.YOUTUBE) {
+            serviceScope.launch {
+                try {
+                    youtubeRepository.rateVideo(
+                        song.id,
+                        if (isNowLiked) LikeStatus.LIKE else LikeStatus.INDIFFERENT,
+                    )
+                } catch (e: Exception) {
+                    KLog.w(TAG, "YouTube like sync failed", e)
+                }
+            }
+        }
         // The store's flow calls refreshMediaButtons too; this just skips the wait.
         refreshMediaButtons()
     }
@@ -1141,6 +1195,7 @@ class MusicService : MediaLibraryService() {
             // would send the outgoing one.
             publishSessionState()
             scheduleSessionCheckpoint()
+            refreshMediaButtons()
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
@@ -1423,7 +1478,7 @@ class MusicService : MediaLibraryService() {
                     try {
                         val deferred = getOrStartResolution(item)
                         val resolvedItem = bindResolutionToItem(item, deferred.await())
-                        
+
                         // Update player if item is still there
                         if (targetIndex < player.mediaItemCount &&
                             player.getMediaItemAt(targetIndex).isSameQueueItemAs(item) &&
@@ -1545,7 +1600,7 @@ class MusicService : MediaLibraryService() {
     private suspend fun performResolution(originalItem: MediaItem): MediaItem {
         val videoId = originalItem.mediaId
         KLog.d(TAG, "Resolution: Starting for $videoId")
-        
+
         // 1. Downloads
         val downloaded = downloadRepository.downloadedSongs.value.find { it.id == videoId }
         if (downloaded != null && downloaded.uri != null) {
@@ -1579,7 +1634,7 @@ class MusicService : MediaLibraryService() {
             val result = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
                 youtubeRepository.getStreamUrl(videoId)
             }
-            
+
             val streamUrl = result?.getOrNull()
             if (!streamUrl.isNullOrEmpty()) {
                 uriCache[videoId] = CachedUri(streamUrl, streamUrlExpiryMs(streamUrl))
@@ -1610,7 +1665,7 @@ class MusicService : MediaLibraryService() {
         duration?.takeIf { it > 0L }?.let(metaBuilder::setDurationMs)
         if (original.mediaMetadata.title == null) {
              val cachedInfo = findSongInCache(original.mediaId)
-             
+
              if (cachedInfo != null) {
                  metaBuilder.setTitle(cachedInfo.title)
                      .setArtist(cachedInfo.artist)
@@ -1648,7 +1703,7 @@ class MusicService : MediaLibraryService() {
         val currentItem = player.currentMediaItem ?: return
         val videoId = currentItem.mediaId
         val uri = currentItem.localConfiguration?.uri
-        
+
         // Stream URLs carry short-lived signatures and local URIs may expose
         // device paths. The media id is sufficient for a user-shared report.
         KLog.w(TAG, "Handling playback error for $videoId")
@@ -1950,7 +2005,7 @@ class MusicService : MediaLibraryService() {
             startPositionMs,
         ) to saved?.playOrder?.takeIf { it.isNotEmpty() }?.toIntArray()
     }
-    
+
     private inner class LibrarySessionCallback : MediaLibrarySession.Callback {
         /**
          * Media3's stock gesture resolver treats a HEADSETHOOK triple as Next followed by a delayed
@@ -2012,7 +2067,7 @@ class MusicService : MediaLibraryService() {
             }
         }
 
-        
+
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             val availablePlayerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
                 .add(Player.COMMAND_SET_SHUFFLE_MODE)
@@ -2133,6 +2188,10 @@ class MusicService : MediaLibraryService() {
                 toggleCurrentSongLike(session.player)
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
+            CMD_TOGGLE_SHUFFLE -> {
+                session.player.shuffleModeEnabled = !session.player.shuffleModeEnabled
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             CMD_REFRESH_STREAM -> refreshCurrentStream()
             CMD_SET_PLAYBACK_SPEED -> {
                 applyPlaybackSpeed(
@@ -2198,6 +2257,36 @@ class MusicService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>
         ): ListenableFuture<MutableList<MediaItem>> {
+            // Android Auto "Shuffle Liked": play all liked songs in random order.
+            if (mediaItems.any { it.mediaId == "LIKED_SHUFFLE" }) {
+                return serviceScope.future {
+                    val songs = likedSongsRepository.likedSongs.value.shuffled()
+                    mediaSession.player.shuffleModeEnabled = false
+                    songs.mapTo(mutableListOf()) { song ->
+                        preparePlaybackItem(mapSongToMediaItem(song))
+                    }
+                }
+            }
+            // The Android Auto "AI DJ" root item: tapping it generates the
+            // one-press instant mix (last plays + liked, transitions at mood
+            // shifts) and plays it. Generation runs async; the car waits.
+            if (mediaItems.any { it.mediaId == "AIDJ" }) {
+                return serviceScope.future {
+                    val queue = buildAutoDjQueue()
+                    val prepared = queue.mapTo(mutableListOf()) { song ->
+                        preparePlaybackItem(tagDjMixItem(mapSongToMediaItem(song)))
+                    }
+                    // DJ mixes are strictly ordered: no shuffle, ever.
+                    mediaSession.player.shuffleModeEnabled = false
+                    if (prepared.isEmpty()) {
+                        // Fall back to liked songs rather than playing nothing.
+                        likedSongsRepository.likedSongs.value
+                            .mapTo(mutableListOf()) { song ->
+                                preparePlaybackItem(mapSongToMediaItem(song))
+                            }
+                    } else prepared
+                }
+            }
             // A voice request ("Hey Google, play X on Koda") arrives as an
             // item carrying only a search query - no media id, no uri. Those
             // need a bounded search before becoming playable. Legacy browsers
@@ -2217,6 +2306,26 @@ class MusicService : MediaLibraryService() {
                 withTimeout(10_000L) {
                     val generation = browseGeneration
                     val resolved = mutableListOf<MediaItem>()
+                    // If a single song was tapped from a browse list (e.g. Liked Songs),
+                    // expand to the full list so Next/Previous work through the
+                    // playlist instead of falling back to a radio station.
+                    // We detect this by matching the song against known collections.
+                    if (mediaItems.size == 1 && mediaItems[0].localConfiguration == null) {
+                        val tappedId = mediaItems[0].mediaId
+                        val liked = likedSongsRepository.likedSongs.value
+                        val likedIndex = liked.indexOfFirst { song ->
+                            mapSongToMediaItem(song).mediaId == tappedId
+                        }
+                        if (likedIndex >= 0) {
+                            // Build queue: tapped song first, then the rest of liked
+                            // in order (wrapping around).
+                            val ordered = (likedIndex until liked.size) + (0 until likedIndex)
+                            for (i in ordered) {
+                                resolved.add(preparePlaybackItem(mapSongToMediaItem(liked[i])))
+                            }
+                            return@withTimeout resolved
+                        }
+                    }
                     for (item in mediaItems) {
                         val query = item.requestMetadata.searchQuery?.trim()?.takeIf { it.isNotEmpty() }
                         if (item.mediaId.isNotBlank() || query == null) {
@@ -2258,8 +2367,8 @@ class MusicService : MediaLibraryService() {
 
         /**
          * Give every incoming item a concrete shape the playback pipeline can
-         * carry: local URIs preserved, YouTube ids turned into placeholders
-         * that [performResolution] swaps for a real stream.
+         * carry: local and podcast URIs preserved, YouTube ids turned into
+         * placeholders that [performResolution] swaps for a real stream.
          */
         private fun preparePlaybackItem(item: MediaItem): MediaItem {
             val existingUri = item.localConfiguration?.uri
@@ -2295,6 +2404,10 @@ class MusicService : MediaLibraryService() {
                 meta = meta.buildUpon().setExtras(extras).build()
             }
 
+            val isPodcastUri = meta.extras?.getString(EXTRA_SONG_SOURCE) == SongSource.PODCAST.name &&
+                (existingUri?.scheme.equals("http", ignoreCase = true) ||
+                    existingUri?.scheme.equals("https", ignoreCase = true))
+
             return if (isLocalUri) {
                 // Local song: preserve the original content:// URI for direct playback
                 KLog.d(TAG, "onAddMediaItems: Preserving local URI for ${item.mediaId}: $existingUri")
@@ -2303,6 +2416,24 @@ class MusicService : MediaLibraryService() {
                     .setUri(existingUri)
                     .setMediaMetadata(meta)
                     .build()
+            } else if (isPodcastUri) {
+                // A downloaded episode plays from its local file, not the
+                // network. Without this, podcast items bypassed
+                // performResolution (which checks downloads first) and a
+                // downloaded episode would still stream.
+                val localUri = findDownloadedUri(item.mediaId)
+                if (localUri != null) {
+                    KLog.d(TAG, "onAddMediaItems: Using downloaded file for ${item.mediaId}")
+                    item.buildUpon()
+                        .setUri(localUri)
+                        .setMediaMetadata(meta)
+                        .build()
+                } else {
+                    KLog.d(TAG, "onAddMediaItems: Preserving podcast stream URI for ${item.mediaId}")
+                    item.buildUpon()
+                        .setMediaMetadata(meta)
+                        .build()
+                }
             } else {
                 // YouTube song: use placeholder — resolution will happen via prefetch system
                 MediaItem.Builder()
@@ -2312,7 +2443,7 @@ class MusicService : MediaLibraryService() {
                     .build()
             }
         }
-        
+
         // --- Browsing Logic (Android Auto / Media Browser) ---
 
         override fun onGetLibraryRoot(
@@ -2340,6 +2471,16 @@ class MusicService : MediaLibraryService() {
             return browseResult {
                 (getRootItems() + getLibraryItems()).firstOrNull { it.mediaId == mediaId }?.let {
                     return@browseResult LibraryResult.ofItem(it, null)
+                }
+                if (mediaId.startsWith("PODCAST_FEED_")) {
+                    val feedId = mediaId.removePrefix("PODCAST_FEED_")
+                    val feed = podcastRepository.feeds.value.find { it.id == feedId }
+                    if (feed != null) {
+                        return@browseResult LibraryResult.ofItem(
+                            browsableCategoryItem(mediaId, feed.title, feed.description?.take(80)),
+                            null,
+                        )
+                    }
                 }
                 if (mediaId.startsWith("PLAYLIST_")) {
                     val playlistId = mediaId.removePrefix("PLAYLIST_")
@@ -2476,10 +2617,58 @@ class MusicService : MediaLibraryService() {
      */
     private fun getRootItems(): ImmutableList<MediaItem> {
         val items = mutableListOf<MediaItem>()
+        items.add(browsableCategoryItem("HOME", "Home"))
         items.add(browsableCategoryItem("LIBRARY", "Library"))
-        items.add(browsableCategoryItem("RECOMMENDED", "Recommended"))
         items.add(browsableCategoryItem("PLAYLISTS", "Playlists"))
+        items.add(browsableCategoryItem("PODCASTS", "Podcasts"))
+        items.add(playableActionItem("AIDJ", "AI DJ", "A 60-song mix from your recent plays"))
         return ImmutableList.copyOf(items)
+    }
+
+    /**
+     * A tappable action at the root of the browse tree (Android Auto): plays
+     * immediately rather than opening a child list.
+     */
+    private fun playableActionItem(
+        mediaId: String,
+        title: String,
+        subtitle: String? = null,
+    ): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(mediaId)
+            .setMediaMetadata(MediaMetadata.Builder()
+                .setTitle(title)
+                .setSubtitle(subtitle)
+                .setArtworkUri(AutoArtwork.categoryKey(mediaId)?.let { AutoArtwork.uriFor(this, it) })
+                .setExtras(contentStyleExtras(LIST_ITEM, LIST_ITEM))
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .build())
+            .build()
+
+    /**
+     * The Home tab: Speed-dial style quick access, like YouTube Music's Home.
+     * Curated shortcuts to the most-used content: one tap to play or browse.
+     */
+    private suspend fun getHomeItems(): List<MediaItem> {
+        val items = mutableListOf<MediaItem>()
+        // AI DJ one-tap mix (playable, same handler as root AIDJ).
+        items.add(playableActionItem("AIDJ", "AI DJ Mix", "A 60-song mix from your recent plays"))
+        // Continue listening (recent).
+        items.add(browsableCategoryItem("RECENT", "Continue Listening", "Pick up where you left off"))
+        // New podcast episodes.
+        podcastRepository.ensureLoaded()
+        val newEpisodes = podcastRepository.allEpisodes().take(10)
+        if (newEpisodes.isNotEmpty()) {
+            items.add(browsableCategoryItem("HOME_EPISODES", "New Episodes", "${newEpisodes.size} new"))
+        }
+        // Liked songs.
+        items.add(browsableCategoryItem("LIKED", "Liked Songs", "Your favorites"))
+        // Recommendations (suggestions).
+        items.add(browsableCategoryItem("RECOMMENDED", "Recommended for You", "Suggestions based on your taste"))
+        // Downloads.
+        items.add(browsableCategoryItem("DOWNLOADS", "Downloaded", "Offline"))
+        return items
     }
 
     private fun getLibraryItems(): ImmutableList<MediaItem> {
@@ -2513,16 +2702,63 @@ class MusicService : MediaLibraryService() {
             .build()
 
     private suspend fun fetchChildrenForId(parentId: String): List<MediaItem> = when (parentId) {
+        "HOME" -> getHomeItems()
         "LIBRARY" -> getLibraryItems()
         "RECOMMENDED" -> browseSongs.get(parentId) {
             youtubeRepository.getRecommendations()
         }.map(::mapSongToMediaItem)
         "PLAYLISTS" -> playlistsForBrowse().map(::playlistEntry)
+        "PODCASTS" -> {
+            // The service can start without the app UI ever opening (e.g. car
+            // head unit binding directly). Feeds live in a process-wide store
+            // that must be loaded first, or Auto shows "No items".
+            podcastRepository.ensureLoaded()
+            podcastRepository.feeds.value.map { feed ->
+                val feedArtwork = feed.artworkUrl?.toArtworkUri()
+                    ?: AutoArtwork.categoryKey("PODCASTS")?.let { AutoArtwork.uriFor(this, it) }
+                MediaItem.Builder()
+                    .setMediaId("PODCAST_FEED_${feed.id}")
+                    .setMediaMetadata(MediaMetadata.Builder()
+                        .setTitle(feed.title)
+                        .setSubtitle(feed.description?.take(80))
+                        .setArtworkUri(feedArtwork)
+                        .setExtras(contentStyleExtras(GRID_ITEM, LIST_ITEM))
+                        .setIsBrowsable(true)
+                        .setIsPlayable(false)
+                        .build())
+                    .build()
+            }
+        }
         "DOWNLOADS" -> downloadRepository.downloadedSongs.value.map(::mapSongToMediaItem)
-        "LIKED" -> likedSongsRepository.likedSongs.value.map(::mapSongToMediaItem)
+        "LIKED" -> {
+            val songs = likedSongsRepository.likedSongs.value
+            val items = mutableListOf<MediaItem>()
+            // Shuffle action at the top: plays all liked songs in random order.
+            if (songs.isNotEmpty()) {
+                items.add(playableActionItem("LIKED_SHUFFLE", "Shuffle", "Play liked songs shuffled"))
+            }
+            items.addAll(songs.map(::mapSongToMediaItem))
+            items
+        }
         "RECENT" -> localBrowseSongs.get(parentId) { recentlyPlayedSongs() }.map(::mapSongToMediaItem)
         "LOCAL_SONGS" -> localBrowseSongs.get(parentId) { localDeviceSongs() }.map(::mapSongToMediaItem)
+        "HOME_EPISODES" -> {
+            podcastRepository.ensureLoaded()
+            podcastRepository.allEpisodes().take(20).map { episode ->
+                val feed = podcastRepository.feeds.value.find { it.id == episode.feedId }
+                mapSongToMediaItem(podcastRepository.episodeToSong(episode, feed))
+            }
+        }
         else -> {
+            if (parentId.startsWith("PODCAST_FEED_")) {
+                val feedId = parentId.removePrefix("PODCAST_FEED_")
+                podcastRepository.ensureLoaded()
+                val feed = podcastRepository.feeds.value.find { it.id == feedId }
+                val episodes = podcastRepository.episodesByFeed.value[feedId].orEmpty()
+                return episodes.map { episode ->
+                    mapSongToMediaItem(podcastRepository.episodeToSong(episode, feed))
+                }
+            }
             require(parentId.startsWith("PLAYLIST_")) { "Unknown browse parent" }
             browseSongs.get(parentId) {
                 youtubeRepository.getPlaylist(parentId.removePrefix("PLAYLIST_"))
@@ -2535,12 +2771,17 @@ class MusicService : MediaLibraryService() {
 
     private fun playlistEntry(playlist: PlaylistDisplayItem): MediaItem {
         val playlistId = playlist.url.substringAfter("list=")
+        // Playlists without a thumbnail (e.g. "Your Likes") render as a broken-
+        // image warning triangle on head units. Fall back to a deterministic
+        // AutoArtwork tile so every row carries iconography.
+        val artworkUri = playlist.thumbnailUrl.toArtworkUri()
+            ?: AutoArtwork.uriFor(this, "playlists")
         return MediaItem.Builder()
             .setMediaId("PLAYLIST_$playlistId")
             .setMediaMetadata(MediaMetadata.Builder()
                 .setTitle(playlist.name)
                 .setSubtitle(playlist.uploaderName)
-                .setArtworkUri(playlist.thumbnailUrl.toArtworkUri())
+                .setArtworkUri(artworkUri)
                 .setExtras(contentStyleExtras(LIST_ITEM, LIST_ITEM))
                 .setIsBrowsable(true)
                 .setIsPlayable(false)
@@ -2623,13 +2864,76 @@ class MusicService : MediaLibraryService() {
             )
             .build()
 
+    /** Local file for a downloaded media id, or null when not downloaded. */
+    private fun findDownloadedUri(mediaId: String): android.net.Uri? {
+        if (!::downloadRepository.isInitialized) return null
+        return downloadRepository.downloadedSongs.value.firstOrNull { it.id == mediaId }?.uri
+    }
+
     /** A single playable id looked up across every store the tree serves. */
+    /**
+     * Build the Android Auto one-press DJ queue: the last 30 played songs
+     * (never podcasts) plus liked songs as taste context, handed to the DJ's
+     * instant-mix generation with spoken transitions at mood shifts.
+     */
+    private suspend fun buildAutoDjQueue(): List<Song> {
+        return try {
+            // Prefer the cached mix (pre-computed on app launch) for instant playback.
+            // Falls back to generating a new one if the cache is empty.
+            val cacheManager = com.ivor.ivormusic.data.DjCacheManager(this)
+            val cached = cacheManager.getCachedMix()
+            if (cached != null) {
+                val queue = cacheManager.buildQueueFromCache(cached)
+                if (queue.isNotEmpty()) return queue
+            }
+            // Cache miss: generate a new mix.
+            val seen = mutableSetOf<String>()
+            val recent = mutableListOf<Song>()
+            for (entry in statsRepository.loadHistory()) {
+                if (entry.source == SongSource.PODCAST) continue
+                if (!seen.add(entry.songId)) continue
+                recent.add(
+                    Song.fromYouTube(
+                        videoId = entry.songId,
+                        title = entry.title,
+                        artist = entry.artist,
+                        album = entry.album,
+                        duration = entry.duration,
+                        thumbnailUrl = entry.thumbnailUrl,
+                    )
+                )
+                if (recent.size >= 30) break
+            }
+            val liked = likedSongsRepository.likedSongs.value
+            val repository = AiDjRepository(this)
+            val mix = repository.generateInstantMix(recent, liked).getOrNull()
+                ?: return emptyList()
+            if (repository.djVoiceEnabled.value) {
+                DjVoiceRepository(this).buildQueueWithIntros(mix)
+            } else {
+                mix.tracks.map { it.song }
+            }
+        } catch (e: Exception) {
+            KLog.w(TAG, "Auto DJ mix failed", e)
+            emptyList()
+        }
+    }
+
     private suspend fun findSongForBrowseId(mediaId: String): Song? {
         findSongInCache(mediaId)?.let { return it }
         downloadRepository.downloadedSongs.value.firstOrNull { it.id == mediaId }
             ?.let { return it }
         likedSongsRepository.likedSongs.value.firstOrNull { it.id == mediaId }
             ?.let { return it }
+        if (mediaId.startsWith(EpisodeProgressRepository.PODCAST_SONG_ID_PREFIX)) {
+            val episodeId = mediaId.removePrefix(EpisodeProgressRepository.PODCAST_SONG_ID_PREFIX)
+            val episode = podcastRepository.episodesByFeed.value.values.flatten()
+                .firstOrNull { it.id == episodeId }
+            if (episode != null) {
+                val feed = podcastRepository.feeds.value.find { it.id == episode.feedId }
+                return podcastRepository.episodeToSong(episode, feed)
+            }
+        }
         localBrowseSongs.get("RECENT") { recentlyPlayedSongs() }
             .firstOrNull { it.id == mediaId }?.let { return it }
         return localBrowseSongs.get("LOCAL_SONGS") { localDeviceSongs() }
@@ -2653,6 +2957,20 @@ class MusicService : MediaLibraryService() {
                 .build())
             .build()
 
+    /**
+     * Tag a MediaItem as part of a curated AI DJ mix. DJ mixes are strictly
+     * ordered: the service forces shuffle off and hides the shuffle button.
+     */
+    private fun tagDjMixItem(item: MediaItem): MediaItem {
+        val meta = item.mediaMetadata
+        val extras = (meta.extras ?: Bundle()).apply {
+            putBoolean(EXTRA_DJ_MIX, true)
+        }
+        return item.buildUpon()
+            .setMediaMetadata(meta.buildUpon().setExtras(extras).build())
+            .build()
+    }
+
     private fun mapSongToMediaItem(song: Song): MediaItem {
         val builder = MediaItem.Builder()
             .setMediaId(song.id)
@@ -2663,21 +2981,20 @@ class MusicService : MediaLibraryService() {
                 .setDurationMs(song.duration.takeIf { it > 0L })
                 .setArtworkUri(song.thumbnailUrl?.toArtworkUri()
                     ?: song.albumArtUri)
-                .setExtras(contentStyleExtras(LIST_ITEM, LIST_ITEM))
+                .setExtras(contentStyleExtras(LIST_ITEM, LIST_ITEM).apply {
+                    putString(EXTRA_SONG_SOURCE, song.source.name)
+                })
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .build())
-        // Device-local songs must arrive carrying their content:// URI:
-        // onAddMediaItems preserves it for direct playback, while an item
-        // without one would be pushed through YouTube stream resolution and
-        // fail. Downloads also resolve locally, but through the mediaId
-        // lookup in performResolution instead.
-        if (song.source == SongSource.LOCAL && song.uri != null) {
+        // Local songs and podcasts carry their own playable URIs; without
+        // those, the item would be pushed through YouTube stream resolution.
+        // Downloads resolve locally through the mediaId lookup instead.
+        if ((song.source == SongSource.LOCAL || song.source == SongSource.PODCAST) && song.uri != null) {
             builder.setUri(song.uri)
         }
         return builder.build()
     }
-    
     private fun findSongInCache(videoId: String): Song? {
         return (browseSongs.values() + localBrowseSongs.values()).asSequence()
             .flatten().firstOrNull { it.id == videoId }
@@ -2694,6 +3011,7 @@ class MusicService : MediaLibraryService() {
     // ([toMusicQueueItem]), so it needs nothing from the UI.
 
     private val sessionRepository by lazy { PlaybackSessionRepository(this) }
+    private val episodeProgressRepository by lazy { EpisodeProgressRepository(this) }
 
     private sealed interface SessionWrite {
         /** Main-thread order; the writer never applies an older snapshot over a newer one. */
@@ -2815,6 +3133,32 @@ class MusicService : MediaLibraryService() {
             snapshotSession()?.let { sessionWrites.trySend(it) }
         } catch (e: Exception) {
             KLog.w(TAG, "Session checkpoint failed: ${e.message}")
+        }
+        // checkpointSession is the funnel for pause, track change, and the
+        // periodic tick, so per-episode progress rides along for free.
+        saveEpisodeProgress()
+    }
+
+    /**
+     * Persist playback progress for the current podcast episode, so episode
+     * rows can show a progress bar / played indicator and playback can
+     * resume where it left off. Music tracks are untouched.
+     */
+    private fun saveEpisodeProgress() {
+        try {
+            if (!::engine.isInitialized) return
+            val current = player
+            val item = current.currentMediaItem ?: return
+            if (item.mediaMetadata.extras?.getString(EXTRA_SONG_SOURCE) != SongSource.PODCAST.name) {
+                return
+            }
+            val episodeId = item.mediaId.removePrefix(EpisodeProgressRepository.PODCAST_SONG_ID_PREFIX)
+            if (episodeId.isBlank()) return
+            val durationMs = current.duration.takeIf { it > 0 } ?: return
+            val positionMs = current.currentPosition.coerceAtLeast(0L)
+            episodeProgressRepository.saveProgress(episodeId, positionMs, durationMs)
+        } catch (e: Exception) {
+            KLog.w(TAG, "Episode progress save failed: ${e.message}")
         }
     }
 
@@ -3536,7 +3880,7 @@ class MusicService : MediaLibraryService() {
             }
         }
     }
-    
+
     /**
      * Snapshot the active player for the home screen widgets. Main thread only
      * - every caller is already a player callback or the progress loop, both of

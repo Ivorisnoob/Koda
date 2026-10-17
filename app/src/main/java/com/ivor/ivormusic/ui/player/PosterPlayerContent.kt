@@ -120,6 +120,7 @@ fun PosterPlayerSheetContent(
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.playOrderQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
@@ -179,6 +180,7 @@ fun PosterPlayerSheetContent(
         Crossfade(targetState = showQueue, label = "CanvasQueueTransition") { queueVisible ->
             if (queueVisible) {
                 EditorialQueueView(
+                    isDjMixPlaying = viewModel.isDjMixPlaying.collectAsState().value,
                     queue = currentQueue,
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
@@ -506,16 +508,19 @@ fun PosterPlayerSheetContent(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        EditorialChip(
-                                            checked = shuffleModeEnabled,
-                                            onClick = { viewModel.toggleShuffle() },
-                                            accent = glyph,
-                                            field = scrim
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Shuffle, "Shuffle",
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                        // DJ mixes are strictly ordered: no shuffle option.
+                                        if (!isDjMixPlaying) {
+                                            EditorialChip(
+                                                checked = shuffleModeEnabled,
+                                                onClick = { viewModel.toggleShuffle() },
+                                                accent = glyph,
+                                                field = scrim
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Shuffle, "Shuffle",
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
                                         }
                                         EditorialCircleButton(
                                             onClick = {

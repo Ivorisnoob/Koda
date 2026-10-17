@@ -21,9 +21,11 @@ import com.ivor.ivormusic.data.arrangedBy
 import com.ivor.ivormusic.data.playOrderQueuingUpNext
 import com.ivor.ivormusic.data.queueIndexForPlayOrder
 import com.ivor.ivormusic.data.queueStartIndex
+import com.ivor.ivormusic.data.EpisodeProgressRepository
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
 import com.ivor.ivormusic.data.LyricsResult
+import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.service.MusicService
 import com.ivor.ivormusic.service.EXTRA_QUEUE_ITEM_ID
 import com.ivor.ivormusic.service.toPlaybackMediaItem
@@ -108,6 +110,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     private val _shuffleModeEnabled = MutableStateFlow(false)
     val shuffleModeEnabled: StateFlow<Boolean> = _shuffleModeEnabled.asStateFlow()
+
+    /**
+     * True while a curated AI DJ mix is playing. DJ mixes are strictly
+     * ordered — shuffle is forced off and the shuffle control is hidden.
+     */
+    private val _isDjMixPlaying = MutableStateFlow(false)
+    val isDjMixPlaying: StateFlow<Boolean> = _isDjMixPlaying.asStateFlow()
 
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
@@ -213,6 +222,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     // Playback session snapshots for resume-on-reopen
     private val playbackSessionRepository = com.ivor.ivormusic.data.PlaybackSessionRepository(context)
+
+    // Per-episode progress for podcast resume
+    private val episodeProgressRepository = com.ivor.ivormusic.data.EpisodeProgressRepository(context)
 
     private val _lyricsResult = MutableStateFlow<LyricsResult>(LyricsResult.Loading)
     val lyricsResult: StateFlow<LyricsResult> = _lyricsResult.asStateFlow()
@@ -881,7 +893,44 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     fun playQueue(songs: List<Song>, startSong: Song? = null) {
+        _isDjMixPlaying.value = false
+        playQueueAtPosition(songs, startSong, resumePositionFor(startSong))
+    }
+
+    /**
+     * Get the current queue index (position of current item in play order).
+     * Used for saving DJ mix resume position.
+     */
+    fun getCurrentQueueIndex(): Int {
+        val currentId = _currentQueueItemId.value ?: return 0
+        val queue = playOrderQueue.value
+        return queue.indexOfFirst { item -> item.id == currentId }.coerceAtLeast(0)
+    }
+
+    /**
+     * Play a curated AI DJ mix: strictly ordered, shuffle forced off and
+     * unavailable while the mix plays.
+     * @param startIndex Queue position to start from (for resume). Defaults to 0.
+     */
+    fun playDjMix(songs: List<Song>, startIndex: Int = 0) {
+        _isDjMixPlaying.value = true
+        setShuffleEnabled(false)
+        val startSong = songs.getOrNull(startIndex.coerceIn(0, songs.size - 1))
         playQueueAtPosition(songs, startSong, 0L)
+    }
+
+    /**
+     * Where a podcast episode should start: its saved progress, unless the
+     * episode is played through or barely started, in which case 0. Music is
+     * untouched — this only applies to [SongSource.PODCAST].
+     */
+    private fun resumePositionFor(song: Song?): Long {
+        if (song?.source != SongSource.PODCAST) return 0L
+        val episodeId = song.id.removePrefix(EpisodeProgressRepository.PODCAST_SONG_ID_PREFIX)
+        val progress = episodeProgressRepository.getProgress(episodeId) ?: return 0L
+        if (progress.completed) return 0L
+        if (progress.positionMs < EpisodeProgressRepository.RESUME_THRESHOLD_MS) return 0L
+        return progress.positionMs
     }
 
     /**
@@ -1420,10 +1469,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     fun toggleShuffle() {
+        // DJ mixes are strictly ordered: shuffle is unavailable while one plays.
+        if (_isDjMixPlaying.value) return
         setShuffleEnabled(!(controller?.shuffleModeEnabled ?: false))
     }
 
     fun setShuffleEnabled(enabled: Boolean) {
+        // DJ mixes are strictly ordered: shuffle can never turn on mid-mix.
+        if (enabled && _isDjMixPlaying.value) return
         val ctrl = controller
         if (ctrl == null) {
             // Nothing to write to yet. Remembered rather than dropped, because
@@ -1664,6 +1717,27 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // Liked Songs list needs it to display YouTube songs without a login.
         val isNowLiked = likedSongsRepository.toggleLike(song)
         _isCurrentSongLiked.value = isNowLiked
+        syncLikeToYouTube(song, isNowLiked)
+    }
+
+    /**
+     * Mirror a Koda like to YouTube Music so the liked state (and count)
+     * stays in sync across apps. Local-only for non-YouTube songs; silent
+     * when logged out or offline — the local like always wins.
+     */
+    private fun syncLikeToYouTube(song: Song, liked: Boolean) {
+        if (song.source != com.ivor.ivormusic.data.SongSource.YOUTUBE) return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                youTubeRepository.rateVideo(
+                    song.id,
+                    if (liked) com.ivor.ivormusic.data.LikeStatus.LIKE
+                    else com.ivor.ivormusic.data.LikeStatus.INDIFFERENT,
+                )
+            } catch (e: Exception) {
+                KLog.w("PlayerViewModel", "YouTube like sync failed", e)
+            }
+        }
     }
 
     /**
@@ -1684,6 +1758,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun toggleLike(song: Song): Boolean {
         val isNowLiked = likedSongsRepository.toggleLike(song)
         if (song.id == _currentSong.value?.id) _isCurrentSongLiked.value = isNowLiked
+        syncLikeToYouTube(song, isNowLiked)
         return isNowLiked
     }
 

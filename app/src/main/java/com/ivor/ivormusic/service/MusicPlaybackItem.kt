@@ -120,8 +120,16 @@ internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
     val builder = MediaItem.Builder()
         .setMediaId(song.id)
         .setMediaMetadata(metadata)
-    if (song.source == SongSource.LOCAL && song.uri != null) {
+    // Podcasts carry their stream URL directly, like local files: without it
+    // the item would be pushed through YouTube stream resolution and fail.
+    if ((song.source == SongSource.LOCAL || song.source == SongSource.PODCAST) && song.uri != null) {
         builder.setUri(song.uri)
+        // Explicit MIME type: podcast MP3s don't have a manifest, and
+        // auto-detection can fail on hosts that don't serve a clean
+        // Content-Type. Most podcast audio is MP3.
+        if (song.source == SongSource.PODCAST) {
+            builder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_MPEG)
+        }
     } else {
         builder.setUri("https://placeholder.ivormusic/${song.id}")
     }
@@ -145,13 +153,21 @@ internal fun MediaItem.toQueueSong(): Song? {
         ?.let { name -> SongSource.entries.firstOrNull { it.name == name } }
         ?: if (localUri != null) SongSource.LOCAL else SongSource.YOUTUBE
     val isLocal = source == SongSource.LOCAL
+    // A restored podcast episode keeps its stream URL: it is https, not a
+    // content/file URI, so the local-only takeIf above would drop it and the
+    // episode would not play after a process death.
+    val restoredUri = when {
+        isLocal -> localUri
+        source == SongSource.PODCAST -> localConfiguration?.uri
+        else -> null
+    }
     return Song(
         id = mediaId,
         title = metadata.title?.toString() ?: "Unknown",
         artist = metadata.artist?.toString() ?: "Unknown Artist",
         album = metadata.albumTitle?.toString() ?: "",
         duration = metadata.durationMs ?: 0L,
-        uri = if (isLocal) localUri else null,
+        uri = restoredUri,
         albumArtUri = if (isLocal) metadata.artworkUri else null,
         thumbnailUrl = if (isLocal) null else {
             extras?.getString(EXTRA_SONG_THUMBNAIL_URL) ?: metadata.artworkUri?.toString()

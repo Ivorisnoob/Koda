@@ -58,6 +58,8 @@ data class PlayerWidgetSnapshot(
     val mediaId: String?,
     /** The playing row's album, when the metadata carries one. */
     val album: String?,
+    /** Vibrant color extracted from artwork (ARGB int), null if unavailable. */
+    val artworkColor: Int?,
 ) {
     /** 0f..1f for the progress strip; 0 when the duration is unknown. */
     val progress: Float
@@ -79,6 +81,7 @@ data class PlayerWidgetSnapshot(
             upNext = emptyList(),
             mediaId = null,
             album = null,
+            artworkColor = null,
         )
     }
 }
@@ -125,6 +128,7 @@ object PlayerWidgetStore {
             put("repeat", snapshot.repeatMode)
             put("mediaId", snapshot.mediaId ?: JSONObject.NULL)
             put("album", snapshot.album ?: JSONObject.NULL)
+            put("artworkColor", snapshot.artworkColor ?: JSONObject.NULL)
             put(
                 "upNext",
                 JSONArray().apply {
@@ -180,6 +184,7 @@ object PlayerWidgetStore {
                 upNext = entries,
                 mediaId = json.optString("mediaId", "").takeIf { it.isNotBlank() },
                 album = json.optString("album", "").takeIf { it.isNotBlank() },
+                artworkColor = json.optInt("artworkColor", 0).takeIf { it != 0 },
             )
         } catch (e: Exception) {
             KLog.w("PlayerWidget", "Widget state unreadable: ${e.message}")
@@ -274,6 +279,7 @@ internal fun Player.toWidgetSnapshot(): PlayerWidgetSnapshot {
         upNext = upcoming,
         mediaId = currentMediaItem?.mediaId?.takeIf { it.isNotBlank() },
         album = mediaMetadata.albumTitle?.toString()?.takeIf { it.isNotBlank() },
+        artworkColor = null, // Enriched by PlayerWidgets.publish() via Palette
     )
 }
 

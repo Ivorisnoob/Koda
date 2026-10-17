@@ -113,6 +113,11 @@ fun MiniPlayerContent(
      * Read in a layer, since it follows the page's scroll.
      */
     detailAlpha: () -> Float = { 1f },
+    /**
+     * When true, the pill has shrunk to a bubble showing only the cover.
+     * A tap on the cover opens the player instead of toggling playback.
+     */
+    isBubble: Boolean = false,
     /** The track's length, so the progress can be carried between the once-a-second samples. */
     durationMs: Long = 0L,
     /** The user's choices for the pill: which buttons, what the cover does, its colours. */
@@ -172,6 +177,7 @@ fun MiniPlayerContent(
     }
     val playLabel = stringResource(R.string.cd_play)
     val pauseLabel = stringResource(R.string.cd_pause)
+    val expandLabel = stringResource(R.string.cd_open_player)
 
     // Toggling while a track is still resolving would call play() again rather
     // than cancelling the pending start (togglePlayPause keys off isPlaying),
@@ -255,12 +261,18 @@ fun MiniPlayerContent(
                             .clickable(
                                 interactionSource = artworkInteraction,
                                 indication = null,
-                                enabled = artworkTogglesPlayback,
-                                onClickLabel = if (isPlaying) pauseLabel else playLabel,
+                                enabled = artworkTogglesPlayback || isBubble,
+                                onClickLabel = if (isBubble) expandLabel else if (isPlaying) pauseLabel else playLabel,
                                 role = Role.Button,
                                 onClick = {
-                                    playerHaptics.playPause(!isPlaying)
-                                    onPlayPauseClick()
+                                    if (isBubble) {
+                                        // The bubble is a minimized icon: tapping
+                                        // it opens the full player.
+                                        onClick()
+                                    } else {
+                                        playerHaptics.playPause(!isPlaying)
+                                        onPlayPauseClick()
+                                    }
                                 }
                             ),
                         contentAlignment = Alignment.Center

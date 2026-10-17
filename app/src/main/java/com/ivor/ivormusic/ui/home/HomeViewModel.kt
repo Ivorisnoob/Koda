@@ -9,6 +9,7 @@ import com.ivor.ivormusic.ui.theme.playlistCoverSeeds
 import androidx.lifecycle.viewModelScope
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.SubgenreShelf
 import com.ivor.ivormusic.data.toVideoItem
 import com.ivor.ivormusic.data.SongRepository
 import com.ivor.ivormusic.data.SongSource
@@ -65,6 +66,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val localRepository = SongRepository(application)
     private val youtubeRepository = YouTubeRepository(application)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
+    private val podcastRepository = com.ivor.ivormusic.data.PodcastRepository(application)
     private val sessionManager = SessionManager(application)
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
@@ -807,11 +809,132 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val recents = mutableListOf<Song>()
             for (entry in history) {
                 if (!seen.add(entry.songId)) continue
-                val song = if (entry.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
-                    // Local files need a playable URI — resolve from the scanned library
-                    localSongs.find { it.id == entry.songId }
-                } else {
-                    Song.fromYouTube(
+                val song = when (entry.source) {
+                    com.ivor.ivormusic.data.SongSource.LOCAL -> {
+                        // Local files need a playable URI — resolve from the scanned library
+                        localSongs.find { it.id == entry.songId }
+                    }
+                    com.ivor.ivormusic.data.SongSource.PODCAST -> {
+                        // Podcasts need their RSS audio URL — resolve from the feed
+                        val episodeId = entry.songId.removePrefix("podcast:")
+                        val allEpisodes = podcastRepository.episodesByFeed.value.values.flatten()
+                        val episode = allEpisodes.find { it.id == episodeId }
+                        val feed = episode?.let { ep ->
+                            podcastRepository.feeds.value.find { it.id == ep.feedId }
+                        }
+                        episode?.let { podcastRepository.episodeToSong(it, feed) }
+                    }
+                    else -> {
+                        Song.fromYouTube(
+                            videoId = entry.songId,
+                            title = entry.title,
+                            artist = entry.artist,
+                            album = entry.album,
+                            duration = entry.duration,
+                            thumbnailUrl = entry.thumbnailUrl
+                        )
+                    }
+                }
+                if (song != null) recents.add(song)
+                if (recents.size >= limit) break
+            }
+            _recentlyPlayed.value = recents
+        }
+
+    /**
+     * The last [limit] played songs, newest first, excluding podcasts. Used
+     * as the AI DJ's instant-mix seed: what the listener has actually been
+     * reaching for lately.
+     */
+    // --- Explore tab discovery ---
+    /** Recent tracks from the listener's most-liked artists. */
+    private val _exploreNewFromLiked = MutableStateFlow<List<Song>>(emptyList())
+    val exploreNewFromLiked: StateFlow<List<Song>> = _exploreNewFromLiked.asStateFlow()
+
+    /** Subgenre shelves ("Because you like Conscious Rap"). */
+    private val _exploreSubgenreShelves = MutableStateFlow<List<SubgenreShelf>>(emptyList())
+    val exploreSubgenreShelves: StateFlow<List<SubgenreShelf>> = _exploreSubgenreShelves.asStateFlow()
+
+    /** YouTube recommendations for the Explore tab. */
+    private val _exploreRecommendations = MutableStateFlow<List<Song>>(emptyList())
+    val exploreRecommendations: StateFlow<List<Song>> = _exploreRecommendations.asStateFlow()
+
+    private var exploreDiscoveryLoaded = false
+
+    /**
+     * Load Explore discovery content: new tracks by liked artists, plus
+     * subgenre shelves with similar artists. Runs once per process; the
+     * AI-powered shelves need a Google AI key and fail silently without one.
+     */
+    fun loadExploreDiscovery() {
+        if (exploreDiscoveryLoaded) return
+        exploreDiscoveryLoaded = true
+        viewModelScope.launch {
+            // YouTube recommendations.
+            try {
+                _exploreRecommendations.value = youtubeRepository.getRecommendations().take(20)
+            } catch (_: Exception) { }
+            val likedArtists = likedSongs.value
+                .groupingBy { it.artist }
+                .eachCount()
+                .toList()
+                .sortedByDescending { it.second }
+                .take(8)
+                .map { it.first }
+                .filter { it.isNotBlank() }
+            if (likedArtists.isEmpty()) return@launch
+
+            // New tracks by liked artists.
+            val fresh = mutableListOf<Song>()
+            for (artist in likedArtists.take(5)) {
+                try {
+                    val match = youtubeRepository.searchArtists(artist).firstOrNull()
+                        ?: continue
+                    val page = youtubeRepository.getArtistPage(match.id)
+                    fresh += page?.songs.orEmpty().take(4)
+                } catch (_: Exception) { }
+            }
+            _exploreNewFromLiked.value = fresh.distinctBy { it.id }.take(20)
+
+            // Subgenre shelves via the DJ's AI.
+            val aiDj = com.ivor.ivormusic.data.AiDjRepository(getApplication())
+            aiDj.suggestSubgenres(likedArtists).fold(
+                onSuccess = { suggestions ->
+                    val shelves = mutableListOf<SubgenreShelf>()
+                    for (suggestion in suggestions.take(3)) {
+                        val songs = mutableListOf<Song>()
+                        for (artist in suggestion.artists.take(3)) {
+                            try {
+                                songs += youtubeRepository.search(artist).take(3)
+                            } catch (_: Exception) { }
+                        }
+                        if (songs.isNotEmpty()) {
+                            shelves += SubgenreShelf(
+                                subgenre = suggestion.subgenre,
+                                basedOn = suggestion.basedOn,
+                                songs = songs.distinctBy { it.id }.take(9),
+                            )
+                        }
+                    }
+                    _exploreSubgenreShelves.value = shelves
+                },
+                onFailure = { /* No key or AI error: shelves stay empty. */ },
+            )
+        }
+    }
+
+    suspend fun getLastPlayedSongs(limit: Int = 30): List<Song> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val localSongs = _songs.value
+            val seen = mutableSetOf<String>()
+            val recents = mutableListOf<Song>()
+            for (entry in statsRepository.loadHistory()) {
+                if (entry.source == com.ivor.ivormusic.data.SongSource.PODCAST) continue
+                if (!seen.add(entry.songId)) continue
+                val song = when (entry.source) {
+                    com.ivor.ivormusic.data.SongSource.LOCAL ->
+                        localSongs.find { it.id == entry.songId }
+                    else -> Song.fromYouTube(
                         videoId = entry.songId,
                         title = entry.title,
                         artist = entry.artist,
@@ -823,7 +946,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (song != null) recents.add(song)
                 if (recents.size >= limit) break
             }
-            _recentlyPlayed.value = recents
+            recents
         }
 
     // Video Mode State
@@ -1327,11 +1450,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var videoFeedLoadedAtMs = 0L
     private var shortsFeedLoadedAtMs = 0L
 
+    private val libraryCache = com.ivor.ivormusic.data.LibraryCache(application)
+
     init {
         observeLocalVideoHistory()
         observeSubscriptionFeedWarmup()
         checkYouTubeConnection()
         observeProfileSwitches()
+        loadCachedLibrary()
+    }
+
+    /**
+     * Load cached library metadata immediately so the Library screen shows
+     * instantly on app open. The fresh YT Music data loads in the background
+     * and updates both the UI and the cache.
+     */
+    private fun loadCachedLibrary() {
+        viewModelScope.launch {
+            val cached = libraryCache.loadCachedLikedSongs()
+            if (cached.isNotEmpty()) {
+                _likedSongs.value = cached
+                likedSongsRepository.setYoutubeLikedIds(cached.map { it.id }.toSet())
+            }
+        }
     }
 
     /**
@@ -2909,7 +3050,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun loadLibraryData() {
         try {
-            _likedSongs.value = youtubeRepository.getLikedMusic()
+            val fresh = youtubeRepository.getLikedMusic()
+            // getLikedMusic() swallows its own errors and returns an empty
+            // list on failure. An empty fetch means the network failed, not
+            // that the user unliked everything: keep the cached list on
+            // screen instead of wiping it (the "sometimes Liked Songs is
+            // missing on the All tab" race).
+            if (fresh.isNotEmpty()) {
+                _likedSongs.value = fresh
+                libraryCache.saveLikedSongs(fresh)
+                // Let the like store know about YouTube likes so the heart
+                // renders correctly for songs liked on YouTube Music.
+                likedSongsRepository.setYoutubeLikedIds(fresh.map { it.id }.toSet())
+            }
             _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
             accountLoadedAtMs = System.currentTimeMillis()
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -3320,8 +3473,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         recommendationsLoadedAtMs = System.currentTimeMillis()
                     }
 
-                    // Update library data
-                    _likedSongs.value = youtubeRepository.getLikedMusic()
+                    // Update library data. Same guard as loadLibraryData:
+                    // an empty fetch is a failed fetch, not an emptied
+                    // library, so never let it wipe the cached list.
+                    val freshLiked = youtubeRepository.getLikedMusic()
+                    if (freshLiked.isNotEmpty()) {
+                        _likedSongs.value = freshLiked
+                        libraryCache.saveLikedSongs(freshLiked)
+                    }
                     _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
                     accountLoadedAtMs = System.currentTimeMillis()
                 } else if (_youtubeSongs.value.isNotEmpty()) {

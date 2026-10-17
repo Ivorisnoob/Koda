@@ -73,6 +73,9 @@ class StatsRepository(private val context: Context) {
         // Incognito leaves no listening record, which is what makes the stats
         // screen and "recently played" honest about the session it describes.
         if (IncognitoMode.isEnabled(context)) return@withContext
+        // The AI DJ's spoken intros are queue filler, not listening: they
+        // must not pollute history, play counts or top artists.
+        if (song.id.startsWith(DJ_INTRO_ID_PREFIX)) return@withContext
         mutex.withLock {
             try {
                 val historyFile = historyFile()
@@ -273,6 +276,8 @@ class StatsRepository(private val context: Context) {
 
     companion object {
         internal const val HISTORY_FILE_BASE = "play_history"
+        /** Song-id prefix for the AI DJ's spoken intro tracks (see DjVoiceRepository). */
+        const val DJ_INTRO_ID_PREFIX = "djid:"
 
         /**
          * One lock for every instance. Five classes each build their own

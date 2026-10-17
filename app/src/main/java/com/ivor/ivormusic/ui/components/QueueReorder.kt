@@ -126,6 +126,12 @@ class QueueReorderState internal constructor(
     private val listState: LazyListState,
     private val haptics: com.ivor.ivormusic.util.KodaHaptics
 ) {
+    /**
+     * When false, drag-to-reorder is disabled. Used for DJ mixes where the
+     * voice intros must stay locked in order with their songs.
+     * Observable so the queue recomposes when the DJ mix starts/stops.
+     */
+    var dragEnabled: Boolean by androidx.compose.runtime.mutableStateOf(true)
     /** Key of the row being dragged, or null when nothing is. */
     var draggingKey: Any? by mutableStateOf(null)
         private set
@@ -246,11 +252,13 @@ fun rememberQueueReorderState(
     listState: LazyListState,
     keys: List<Any>,
     onMove: (from: Int, to: Int) -> Unit,
-    onSettle: () -> Unit
+    onSettle: () -> Unit,
+    dragEnabled: Boolean = true,
 ): QueueReorderState {
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val density = LocalDensity.current
     val state = remember(listState) { QueueReorderState(listState, haptics) }
+    state.dragEnabled = dragEnabled
 
     // Read through on every recomposition rather than captured once: the queue
     // changes under this state constantly, both from the drag itself and from
@@ -319,8 +327,9 @@ fun Modifier.queueDragHandle(state: QueueReorderState, key: Any): Modifier =
  * moving before the long-press timeout hands the gesture to the list's own
  * scroll, which reads as the drag simply not working.
  */
-fun Modifier.queueDragLongPress(state: QueueReorderState, key: Any): Modifier =
-    this.pointerInput(key) {
+fun Modifier.queueDragLongPress(state: QueueReorderState, key: Any): Modifier {
+    if (!state.dragEnabled) return this
+    return this.pointerInput(key) {
         detectDragGesturesAfterLongPress(
             onDragStart = { state.begin(key) },
             onDragEnd = { state.end() },
@@ -331,3 +340,4 @@ fun Modifier.queueDragLongPress(state: QueueReorderState, key: Any): Modifier =
             }
         )
     }
+}

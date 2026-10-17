@@ -121,6 +121,7 @@ fun BentoPlayerSheetContent(
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.playOrderQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
@@ -159,6 +160,7 @@ fun BentoPlayerSheetContent(
         Crossfade(targetState = showQueue, label = "BentoQueueTransition") { queueVisible ->
             if (queueVisible) {
                 EditorialQueueView(
+                    isDjMixPlaying = viewModel.isDjMixPlaying.collectAsState().value,
                     queue = currentQueue,
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
@@ -455,13 +457,16 @@ fun BentoPlayerSheetContent(
                         ) {
                             LikeBurstIcon(isFavorite = isFavorite, iconSize = 22.dp)
                         }
-                        BentoToggleTile(
-                            checked = shuffleModeEnabled,
-                            onClick = { viewModel.toggleShuffle() },
-                            uncheckedColor = tileColor,
-                            uncheckedContent = onTileVariant
-                        ) {
-                            Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(22.dp))
+                        // DJ mixes are strictly ordered: no shuffle option.
+                        if (!isDjMixPlaying) {
+                            BentoToggleTile(
+                                checked = shuffleModeEnabled,
+                                onClick = { viewModel.toggleShuffle() },
+                                uncheckedColor = tileColor,
+                                uncheckedContent = onTileVariant
+                            ) {
+                                Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(22.dp))
+                            }
                         }
                         BentoToggleTile(
                             checked = repeatMode != Player.REPEAT_MODE_OFF,

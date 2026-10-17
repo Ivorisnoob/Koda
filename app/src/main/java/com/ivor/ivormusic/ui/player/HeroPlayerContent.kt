@@ -141,6 +141,7 @@ fun HeroPlayerSheetContent(
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentQueue by viewModel.playOrderQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
@@ -188,6 +189,7 @@ fun HeroPlayerSheetContent(
         Crossfade(targetState = showQueue, label = "HeroQueueTransition") { queueVisible ->
             if (queueVisible) {
                 EditorialQueueView(
+                    isDjMixPlaying = viewModel.isDjMixPlaying.collectAsState().value,
                     queue = currentQueue,
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
@@ -532,18 +534,21 @@ fun HeroPlayerSheetContent(
                                         .height(52.dp),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    HeroToggle(
-                                        checked = shuffleModeEnabled,
-                                        onClick = { viewModel.toggleShuffle() },
-                                        ink = ink,
-                                        accent = accent,
-                                        onAccent = onAccent
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Shuffle,
-                                            stringResource(R.string.cd_shuffle),
-                                            modifier = Modifier.size(22.dp)
-                                        )
+                                    // DJ mixes are strictly ordered: no shuffle option.
+                                    if (!isDjMixPlaying) {
+                                        HeroToggle(
+                                            checked = shuffleModeEnabled,
+                                            onClick = { viewModel.toggleShuffle() },
+                                            ink = ink,
+                                            accent = accent,
+                                            onAccent = onAccent
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Shuffle,
+                                                stringResource(R.string.cd_shuffle),
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
                                     }
                                     HeroToggle(
                                         checked = repeatMode != Player.REPEAT_MODE_OFF,

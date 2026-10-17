@@ -10,7 +10,9 @@ import java.util.Locale
 @Serializable
 enum class SongSource {
     LOCAL,
-    YOUTUBE
+    YOUTUBE,
+    /** An RSS podcast episode; streams its audio URL like a local URI. */
+    PODCAST
 }
 
 /**

@@ -81,13 +81,17 @@ object AutoArtwork {
 
     /** Browse mediaId -> tile key. Null means "no category tile for this id". */
     fun categoryKey(mediaId: String?): String? = when (mediaId) {
+        "HOME" -> "home"
         "LIBRARY" -> "library"
         "RECOMMENDED" -> "recommended"
         "PLAYLISTS" -> "playlists"
+        "PODCASTS" -> "podcasts"
+        "AIDJ" -> "dj"
         "DOWNLOADS" -> "downloads"
         "LIKED" -> "liked"
         "RECENT" -> "recent"
         "LOCAL_SONGS" -> "device"
+        "HOME_EPISODES" -> "episodes"
         else -> null
     }
 
@@ -134,9 +138,13 @@ object AutoArtwork {
 
     /** Fixed hues per category: identity, not theme. See the file KDoc. */
     private val TILE_HUES: Map<String, Pair<Float, Float>> = mapOf(
+        "home" to (200f to 230f),
         "library" to (260f to 295f),
         "recommended" to (20f to 45f),
         "playlists" to (210f to 240f),
+        "podcasts" to (280f to 320f),
+        "episodes" to (290f to 330f),
+        "dj" to (170f to 200f),
         "downloads" to (175f to 210f),
         "liked" to (350f to 320f),
         "recent" to (35f to 15f),
@@ -144,9 +152,13 @@ object AutoArtwork {
     )
 
     private val TILE_LETTERS: Map<String, Char> = mapOf(
+        "home" to 'H',
         "library" to 'L',
         "recommended" to 'R',
         "playlists" to 'P',
+        "podcasts" to 'P',
+        "episodes" to 'E',
+        "dj" to 'D',
         "downloads" to 'D',
         "liked" to 'L',
         "recent" to 'R',

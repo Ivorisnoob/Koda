@@ -261,7 +261,7 @@ private class PolygonShape(private val polygon: RoundedPolygon) : Shape {
  * per category would mean repeating the whole list eleven times. The Home tab
  * system solves the same problem the same way.
  */
-internal enum class SettingsPage {
+enum class SettingsPage {
     HUB,
     ACCOUNT,
     APPEARANCE,
@@ -277,6 +277,7 @@ internal enum class SettingsPage {
     DISPLAY_SIZE,
     LYRICS,
     LASTFM,
+    AIDJ,
     SPONSORBLOCK,
     APP_ICON,
     BACKUP,
@@ -310,6 +311,7 @@ internal enum class SettingsPage {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsScreen(
+    initialPage: SettingsPage = SettingsPage.HUB,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     amoledTheme: Boolean,
@@ -531,7 +533,7 @@ fun SettingsScreen(
     }
 
     // Which category page is open, and what is typed in the hub's search box.
-    var page by remember { mutableStateOf(SettingsPage.HUB) }
+    var page by remember(initialPage) { mutableStateOf(initialPage) }
     var searchQuery by remember { mutableStateOf("") }
 
     // Backup and restore is a page like the others, so on a wide window it
@@ -859,6 +861,7 @@ fun SettingsScreen(
         )
 
         SettingsPage.LASTFM -> LastFmSettingsPage(onBack = { page = SettingsPage.HUB })
+        SettingsPage.AIDJ -> AiDjSettingsPage(onBack = { page = SettingsPage.HUB })
         SettingsPage.LYRICS -> LyricsSettingsPage(
             configuration = lyricsConfiguration,
             onChange = onLyricsConfigurationChange,
@@ -1771,6 +1774,11 @@ private fun SettingsHub(
                         LastFmHubRow(
                             onClick = { onOpenPage(SettingsPage.LASTFM) },
                             selected = selectedPage == SettingsPage.LASTFM
+                        )
+                        SettingsDivider()
+                        AiDjHubRow(
+                            onClick = { onOpenPage(SettingsPage.AIDJ) },
+                            selected = selectedPage == SettingsPage.AIDJ
                         )
                         SettingsDivider()
                         SettingsHubRow(

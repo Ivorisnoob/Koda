@@ -10,7 +10,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
@@ -71,12 +70,7 @@ import com.ivor.ivormusic.R
  */
 class PixelWidget : GlanceAppWidget() {
 
-    override val sizeMode: SizeMode = SizeMode.Responsive(
-        setOf(
-            DpSize(140.dp, 140.dp),
-            DpSize(200.dp, 200.dp),
-        )
-    )
+    override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         PlayerWidgetHost.ensureSeeded(context)
@@ -113,9 +107,7 @@ private fun PixelContent(ui: PlayerWidgetUi) {
 
     val context = LocalContext.current
     val size = LocalSize.current
-    // LocalSize reports the matched bucket rather than the real cell, so the
-    // deck is sized from it explicitly and everything inside is measured
-    // against that square - the art and the tap targets cannot drift apart.
+    // The deck and tap targets use the actual square the launcher allocated.
     val side = minOf(size.width, size.height) - 8.dp
     val unit = side / PIXEL_GRID
     val playing = ui.snapshot.isPlaying
@@ -134,7 +126,7 @@ private fun PixelContent(ui: PlayerWidgetUi) {
                         if (playing) R.string.widget_action_pause else R.string.widget_action_play
                     )
                 }
-                .clickable(actionRunCallback<TogglePlaybackAction>()),
+                .clickable(widgetTransportAction(WidgetActionActivity.ACTION_TOGGLE)),
             contentAlignment = Alignment.Center,
         ) {
             PixelLayer(R.drawable.px_deck, colors.surfaceVariant)
@@ -186,13 +178,13 @@ private fun PixelContent(ui: PlayerWidgetUi) {
                         width = unit * 11,
                         height = unit * 9,
                         description = widgetString(R.string.widget_action_previous),
-                        action = actionRunCallback<SkipPreviousAction>(),
+                        action = widgetTransportAction(WidgetActionActivity.ACTION_PREVIOUS),
                     )
                     PixelTapTarget(
                         width = unit * 10,
                         height = unit * 9,
                         description = widgetString(R.string.widget_action_next),
-                        action = actionRunCallback<SkipNextAction>(),
+                        action = widgetTransportAction(WidgetActionActivity.ACTION_NEXT),
                     )
                 }
             }

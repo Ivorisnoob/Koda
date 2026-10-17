@@ -49,6 +49,12 @@ class LikedSongsRepository(context: Context) {
         // Process-wide state (see class doc).
         private val _likedSongIds = MutableStateFlow<Set<String>>(emptySet())
         private val _likedSongs = MutableStateFlow<List<Song>>(emptyList())
+        /**
+         * Song IDs liked on YouTube Music (from the API). A song counts as
+         * liked if it's in either set, so YouTube likes show the filled heart
+         * in Koda without a local copy.
+         */
+        private val _youtubeLikedIds = MutableStateFlow<Set<String>>(emptySet())
         private val LOCK = Any()
 
         /** The profile whose likes are in the flows, or null before the first load. */
@@ -164,10 +170,24 @@ class LikedSongsRepository(context: Context) {
     }
 
     /**
-     * Check if a song is liked.
+     * Check if a song is liked — locally in Koda or on YouTube Music.
      */
     fun isLiked(songId: String): Boolean {
-        return _likedSongIds.value.contains(songId)
+        return _likedSongIds.value.contains(songId) ||
+            _youtubeLikedIds.value.contains(songId)
+    }
+
+    /**
+     * Replace the YouTube-liked ID set (from the YouTube API). Called after
+     * the liked list refreshes so YouTube likes render as liked in Koda.
+     */
+    fun setYoutubeLikedIds(ids: Set<String>) {
+        _youtubeLikedIds.value = ids
+    }
+
+    /** Forget a YouTube-liked ID (after the user unlikes it in Koda). */
+    fun removeYoutubeLikedId(songId: String) {
+        _youtubeLikedIds.value = _youtubeLikedIds.value - songId
     }
 
     /**
@@ -191,10 +211,19 @@ class LikedSongsRepository(context: Context) {
 
     /**
      * Toggle the liked status of a song by ID only (no metadata stored).
+     * A YouTube-liked song toggles to unliked (the caller syncs the unlike
+     * to YouTube); otherwise the local set toggles as before.
      * @return true if the song is now liked, false if unliked
      */
     fun toggleLike(songId: String): Boolean {
         val profileId = writeTarget()
+        // YouTube-liked but not locally liked: this toggle unlikes it.
+        if (!(_likedSongIds.value.contains(songId)) &&
+            _youtubeLikedIds.value.contains(songId)
+        ) {
+            _youtubeLikedIds.value = _youtubeLikedIds.value - songId
+            return false
+        }
         val currentLiked = _likedSongIds.value.toMutableSet()
         val isNowLiked = if (currentLiked.contains(songId)) {
             currentLiked.remove(songId)

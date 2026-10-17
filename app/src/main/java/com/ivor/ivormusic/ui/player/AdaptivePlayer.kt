@@ -311,6 +311,7 @@ internal fun PlayerQueuePane(
 ) {
     val queue by viewModel.playOrderQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val currentIndex = remember(queue, currentQueueItemId) {
         queue.indexOfFirst { it.id == currentQueueItemId }
@@ -322,7 +323,8 @@ internal fun PlayerQueuePane(
         listState = listState,
         keys = rowKeys,
         onMove = { from, to -> viewModel.movePlayOrderItem(from, to, persist = false) },
-        onSettle = { viewModel.commitQueueOrder() }
+        onSettle = { viewModel.commitQueueOrder() },
+        dragEnabled = !isDjMixPlaying,
     )
     val removal = rememberQueueRemoval(onUndo = { viewModel.undoQueueRemoval() })
     var showSaveDialog by remember { mutableStateOf(false) }
@@ -569,6 +571,7 @@ internal fun LandscapeNowPlaying(
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
+    val isDjMixPlaying by viewModel.isDjMixPlaying.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
@@ -767,11 +770,13 @@ internal fun LandscapeNowPlaying(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (!isDjMixPlaying) {
                         LandscapeToggle(
-                            checked = shuffleModeEnabled,
-                            onCheckedChange = { viewModel.toggleShuffle() },
-                            contentDescription = stringResource(R.string.cd_shuffle)
-                        ) { Icon(Icons.Default.Shuffle, null, Modifier.size(22.dp)) }
+                                checked = shuffleModeEnabled,
+                                onCheckedChange = { viewModel.toggleShuffle() },
+                                contentDescription = stringResource(R.string.cd_shuffle)
+                            ) { Icon(Icons.Default.Shuffle, null, Modifier.size(22.dp)) }
+                        }
                         LandscapeSkipButton(
                             onClick = onPrevious,
                             contentDescription = stringResource(R.string.cd_previous)

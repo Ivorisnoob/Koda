@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.Search
@@ -106,6 +108,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -206,6 +209,16 @@ private val MINI_BUBBLE_EXPAND_SCROLL = 200.dp
 private data class HomeTabKey(val tab: Int, val videoMode: Boolean)
 
 /**
+ * Music-mode tab indices. Explore sits left of Search; Library is last.
+ * Video mode has its own numbering (VideoHomeDestination.tabId) sharing the
+ * same Int space — the mode-switch guard below maps between them.
+ */
+private const val TAB_HOME = 0
+private const val TAB_EXPLORE = 1
+private const val TAB_SEARCH = 2
+private const val TAB_LIBRARY = 3
+
+/**
  * The widest the collapsed music pill grows beside a rail. Past this it stops
  * reading as a pill and starts reading as a banner, so on a tablet it centres
  * over the page instead of spanning it.
@@ -231,6 +244,7 @@ fun HomeScreen(
     isDarkMode: Boolean = true,
     onThemeToggle: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToAiDjSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
     onNavigateToStats: () -> Unit = {},
     onNavigateToSubscriptions: () -> Unit = {},
@@ -433,11 +447,15 @@ fun HomeScreen(
         mutableIntStateOf(if (reachable) stored else videoRootTab)
     }
 
+    // Incremented when the Library tab is re-tapped while already selected,
+    // to pop its internal navigation back to the Main landing page.
+    var libraryResetSignal by androidx.compose.runtime.remember { mutableIntStateOf(0) }
+
     val rootTab = if (videoMode) videoRootTab else 0
     val visualTabOrder = if (videoMode) {
         videoHomeConfiguration.destinationOrder.map(VideoHomeDestination::tabId)
     } else {
-        listOf(0, 1, 2)
+        listOf(TAB_HOME, TAB_EXPLORE, TAB_LIBRARY)
     }
 
     // A destination can be hidden while it is selected (including from the
@@ -519,13 +537,15 @@ fun HomeScreen(
     val subscriptionsScrollState = rememberLazyListState()
     val musicLibraryScrollState = rememberLazyListState()
     val videoLibraryScrollState = rememberLazyListState()
+    val exploreScrollState = rememberLazyListState()
 
     // Which of the above the visible tab is currently driving.
     val currentTabScrollState = when (selectedTab) {
-        0 -> if (videoMode) videoHomeScrollState else musicHomeScrollState
-        1 -> if (videoMode) videoSearchScrollState else musicSearchScrollState
-        2 -> if (videoMode) subscriptionsScrollState else musicLibraryScrollState
-        else -> videoLibraryScrollState
+        TAB_HOME -> if (videoMode) videoHomeScrollState else musicHomeScrollState
+        TAB_EXPLORE -> if (videoMode) videoSearchScrollState else exploreScrollState
+        TAB_SEARCH -> if (videoMode) videoSearchScrollState else musicSearchScrollState
+        TAB_LIBRARY -> if (videoMode) subscriptionsScrollState else musicLibraryScrollState
+        else -> if (videoMode) videoLibraryScrollState else musicLibraryScrollState
     }
 
     // Lives outside the mode-swapped content so the thumb keeps animating
@@ -557,9 +577,31 @@ fun HomeScreen(
         selectedTab = rootTab
     }
 
-    // The Subscriptions/History tabs (2/3) only exist in video mode
+    // Load Explore discovery content the first time the tab opens.
+    LaunchedEffect(selectedTab, videoMode) {
+        if (!videoMode && selectedTab == TAB_EXPLORE) {
+            viewModel.loadExploreDiscovery()
+        }
+    }
+
+    // The tab indices mean different things per mode (music: 0 Home, 1 Explore,
+    // 2 Search, 3 Library; video: 0 Home, 1 Search, 2 Subscriptions, 3 Library).
     LaunchedEffect(videoMode) {
-        if (!videoMode && selectedTab > 2) selectedTab = 0
+        if (videoMode) {
+            // Was music: Search -> video Search, Explore -> Home (no equivalent).
+            selectedTab = when (selectedTab) {
+                TAB_SEARCH -> VideoHomeDestination.SEARCH.tabId
+                TAB_EXPLORE -> videoRootTab
+                else -> selectedTab
+            }
+        } else {
+            // Was video: Search -> music Search, Subscriptions -> Home.
+            selectedTab = when (selectedTab) {
+                VideoHomeDestination.SEARCH.tabId -> TAB_SEARCH
+                VideoHomeDestination.SUBSCRIPTIONS.tabId -> TAB_HOME
+                else -> selectedTab
+            }
+        }
     }
 
     // Re-read the history when Home becomes the active tab. Playback writes an
@@ -624,7 +666,7 @@ fun HomeScreen(
             // Asking for it is therefore asking to be in music mode.
             noteLibraryReturn()
             viewedArtistFromPlayer = artist
-            goToTab(2)
+            goToTab(TAB_LIBRARY)
             viewModel.consumeArtistPageRequest()
         }
     }
@@ -638,6 +680,125 @@ fun HomeScreen(
     var viewedVideoPlaylistFromHome by remember {
         mutableStateOf<com.ivor.ivormusic.data.VideoPlaylist?>(null)
     }
+    // The Home tab's DJ card: opens the Library's AI DJ route, consumed by
+    // LibraryContent on arrival like the playlist hand-off above.
+    var openAiDjFromHome by remember { mutableStateOf(false) }
+
+    // The DJ emblem regenerates the mix right away: a 60-song set from the
+    // last 30 plays plus liked context, with spoken transitions only at
+    // notable mood shifts. The fresh mix is cached and starts playing.
+    // Failures fall back to the DJ screen, which explains what went wrong.
+    var djInstantLoading by remember { mutableStateOf(false) }
+    val djContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    // Background DJ cache: pre-computes the mix and voice intros on launch,
+    // so the FAB plays instantly from cache.
+    val djCacheManager = remember(djContext) {
+        com.ivor.ivormusic.data.DjCacheManager(djContext)
+    }
+    // Start pre-computation on launch (background, non-blocking).
+    androidx.compose.runtime.LaunchedEffect(djCacheManager) {
+        djCacheManager.startPrecompute(
+            getRecent = { viewModel.getLastPlayedSongs(30) },
+            getLiked = { viewModel.likedSongs.value },
+        )
+    }
+    // Cleanup on dispose.
+    androidx.compose.runtime.DisposableEffect(djCacheManager) {
+        onDispose { djCacheManager.shutdown() }
+    }
+    // Save DJ position when the mix stops being the active queue.
+    // This enables resume-from-nearest-intro on next FAB press.
+    val isDjMixPlayingState by playerViewModel.isDjMixPlaying.collectAsState()
+    var wasDjMixPlaying by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(isDjMixPlayingState) {
+        if (wasDjMixPlaying && !isDjMixPlayingState) {
+            // DJ just stopped — save the position
+            val cached = djCacheManager.getCachedMix()
+            if (cached != null) {
+                val index = playerViewModel.getCurrentQueueIndex()
+                djCacheManager.saveDjPosition(cached, index)
+            }
+        }
+        wasDjMixPlaying = isDjMixPlayingState
+    }
+    fun regenerateDj() {
+        if (djInstantLoading) return
+        djInstantLoading = true
+        scope.launch {
+            try {
+                val repository = com.ivor.ivormusic.data.AiDjRepository(djContext)
+                val voiceRepository = com.ivor.ivormusic.data.DjVoiceRepository(djContext)
+                val recent = viewModel.getLastPlayedSongs(30)
+                val liked = viewModel.likedSongs.value
+                repository.generateInstantMix(recent, liked).fold(
+                    onSuccess = { mix ->
+                        repository.cacheMix(mix)
+                        val queue = if (repository.djVoiceEnabled.value) {
+                            voiceRepository.buildQueueWithIntros(mix)
+                        } else {
+                            mix.tracks.map { it.song }
+                        }
+                        if (queue.isNotEmpty()) {
+                            playerViewModel.playQueue(queue, queue.first())
+                            showPlayerSheet = true
+                        } else {
+                            noteLibraryReturn()
+                            openAiDjFromHome = true
+                            goToTab(3)
+                        }
+                    },
+                    onFailure = {
+                        noteLibraryReturn()
+                        openAiDjFromHome = true
+                        goToTab(3)
+                    },
+                )
+            } finally {
+                djInstantLoading = false
+            }
+        }
+    }
+    /**
+     * Play the DJ mix instantly from cache, bypassing the config screen.
+     * If no cached mix exists, falls back to regenerateDj().
+     */
+    fun playDjFromCache() {
+        if (djInstantLoading) return
+        // If the DJ mix is already playing, the FAB is a pause/play toggle —
+        // never restart the playlist.
+        if (playerViewModel.isDjMixPlaying.value) {
+            playerViewModel.togglePlayPause()
+            return
+        }
+        val cached = djCacheManager.getCachedMix()
+        if (cached == null) {
+            regenerateDj()
+            return
+        }
+        djInstantLoading = true
+        scope.launch {
+            try {
+                val queue = djCacheManager.buildQueueFromCache(cached)
+                if (queue.isNotEmpty()) {
+                    // Resume from nearest DJ intro before last position, if available.
+                    val savedPos = djCacheManager.getSavedDjPosition(cached)
+                    val startIndex = if (savedPos != null && savedPos < queue.size) {
+                        djCacheManager.findResumeIntroIndex(queue, savedPos)
+                    } else {
+                        0
+                    }
+                    playerViewModel.playDjMix(queue, startIndex)
+                    showPlayerSheet = true
+                    // Keep caching upcoming intros ahead of playback.
+                    djCacheManager.startAheadCaching(cached)
+                } else {
+                    regenerateDj()
+                }
+            } finally {
+                djInstantLoading = false
+            }
+        }
+    }
 
     // A playlist link shared or opened into the app, which lands at
     // MainActivity and cannot reach the tab state from there. Same hand-off as
@@ -650,7 +811,7 @@ fun HomeScreen(
         pendingPlaylistPage?.let { playlist ->
             noteLibraryReturn()
             viewedPlaylistFromHome = playlist
-            goToTab(2)
+            goToTab(TAB_LIBRARY)
             viewModel.consumePlaylistPageRequest()
         }
     }
@@ -658,7 +819,7 @@ fun HomeScreen(
     // consumes the request, so all this has to do is get to the music Library.
     val pendingSpotifyImport by viewModel.pendingSpotifyImport.collectAsState()
     LaunchedEffect(pendingSpotifyImport) {
-        if (pendingSpotifyImport != null) goToTab(2)
+        if (pendingSpotifyImport != null) goToTab(TAB_LIBRARY)
     }
     val pendingVideoPlaylistPage by viewModel.pendingVideoPlaylistPage.collectAsState()
     LaunchedEffect(pendingVideoPlaylistPage) {
@@ -965,7 +1126,7 @@ fun HomeScreen(
     val gestureTabIds = if (videoMode) {
         videoHomeConfiguration.orderedVisibleDestinations.map { it.tabId }
     } else {
-        listOf(0, 1, 2)
+        listOf(TAB_HOME, TAB_EXPLORE, TAB_SEARCH, TAB_LIBRARY)
     }
     val flickToTab: (towardNext: Boolean) -> Unit = { towardNext ->
         val index = gestureTabIds.indexOf(selectedTab)
@@ -1118,6 +1279,17 @@ fun HomeScreen(
                 }
             ) { tabKey ->
                 val targetTab = tabKey.tab
+                // The bottom bar was reordered to Home, Explore, Search, Library,
+                // but the content branches below predate that and use the original
+                // order (0 Home, 1 Search, 2 Library, 3 Explore). Translate the
+                // music-mode index here rather than churning the branches; video
+                // mode has its own numbering and passes through untouched.
+                val contentTab = if (tabKey.videoMode) targetTab else when (targetTab) {
+                    TAB_EXPLORE -> 3
+                    TAB_SEARCH -> 1
+                    TAB_LIBRARY -> 2
+                    else -> targetTab
+                }
                 // Each page draws the mode it was keyed on, never the live one.
                 // A mode switch keeps the page being left composed until its
                 // fade ends; reading the live mode there made it rebuild itself
@@ -1130,7 +1302,7 @@ fun HomeScreen(
                 // [scar October 2026, read out of a heap dump of a stuck Home]
                 @Suppress("NAME_SHADOWING")
                 val videoMode = tabKey.videoMode
-                when (targetTab) {
+                when (contentTab) {
                     0 -> {
                         videoMode.let { videoModeContent ->
                             // Video Mode: Show video content
@@ -1237,10 +1409,17 @@ fun HomeScreen(
                                                 onPlaylistClick = { playlist ->
                                                     noteLibraryReturn()
                                                     viewedPlaylistFromHome = playlist
-                                                    selectedTab = 2
+                                                    selectedTab = TAB_LIBRARY
                                                 },
-                                                onOpenLiked = { selectedTab = 2 },
-                                                onShowAllInLibrary = { selectedTab = 2 },
+                                                onOpenLiked = { selectedTab = TAB_LIBRARY },
+                                                onShowAllInLibrary = { selectedTab = TAB_LIBRARY },
+                                                onOpenAiDj = {
+                                                    noteLibraryReturn()
+                                                    openAiDjFromHome = true
+                                                    goToTab(TAB_LIBRARY)
+                                                },
+                                                onRegenerateDj = { regenerateDj() },
+                                                djLoading = djInstantLoading,
                                                 onSpinClick = { source ->
                                                     spinSource = source
                                                     spinOpen = true
@@ -1291,7 +1470,7 @@ fun HomeScreen(
                                                     viewedPlaylistFromHome = com.ivor.ivormusic.data.PlaylistDisplayItem(
                                                         context.getString(R.string.liked_songs), "LM", "You", classicLiked.size, null
                                                     )
-                                                    selectedTab = 2
+                                                    selectedTab = TAB_LIBRARY
                                                 },
                                                 topArtists = classicTopArtists,
                                                 artistPhotos = classicArtistPhotos,
@@ -1309,7 +1488,7 @@ fun HomeScreen(
                                                     if (album.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
                                                         noteLibraryReturn()
                                                         viewedAlbumFromPlayer = album.title
-                                                        selectedTab = 2
+                                                        selectedTab = TAB_LIBRARY
                                                         return@YourMixContent
                                                     }
                                                     scope.launch {
@@ -1321,7 +1500,7 @@ fun HomeScreen(
                                                         if (page != null) {
                                                             noteLibraryReturn()
                                                             viewedPlaylistFromHome = page
-                                                            selectedTab = 2
+                                                            selectedTab = TAB_LIBRARY
                                                         } else {
                                                             val queue = viewModel.recentAlbumQueue(album)
                                                             if (queue.isNotEmpty()) {
@@ -1339,7 +1518,7 @@ fun HomeScreen(
                                                 onPlaylistClick = { playlist ->
                                                     noteLibraryReturn()
                                                     viewedPlaylistFromHome = playlist
-                                                    selectedTab = 2
+                                                    selectedTab = TAB_LIBRARY
                                                 },
                                                 onRecentClick = { song ->
                                                     // Resume from the history rail: the
@@ -1347,7 +1526,7 @@ fun HomeScreen(
                                                     playerViewModel.playQueue(recentlyPlayed, song)
                                                     showPlayerSheet = true
                                                 },
-                                                onShowAllInLibrary = { selectedTab = 2 },
+                                                onShowAllInLibrary = { selectedTab = TAB_LIBRARY },
                                                 onSpinClick = {
                                                     spinSource = SpinSource.Mix
                                                     spinOpen = true
@@ -1486,6 +1665,10 @@ fun HomeScreen(
                                     playerViewModel.playQueue(songs, selectedSong)
                                     showPlayerSheet = true
                                 },
+                                onPlayDjMix = { songs: List<Song> ->
+                                    playerViewModel.playDjMix(songs)
+                                    showPlayerSheet = true
+                                },
                                 onShuffleQueue = { songs: List<Song> ->
                                     playerViewModel.playQueueShuffled(songs)
                                     showPlayerSheet = true
@@ -1507,17 +1690,60 @@ fun HomeScreen(
                                 initialAlbum = viewedAlbumFromPlayer,
                                 onInitialAlbumConsumed = { viewedAlbumFromPlayer = null },
                                 onStatsClick = onNavigateToStats,
+                                onOpenAiDjSettings = onNavigateToAiDjSettings,
+                                initialAiDj = openAiDjFromHome,
+                                onInitialAiDjConsumed = { openAiDjFromHome = false },
                                 onOpenChannel = onOpenChannel,
                                 onSongLongPress = { song -> songOptionsTarget = song },
                                 onEnqueueSong = { song, playNext ->
                                     if (playNext) playerViewModel.playNext(song)
                                     else playerViewModel.addToQueue(song)
                                 },
-                                allSongsListState = musicLibraryScrollState
+                                allSongsListState = musicLibraryScrollState,
+                                resetSignal = libraryResetSignal,
                             )
                         }
                     }
-                    3 -> {
+                    3 -> if (!videoMode) {
+                        // Music mode: the Explore tab (Quick Picks + Artist
+                        // Spotlight), separate from Search.
+                        val exploreLiked by viewModel.likedSongs.collectAsState()
+                        val exploreDownloaded by viewModel.downloadedSongs.collectAsState()
+                        val exploreRecent by viewModel.recentlyPlayed.collectAsState()
+                        val exploreTopArtists by viewModel.topArtists.collectAsState()
+                        val exploreArtistPhotos by viewModel.artistPhotos.collectAsState()
+                        ExploreContent(
+                            songs = songs,
+                            likedSongs = exploreLiked,
+                            downloadedSongs = exploreDownloaded,
+                            recentlyPlayed = exploreRecent,
+                            topArtists = exploreTopArtists,
+                            artistPhotos = exploreArtistPhotos,
+                            newFromLiked = viewModel.exploreNewFromLiked.collectAsState().value,
+                            subgenreShelves = viewModel.exploreSubgenreShelves.collectAsState().value,
+                            recommendations = viewModel.exploreRecommendations.collectAsState().value,
+                            onPlaySongs = { queue, start ->
+                                playerViewModel.playQueue(queue, start)
+                                showPlayerSheet = true
+                            },
+                            onSongLongPress = { song -> songOptionsTarget = song },
+                            onArtistClick = { artist ->
+                                noteLibraryReturn()
+                                viewedArtistFromPlayer = artist
+                                goToTab(TAB_LIBRARY)
+                            },
+                            onArtistRadio = { artist ->
+                                val artistSongs = (songs + exploreLiked).distinctBy { it.id }
+                                    .filter { it.artist.equals(artist, ignoreCase = true) }
+                                if (artistSongs.isNotEmpty()) {
+                                    playerViewModel.playQueueShuffled(artistSongs)
+                                    showPlayerSheet = true
+                                }
+                            },
+                            contentPadding = listContentPadding,
+                            listState = exploreScrollState,
+                        )
+                    } else {
                         // Video mode only: Library (playlists, Watch Later,
                         // liked videos, watch history)
                         if (videoMode && localOnly) {
@@ -1710,13 +1936,20 @@ fun HomeScreen(
                 }
             }
         } else listOf(
-            Triple(0, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
-            Triple(1, stringResource(R.string.tab_search), Pair(Icons.Filled.Search, Icons.Outlined.Search)),
-            Triple(2, stringResource(R.string.tab_library), Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
+            Triple(TAB_HOME, stringResource(R.string.tab_home), Pair(Icons.Rounded.Home, Icons.Outlined.Home)),
+            Triple(TAB_EXPLORE, stringResource(R.string.tab_explore), Pair(Icons.Filled.Explore, Icons.Outlined.Explore)),
+            Triple(TAB_LIBRARY, stringResource(R.string.tab_library), Pair(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic))
         )
         val selectNavTab: (Int) -> Unit = { index ->
             if (selectedTab == index) {
-                if (currentTabScrollState.canScrollBackward) {
+                // Re-tapping the current tab: pop its internal navigation back
+                // to the landing page, then scroll to top if already there.
+                // Library has sub-routes (Playlist, PodcastDetail, AiDj, ...);
+                // the others scroll.
+                if (index == TAB_LIBRARY) {
+                    navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    libraryResetSignal++
+                } else if (currentTabScrollState.canScrollBackward) {
                     navBarHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                     scope.launch { currentTabScrollState.scrollToTop() }
                 }
@@ -1886,6 +2119,48 @@ fun HomeScreen(
             )
         }
 
+        // AI DJ floating action button: squircle, headphones emblem, bottom-right
+        // next to the nav pill (or in the rail layout's content corner).
+        // 56dp to match the pill bar height; 32dp emblem for better proportions.
+        // Tap plays instantly from cache (or toggles pause/play if the DJ mix is
+        // already running); long-press opens the DJ screen.
+        // Hides with the pill bar on scroll: fades and slides down using the
+        // toolbar's hidden fraction, so it never overlaps content.
+        if (!nonExpressiveNavigationBar) {
+            val djHiddenFraction = if (useRail) 0f else floatingToolbarState.hiddenFraction()
+            androidx.compose.material3.Surface(
+                modifier = Modifier
+                    .align(androidx.compose.ui.Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp, end = 20.dp)
+                    .offset(y = with(androidx.compose.ui.platform.LocalDensity.current) {
+                        // Slide down with the toolbar, plus extra to fully clear
+                        // the 56dp button off-screen when fully hidden.
+                        (floatingToolbarState.offset + 80.dp.toPx() * djHiddenFraction).toDp()
+                    })
+                    .alpha(1f - djHiddenFraction)
+                    .size(56.dp)
+                    .combinedClickable(
+                        onClick = { playDjFromCache() },
+                        onLongClick = {
+                            noteLibraryReturn()
+                            openAiDjFromHome = true
+                            goToTab(TAB_LIBRARY)
+                        },
+                    ),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                color = androidx.compose.material3.MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onTertiaryContainer,
+                shadowElevation = 6.dp,
+            ) {
+                DjEmblem(
+                    emblemSize = 32.dp,
+                    // DjEmblem handles its own click; we want the FAB's.
+                    onClick = null,
+                )
+            }
+        }
+
         // Published for the video overlay, which is drawn above the NavHost and
         // therefore above this player. Cleared on dispose as well as on
         // collapse: leaving Home while the player is open drops the remembered
@@ -1948,13 +2223,13 @@ fun HomeScreen(
                 noteLibraryReturn()
                 showPlayerSheet = false
                 viewedArtistFromPlayer = artistName
-                goToTab(2) // Music Library tab
+                goToTab(TAB_LIBRARY) // Music Library tab
             },
             onAlbumClick = { albumName ->
                 noteLibraryReturn()
                 showPlayerSheet = false
                 viewedAlbumFromPlayer = albumName
-                goToTab(2)
+                goToTab(TAB_LIBRARY)
             },
             onOpenAlbum = { albumItem ->
                 // A stream's album opens the playlist detail the same way a
@@ -1962,7 +2237,7 @@ fun HomeScreen(
                 noteLibraryReturn()
                 showPlayerSheet = false
                 viewedPlaylistFromHome = albumItem
-                goToTab(2)
+                goToTab(TAB_LIBRARY)
             },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
@@ -2060,12 +2335,12 @@ fun HomeScreen(
             onArtistClick = { artist ->
                 noteLibraryReturn()
                 viewedArtistFromPlayer = artist
-                goToTab(2)
+                goToTab(TAB_LIBRARY)
             },
             onOpenAlbum = { albumItem ->
                 noteLibraryReturn()
                 viewedPlaylistFromHome = albumItem
-                goToTab(2)
+                goToTab(TAB_LIBRARY)
             },
             // Only for songs a feed could have recommended. A file on this
             // device was not recommended by anything, so "stop recommending
@@ -3263,7 +3538,7 @@ fun SearchContent(
                 isDarkMode = isDarkMode,
                 videoMode = videoMode,
                 localOnly = localOnly,
-                requestInitialFocus = requestInitialFocus,
+                requestInitialFocus = false,
                 listState = listState
             )
         }

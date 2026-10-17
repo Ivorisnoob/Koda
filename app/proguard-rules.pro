@@ -59,3 +59,7 @@
 # implementation and worker reachable.
 -keep class * extends androidx.room.RoomDatabase { <init>(...); }
 -keep class * extends androidx.work.ListenableWorker { <init>(...); }
+
+# Glance AppWidget actionRunCallback instantiates ActionCallback classes via
+# reflection. R8 strips them in release builds, silently breaking widget buttons.
+-keep class * implements androidx.glance.appwidget.action.ActionCallback { *; }

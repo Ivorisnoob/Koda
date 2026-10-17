@@ -53,6 +53,7 @@ import com.ivor.ivormusic.ui.components.LocalInSegmentedColumn
 import com.ivor.ivormusic.ui.components.SegmentedColumn
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -563,8 +564,24 @@ internal fun SettingsHubRow(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
-            .clip(RoundedCornerShape(18.dp))
-            .background(selectedFill)
+            // Draw the selected background expanded by 6dp on each side to cover
+            // the card's content inset. Uses drawBehind (safe) instead of negative
+            // padding (crashes). The clip is applied to the expanded draw.
+            .drawBehind {
+                if (selected) {
+                    val insetPx = 6.dp.toPx()
+                    val cornerPx = 18.dp.toPx()
+                    drawRoundRect(
+                        color = selectedFill,
+                        topLeft = androidx.compose.ui.geometry.Offset(-insetPx, 0f),
+                        size = androidx.compose.ui.geometry.Size(
+                            size.width + insetPx * 2,
+                            size.height
+                        ),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerPx, cornerPx)
+                    )
+                }
+            }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
