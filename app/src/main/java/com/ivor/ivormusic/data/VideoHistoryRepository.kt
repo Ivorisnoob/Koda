@@ -329,6 +329,8 @@ class VideoHistoryRepository(context: Context) {
                     updatedAt = item.optLong("updatedAt"),
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("VideoHistoryRepo", "Failed to load resume positions", e)
             emptyList()
@@ -386,6 +388,8 @@ class VideoHistoryRepository(context: Context) {
                         .takeIf { it > 0L } ?: checkpoints[videoId]?.updatedAt ?: 0L
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("VideoHistoryRepo", "Failed to load local video history", e)
             emptyList()

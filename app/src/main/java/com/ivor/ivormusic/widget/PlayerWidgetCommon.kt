@@ -181,6 +181,8 @@ object PlayerWidgetStore {
                 mediaId = json.optString("mediaId", "").takeIf { it.isNotBlank() },
                 album = json.optString("album", "").takeIf { it.isNotBlank() },
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w("PlayerWidget", "Widget state unreadable: ${e.message}")
             null
@@ -228,6 +230,8 @@ internal object PlayerWidgetReader {
             // A newer push cancelled this one. Swallowed, it came back as "no
             // cover", which the host then published and kept: the next push
             // saw the same cover uri and reused the nothing it had stored.
+            throw e
+        } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Widget artwork failed: ${e.message}")
@@ -299,6 +303,8 @@ internal suspend fun <T> withController(
     try {
         controller = withTimeoutOrNull(timeoutMs) { future.await() } ?: return@withContext null
         block(controller)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         KLog.w("PlayerWidget", "Session call failed: ${e.message}")
         null

@@ -95,10 +95,14 @@ internal class MusicSearch(
                         duration = item.duration * 1000L,
                         thumbnailUrl = item.thumbnails?.firstOrNull()?.url
                     )
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     null
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -135,10 +139,14 @@ internal class MusicSearch(
                         duration = item.duration * 1000L,
                         thumbnailUrl = item.thumbnails?.firstOrNull()?.url
                     )
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     null
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -167,6 +175,8 @@ internal class MusicSearch(
                     thumbnailUrl = item.thumbnails?.firstOrNull()?.url
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -190,6 +200,8 @@ internal class MusicSearch(
                     isVerified = item.isVerified
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -212,6 +224,8 @@ internal class MusicSearch(
                     thumbnailUrl = item.thumbnails?.firstOrNull()?.url
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }

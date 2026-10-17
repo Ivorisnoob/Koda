@@ -43,6 +43,8 @@ internal class LiveChat(
         try {
             val root = watchPage.fetchWatchNextRoot(videoId) ?: return@withContext null
             parseLiveChatContinuation(root)?.let { LiveChatSession(continuation = it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getLiveChatSession failed for $videoId", e)
             null
@@ -171,6 +173,8 @@ internal class LiveChat(
                     ?.takeIf { it > 0 }
                     ?: 200,
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "pollLiveChat failed", e)
             null
@@ -227,6 +231,8 @@ internal class LiveChat(
                 val reason = errors.firstNotNullOfOrNull { getRunText(it) }
                     ?.takeIf { it.isNotBlank() }
                 LiveChatSendResult(false, error = reason ?: "Message not sent")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e(YOUTUBE_TAG, "sendLiveChatMessage failed", e)
                 LiveChatSendResult(false, error = "Message not sent")
@@ -266,6 +272,8 @@ internal class LiveChat(
                 dateText = getRunText(dateTexts.firstOrNull()?.optJSONObject("dateText"))
                     ?.takeIf { it.isNotBlank() },
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getLiveMetadata failed for $videoId", e)
             null

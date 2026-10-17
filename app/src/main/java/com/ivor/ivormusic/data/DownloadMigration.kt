@@ -139,6 +139,8 @@ object DownloadMigration {
                 prefs.edit().putBoolean(KEY_MIGRATED, true).apply()
                 completedThisProcess = true
                 KLog.i(TAG, "Download migration finished (migratedAny=$migratedAny)")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Leave the flag unset so the next launch retries. The metadata
                 // file is still valid: migrated entries carry mediaUri, the rest

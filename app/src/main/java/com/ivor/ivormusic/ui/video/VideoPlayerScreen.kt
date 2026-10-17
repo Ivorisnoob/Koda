@@ -1845,6 +1845,8 @@ private suspend fun extractLocalVideoFrame(
             targetWidth,
             targetHeight,
         )
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (_: Exception) {
         null
     } finally {
@@ -2891,6 +2893,8 @@ private fun currentWindowBrightness(activity: Activity): Float {
             activity.contentResolver,
             android.provider.Settings.System.SCREEN_BRIGHTNESS
         ) / 255f).coerceIn(0f, 1f)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         0.5f
     }

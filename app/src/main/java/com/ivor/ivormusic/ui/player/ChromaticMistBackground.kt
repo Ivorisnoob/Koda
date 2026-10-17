@@ -321,6 +321,8 @@ private suspend fun extractColorsFromUrl(
         } else {
             emptyList()
         }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         emptyList()
     }
