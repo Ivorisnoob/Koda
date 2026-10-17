@@ -367,7 +367,7 @@ private fun ChannelRoot(
                 val isTabLoading = selectedTab in loadingTabs
 
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(CHANNEL_GRID_COLUMNS),
+                    columns = GridCells.Adaptive(180.dp),
                     state = gridState,
                     // One gutter for the whole page, so a video card, a
                     // playlist tile and a Short all line up on the same edge

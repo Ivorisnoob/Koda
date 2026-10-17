@@ -127,6 +127,8 @@ fun enterPipMode(activity: androidx.activity.ComponentActivity): Boolean {
         // entered, leaving only the system's basic control.
         activity.enterPictureInPictureMode()
         true
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         KLog.w("VideoPlayerOverlay", "enterPictureInPictureMode refused", e)
         false
@@ -178,6 +180,8 @@ fun enterPipMode(
             }
             .build()
         activity.enterPictureInPictureMode(params)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         KLog.w("VideoPlayerOverlay", "Explicit PiP entry refused", e)
         false
