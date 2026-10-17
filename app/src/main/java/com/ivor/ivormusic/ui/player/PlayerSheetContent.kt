@@ -144,8 +144,7 @@ fun PlayerSheetContent(
                     queue = currentQueue,
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
-                    onMoveSong = { from, to -> viewModel.movePlayOrderItem(from, to, persist = false) },
-                    onCommitOrder = { viewModel.commitQueueOrder() },
+                    onMoveSong = { from, to -> viewModel.movePlayOrderItem(from, to) },
                     onUndoRemove = { viewModel.undoQueueRemoval() },
                     onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
                     onLoadMore = onLoadMore,
@@ -863,7 +862,6 @@ private fun ExpressiveQueueView(
     currentQueueItemId: String?,
     onQueueItemClick: (MusicQueueItem) -> Unit,
     onMoveSong: (fromIndex: Int, toIndex: Int) -> Unit,
-    onCommitOrder: () -> Unit,
     onUndoRemove: () -> Unit,
     onRemoveItem: (MusicQueueItem) -> Unit,
     onLoadMore: () -> Unit,
@@ -893,7 +891,7 @@ private fun ExpressiveQueueView(
         listState = listState,
         keys = rowKeys,
         onMove = onMoveSong,
-        onSettle = onCommitOrder
+        onSettle = {}
     )
     val removal = rememberQueueRemoval(onUndo = onUndoRemove)
     var showSaveDialog by remember { mutableStateOf(false) }

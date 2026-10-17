@@ -54,6 +54,8 @@ class DownloadedPlaylistStore(context: Context) {
         file.openRead().bufferedReader().use { json.decodeFromString(it.readText()) }
     } catch (_: java.io.FileNotFoundException) {
         emptyList()
+    } catch (error: kotlinx.coroutines.CancellationException) {
+        throw error
     } catch (error: Exception) {
         com.ivor.ivormusic.util.KLog.e("DownloadedPlaylists", "Cannot read playlist snapshots", error)
         emptyList()

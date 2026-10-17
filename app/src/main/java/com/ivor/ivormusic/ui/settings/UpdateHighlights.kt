@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.settings
 
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -177,7 +178,7 @@ fun WhatsNewSheet(
     highlights: List<String>,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,

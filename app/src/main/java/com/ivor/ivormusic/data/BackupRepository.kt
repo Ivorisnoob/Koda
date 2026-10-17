@@ -249,6 +249,8 @@ class BackupRepository(context: Context) {
             appContext.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
                 .edit().putLong(KEY_LAST_BACKUP_AT, snapshot.manifest.createdAt).apply()
             snapshot.manifest
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Backup failed", e)
             null
@@ -444,6 +446,8 @@ class BackupRepository(context: Context) {
                 restoredProfiles = profileMap.size,
                 signInNeeded = snapshot.profiles.count { it.kind == ProfileKind.YOUTUBE.name }
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Restore failed", e)
             RestoreResult(success = false, error = "The restore could not be completed.")

@@ -438,6 +438,8 @@ class ProfileManager(context: Context) {
             (0 until array.length()).mapNotNull { i ->
                 array.optJSONObject(i)?.let { fromJson(it) }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load profiles", e)
             emptyList()
@@ -524,6 +526,8 @@ class ProfileManager(context: Context) {
                     val app = context.applicationContext
                     val created = try {
                         buildPrefs(app)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         KLog.e(TAG, "EncryptedSharedPreferences corrupted, resetting", e)
                         try {
@@ -541,6 +545,8 @@ class ProfileManager(context: Context) {
                                 KLog.w(TAG, "Could not remove unusable master key", it)
                             }
                             buildPrefs(app)
+                        } catch (retry: kotlinx.coroutines.CancellationException) {
+                            throw retry
                         } catch (retry: Exception) {
                             // Do not turn a permanently unavailable keystore
                             // into a launch loop, and never fall back to storing

@@ -154,6 +154,8 @@ internal class VideoFeeds(
             val videos = parseVideosFromYouTubeJson(responseBody)
             KLog.d(YOUTUBE_TAG, "Parsed ${videos.size} personalized videos")
             VideoFeedPage(videos, extractRichGridContinuation(root))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Error in getPersonalizedVideoRecommendations", e)
             empty
@@ -201,6 +203,8 @@ internal class VideoFeeds(
         return try {
             val root = watchPage.fetchWatchNextRoot(videoId) ?: return emptyList()
             parseRelatedFromWatchNext(root)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(YOUTUBE_TAG, "getRelatedVideosLight failed for $videoId", e)
             emptyList()
@@ -249,6 +253,8 @@ internal class VideoFeeds(
             }
             KLog.d(YOUTUBE_TAG, "Feed continuation: ${videos.size} videos, next=${nextToken != null}")
             VideoFeedPage(videos.distinctBy { it.videoId }, nextToken)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Feed continuation failed", e)
             VideoFeedPage(emptyList())
@@ -414,6 +420,8 @@ internal class VideoFeeds(
                 KLog.w(YOUTUBE_TAG, "feedback token not processed")
             }
             processed
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "feedback failed", e)
             false

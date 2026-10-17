@@ -47,6 +47,8 @@ class PlaylistRepository(private val context: Context) {
         val loaded = files?.mapNotNull { file ->
             try {
                 json.decodeFromString<UserPlaylist>(file.readText())
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w("PlaylistRepository", "Skipping unreadable playlist ${file.name}", e)
                 null
@@ -236,6 +238,8 @@ class PlaylistRepository(private val context: Context) {
                     }
                     android.graphics.BitmapFactory.decodeStream(input, null, options)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Could not read the chosen cover", e)
                 null
@@ -247,6 +251,8 @@ class PlaylistRepository(private val context: Context) {
                 target.outputStream().use { out ->
                     square.compress(Bitmap.CompressFormat.JPEG, 92, out)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e(TAG, "Could not write the cover", e)
                 target.delete()
@@ -305,6 +311,8 @@ class PlaylistRepository(private val context: Context) {
             context.contentResolver.openInputStream(source)?.use { input ->
                 android.graphics.BitmapFactory.decodeStream(input, null, bounds)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             return 1
         }

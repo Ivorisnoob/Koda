@@ -198,6 +198,8 @@ internal class PlaybackHistory(
         } catch (e: CancellationException) {
             // The token mint above suspends; never swallow a cancellation.
             throw e
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Error in reportPlayback", e)
         }

@@ -90,6 +90,8 @@ internal class YouTubeAccount(
                     avatarUrl = match?.groupValues?.get(1)
                 }
 
+            } catch (jsonEx: kotlinx.coroutines.CancellationException) {
+                throw jsonEx
             } catch (jsonEx: Exception) {
                 // Ignore
             }
@@ -131,6 +133,8 @@ internal class YouTubeAccount(
                     ?.let { sessionManager.updateSessionIdentity(session, datasyncId = it) }
             }
             
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Account identity refresh failed", e)
         }
@@ -213,6 +217,8 @@ internal class YouTubeAccount(
                     id = renderer.optString("notificationId")
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getNotifications failed", e)
             emptyList()

@@ -105,6 +105,8 @@ internal class MusicPlaylists(
             if (allSongs.isNotEmpty()) {
                 return@withContext allSongs.distinctBy { it.id }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Error fetching liked music", e)
         }
@@ -148,6 +150,8 @@ internal class MusicPlaylists(
 
             // The library grid can include "Your Likes" (VLLM) which we already synthesized
             playlists.distinctBy { it.id }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Error fetching user playlists", e)
             emptyList()
@@ -182,6 +186,8 @@ internal class MusicPlaylists(
                 try {
                     currentPage = playlistExtractor.getPage(currentPage.nextPage)
                     allItems.addAll(currentPage.items.filterIsInstance<StreamInfoItem>())
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     newPipeComplete = false
                     KLog.w(
@@ -203,6 +209,8 @@ internal class MusicPlaylists(
                     thumbnailUrl = item.thumbnails?.firstOrNull()?.url
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             newPipeComplete = false
             emptyList()
