@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.player
 
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
@@ -226,7 +227,7 @@ fun NowPlayingOptionsSheet(
     // player it slid up over, whose controls were all album-coloured. The rule
     // that survives is the other half of that decision: take the scheme
     // whole. Do not pick roles from the app's palette and the player's here.
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,

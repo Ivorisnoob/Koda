@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.player
 
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -114,7 +115,7 @@ fun SongOptionsSheet(
     val isDownloaded = remember(song.id) { viewModel.isDownloaded(song.id) }
     val artist = song.artist.takeIf { !isUnknownArtist(it) }
 
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
