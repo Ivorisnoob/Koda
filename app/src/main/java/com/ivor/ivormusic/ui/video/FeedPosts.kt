@@ -50,11 +50,12 @@ fun LazyListScope.videoListItemsWithPosts(
     posts: List<ChannelPost>,
     layout: String,
     keyPrefix: String = "",
+    columns: Int = 2,
     post: @Composable (ChannelPost) -> Unit,
     card: @Composable (VideoItem, Modifier) -> Unit,
 ) {
     if (posts.isEmpty()) {
-        videoListItems(videos, layout, keyPrefix, card)
+        videoListItems(videos, layout, keyPrefix, columns, card)
         return
     }
     // Deduplicated before it is cut into runs: each run is keyed on its own,
@@ -65,7 +66,7 @@ fun LazyListScope.videoListItemsWithPosts(
     var run = FEED_POST_FIRST_AFTER
     while (start < unique.size) {
         val end = minOf(unique.size, start + run)
-        videoListItems(unique.subList(start, end), layout, keyPrefix, card)
+        videoListItems(unique.subList(start, end), layout, keyPrefix, columns, card)
         if (end - start == run && postIndex < posts.size) {
             val feedPost = posts[postIndex++]
             item(key = keyPrefix + "post_" + feedPost.postId, contentType = "feed_post") {

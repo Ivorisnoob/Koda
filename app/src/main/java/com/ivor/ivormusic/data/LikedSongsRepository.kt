@@ -143,11 +143,15 @@ class LikedSongsRepository(context: Context) {
                 }
                 try {
                     songsFile.writeText(json.encodeToString(backfilled))
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     KLog.e(TAG, "Error persisting backfilled like timestamps", e)
                 }
                 backfilled
             } else stored
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error loading liked song metadata", e)
             emptyList()
@@ -158,6 +162,8 @@ class LikedSongsRepository(context: Context) {
         _likedSongs.value = songs
         try {
             songsFileFor(appContext, profileId).writeText(json.encodeToString(songs))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error saving liked song metadata", e)
         }

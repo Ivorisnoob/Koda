@@ -127,6 +127,8 @@ internal class CommentThreads(
             }
 
             CommentsPage(comments, nextToken, createCommentParams)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getCommentsPage failed", e)
             null
@@ -178,6 +180,8 @@ internal class CommentThreads(
             val results = mutableListOf<JSONObject>()
             findObjectsByKey(JSONObject(raw), "actionResult", results)
             results.isEmpty() || results.any { it.optString("status") == "STATUS_SUCCEEDED" }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             true
         }

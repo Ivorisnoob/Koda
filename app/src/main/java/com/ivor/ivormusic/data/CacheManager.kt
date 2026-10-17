@@ -77,7 +77,7 @@ object CacheManager {
     private var videoCache: SimpleCache? = null
     private var videoDatabaseProvider: StandaloneDatabaseProvider? = null
     private var videoCacheDir: File? = null
-    private val activeVideoOwners = mutableSetOf<String>()
+    private val activeVideoOwners = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var videoCleanupJob: Job? = null
 
@@ -197,6 +197,8 @@ object CacheManager {
                 databaseProvider!!
             )
             KLog.d(TAG, "Cache initialized with max size: ${maxSizeMb}MB")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Cache initialization failed, attempting recovery by clearing cache", e)
             // Cache is corrupted - delete and retry
@@ -211,6 +213,8 @@ object CacheManager {
                     databaseProvider!!
                 )
                 KLog.d(TAG, "Cache recovery successful")
+            } catch (e2: kotlinx.coroutines.CancellationException) {
+                throw e2
             } catch (e2: Exception) {
                 KLog.e(TAG, "Cache recovery failed - caching disabled", e2)
                 simpleCache = null
@@ -266,6 +270,8 @@ object CacheManager {
             val keys = cache.keys.filter { shorts == null || isShortsCacheKey(it) == shorts }
             keys.forEach(cache::removeResource)
             KLog.d(TAG, "Transient video cache cleared: removed ${keys.size} items")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error clearing transient video cache", e)
         }
@@ -285,6 +291,8 @@ object CacheManager {
                     updateCacheSize()
                     KLog.i(TAG, "Removed ${keys.size} legacy video entries from the music cache")
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Could not remove legacy video cache entries", e)
             }
@@ -327,6 +335,8 @@ object CacheManager {
                     CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
                 )
                 .apply { if (!writeEnabled) setCacheWriteDataSinkFactory(null) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to create cache data source factory", e)
             return null
@@ -439,6 +449,8 @@ object CacheManager {
                 NoOpCacheEvictor(),
                 checkNotNull(videoDatabaseProvider),
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Video cache initialization failed, attempting recovery", e)
             runCatching { videoCacheDir?.deleteRecursively() }
@@ -502,6 +514,8 @@ object CacheManager {
                 KLog.d(TAG, "Cache cleared: removed ${keys.size} items")
             }
             updateCacheSize()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error clearing cache", e)
         }
@@ -521,6 +535,8 @@ object CacheManager {
             videoDatabaseProvider = null
             evictor = null
             KLog.d(TAG, "Cache released")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error releasing cache", e)
         }
@@ -564,6 +580,8 @@ object CacheManager {
         val dir = cacheDir ?: File(context.cacheDir, CACHE_DIR_NAME)
         val target = if (dir.exists()) dir else context.cacheDir
         android.os.StatFs(target.absolutePath).availableBytes
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         KLog.e(TAG, "Could not read free space", e)
         -1L

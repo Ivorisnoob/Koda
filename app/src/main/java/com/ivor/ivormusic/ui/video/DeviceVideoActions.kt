@@ -131,6 +131,8 @@ private fun displayNameOf(context: Context, uri: Uri): String? = try {
             cursor.getString(0)?.substringBeforeLast('.')?.takeIf { it.isNotBlank() }
         } else null
     }
+} catch (e: kotlinx.coroutines.CancellationException) {
+    throw e
 } catch (e: Exception) {
     KLog.w("DeviceVideoActions", "Could not read a display name for $uri", e)
     null

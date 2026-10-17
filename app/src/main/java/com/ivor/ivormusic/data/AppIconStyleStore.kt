@@ -75,6 +75,8 @@ class AppIconStyleStore(context: Context) {
         val raw = prefs.getString(KEY_STYLES, null) ?: return emptyList()
         return try {
             json.decodeFromString<List<SavedIconStyle>>(raw)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
         } catch (error: Exception) {
             // A style list that will not parse is worth losing quietly: it is a
             // preference, not user content, and refusing to open the page over

@@ -95,6 +95,8 @@ internal class ChannelPages(
                 selectedTab = selectedKind,
                 selectedContent = content
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getChannelPage failed for $channelId", e)
             null
@@ -118,6 +120,8 @@ internal class ChannelPages(
             val root = JSONObject(raw)
             val scope = parseSelectedTab(root)?.second ?: root
             parseChannelTabPage(scope, header)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getChannelTab failed for $channelId", e)
             ChannelTabPage()
@@ -141,6 +145,8 @@ internal class ChannelPages(
                 JSONObject().put("context", webApi.webContext()).put("continuation", token)
             ) ?: return@withContext ChannelTabPage()
             parseChannelTabPage(JSONObject(raw), header)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getChannelContinuation failed", e)
             ChannelTabPage()
@@ -173,6 +179,8 @@ internal class ChannelPages(
             ) ?: return@withContext ChannelTabPage()
             val root = JSONObject(raw)
             parseChannelTabPage(parseSelectedTab(root)?.second ?: root, header)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "searchWithinChannel failed for $channelId", e)
             ChannelTabPage()
@@ -213,6 +221,8 @@ internal class ChannelPages(
                 country = view.optString("country").takeIf { it.isNotBlank() },
                 canonicalUrl = view.optString("canonicalChannelUrl").takeIf { it.isNotBlank() }
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getChannelAbout failed", e)
             null
@@ -270,6 +280,8 @@ internal class ChannelPages(
                     ?: return@mapNotNull null
                 withSubscribedChannelIdentity(parsed, channel)
             }.distinctBy { it.videoId }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getChannelVideos failed", e)
             emptyList()
@@ -390,6 +402,8 @@ internal class ChannelPages(
                 pages++
             }
             channels.distinctBy { it.channelId }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getSubscribedChannels failed", e)
             emptyList()
@@ -423,6 +437,8 @@ internal class ChannelPages(
                 ?.optJSONObject("browseEndpoint")
                 ?.optString("browseId")
                 ?.takeIf { it.startsWith("UC") }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(YOUTUBE_TAG, "resolveChannelId failed for $url", e)
             null
@@ -466,6 +482,8 @@ internal class ChannelPages(
             }.getOrNull()
 
             ChannelProfile(id, name, avatarUrl, handle, subscriberCountText)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(YOUTUBE_TAG, "getChannelProfile failed for $channelId", e)
             null

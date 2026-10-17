@@ -321,8 +321,8 @@ internal fun PlayerQueuePane(
     val reorder = rememberQueueReorderState(
         listState = listState,
         keys = rowKeys,
-        onMove = { from, to -> viewModel.movePlayOrderItem(from, to, persist = false) },
-        onSettle = { viewModel.commitQueueOrder() }
+        onMove = { from, to -> viewModel.movePlayOrderItem(from, to) },
+        onSettle = {}
     )
     val removal = rememberQueueRemoval(onUndo = { viewModel.undoQueueRemoval() })
     var showSaveDialog by remember { mutableStateOf(false) }

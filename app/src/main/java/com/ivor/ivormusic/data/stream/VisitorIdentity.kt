@@ -247,6 +247,8 @@ internal class VisitorIdentity(
             ?.replace("%3D", "=")
             ?.replace("%3d", "=")
             ?.takeIf { it.isNotEmpty() }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         KLog.w(STREAM_TAG, "visitor_id mint failed: ${e.message}")
         null
@@ -268,6 +270,8 @@ internal class VisitorIdentity(
             ?.replace("\\u003d", "=")
             ?.replace("\\u0026", "&")
             ?.takeIf { it.isNotEmpty() }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         KLog.w(STREAM_TAG, "bootstrap visitorData scrape failed: ${e.message}")
         null

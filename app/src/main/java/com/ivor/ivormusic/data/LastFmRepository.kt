@@ -253,6 +253,8 @@ class LastFmRepository private constructor(private val context: Context) {
                     try {
                         val text = response.use { it.body?.string() ?: throw IOException("Empty response") }
                         if (continuation.isActive) continuation.resume(text)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Exception) { if (continuation.isActive) continuation.resumeWithException(e) }
                 }
             })
@@ -340,11 +342,15 @@ class LastFmRepository private constructor(private val context: Context) {
          */
         private fun openPrivatePrefs(context: Context): SharedPreferences = try {
             buildPrivatePrefs(context)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Encrypted Last.fm store unreadable, resetting", e)
             try {
                 context.deleteSharedPreferences(PRIVATE_PREFS)
                 buildPrivatePrefs(context)
+            } catch (retry: kotlinx.coroutines.CancellationException) {
+                throw retry
             } catch (retry: Exception) {
                 KLog.e(TAG, "Encrypted Last.fm store unavailable; using volatile store", retry)
                 VolatileSharedPreferences()

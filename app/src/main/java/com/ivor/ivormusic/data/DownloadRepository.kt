@@ -474,6 +474,8 @@ class DownloadRepository private constructor(private val context: Context) {
             // Persist the pruned list so externally deleted files do not get
             // re-checked on every launch, and so backfilled timestamps stick.
             if (prunedAny || backfilledAny || companionStateChanged) saveMetadata()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error loading downloads", e)
             _downloadedSongs.value = emptyList()
@@ -543,6 +545,8 @@ class DownloadRepository private constructor(private val context: Context) {
                 jsonArray.put(obj)
             }
             downloadsFile.writeText(jsonArray.toString())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error saving metadata", e)
         }
@@ -589,6 +593,8 @@ class DownloadRepository private constructor(private val context: Context) {
 
             _downloadedVideos.value = videos
             if (prunedAny) saveVideoMetadata()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error loading video downloads", e)
             _downloadedVideos.value = emptyList()
@@ -612,6 +618,8 @@ class DownloadRepository private constructor(private val context: Context) {
                 )
             }
             videosFile.writeText(jsonArray.toString())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error saving video metadata", e)
         }

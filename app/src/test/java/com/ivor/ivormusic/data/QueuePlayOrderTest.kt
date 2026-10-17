@@ -60,7 +60,7 @@ class QueuePlayOrderTest {
         val order = intArrayOf(3, 0, 4, 1, 2)
         assertEquals(
             listOf(3, 0, 5, 4, 1, 2),
-            playOrderQueuingUpNext(order, currentIndex = 0, addedCount = 1) { false }?.toList()
+            playOrderQueuingUpNext(order, currentIndex = 0, addedCount = 1)?.toList()
         )
     }
 
@@ -77,12 +77,53 @@ class QueuePlayOrderTest {
         val order = intArrayOf(2, 0, 1)
         assertEquals(
             listOf(2, 0, 1, 3),
-            playOrderQueuingUpNext(order, currentIndex = 1, addedCount = 1) { false }?.toList()
+            playOrderQueuingUpNext(order, currentIndex = 1, addedCount = 1)?.toList()
+        )
+    }
+
+    @Test fun playingNextFromTheLastQueueRowStillPlaysNext() {
+        // The playing song is the last queue row, so its insert reaches the
+        // player as an append, which the shuffle order plays last. It has to
+        // land just after the current song instead - play row 3, not row 5.
+        // Anywhere else in the queue the shuffle order already gets this right,
+        // which is why a mid-queue "Play next" is left alone.
+        val order = intArrayOf(3, 0, 4, 1, 2)
+        assertEquals(
+            listOf(3, 0, 4, 5, 1, 2),
+            playOrderQueuingUpNext(order, currentIndex = 4, addedCount = 1)?.toList()
         )
     }
 
     @Test fun queuingWithTheCurrentSongOutsideTheOrderIsRefused() {
-        assertEquals(null, playOrderQueuingUpNext(intArrayOf(1, 0), currentIndex = 5, addedCount = 1) { false })
-        assertEquals(null, playOrderQueuingUpNext(intArrayOf(1, 0), currentIndex = 0, addedCount = 0) { false })
+        assertEquals(null, playOrderQueuingUpNext(intArrayOf(1, 0), currentIndex = 5, addedCount = 1))
+        assertEquals(null, playOrderQueuingUpNext(intArrayOf(1, 0), currentIndex = 0, addedCount = 0))
+    }
+
+    @Test fun aQueueMoveRenumbersTheOrderButNotTheArrangement() {
+        // Play order d,a,e,b,c over a queue a..e. Moving a from queue row 0 to
+        // row 3 lifts b, c and d down one; the order still names the same songs
+        // in the same sequence, so the moved song keeps its play row.
+        val order = intArrayOf(3, 0, 4, 1, 2)
+        val moved = order.afterQueueMove(from = 0, to = 3)
+        assertEquals(listOf(2, 3, 4, 0, 1), moved.toList())
+        assertEquals(order.toList(), moved.afterQueueMove(from = 3, to = 0).toList())
+    }
+
+    @Test fun removingASongClosesTheOrderBehindIt() {
+        val order = intArrayOf(3, 0, 4, 1, 2)
+        assertEquals(listOf(2, 3, 0, 1), order.afterQueueRemoval(0).toList())
+        assertEquals(listOf(3, 0, 1, 2), order.afterQueueRemoval(4).toList())
+        // An index the order never named - a stale UI position - changes nothing.
+        assertEquals(order.toList(), order.afterQueueRemoval(9).toList())
+    }
+
+    @Test fun undoPutsTheSongBackOnItsPlayRow() {
+        // d,a,e,b,c; undoing the removal of b has to restore its queue row and
+        // its play row. Appending, or inserting at the recorded queue index
+        // without renumbering, would drop it somewhere else.
+        val order = intArrayOf(3, 0, 4, 1, 2)
+        val afterRemoval = order.afterQueueRemoval(1)
+        assertEquals(listOf(2, 0, 3, 1), afterRemoval.toList())
+        assertEquals(order.toList(), afterRemoval.afterQueueRestore(at = 1, playIndex = 3).toList())
     }
 }

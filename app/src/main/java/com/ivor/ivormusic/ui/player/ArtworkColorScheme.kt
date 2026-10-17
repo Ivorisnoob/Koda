@@ -187,6 +187,8 @@ private suspend fun extractArtworkSeeds(
             ?: primary
 
         ArtworkSeeds(Color(primary.rgb), Color(secondary.rgb))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         null
     }
