@@ -249,6 +249,7 @@ fun SearchScreen(
     var videoSongResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     val searchListLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
+    val searchGridColumns = com.ivor.ivormusic.ui.video.rememberVideoGridColumns()
     var videoPlaylistResults by remember { mutableStateOf<List<VideoPlaylist>>(emptyList()) }
     var channelResults by remember {
         mutableStateOf<List<com.ivor.ivormusic.data.SubscribedChannel>>(emptyList())
@@ -1055,7 +1056,11 @@ fun SearchScreen(
 
                         // Display video results; long-press opens the save sheet
                         run {
-                            videoListItems(videoResults, searchListLayout) { video, cell ->
+                            videoListItems(
+                                videoResults,
+                                searchListLayout,
+                                columns = searchGridColumns
+                            ) { video, cell ->
                                 VideoCard(
                                     video = video,
                                     onClick = { onVideoClick(video) },

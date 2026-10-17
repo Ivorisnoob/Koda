@@ -149,6 +149,7 @@ fun SubscriptionsContent(
     val feedError by viewModel.subscriptionFeedError.collectAsState()
     val feedUpdatedAt by viewModel.subscriptionFeedUpdatedAt.collectAsState()
     val listLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
+    val videoGridColumns = com.ivor.ivormusic.ui.video.rememberVideoGridColumns()
     val selectedChannelFeed by viewModel.selectedChannelFeed.collectAsState()
     val isSelectedChannelFeedLoading by viewModel.isSelectedChannelFeedLoading.collectAsState()
     val selectedChannelFeedError by viewModel.selectedChannelFeedError.collectAsState()
@@ -810,6 +811,7 @@ fun SubscriptionsContent(
                                 emptyList()
                             },
                             layout = listLayout,
+                            columns = videoGridColumns,
                             post = { post ->
                                 FeedPostCard(post, viewModel, onVideoClick, onOpenChannel, postPhotoViewer)
                             }
