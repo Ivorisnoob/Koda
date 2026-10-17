@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
@@ -400,31 +401,78 @@ private fun EditorialNowPlayingView(
         // Wrapped so the song information is one swipe target the full width
         // of the player, not two text-shaped ones.
         val title = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled"
+        // One word has no space to wrap at, so character-count buckets break it
+        // mid-word (e.g. "Espresso" -> "Espress" / "o"). Fit it to one line
+        // instead: shrink from the display size down to the floor, and only
+        // wrap the words that still don't fit. Multi-word titles keep the
+        // existing stacked two-line magazine look untouched.
+        val isSingleWord = title.trim().none { it.isWhitespace() }
         val headlineBase = when {
             title.length <= 12 -> MaterialTheme.typography.displayLarge
             title.length <= 24 -> MaterialTheme.typography.displayMedium
             else -> MaterialTheme.typography.displaySmall
         }
+        val singleWordStyle = MaterialTheme.typography.displayLarge.copy(
+            fontFamily = FontFamily.Serif,
+            fontStyle = FontStyle.Italic,
+            fontWeight = FontWeight.Bold
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .swipeToSkip(swipeToSkip)
                 .swipeToSkipFollow(swipeToSkip)
         ) {
-            Text(
-                text = title,
-                style = headlineBase.copy(
-                    fontFamily = FontFamily.Serif,
-                    fontStyle = FontStyle.Italic,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = accent,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-            )
+            if (isSingleWord) {
+                var fitsOneLine by remember(title) { mutableStateOf(true) }
+                if (fitsOneLine) {
+                    Text(
+                        text = title,
+                        style = singleWordStyle,
+                        color = accent,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        autoSize = TextAutoSize.StepBased(
+                            minFontSize = 30.sp,
+                            maxFontSize = 68.sp,
+                            stepSize = 2.sp
+                        ),
+                        onTextLayout = { result ->
+                            if (result.hasVisualOverflow) fitsOneLine = false
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                    )
+                } else {
+                    Text(
+                        text = title,
+                        style = singleWordStyle.copy(fontSize = 30.sp),
+                        color = accent,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                    )
+                }
+            } else {
+                Text(
+                    text = title,
+                    style = headlineBase.copy(
+                        fontFamily = FontFamily.Serif,
+                        fontStyle = FontStyle.Italic,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = accent,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                )
+            }
 
             val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
             Text(
