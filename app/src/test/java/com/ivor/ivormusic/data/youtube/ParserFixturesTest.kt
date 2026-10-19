@@ -288,4 +288,64 @@ class ParserFixturesTest {
         // The response carries one LOCKUP_CONTENT_TYPE_PLAYLIST lockup.
         assertFalse(page.videos.any { it.videoId == "PL85u7MKw0VpGhdv_1t3QNi4Ik84v6Yt8f" })
     }
+
+    // --- FEnotifications_inbox: the bell ---
+    //
+    // Unlike the fixtures above these are signed in, because the inbox exists
+    // only for an account. So they are not reduced captures: every container
+    // is as YouTube sent it in October 2026 and every value is a placeholder
+    // (.probe/scratch/notification_fixtures.py), so nothing of the account
+    // that was probed is in the repo.
+
+    @Test
+    fun notificationInboxReadsBothSectionsInOrder() {
+        val page = parseNotificationInboxPage(fixture("notifications_inbox"))
+
+        // "Important" first, then "More notifications"; the repeated item once.
+        assertEquals(
+            listOf("notification-1", "notification-2", "notification-3", "notification-4", "notification-5"),
+            page.items.map { it.id }
+        )
+        assertEquals("token-page-2", page.continuation)
+    }
+
+    @Test
+    fun notificationMessagesAreReadFromRunsAndSimpleText() {
+        val items = parseNotificationInboxPage(fixture("notifications_inbox")).items
+
+        assertEquals("Channel 1 uploaded: Video 1", items[0].message)
+        assertEquals("Channel 3 posted: Post 3", items[2].message)
+        assertEquals("1 hours ago", items[0].sentTime)
+        assertFalse(items[0].isRead)
+        assertTrue(items[1].isRead)
+        assertEquals("https://yt3.ggpht.com/avatar-1=s96", items[0].channelAvatarUrl)
+        assertEquals("https://i.ytimg.com/vi/vid00000001/hqdefault.jpg", items[0].videoThumbnailUrl)
+    }
+
+    @Test
+    fun notificationTargetsFollowTheirEndpoints() {
+        val targets = parseNotificationInboxPage(fixture("notifications_inbox")).items.map { it.target }
+
+        assertEquals(com.ivor.ivormusic.data.NotificationTarget.Video("vid00000001"), targets[0])
+        assertEquals(com.ivor.ivormusic.data.NotificationTarget.Short("vid00000002"), targets[1])
+        assertEquals(
+            com.ivor.ivormusic.data.NotificationTarget.Post("post-params-3", "https://www.youtube.com/post/post3"),
+            targets[2]
+        )
+        assertEquals(
+            com.ivor.ivormusic.data.NotificationTarget.Link("https://www.youtube.com/channel/UCchannel4"),
+            targets[3]
+        )
+    }
+
+    @Test
+    fun notificationContinuationPagesCarryTheNextTokenUntilTheEnd() {
+        val next = parseNotificationInboxPage(fixture("notifications_inbox_next"))
+        assertEquals(listOf("notification-6", "notification-7"), next.items.map { it.id })
+        assertEquals("token-page-3", next.continuation)
+
+        val last = parseNotificationInboxPage(fixture("notifications_inbox_last"))
+        assertEquals(listOf("notification-8"), last.items.map { it.id })
+        assertEquals(null, last.continuation)
+    }
 }

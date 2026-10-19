@@ -229,7 +229,8 @@ class YouTubeRepository(private val context: Context) {
         youtubeAccount.fetchAccountInfo()
     }
 
-    suspend fun getNotifications(): List<NotificationItem> = youtubeAccount.getNotifications()
+    suspend fun getNotificationsPage(continuation: String? = null): NotificationPage? =
+        youtubeAccount.getNotificationsPage(continuation)
 
     // --- Music search (MusicSearch) ---
 

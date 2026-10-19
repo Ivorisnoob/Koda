@@ -85,8 +85,10 @@ private val NotificationItem.kind: NotificationKind
  * The notification inbox: what YouTube currently lists, and under it what this
  * device remembers from before YouTube dropped it.
  *
- * YouTube's own inbox only reaches a little way back, so the sheet has three
- * parts - New, Earlier, and Kept on this device -
+ * YouTube's inbox is read a page at a time, the next one asked for as the end
+ * of the list comes into view. It only reaches a few weeks back, so the sheet
+ * has three parts - New, Earlier, and, once the last page is read, Kept on
+ * this device -
  * and a row of kind filters, because a week of history is mostly Shorts
  * uploads with the one post somebody was looking for somewhere among them.
  *
@@ -101,6 +103,10 @@ fun NotificationsSheet(
     notifications: List<NotificationItem>,
     isLoading: Boolean,
     hiddenCount: Int,
+    hasMore: Boolean,
+    isLoadingMore: Boolean,
+    loadMoreFailed: Boolean,
+    onLoadMore: () -> Unit,
     onNotificationClick: (NotificationItem) -> Unit,
     onHide: (NotificationItem) -> Unit,
     onRestoreHidden: () -> Unit,
@@ -259,6 +265,16 @@ fun NotificationsSheet(
                             onClick = onNotificationClick,
                             onHide = onHide
                         )
+                        if (hasMore) {
+                            item(key = "more_footer", contentType = "more") {
+                                NotificationsMoreFooter(
+                                    loadedCount = notifications.size,
+                                    isLoadingMore = isLoadingMore,
+                                    failed = loadMoreFailed,
+                                    onLoadMore = onLoadMore
+                                )
+                            }
+                        }
                         if (hiddenCount > 0) {
                             item(key = "hidden_footer", contentType = "footer") {
                                 Box(
@@ -349,6 +365,48 @@ private fun NotificationFilterChip(label: String, count: Int, selected: Boolean,
         label = { Text(stringResource(R.string.ns_filter_with_count, label, count)) },
         shape = CircleShape
     )
+}
+
+/**
+ * The end of the pages read so far. Being drawn is what asks for the next
+ * page, as on the website, and it asks again after each page that leaves it
+ * in view. A failed page waits for a tap rather than retrying on its own.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun NotificationsMoreFooter(
+    loadedCount: Int,
+    isLoadingMore: Boolean,
+    failed: Boolean,
+    onLoadMore: () -> Unit
+) {
+    val loadMore by rememberUpdatedState(onLoadMore)
+    // Keyed on the load finishing too: a page that added nothing new leaves
+    // the count alone and would otherwise leave this spinning in view.
+    LaunchedEffect(loadedCount, failed, isLoadingMore) {
+        if (!failed && !isLoadingMore) loadMore()
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (failed && !isLoadingMore) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = stringResource(R.string.ns_load_more_failed),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(onClick = onLoadMore) {
+                    Text(stringResource(R.string.action_try_again))
+                }
+            }
+        } else {
+            LoadingIndicator(modifier = Modifier.size(36.dp))
+        }
+    }
 }
 
 @Composable

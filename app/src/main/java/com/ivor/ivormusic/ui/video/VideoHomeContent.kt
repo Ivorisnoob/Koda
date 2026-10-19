@@ -188,6 +188,9 @@ fun VideoHomeContent(
     val notifications by viewModel.notifications.collectAsState()
     val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
     val hiddenNotificationCount by viewModel.hiddenNotificationCount.collectAsState()
+    val hasMoreNotifications by viewModel.hasMoreNotifications.collectAsState()
+    val isNotificationsLoadingMore by viewModel.isNotificationsLoadingMore.collectAsState()
+    val notificationsLoadMoreFailed by viewModel.notificationsLoadMoreFailed.collectAsState()
 
     // Options sheet (long-press on a video card)
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
@@ -207,6 +210,10 @@ fun VideoHomeContent(
             notifications = notifications,
             isLoading = isNotificationsLoading,
             hiddenCount = hiddenNotificationCount,
+            hasMore = hasMoreNotifications,
+            isLoadingMore = isNotificationsLoadingMore,
+            loadMoreFailed = notificationsLoadMoreFailed,
+            onLoadMore = viewModel::loadMoreNotifications,
             onHide = viewModel::hideNotification,
             onRestoreHidden = viewModel::restoreHiddenNotifications,
             onRefresh = { viewModel.loadNotifications(force = true) },

@@ -8,8 +8,8 @@ import org.json.JSONObject
 /**
  * The notifications this device has seen, kept after YouTube stops listing them.
  *
- * YouTube's inbox only reaches so far back - a few pages on a busy account, a
- * dozen items on a quiet one (see `YouTubeAccount.getNotifications`) - and
+ * YouTube's inbox only reaches so far back - a few weeks of pages on a busy
+ * account (see `YouTubeAccount.getNotificationsPage`) - and
  * what falls off the end is simply gone from it. Koda remembers each item the
  * first time it sees it and goes on showing it, under its own heading, once
  * YouTube has dropped it.
@@ -40,7 +40,10 @@ internal class NotificationHistoryStore(context: Context) {
         nowMs: Long = System.currentTimeMillis(),
     ): List<NotificationItem> {
         val merged = mergeNotificationHistory(read(profileId), fresh, nowMs)
-        write(profileId, merged)
+        // The cap is on what is kept, not on what is shown: an inbox scrolled
+        // further back than the cap still shows every page it has read.
+        val stored = merged.take(NOTIFICATION_HISTORY_MAX)
+        write(profileId, stored)
         // A hidden id is only worth keeping while its item can still be shown.
         val kept = merged.mapTo(HashSet()) { it.id }
         val hidden = hiddenIds(profileId)
@@ -138,7 +141,7 @@ internal class NotificationHistoryStore(context: Context) {
     }
 }
 
-/** How many notifications a profile keeps. An inbox is a dozen, so this is months of it. */
+/** How many notifications a profile keeps: about ten pages of the inbox. */
 internal const val NOTIFICATION_HISTORY_MAX = 200
 
 /** How long a notification YouTube has dropped is kept. */
@@ -172,5 +175,7 @@ internal fun mergeNotificationHistory(
         .sortedByDescending { it.firstSeenMs }
         // Whatever YouTube last said about it, an item it no longer lists is not new.
         .map { it.copy(remembered = true, isRead = true) }
-    return (current + older).take(NOTIFICATION_HISTORY_MAX)
+    // Every fresh item, however many pages were read; only the remembered
+    // tail is bounded here, and the store bounds what it writes.
+    return current + older.take((NOTIFICATION_HISTORY_MAX - current.size).coerceAtLeast(0))
 }

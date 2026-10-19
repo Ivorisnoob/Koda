@@ -1212,6 +1212,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _hiddenNotificationCount = MutableStateFlow(0)
     val hiddenNotificationCount: StateFlow<Int> = _hiddenNotificationCount.asStateFlow()
 
+    /** The inbox pages read since the sheet last loaded, in YouTube's order. */
+    private var freshNotifications: List<com.ivor.ivormusic.data.NotificationItem> = emptyList()
+
+    /** Where the next inbox page starts; null once the last page has been read, or before the first. */
+    private var notificationsCursor: String? = null
+
+    private val _hasMoreNotifications = MutableStateFlow(false)
+    val hasMoreNotifications: StateFlow<Boolean> = _hasMoreNotifications.asStateFlow()
+
+    private val _isNotificationsLoadingMore = MutableStateFlow(false)
+    val isNotificationsLoadingMore: StateFlow<Boolean> = _isNotificationsLoadingMore.asStateFlow()
+
+    /** The last request for an older page failed; the sheet offers it again rather than retrying alone. */
+    private val _notificationsLoadMoreFailed = MutableStateFlow(false)
+    val notificationsLoadMoreFailed: StateFlow<Boolean> = _notificationsLoadMoreFailed.asStateFlow()
+
     // Video library tab state. This half is the signed-in account's own
     // playlists; the device's are merged in by [videoPlaylists] below.
     private val _videoPlaylists = MutableStateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>>(emptyList())
@@ -1466,9 +1482,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _isVideoPlaylistsLoading.value = false
         _videoPlaylists.value = emptyList()
         notificationsJob?.cancel()
+        notificationsMoreJob?.cancel()
         _isNotificationsLoading.value = false
+        _isNotificationsLoadingMore.value = false
+        _notificationsLoadMoreFailed.value = false
         _notifications.value = emptyList()
         allNotifications = emptyList()
+        freshNotifications = emptyList()
+        notificationsCursor = null
+        _hasMoreNotifications.value = false
         _hiddenNotificationCount.value = 0
         _selectedGroupId.value = null
 
@@ -2775,22 +2797,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var notificationsJob: kotlinx.coroutines.Job? = null
+    private var notificationsMoreJob: kotlinx.coroutines.Job? = null
 
     private val notificationHistory by lazy {
         com.ivor.ivormusic.data.NotificationHistoryStore(app)
     }
 
     /**
-     * Load the notification inbox. Requires login.
+     * Load the first page of the notification inbox. Requires login.
      *
      * What this device remembers is shown at once and the fresh inbox is
-     * folded into it when it arrives. The profile is read before the request
-     * and checked after it, so an inbox that lands after a switch is neither
-     * shown to nor remembered for the profile switched to.
+     * folded into it when it arrives; older pages follow as the sheet scrolls
+     * ([loadMoreNotifications]). The profile is read before the request and
+     * checked after it, so an inbox that lands after a switch is neither shown
+     * to nor remembered for the profile switched to.
      */
     fun loadNotifications(force: Boolean = false) {
         if (_isNotificationsLoading.value) return
         if (_notifications.value.isNotEmpty() && !force) return
+        // A refresh starts the inbox again; an older page still on its way
+        // would land after the new first page.
+        notificationsMoreJob?.cancel()
+        _isNotificationsLoadingMore.value = false
         notificationsJob = viewModelScope.launch {
             _isNotificationsLoading.value = true
             try {
@@ -2801,18 +2829,58 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         withContext(Dispatchers.IO) { notificationHistory.remembered(profileId) }
                     )
                 }
-                val fresh = youtubeRepository.getNotifications()
+                val page = youtubeRepository.getNotificationsPage()
                 if (com.ivor.ivormusic.data.ProfileManager.activeProfileId(app) != profileId) return@launch
-                // An empty answer is as likely a failed request as an empty
-                // inbox, and must not present the remembered items as gone.
-                if (fresh.isNotEmpty()) {
+                // An empty answer is as likely a session YouTube no longer
+                // accepts as an empty inbox, and must not present the
+                // remembered items as gone.
+                if (page != null && page.items.isNotEmpty()) {
+                    freshNotifications = page.items
+                    notificationsCursor = page.continuation
+                    _hasMoreNotifications.value = page.continuation != null
+                    _notificationsLoadMoreFailed.value = false
                     publishNotifications(
                         profileId,
-                        withContext(Dispatchers.IO) { notificationHistory.merge(profileId, fresh) }
+                        withContext(Dispatchers.IO) { notificationHistory.merge(profileId, freshNotifications) }
                     )
                 }
             } finally {
                 _isNotificationsLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Read the next, older page of the inbox, when the sheet has scrolled to
+     * the end of the ones it has. A failure keeps the cursor so the same page
+     * can be asked for again.
+     */
+    fun loadMoreNotifications() {
+        val cursor = notificationsCursor ?: return
+        if (_isNotificationsLoading.value || _isNotificationsLoadingMore.value) return
+        notificationsMoreJob = viewModelScope.launch {
+            _isNotificationsLoadingMore.value = true
+            _notificationsLoadMoreFailed.value = false
+            try {
+                val profileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(app)
+                val page = youtubeRepository.getNotificationsPage(cursor)
+                if (com.ivor.ivormusic.data.ProfileManager.activeProfileId(app) != profileId) return@launch
+                if (notificationsCursor != cursor) return@launch
+                if (page == null) {
+                    _notificationsLoadMoreFailed.value = true
+                    return@launch
+                }
+                val known = freshNotifications.mapTo(HashSet()) { it.id }
+                freshNotifications = freshNotifications +
+                    page.items.filter { it.id.isBlank() || known.add(it.id) }
+                notificationsCursor = page.continuation
+                _hasMoreNotifications.value = page.continuation != null
+                publishNotifications(
+                    profileId,
+                    withContext(Dispatchers.IO) { notificationHistory.merge(profileId, freshNotifications) }
+                )
+            } finally {
+                _isNotificationsLoadingMore.value = false
             }
         }
     }
@@ -2822,9 +2890,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         items: List<com.ivor.ivormusic.data.NotificationItem>,
     ) {
         val hidden = notificationHistory.hiddenIds(profileId)
+        // While YouTube still has older pages, an item only this device
+        // remembers may just be on one not read yet; "Kept on this device"
+        // waits for the inbox's real end rather than claim it was dropped.
+        val shown = if (notificationsCursor != null) items.filterNot { it.remembered } else items
         allNotifications = items
-        _notifications.value = items.filterNot { it.id in hidden }
-        _hiddenNotificationCount.value = items.count { it.id in hidden }
+        _notifications.value = shown.filterNot { it.id in hidden }
+        _hiddenNotificationCount.value = shown.count { it.id in hidden }
     }
 
     /** Take one notification out of the inbox on this device. YouTube is not told. */
