@@ -1,0 +1,93 @@
+{
+  "playabilityStatus": {
+    "status": "OK"
+  },
+  "streamingData": {
+    "adaptiveFormats": [
+      {
+        "itag": 135,
+        "mimeType": "video/mp4; codecs=\"avc1.4D401E\"",
+        "bitrate": 648434,
+        "averageBitrate": 401209,
+        "contentLength": "11086735",
+        "approxDurationMs": "221066",
+        "width": 640,
+        "height": 480,
+        "fps": 30,
+        "qualityLabel": "480p",
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=135&clen=11086735&dur=221.066&mime=video%2Fmp4&c=VISIONOS"
+      },
+      {
+        "itag": 139,
+        "mimeType": "audio/mp4; codecs=\"mp4a.40.5\"",
+        "bitrate": 50136,
+        "averageBitrate": 48813,
+        "contentLength": "1350209",
+        "approxDurationMs": "221286",
+        "audioQuality": "AUDIO_QUALITY_LOW",
+        "audioSampleRate": "22050",
+        "audioChannels": 2,
+        "loudnessDb": 5.3999996,
+        "trackAbsoluteLoudnessLkfs": -8.6,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=139&clen=1350209&dur=221.286&mime=audio%2Fmp4&c=VISIONOS"
+      },
+      {
+        "itag": 140,
+        "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+        "bitrate": 130523,
+        "averageBitrate": 129502,
+        "contentLength": "3580995",
+        "approxDurationMs": "221216",
+        "audioQuality": "AUDIO_QUALITY_MEDIUM",
+        "audioSampleRate": "44100",
+        "audioChannels": 2,
+        "loudnessDb": 5.3999996,
+        "trackAbsoluteLoudnessLkfs": -8.6,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=140&clen=3580995&dur=221.216&mime=audio%2Fmp4&c=VISIONOS"
+      },
+      {
+        "itag": 249,
+        "mimeType": "audio/webm; codecs=\"opus\"",
+        "bitrate": 105308,
+        "averageBitrate": 49368,
+        "contentLength": "1364926",
+        "approxDurationMs": "221181",
+        "audioQuality": "AUDIO_QUALITY_LOW",
+        "audioSampleRate": "48000",
+        "audioChannels": 2,
+        "loudnessDb": 5.3900003,
+        "trackAbsoluteLoudnessLkfs": -8.61,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=249&clen=1364926&dur=221.181&mime=audio%2Fwebm&c=VISIONOS"
+      },
+      {
+        "itag": 250,
+        "mimeType": "audio/webm; codecs=\"opus\"",
+        "bitrate": 106671,
+        "averageBitrate": 64496,
+        "contentLength": "1783186",
+        "approxDurationMs": "221181",
+        "audioQuality": "AUDIO_QUALITY_LOW",
+        "audioSampleRate": "48000",
+        "audioChannels": 2,
+        "loudnessDb": 5.3900003,
+        "trackAbsoluteLoudnessLkfs": -8.61,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=250&clen=1783186&dur=221.181&mime=audio%2Fwebm&c=VISIONOS"
+      },
+      {
+        "itag": 251,
+        "mimeType": "audio/webm; codecs=\"opus\"",
+        "bitrate": 176196,
+        "averageBitrate": 127622,
+        "contentLength": "3528471",
+        "approxDurationMs": "221181",
+        "audioQuality": "AUDIO_QUALITY_MEDIUM",
+        "audioSampleRate": "48000",
+        "audioChannels": 2,
+        "loudnessDb": 5.3900003,
+        "trackAbsoluteLoudnessLkfs": -8.61,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=251&clen=3528471&dur=221.181&mime=audio%2Fwebm&c=VISIONOS"
+      }
+    ],
+    "formats": []
+  }
+}

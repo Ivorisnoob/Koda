@@ -164,8 +164,9 @@ fun MiniVideoPlayerContent(
                 .fillMaxHeight(),
             previousLabel = stringResource(R.string.cd_previous),
             nextLabel = stringResource(R.string.cd_next),
-            previous = previousVideo?.let { neighbour -> { MiniVideoNeighbour(neighbour) } },
-            next = nextVideo?.let { neighbour -> { MiniVideoNeighbour(neighbour) } },
+            previous = previousVideo,
+            next = nextVideo,
+            neighbour = { video -> MiniVideoNeighbour(video) },
         ) {
             Row(
                 modifier = Modifier.fillMaxSize(),

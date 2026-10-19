@@ -22,6 +22,30 @@ class HomeRecommendationsTest {
         assertEquals(30, usableHomeRecommendations(listOf(songs)).size)
     }
 
+    @Test
+    fun `a refresh leads with songs that have not led`() {
+        val songs = (1..6).map { song(it.toString(), "Song $it") }
+        assertEquals(
+            listOf("3", "4", "5", "6", "1", "2"),
+            rotateHomeRecommendations(songs, listOf("1", "2")).map { it.id }
+        )
+    }
+
+    @Test
+    fun `once every song has led the longest ago leads again`() {
+        val songs = (1..4).map { song(it.toString(), "Song $it") }
+        assertEquals(
+            listOf("3", "4", "1", "2"),
+            rotateHomeRecommendations(songs, listOf("3", "4", "1", "2")).map { it.id }
+        )
+    }
+
+    @Test
+    fun `nothing has led yet keeps the fetched order`() {
+        val songs = (1..3).map { song(it.toString(), "Song $it") }
+        assertEquals(songs, rotateHomeRecommendations(songs, emptyList()))
+    }
+
     private fun song(id: String, title: String) = Song.fromYouTube(
         videoId = id,
         title = title,

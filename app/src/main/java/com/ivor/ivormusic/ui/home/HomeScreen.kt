@@ -130,7 +130,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ivor.ivormusic.ui.settings.openExternal
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.ui.library.songRowClick
@@ -159,6 +161,8 @@ import kotlinx.coroutines.launch
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.ui.video.VideoHomeContent
 import com.ivor.ivormusic.data.VideoHomeConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.ivor.ivormusic.ui.components.hiddenFraction
 import com.ivor.ivormusic.data.VideoHomeDestination
 import com.ivor.ivormusic.ui.library.LibraryContent
@@ -180,6 +184,19 @@ private val VIDEO_SHELL_TOP_BAR_HEIGHT = 76.dp
 
 /** Gap the mini player keeps above the system navigation bar once the floating toolbar is gone. */
 private val MINI_PLAYER_RESTING_GAP = 16.dp
+
+/** The bubble's width plus its margin and a gap: what a bar beside it leaves free. */
+private val MINI_BUBBLE_END_RESERVE = 92.dp
+
+/** Scrolling down this far closes the music pill into its bubble. */
+private val MINI_BUBBLE_COLLAPSE_SCROLL = 56.dp
+
+/**
+ * Scrolling back up this far opens the bubble into the pill again: about one
+ * deliberate swipe. Less than this is somebody re-reading the row they just
+ * passed, and the pill opening and closing under that read as a twitch.
+ */
+private val MINI_BUBBLE_EXPAND_SCROLL = 200.dp
 
 /**
  * What the Home shell is currently showing. The mode rides along with the tab
@@ -409,7 +426,8 @@ fun HomeScreen(
     // effect below - otherwise a cold entry composes the hidden tab's content
     // once before the correction lands.
     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable(videoMode) {
-        val stored = homePreferences.getLastHomeTab(videoMode)
+        // The user's start screen, or the last tab they were on.
+        val stored = homePreferences.getStartHomeTab(videoMode)
         val reachable = !videoMode ||
             videoHomeConfiguration.orderedVisibleDestinations.any { it.tabId == stored }
         mutableIntStateOf(if (reachable) stored else videoRootTab)
@@ -492,7 +510,12 @@ fun HomeScreen(
     // restore one list's index into the other.
     val videoHomeScrollState = rememberLazyListState()
     val musicHomeScrollState = rememberLazyListState()
-    val searchScrollState = rememberLazyListState()
+    // Search is one screen in both modes, but a mode switch on it has the
+    // outgoing and the incoming copy composed together for the length of the
+    // cross-fade, and a LazyListState can drive only one list (see the tab
+    // AnimatedContent below).
+    val musicSearchScrollState = rememberLazyListState()
+    val videoSearchScrollState = rememberLazyListState()
     val subscriptionsScrollState = rememberLazyListState()
     val musicLibraryScrollState = rememberLazyListState()
     val videoLibraryScrollState = rememberLazyListState()
@@ -500,7 +523,7 @@ fun HomeScreen(
     // Which of the above the visible tab is currently driving.
     val currentTabScrollState = when (selectedTab) {
         0 -> if (videoMode) videoHomeScrollState else musicHomeScrollState
-        1 -> searchScrollState
+        1 -> if (videoMode) videoSearchScrollState else musicSearchScrollState
         2 -> if (videoMode) subscriptionsScrollState else musicLibraryScrollState
         else -> videoLibraryScrollState
     }
@@ -512,6 +535,18 @@ fun HomeScreen(
     // Material owns both the offset range and the settle/fling behavior. The
     // toolbar is bottom-centred, so its exit direction is down and the Home
     // shell only needs to forward nested scroll from whichever tab is active.
+    // The user's choices for the bar: whether it hides, and when it names
+    // its tabs.
+    val homeNavigation by homePreferences.homeNavigation.collectAsState()
+    val barHidesOnScroll = homeNavigation.barHidesOnScroll
+    // A bar told to stay put is brought back if it was away, and everything
+    // that follows it (the mini player, the bars floating above) with it.
+    LaunchedEffect(barHidesOnScroll) {
+        if (!barHidesOnScroll) {
+            floatingToolbarState.offset = 0f
+            floatingToolbarState.contentOffset = 0f
+        }
+    }
     val floatingToolbarScrollBehavior = FloatingToolbarDefaults.exitAlwaysScrollBehavior(
         exitDirection = FloatingToolbarExitDirection.Bottom,
         state = floatingToolbarState
@@ -543,7 +578,14 @@ fun HomeScreen(
     // device-only profiles there is always something to switch between, and
     // sending a signed-out user straight to a Google login was the app assuming
     // an account is the only way to have an identity.
-    val onProfileClick: () -> Unit = { showAccountSheet = true }
+    // In music mode the profile picture opens the Koda profile; holding it,
+    // there and everywhere, is the account switcher. Video mode keeps the
+    // tap as the switcher: its profile is the account, and the screen is
+    // about listening.
+    var showProfileScreen by remember { mutableStateOf(false) }
+    val onProfileClick: () -> Unit = {
+        if (videoMode) showAccountSheet = true else showProfileScreen = true
+    }
 
     val backgroundColor = MaterialTheme.colorScheme.background
     
@@ -612,6 +654,12 @@ fun HomeScreen(
             viewModel.consumePlaylistPageRequest()
         }
     }
+    // A shared Spotify link: the Library opens its import screen on it and
+    // consumes the request, so all this has to do is get to the music Library.
+    val pendingSpotifyImport by viewModel.pendingSpotifyImport.collectAsState()
+    LaunchedEffect(pendingSpotifyImport) {
+        if (pendingSpotifyImport != null) goToTab(2)
+    }
     val pendingVideoPlaylistPage by viewModel.pendingVideoPlaylistPage.collectAsState()
     LaunchedEffect(pendingVideoPlaylistPage) {
         pendingVideoPlaylistPage?.let { playlist ->
@@ -632,17 +680,93 @@ fun HomeScreen(
     // Held separately so the pill's label survives its exit animation
     var latestVersion by remember { mutableStateOf("") }
 
-    // Check for updates on app launch (only for release builds)
-    LaunchedEffect(Unit) {
-        if (!BuildConfig.DEBUG) {
-            updateResult = updateRepository.checkForUpdate(
+    val updateContext = androidx.compose.ui.platform.LocalContext.current
+    val updatePrompts = remember(updateContext) {
+        com.ivor.ivormusic.data.UpdatePromptStore(updateContext)
+    }
+
+    // First launch after an update: this version's highlights, once, from
+    // the file bundled in the APK. Decided before the update check so the
+    // two never open over each other - the prompt waits for this to close.
+    var whatsNew by remember {
+        mutableStateOf(
+            updatePrompts.whatsNewVersion(BuildConfig.VERSION_NAME)?.let { version ->
+                val highlights = com.ivor.ivormusic.data.ReleaseHighlights.bundled(updateContext, version)
+                if (highlights.isEmpty()) {
+                    // A release that bundled no highlights has nothing to
+                    // show; record it so the next one is not mistaken for it.
+                    updatePrompts.markWhatsNewSeen(BuildConfig.VERSION_NAME)
+                    null
+                } else {
+                    version to highlights
+                }
+            }
+        )
+    }
+    var showUpdatePrompt by remember { mutableStateOf(false) }
+
+    // Check for updates on launch and, for an app left open for days, when
+    // it comes back to the foreground after UPDATE_RECHECK_MS. Release builds
+    // only, and never in Local Only mode: a metadata request is a request.
+    val updateLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val currentLocalOnly by rememberUpdatedState(localOnly)
+    LaunchedEffect(updateLifecycleOwner) {
+        if (BuildConfig.DEBUG) return@LaunchedEffect
+        var lastCheckAtMs = 0L
+        updateLifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (currentLocalOnly) return@repeatOnLifecycle
+            if (lastCheckAtMs != 0L && now - lastCheckAtMs < UPDATE_RECHECK_MS) return@repeatOnLifecycle
+            lastCheckAtMs = now
+            val result = updateRepository.checkForUpdate(
                 repoPath = BuildConfig.GITHUB_REPO,
                 currentVersion = BuildConfig.VERSION_NAME
             )
-            (updateResult as? UpdateResult.UpdateAvailable)?.let {
-                latestVersion = it.latestVersion
+            updateResult = result
+            if (result is UpdateResult.UpdateAvailable) {
+                latestVersion = result.latestVersion
+                if (updatePrompts.shouldPromptFor(result.latestVersion)) showUpdatePrompt = true
             }
         }
+    }
+
+    whatsNew?.let { (version, highlights) ->
+        com.ivor.ivormusic.ui.settings.WhatsNewSheet(
+            version = version,
+            highlights = highlights,
+            onDismiss = {
+                updatePrompts.markWhatsNewSeen(BuildConfig.VERSION_NAME)
+                whatsNew = null
+            }
+        )
+    }
+    (updateResult as? UpdateResult.UpdateAvailable)?.takeIf { showUpdatePrompt && whatsNew == null }?.let { update ->
+        val highlights = remember(update.releaseNotes) {
+            com.ivor.ivormusic.data.ReleaseHighlights.fromReleaseBody(update.releaseNotes)
+        }
+        // Every way out of the dialog is recorded, so it comes back in two
+        // days rather than on the next launch.
+        val closePrompt = {
+            updatePrompts.markPrompted(update.latestVersion)
+            showUpdatePrompt = false
+        }
+        com.ivor.ivormusic.ui.settings.UpdatePromptDialog(
+            installedVersion = com.ivor.ivormusic.data.ReleaseHighlights.releaseVersion(BuildConfig.VERSION_NAME),
+            latestVersion = update.latestVersion,
+            highlights = highlights,
+            onUpdate = {
+                closePrompt()
+                // The same hand-off the update screen makes. When nothing can
+                // take the link, that screen is where the reason is explained.
+                val url = UpdateRepository.findBestApk(update.apkAssets)?.downloadUrl ?: update.htmlUrl
+                if (!updateContext.openExternal(url)) onNavigateToUpdate()
+            },
+            onDetails = {
+                closePrompt()
+                onNavigateToUpdate()
+            },
+            onLater = closePrompt
+        )
     }
 
     // How much clearance bottom-anchored UI needs above the nav bar inset to
@@ -695,6 +819,62 @@ fun HomeScreen(
     val miniPlayerFollowOffsetPx: () -> Float = {
         miniPlayerFollowDistancePx * floatingToolbarState.hiddenFraction()
     }
+    // Whether the music pill is closed into its bubble. A latch with two
+    // different distances rather than the toolbar's own hidden fraction: the
+    // toolbar comes back on the first pixel of an upward scroll, which is
+    // right for navigation and made the pill open and close on every small
+    // correction. [scar October 2026] It closes after a short scroll down and
+    // opens after a deliberate scroll up, or as soon as the list is back
+    // where the downward scroll began - which is what opens it at the top of
+    // a list, where there is no further up to scroll.
+    val bubbleDensity = androidx.compose.ui.platform.LocalDensity.current
+    val miniBubbleCollapsePx = with(bubbleDensity) { MINI_BUBBLE_COLLAPSE_SCROLL.toPx() }
+    val miniBubbleExpandPx = with(bubbleDensity) { MINI_BUBBLE_EXPAND_SCROLL.toPx() }
+    var miniBubble by remember { mutableStateOf(false) }
+    // Keyed on the tab: the scroll total is shared by every tab's list, so a
+    // new tab starts as a pill, measured from wherever the total stands.
+    LaunchedEffect(floatingToolbarState, selectedTab, videoMode) {
+        miniBubble = false
+        // The content offset falls as the list scrolls down and rises as it
+        // scrolls up. `turn` is the furthest point of the current run.
+        var turn = floatingToolbarState.contentOffset
+        var downRunStart = turn
+        androidx.compose.runtime.snapshotFlow { floatingToolbarState.contentOffset }.collect { offset ->
+            if (!miniBubble) {
+                if (offset > turn) turn = offset
+                if (turn - offset >= miniBubbleCollapsePx) {
+                    downRunStart = turn
+                    turn = offset
+                    miniBubble = true
+                }
+            } else {
+                if (offset < turn) turn = offset
+                if (offset - turn >= miniBubbleExpandPx || offset >= downRunStart) {
+                    turn = offset
+                    miniBubble = false
+                }
+            }
+        }
+    }
+    // Only the floating toolbar feeds that scroll total; a pinned navigation
+    // bar or a rail leaves the pill a pill.
+    //
+    // The user can also pin it either way: never a bubble, or always one.
+    // Always still needs the floating toolbar, for the same reason.
+    val miniShrinkContext = androidx.compose.ui.platform.LocalContext.current
+    val miniShrink = remember(miniShrinkContext) {
+        com.ivor.ivormusic.data.ThemePreferences(miniShrinkContext)
+    }.miniPlayerCustomization.collectAsState().value.shrink
+    val miniBubbleWanted = when (miniShrink) {
+        com.ivor.ivormusic.data.MiniPlayerShrink.NEVER -> false
+        com.ivor.ivormusic.data.MiniPlayerShrink.ALWAYS -> true
+        com.ivor.ivormusic.data.MiniPlayerShrink.ON_SCROLL -> miniBubble
+    }
+    val miniBubbleFraction = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (miniBubbleWanted && !nonExpressiveNavigationBar && !useRail) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+        label = "miniBubbleFraction"
+    )
     val bottomOverlayInset by androidx.compose.animation.core.animateDpAsState(
         targetValue = when {
             musicPillVisible && hasVideoMiniPlayer -> navigationOverlayInset + 196.dp
@@ -705,6 +885,44 @@ fun HomeScreen(
         animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
         label = "bottomOverlayInset"
     )
+    // The same clearance as it moves, for a bar that floats above the content
+    // and should follow the overlays rather than stand over the gap they
+    // leave: down to the screen edge as the toolbar hides, and beside the
+    // music bubble once the pill has closed into it. With the video mini bar
+    // up, or a pinned bar or rail, nothing moves and it is the resting inset.
+    val overlaysMove by rememberUpdatedState(
+        !nonExpressiveNavigationBar && !useRail && !hasVideoMiniPlayer
+    )
+    val overlayNavInset by rememberUpdatedState(navigationOverlayInset)
+    val overlayHasMusicPill by rememberUpdatedState(musicPillVisible)
+    val overlayRestingInset = rememberUpdatedState(bottomOverlayInset)
+    val bottomOverlayMotion = remember(floatingToolbarState, bubbleDensity) {
+        com.ivor.ivormusic.ui.components.BottomOverlayMotion(
+            bottomPx = {
+                with(bubbleDensity) {
+                    val resting = overlayRestingInset.value
+                    if (!overlaysMove) {
+                        resting.toPx()
+                    } else {
+                        val hidden = floatingToolbarState.hiddenFraction()
+                        val bubble = miniBubbleFraction.value.coerceIn(0f, 1f)
+                        val nav = overlayNavInset.toPx()
+                        val base = nav + (MINI_PLAYER_RESTING_GAP.toPx() - nav) * hidden
+                        // The pill rides down with the toolbar and closes the
+                        // gap between them as it goes.
+                        val pill = (resting.toPx() - nav) * (1f - 0.12f * hidden) * (1f - bubble)
+                        base + pill
+                    }
+                }
+            },
+            endInsetPx = {
+                if (!overlaysMove || !overlayHasMusicPill) 0f
+                else with(bubbleDensity) {
+                    MINI_BUBBLE_END_RESERVE.toPx() * miniBubbleFraction.value.coerceIn(0f, 1f)
+                }
+            }
+        )
+    }
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // The one inset every tab list scrolls inside, top and bottom. It belongs
@@ -720,6 +938,8 @@ fun HomeScreen(
     // Use Box overlay instead of Scaffold for truly floating navbar
     androidx.compose.runtime.CompositionLocalProvider(
         com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset,
+        com.ivor.ivormusic.ui.components.LocalBottomOverlayMotion provides bottomOverlayMotion,
+        com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher provides { showAccountSheet = true },
         com.ivor.ivormusic.ui.components.LocalNowPlaying provides
             com.ivor.ivormusic.ui.components.NowPlayingState(currentSong?.id, isPlaying)
     ) {
@@ -800,7 +1020,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(backgroundColor)
             .then(
-                if (nonExpressiveNavigationBar || useRail) Modifier
+                if (nonExpressiveNavigationBar || useRail || !barHidesOnScroll) Modifier
                 else Modifier.nestedScroll(floatingToolbarScrollBehavior)
             )
             .nestedScroll(shelfEdgeFlick)
@@ -865,12 +1085,17 @@ fun HomeScreen(
                     // that header off with it and reads as the whole chrome
                     // leaving - when nothing about it was supposed to move.
                     // A fade leaves it apparently stationary.
+                    // The page being left also grows a touch as it goes, the
+                    // morph the mode swap has always had.
                     if (initialState.videoMode != targetState.videoMode) {
                         return@AnimatedContent androidx.compose.animation.fadeIn(
                             androidx.compose.animation.core.tween(220)
-                        ) togetherWith androidx.compose.animation.fadeOut(
+                        ) togetherWith (androidx.compose.animation.fadeOut(
                             androidx.compose.animation.core.tween(180)
-                        )
+                        ) + androidx.compose.animation.scaleOut(
+                            targetScale = 1.05f,
+                            animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
+                        ))
                     }
                     val initialRank = visualTabOrder.indexOf(initialState.tab).takeIf { it >= 0 }
                         ?: initialState.tab
@@ -893,29 +1118,21 @@ fun HomeScreen(
                 }
             ) { tabKey ->
                 val targetTab = tabKey.tab
+                // Each page draws the mode it was keyed on, never the live one.
+                // A mode switch keeps the page being left composed until its
+                // fade ends; reading the live mode there made it rebuild itself
+                // as the mode being entered, so two lists shared one
+                // LazyListState for the length of the transition. The state
+                // binds to whichever list attached last and is not handed back
+                // when that list is disposed, so if the survivor was the other
+                // one it stopped scrolling until the tab was rebuilt: every
+                // drag reached it and remeasured a list no longer on screen.
+                // [scar October 2026, read out of a heap dump of a stuck Home]
+                @Suppress("NAME_SHADOWING")
+                val videoMode = tabKey.videoMode
                 when (targetTab) {
                     0 -> {
-                        // Mode swap morphs the page while the hoisted toggle
-                        // thumb keeps sliding above it. Spec is read here because
-                        // motionScheme is composable and transitionSpec is not.
-                        val modeScaleSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
-                        androidx.compose.animation.AnimatedContent(
-                            targetState = videoMode,
-                            label = "ModeTransition",
-                            transitionSpec = {
-                                (androidx.compose.animation.fadeIn(
-                                    androidx.compose.animation.core.tween(durationMillis = 260, delayMillis = 60)
-                                ) + androidx.compose.animation.scaleIn(
-                                    initialScale = 0.92f,
-                                    animationSpec = modeScaleSpec
-                                )) togetherWith (androidx.compose.animation.fadeOut(
-                                    androidx.compose.animation.core.tween(durationMillis = 160)
-                                ) + androidx.compose.animation.scaleOut(
-                                    targetScale = 1.05f,
-                                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 220)
-                                ))
-                            }
-                        ) { videoModeContent ->
+                        videoMode.let { videoModeContent ->
                             // Video Mode: Show video content
                             if (videoModeContent && localOnly) {
                                 com.ivor.ivormusic.ui.components.LocalOnlyNotice(
@@ -1231,7 +1448,7 @@ fun HomeScreen(
                         videoMode = videoMode,
                         localOnly = localOnly,
                         requestInitialFocus = !hasExpandedVideoPlayer && !showPlayerSheet,
-                        listState = searchScrollState
+                        listState = if (videoMode) videoSearchScrollState else musicSearchScrollState
                     )
                     2 -> {
                         if (videoMode && localOnly) {
@@ -1567,14 +1784,22 @@ fun HomeScreen(
                                 contentDescription = label
                             )
                         },
-                        label = { Text(label) }
+                        // The standard bar names every tab unless the
+                        // user asked otherwise.
+                        label = if (homeNavigation.tabLabels == com.ivor.ivormusic.data.NavTabLabels.NEVER) {
+                            null
+                        } else {
+                            { Text(label) }
+                        },
+                        alwaysShowLabel =
+                            homeNavigation.tabLabels != com.ivor.ivormusic.data.NavTabLabels.SELECTED
                     )
                 }
             }
         } else {
             HorizontalFloatingToolbar(
                 expanded = true,
-                scrollBehavior = floatingToolbarScrollBehavior,
+                scrollBehavior = if (barHidesOnScroll) floatingToolbarScrollBehavior else null,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -1630,7 +1855,13 @@ fun HomeScreen(
                                     modifier = Modifier.size(24.dp)
                                 )
                                 androidx.compose.animation.AnimatedVisibility(
-                                    visible = selected,
+                                    // The floating bar names only the open
+                                    // tab unless the user asked otherwise.
+                                    visible = when (homeNavigation.tabLabels) {
+                                        com.ivor.ivormusic.data.NavTabLabels.ALWAYS -> true
+                                        com.ivor.ivormusic.data.NavTabLabels.NEVER -> false
+                                        else -> selected
+                                    },
                                     enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(
                                         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
                                     ),
@@ -1695,6 +1926,9 @@ fun HomeScreen(
             onPlayerStyleChange = onPlayerStyleChange,
             collapsedBottomSpacing = miniPlayerCollapsedSpacing,
             collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
+            // Read in the lambda, so the bubble animating does not recompose
+            // this screen.
+            collapsedBubbleFraction = { miniBubbleFraction.value.coerceIn(0f, 1f) },
             collapsedStartInset = contentStartInset,
             collapsedEndInset = contentEndInset,
             collapsedMaxWidth = if (useRail) MINI_PLAYER_MAX_WIDE_WIDTH else androidx.compose.ui.unit.Dp.Unspecified,
@@ -1753,7 +1987,9 @@ fun HomeScreen(
             Surface(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .clickable { onNavigateToUpdate() },
+                    // The pill is the way back to the dialog it replaced as
+                    // the first thing an update shows.
+                    .clickable { showUpdatePrompt = true },
                 color = MaterialTheme.colorScheme.primaryContainer,
                 tonalElevation = 4.dp,
                 shadowElevation = 4.dp,
@@ -1778,6 +2014,32 @@ fun HomeScreen(
                     )
                 }
             }
+        }
+
+        // The Koda profile, over everything on Home including the mini
+        // player and the navigation bar: it is a full screen, hosted here
+        // rather than on a route because the switcher sheet it hands to
+        // lives in this composable.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showProfileScreen,
+            enter = androidx.compose.animation.fadeIn() +
+                androidx.compose.animation.slideInVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
+                ) { it / 10 },
+            exit = androidx.compose.animation.fadeOut() +
+                androidx.compose.animation.slideOutVertically { it / 10 }
+        ) {
+            com.ivor.ivormusic.ui.profile.KodaProfileScreen(
+                onBack = { showProfileScreen = false },
+                onSwitchProfile = {
+                    showProfileScreen = false
+                    showAccountSheet = true
+                },
+                onOpenStats = {
+                    showProfileScreen = false
+                    onNavigateToStats()
+                }
+            )
         }
     }
     }
@@ -2194,21 +2456,26 @@ fun TopBarSection(
     showModeToggle: Boolean = true,
     modeToggleState: MusicVideoToggleState = rememberMusicVideoToggleState(videoMode)
 ) {
-    val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
-    val iconColor = MaterialTheme.colorScheme.onSurface
-    val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    // The bar's buttons wear the secondary container, not a grey surface
+    // tone: on the tinted page a grey button read as part of the background.
+    val iconColor = MaterialTheme.colorScheme.onSecondaryContainer
+    val containerColor = MaterialTheme.colorScheme.secondaryContainer
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val userAvatar by viewModel.userAvatar.collectAsState()
+    val profileLabel = stringResource(R.string.cd_profile)
     val downloadingIds by viewModel.downloadingIds.collectAsState()
     val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
-    
-    Row(
+    val topBarOptions = com.ivor.ivormusic.ui.components.rememberHomeTopBarOptions()
+    val showDownloads = topBarOptions.alwaysShowDownloads || downloadingIds.isNotEmpty()
+
+    // A Box, not a spaced Row: the mode switch sits in the true centre of
+    // the bar whatever is either side of it, so it does not shift when the
+    // buttons on the right change between music and video.
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         // Profile avatar. Tap opens the switcher; long-press flips straight
         // back to the last profile, which is the whole point of a switcher for
@@ -2220,18 +2487,33 @@ fun TopBarSection(
             com.ivor.ivormusic.data.AccountSwitcher(context)
         }
         val isSwitching by accountSwitcher.switching.collectAsState()
-        Box {
+        val openAccountSwitcher = com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher.current
+        Box(modifier = Modifier.align(Alignment.CenterStart)) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(CircleShape)
-                    .background(surfaceColor)
+                    // No circle clip and no disc behind it: a Koda avatar has
+                    // an outline of its own (a flower, a clover, a cookie),
+                    // and a round frame cut its points off. The picture is
+                    // drawn to its own shape; only the press ripple is round.
                     .combinedClickable(
+                        interactionSource = remember {
+                            androidx.compose.foundation.interaction.MutableInteractionSource()
+                        },
+                        indication = androidx.compose.material3.ripple(bounded = false, radius = 22.dp),
                         onClick = onProfileClick,
                         onLongClick = {
-                            // A long-press that does nothing reads as broken, so
-                            // this only fires when there is somewhere to go.
-                            if (accountSwitcher.quickSwitchTarget() != null) {
+                            // Holding the picture is the account switcher, now
+                            // that a tap opens the profile. Where no shell
+                            // provides it, the old flip to the last profile
+                            // stands, and only when there is one to flip to: a
+                            // long-press that does nothing reads as broken.
+                            if (openAccountSwitcher != null) {
+                                haptics.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                                )
+                                openAccountSwitcher()
+                            } else if (accountSwitcher.quickSwitchTarget() != null) {
                                 haptics.performHapticFeedback(
                                     androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
                                 )
@@ -2241,21 +2523,15 @@ fun TopBarSection(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (userAvatar != null) {
-                    AsyncImage(
-                        model = userAvatar,
-                        contentDescription = stringResource(R.string.cd_profile),
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = stringResource(R.string.cd_profile),
-                        tint = iconColor,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                // The active profile's own picture: its photo, its Koda
+                // avatar, or the account's. A device-only profile used to
+                // be a grey person icon here.
+                com.ivor.ivormusic.ui.profile.ActiveProfileAvatar(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics { contentDescription = profileLabel },
+                    accountAvatarUrl = userAvatar
+                )
                 // Progress rides on the avatar rather than blocking the screen: the
                 // switch itself is instant, but the feeds behind it are refetching,
                 // and the status belongs where the user just tapped.
@@ -2304,15 +2580,40 @@ fun TopBarSection(
             }
         }
         
-        // Right side icons with shape morphing
+        // Right side icons with shape morphing.
         Row(
+            modifier = Modifier.align(Alignment.CenterEnd),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Downloads Button with badge if downloading
-            Box {
-                IconButton(
+            // Music/Video mode switch: one button the size of its neighbours
+            // that changes shape, colour and icon with the mode, instead of
+            // a two-part switch twice their width. [trial October 2026] Can
+            // be hidden from Settings (Home Screen Mode Toggle).
+            if (showModeToggle) {
+                com.ivor.ivormusic.ui.components.ModeMorphButton(
+                    videoMode = videoMode,
+                    onVideoModeChange = onVideoModeToggle
+                )
+            }
+
+            // Downloads appear here only while something is downloading: the
+            // button is a status, and the downloads themselves live in the
+            // Library. A permanent button for a place visited now and then
+            // was one more grey circle in the row.
+            // Customization can keep it there for good. It shares an unspaced
+            // row with Settings because it brings its own gap (see
+            // TopBarDownloadsButton).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                com.ivor.ivormusic.ui.components.TopBarDownloadsButton(
+                    visible = showDownloads,
+                    downloading = downloadingIds.isNotEmpty(),
                     onClick = onDownloadsClick,
+                    containerColor = containerColor,
+                    contentColor = iconColor
+                )
+                IconButton(
+                    onClick = onSettingsClick,
                     shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = containerColor,
@@ -2321,51 +2622,27 @@ fun TopBarSection(
                     modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Rounded.Download,
-                        contentDescription = stringResource(R.string.cd_downloads),
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.cd_settings),
                         modifier = Modifier.size(22.dp)
                     )
                 }
-                // Show badge if downloads are active
-                if (downloadingIds.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .align(Alignment.TopEnd)
-                            .offset(x = (-4).dp, y = 4.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
-                }
-            }
-            
-            IconButton(
-                onClick = onSettingsClick,
-                shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = containerColor,
-                    contentColor = iconColor
-                ),
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = stringResource(R.string.cd_settings),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            // Music/Video mode switch, anchored in the corner so it stays put
-            // when the home content swaps between modes. Can be hidden from
-            // Settings (Home Screen Mode Toggle).
-            if (showModeToggle) {
-                MusicVideoToggle(
-                    videoMode = videoMode,
-                    onVideoModeChange = onVideoModeToggle,
-                    state = modeToggleState
-                )
             }
         }
+
+        // A greeting beside the profile picture, so the bar has something to
+        // say whether or not the mode switch is on it. It gives way to the
+        // buttons: the end padding is their width, with or without the switch.
+        if (topBarOptions.showGreeting) com.ivor.ivormusic.ui.components.HomeGreeting(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(
+                    start = 56.dp,
+                    // One 44dp button and its gap for each button drawn.
+                    end = 56.dp * (1 + (if (showModeToggle) 1 else 0) +
+                        (if (showDownloads) 1 else 0))
+                )
+        )
     }
 }
 
@@ -2395,8 +2672,15 @@ fun HeroSection(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        // Left side - Title and subtitle
-        Column {
+        // Left side - Title and subtitle. Weighted, so it takes what Play
+        // leaves rather than the other way round: unweighted, a long pair of
+        // artist names was measured first at its full width and Play was
+        // squeezed into the remainder, narrower on some mixes than others.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 16.dp)
+        ) {
             Text(
                 text = stringResource(R.string.your_mix_line1),
                 style = MaterialTheme.typography.displayLarge,
@@ -3055,7 +3339,8 @@ fun SearchContent(
                         onEnqueueSong = onEnqueueSong,
                         // Search opens other people's playlists; the import
                         // flow belongs to the Library's local ones.
-                        onAddSongsRequest = null
+                        onAddSongsRequest = null,
+                        onSearchSongsRequest = null
                     )
                 }
             }
@@ -3317,6 +3602,9 @@ fun PlaylistsShelfSection(
 
 /** Covers on the Classic playlists rail; the header arrow reaches the rest. */
 private const val PLAYLIST_SHELF_ITEMS = 20
+
+/** How long an app left running goes before a return to it checks for an update again. */
+private const val UPDATE_RECHECK_MS = 6L * 60L * 60L * 1000L
 
 /** Square artwork edge, and the rail's item width. */
 internal val ARTWORK_SIZE = 140.dp

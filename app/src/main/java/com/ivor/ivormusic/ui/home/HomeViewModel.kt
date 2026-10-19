@@ -27,7 +27,9 @@ import com.ivor.ivormusic.data.usableHomeRecommendations
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
@@ -67,6 +69,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
     private val homeRecommendationCache = HomeRecommendationCache(application)
+    // Ids that have led Home this session, oldest first, so a pull to refresh
+    // can lead with something else. Above init, which runs the first load.
+    private val recentHomeLeads = ArrayDeque<String>()
     private val videoHistoryRepository = com.ivor.ivormusic.data.VideoHistoryRepository(application)
     private val localVideoRepository = com.ivor.ivormusic.data.LocalVideoRepository(application)
 
@@ -123,6 +128,53 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _pendingVideoPlaylistPage = MutableStateFlow<VideoPlaylist?>(null)
     val pendingVideoPlaylistPage: StateFlow<VideoPlaylist?> = _pendingVideoPlaylistPage.asStateFlow()
+
+    /**
+     * A Spotify playlist or album link shared into the app, waiting for the
+     * Library to open its import screen on it. The same hand-off as the
+     * playlist page above: the screen lives inside the tab system.
+     */
+    private val _pendingSpotifyImport = MutableStateFlow<String?>(null)
+    val pendingSpotifyImport: StateFlow<String?> = _pendingSpotifyImport.asStateFlow()
+
+    fun requestSpotifyImport(link: String) {
+        _pendingSpotifyImport.value = link.takeIf { it.isNotBlank() }
+    }
+
+    fun consumeSpotifyImportRequest() {
+        _pendingSpotifyImport.value = null
+    }
+
+    private val spotifyPlaylistSource = com.ivor.ivormusic.data.SpotifyPlaylistSource()
+
+    /** The songs a Spotify link names, or null when it cannot be read (private, removed, offline). */
+    suspend fun loadSpotifyCollection(ref: com.ivor.ivormusic.data.SpotifyRef): com.ivor.ivormusic.data.SpotifyCollection? =
+        try {
+            spotifyPlaylistSource.load(ref)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w("HomeViewModel", "Spotify playlist could not be read", e)
+            null
+        }
+
+    /**
+     * The same recording on YouTube Music, or null when no result is an exact
+     * match. One song search per track: the caller paces them and stops on a
+     * rate-limit hold, since a hundred searches in a row is exactly the
+     * traffic that hold exists to stop.
+     */
+    suspend fun matchSpotifyTrack(track: com.ivor.ivormusic.data.SpotifyTrack): Song? =
+        try {
+            com.ivor.ivormusic.data.SpotifyMatcher.pick(
+                track,
+                youtubeRepository.search(com.ivor.ivormusic.data.SpotifyMatcher.query(track))
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
 
     fun requestPlaylistPage(info: PlaylistPageInfo) {
         _pendingPlaylistPage.value = info.toDisplayItem()
@@ -1072,6 +1124,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     private var subscriptionFeedAttempted = false
 
+    // Paging state. Declared here rather than beside loadMoreSubscriptionFeed:
+    // the cache restore and the warm-up refresh both run from an init
+    // collector, and a property declared below that point is still unset
+    // (or is reset by its own initialiser afterwards) when they touch it.
+
+    /** Token for the account feed's next page; null once YouTube has no more. */
+    private var subscriptionFeedContinuation: String? = null
+
+    /**
+     * The feed on screen came from the disk cache, which stores videos and no
+     * token. The first load-more then fetches the account's first page for its
+     * token (and whatever is new on it) instead of a whole refresh, which for
+     * device follows is a request per channel.
+     */
+    private var subscriptionFeedTokenUnknown = false
+    private var subscriptionFeedGeneration = 0L
+
+    private val _isSubscriptionFeedLoadingMore = MutableStateFlow(false)
+    val isSubscriptionFeedLoadingMore: StateFlow<Boolean> = _isSubscriptionFeedLoadingMore.asStateFlow()
+
     private val subscriptionFeedCache = com.ivor.ivormusic.data.SubscriptionFeedCache(application)
     private val _subscriptionFeedUpdatedAt = MutableStateFlow<Long?>(null)
     val subscriptionFeedUpdatedAt: StateFlow<Long?> = _subscriptionFeedUpdatedAt.asStateFlow()
@@ -1093,6 +1165,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val age = System.currentTimeMillis() - snapshot.fetchedAtMs
         if (interval != com.ivor.ivormusic.data.ThemePreferences.SUBS_REFRESH_MANUAL && age > interval * 60_000L) return false
         _subscriptionFeed.value = snapshot.videos
+        resetSubscriptionFeedPaging()
+        subscriptionFeedTokenUnknown = true
         _subscriptionFeedError.value = null
         _subscriptionFeedUpdatedAt.value = snapshot.fetchedAtMs
         subscriptionFeedAttempted = true
@@ -1128,6 +1202,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isNotificationsLoading = MutableStateFlow(false)
     val isNotificationsLoading: StateFlow<Boolean> = _isNotificationsLoading.asStateFlow()
+
+    // Declared here, beside the flow the profile-switch reset also clears,
+    // rather than down with the loader: a property that reset touches must
+    // not be initialised after the collector that runs it.
+    /** Everything known for the open inbox, hidden items included; [notifications] is this filtered. */
+    private var allNotifications: List<com.ivor.ivormusic.data.NotificationItem> = emptyList()
+
+    private val _hiddenNotificationCount = MutableStateFlow(0)
+    val hiddenNotificationCount: StateFlow<Int> = _hiddenNotificationCount.asStateFlow()
 
     // Video library tab state. This half is the signed-in account's own
     // playlists; the device's are merged in by [videoPlaylists] below.
@@ -1305,6 +1388,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         if (!restoreCachedSubscriptionFeed()) loadSubscriptionFeed(force = true)
                     } else {
                         _subscriptionFeed.value = emptyList()
+                        resetSubscriptionFeedPaging()
                         _subscriptionFeedError.value = null
                     }
                 }
@@ -1357,6 +1441,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _youtubePlaylists.value = emptyList()
         _accountChannels.value = emptyList()
         _subscriptionFeed.value = emptyList()
+        resetSubscriptionFeedPaging()
 
         // Both modes are emptied, not just the visible one. Toggling modes
         // refetches on its own (HomeScreen's LaunchedEffect(videoMode)), but
@@ -1368,6 +1453,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _trendingVideos.value = emptyList()
         clearShortsFeed()
         clearSubscriptionMix()
+        clearFeedPosts()
         _historyVideos.value = emptyList()
         _lastHistoryRemoval.value = null
         forgetHomeLoadTimes()
@@ -1382,6 +1468,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         notificationsJob?.cancel()
         _isNotificationsLoading.value = false
         _notifications.value = emptyList()
+        allNotifications = emptyList()
+        _hiddenNotificationCount.value = 0
         _selectedGroupId.value = null
 
         // Spotlight's YouTube Music tabs are the account's own when signed in.
@@ -1525,6 +1613,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Claim the refresh before launching so two callers in the same main-
         // thread frame cannot both pass the guard and start duplicate work.
         _isSubscriptionFeedLoading.value = true
+        // A page asked for before this refresh belongs to the list it replaces.
+        subscriptionFeedGeneration++
+        _isSubscriptionFeedLoadingMore.value = false
         viewModelScope.launch {
             _subscriptionFeedError.value = null
             // A refresh that was refused never ran, so it must not count as the
@@ -1538,7 +1629,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     sessionManager.isLoggedIn()
                 val useLocal = source != com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_YOUTUBE
 
-                val accountFeed = if (useAccount) youtubeRepository.getSubscriptionsFeed() else emptyList()
+                val accountPage = if (useAccount) {
+                    youtubeRepository.getSubscriptionsFeedPage()
+                } else {
+                    com.ivor.ivormusic.data.VideoFeedPage(emptyList())
+                }
+                val accountFeed = accountPage.videos
 
                 val channels = if (useLocal) groupFilteredLocalChannels() else emptyList()
                 val localFeed = if (channels.isNotEmpty()) {
@@ -1555,6 +1651,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 } else emptyList()
 
                 _subscriptionFeed.value = mergeFeeds(accountFeed, localFeed)
+                subscriptionFeedContinuation = accountPage.continuation
+                subscriptionFeedTokenUnknown = false
                 if (_subscriptionFeed.value.isNotEmpty()) {
                     subscriptionFeedCache.write(_subscriptionFeed.value, subscriptionFeedKey())
                     _subscriptionFeedUpdatedAt.value = System.currentTimeMillis()
@@ -1591,6 +1689,194 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    // ---------------- Subscriptions feed paging ----------------
+    // (its state is declared beside the feed's own, above the init collectors)
+
+    private fun resetSubscriptionFeedPaging() {
+        subscriptionFeedGeneration++
+        subscriptionFeedContinuation = null
+        subscriptionFeedTokenUnknown = false
+        _isSubscriptionFeedLoadingMore.value = false
+    }
+
+    /**
+     * Append the account feed's next page as the Subscriptions tab nears its
+     * end. Only the account half pages: a device follow's feed is that
+     * channel's Atom file, which has no second page. A page that fails or comes
+     * back empty ends the paging until the next refresh, rather than being
+     * asked for again on every scroll frame.
+     */
+    fun loadMoreSubscriptionFeed() {
+        if (_isSubscriptionFeedLoading.value || _isSubscriptionFeedLoadingMore.value) return
+        if (_subscriptionFeed.value.isEmpty()) return
+        val token = subscriptionFeedContinuation
+        if (token == null && !(subscriptionFeedTokenUnknown && shouldUseAccountSubscriptions())) return
+        if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) return
+        val generation = subscriptionFeedGeneration
+        _isSubscriptionFeedLoadingMore.value = true
+        viewModelScope.launch {
+            try {
+                val page = if (token != null) {
+                    youtubeRepository.getVideoFeedContinuation(token)
+                } else {
+                    youtubeRepository.getSubscriptionsFeedPage()
+                }
+                if (generation != subscriptionFeedGeneration) return@launch
+                subscriptionFeedTokenUnknown = false
+                subscriptionFeedContinuation = page.continuation
+                val known = _subscriptionFeed.value.mapTo(HashSet()) { it.videoId }
+                val fresh = page.videos.filter { known.add(it.videoId) }
+                if (fresh.isNotEmpty()) _subscriptionFeed.value = _subscriptionFeed.value + fresh
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                KLog.w("HomeViewModel", "Subscription feed page failed", e)
+                if (generation == subscriptionFeedGeneration) subscriptionFeedContinuation = null
+            } finally {
+                if (generation == subscriptionFeedGeneration) _isSubscriptionFeedLoadingMore.value = false
+            }
+        }
+    }
+
+    // ---------------- Community posts between the videos ----------------
+    //
+    // Neither FEwhat_to_watch nor FEsubscriptions carries a post [verified
+    // October 2026, signed in, WEB], so the posts Home and the Subscriptions
+    // tab scatter between videos come from the followed channels themselves: a
+    // few channels at a time in a shuffled order, one Posts-tab browse each,
+    // topped up as a feed grows. It is discretionary fan-out, so a 429 hold
+    // stands it down.
+
+    private val _feedPosts = MutableStateFlow<List<com.ivor.ivormusic.data.ChannelPost>>(emptyList())
+
+    /** Posts for the feeds, minus those from a channel the user has blocked since. */
+    val feedPosts: StateFlow<List<com.ivor.ivormusic.data.ChannelPost>> =
+        combine(_feedPosts, notInterestedRepository.blockedChannels) { posts, blocked ->
+            if (blocked.isEmpty()) posts
+            else posts.filterNot { post -> blocked.any { it.channelId == post.channelId } }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private var feedPostChannelOrder: List<com.ivor.ivormusic.data.SubscribedChannel> = emptyList()
+    private var feedPostNextChannel = 0
+    private var feedPostsStarted = false
+    private var feedPostJob: Job? = null
+    private var feedPostGeneration = 0L
+
+    /**
+     * Make sure there are enough posts for a feed of [videoCount] videos: one
+     * per `FEED_VIDEOS_PER_POST`. Called by the feeds as they scroll; does nothing
+     * once the posts in hand cover the feed or every followed channel has been
+     * asked.
+     */
+    fun ensureFeedPosts(videoCount: Int) {
+        if (themePreferences.isLocalOnlyModeEnabled()) return
+        if (feedPostJob?.isActive == true) return
+        if (_feedPosts.value.size >= videoCount / com.ivor.ivormusic.ui.video.FEED_VIDEOS_PER_POST) return
+        if (feedPostsStarted && feedPostNextChannel >= feedPostChannelOrder.size) return
+        if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) return
+        val generation = feedPostGeneration
+        feedPostJob = viewModelScope.launch {
+            try {
+                if (!feedPostsStarted) {
+                    val channels = subscribedChannelsForMix()
+                    if (generation != feedPostGeneration) return@launch
+                    feedPostChannelOrder = channels
+                        .filterNot { notInterestedRepository.isChannelBlocked(it.channelId) }
+                        .shuffled(mixRandom)
+                    feedPostNextChannel = 0
+                    feedPostsStarted = true
+                }
+                // Plenty of channels never post, so a batch that brings nothing
+                // is followed by another rather than leaving the feed without.
+                var batchesTried = 0
+                var added = false
+                while (!added && feedPostNextChannel < feedPostChannelOrder.size &&
+                    batchesTried < FEED_POST_EMPTY_BATCH_LIMIT
+                ) {
+                    batchesTried++
+                    val batch = feedPostChannelOrder.subList(
+                        feedPostNextChannel,
+                        minOf(feedPostChannelOrder.size, feedPostNextChannel + FEED_POST_CHANNELS_PER_BATCH)
+                    )
+                    feedPostNextChannel += batch.size
+                    val fetched = batch.map { channel ->
+                        async {
+                            youtubeRepository.getChannelPosts(channel.channelId).take(FEED_POSTS_PER_CHANNEL)
+                        }
+                    }.awaitAll()
+                    if (generation != feedPostGeneration) return@launch
+                    val known = _feedPosts.value.mapTo(HashSet()) { it.postId }
+                    val fresh = fetched.flatten().filter { known.add(it.postId) }.shuffled(mixRandom)
+                    if (fresh.isNotEmpty()) {
+                        _feedPosts.value = _feedPosts.value + fresh
+                        added = true
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                KLog.w("HomeViewModel", "Feed posts failed", e)
+            }
+        }
+    }
+
+    /** A pull to refresh: different channels, different posts. */
+    fun refreshFeedPosts() = clearFeedPosts()
+
+    private fun clearFeedPosts() {
+        feedPostGeneration++
+        feedPostJob?.cancel()
+        feedPostChannelOrder = emptyList()
+        feedPostNextChannel = 0
+        feedPostsStarted = false
+        _feedPosts.value = emptyList()
+    }
+
+    /**
+     * The feed post whose comments are open, and that thread - the channel
+     * page's arrangement (see ChannelViewModel), for a post met in a feed.
+     */
+    private val _feedCommentsPost = MutableStateFlow<com.ivor.ivormusic.data.ChannelPost?>(null)
+    val feedCommentsPost: StateFlow<com.ivor.ivormusic.data.ChannelPost?> = _feedCommentsPost.asStateFlow()
+    val feedPostComments = com.ivor.ivormusic.ui.video.CommentThreadController(
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        viaBrowse = true
+    )
+
+    fun openFeedPostComments(post: com.ivor.ivormusic.data.ChannelPost) {
+        val params = post.detailParams ?: return
+        _feedCommentsPost.value = post
+        feedPostComments.load { youtubeRepository.getPostCommentsToken(params) }
+    }
+
+    /** The post a notification is being opened on, so a second tap does not fetch it twice. */
+    private var notificationPostJob: Job? = null
+
+    /**
+     * Open the post a notification is about, in the same sheet a feed post's
+     * comments open in: the post pinned above its thread. [onResult] says
+     * whether it opened, so the caller can fall back to the post's web link.
+     */
+    fun openNotificationPost(detailParams: String, onResult: (opened: Boolean) -> Unit) {
+        notificationPostJob?.cancel()
+        notificationPostJob = viewModelScope.launch {
+            val post = youtubeRepository.getPostDetail(detailParams)
+            if (post != null) openFeedPostComments(post)
+            onResult(post != null)
+        }
+    }
+
+    /** Reload the open thread, e.g. after signing in, so its composer appears. */
+    fun reloadFeedPostComments() {
+        _feedCommentsPost.value?.let { openFeedPostComments(it) }
+    }
+
+    fun closeFeedPostComments() {
+        _feedCommentsPost.value = null
+        feedPostComments.clear()
     }
 
     /**
@@ -2490,18 +2776,69 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private var notificationsJob: kotlinx.coroutines.Job? = null
 
-    /** Load the notification inbox. Requires login. */
+    private val notificationHistory by lazy {
+        com.ivor.ivormusic.data.NotificationHistoryStore(app)
+    }
+
+    /**
+     * Load the notification inbox. Requires login.
+     *
+     * What this device remembers is shown at once and the fresh inbox is
+     * folded into it when it arrives. The profile is read before the request
+     * and checked after it, so an inbox that lands after a switch is neither
+     * shown to nor remembered for the profile switched to.
+     */
     fun loadNotifications(force: Boolean = false) {
         if (_isNotificationsLoading.value) return
         if (_notifications.value.isNotEmpty() && !force) return
         notificationsJob = viewModelScope.launch {
             _isNotificationsLoading.value = true
             try {
-                _notifications.value = youtubeRepository.getNotifications()
+                val profileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(app)
+                if (allNotifications.isEmpty()) {
+                    publishNotifications(
+                        profileId,
+                        withContext(Dispatchers.IO) { notificationHistory.remembered(profileId) }
+                    )
+                }
+                val fresh = youtubeRepository.getNotifications()
+                if (com.ivor.ivormusic.data.ProfileManager.activeProfileId(app) != profileId) return@launch
+                // An empty answer is as likely a failed request as an empty
+                // inbox, and must not present the remembered items as gone.
+                if (fresh.isNotEmpty()) {
+                    publishNotifications(
+                        profileId,
+                        withContext(Dispatchers.IO) { notificationHistory.merge(profileId, fresh) }
+                    )
+                }
             } finally {
                 _isNotificationsLoading.value = false
             }
         }
+    }
+
+    private fun publishNotifications(
+        profileId: String,
+        items: List<com.ivor.ivormusic.data.NotificationItem>,
+    ) {
+        val hidden = notificationHistory.hiddenIds(profileId)
+        allNotifications = items
+        _notifications.value = items.filterNot { it.id in hidden }
+        _hiddenNotificationCount.value = items.count { it.id in hidden }
+    }
+
+    /** Take one notification out of the inbox on this device. YouTube is not told. */
+    fun hideNotification(item: com.ivor.ivormusic.data.NotificationItem) {
+        if (item.id.isBlank()) return
+        val profileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(app)
+        notificationHistory.hide(profileId, item.id)
+        publishNotifications(profileId, allNotifications)
+    }
+
+    fun restoreHiddenNotifications() {
+        val profileId = com.ivor.ivormusic.data.ProfileManager.activeProfileId(app)
+        notificationHistory.restoreHidden(profileId)
+        publishNotifications(profileId, allNotifications)
     }
     
     // --- Download Actions ---
@@ -2580,6 +2917,35 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) { }
     }
 
+    /**
+     * Put a fetched Home list on screen and in the cache. A refresh the user
+     * asked for [rotate]s it first, so it leads with songs that have not led
+     * this session; an ordinary load keeps YouTube's order. Either way the
+     * songs that end up leading are remembered for the next refresh.
+     *
+     * @return false when the fetch had nothing usable and Home was left alone.
+     */
+    private fun publishHomeRecommendations(fetched: List<Song>, rotate: Boolean): Boolean {
+        val pool = usableHomeRecommendations(
+            listOf(fetched),
+            limit = com.ivor.ivormusic.data.HOME_RECOMMENDATION_POOL
+        )
+        val ordered = if (rotate) {
+            com.ivor.ivormusic.data.rotateHomeRecommendations(pool, recentHomeLeads.toList())
+        } else pool
+        val recs = usableHomeRecommendations(listOf(ordered))
+        if (recs.isEmpty()) return false
+        val leads = recs.take(com.ivor.ivormusic.data.HOME_LEAD_SIZE).map { it.id }
+        recentHomeLeads.removeAll(leads.toSet())
+        recentHomeLeads.addAll(leads)
+        while (recentHomeLeads.size > com.ivor.ivormusic.data.HOME_RECOMMENDATION_POOL) {
+            recentHomeLeads.removeFirst()
+        }
+        _youtubeSongs.value = recs
+        homeRecommendationCache.save(recs)
+        return true
+    }
+
     fun loadYouTubeRecommendations(force: Boolean = false) {
         if (!force &&
             (recommendationsLoadJob?.isActive == true || loadedRecently(recommendationsLoadedAtMs))
@@ -2587,27 +2953,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         recommendationsLoadJob = viewModelScope.launch {
             _isLoading.value = true
             try {
-                if (sessionManager.isLoggedIn()) {
-                    val recs = usableHomeRecommendations(
-                        listOf(youtubeRepository.getRecommendations())
-                    )
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                        homeRecommendationCache.save(recs)
-                        recommendationsLoadedAtMs = System.currentTimeMillis()
-                    }
+                // Not logged in: personalize from the local taste profile
+                // (play history, likes, searches). Falls back to trending
+                // internally when there's no listening data yet.
+                val fetched = if (sessionManager.isLoggedIn()) {
+                    youtubeRepository.getRecommendations()
                 } else {
-                    // Not logged in: personalize from the local taste profile
-                    // (play history, likes, searches). Falls back to trending
-                    // internally when there's no listening data yet.
-                    val recs = usableHomeRecommendations(
-                        listOf(recommendationEngine.getHomeRecommendations())
+                    recommendationEngine.getHomeRecommendations(
+                        limit = com.ivor.ivormusic.data.HOME_RECOMMENDATION_POOL
                     )
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                        homeRecommendationCache.save(recs)
-                        recommendationsLoadedAtMs = System.currentTimeMillis()
-                    }
+                }
+                if (publishHomeRecommendations(fetched, rotate = false)) {
+                    recommendationsLoadedAtMs = System.currentTimeMillis()
                 }
             } catch (e: Exception) {
                 // The feed keeps whatever it already had - both branches above
@@ -2934,11 +3291,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         forgetHomeLoadTimes()
         accountLoadJob?.cancel()
         clearSubscriptionMix()
+        clearFeedPosts()
         // The Subscriptions tab no longer empties itself on sign-out - local
         // subscriptions outlive the session - so the account's half has to be
         // dropped explicitly, or it would sit there unreachable and stale.
         _accountChannels.value = emptyList()
         _subscriptionFeed.value = emptyList()
+        resetSubscriptionFeedPaging()
         loadSubscriptionFeed(force = true)
         loadYouTubeRecommendations(force = true)
     }
@@ -2953,13 +3312,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     youtubeRepository.fetchAccountInfo()
                     _userAvatar.value = sessionManager.getUserAvatar()
                     
-                    // Fetch personalized recommendations (order preserved from YTM)
-                    val recs = usableHomeRecommendations(
-                        listOf(youtubeRepository.getRecommendations())
-                    )
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                        homeRecommendationCache.save(recs)
+                    // Personalized recommendations, led by songs that have
+                    // not led yet: YouTube answers a refresh with the same
+                    // list, and the same three covers read as nothing having
+                    // happened.
+                    if (publishHomeRecommendations(youtubeRepository.getRecommendations(), rotate = true)) {
                         recommendationsLoadedAtMs = System.currentTimeMillis()
                     }
 
@@ -2971,11 +3328,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     // Logged-out YouTube mode: refresh the taste-based feed too.
                     // (Gated on a non-empty feed so local-only users don't pay
                     // for network searches on every pull-to-refresh.)
-                    val recs = recommendationEngine.getHomeRecommendations()
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                        homeRecommendationCache.save(recs)
-                    }
+                    publishHomeRecommendations(
+                        recommendationEngine.getHomeRecommendations(
+                        limit = com.ivor.ivormusic.data.HOME_RECOMMENDATION_POOL
+                    ), rotate = true
+                    )
                 }
                 // Reload local songs with exclusions and playlists
                 playlistRepository.refreshPlaylists()
@@ -3658,7 +4015,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         name: String,
         description: String?,
         songs: List<Song>,
-    ): Pair<com.ivor.ivormusic.data.YouTubeRepository.PlaylistUpload?, Int> {
+    ): Pair<com.ivor.ivormusic.data.youtube.PlaylistUpload?, Int> {
         val ids = songs.filter { it.source == com.ivor.ivormusic.data.SongSource.YOUTUBE }
             .map { it.id }
             .distinct()
@@ -3695,6 +4052,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun addSongsToLocalPlaylist(playlistId: String, songs: List<Song>): Int =
         playlistRepository.addSongsToPlaylist(playlistId, songs)
+
+    /**
+     * Add a picked selection to a playlist the user owns: one batch write for
+     * a device playlist, one `edit_playlist` per song for one on the account.
+     * The account has no place for a device file, so those are left out there.
+     * One request per song rather than several actions in one, because only
+     * the single-action form of that call has been probed.
+     *
+     * @return how many songs landed.
+     */
+    suspend fun addSongsToPlaylist(playlistId: String, songs: List<Song>): Int {
+        if (playlistRepository.userPlaylists.value.any { it.id == playlistId }) {
+            return playlistRepository.addSongsToPlaylist(playlistId, songs)
+        }
+        var added = 0
+        for (song in songs.distinctBy { it.id }) {
+            if (song.source != com.ivor.ivormusic.data.SongSource.YOUTUBE) continue
+            val ok = try {
+                youtubeRepository.addToYouTubePlaylist(playlistId, song.id, music = true)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+            if (ok) added++
+        }
+        return added
+    }
 
     /**
      * Create a local playlist already holding [songs] - the playlist studio's
@@ -4104,6 +4489,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         /** Consecutive empty channel batches one page will try before giving up. */
         const val MIX_EMPTY_BATCH_LIMIT = 3
+
+        /** Channels asked for posts at once; each is one browse of about half a megabyte. */
+        const val FEED_POST_CHANNELS_PER_BATCH = 3
+
+        /** Posts taken from one channel, so no creator fills the feed's post slots alone. */
+        const val FEED_POSTS_PER_CHANNEL = 2
+
+        /** Consecutive post-less channel batches one top-up will try before giving up. */
+        const val FEED_POST_EMPTY_BATCH_LIMIT = 3
 
         /** Byline of a video-mode playlist shown in the music Library. */
         const val CROSS_MODE_VIDEO_SUBTITLE = "Video playlist · On this device"

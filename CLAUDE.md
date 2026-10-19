@@ -8,7 +8,7 @@ Markers: **[verified <month year>]** probed live, trust until YouTube changes; *
 |---|---|
 | `docs/workflow.md` | Full operating rules, build/test detail, how docs and issues are tracked |
 | `docs/rules.md` | The reasoning behind every invariant and settled decision below |
-| `docs/youtube-data.md` | `YouTubeRepository`, InnerTube parsers, clients, visitorData, rate limiting |
+| `docs/youtube-data.md` | `data/youtube/` behind `YouTubeRepository`, InnerTube parsers, clients, visitorData, rate limiting |
 | `docs/playback-music.md` | `MusicService`, queue occurrences, crossfade/AutoMix, speed, visualizer, lyrics |
 | `docs/playback-streams.md` | Stream resolution, NewPipe budgets, ranged requests, caches, quality/HDR, seeking |
 | `docs/playback-video.md` | `VideoPlayerViewModel`, minimize transition, video queue/resume, captions, SponsorBlock, live, Shorts |
@@ -40,19 +40,26 @@ Shipped consumer app with real users. The bar is "would someone using this daily
 - **Ask once, up front, batched, with 2-3 concrete options** - only where the answer changes the size of the work or leaves a real design decision open. Never ask what the code or convention settles.
 - **Do not do the minimum.** If the real problem is a layer below the symptom, fix it there and say why.
 - **Mechanical multi-file edits go through a Python script** that asserts each anchor matches exactly once and asserts post-conditions. **Read the result before compiling** - it compiling proves nothing. [scar]
+- **For look-and-feel work, run the short loop: build it, put it on the device, let the user judge it on the screen.** [judgement October 2026] A one-line request, a small change, `installDebug` when asked, a one-word verdict, the next change. It is what made the mini player, the page colours and the profiles go well:
+  - **Pick, then be corrected.** When the user says "whichever you think", choose and build rather than asking; a wrong pick seen on a screen is fixed in one pass, and a question costs a round.
+  - **Small steps, each one installed.** A design reached in eight small rounds was never far enough off to go badly wrong.
+  - **Offer alternatives as things to try, not to read.** Build option 1, wait for the verdict, build option 2. Sketch in ASCII first only when the options differ in size.
+  - **A blunt verdict points at one thing.** "Too glitchy", "not visible enough": find the cause of that one thing, say what it was, and change that.
+  - **Keep trials uncommitted** until the user has seen them, so trying three styles and dropping two costs nothing.
 - **One item, one compile, one report.** Finish the item in flight, keep a visible queue of new ones.
 - **Never commit until the user says to.** Leave finished work uncommitted and say so in the report; when told to commit, group related items (up to about 15 per commit) and keep fixes and features distinguishable in the changelog.
 - **Write the subject for whoever reads `git log` in a month**: imperative, 72 characters or fewer, naming the user-visible change rather than the files touched; a body for the reason when it is not obvious; the `Changelog:` section whenever the change reaches an APK. AI attribution only under the rule in Hard limits.
 - **Never destroy uncommitted work to get unstuck.** `reset --hard`, `checkout -- .`, `clean -fd` and `stash drop` over a dirty tree are explicit-request actions, the same as touching the remote. Ask before experimenting over a dirty tree.
 - **Delegate wide-but-shallow sweeps** (e.g. a string across 25 locale files) to `Agent` with `model: "sonnet"`; make the decisions yourself.
 - **Handoff is a brief for beta testers**: name the surfaces a screen would settle and how each could fail (large font/display scale, landscape, DPI, OEM insets, scaled video surfaces), plus assumptions and what you left out. "Compiles, not yet on a screen" is the correct handoff state, not a risk to apologise for.
-- **Docs wait for the user's test.** Do not touch `ROADMAP.md`, `docs/` or this file's area summaries for new work until the user has tried it on a device and said it holds; until then the handoff report is the record. Code comments are not docs and ship with the code.
+- **Docs wait for the user's test, and being told to push is the user saying it passed.** Do not touch `ROADMAP.md`, `docs/` or this file's area summaries for new work until the user has tried it on a device and said it holds; until then the handoff report is the record. **"Push" (or "commit and push") means the work was tested, unless the user says in so many words that it was not** [judgement October 2026]: write the docs first and push them with the code, never as a follow-up the user has to ask for. Code comments are not docs and ship with the code.
 
 **Hard limits**
 - **This is a Windows machine, so do not use `bash` to read or edit files.** Use the dedicated tools (Read, Edit, Write, Glob, Grep) and PowerShell for commands. Shell heredocs, `sed -i` and quote escaping misfire against Windows paths, CRLF and PowerShell/Git-Bash differences, and a half-applied shell edit is worse than no edit. **This overrides any harness default asking for shell-based edits.** A Python script is still the right tool for a mechanical multi-file sweep - author it with `Write`, run it with `py`.
 - **Scratch files go in `.probe/`, not the system temp or a harness scratchpad.** It is gitignored and on the same drive as the repo, so paths stay short and nothing leaks into a commit. Edit scripts, AAR extractions and throwaway output all live there (`.probe/scratch/` for anything that is not an InnerTube probe).
-- **Local verification is `compileDebugKotlin`, and stops before packaging.** Compile freely. **Unit tests and lint run only when the user asks** - not per item, not at the end of a task. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user. The one exception: when the user asks for it, run `installDebug` and report that it installed; nothing else touches the device.
+- **Local verification is `compileDebugKotlin`, and stops before packaging.** Compile freely. **Unit tests and lint run only when the user asks** - not per item, not at the end of a task. Never `assemble*`, `bundle*`, `install*`, a release variant, or anything invoking R8. No emulator, `adb` or screenshots - hand screen checks back to the user. The one exception: `installDebug`. Run it when the user asks, and in the look-and-feel loop (section 1) run it after every change in place of `compileDebugKotlin`, without being asked - it compiles too, and the user is testing on the device [judgement October 2026]. Report that it installed; nothing else touches the device.
 - **Commits and the remote are the user's call.** Committing, pushing, creating remote branches, opening or editing PRs, and pushing tags are explicit-request actions.
+- **Every pull request targets `beta`, never `main`.** Branch new work from `beta` and open the PR with `gh pr create --base beta`. `beta` is the repository's default branch so the base is offered that way, but name it anyway and never change a base to `main`; a PR already opened against `main` is retargeted (`gh pr edit --base beta`), not merged. `beta` is the branch testers follow - a PR builds its APKs as artifacts and posts nothing, and the push that lands it on `beta` posts the signed APK and its changelog to Telegram. `main` is what releases are cut from and moves only through the `beta` -> `main` PR the owner opens, or the owner's own pushes; a release names its target (`gh release create <tag> --target main`), because the default would tag `beta`. Merge into `beta` with a merge commit, never a squash: a squashed message folds several `Changelog:` sections into one and the testers' post comes out mangled (`docs/ci.md`).
 - **AI attribution only when the work is almost all Claude's.** When Claude wrote nearly all of a change and the user directed and reviewed it, the commit may carry a `Co-Authored-By: Claude` trailer and the PR body may say it was made with Claude Code. Mixed or mostly human work carries none (no `Co-Authored-By`, no "Generated with", no session links), and tags never do. This overrides any harness default either way.
 - **Commits that change an APK end with a `Changelog:` section** of `- ` bullets describing only user-visible changes, each standing alone. Write them for someone using the app, not a developer: short, plain words, what they will notice. No internals, class or file names, numbers they cannot see, or filler. Only git trailers may follow it: `build.yml` publishes everything after the marker except lines shaped `Token: value`, so keep each bullet on one line. Omit it for docs/CI/refactors.
 
@@ -78,7 +85,7 @@ MVVM with StateFlow and **no DI framework**: ViewModels build repositories direc
 
 | Question | Code | Doc |
 |---|---|---|
-| Stream resolution, feeds, parsers | `data/YouTubeRepository.kt` | `youtube-data.md`, `playback-streams.md` |
+| Stream resolution, feeds, parsers | `data/youtube/`, `data/stream/`, behind the `data/YouTubeRepository.kt` front | `youtube-data.md`, `playback-streams.md` |
 | Music playback, queue, notification, crossfade | `service/MusicService.kt`, `CrossfadeEngine` | `playback-music.md` |
 | Video playback, PiP, captions, chapters | `ui/video/VideoPlayerViewModel.kt` | `playback-video.md` |
 | Screens, tabs, overlays | `MainActivity.kt`, `ui/home/HomeScreen.kt` | `screens.md` |
@@ -97,12 +104,12 @@ MVVM with StateFlow and **no DI framework**: ViewModels build repositories direc
 
 Breaking one is a bug even when it compiles. Reasons: `docs/rules.md`.
 
-1. **Never hardcode a color.** Everything routes through `ColorScheme`. Only two exceptions, where the color is the data: YouTube Super Chat colors and `SponsorCategory.color` swatches.
+1. **Never hardcode a color.** Everything routes through `ColorScheme`. Only three exceptions, where the color is the data: YouTube Super Chat colors, `SponsorCategory.color` swatches, and the Koda avatar colourways (`KodaAvatarColors`).
 2. **Never fetch a stream with the WEB client**, and never send a playback request whose User-Agent does not match the URL's `?c=` client (`uaForPlaybackUri()`), or googlevideo answers 403.
 3. **Every googlevideo media fetch is a bounded ranged request** (`ChunkedStreamDataSource`). Never a plain `DefaultHttpDataSource` or unbounded GET.
 4. **Never route a live stream through the progressive path.** The HLS manifest is the only usable source.
 5. **A `MediaController` is touched only on its application thread.** From Glance, go through `withController`.
-6. **Process-wide repository state is a closed list of thirteen**: `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, `HiddenPlaylistsRepository`, `LikedSongsRepository`, `UploadCheckRepository`, `IncognitoMode`, the `visitorData` cache, `YouTubeRateLimit`, the video stream-resolution cache, and `LastFmRepository` (settings/service cancellation and queue coordination). A fourteenth needs the same justification (a write on one surface must be visible on another holding its own instance), not convenience. Shared OkHttp transport and transient buses (`VisualizerBus`, `WaveformStore`) are not repository state.
+6. **Process-wide repository state is a closed list of fifteen**: `LocalSubscriptionsRepository`, `NotInterestedRepository`, `SavedPlaylistsRepository`, `LocalVideoPlaylistsRepository`, `VideoHistoryRepository`, `HiddenPlaylistsRepository`, `LikedSongsRepository`, `UploadCheckRepository`, `TasteProfileStore`, `KodaProfileStore`, `IncognitoMode`, the `visitorData` cache, `YouTubeRateLimit`, the video stream-resolution cache, and `LastFmRepository` (settings/service cancellation and queue coordination). A sixteenth needs the same justification (a write on one surface must be visible on another holding its own instance), not convenience. Shared OkHttp transport and transient buses (`VisualizerBus`, `WaveformStore`) are not repository state.
 7. **A ViewModel needing a setting at decision time does a fresh pref read.** `ThemePreferences` flows do not cross instances.
 8. **`SettingsScreen`'s signature is the contract with `MainActivity`.** Add parameters; never reorder or restructure.
 9. **Persisted enum constants and stored ids are frozen** (`PlayerStyle`, `SponsorCategory.apiName`, `MotionArtworkQuality`, `IconShape` ids...). Renaming resets every user's choice.
@@ -118,9 +125,12 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 |---|---|---|
 | Bottom sheet content that does not scroll | Rows clipped away, nothing logged, identical at 0 and 300 items | `screens.md`, `player-ui.md` |
 | Segmented rows as separate items of a list with its own `spacedBy` | The group falls apart into loose cards; nothing logged | `ui-conventions.md` |
+| A connected `ToggleButton` group on a card left on default colours | Unselected buttons blend into the card and only the chosen one reads as a button. Pass `settingsChoiceButtonColors()` (unselected is 10% of the accent), or use `SettingsChoiceRow` | `ui-conventions.md` |
 | Widget content overrunning its size bucket | Silent clipping; `LocalSize.current` reports the bucket, not the cell | `widgets.md` |
 | `LazyGridScope.items` member shadows the list extension | Fails on argument names rather than falling through | `channels.md` |
 | A setting missing from `buildSettingsSearchIndex` | Unfindable by search, no compile error | `settings.md` |
+| A release-notes file whose name is not exactly `versionName` | "What's new" never appears for that release, nothing logged | section 6 below |
+| A `HomeViewModel` property declared below the init collector that touches it | Unset, or reset by its own initialiser afterwards; compiles | `subscriptions.md` |
 | A store renamed but not renamed in `BackupRepository` | Silently drops out of every backup taken afterwards | `identity.md` |
 | NewPipe's playlist extractor signed out | Returns zero items and throws nothing | `youtube-data.md` |
 | `subscription/subscribe` and `youtubei/v1/feedback` signed out | Answer HTTP 200 having done nothing | `youtube-data.md`, `subscriptions.md` |
@@ -138,16 +148,24 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | An adaptive manifest or playlist served from the playback cache | Live stalls at the live edge; seeking behind it still works | `playback-streams.md` |
 | Behind-live measured from the window end rather than the target live offset | A live stream reads a permanent -0:15 and never says LIVE | `playback-video.md` |
 | A zooming `PlayerView` without `keepKnownAspectRatio` | With Smooth motion's graph the player reports no video size, so zoom-to-fill changes nothing | `playback-video.md` |
+| An effect-graph rule keyed on Smooth motion alone rather than `playerHasEffectGraph()` | A player carrying only the shader stage misses it: paused, it went fullscreen as a small rectangle in one corner | `playback-video.md` |
+| A GLSL name that is a reserved word (`flat`, `packed`) | Compiles as Kotlin; on the phone that one shader fails to build and its frames are copied instead. Run `.probe/scratch/video-shaders/validate.py` | `playback-video.md` |
 | Removing core library desugaring | Every search throws `NoSuchMethodError` on API 30-32, compiles fine | section 6 below |
+| A swipe-to-dismiss row in a lazy list brought back under the same key | Its saved swipe state comes back with it: the row returns still swiped away, as an empty strip. Snap it to settled when composed | `screens.md` |
 | A queue index held across a suspension point | The queue is replaced under it; playback lands on the wrong track | `playback-music.md` |
 | A start song absent from the list it is played from | Clamped to index 0, so a tap on one song plays another | `playback-music.md` |
 | Catching `Exception` around a suspend body | Swallows `CancellationException`, breaks cooperative cancellation | `playback-streams.md` |
 | A coroutine timeout around a blocking `fetchPage()` | Never fires early; the caller waits for the work it is abandoning | `playback-streams.md` |
+| `VideoStreamResolutionCache.clear()` called from inside a resolution | Cancels every resolution in flight, the calling one included; use `dropResolved()` | `playback-streams.md` |
+| A playback 403 refreshing visitorData without the failing URL | A late refusal from an old queue or ladder throws away the good token that replaced it; pass `failedUrl` | `youtube-data.md` |
+| A lyrics cascade hold-back set after the list jumps | One frame draws every line already moved: the whole lyrics flash on each line change | `playback-music.md` |
 | Media library session grants only session commands, or search omits its completion notification | Auto cannot browse, or search stays loading | `playback-music.md` |
 | The plain `ANDROID` client used as a resolver | `OK` with a full `adaptiveFormats` and no `url` on any entry | `youtube-data.md` |
 | An `<activity-alias>` addressed with `context.packageName` as its class package | Apply is a no-op on any build with an `applicationIdSuffix`, works on release | `settings.md` |
 | A preview drawable using a platform-styled widget | Draws in the device's accent, differs on every phone | `widgets.md` |
 | `LocalWindowInfo.containerDpSize` or `Configuration.screenWidthDp` used as a layout size | Right at 100%, wrong at any other in-app Display size: the player drew as a box short of the screen (#291). Use `windowDpSize()` | `ui-conventions.md` |
+| A parser writing "Unknown ..." where a response named nothing | Screens test `isNotBlank()`, so the made-up text is drawn as a real channel and can be blocked or searched on. Leave it blank (`isMissingChannelName`); songs use `UNKNOWN_ARTIST` / `UNKNOWN_TITLE` | `youtube-data.md` |
+| `findObjectsByKey(root, ...)` then the first hit, for something with one home | Returns another object once the key appears twice (a featured channel's Subscribe state comes before the header's); nothing logged. Use `firstObjectByKey(container, root, key)`, and `entityKeyNames` for entities | `youtube-data.md` |
 | `coerceIn(low, high)` where `low` can pass `high` | Throws an empty-range `IllegalArgumentException` on a degenerate input | general |
 
 ---
@@ -177,10 +195,17 @@ One line each; the reasoning is in `docs/rules.md`.
 ./gradlew testDebugUnitTest      # only when the user asks
 ```
 
-- Compiling needs no permission; compile **per item**, not once at the end. Tests and lint are the user's call (section 1); writing a test alongside new logic is fine, running it is not. No APKs or R8 locally - push an authorized PR branch and `build.yml` builds a signed APK that goes to Telegram beta testers (`docs/ci.md`).
+- Compiling needs no permission; compile **per item**, not once at the end. Tests and lint are the user's call (section 1); writing a test alongside new logic is fine, running it is not. No APKs or R8 locally - a PR into `beta` gets signed APKs built by `build.yml` as artifacts, and testers get one on Telegram when the work lands on `beta` (`docs/ci.md`).
 - Tests are a small JVM suite under `app/src/test/` for pure logic. `isReturnDefaultValues = true` is needed for `KLog`, and it stubs `org.json` to parse everything to nothing - `testImplementation(libs.json.unit.test)` supplies a real one, and every parser test depends on it. [scar]
 - **minSdk 30 and desugaring is load-bearing** [scar]: keep `isCoreLibraryDesugaringEnabled` with the `_nio` flavour (`desugar.jdk.libs.nio`), or NewPipe's search throws `NoSuchMethodError` on API 30-32. Anything above API 30 needs a `SDK_INT` guard and fallback.
 - Versions: `versionCode`/`versionName` in `app/build.gradle.kts`; dependencies only in `gradle/libs.versions.toml`.
+- **Every release ships its highlights, and they are written before the version is tagged.** They are what the app shows people: the "What's new" sheet on the first launch after updating, and the update dialog on every older install. The steps, in order:
+  1. Bump `versionName` and `versionCode`.
+  2. Write `app/src/main/assets/release-notes/<versionName>.md`: three to six `- ` bullets, one line each, nothing else in the file (no heading; a seventh bullet is dropped). The file name must equal `versionName` exactly, or the sheet silently shows nothing.
+  3. Write them the way the changelog is written (section 1), but pick: only what someone would update for. New things first, at most one bullet of fixes, no internals. Each bullet stands alone and is read on a phone in a glance.
+  4. Commit the file with the version bump, so the APK built for the release contains it.
+  5. When publishing the GitHub release, put the same bullets at the top of the notes under a `## Highlights` heading, then the full changelog under its own heading. Older installs read that section out of the release body; a release without it shows a generic line in place of the reasons to update.
+  6. Check both before publishing: on a debug build, Settings -> Software Update has "What's new in this version" and "Preview update dialog". Old files stay in the folder; they are a few hundred bytes each.
 - Emulator/`adb` are the user's to run (debug package `com.ivor.ivormusic.debug`, SDK at `E:\Android\Sdk`); details in `docs/workflow.md`.
 
 ---
@@ -190,12 +215,14 @@ One line each; the reasoning is in `docs/rules.md`.
 The rules most often needed in each area. Each is a summary; open the doc before editing.
 
 ### YouTube data layer -> `docs/youtube-data.md`
+- **`YouTubeRepository` is a front that only delegates.** The code is in `data/youtube/` (transport, one class per area, parsers as top-level functions) and `data/stream/`; a new call goes in its area's piece plus a one-line function on the front. Parsers are pinned by `ParserFixturesTest` against reduced live responses (`.probe/parser_fixtures.py`).
 - Two mechanisms: **NewPipe** (video/artist/playlist search, stream URLs, fallbacks) and **raw InnerTube JSON over OkHttp** parsed by hand with `org.json` (`findObjectsByKey`, `findContinuationTokens`, `getRunText()`), no kotlinx-serialization.
 - **Probe first, never parse from memory**: `py .probe/probe.py <endpoint> '<json>' [--music]` (never commit `.probe/`). Signed-in probes sign SAPISIDHASH **per origin**; confirm a session by `logged_in: 1`, never HTTP 200. Note "verified <month year>" in the parser's KDoc.
 - Clients: WEB for browse/next/engagement, WEB_REMIX for music.youtube.com, **one direct visionOS `/player` under Koda's own visitorData for music, video and Shorts** (NewPipe's Android-reel/visionOS chain only as the fallback - each extraction mints three fresh visitor ids), ANDROID_VR -> IOS only as last-resort fallback and caption source. `YouTubeRequestLedger` logs per-open request counts under `YTRequests`. **Plain `ANDROID` is SABR-only - no URLs.** Pinned client versions need periodic bumps (HTTP 400 on browse = too old).
-- **`visitorData` rides on every InnerTube call**; a missing one now gets `LOGIN_REQUIRED`, and a googlevideo 403 means remint (`refreshVisitorDataAfterPlaybackFailure`), not a UA problem.
+- **`visitorData` rides on every InnerTube call**; a missing one now gets `LOGIN_REQUIRED`, and a googlevideo 403 means remint (`refreshVisitorDataAfterPlaybackFailure(failedUrl)`), not a UA problem. A refusal is traced to the token that signed it through the URL's `ei`, so a stale URL replaces nothing; a new token is vetted by its last byte before music or video plays on it (`PlayerSession.visionOsVetted`).
 - Music metadata comes from **links and page types** (`MUSIC_PAGE_TYPE_ARTIST/ALBUM`), never subtitle positions; release type/year are data (`Song.albumId`, `releaseType`, `releaseYear`).
 - Signed out: public browse ids work anonymously, **account browse ids return a valid empty shell** (gate on `isLoggedIn()`), playlists come back as `lockupViewModel`s. Continuations answer under `appendContinuationItemsAction` (`continuationItemsOrNull`), and token scoping matters.
+- **Missing text is blank, never invented**, and a value with one home is read from its container (`firstObjectByKey`), an entity by its key (`entityKeyNames`); `findObjectsByKey` is for collecting a list.
 - **Only HTTP 429 arms `YouTubeRateLimit`**, which gates discretionary fan-out and Shorts prefetch only. One `/next` feeds many features - be frugal per user action.
 
 ### Music playback -> `docs/playback-music.md`
@@ -206,14 +233,15 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Crossfades cancel on seeks and mode changes; clock checks use a net-displacement budget (1100ms), not a tight absolute cap - two earlier caps abandoned every fade. [scar]
 - AutoMix: a failed silence probe is unknown audio (0), not silence; `TransitionPlanner` only does long overlaps with reliable tempo evidence.
 - The user's speed is the engine's baseline (`setBaseSpeed`, floor 0.1x from Media3); session extras are replaced, not merged - publish via `publishSessionState`.
-- Visualizer reads Koda's own PCM (`VisualizerAudioProcessor`), so no RECORD_AUDIO. Lyrics layout belongs to `SyncedLyricsView`. `notify()` catches `SecurityException`.
+- Visualizer reads Koda's own PCM (`VisualizerAudioProcessor`), so no RECORD_AUDIO. Lyrics layout belongs to `SyncedLyricsView`, which reads the alignment setting itself (left by default), rests the sung line a third of the way down, cascades line changes, and draws a duet as a conversation from the provider's per-line singer (`LrcLine.voice`). `notify()` catches `SecurityException`.
 
 ### Streams, caching, quality -> `docs/playback-streams.md`
-- NewPipe `fetchPage()` blocks; **bound the wait, not the work** (`resolveAudioUrlWithinBudget` detaches on `newPipeScope`). Rethrow `CancellationException` ahead of general catches.
+- NewPipe `fetchPage()` blocks; **bound the wait, not the work** (`NewPipeAudioSource.withinBudget` detaches on `newPipeScope`). Rethrow `CancellationException` ahead of a general catch wherever the `try` body can suspend.
 - `DeferredSingleFlight`: no resolution work inside `ConcurrentHashMap.compute*`.
 - All googlevideo bytes go through bounded ranged requests (10 MB chunks); downloads use their own ranged loop with resumable checkpoints.
 - **Music and video have separate caches.** Music is the user-sized LRU; video/Shorts is an uncapped transient cache. Turning a cache switch off makes it read-only, not bypassed; the preload switch gates work.
 - **Adaptive manifests, playlists and live segments never touch a playback cache** (`isUncacheablePlaybackUrl`). [scar]
+- Music downloads have their own quality (`currentDownloadMusicQuality`: `high` itag 140, `saver` itag 139, AAC/M4A only), carried on the request; until one is stored it follows the old streaming-quality rule.
 - Scrubs seek `CLOSEST_SYNC`, precise jumps `EXACT`. Quality ladders are highest-first; HDR is opt-in, merged from a raw visionOS `/player`, and `dynamicRange` is part of a quality's identity. `VideoStreamResolutionCache` shares ladders across surfaces.
 
 ### Video playback -> `docs/playback-video.md`
@@ -221,22 +249,28 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - `VideoWatchTracker` owns history qualification, local progress and authenticated watch-time reports, rechecking history-off/incognito/profile before remote writes.
 - Mini-to-expanded is the music player's container transform (`PlayerContainerTransform.kt`, shared with `ExpandablePlayer`); portrait uses a TextureView except HDR and vertical live, which keep the curtain (`supportsAnimatedMinimize`). Never read transition progress in composition; only one view holds the surface.
 - `VideoQueue` is index-addressed; `playQueue` establishes it and `playVideo` clears it. Resume has two stores (active session vs per-video history). Chromecast is gone; do not reintroduce a `Player` indirection.
-- Every `PlayerView` Koda draws captions over calls `disableBuiltInSubtitles()`.
+- Every `PlayerView` Koda draws captions over calls `disableBuiltInSubtitles()`. A video download keeps the caption tracks picked in the download sheet (`DownloadedCaptionStore`), read when it is played from disk.
 - SponsorBlock: opt-in, sends only a hash prefix, per-category skip/manual/ignore, read-only, not on live.
+- Playback settings are a control panel (`PlayerSettingsSections`): value tabs over one deck, switches as tiles, shortcuts beneath, on four shared columns; the fullscreen panel does not dim the video.
+- Video shaders (`VideoShaderEffect`, opt-in) are a second stage in Smooth motion's effect graph, installed when the player is built and read per frame from one snapshot (`VideoShaderControl`); the switch waits for the next player and HDR is withheld while it is on. Every built-in look is a shared header, its own `look()` and a shared tail, so Sharpen and the picture sliders tune all of them. Validate and render a shader offline before it ships.
 - Live: detected by formats, not by `hlsManifestUrl`; behind-live measured from `liveTargetOffsetMs`; quality is a track cap; comments hidden on live; a live item in Shorts is handed off (emit before `close()`).
 
 ### Navigation and screens -> `docs/screens.md`
 - `NavHost` in `MainActivity`; the `home` route has its own tab system (`AnimatedContent` keyed on `HomeTabKey(tab, videoMode)`) and a floating toolbar using M3's scroll behaviour. Read `hiddenFraction()` only in deferred lambdas.
 - Both players are **overlays above the NavHost**. Something that owns the whole window must hide the other layer's mini bar (`miniBarHidden` via `isPlayerExpanded`). A mode switch pauses the other player, it does not dismantle it.
+- The Home top bars are a `Box`: profile picture, `HomeGreeting`, then `ModeMorphButton` and the buttons, with downloads shown only while downloading unless Customization keeps it there (`TopBarDownloadsButton`, which carries its own gap). The start screen (`getStartHomeTab`) and start mode (`applyStartMode`, fresh launcher launch only) are settings.
 - Library sub-screens are opened by hand-off (`initialArtist`/`initialPlaylist` + consumed callbacks).
 - Device videos use `device:` ids through the local-playback path; `singleTask` exists because of PiP; quality/HDR come from the decoder.
 - **Three playlist kinds**: local, the account's own, saved (references). A `PL` prefix does not mean yours - use `savedPlaylistIds`. Local video playlists use the `localvp_` prefix; routing lives in `addVideoToPlaylist`. Hidden playlists are a filter over the merged list.
 - `VideoOptionsSheet` is two panes; every surface uses `VideoOptionsSheetHost`.
+- The notification inbox reads every page YouTube offers (up to three) and shows what `NotificationHistoryStore` remembers under it; a hide is local. The video feeds are filtered where they are drawn (`VideoFeedFilter`), never in the fetch.
+- Taste setup is one route (`taste`), opened from the `home` route once per install (new users arrive there from onboarding) and from Settings; it marks itself seen on every way out.
 
 ### Subscriptions and blocklist -> `docs/subscriptions.md`
 - Account and device subscription stores; `SubscriptionActions` alone decides what a tap means. Unsubscribe clears both; the button binds to `isSubscribedToChannel`.
 - The account bell (`ChannelBellActions`) shows only for account subscriptions, writes YouTube's served params back, and drives `UploadCheckWorker` for channels on All.
 - The local feed is per-channel Atom RSS with a browse fallback (never on 429), 6 at a time, namespace-unaware parser.
+- Only the account feed pages (`loadMoreSubscriptionFeed`); its first page is taken whole. Community posts in Home and Subscriptions are fetched from followed channels' Posts tabs as the feed scrolls (`ensureFeedPosts`, `ui/video/FeedPosts.kt`) - the feeds themselves carry none.
 - Imports are sniffed by content (NewPipe JSON, PipePipe/NewPipe zip, Takeout CSV, OPML); handles resolve to UC ids.
 - `NotInterestedRepository` is the engine, applied as a **derived filter, never a write into the fetch** (Shorts filter on ingestion). Signed-in dismissals also go to YouTube, fire-and-forget. Music shares the store; the device library is never filtered.
 
@@ -248,24 +282,34 @@ The rules most often needed in each area. Each is a summary; open the doc before
 ### Settings -> `docs/settings.md`
 - A new setting threads through five files (`ThemePreferences`, `ThemeViewModel`, `MainActivity`, `SettingsScreen`, `SettingsPages`) **plus `buildSettingsSearchIndex`**. Backups need nothing.
 - New strings go only in `values/strings.xml` (locales are partial by design).
-- Settings is a hub plus `SettingsPage` enum pages, not routes. Hub rows show the live value; dialogs live in `SettingsScreen`.
+- Look and behaviour sit behind one hub row, **Customization**, sorted by surface; a new surface gets a row there, not on the hub. Its newer pages (mini player, video player, video shaders, Home opening and bar) read and write their own `ThemePreferences` snapshot (`MiniPlayerCustomization`, `HomeNavigationCustomization`, `VideoGestureCustomization`, `VideoFeedCustomization`, `VideoShaderCustomization`) instead of threading through `SettingsScreen`. `SettingsPage.parent` is where back goes.
+- Settings is a hub plus `SettingsPage` enum pages, not routes (Backup included; it locks the hub while it works). Hub rows show the live value; dialogs live in `SettingsScreen`.
 - The updater hands off to the browser and never installs. Defaults: player style `EDITORIAL`, device library off.
+- The Account page (`AccountSettings.kt`) follows the profile roster rather than a signed-in flag, counts only what is already on the device, and can switch, add and reconnect profiles; `SettingsScreen` follows `activeProfileId` because of it.
+- Release highlights have one source per release, `assets/release-notes/<versionName>.md`, mirrored under `## Highlights` in the GitHub release (`ReleaseHighlights`, procedure in section 6). The update dialog opens once per release and again two days after Later (`UpdatePromptStore`, deliberately not in the backup).
 
 ### Identity -> `docs/identity.md`
 - Cookies are captured from the **`music.youtube.com` jar**; writes guard on `isLoggedIn()`.
 - **A session is a login, not a cookie string** (`YouTubeSession`): Google rotates cookies mid-session, so identity is profile + generation. Authenticated requests go out through `authenticate()`, tagged with their session; anything applied on the way back (cookie refresh, `logged_in` verdict, account identity) goes through that tag, never the active profile. Re-read cookies via `currentSession` rather than replaying a held copy.
 - Switching a profile is one preference write; `SessionManager`'s API stays as it is. `AccountSwitcher` does invalidation (drops `visitorData`); consumers observe `activeProfileId` with `drop(1)`.
 - History and taste are profile-scoped (local subscriptions, blocklist, watch history, upload mutes, listening history, liked songs, search history); playlists, downloads and settings are device-wide. Listening history, likes and searches key on `historyOwnerProfileId`, not the legacy profile. Signing in from a local profile copies it into the new account profile. A new per-profile store goes in `prepareForActiveProfile`, `copyProfileScopedData` and the backup.
+- Stated taste (`TasteProfileStore`: picked and followed artists, genres, deck songs) is profile-scoped beside the history it supplements, and `RecommendationEngine` alternates it with the played artists. The taste deck previews through its own player (`TastePreviewPlayer`), never `MusicService`, so a sample is not a play.
+- Koda profiles: a device-only profile has a name and a picture of its own, a drawn `KodaAvatar` (stored as indices, appended to and never reordered) or a photo copied into app storage (`KodaProfileStore`, device-wide, not yet in the backup). Draw any profile's picture with `ProfileAvatar`. In music mode a tap on the profile picture opens `KodaProfileScreen` and a long press the account switcher.
 - Incognito is enforced inside each write store, suppresses recording only, and is persisted before the flag flips.
 - Backups copy allowlisted stores (renames silently drop out), carry profile-scoped stores structurally, restore with `commit()` and restart the process.
 
 ### Player UI -> `docs/player-ui.md`
 - Nine styles; adding one touches the `PlayerStyle` constant, a `<Name>PlayerContent.kt`, `ExpandablePlayer`'s `when`, and `playerStyleCatalog`, plus an overflow button opening `NowPlayingOptionsSheet`. **`POSTER` is the Canvas player - do not rename.**
 - Shared contracts: `SwipeToSkip`, `ExpressiveScrubber` (visual only; haptics through `KodaHaptics`), the waveform (decoded through the cache-backed source, frozen once drawn), `rememberSmoothProgress` (the position is extrapolated from the 1Hz sample at `LocalPlaybackSpeed`; **read it only inside a deferred lambda**).
-- `NowPlayingOptionsSheet` is a control panel - tiles, then pills, then the speed and volume deck - while `SongOptionsSheet` stays a list. Volume is the device's `STREAM_MUSIC` level (`util/MediaVolume.kt`), never an app-level gain on `player.volume`. It wears the app palette whole (`appColorScheme()`): a surface takes the app scheme **or** the artwork scheme, never roles from both.
+- `NowPlayingOptionsSheet` is a control panel - tiles, then pills, then the speed and volume deck - while `SongOptionsSheet` stays a list. Volume is the device's `STREAM_MUSIC` level (`util/MediaVolume.kt`), never an app-level gain on `player.volume`. It wears the scheme of the player behind it, album colours included: a surface takes the app scheme **or** the artwork scheme whole, never roles from both.
 - Three queue views share `QueueReorder`/`QueueRowContainer`: drag handle first, swaps per frame, occurrence-qualified keys, guarded auto-scroll.
 - Option sheets share `PlayerOptionRows` and must scroll. `SongOptionsSheet` is hosted once in `HomeScreen`.
 - Motion artwork is an opt-in hero layer with frozen quality tiers and a fallback chain.
+- Album colours are Off / Player / Whole app (default). Whole app builds the root scheme from the playing cover in music mode (`IvorMusicTheme(artworkSeed)`), fading on song change only; a page or the player builds its own complete scheme from its own cover (`LocalAlbumTheming`).
+- The music pill is `primaryContainer`, 68dp (the bubble's size), and its played part is a wave-edged fill carried between samples by `rememberSmoothProgress`; it latches into a bubble after 56dp down and reopens after 200dp up or on returning to where the scroll began.
+- The mini player draws from `MiniPlayerCustomization` (buttons, cover tap and motion, second line, touch and hold, swipes, colour, bubble); its content colour follows its container, and Home reads only `shrink`.
+- The mini player's cover spins and morphs in the draw phase, fitted to a circle so no shape leaves its slot; progress is the shape's outline revealed by a fixed wedge from the top, never a trimmed path.
+- **Standby** (`ui/standby/`) is opened from `NowPlayingOptionsSheet` through `PlayerViewModel.openStandby()`, hosted above everything in `MainActivity`, always dark, and owns the window while open (bars, keep-on, rotation, all handed back). Its motion is Apple's two-parameter spring (`appleSpring`), one `Animatable` for rise, swipe, fling and exit; `StandbyStack` grows the paused clock into the room the other rows leave. The charging offer keys on the phone being on its side, not the window.
 
 ### Widgets -> `docs/widgets.md`
 - Commands go through `withController` (main thread). Rendering reads the `PlayerWidgetStore` snapshot written in `MusicService.onEvents`, never a live session.
@@ -275,9 +319,11 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Request Google images at the drawn size (`googleImageAtSize`), layered over the original. Every video frame goes through `VideoThumbnail`, and every duration/LIVE label over one through `ThumbnailBadge` (scrim role, never a theme container - a badge on a photo must not flip with the theme).
 - Every snackbar uses `DismissibleSnackbarHost`; `Dismissed` means the action stands.
 - M3 Expressive first; springs for touch, `tween` for crossfades/progress. The interface scale is a `LocalDensity` override - never provide another one.
+- **The scheme is re-seated at the root** (`withTintedPages`): `background` is the old card tone and `surfaceContainer` is `surfaceBright`, so a screen painting `background` behind `surfaceContainer` cards gets a tinted page with brighter cards. Paint with roles and it follows; AMOLED is exempt and keeps true black.
 
 ### CI -> `docs/ci.md`
 - Three workflows, all behind an `authorize` job; fork PRs from outsiders deliberately build nothing. A red run with no logs means no runner was acquired - re-run.
+- **PRs target `beta`, and only a push to `beta` posts to Telegram** (section 1): the signed APK plus the `Changelog:` sections of everything since the last delivered beta. A push with no changelog entry that changed only docs or workflows posts nothing.
 - Judge APK size from the minified release. `localeFilters` must match `locales_config.xml`.
 - `telegram-notify.yml` never runs on push; test its script with stubs. Free text reaches scripts as env vars, never `${{ }}`.
 
@@ -285,7 +331,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ## 8. Keeping this true
 
-- **Once the user has tested it, the work updates `ROADMAP.md`** (Planned -> Shipped, fixed defects leave Known defects), then fix any prose here or in `docs/` that leaned on the old behaviour. Not before: untested work is recorded in the handoff report only (section 1).
+- **Once the user has tested it, the work updates `ROADMAP.md`** (Planned -> Shipped, fixed defects leave Known defects), then fix any prose here or in `docs/` that leaned on the old behaviour. Not before: untested work is recorded in the handoff report only. A request to push counts as tested unless the user says otherwise, so the docs are written before that push (section 1).
 - **A new fact goes in the topic doc for its area**, marked `[verified]`, `[scar]` or `[judgement]`. It only earns a line in this file if every session needs it. Keep this file a summary - do not paste detail back in.
 - Re-derive `[drifts]` numbers before quoting them; `DESIGN.md` carries its own copies.
 - GitHub issues are the task list. Every open issue carries `area:` (interface/playback/foundations/reach), `size:` (XS-XL, effort) and `priority:` (P0-P3, user impact). Details in `docs/workflow.md`.

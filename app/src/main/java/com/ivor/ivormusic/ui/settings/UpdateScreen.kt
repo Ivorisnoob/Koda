@@ -104,6 +104,46 @@ fun UpdateScreen(
     var result by remember { mutableStateOf<UpdateResult>(UpdateResult.Checking) }
     var checkRequest by remember { mutableIntStateOf(0) }
 
+    // This version's highlights, to read again after the first-launch
+    // sheet. A debug build falls back to the newest bundled file, so the
+    // next release's notes can be previewed before the version is bumped.
+    val highlightsContext = LocalContext.current
+    val bundledHighlights = remember(highlightsContext) {
+        val version = com.ivor.ivormusic.data.ReleaseHighlights.releaseVersion(BuildConfig.VERSION_NAME)
+        com.ivor.ivormusic.data.ReleaseHighlights.bundled(highlightsContext, version)
+            .takeIf { it.isNotEmpty() }?.let { version to it }
+            ?: if (BuildConfig.DEBUG) {
+                com.ivor.ivormusic.data.ReleaseHighlights.newestBundled(highlightsContext)
+            } else {
+                null
+            }
+    }
+    var showWhatsNew by remember { mutableStateOf(false) }
+    var previewUpdatePrompt by remember { mutableStateOf(false) }
+    if (showWhatsNew) {
+        bundledHighlights?.let { (version, highlights) ->
+            WhatsNewSheet(version = version, highlights = highlights, onDismiss = { showWhatsNew = false })
+        }
+    }
+    if (previewUpdatePrompt) {
+        val (previewVersion, previewNotes) = when (val current = result) {
+            is UpdateResult.UpdateAvailable -> current.latestVersion to current.releaseNotes
+            is UpdateResult.UpToDate -> current.latestVersion to current.releaseNotes
+            else -> BuildConfig.VERSION_NAME to ""
+        }
+        UpdatePromptDialog(
+            installedVersion = com.ivor.ivormusic.data.ReleaseHighlights.releaseVersion(BuildConfig.VERSION_NAME),
+            latestVersion = previewVersion,
+            // The release as published, or the bundled file when it has no
+            // Highlights section yet, so the layout can be judged either way.
+            highlights = com.ivor.ivormusic.data.ReleaseHighlights.fromReleaseBody(previewNotes)
+                .ifEmpty { bundledHighlights?.second.orEmpty() },
+            onUpdate = { previewUpdatePrompt = false },
+            onDetails = { previewUpdatePrompt = false },
+            onLater = { previewUpdatePrompt = false }
+        )
+    }
+
     // Local Only is a key rather than an early return: turning it off in
     // another window has to start the check that was refused, and turning it
     // on has to stop showing a release the user can no longer download.
@@ -176,6 +216,33 @@ fun UpdateScreen(
         ) {
             item { UpdateStatusHero(result) }
             item { InstalledBuildCard() }
+            if (bundledHighlights != null) {
+                item {
+                    OutlinedButton(
+                        onClick = { showWhatsNew = true },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Icon(Icons.Rounded.NewReleases, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.us_whats_new_in_this_version))
+                    }
+                }
+            }
+            // Debug builds never run the launch check, so this is the only
+            // way to see the dialog without publishing a release. Not
+            // translated: it does not exist in a release build.
+            if (BuildConfig.DEBUG) {
+                item {
+                    OutlinedButton(
+                        onClick = { previewUpdatePrompt = true },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Text("Preview update dialog (debug)")
+                    }
+                }
+            }
             item {
                 AnimatedContent(
                     targetState = result,
@@ -826,7 +893,7 @@ private fun formatFileSize(sizeBytes: Long): String = when {
  * worked. The old version swallowed the failure, so a device with no activity
  * for `ACTION_VIEW` had a download button that did nothing at all.
  */
-private fun Context.openExternal(url: String): Boolean {
+internal fun Context.openExternal(url: String): Boolean {
     if (url.isBlank()) return false
     return runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
 }

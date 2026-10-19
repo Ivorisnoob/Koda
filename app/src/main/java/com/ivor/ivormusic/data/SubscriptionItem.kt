@@ -39,7 +39,21 @@ data class NotificationItem(
     val videoThumbnailUrl: String?,
     /** Where a tap goes; null when the item named nowhere Koda can open. */
     val target: NotificationTarget?,
-    val isRead: Boolean
+    val isRead: Boolean,
+    /**
+     * YouTube's `notificationId`: a string, unique per item [verified October
+     * 2026]. What [NotificationHistoryStore] remembers and hides an item by.
+     * Blank only for an item that carried none, which is then never stored.
+     */
+    val id: String = "",
+    /** When this device first saw the item. Set by [NotificationHistoryStore]. */
+    val firstSeenMs: Long = 0L,
+    /**
+     * No longer in YouTube's inbox, shown from this device's memory of it.
+     * [sentTime] is then stale ("3 hours ago", said days ago) and the row
+     * draws a time from [firstSeenMs] instead.
+     */
+    val remembered: Boolean = false
 )
 
 /**
@@ -53,9 +67,18 @@ sealed interface NotificationTarget {
     data class Video(val videoId: String) : NotificationTarget
     data class Short(val videoId: String) : NotificationTarget
     /**
-     * Anything else, as its youtube.com URL - today a community post. Koda has
-     * no single-post screen, so the in-app link handler passes it on to the
-     * YouTube app or the browser.
+     * A community post, by the `params` of its `FEpost_detail` page. [verified
+     * October 2026, signed in] "X posted ..." items carry a `browseEndpoint`
+     * with that browse id and its params, and the page they open holds the
+     * post itself as one `backstagePostRenderer` beside its comment section,
+     * so the post opens in Koda with its comments. [url] is the way out when
+     * the page cannot be read.
+     */
+    data class Post(val detailParams: String, val url: String?) : NotificationTarget
+    /**
+     * Anything else, as its youtube.com URL - a channel ("New subscriber"),
+     * which the in-app link handler opens here, or something Koda has no
+     * screen for, which it passes on to the YouTube app or the browser.
      */
     data class Link(val url: String) : NotificationTarget
 }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Vinyl widget's rotation. A widget cannot run an animation of its own,
+    but an indeterminate ProgressBar is animated by the launcher, and with a
+    rotate drawable in place of the usual spinner it turns that drawable
+    smoothly: one revolution every 1.8 seconds, a record at 33 rpm.
+
+    Every attribute that would otherwise come from the launcher's theme is set
+    here - the drawable, the duration, the size limits - because a
+    platform-styled widget draws differently on every phone. The tint is set
+    from VinylWidget, so nothing here names a colour.
+-->
+<ProgressBar xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/vinyl_spin"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:indeterminate="true"
+    android:indeterminateBehavior="repeat"
+    android:indeterminateDrawable="@drawable/vinyl_spin"
+    android:indeterminateDuration="1800"
+    android:indeterminateOnly="true"
+    android:interpolator="@android:anim/linear_interpolator"
+    android:maxHeight="2000dp"
+    android:maxWidth="2000dp"
+    android:minHeight="0dp"
+    android:minWidth="0dp" />

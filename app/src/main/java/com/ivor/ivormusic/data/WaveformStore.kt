@@ -7,6 +7,7 @@ import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Measured waveforms, keyed by song id.
@@ -87,7 +88,7 @@ object WaveformStore {
         if (envelope.isComplete) return
         if (!envelope.record(fraction, peak)) return
         synchronized(lock) { dirty += songId }
-        _version.value++
+        _version.update { it + 1 }
     }
 
     /** Whether this song has been measured end to end, so nothing needs to measure it again. */
@@ -136,7 +137,8 @@ object WaveformStore {
             dirty += songId
         }
         flushIfDue(context, force = true)
-        _version.value++
+        // Atomic: this arrives from the analyzer's thread while the sampler bumps from another.
+        _version.update { it + 1 }
     }
 
     /** Write out at most every [FLUSH_INTERVAL_MS]; safe to call from the sampler each tick. */

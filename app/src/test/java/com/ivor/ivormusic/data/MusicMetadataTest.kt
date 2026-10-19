@@ -290,4 +290,51 @@ class MusicMetadataTest {
         assertTrue(songs.all { it.albumId == "MPREb_Wp9Aj8HpTsB" })
         assertTrue(songs.all { it.artist == "Billie Eilish" })
     }
+
+    private fun track(id: String, title: String, duration: Long) =
+        Song.fromYouTube(id, title, "Artist", "Album", duration, null)
+
+    private fun panel(id: String, type: String) = JSONObject()
+        .put("videoId", id)
+        .put("title", JSONObject().put("runs", JSONArray().put(JSONObject().put("text", "Song"))))
+        .put("navigationEndpoint", JSONObject().put("watchEndpoint", JSONObject()
+            .put("videoId", id)
+            .put("watchEndpointMusicSupportedConfigs", JSONObject().put("watchEndpointMusicConfig",
+                JSONObject().put("musicVideoType", type)))))
+
+    @Test fun `an album's videos are swapped for its songs, keeping the album's own details`() {
+        val album = listOf(
+            track("video1", "Taste", 158_000).copy(albumId = "MPREb", trackNumber = 1),
+            track("video2", "Espresso", 176_000).copy(albumId = "MPREb", trackNumber = 2),
+            track("video3", "Only On The Album", 100_000).copy(albumId = "MPREb", trackNumber = 3),
+        )
+        val audio = listOf(track("song1", "Taste", 158_000), track("song2", "espresso ", 176_000))
+        val swapped = MusicMetadata.withSongVersions(album, audio)
+        assertEquals(listOf("song1", "song2", "video3"), swapped.map { it.id })
+        assertTrue(swapped.all { it.albumId == "MPREb" })
+        assertEquals(listOf(1, 2, 3), swapped.map { it.trackNumber })
+    }
+
+    @Test fun `songs are matched by title when the two lists are in a different order`() {
+        val album = listOf(track("v1", "One", 1_000), track("v2", "Two", 2_000))
+        val audio = listOf(track("s2", "Two", 2_000), track("s1", "One", 1_000))
+        assertEquals(listOf("s1", "s2"), MusicMetadata.withSongVersions(album, audio).map { it.id })
+    }
+
+    @Test fun `a row says whether it is the song or a video of it`() {
+        assertEquals(true, MusicMetadata.isSongVersion(panel("a", "MUSIC_VIDEO_TYPE_ATV")))
+        assertEquals(false, MusicMetadata.isSongVersion(panel("a", "MUSIC_VIDEO_TYPE_OMV")))
+        assertNull(MusicMetadata.isSongVersion(JSONObject().put("videoId", "a")))
+    }
+
+    @Test fun `a queue entry offered as video and song is queued once, as the song`() {
+        val wrapped = JSONObject().put("playlistPanelVideoWrapperRenderer", JSONObject()
+            .put("primaryRenderer", JSONObject().put("playlistPanelVideoRenderer", panel("video", "MUSIC_VIDEO_TYPE_OMV")))
+            .put("counterpart", JSONArray().put(JSONObject().put("counterpartRenderer",
+                JSONObject().put("playlistPanelVideoRenderer", panel("song", "MUSIC_VIDEO_TYPE_ATV"))))))
+        val plain = JSONObject().put("playlistPanelVideoRenderer", panel("upload", "MUSIC_VIDEO_TYPE_UGC"))
+        val root = JSONObject().put("playlistPanelRenderer",
+            JSONObject().put("contents", JSONArray().put(wrapped).put(plain)))
+        assertEquals(listOf("song", "upload"), MusicMetadata.queueSongs(root).map { it.id })
+    }
 }

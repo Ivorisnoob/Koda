@@ -51,6 +51,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -112,7 +114,13 @@ import java.util.Date
 @Composable
 fun BackupScreen(
     onBack: () -> Unit,
-    contentPadding: PaddingValues = PaddingValues()
+    contentPadding: PaddingValues = PaddingValues(),
+    /**
+     * True while a file is being read, written or restored. Settings hosts
+     * this as one of its pages, and beside the hub on a wide window it has to
+     * know not to swap the page out from under that work.
+     */
+    onBusyChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -147,6 +155,7 @@ fun BackupScreen(
     var restored by remember { mutableStateOf<RestoreResult?>(null) }
 
     val busy = phase != BackupPhase.IDLE
+    LaunchedEffect(busy) { onBusyChange(busy) }
 
     // A restore is mid-write for as long as this is up. Leaving the screen
     // cannot stop it, but it can leave the user somewhere that will not tell
@@ -214,7 +223,15 @@ fun BackupScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(stringResource(R.string.settings_backup_and_restore), fontWeight = FontWeight.Bold)
+                        // The same title the other settings pages wear, so
+                        // this reads as one of them rather than a screen apart.
+                        Text(
+                            text = stringResource(R.string.settings_backup_and_restore),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.headlineSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         Text(
                             text = lastBackupLine(lastBackupAt),
                             style = MaterialTheme.typography.bodySmall,
@@ -223,7 +240,19 @@ fun BackupScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack, enabled = phase != BackupPhase.RESTORING) {
+                    // Beside the hub there is nothing to go back to.
+                    if (LocalSettingsDetailShowsBack.current) IconButton(
+                        onClick = onBack,
+                        enabled = phase != BackupPhase.RESTORING,
+                        shapes = IconButtonDefaults.shapes(),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onBackground
+                        ),
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .size(44.dp)
+                    ) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
                 },

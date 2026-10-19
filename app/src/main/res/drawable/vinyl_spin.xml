@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Vinyl widget's turning layer: the print on the record's label and a
+    scuff on its grooves, one full turn. A ProgressBar drives the level, so the
+    launcher animates it on its own frame clock (see layout/widget_vinyl_spin).
+-->
+<rotate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/vinyl_label_marks"
+    android:fromDegrees="0"
+    android:pivotX="50%"
+    android:pivotY="50%"
+    android:toDegrees="360" />

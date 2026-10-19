@@ -60,7 +60,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.DownloadRepository
+import com.ivor.ivormusic.data.DownloadedCaptionStore
 import com.ivor.ivormusic.data.DownloadStatus
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoItem
@@ -105,12 +109,24 @@ fun VideoDownloadSheet(
     var sizeLoading by remember(video.videoId) { mutableStateOf(false) }
     var sizeResolved by remember(video.videoId) { mutableStateOf(false) }
 
+    // Captions to keep with the download. Null while unknown; the section only
+    // appears once there is something to choose, so a video without captions
+    // shows nothing rather than an empty heading.
+    var captionTracks by remember(video.videoId) { mutableStateOf<List<CaptionTrack>?>(null) }
+    var selectedCaptions by remember(video.videoId) { mutableStateOf<Set<String>>(emptySet()) }
+    var showAllCaptions by remember(video.videoId) { mutableStateOf(false) }
+
     val downloadedVideos by downloadRepository.downloadedVideos.collectAsState()
     val progressMap by downloadRepository.downloadProgress.collectAsState()
     val alreadyDownloaded = downloadedVideos.any { it.id == video.videoId }
-    val inFlight = progressMap[video.videoId]?.status.let {
+    val activeEntry = progressMap[video.videoId]
+    val inFlight = activeEntry?.status.let {
         it == DownloadStatus.DOWNLOADING || it == DownloadStatus.QUEUED
     }
+    // A paused download is still held by the queue, which refuses a second
+    // request for it. Offered as a fresh download, the button said "Added" and
+    // nothing happened.
+    val paused = activeEntry?.status == DownloadStatus.PAUSED
 
     fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
 
@@ -139,11 +155,27 @@ fun VideoDownloadSheet(
                 else -> downloadable.firstOrNull { height(it.resolution) in 1..targetHeight }?.resolution
                     ?: downloadable.first().resolution
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w("VideoDownloadSheet", "Failed to load qualities", e)
             options = emptyList()
             loadFailed = true
         }
+    }
+
+    // After the qualities: that resolution reads the same /player response the
+    // caption list comes from, so this is normally answered from memory.
+    LaunchedEffect(video.videoId, options != null) {
+        if (options == null) return@LaunchedEffect
+        val tracks = youtubeRepository.getCaptionTracks(video.videoId)
+        val locales = context.resources.configuration.locales
+        selectedCaptions = DownloadedCaptionStore.preferredTracks(
+            available = tracks,
+            savedLanguage = themePreferences.getCaptionLanguageCode(),
+            deviceLanguages = (0 until locales.size()).map { locales[it].language },
+        ).mapTo(HashSet()) { DownloadedCaptionStore.keyOf(it) }
+        captionTracks = tracks
     }
 
     LaunchedEffect(selectedLabel, options) {
@@ -179,6 +211,10 @@ fun VideoDownloadSheet(
     ) {
         Column(
             modifier = Modifier
+                // Qualities, captions and the rest run past a short or
+                // landscape window; unscrolled, the Download button was the
+                // part that got clipped away.
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
         ) {
@@ -272,6 +308,54 @@ fun VideoDownloadSheet(
                 }
             }
 
+            // Captions to keep offline. Only for a video that can be downloaded
+            // and has some: tap to add or drop a language, none is allowed.
+            val tracks = captionTracks.orEmpty()
+            if (selectedLabel != null && tracks.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = stringResource(R.string.vp_captions),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                // Some videos list a hundred translations. The ticked ones and
+                // the first few lead; the rest wait behind one pill.
+                val collapsed = remember(tracks, showAllCaptions) {
+                    if (showAllCaptions || tracks.size <= CAPTION_PILLS_COLLAPSED) tracks
+                    else {
+                        val ticked = tracks.filter { DownloadedCaptionStore.keyOf(it) in selectedCaptions }
+                        (ticked + tracks.filterNot { it in ticked })
+                            .take(maxOf(CAPTION_PILLS_COLLAPSED, ticked.size))
+                    }
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    collapsed.forEach { track ->
+                        val key = DownloadedCaptionStore.keyOf(track)
+                        QualityPill(
+                            label = if (track.isAutoGenerated) "${track.name} (auto)" else track.name,
+                            selected = key in selectedCaptions,
+                            onClick = {
+                                selectedCaptions =
+                                    if (key in selectedCaptions) selectedCaptions - key
+                                    else selectedCaptions + key
+                            }
+                        )
+                    }
+                    val hidden = tracks.size - collapsed.size
+                    if (hidden > 0) {
+                        QualityPill(
+                            label = stringResource(R.string.vd_captions_more, hidden),
+                            selected = false,
+                            onClick = { showAllCaptions = true }
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             if (selectedLabel != null) {
@@ -342,13 +426,23 @@ fun VideoDownloadSheet(
 
             Button(
                 onClick = {
+                    if (paused) {
+                        downloadRepository.resumeDownload(video.videoId)
+                        queued = true
+                        return@Button
+                    }
                     val label = selectedLabel ?: return@Button
                     if (rememberQuality) themePreferences.setDownloadVideoQuality(label)
-                    scope.launch { downloadRepository.downloadVideo(video, label) }
+                    // Null while the caption list has not arrived: the
+                    // download then keeps the likely ones rather than none.
+                    val captions = selectedCaptions.takeIf { captionTracks != null }
+                    scope.launch { downloadRepository.downloadVideo(video, label, captions) }
                     queued = true
                 },
-                enabled = selectedLabel != null && !sizeLoading && sizeResolved &&
-                    !queued && !alreadyDownloaded && !inFlight,
+                // Resuming needs neither the quality ladder nor the size: the
+                // paused request already carries its choice.
+                enabled = !queued && !alreadyDownloaded && !inFlight &&
+                    (paused || (selectedLabel != null && !sizeLoading && sizeResolved)),
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -367,10 +461,31 @@ fun VideoDownloadSheet(
                     queued || inFlight -> {
                         LoadingIndicator(modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(8.dp))
+                        // What the download is really doing. This read
+                        // "Preparing" for a video waiting its turn and for one
+                        // most of the way through alike.
                         Text(
-                            text = if (queued) stringResource(R.string.vd_added) else stringResource(R.string.dl_preparing),
+                            text = when {
+                                queued -> stringResource(R.string.vd_added)
+                                activeEntry?.status == DownloadStatus.QUEUED ->
+                                    stringResource(R.string.dl_waiting)
+                                activeEntry?.finishing == true ->
+                                    stringResource(R.string.dl_finishing)
+                                (activeEntry?.totalBytes ?: 0L) > 0L ->
+                                    "${((activeEntry?.progress ?: 0f) * 100).toInt()}%"
+                                else -> stringResource(R.string.dl_preparing)
+                            },
                             fontWeight = FontWeight.SemiBold
                         )
+                    }
+                    paused -> {
+                        Icon(
+                            imageVector = Icons.Rounded.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = stringResource(R.string.dl_resume), fontWeight = FontWeight.SemiBold)
                     }
                     else -> {
                         Icon(
@@ -391,6 +506,9 @@ fun VideoDownloadSheet(
         }
     }
 }
+
+/** Caption pills shown before the rest fold behind a "more" pill. */
+private const val CAPTION_PILLS_COLLAPSED = 6
 
 /**
  * One selectable quality label: a tonal pill that fills with

@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -46,10 +47,10 @@ import kotlin.math.sqrt
  * fetched, and the whole point of routing that through [CacheManager]'s cache-backed source
  * under the song's own cache key is that they are the *same* bytes playback is about to read -
  * so a song listened through costs nothing extra and starts from disk. A song skipped away from
- * has cost the rest of its audio, and that is the accepted trade on any connection: someone who
- * does not want the app spending data ahead of the playhead has the caching and Local Only
- * switches to say so, and [canAnalyze] reads exactly those. A refusal is not a failure - the
- * song simply keeps the plain wavy bar and gains its shape from listening.
+ * has cost the rest of its audio, and that is the accepted trade on any connection: the waveform
+ * switch is what asks for it, and only Local Only refuses a stream ([canAnalyze]). A refusal is
+ * not a failure - the song simply keeps the plain wavy bar and gains its shape from listening -
+ * but a pass that broke is one, and is tried again ([retryLater]).
  *
  * Every network read goes through the ordinary playback data source, so invariant 3's bounded
  * ranged requests and [YouTubeRepository.uaForPlaybackUri]'s per-client User-Agent both hold
@@ -97,6 +98,23 @@ object WaveformAnalyzer {
     @Volatile
     private var lastRequest: String? = null
 
+    /** How long to wait before each further attempt at a song whose pass failed. */
+    private val RETRY_DELAYS_MS = longArrayOf(1_500L, 4_000L, 10_000L)
+
+    private val failureLock = Any()
+    private var failedKey: String? = null
+    private var failedAttempts = 0
+
+    /**
+     * How much of the start of a stream is kept in memory. Choosing a container means several
+     * extractors each reading the head from the top, and every one of those was a fresh ranged
+     * request: seconds of round trips on mobile data before the first sample was decoded.
+     */
+    private const val HEAD_BYTES = 64 * 1024
+
+    /** A forward jump shorter than this is read through rather than reopened. */
+    private const val SKIP_AHEAD_BYTES = 256L * 1024
+
     /**
      * Measure [songId] unless it is already measured, replacing any pass still running.
      *
@@ -118,62 +136,89 @@ object WaveformAnalyzer {
         val app = context.applicationContext
         running?.cancel()
         running = scope.launch {
-            gate.withLock {
-                if (WaveformStore.isComplete(app, songId)) return@withLock
-                if (!canAnalyze(app, uri, songId, musicCacheEnabled)) return@withLock
+            val failed = gate.withLock {
+                if (WaveformStore.isComplete(app, songId)) return@withLock false
+                if (!canAnalyze(app, uri, songId)) return@withLock false
                 val job = coroutineContext[Job]
                 val levels = try {
-                    measure(app, songId, uri, durationMs) { job?.isActive != false }
+                    measure(app, songId, uri, durationMs, musicCacheEnabled) {
+                        job?.isActive != false
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     KLog.w(TAG, "Could not measure $songId", e)
                     null
-                } ?: return@withLock
-                val envelope = WaveformEnvelope.measured(levels) ?: return@withLock
+                }
+                // Abandoned for another song, which is not a failure of this one.
+                if (job?.isActive == false) return@withLock false
+                val envelope = levels?.let { WaveformEnvelope.measured(it) }
+                    ?: return@withLock true
                 WaveformStore.publish(app, songId, envelope)
                 KLog.d(TAG, "Measured whole song $songId")
+                false
             }
+            if (failed) retryLater(key, songId)
         }
+    }
+
+    /**
+     * Let the caller's next poll ask for [key] again, after a pause.
+     *
+     * [scar] A pass that failed used to stay latched in [lastRequest], so one dropped
+     * connection left the song on the plain bar for as long as it stayed current - which on
+     * mobile data read as the waveform loading for some songs and not others. The latch is
+     * released here instead, a bounded number of times: a container no decoder can open fails
+     * identically on every attempt, and must not decode in a loop for the length of the song.
+     */
+    private suspend fun retryLater(key: String, songId: String) {
+        val attempt = synchronized(failureLock) {
+            if (failedKey != key) {
+                failedKey = key
+                failedAttempts = 0
+            }
+            ++failedAttempts
+        }
+        if (attempt > RETRY_DELAYS_MS.size) {
+            KLog.w(TAG, "Giving up on measuring $songId after $attempt attempts")
+            return
+        }
+        delay(RETRY_DELAYS_MS[attempt - 1])
+        if (lastRequest == key) lastRequest = null
     }
 
     /** Forget the last request, so the next one is taken even if it names the same song. */
     fun reset() {
         lastRequest = null
         running?.cancel()
+        synchronized(failureLock) {
+            failedKey = null
+            failedAttempts = 0
+        }
     }
 
     /**
      * Whether measuring this source is something the user's settings allow.
      *
      * A file on the device always is, and so is a song already whole in the cache - there is
-     * nothing left to fetch for either. A stream is measured whenever its bytes can be *kept*,
-     * because that is what makes the fetch shared rather than duplicated: with the music cache
-     * on, reading ahead is the same download playback is about to make, and the song starts from
-     * disk. With it off the analyzer would pull a second copy of the audio that nothing else
-     * could use, and would be writing to a store the user switched off.
+     * nothing left to fetch for either, which is why the cache is asked before Local Only: that
+     * switch forbids the network, not reading what is already on disk. Any other stream is
+     * measured unless Local Only is on.
      *
-     * [judgement] There is deliberately no metered check. The measurement is of the song being
-     * listened to, not a guess at the next one, so on any connection it is the same bytes moved
-     * earlier rather than extra bytes - only skipping away mid-song actually spends more, and a
-     * connection-shaped rule would have hidden the feature entirely from anyone mostly on mobile
-     * data. The switches that mean "do not spend data on media I have not asked for" already
-     * exist and are read above; guessing a second policy on top of them is the app deciding
-     * something its owner already decided.
+     * [judgement October 2026] The waveform switch is the consent. This used to refuse a stream
+     * while the music cache was off, since the bytes could not be kept and the pass became a
+     * second download; the result was a setting that was on and a bar that stayed plain, with
+     * nothing on screen to say why. With the cache off the pass now reads through the cache
+     * without writing to it (see [measure]) and costs that second download.
+     *
+     * There is deliberately no metered check either: a connection-shaped rule hid the feature
+     * from anyone mostly on mobile data.
      */
-    private fun canAnalyze(
-        context: Context,
-        uri: Uri,
-        songId: String,
-        musicCacheEnabled: Boolean,
-    ): Boolean {
+    private fun canAnalyze(context: Context, uri: Uri, songId: String): Boolean {
         return when (uri.scheme?.lowercase()) {
             null, "content", "file" -> true
-            "http", "https" -> when {
-                ThemePreferences.isLocalOnly(context) -> false
-                CacheManager.isFullyCached(songId) -> true
-                else -> musicCacheEnabled
-            }
+            "http", "https" ->
+                CacheManager.isFullyCached(songId) || !ThemePreferences.isLocalOnly(context)
             else -> false
         }
     }
@@ -192,6 +237,7 @@ object WaveformAnalyzer {
         songId: String,
         uri: Uri,
         hintedDurationMs: Long?,
+        musicCacheEnabled: Boolean,
         isActive: () -> Boolean,
     ): FloatArray? {
         val extractor = MediaExtractor()
@@ -200,7 +246,11 @@ object WaveformAnalyzer {
         try {
             when (uri.scheme?.lowercase()) {
                 "http", "https" -> {
-                    val factory = CacheManager.createCacheDataSourceFactory(context) ?: return null
+                    // With the music cache off this still reads whatever is stored but writes
+                    // nothing, the same rule playback follows for that switch.
+                    val factory = CacheManager.createCacheDataSourceFactory(
+                        context, writeEnabled = musicCacheEnabled
+                    ) ?: return null
                     networkSource = Media3MediaDataSource(factory, uri, songId, isActive)
                     extractor.setDataSource(networkSource)
                 }
@@ -234,7 +284,15 @@ object WaveformAnalyzer {
             codec.configure(input, null, null as MediaCrypto?, 0)
             codec.start()
 
-            return decode(codec, extractor, input, durationUs, isActive)
+            val levels = decode(codec, extractor, input, durationUs, isActive)
+            // [scar] A read that fails reaches the extractor as the end of the stream, so the
+            // decode finishes cleanly on half a song. Publishing that stored a waveform with a
+            // flat, invented tail as complete, and a complete envelope is never measured again.
+            if (networkSource?.failed == true) {
+                KLog.w(TAG, "Stream for $songId broke off before the end; not keeping the result")
+                return null
+            }
+            return levels
         } finally {
             try {
                 codec?.stop()
@@ -447,6 +505,18 @@ object WaveformAnalyzer {
         @Volatile private var nextPosition = -1L
         @Volatile private var totalLength = -1L
 
+        /** The first [HEAD_BYTES] of the stream, as far as they have been read in order. */
+        private val head = ByteArray(HEAD_BYTES)
+        @Volatile private var headFilled = 0
+
+        /**
+         * Whether a read or an open failed for a reason other than the pass being abandoned.
+         * The extractor swallows that into an ordinary end of stream, so this is the only way
+         * the caller learns the song it decoded was cut short.
+         */
+        @Volatile var failed = false
+            private set
+
         override fun getSize(): Long {
             if (totalLength < 0L) {
                 // Opening at the start with no length is what resolves the total; an extractor
@@ -464,31 +534,79 @@ object WaveformAnalyzer {
             if (!isActive()) throw IOException("Waveform pass abandoned")
             if (size == 0) return 0
             if (totalLength in 0..position) return -1
-            if (source == null || position != nextPosition) openAt(position)
-            val open = source ?: return -1
-            val read = open.read(buffer, offset, size)
-            if (read == C.RESULT_END_OF_INPUT) return -1
-            nextPosition = position + read
-            return read
+            if (position < headFilled) {
+                // A short read is fine here: the extractor asks again for the rest.
+                val count = minOf(size, headFilled - position.toInt())
+                System.arraycopy(head, position.toInt(), buffer, offset, count)
+                return count
+            }
+            try {
+                val open = sourceAt(position) ?: return -1
+                val read = open.read(buffer, offset, size)
+                if (read == C.RESULT_END_OF_INPUT) return -1
+                if (position == headFilled.toLong() && headFilled < HEAD_BYTES) {
+                    val keep = minOf(read, HEAD_BYTES - headFilled)
+                    System.arraycopy(buffer, offset, head, headFilled, keep)
+                    headFilled += keep
+                }
+                nextPosition = position + read
+                return read
+            } catch (e: IOException) {
+                if (isActive()) failed = true
+                throw e
+            }
         }
 
         override fun close() {
             release()
         }
 
+        /**
+         * The source positioned at [position]: the open one when the read continues it, the
+         * open one read forward when the jump is short, and a new request only otherwise.
+         */
+        private fun sourceAt(position: Long): DataSource? {
+            val open = source
+            if (open != null && position == nextPosition) return open
+            val gap = position - nextPosition
+            if (open != null && nextPosition >= 0L && gap in 1..SKIP_AHEAD_BYTES) {
+                val scratch = ByteArray(16 * 1024)
+                var left = gap
+                while (left > 0L) {
+                    if (!isActive()) throw IOException("Waveform pass abandoned")
+                    val read = open.read(scratch, 0, minOf(left, scratch.size.toLong()).toInt())
+                    if (read == C.RESULT_END_OF_INPUT) return null
+                    left -= read
+                }
+                nextPosition = position
+                return open
+            }
+            openAt(position)
+            return source
+        }
+
         private fun openAt(position: Long) {
             release()
             val open = factory.createDataSource()
-            val resolved = open.open(
-                DataSpec.Builder()
-                    .setUri(uri)
-                    .setPosition(position)
-                    // Playback reads this song's bytes under its media id (see
-                    // buildMediaItemWithUri's setCustomCacheKey); writing under any other key
-                    // would fill the cache with a second copy nothing else can use.
-                    .setKey(cacheKey)
-                    .build()
-            )
+            val resolved = try {
+                open.open(
+                    DataSpec.Builder()
+                        .setUri(uri)
+                        .setPosition(position)
+                        // Playback reads this song's bytes under its media id (see
+                        // buildMediaItemWithUri's setCustomCacheKey); writing under any other
+                        // key would fill the cache with a second copy nothing else can use.
+                        .setKey(cacheKey)
+                        .build()
+                )
+            } catch (e: IOException) {
+                // A source that failed to open still holds whatever it had begun to acquire.
+                try {
+                    open.close()
+                } catch (_: IOException) {
+                }
+                throw e
+            }
             source = open
             nextPosition = position
             if (resolved != C.LENGTH_UNSET.toLong()) totalLength = position + resolved

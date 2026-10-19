@@ -187,6 +187,7 @@ fun VideoHomeContent(
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val notifications by viewModel.notifications.collectAsState()
     val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
+    val hiddenNotificationCount by viewModel.hiddenNotificationCount.collectAsState()
 
     // Options sheet (long-press on a video card)
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
@@ -205,6 +206,10 @@ fun VideoHomeContent(
         NotificationsSheet(
             notifications = notifications,
             isLoading = isNotificationsLoading,
+            hiddenCount = hiddenNotificationCount,
+            onHide = viewModel::hideNotification,
+            onRestoreHidden = viewModel::restoreHiddenNotifications,
+            onRefresh = { viewModel.loadNotifications(force = true) },
             onNotificationClick = { notification ->
                 when (val target = notification.target) {
                     is com.ivor.ivormusic.data.NotificationTarget.Video -> {
@@ -228,9 +233,19 @@ fun VideoHomeContent(
                         previewController?.release()
                         onOpenShorts(listOf(com.ivor.ivormusic.data.ShortsItem(videoId = target.videoId)), 0)
                     }
+                    // A community post opens here, pinned above its comments.
+                    // The inbox stays up for the moment the post takes to
+                    // arrive, so the tap is never followed by an empty screen;
+                    // only a post that cannot be read leaves for its web page.
+                    is com.ivor.ivormusic.data.NotificationTarget.Post -> {
+                        viewModel.openNotificationPost(target.detailParams) { opened ->
+                            showNotificationsSheet = false
+                            if (!opened) target.url?.let(uriHandler::openUri)
+                        }
+                    }
                     // Through the in-app link handler, which keeps anything Koda
-                    // can open and hands the rest (a community post) to the
-                    // YouTube app or the browser.
+                    // can open (a channel) and hands the rest to the YouTube
+                    // app or the browser.
                     is com.ivor.ivormusic.data.NotificationTarget.Link -> {
                         showNotificationsSheet = false
                         uriHandler.openUri(target.url)
@@ -252,12 +267,34 @@ fun VideoHomeContent(
         )
     }
 
+    // Community posts from followed channels, scattered between the videos.
+    // What the Video feed settings let through. Posts that are switched off
+    // are not asked for either, since each batch costs channel browses.
+    val feedFilter = rememberHomeFeedFilter()
+    val allFeedPosts by viewModel.feedPosts.collectAsState()
+    val feedPosts = if (feedFilter.showPosts) allFeedPosts else emptyList()
+    val postPhotoViewer = remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    FeedPostOverlays(viewModel, postPhotoViewer, onOpenChannel)
+    FeedPostDemand(
+        viewModel = viewModel,
+        listState = listState,
+        videoCount = videos.size,
+        postCount = allFeedPosts.size,
+        enabled = !showOfflineDownloads && feedFilter.showPosts
+    )
+    val feedPostCard: @Composable (com.ivor.ivormusic.data.ChannelPost) -> Unit = { post ->
+        FeedPostCard(post, viewModel, openVideo, onOpenChannel, postPhotoViewer)
+    }
+
     ExpressivePullToRefresh(
         // Only let the pull-to-refresh spinner represent a refresh over existing
         // content. The empty-feed case shows its own centered indicator below, and
         // driving both off the same flag renders two spinners at once.
         isRefreshing = isLoading && (videos.isNotEmpty() || showOfflineDownloads),
-        onRefresh = onRefresh,
+        onRefresh = {
+            viewModel.refreshFeedPosts()
+            onRefresh()
+        },
         modifier = Modifier.fillMaxSize()
     ) {
         if (isLoading && videos.isEmpty() && !showOfflineDownloads) {
@@ -365,7 +402,7 @@ fun VideoHomeContent(
                 } else {
                     // Video cards, with the Shorts shelf slotted in after the
                     // first two like the YouTube home feed.
-                    val feedVideos = videos
+                    val feedVideos = feedFilter.apply(videos)
                     val leadingVideos = if (!shortsEnabled) {
                         feedVideos
                     } else {
@@ -377,7 +414,16 @@ fun VideoHomeContent(
                         feedVideos.drop(2)
                     }
 
-                    videoListItems(leadingVideos, listLayout, keyPrefix = "lead_") { video, cell ->
+                    // Posts go in whichever run is the feed proper: after
+                    // the Shorts shelf when there is one, never between the
+                    // two videos above it.
+                    videoListItemsWithPosts(
+                        videos = leadingVideos,
+                        posts = if (shortsEnabled) emptyList() else feedPosts,
+                        layout = listLayout,
+                        keyPrefix = "lead_",
+                        post = feedPostCard
+                    ) { video, cell ->
                         VideoCard(
                             video = video,
                             onClick = { openVideo(video) },
@@ -399,7 +445,13 @@ fun VideoHomeContent(
                         }
                     }
 
-                    videoListItems(trailingVideos, listLayout, keyPrefix = "trail_") { video, cell ->
+                    videoListItemsWithPosts(
+                        videos = trailingVideos,
+                        posts = feedPosts,
+                        layout = listLayout,
+                        keyPrefix = "trail_",
+                        post = feedPostCard
+                    ) { video, cell ->
                         VideoCard(
                             video = video,
                             onClick = { openVideo(video) },
@@ -523,25 +575,30 @@ internal fun VideoTopBarSection(
     showNotifications: Boolean = true
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
-    val iconColor = MaterialTheme.colorScheme.onSurface
-    val containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    // The bar's buttons wear the secondary container, not a grey surface
+    // tone: on the tinted page a grey button read as part of the background.
+    val iconColor = MaterialTheme.colorScheme.onSecondaryContainer
+    val containerColor = MaterialTheme.colorScheme.secondaryContainer
     
     val userAvatar by viewModel.userAvatar.collectAsState()
     val downloadingIds by viewModel.downloadingIds.collectAsState()
     val context = LocalContext.current
     val incognito by com.ivor.ivormusic.data.IncognitoMode.enabled(context).collectAsState()
-    
-    Row(
+    val topBarOptions = com.ivor.ivormusic.ui.components.rememberHomeTopBarOptions()
+    val showDownloads = topBarOptions.alwaysShowDownloads || downloadingIds.isNotEmpty()
+
+    // A Box, not a spaced Row: the mode switch sits in the true centre of
+    // the bar whatever is either side of it, so it does not shift when the
+    // buttons on the right change between music and video.
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         // Profile avatar. Incognito shows as a badge on the avatar itself
         // rather than a chip beside it, so the bar keeps its shape whether
         // history is paused or not.
-        Box {
+        Box(modifier = Modifier.align(Alignment.CenterStart)) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -599,11 +656,23 @@ internal fun VideoTopBarSection(
             }
         }
 
-        // Right side icons
+        // Right side icons.
         Row(
+            modifier = Modifier.align(Alignment.CenterEnd),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Music/Video mode switch: one button the size of its neighbours
+            // that changes shape, colour and icon with the mode, instead of
+            // a two-part switch twice their width. [trial October 2026] Can
+            // be hidden from Settings (Home Screen Mode Toggle).
+            if (showModeToggle) {
+                com.ivor.ivormusic.ui.components.ModeMorphButton(
+                    videoMode = videoMode,
+                    onVideoModeChange = onVideoModeToggle
+                )
+            }
+
             // Notifications Button
             if (showNotifications) IconButton(
                 onClick = onNotificationsClick,
@@ -621,10 +690,23 @@ internal fun VideoTopBarSection(
                 )
             }
 
-            // Downloads Button
-            Box {
-                IconButton(
+            // Downloads appear here only while something is downloading: the
+            // button is a status, and the downloads themselves live in the
+            // Library. A permanent button for a place visited now and then
+            // was one more grey circle in the row.
+            // Customization can keep it there for good. It shares an unspaced
+            // row with Settings because it brings its own gap (see
+            // TopBarDownloadsButton).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                com.ivor.ivormusic.ui.components.TopBarDownloadsButton(
+                    visible = showDownloads,
+                    downloading = downloadingIds.isNotEmpty(),
                     onClick = onDownloadsClick,
+                    containerColor = containerColor,
+                    contentColor = iconColor
+                )
+                IconButton(
+                    onClick = onSettingsClick,
                     shapes = IconButtonDefaults.shapes(),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = containerColor,
@@ -633,50 +715,28 @@ internal fun VideoTopBarSection(
                     modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Download,
-                        contentDescription = stringResource(R.string.cd_downloads),
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.cd_settings),
                         modifier = Modifier.size(22.dp)
                     )
                 }
-                // Badge for active downloads
-                if (downloadingIds.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .align(Alignment.TopEnd)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
-                }
-            }
-            
-            IconButton(
-                onClick = onSettingsClick,
-                shapes = IconButtonDefaults.shapes(),
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = containerColor,
-                    contentColor = iconColor
-                ),
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = stringResource(R.string.cd_settings),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            // Music/Video mode switch, anchored in the corner so it stays put
-            // when the home content swaps between modes. Can be hidden from
-            // Settings (Home Screen Mode Toggle).
-            if (showModeToggle) {
-                MusicVideoToggle(
-                    videoMode = videoMode,
-                    onVideoModeChange = onVideoModeToggle,
-                    state = modeToggleState
-                )
             }
         }
+
+        // A greeting beside the profile picture, so the bar has something to
+        // say whether or not the mode switch is on it. It gives way to the
+        // buttons: the end padding is their width, with or without the switch.
+        if (topBarOptions.showGreeting) com.ivor.ivormusic.ui.components.HomeGreeting(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(
+                    start = 56.dp,
+                    // One 44dp button and its gap for each button drawn.
+                    end = 56.dp * (1 + (if (showModeToggle) 1 else 0) +
+                        (if (showNotifications) 1 else 0) +
+                        (if (showDownloads) 1 else 0))
+                )
+        )
     }
 }
 

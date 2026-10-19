@@ -273,7 +273,7 @@ class LocalVideoPlaylistsRepository(context: Context) {
             VideoItem(
                 videoId = videoId,
                 title = item.optString("title"),
-                channelName = item.optString("channelName"),
+                channelName = cleanChannelName(item.optString("channelName")),
                 channelId = item.optString("channelId").takeIf { it.isNotBlank() },
                 channelIconUrl = item.optString("channelIcon").takeIf { it.isNotBlank() },
                 thumbnailUrl = item.optString("thumbnail").takeIf { it.isNotBlank() },

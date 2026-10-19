@@ -1,0 +1,130 @@
+{
+  "playabilityStatus": {
+    "status": "OK"
+  },
+  "streamingData": {
+    "adaptiveFormats": [
+      {
+        "itag": 140,
+        "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+        "bitrate": 131963,
+        "averageBitrate": 129477,
+        "contentLength": "24944680",
+        "approxDurationMs": "1541247",
+        "audioQuality": "AUDIO_QUALITY_MEDIUM",
+        "audioSampleRate": "44100",
+        "audioChannels": 2,
+        "xtags": "Cg8KBWFjb250EgZkdWJiZWQKCgoEbGFuZxICZGU",
+        "loudnessDb": -0.03999996,
+        "trackAbsoluteLoudnessLkfs": -14.04,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=140&clen=24944680&dur=1541.247&mime=audio%2Fmp4&c=VISIONOS",
+        "audioTrack": {
+          "displayName": "German",
+          "id": "de.3",
+          "audioIsDefault": false
+        }
+      },
+      {
+        "itag": 140,
+        "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+        "bitrate": 131684,
+        "averageBitrate": 129478,
+        "contentLength": "24944734",
+        "approxDurationMs": "1541247",
+        "audioQuality": "AUDIO_QUALITY_MEDIUM",
+        "audioSampleRate": "44100",
+        "audioChannels": 2,
+        "xtags": "Cg8KBWFjb250EgZkdWJiZWQKCgoEbGFuZxICZXM",
+        "loudnessDb": 0,
+        "trackAbsoluteLoudnessLkfs": -14,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=140&clen=24944734&dur=1541.247&mime=audio%2Fmp4&c=VISIONOS",
+        "audioTrack": {
+          "displayName": "Spanish",
+          "id": "es.3",
+          "audioIsDefault": false
+        }
+      },
+      {
+        "itag": 140,
+        "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+        "bitrate": 131818,
+        "averageBitrate": 129475,
+        "contentLength": "24944676",
+        "approxDurationMs": "1541270",
+        "audioQuality": "AUDIO_QUALITY_MEDIUM",
+        "audioSampleRate": "44100",
+        "audioChannels": 2,
+        "xtags": "ChEKBWFjb250EghvcmlnaW5hbAoNCgRsYW5nEgVlbi1VUw",
+        "loudnessDb": 1.6599998,
+        "trackAbsoluteLoudnessLkfs": -12.34,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=140&clen=24944676&dur=1541.270&mime=audio%2Fmp4&c=VISIONOS",
+        "audioTrack": {
+          "displayName": "English (US) original",
+          "id": "en-US.4",
+          "audioIsDefault": true
+        }
+      },
+      {
+        "itag": 251,
+        "mimeType": "audio/webm; codecs=\"opus\"",
+        "bitrate": 142079,
+        "averageBitrate": 126949,
+        "contentLength": "24457168",
+        "approxDurationMs": "1541221",
+        "audioQuality": "AUDIO_QUALITY_MEDIUM",
+        "audioSampleRate": "48000",
+        "audioChannels": 2,
+        "xtags": "Cg8KBWFjb250EgZkdWJiZWQKCgoEbGFuZxICZGU",
+        "loudnessDb": -0.05000019,
+        "trackAbsoluteLoudnessLkfs": -14.05,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=251&clen=24457168&dur=1541.221&mime=audio%2Fwebm&c=VISIONOS",
+        "audioTrack": {
+          "displayName": "German",
+          "id": "de.3",
+          "audioIsDefault": false
+        }
+      },
+      {
+        "itag": 251,
+        "mimeType": "audio/webm; codecs=\"opus\"",
+        "bitrate": 149818,
+        "averageBitrate": 128339,
+        "contentLength": "24725023",
+        "approxDurationMs": "1541221",
+        "audioQuality": "AUDIO_QUALITY_MEDIUM",
+        "audioSampleRate": "48000",
+        "audioChannels": 2,
+        "xtags": "Cg8KBWFjb250EgZkdWJiZWQKCgoEbGFuZxICZXM",
+        "loudnessDb": 0,
+        "trackAbsoluteLoudnessLkfs": -14,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=251&clen=24725023&dur=1541.221&mime=audio%2Fwebm&c=VISIONOS",
+        "audioTrack": {
+          "displayName": "Spanish",
+          "id": "es.3",
+          "audioIsDefault": false
+        }
+      },
+      {
+        "itag": 251,
+        "mimeType": "audio/webm; codecs=\"opus\"",
+        "bitrate": 144266,
+        "averageBitrate": 125304,
+        "contentLength": "24140597",
+        "approxDurationMs": "1541241",
+        "audioQuality": "AUDIO_QUALITY_MEDIUM",
+        "audioSampleRate": "48000",
+        "audioChannels": 2,
+        "xtags": "ChEKBWFjb250EghvcmlnaW5hbAoNCgRsYW5nEgVlbi1VUw",
+        "loudnessDb": 1.6599998,
+        "trackAbsoluteLoudnessLkfs": -12.34,
+        "url": "https://rr1---sn-fixture.googlevideo.com/videoplayback?itag=251&clen=24140597&dur=1541.241&mime=audio%2Fwebm&c=VISIONOS",
+        "audioTrack": {
+          "displayName": "English (US) original",
+          "id": "en-US.4",
+          "audioIsDefault": true
+        }
+      }
+    ],
+    "formats": []
+  }
+}

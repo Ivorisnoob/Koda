@@ -7,12 +7,15 @@ import android.os.Looper
 import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -53,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Constraints
 import com.ivor.ivormusic.data.LrcContentSpan
 import com.ivor.ivormusic.data.LrcLine
+import com.ivor.ivormusic.data.LyricVoice
 import com.ivor.ivormusic.data.LyricsResult
 import com.ivor.ivormusic.data.LyricsSyncType
 import com.ivor.ivormusic.ui.theme.MontserratFamily
@@ -104,11 +108,36 @@ fun SyncedLyricsView(
     modifier: Modifier = Modifier,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
     onSurfaceColor: Color = MaterialTheme.colorScheme.onSurface,
-    onSurfaceVariantColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
+    onSurfaceVariantColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    /**
+     * The side margin inside the lyrics, or null for the default, which
+     * narrows on small widths. A host that already lines the lyrics up with
+     * its own text (Standby, under the title) passes zero so left-aligned
+     * lines start on the same edge as the title.
+     */
+    horizontalGutter: androidx.compose.ui.unit.Dp? = null,
+    /**
+     * Where the sung line rests, as a fraction of the height from the top.
+     * A third of the way down by default, as Apple Music holds it: the
+     * centre left half the panel empty above the first line, and put more of
+     * what has been sung on screen than of what is coming.
+     */
+    anchorFraction: Float = LYRIC_ANCHOR,
+    /**
+     * Move to the next line as a cascade, each line below the sung one
+     * following a beat after the one above. False is the plain scroll, kept
+     * for Standby's small panel, which was tuned around it.
+     */
+    cascadeScroll: Boolean = true
 ) {
     val hasWordTiming = lyricsResult is LyricsResult.Success &&
         lyricsResult.syncType == LyricsSyncType.WORD
     val lyricsMotionEnabled = rememberLyricsMotionEnabled()
+    // Read here rather than passed in, so every player style and Standby
+    // follow the one setting without each having to be wired to it.
+    val context = LocalContext.current
+    val centered by remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
+        .lyricsCentered.collectAsState()
     var renderedPositionMs by remember { mutableLongStateOf(currentPositionMs) }
 
     // The player publishes coarse progress updates. Interpolate only while a
@@ -154,7 +183,11 @@ fun SyncedLyricsView(
                         onSeekTo = onSeekTo,
                         primaryColor = primaryColor,
                         onSurfaceColor = onSurfaceColor,
-                        motionEnabled = lyricsMotionEnabled
+                        motionEnabled = lyricsMotionEnabled,
+                        centered = centered,
+                        horizontalGutter = horizontalGutter,
+                        anchorFraction = anchorFraction,
+                        cascadeScroll = cascadeScroll
                     )
                 }
             }
@@ -170,9 +203,18 @@ private fun LyricsContent(
     onSeekTo: (Long) -> Unit,
     primaryColor: Color,
     onSurfaceColor: Color,
-    motionEnabled: Boolean
+    motionEnabled: Boolean,
+    centered: Boolean,
+    horizontalGutter: androidx.compose.ui.unit.Dp?,
+    anchorFraction: Float,
+    cascadeScroll: Boolean
 ) {
     val listState = rememberLazyListState()
+    val cascade = remember { LyricCascade() }
+    val cascading = cascadeScroll && motionEnabled
+    // A duet is drawn as a conversation, whatever the alignment setting:
+    // centring would throw away who is singing.
+    val duet = remember(lines) { lines.any { it.voice == LyricVoice.DUET } }
     val isSynced = syncType != LyricsSyncType.PLAIN
 
     // Montserrat for the lyric itself, where it can draw the song's script -
@@ -192,8 +234,9 @@ private fun LyricsContent(
         }
     }
 
-    // Auto-scroll to the visual centre, using the item's measured height. A
-    // fixed scroll offset is wrong as soon as a line wraps or font scale grows.
+    // Auto-scroll the sung line to the anchor, using the item's measured
+    // height. A fixed scroll offset is wrong as soon as a line wraps or font
+    // scale grows.
     LaunchedEffect(currentLineIndex, lines) {
         if (isSynced && currentLineIndex >= 0 && lines.isNotEmpty()) {
             try {
@@ -204,9 +247,29 @@ private fun LyricsContent(
                 val layout = listState.layoutInfo
                 val item = layout.visibleItemsInfo.firstOrNull { it.index == currentLineIndex }
                 if (item != null) {
-                    val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2
+                    val anchor = layout.viewportStartOffset +
+                        ((layout.viewportEndOffset - layout.viewportStartOffset) * anchorFraction).toInt()
                     val itemCenter = item.offset + item.size / 2
-                    listState.animateScrollBy((itemCenter - viewportCenter).toFloat())
+                    val delta = (itemCenter - anchor).toFloat()
+                    if (cascading) {
+                        // The list jumps at once and every line is drawn back
+                        // where it was, then each is let go in turn: the lines
+                        // move on their own clocks while the list itself is
+                        // already where it is going.
+                        //
+                        // [scar] The hold-back is set before the jump, in the
+                        // same frame. Set after it (on the next frame's clock),
+                        // one frame drew every line already jumped, then the
+                        // next pulled them all back: a flash of the whole
+                        // lyrics on each line change. System.nanoTime is the
+                        // frame clock's own timebase on Android.
+                        cascade.kick(delta, currentLineIndex, System.nanoTime())
+                        val moved = listState.scrollBy(delta)
+                        // The end of the list can stop the jump short.
+                        if (moved != delta) cascade.correctLast(moved)
+                    } else {
+                        listState.animateScrollBy(delta)
+                    }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -219,13 +282,29 @@ private fun LyricsContent(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // UI scale and system font scale both reduce the available dp width.
         // Shrink the gutter before shrinking the lyric itself.
-        val horizontalPadding = when {
+        val horizontalPadding = horizontalGutter ?: when {
             maxWidth < 280.dp -> 12.dp
             maxWidth < 360.dp -> 16.dp
             else -> 24.dp
         }
-        val centerPadding = (maxHeight / 2 - 36.dp).coerceAtLeast(12.dp)
+        // Room above the first line and below the last, so either can reach
+        // the anchor. At an anchor of one half these are the centring pads the
+        // view always had.
+        val topPadding = (maxHeight * anchorFraction - 36.dp).coerceAtLeast(12.dp)
+        val bottomPadding = (maxHeight * (1f - anchorFraction) - 36.dp).coerceAtLeast(12.dp)
         val lineSpacing = if (maxHeight < 420.dp) 20.dp else 28.dp
+        // Each side of a duet stops short of the other, so a long line that
+        // wraps still reads as belonging to its side.
+        val duetInset = if (duet) maxWidth * DUET_INSET_FRACTION else 0.dp
+
+        // Drives the cascade: one frame clock for every line, running only
+        // while a line change is still settling.
+        LaunchedEffect(cascade.generation) {
+            while (cascade.isMoving(cascade.frameNanos)) {
+                withFrameNanos { cascade.frameNanos = it }
+            }
+            cascade.settle()
+        }
         
         LazyColumn(
             state = listState,
@@ -247,16 +326,19 @@ private fun LyricsContent(
                     )
                 },
             contentPadding = PaddingValues(
-                top = centerPadding,
-                bottom = centerPadding,
+                top = topPadding,
+                bottom = bottomPadding,
                 start = horizontalPadding,
                 end = horizontalPadding
             ),
             verticalArrangement = Arrangement.spacedBy(lineSpacing),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start
         ) {
             itemsIndexed(lines, key = { index, line -> "${index}_${line.timeMs}" }) { index, line ->
                 LyricLine(
+                    modifier = Modifier.graphicsLayer {
+                        translationY = cascade.offsetFor(index, cascade.frameNanos)
+                    },
                     line = line,
                     isCurrent = index == currentLineIndex,
                     isSynced = isSynced,
@@ -265,15 +347,129 @@ private fun LyricsContent(
                     onSurfaceColor = onSurfaceColor,
                     motionEnabled = motionEnabled,
                     currentPositionMs = currentPositionMs,
-                    lyricsFont = lyricsFont
+                    lyricsFont = lyricsFont,
+                    side = lineSide(line, duet, centered),
+                    duetInset = duetInset
                 )
             }
         }
     }
 }
 
+/** Where the sung line rests by default; see [SyncedLyricsView]'s anchorFraction. */
+private const val LYRIC_ANCHOR = 0.32f
+
+/** How long a word-timed line takes to settle from its sung colours into a resting line. */
+private const val WORD_LINE_DISSOLVE_MS = 320
+
+/** The share of the width each side of a duet leaves to the other. */
+private const val DUET_INSET_FRACTION = 0.12f
+
+/** The edge a lyric line is set from. Start and end are mirrored in RTL. */
+internal enum class LyricSide(val boxAlignment: Alignment, val textAlign: TextAlign) {
+    START(Alignment.CenterStart, TextAlign.Start),
+    CENTER(Alignment.Center, TextAlign.Center),
+    END(Alignment.CenterEnd, TextAlign.End),
+}
+
+/**
+ * Where [line] sits. In a duet the second singer answers from the end
+ * edge and lines sung together stay with the first; otherwise the
+ * alignment setting decides.
+ */
+private fun lineSide(line: LrcLine, duet: Boolean, centered: Boolean): LyricSide = when {
+    duet -> if (line.voice == LyricVoice.DUET) LyricSide.END else LyricSide.START
+    centered -> LyricSide.CENTER
+    else -> LyricSide.START
+}
+
+/**
+ * Apple Music's line change, as a shared timeline rather than an animation per
+ * row.
+ *
+ * Each change ("kick") records how far the list jumped and which line is now
+ * sung. Every row is drawn displaced by that distance and released along a
+ * critically damped spring - it starts from rest and settles without
+ * overshoot, which is the ease-in-out a hand-picked curve only approximates -
+ * the rows below the sung line each a beat later than the one above, so the
+ * text ripples down into place instead of sliding as one slab. Rows that
+ * scroll into view mid-change read the same timeline, so they arrive in step
+ * with their neighbours. Overlapping changes add up, so a quick run of short
+ * lines never jumps.
+ *
+ * All of it is read in the draw phase through [frameNanos]: the lines move
+ * without recomposing.
+ */
+private class LyricCascade {
+    private class Kick(var distance: Float, val pivot: Int, val startNanos: Long)
+
+    private val kicks = mutableListOf<Kick>()
+
+    /** Bumped on each kick, to restart the frame loop. */
+    var generation by mutableIntStateOf(0)
+        private set
+
+    var frameNanos by mutableLongStateOf(0L)
+
+    fun kick(distance: Float, pivot: Int, nowNanos: Long) {
+        kicks += Kick(distance, pivot, nowNanos)
+        frameNanos = nowNanos
+        generation++
+    }
+
+    /** The last jump went [actual] rather than the distance it was kicked with. */
+    fun correctLast(actual: Float) {
+        val last = kicks.lastOrNull() ?: return
+        if (actual == 0f) kicks.removeAt(kicks.lastIndex) else last.distance = actual
+        // A fresh read for the layers, which drew the old distance.
+        frameNanos = frameNanos + 1
+    }
+
+    fun isMoving(nowNanos: Long): Boolean =
+        kicks.any { nowNanos - it.startNanos < CASCADE_TOTAL_NANOS }
+
+    fun settle() {
+        kicks.clear()
+    }
+
+    fun offsetFor(index: Int, nowNanos: Long): Float {
+        var offset = 0f
+        for (kick in kicks) {
+            // Lines above the sung one go first, together; each line from
+            // the sung one down waits one beat more than the line above it.
+            val beats = (index - kick.pivot + 1).coerceIn(0, CASCADE_MAX_BEATS)
+            val t = (nowNanos - kick.startNanos) / 1_000_000_000f - beats * CASCADE_BEAT_S
+            offset += kick.distance * (1f - criticallyDampedProgress(t))
+        }
+        return offset
+    }
+}
+
+/**
+ * The position of a unit-mass, critically damped spring released from rest:
+ * 1 - (1 + wt)e^(-wt), with w set by Apple's "response" (the spring's period).
+ * Zero velocity at the start and at the end, so it eases in and out.
+ */
+private fun criticallyDampedProgress(seconds: Float): Float {
+    if (seconds <= 0f) return 0f
+    val wt = CASCADE_OMEGA * seconds
+    return (1f - (1f + wt) * kotlin.math.exp(-wt)).coerceIn(0f, 1f)
+}
+
+/** How quickly a line gets there: Apple's response, in seconds. */
+private const val CASCADE_RESPONSE_S = 0.55f
+private const val CASCADE_OMEGA = (2f * Math.PI.toFloat()) / CASCADE_RESPONSE_S
+
+/** The wait between one line and the next, and how many lines are staggered. */
+private const val CASCADE_BEAT_S = 0.045f
+private const val CASCADE_MAX_BEATS = 8
+
+/** Long enough for the last staggered line to settle to well under a pixel. */
+private const val CASCADE_TOTAL_NANOS = 1_600_000_000L
+
 @Composable
 private fun LyricLine(
+    modifier: Modifier = Modifier,
     line: LrcLine,
     isCurrent: Boolean,
     isSynced: Boolean,
@@ -283,7 +479,11 @@ private fun LyricLine(
     motionEnabled: Boolean,
     currentPositionMs: Long = 0L,
     /** Null leaves the theme's own font in place; see [lyricsFitDisplayFont]. */
-    lyricsFont: FontFamily? = null
+    lyricsFont: FontFamily? = null,
+    /** Which edge the line is set from; see [lineSide]. */
+    side: LyricSide = LyricSide.START,
+    /** Room kept free on the side away from this line's singer, in a duet. */
+    duetInset: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     // Animate alpha for past/future lines
     val alpha by animateFloatAsState(
@@ -293,12 +493,18 @@ private fun LyricLine(
     )
 
     // Current and inactive lines share one style so a line wraps identically
-    // either way; only colour and glow change, and both fade. Held here rather
-    // than inside the plain-text branch so a word-timed line leaving the
-    // karaoke view fades from its sung colour instead of snapping. A size or
+    // either way; only colour and glow change, and both fade. A size or
     // weight change re-wrapped the line the moment it became current, jumping
     // from one row to two.
-    val highlighted = isSynced && isCurrent
+    //
+    // A word-timed line is never highlighted as a whole: its words light up
+    // in the karaoke view, and it dissolves from that straight into the
+    // resting line (below). [scar] It used to hand over to this plain text
+    // still wearing the sung colour and a full-line glow, to fade from the
+    // sung colour rather than snap - which lit the entire line, glow and all,
+    // the moment it ended, words the singer had not reached included.
+    val wordTimed = line.contentSpans.isNotEmpty()
+    val highlighted = isSynced && isCurrent && !wordTimed
     val lineColor by animateColorAsState(
         targetValue = if (highlighted) primaryColor else onSurfaceColor,
         animationSpec = spring(stiffness = Spring.StiffnessLow),
@@ -322,25 +528,49 @@ private fun LyricLine(
     }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .alpha(alpha)
             .then(tapModifier)
-            .padding(vertical = 8.dp),
-        contentAlignment = Alignment.Center
+            .padding(vertical = 8.dp)
+            .padding(
+                start = if (side == LyricSide.END) duetInset else 0.dp,
+                end = if (side == LyricSide.START) duetInset else 0.dp
+            ),
+        contentAlignment = side.boxAlignment
     ) {
-        if (isCurrent && line.contentSpans.isNotEmpty()) {
-            KaraokeWordFlow(
-                spans = line.contentSpans,
-                lineText = line.text,
-                currentPositionMs = currentPositionMs,
-                primaryColor = primaryColor,
-                unsungColor = onSurfaceColor.copy(alpha = 0.5f),
-                motionEnabled = motionEnabled,
-                lyricsFont = lyricsFont,
-                modifier = Modifier.fillMaxWidth()
-            )
-
+        if (wordTimed) {
+            // The two views wrap a line identically (see KaraokeWordFlow), so
+            // a crossfade between them reads as the colour settling, not as
+            // one line replaced by another.
+            androidx.compose.animation.Crossfade(
+                targetState = isCurrent,
+                animationSpec = tween(WORD_LINE_DISSOLVE_MS, easing = FastOutSlowInEasing),
+                modifier = Modifier.fillMaxWidth(),
+                label = "WordLineDissolve"
+            ) { singing ->
+                if (singing) {
+                    KaraokeWordFlow(
+                        spans = line.contentSpans,
+                        lineText = line.text,
+                        currentPositionMs = currentPositionMs,
+                        primaryColor = primaryColor,
+                        unsungColor = onSurfaceColor.copy(alpha = 0.5f),
+                        motionEnabled = motionEnabled,
+                        lyricsFont = lyricsFont,
+                        side = side,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        text = line.text,
+                        style = lyricLineStyle().withLyricsFont(lyricsFont),
+                        color = onSurfaceColor,
+                        textAlign = side.textAlign,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         } else {
             // Line-synced lyrics highlight the whole line - no invented
             // per-word fill.
@@ -357,7 +587,7 @@ private fun LyricLine(
                     }
                 ).withLyricsFont(lyricsFont),
                 color = lineColor,
-                textAlign = TextAlign.Center
+                textAlign = side.textAlign
             )
         }
     }
@@ -423,6 +653,7 @@ private fun KaraokeWordFlow(
     unsungColor: Color,
     motionEnabled: Boolean,
     lyricsFont: FontFamily? = null,
+    side: LyricSide = LyricSide.START,
     modifier: Modifier = Modifier
 ) {
     val tokens = remember(spans, lineText) { buildTimedLyricTokens(spans, lineText) }
@@ -435,7 +666,7 @@ private fun KaraokeWordFlow(
             text = lineText,
             style = lyricLineStyle().withLyricsFont(lyricsFont),
             color = primaryColor,
-            textAlign = TextAlign.Center
+            textAlign = side.textAlign
         )
         return
     }
@@ -458,6 +689,7 @@ private fun KaraokeWordFlow(
         val maxWordWidthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
         CenteredLyricFlow(
             tokens = tokens,
+            side = side,
             horizontalSpacing = wordSpacing,
             // The style's line height already carries the leading, so rows sit
             // as close as the same line drawn as plain text would.
@@ -681,6 +913,8 @@ private data class FlowLine(
 @Composable
 private fun CenteredLyricFlow(
     tokens: List<TimedLyricToken>,
+    /** Which edge each row is set from; RTL is mirrored by placeRelative. */
+    side: LyricSide,
     horizontalSpacing: androidx.compose.ui.unit.Dp,
     verticalSpacing: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
@@ -741,7 +975,11 @@ private fun CenteredLyricFlow(
         layout(layoutWidth, layoutHeight) {
             var y = 0
             lines.forEach { line ->
-                var x = ((layoutWidth - line.width) / 2).coerceAtLeast(0)
+                var x = when (side) {
+                    LyricSide.START -> 0
+                    LyricSide.CENTER -> ((layoutWidth - line.width) / 2).coerceAtLeast(0)
+                    LyricSide.END -> (layoutWidth - line.width).coerceAtLeast(0)
+                }
                 line.placements.forEach { placement ->
                     val placeable = placeables[placement.index]
                     x += placement.gapBeforePx

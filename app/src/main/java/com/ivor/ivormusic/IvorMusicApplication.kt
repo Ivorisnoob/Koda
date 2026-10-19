@@ -19,6 +19,12 @@ class IvorMusicApplication : Application(), ImageLoaderFactory {
         // The setting handler does the same immediately when the value changes.
         com.ivor.ivormusic.work.UploadCheckWorker.sync(this)
         com.ivor.ivormusic.work.ScheduledBackupWorker.sync(this)
+        // Discord Rich Presence (no-ops until the user turns it on in Settings
+        // AND the Discord app is installed and signed in).
+        // Observes playback state only; it can never affect audio delivery,
+        // and every failure stays contained so a missing Discord install
+        // cannot reach startup.
+        com.ivor.ivormusic.presence.DiscordPresenceManager.start(this)
     }
 
     /**

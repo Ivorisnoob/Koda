@@ -129,6 +129,7 @@ class MiniSkipState internal constructor(
     private var crossed = false
     private var startKey: Any? = null
     private var expectedKey: Any? = null
+    private var commitSeq = 0
     private val awaiting get() = committing
 
     internal fun start() {
@@ -163,12 +164,15 @@ class MiniSkipState internal constructor(
         startKey = contentKey
         expectedKey = if (direction == MiniSkip.Direction.NEXT) nextKey else previousKey
         val target = if (direction == MiniSkip.Direction.NEXT) -widthPx else widthPx
+        val commit = ++commitSeq
         scope.launch {
             offset.animateTo(target, SLIDE_IN)
             if (direction == MiniSkip.Direction.NEXT) onNext() else onPrevious()
             delay(COMMIT_TIMEOUT_MS)
             // Still waiting: the skip did not land. Put the real item back.
-            if (committing) {
+            // Only for this commit - a second swipe made inside the timeout
+            // is its own, and this one ending it sprang the bar back mid-slide.
+            if (committing && commitSeq == commit) {
                 committing = false
                 offset.animateTo(0f, SPRING_HOME)
             }
@@ -309,23 +313,40 @@ fun Modifier.miniSkipGesture(state: MiniSkipState, enabled: Boolean = true): Mod
  * recomposes nothing.
  */
 @Composable
-fun MiniSkipCarousel(
+fun <T : Any> MiniSkipCarousel(
     state: MiniSkipState,
     modifier: Modifier = Modifier,
     previousLabel: String? = null,
     nextLabel: String? = null,
-    previous: (@Composable () -> Unit)? = null,
-    next: (@Composable () -> Unit)? = null,
+    /** The items either side, as data; [neighbour] draws whichever is leaned toward. */
+    previous: T? = null,
+    next: T? = null,
+    neighbour: @Composable (T) -> Unit,
     current: @Composable () -> Unit,
 ) {
     // While a commit is in flight, keep drawing the neighbours as they were
     // when it began: the one that slid into the middle must stay that item
     // until the bar's own content has become it (see MiniSkipState).
+    //
+    // [scar] What is held is the *item*, and it has to be. The neighbours
+    // used to arrive as composable lambdas and the lambda was what got held,
+    // which froze nothing: Compose remembers one lambda object per call site
+    // and swaps its body in place on recomposition, so the "frozen" reference
+    // drew the caller's newest neighbour the moment the skip landed - the song
+    // after the new one, in the middle of the bar, until the hand-off.
+    //
+    // And "as they were when it began" means the last composition *before*
+    // the commit, not the first one that sees it: a swipe dragged most of the
+    // way across finishes its slide in a frame, so by the first recomposition
+    // where `committing` reads true the skip may already have landed.
     val committing = state.committing
-    val frozenNext = remember(committing) { next }
-    val frozenPrevious = remember(committing) { previous }
-    val drawnNext = if (committing) frozenNext else next
-    val drawnPrevious = if (committing) frozenPrevious else previous
+    val idle = remember { IdleNeighbours<T>() }
+    if (!committing) {
+        idle.next = next
+        idle.previous = previous
+    }
+    val drawnNext = if (committing) idle.next else next
+    val drawnPrevious = if (committing) idle.previous else previous
 
     // A swipe has no accessibility equivalent of its own, so the same two
     // moves are offered as actions on the item.
@@ -353,7 +374,7 @@ fun MiniSkipCarousel(
                     translationX = offset + state.widthPx
                     alpha = if (offset < 0f) min(1f, abs(offset) / (state.widthPx * 0.35f).coerceAtLeast(1f)) else 0f
                 }
-            ) { drawnNext() }
+            ) { neighbour(drawnNext) }
         }
         if (drawnPrevious != null) {
             Box(
@@ -362,9 +383,15 @@ fun MiniSkipCarousel(
                     translationX = offset - state.widthPx
                     alpha = if (offset > 0f) min(1f, offset / (state.widthPx * 0.35f).coerceAtLeast(1f)) else 0f
                 }
-            ) { drawnPrevious() }
+            ) { neighbour(drawnPrevious) }
         }
     }
+}
+
+/** The neighbours as last composed with no commit in flight. Not state: read in the same pass. */
+private class IdleNeighbours<T> {
+    var next: T? = null
+    var previous: T? = null
 }
 
 /**

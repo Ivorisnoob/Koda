@@ -370,7 +370,7 @@ class VideoHistoryRepository(context: Context) {
                 VideoItem(
                     videoId = videoId,
                     title = obj.optString("title"),
-                    channelName = obj.optString("channelName"),
+                    channelName = cleanChannelName(obj.optString("channelName")),
                     channelId = obj.optString("channelId").takeIf { it.isNotBlank() && it != "null" },
                     channelIconUrl = obj.optString("channelIconUrl").takeIf { it.isNotBlank() && it != "null" },
                     thumbnailUrl = obj.optString("thumbnailUrl").takeIf { it.isNotBlank() && it != "null" },

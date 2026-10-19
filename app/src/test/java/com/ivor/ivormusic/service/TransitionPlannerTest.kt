@@ -32,12 +32,54 @@ class TransitionPlannerTest {
         assertEquals(0L, result.incomingStartMs)
     }
 
-    @Test fun `incompatible tempos do not get a long outro overlap`() {
+    @Test fun `incompatible tempos are echoed out over four beats, never blended`() {
         val result = plan(rhythmic(), rhythmic("incoming", 95f))
         assertEquals(TransitionPlan.Reason.TEMPO_MISMATCH, result.reason)
-        assertEquals(1_500L, result.overlapMs)
+        assertEquals(TransitionStyle.ECHO_OUT, result.style)
+        // 120 bpm: four beats are two seconds, and the echo repeats on the half beat.
+        assertEquals(2_000L, result.overlapMs)
+        assertEquals(250, result.echoDelayMs)
         assertEquals(1f, result.incomingSpeed, 0f)
         assertEquals(0f, result.filterSweepStrength, 0f)
+    }
+
+    @Test fun `tempos eight percent apart are matched, further are not`() {
+        val near = plan(rhythmic(), rhythmic("incoming", 112f))
+        assertEquals(120f / 112f, near.incomingSpeed, 0.0001f)
+        assertEquals(TransitionStyle.BASS_SWAP, near.style)
+        val far = plan(rhythmic(), rhythmic("incoming", 108f))
+        assertEquals(1f, far.incomingSpeed, 0f)
+        assertEquals(TransitionStyle.ECHO_OUT, far.style)
+    }
+
+    @Test fun `a long matched blend swaps the bass and a short one does not`() {
+        assertEquals(TransitionStyle.BASS_SWAP, plan(rhythmic(), rhythmic("in", 118f)).style)
+        val short = plan(rhythmic().copy(outroLeadMs = 4_000L), rhythmic("in", 118f))
+        assertEquals(TransitionStyle.BLEND, short.style)
+    }
+
+    @Test fun `a song is left at a confident phrase boundary well before its end`() {
+        val out = rhythmic().copy(
+            outroLeadMs = 28_000L, phraseOutroLeadMs = 28_000L, phraseConfidence = 0.9f,
+        )
+        val result = plan(out, rhythmic("in", 118f))
+        assertEquals(TransitionPlan.Reason.PHRASE_BOUNDARY, result.reason)
+        // The mix starts where the ending starts and lasts no longer than a mix may.
+        assertTrue(result.effectivePrepareLeadMs in 24_000L..32_000L)
+        assertTrue(result.overlapMs <= 15_000L)
+        assertTrue(result.overlapMs < result.effectivePrepareLeadMs)
+    }
+
+    @Test fun `an early ending is not acted on when the keys clash or the tempo is unknown`() {
+        val out = rhythmic().copy(
+            outroLeadMs = 28_000L, phraseOutroLeadMs = 28_000L, phraseConfidence = 0.9f,
+            keyPitchClass = 0, keyMode = "major", keyConfidence = 0.9f,
+        )
+        val clash = rhythmic("in").copy(keyPitchClass = 1, keyMode = "major", keyConfidence = 0.9f)
+        val clashed = plan(out, clash)
+        assertTrue(clashed.effectivePrepareLeadMs <= 3_000L)
+        val unknownTempo = plan(out.copy(outroBpm = null), rhythmic("in"))
+        assertTrue(unknownTempo.effectivePrepareLeadMs <= 3_000L)
     }
 
     @Test fun `a lone energy dip does not authorize a twelve second mix`() {

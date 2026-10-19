@@ -24,7 +24,7 @@ class SubscriptionFeedCache(context: Context) {
             VideoItem(
                 videoId = o.optString("videoId").takeIf { it.isNotBlank() } ?: return@mapNotNull null,
                 title = o.optString("title"),
-                channelName = o.optString("channelName"),
+                channelName = cleanChannelName(o.optString("channelName")),
                 channelId = o.optString("channelId").takeIf { it.isNotBlank() },
                 channelIconUrl = o.optString("channelIcon").takeIf { it.isNotBlank() },
                 thumbnailUrl = o.optString("thumbnail").takeIf { it.isNotBlank() },

@@ -189,6 +189,51 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     val frameInterpolationStatus: StateFlow<com.ivor.ivormusic.service.FrameInterpolationStatus> =
         frameInterpolation.status
 
+    /**
+     * Video shaders. Like Smooth motion, the stage joins the effect graph when
+     * the player is built and cannot be added to or taken from a running one,
+     * so whether this player has it is remembered and compared with the
+     * setting when the player closes. What it draws is [videoShaderControl],
+     * read per frame.
+     */
+    private val videoShaderControl = com.ivor.ivormusic.service.VideoShaderControl()
+
+    private fun videoShadersWanted(): Boolean = themePreferences.readVideoShaders().masterEnabled
+
+    private val _playerHasVideoShaders = MutableStateFlow(false)
+
+    /**
+     * Whether the player on screen was built with the shader stage. False
+     * while the setting is on means it was turned on under an open video, and
+     * the panel says so rather than offering presets that would draw nothing.
+     */
+    val videoShadersInstalled: StateFlow<Boolean> = _playerHasVideoShaders.asStateFlow()
+
+    private val _videoShaders = MutableStateFlow(themePreferences.readVideoShaders())
+    val videoShaders: StateFlow<com.ivor.ivormusic.data.VideoShaderCustomization> =
+        _videoShaders.asStateFlow()
+
+    /**
+     * Put [settings] on the picture without storing them: a slider mid-drag,
+     * which is judged by watching and stored once, when the finger lifts.
+     */
+    fun previewVideoShaders(settings: com.ivor.ivormusic.data.VideoShaderCustomization) {
+        if (settings == _videoShaders.value) return
+        _videoShaders.value = settings
+        videoShaderControl.settings = settings
+        // A paused video draws nothing new, so the change would wait for Play.
+        if (_playerHasVideoShaders.value) redrawPausedFrameThroughGraph()
+    }
+
+    fun setVideoShaders(settings: com.ivor.ivormusic.data.VideoShaderCustomization) {
+        previewVideoShaders(settings)
+        themePreferences.setVideoShaders(settings)
+    }
+
+    /** The player renders through Media3's effect graph, for either feature. */
+    private fun playerHasEffectGraph(): Boolean =
+        playerHasInterpolation || _playerHasVideoShaders.value
+
     // State
     private val _currentVideo = MutableStateFlow<VideoItem?>(null)
     val currentVideo: StateFlow<VideoItem?> = _currentVideo
@@ -482,6 +527,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     private var captionsLoadedForVideoId: String? = null
 
+    private val downloadedCaptions = com.ivor.ivormusic.data.DownloadedCaptionStore(context)
+
+    /**
+     * Whether a locally played id is one of Koda's own downloads rather than a
+     * device file or a file opened from outside: those carry a prefix, a
+     * download keeps the YouTube id it was saved under.
+     */
+    private fun isDownloadedVideoId(videoId: String): Boolean =
+        !videoId.startsWith(LocalVideo.ID_PREFIX) && !videoId.startsWith("external:")
+
     // Cues of the selected track, rendered by the player overlay. Captions are
     // deliberately kept out of the media source - see [setCaptionTrack].
     private val _captionCues = MutableStateFlow<List<VttCue>>(emptyList())
@@ -631,6 +686,15 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     init {
+        // The Video shaders page writes through its own ThemePreferences, with
+        // a video possibly still open in the mini player. Only what is drawn
+        // follows it here: the stage itself waits for the next player, since
+        // releasing this one would pull it out from under the media session
+        // and the views that hold it.
+        videoShaderControl.settings = _videoShaders.value
+        viewModelScope.launch {
+            themePreferences.videoShaders.collect { previewVideoShaders(it) }
+        }
         viewModelScope.launch {
             _playbackError.collect { error ->
                 // A device video never asked YouTube for anything.
@@ -749,7 +813,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /**
      * Whether the current video is a live broadcast. Resolved in Phase 1 from
      * the quality list: a live stream only ever produces a single adaptive HLS
-     * entry (see YouTubeRepository.parseQualitiesFromStreamingData), so the
+     * entry (see parseDirectVideoQualities), so the
      * flag rides along with the streams instead of costing a separate call.
      */
     private val _isLive = MutableStateFlow(false)
@@ -1056,7 +1120,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // process restart rebuilds the player at 1x while the sheet
             // still shows the remembered rate.
             player.setPlaybackSpeed(_playbackSpeed.value)
-            installFrameInterpolation(player)
+            installVideoEffects(player)
         }
     }
 
@@ -1066,22 +1130,34 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * revisit it. Everything after this is the per-frame gate the progress
      * poll sets.
      */
-    private fun installFrameInterpolation(player: ExoPlayer) {
+    private fun installVideoEffects(player: ExoPlayer) {
         playerHasInterpolation = frameInterpolationWanted()
-        if (!playerHasInterpolation) return
-        player.setVideoEffects(
-            listOf(com.ivor.ivormusic.service.FrameInterpolationEffect(frameInterpolation.control))
-        )
+        val shaders = themePreferences.readVideoShaders()
+        _playerHasVideoShaders.value = shaders.masterEnabled
+        // The look first, on decoded frames: Smooth motion then draws its
+        // in-between frames from pictures that already wear it.
+        val effects = buildList {
+            if (shaders.masterEnabled) {
+                add(com.ivor.ivormusic.service.VideoShaderEffect(videoShaderControl))
+            }
+            if (playerHasInterpolation) {
+                add(com.ivor.ivormusic.service.FrameInterpolationEffect(frameInterpolation.control))
+            }
+        }
+        if (effects.isNotEmpty()) {
+            player.setVideoEffects(effects)
+        }
     }
 
     /**
-     * HDR stays out of the ladder while Smooth motion is on, and while the
-     * player still carries the effect graph after it was turned off: an HDR
-     * rendition through that graph is tone-mapped or not, depending on the
-     * device's GL extensions, which is a worse answer than SDR on purpose.
+     * HDR stays out of the ladder while Smooth motion or video shaders are on,
+     * and while the player still carries the effect graph after they were
+     * turned off: an HDR rendition through that graph is tone-mapped or not,
+     * depending on the device's GL extensions, which is a worse answer than
+     * SDR on purpose.
      */
-    private fun frameInterpolationBlocksHdr(): Boolean =
-        playerHasInterpolation || frameInterpolationWanted()
+    private fun effectGraphBlocksHdr(): Boolean =
+        playerHasEffectGraph() || frameInterpolationWanted() || videoShadersWanted()
 
     /**
      * The playback listener the local ExoPlayer carries: buffering spinner,
@@ -1759,7 +1835,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         sourceRecoveryJob?.cancel()
         sourceRecoveryJob = viewModelScope.launch {
             if (httpResponseCode(original) == 403) {
-                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                youtubeRepository.refreshVisitorDataAfterPlaybackFailure(
+                    com.ivor.ivormusic.data.httpFailureUrl(original),
+                )
             }
             if (!reresolveAndReload(video)) {
                 _playbackError.value = original
@@ -1913,11 +1991,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         themePreferences.setVideoRepeatEnabled(enabled)
     }
 
-    /** Set the playback speed for the current video and remember it for the next one. */
-    fun setPlaybackSpeed(speed: Float) {
+    /**
+     * Set the playback speed for the current video and remember it for the next one.
+     *
+     * [persist] is false for one frame of a slider drag: the rate still applies,
+     * because it is judged by watching, but only the value the finger lifts on
+     * is written.
+     */
+    fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
         val bounded = speed.coerceIn(0.25f, ThemePreferences.MAX_PLAYBACK_SPEED)
         _playbackSpeed.value = bounded
         _exoPlayer?.setPlaybackSpeed(bounded)
+        if (!persist) return
         // A live broadcast always plays at 1x: a manual change there is a
         // momentary adjustment, not the rate the next VOD should reopen at.
         if (_isLive.value || _currentVideo.value?.isLive == true) return
@@ -2862,7 +2947,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         // Captions that were on for the last video stay on for this one: the
         // track list is fetched up front rather than waiting for a CC tap.
-        if (themePreferences.isCaptionsEnabled() && !_isLocalPlayback.value) {
+        // Downloads included; ensureCaptionsLoaded leaves device files alone.
+        if (themePreferences.isCaptionsEnabled()) {
             ensureCaptionsLoaded()
         }
 
@@ -3410,7 +3496,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // HDR can produce a visible benefit. This also handles an enabled
         // value restored onto an SDR-only phone.
         val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context) &&
-            !frameInterpolationBlocksHdr()
+            !effectGraphBlocksHdr()
         val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
         val qualities = if (includeHdr) {
             result.qualities
@@ -3420,10 +3506,19 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         return result.copy(qualities = qualities)
     }
 
-    /** One-shot HDR-to-SDR recovery shared by source and decoder failures. */
+    /**
+     * One-shot HDR-to-SDR recovery shared by source and decoder failures.
+     *
+     * Not for a 403. HDR and SDR come from one visionOS response, signed under
+     * one token, so a refused HDR URL means the SDR one beside it is refused
+     * too: reloading it only failed again and spent a second token replacement
+     * on the way. [recoverFromSourceError] re-resolves the whole ladder instead,
+     * and the fallback stays armed for a failure HDR itself causes.
+     */
     private fun fallbackFromHdr(error: PlaybackException): Boolean {
         val failed = _currentQuality.value ?: return false
         if (!failed.isHdr || hdrFallbackUsed) return false
+        if (httpResponseCode(error) == 403) return false
         val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), failed)
             ?: return false
 
@@ -3434,25 +3529,31 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             "HDR ${failed.displayLabel} failed; falling back to ${fallback.displayLabel}",
             error,
         )
-        if (httpResponseCode(error) == 403) {
-            viewModelScope.launch {
-                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
-            }
-        }
         reloadPreservingPosition(fallback)
         return true
     }
 
     /** Load the caption track list for the current video, once, on demand. */
     fun ensureCaptionsLoaded() {
-        if (_isLocalPlayback.value) return
         val video = _currentVideo.value ?: return
+        // A device file's subtitles are the tracks inside it, read by the
+        // player. A download is a YouTube video played from disk: its captions
+        // are the ones saved beside it when it was downloaded.
+        val isDownload = _isLocalPlayback.value && isDownloadedVideoId(video.videoId)
+        if (_isLocalPlayback.value && !isDownload) return
         if (captionsLoadedForVideoId == video.videoId) return
         captionsLoadedForVideoId = video.videoId
         _isCaptionsLoading.value = true
         viewModelScope.launch {
             try {
-                val tracks = youtubeRepository.getCaptionTracks(video.videoId)
+                val saved = if (isDownload) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        downloadedCaptions.tracks(video.videoId)
+                    }
+                } else emptyList()
+                // A download made before captions were kept has none saved;
+                // with a connection the live list still works for it.
+                val tracks = saved.ifEmpty { youtubeRepository.getCaptionTracks(video.videoId) }
                 // Ignore stale results if the user switched videos meanwhile
                 if (_currentVideo.value?.videoId == video.videoId) {
                     _captionTracks.value = tracks
@@ -3511,7 +3612,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             return
         }
         captionCuesJob = viewModelScope.launch {
-            val cues = youtubeRepository.getCaptionCues(track)
+            // Saved beside a download, or fetched: the store answers null for
+            // a track that is not one of its own.
+            val cues = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                downloadedCaptions.cues(track)
+            }
+                ?: youtubeRepository.getCaptionCues(track)
             // Ignore a load the user has already switched away from
             if (_selectedCaption.value == track) {
                 _captionCues.value = cues
@@ -3577,15 +3683,19 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         com.ivor.ivormusic.service.VideoPlaybackService.stop(context)
         // Whatever opens next - even this same video - gets a fresh chance.
         frameInterpolation.reset()
-        // Smooth motion can only be added or removed by building a new player,
-        // and this is the one moment nothing holds the old one: the session is
-        // gone (just above) and the overlay disposes its views with the video.
-        if (_exoPlayer != null &&
-            playerHasInterpolation != frameInterpolationWanted()
+        // Smooth motion and video shaders can only be added or removed by
+        // building a new player, and this is the one moment nothing holds the
+        // old one: the session is gone (just above) and the overlay disposes
+        // its views with the video.
+        if (_exoPlayer != null && (
+            playerHasInterpolation != frameInterpolationWanted() ||
+                _playerHasVideoShaders.value != videoShadersWanted()
+            )
         ) {
             _exoPlayer?.release()
             _exoPlayer = null
             playerHasInterpolation = false
+            _playerHasVideoShaders.value = false
         }
         // An explicit close means "I'm done with this video" - the opposite
         // of what the resume snapshot is for, so it must not reappear next
@@ -3665,8 +3775,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * [precise] and keep exact seeking.
      */
     /**
-     * Draw the paused frame again once a new surface has its size, when
-     * Smooth motion's effect graph is installed.
+     * Draw the paused frame again once a new surface has its size, when the
+     * effect graph is installed (Smooth motion, video shaders or both), and
+     * when a shader setting changes under a paused video.
      *
      * The graph draws at the output surface's size, and a view taking the
      * surface over (the mini bar handing to the page, fullscreen back to
@@ -3681,7 +3792,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * is drawn at the new size.
      */
     private fun redrawPausedFrameThroughGraph() {
-        if (!playerHasInterpolation) return
+        // [scar, October 2026] This asked for Smooth motion alone, so a player
+        // carrying only the shader stage went fullscreen while paused with its
+        // frame still drawn at the portrait surface's size: a small rectangle
+        // in one corner until Play.
+        if (!playerHasEffectGraph()) return
         graphRedrawJob?.cancel()
         graphRedrawJob = viewModelScope.launch {
             delay(GRAPH_REDRAW_SETTLE_MS)

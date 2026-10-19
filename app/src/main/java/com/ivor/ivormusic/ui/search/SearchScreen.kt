@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.search
 
+import com.ivor.ivormusic.data.isMissingChannelName
 import com.ivor.ivormusic.ui.video.videoListItems
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -310,6 +311,7 @@ fun SearchScreen(
 
     // Video mode browse state: trending feed doubles as the explore list
     val trendingVideos by viewModel.trendingVideos.collectAsState()
+    val isVideoFeedLoading by viewModel.isVideoLoading.collectAsState()
     LaunchedEffect(videoMode) {
         if (videoMode && trendingVideos.isEmpty()) {
             viewModel.loadTrendingVideos()
@@ -666,7 +668,7 @@ fun SearchScreen(
                             item {
                                 val video = state.video
                                 val subtitle = listOfNotNull(
-                                    video.channelName.takeIf { it.isNotBlank() && it != "Unknown" },
+                                    video.channelName.takeUnless(::isMissingChannelName),
                                     video.viewCount.takeIf { it.isNotBlank() },
                                     video.uploadedDate
                                 ).joinToString(" • ")
@@ -841,6 +843,35 @@ fun SearchScreen(
                 // Video mode browse: trending instead of the music library.
                 // The old hard-coded category chips duplicated search and made
                 // this state read like an Explore page rather than history.
+                // An empty feed that is not loading stays empty: recommendations
+                // are switched off, the phone is offline, or the request came
+                // back with nothing. Spinning there never ended.
+                videoMode && query.isEmpty() && trendingVideos.isEmpty() && !isVideoFeedLoading -> {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = secondaryTextColor.copy(alpha = 0.5f)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    stringResource(R.string.search_video_idle_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = secondaryTextColor
+                                )
+                            }
+                        }
+                    }
+                }
+
                 videoMode && query.isEmpty() -> {
                     item {
                         Text(
@@ -2392,7 +2423,10 @@ fun PlaylistResultCard(
                       Spacer(modifier = Modifier.size(6.dp))
                       val metadata = if (isAlbum) {
                           if (item.hasReleaseMetadata) item.displaySubtitle()
-                          else stringResource(R.string.album_metadata, item.uploaderName)
+                          else stringResource(
+                              R.string.album_metadata,
+                              item.uploaderName.ifBlank { stringResource(R.string.unknown_artist) },
+                          )
                       } else {
                           buildList {
                               add(stringResource(R.string.label_playlist))

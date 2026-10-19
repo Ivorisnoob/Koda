@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.FormatAlignCenter
+import androidx.compose.material.icons.rounded.FormatAlignLeft
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,6 +56,25 @@ internal fun LyricsSettingsPage(
         itemSpacing = 4.dp
     ) {
         item {
+            // How lyrics look, ahead of where they come from: the one choice
+            // here that changes something on screen.
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val prefs = remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
+            val centered by prefs.lyricsCentered.collectAsState()
+            SettingsCard {
+                SettingsChoiceRow(
+                    icon = if (centered) Icons.Rounded.FormatAlignCenter else Icons.Rounded.FormatAlignLeft,
+                    title = stringResource(R.string.lyrics_alignment),
+                    subtitle = stringResource(R.string.lyrics_alignment_sub),
+                    labels = listOf(
+                        stringResource(R.string.lyrics_alignment_left),
+                        stringResource(R.string.lyrics_alignment_centre)
+                    ),
+                    selectedIndex = if (centered) 1 else 0,
+                    onSelect = { prefs.setLyricsCentered(it == 1) }
+                )
+            }
+            Spacer(Modifier.height(12.dp))
             SettingsCard {
                 SettingsToggleRow(
                     icon = Icons.Rounded.Cloud,

@@ -2,6 +2,28 @@ package com.ivor.ivormusic.service
 
 import com.ivor.ivormusic.data.AudioProfile
 
+/**
+ * How two tracks are handed over during an overlap. One move for every pair
+ * was the giveaway that a machine was mixing; which one fits is decided by
+ * what the planner knows about the pair.
+ */
+enum class TransitionStyle {
+    /** An equal-power fade, with the outgoing track's bass eased out when the keys call for it. */
+    BLEND,
+
+    /**
+     * A long beat-matched blend in which the low end changes hands at the
+     * midpoint, so there are never two basslines at once.
+     */
+    BASS_SWAP,
+
+    /**
+     * For two tempos that cannot be matched: the outgoing track is cut loose
+     * into its own echo, and the new song comes in under the repeats.
+     */
+    ECHO_OUT,
+}
+
 /** A conservative, explainable decision for one automatic track change. */
 data class TransitionPlan(
     val overlapMs: Long,
@@ -19,6 +41,9 @@ data class TransitionPlan(
      * length fade at the point the music actually stopped.
      */
     val prepareLeadMs: Long = 0L,
+    val style: TransitionStyle = TransitionStyle.BLEND,
+    /** The echo's repeat time, for [TransitionStyle.ECHO_OUT]. */
+    val echoDelayMs: Int = 0,
 ) {
     val shouldOverlap: Boolean get() = overlapMs > 0L
 
@@ -96,7 +121,17 @@ object TransitionPlanner {
             TransitionPlan.HarmonicMatch.UNKNOWN -> 0f
         }
 
-        fun result(overlap: Long, reason: TransitionPlan.Reason): TransitionPlan {
+        /**
+         * @param startLeadMs where the outgoing track's ending begins, when
+         *   that is further from the end than the overlap is long. The mix
+         *   then starts there and the track is left once the overlap is over,
+         *   with its outro unplayed - see [MAX_EARLY_EXIT_MS].
+         */
+        fun result(
+            overlap: Long,
+            reason: TransitionPlan.Reason,
+            startLeadMs: Long = 0L,
+        ): TransitionPlan {
             val harmonicallySafe = minOf(maximum, if (harmonic == TransitionPlan.HarmonicMatch.CLASH) {
                 minOf(overlap, CLASH_MAX_OVERLAP_MS)
             } else overlap)
@@ -104,28 +139,42 @@ object TransitionPlanner {
             // natural fade stays at one second and a key clash stays at three.
             val ruleMaximum = minOf(maximum, harmonicallySafe)
             val canProcess = tempo.compatible && harmonicallySafe > NATURAL_FADE_OVERLAP_MS
+            // Leaving early is for a real mix only: both songs on one beat and
+            // in keys that sit together. Anything less keeps the whole ending.
+            val earlyExitCap = if (outgoingDurationMs > 0L) {
+                minOf(MAX_EARLY_EXIT_MS, outgoingDurationMs / 4L)
+            } else MAX_EARLY_EXIT_MS
+            val leavesEarly = canProcess &&
+                harmonic != TransitionPlan.HarmonicMatch.CLASH &&
+                minOf(startLeadMs, earlyExitCap) > harmonicallySafe
+            val requestedLead = if (leavesEarly) minOf(startLeadMs, earlyExitCap) else harmonicallySafe
             val cue = incomingCue(
                 incoming,
                 silenceStart,
                 baseSpeed.coerceAtLeast(0.01f) * if (canProcess) tempo.speed else 1f,
                 alignBars,
             )
-            val beatAligned = if (canProcess) alignOutgoingBoundary(
-                requestedLeadMs = harmonicallySafe,
-                maximumLeadMs = ruleMaximum,
+            val alignedLead = if (canProcess) alignOutgoingBoundary(
+                requestedLeadMs = requestedLead,
+                maximumLeadMs = if (leavesEarly) earlyExitCap else ruleMaximum,
                 durationMs = outgoingDurationMs,
                 profile = outgoing,
                 incomingDownbeatDelayMs = cue.downbeatDelayMs,
                 alignBars = alignBars,
-            ) else harmonicallySafe
+            ) else requestedLead
+            val overlapMs = if (leavesEarly) minOf(harmonicallySafe, alignedLead) else alignedLead
             return TransitionPlan(
-                overlapMs = beatAligned,
+                overlapMs = overlapMs,
                 incomingStartMs = cue.startMs,
                 reason = reason,
                 incomingSpeed = if (canProcess) tempo.speed else 1f,
                 filterSweepStrength = if (canProcess) filterStrength else 0f,
                 harmonicMatch = harmonic,
                 incomingDownbeatDelayMs = if (canProcess) cue.downbeatDelayMs else 0L,
+                prepareLeadMs = if (leavesEarly) alignedLead else 0L,
+                style = if (canProcess && overlapMs >= BASS_SWAP_MIN_OVERLAP_MS) {
+                    TransitionStyle.BASS_SWAP
+                } else TransitionStyle.BLEND,
             )
         }
 
@@ -175,8 +224,16 @@ object TransitionPlanner {
             )
         }
 
+        // Two tempos that are known and cannot be brought together. Blending
+        // them is two beats fighting, so the outgoing track is echoed out
+        // instead: four of its beats long, repeating on the half beat.
         if (tempo.confident && !tempo.compatible) {
-            return result(minOf(fallback, 1_500L), TransitionPlan.Reason.TEMPO_MISMATCH)
+            val beatMs = 60_000f / (outgoing.outroBpm ?: 120f)
+            val overlap = (beatMs * 4f).toLong().coerceIn(MIN_ECHO_OUT_MS, MAX_ECHO_OUT_MS)
+            return result(minOf(maximum, overlap), TransitionPlan.Reason.TEMPO_MISMATCH).copy(
+                style = TransitionStyle.ECHO_OUT,
+                echoDelayMs = (beatMs / 2f).toInt().coerceIn(MIN_ECHO_DELAY_MS, MAX_ECHO_DELAY_MS),
+            )
         }
 
         // Long overlaps require a reliable matching pulse on both sides.
@@ -186,16 +243,26 @@ object TransitionPlanner {
         }
 
         val phrase = outgoing.phraseOutroLeadMs
+        // A boundary on a bar line can be acted on from further out than an
+        // energy dip alone: the mix starts where the ending starts, even when
+        // that is longer ago than the overlap lasts.
         if (outgoing.phraseConfidence >= MIN_PHRASE_CONFIDENCE &&
-            phrase in MIN_OUTRO_BOUNDARY_MS..MAX_OUTRO_BOUNDARY_MS
+            phrase in MIN_OUTRO_BOUNDARY_MS..MAX_EARLY_EXIT_MS
         ) {
-            return result(minOf(maximum, phrase), TransitionPlan.Reason.PHRASE_BOUNDARY)
+            return result(
+                minOf(maximum, phrase),
+                TransitionPlan.Reason.PHRASE_BOUNDARY,
+                startLeadMs = phrase,
+            )
         }
 
         // A measured outro is more useful than an arbitrary duration: begin
         // where the energy actually falls, up to AutoMix's conservative cap.
+        // The ending is now looked for further back than an overlap can reach.
+        // Without a bar line to trust, a longer one is not left early: the
+        // overlap is capped and simply starts inside it.
         val outro = outgoing.outroLeadMs
-        if (outro in MIN_OUTRO_BOUNDARY_MS..MAX_OUTRO_BOUNDARY_MS) {
+        if (outro in MIN_OUTRO_BOUNDARY_MS..MAX_EARLY_EXIT_MS) {
             return result(
                 minOf(maximum, outro).coerceAtLeast(MIN_OVERLAP_MS),
                 TransitionPlan.Reason.OUTRO_BOUNDARY,
@@ -326,7 +393,6 @@ object TransitionPlanner {
     private const val MIN_OVERLAP_MS = 750L
     private const val MAX_OVERLAP_MS = 15_000L
     private const val MIN_OUTRO_BOUNDARY_MS = 750L
-    private const val MAX_OUTRO_BOUNDARY_MS = 15_000L
     private const val NATURAL_FADE_THRESHOLD_MS = 900L
     private const val NATURAL_FADE_OVERLAP_MS = 1_000L
     private const val ABRUPT_END_OVERLAP_MS = 750L
@@ -336,9 +402,27 @@ object TransitionPlanner {
     private const val MIN_GRID_CONFIDENCE = 0.4f
     private const val MIN_PHRASE_CONFIDENCE = 0.4f
     private const val MIN_KEY_CONFIDENCE = 0.08f
-    private const val MIN_TEMPO_SPEED = 0.96f
-    private const val MAX_TEMPO_SPEED = 1.04f
+    // Eight percent, up from four: the tempo change now goes through a
+    // stretcher made for music (MusicTimeStretcher), and this is as far as a
+    // DJ's pitch fader goes with key lock on. Matches CrossfadeEngine's clamp.
+    private const val MIN_TEMPO_SPEED = 0.92f
+    private const val MAX_TEMPO_SPEED = 1.08f
     private const val CLASH_MAX_OVERLAP_MS = 3_000L
+
+    /** A blend at least this long is long enough to swap the bass in. */
+    private const val BASS_SWAP_MIN_OVERLAP_MS = 6_000L
+
+    /**
+     * How far before its end a song may be left, when its ending is known to
+     * start there. The song's last half minute is the most a mix gives up;
+     * the planner also never takes more than a quarter of a track.
+     */
+    private const val MAX_EARLY_EXIT_MS = 32_000L
+
+    private const val MIN_ECHO_OUT_MS = 1_500L
+    private const val MAX_ECHO_OUT_MS = 3_000L
+    private const val MIN_ECHO_DELAY_MS = 150
+    private const val MAX_ECHO_DELAY_MS = 450
 
     /** Dead air worth special handling starts where the ordinary outro
      *  boundary search gives up; it may extend to a full minute. */

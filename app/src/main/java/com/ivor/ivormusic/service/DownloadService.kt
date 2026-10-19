@@ -144,6 +144,7 @@ class DownloadService : Service() {
                         totalBytes = active.totalBytes,
                         queuedCount = queued,
                         isVideo = active.request.isVideo,
+                        finishing = active.finishing,
                         artwork = NotificationArtworkLoader.cached(artUrl)
                     )
                 } else {
@@ -175,6 +176,7 @@ class DownloadService : Service() {
             totalBytes = active?.totalBytes ?: 0,
             queuedCount = queued,
             isVideo = active?.request?.isVideo ?: false,
+            finishing = active?.finishing ?: false,
             artwork = NotificationArtworkLoader.cached(active?.request?.thumbnailUrl)
         )
     }

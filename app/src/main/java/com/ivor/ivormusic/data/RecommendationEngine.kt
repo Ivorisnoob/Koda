@@ -26,6 +26,7 @@ class RecommendationEngine(
     private val statsRepository = StatsRepository(context)
     private val searchHistoryRepository = SearchHistoryRepository(context)
     private val likedSongsRepository = LikedSongsRepository(context)
+    private val tasteProfileStore = TasteProfileStore(context)
 
     data class TasteProfile(
         /** Artist names ranked by recency-weighted listening, best first. */
@@ -33,9 +34,12 @@ class RecommendationEngine(
         /** The user's highest-scoring YouTube songs (radio seed candidates). */
         val topSongs: List<PlayHistoryEntry>,
         /** Most recent search queries, newest first. */
-        val recentSearches: List<String>
+        val recentSearches: List<String>,
+        /** Genres picked in taste setup. Never inferred: nothing here knows a song's genre. */
+        val genres: List<String> = emptyList()
     ) {
-        fun isEmpty() = topArtists.isEmpty() && topSongs.isEmpty() && recentSearches.isEmpty()
+        fun isEmpty() =
+            topArtists.isEmpty() && topSongs.isEmpty() && recentSearches.isEmpty() && genres.isEmpty()
     }
 
     /**
@@ -106,15 +110,41 @@ class RecommendationEngine(
             if (isUnknownArtist(artist)) continue
             artistScores.merge(artist, score, Double::plus)
         }
-        val topArtists = artistScores.entries
+        val playedArtists = artistScores.entries
             .sortedByDescending { it.value }
             .take(MAX_ARTISTS)
             .map { it.key }
 
+        // What the user said they like, beside what the history shows. On a
+        // new install it is the whole profile; later the two alternate, so a
+        // followed artist keeps a seat without crowding out this week's
+        // listening. Shuffled, because a follow list has no ranking and the
+        // same first four would otherwise seed every refresh.
+        val stated = tasteProfileStore.current()
+        val statedArtists = stated.artists.map { it.name }.filterNot { isUnknownArtist(it) }.shuffled()
+        val topArtists = alternate(playedArtists, statedArtists)
+            .distinctBy { it.trim().lowercase() }
+            .take(MAX_ARTISTS)
+
+        // Songs said yes to in the taste deck seed radios once the history
+        // has run out of its own, never ahead of it.
+        val statedSongs = stated.songs.map { song ->
+            PlayHistoryEntry(
+                songId = song.id,
+                title = song.title,
+                artist = song.artist,
+                album = "",
+                timestamp = now,
+                duration = 0L,
+                thumbnailUrl = song.thumbnailUrl
+            )
+        }
+
         TasteProfile(
             topArtists = topArtists,
-            topSongs = topSongs,
-            recentSearches = searchHistoryRepository.getHistory().take(MAX_RECENT_SEARCHES)
+            topSongs = (topSongs + statedSongs).distinctBy { it.songId }.take(MAX_TOP_SONGS),
+            recentSearches = searchHistoryRepository.getHistory().take(MAX_RECENT_SEARCHES),
+            genres = stated.genres.map { it.title }
         )
     }
 
@@ -177,6 +207,7 @@ class RecommendationEngine(
         val seedQueries = buildList {
             profile.topArtists.take(3).forEach { add("$it songs") }
             profile.recentSearches.take(2).forEach { add(it) }
+            profile.genres.shuffled().take(2).forEach { add("$it music") }
         }
 
         val searchBuckets = seedQueries.map { query ->
@@ -264,7 +295,15 @@ class RecommendationEngine(
             }
         }
 
-        val buckets = (searchBuckets + searchHistoryBucket + radioBuckets)
+        val genreBuckets = profile.genres.shuffled().take(1).map { genre ->
+            async {
+                runCatching {
+                    youTubeRepository.search("new $genre songs", YouTubeRepository.FILTER_SONGS)
+                }.getOrDefault(emptyList())
+            }
+        }
+
+        val buckets = (searchBuckets + searchHistoryBucket + radioBuckets + genreBuckets)
             .map { it.await() }
             .map { bucket -> bucket.filter { it.id !in excludeIds } }
             .filter { it.isNotEmpty() }
@@ -371,6 +410,14 @@ class RecommendationEngine(
             i++
         }
         return out
+    }
+
+    /** Two ranked lists taken in turn, first from [first]; whichever runs out stops contributing. */
+    private fun alternate(first: List<String>, second: List<String>): List<String> = buildList {
+        for (index in 0 until maxOf(first.size, second.size)) {
+            first.getOrNull(index)?.let(::add)
+            second.getOrNull(index)?.let(::add)
+        }
     }
 
     /** Round-robin merge so one seed doesn't dominate the top of the feed. */

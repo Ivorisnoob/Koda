@@ -79,6 +79,9 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -560,6 +563,21 @@ fun ArtistScreen(
         }
     }
 
+    // Following is Koda's own: a note on this device that the user likes
+    // this artist, read by the recommendations and listed in the Library.
+    // Nothing is sent to YouTube, so it needs no account. An artist that is
+    // only an unknown tag on some files has nothing to follow.
+    val followContext = androidx.compose.ui.platform.LocalContext.current
+    val tasteStore = remember(followContext) { com.ivor.ivormusic.data.TasteProfileStore(followContext) }
+    val tasteProfile by tasteStore.profile.collectAsState()
+    val canFollow = !isUnknownArtist(artistPage?.name ?: artistName)
+    val followArtist = com.ivor.ivormusic.data.TasteArtist(
+        id = (resolvedChannelId ?: artistId).orEmpty().takeIf { it.startsWith("UC") }.orEmpty(),
+        name = displayName,
+        thumbnailUrl = heroFallback.second ?: heroFallback.first
+    )
+    val isFollowing = tasteProfile.artists.any { it.sameArtistAs(followArtist) }
+
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
 
@@ -622,6 +640,15 @@ fun ArtistScreen(
                                 bannerUrl = artistPage?.bannerUrl,
                                 fallbackUrl = heroFallback.first,
                                 fallbackHighResUrl = heroFallback.second,
+                                isFollowing = isFollowing,
+                                onFollowToggle = if (canFollow) {
+                                    {
+                                        if (isFollowing) tasteStore.unfollow(followArtist)
+                                        else tasteStore.follow(followArtist)
+                                    }
+                                } else {
+                                    null
+                                },
                                 // Read in the layer, not in composition, so a
                                 // scroll redraws the photo without recomposing.
                                 scrollOffsetPx = {
@@ -1045,6 +1072,9 @@ private fun ArtistHero(
     bannerUrl: String?,
     fallbackUrl: String?,
     fallbackHighResUrl: String?,
+    isFollowing: Boolean,
+    /** Null where there is nothing to follow (an unknown-artist tag). */
+    onFollowToggle: (() -> Unit)?,
     scrollOffsetPx: () -> Float,
     modifier: Modifier = Modifier,
 ) {
@@ -1183,6 +1213,10 @@ private fun ArtistHero(
                         }
                     }
                 }
+                if (onFollowToggle != null) {
+                    Spacer(Modifier.height(14.dp))
+                    ArtistFollowButton(following = isFollowing, onClick = onFollowToggle)
+                }
             }
 
             // The content sheet's rounded edge, rising over the photo's foot.
@@ -1197,6 +1231,45 @@ private fun ArtistHero(
                     )
             )
         }
+    }
+}
+
+/**
+ * Follow, as a toggle that carries its state in its fill and squares off as it
+ * takes: "Following" reads as something done, not as a second thing to press.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ArtistFollowButton(following: Boolean, onClick: () -> Unit) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    ToggleButton(
+        checked = following,
+        onCheckedChange = {
+            haptics.performHapticFeedback(
+                if (following) {
+                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff
+                } else {
+                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOn
+                }
+            )
+            onClick()
+        },
+        modifier = Modifier.heightIn(min = 44.dp),
+        colors = ToggleButtonDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
+    ) {
+        Icon(
+            imageVector = if (following) Icons.Rounded.Check else Icons.Rounded.Add,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = stringResource(if (following) R.string.artist_following else R.string.artist_follow),
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 

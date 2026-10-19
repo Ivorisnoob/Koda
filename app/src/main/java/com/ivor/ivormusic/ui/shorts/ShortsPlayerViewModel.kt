@@ -660,6 +660,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         nextSequenceParams = null
         refreshSequenceForProfile = false
         _isActive.value = false
+        playDeferredToForeground = false
         playJob?.cancel()
         watchNextJob?.cancel()
         // Reopening is a fresh tap, never the tail of a streak.
@@ -697,6 +698,35 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     /** Pause without closing (e.g. app backgrounded while a Short is open). */
     fun pause() {
         _exoPlayer?.pause()
+    }
+
+    private var isInBackground = false
+    private var playDeferredToForeground = false
+
+    /**
+     * The app stopped being visible (screen locked, home, another app).
+     *
+     * More than a pause: a Short that is still resolving, recovering or
+     * falling back when this lands used to finish that work and call play()
+     * anyway, so it started sounding behind the lock screen.
+     */
+    fun onEnterBackground() {
+        isInBackground = true
+        _exoPlayer?.pause()
+    }
+
+    /** Visible again: start only what finished loading while it was hidden. */
+    fun onEnterForeground() {
+        isInBackground = false
+        if (playDeferredToForeground) {
+            playDeferredToForeground = false
+            if (_isActive.value) _exoPlayer?.play()
+        }
+    }
+
+    /** play() for work that completes on its own time rather than on a tap. */
+    private fun playWhenVisible() {
+        if (isInBackground) playDeferredToForeground = true else _exoPlayer?.play()
     }
 
     /** Re-attempt playback of the current Short after an error. */
@@ -765,9 +795,16 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         }
     }
 
+    /**
+     * One-shot HDR-to-SDR recovery. Not for a 403: HDR and SDR are signed
+     * under one token, so the SDR URL is refused too, and reloading it spent
+     * a second token replacement; [recoverFromSourceError] re-resolves instead.
+     * Mirrors VideoPlayerViewModel.
+     */
     private fun fallbackFromHdr(error: PlaybackException): Boolean {
         val failed = currentQuality ?: return false
         if (!failed.isHdr || hdrFallbackUsed) return false
+        if (httpResponseCode(error) == 403) return false
         val item = currentItem() ?: return false
         val qualities = cachedQualities(item.videoId).orEmpty()
         val fallback = bestSdrFallback(qualities, failed) ?: return false
@@ -779,14 +816,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             "HDR ${failed.displayLabel} failed; falling back to ${fallback.displayLabel}",
             error,
         )
-        if (httpResponseCode(error) == 403) {
-            invalidatePrefetchedQualities()
-            viewModelScope.launch {
-                youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
-            }
-        }
         loadQuality(fallback, startAtMs = position)
-        _exoPlayer?.play()
+        playWhenVisible()
         return true
     }
 
@@ -814,7 +845,9 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         recoveryJob = viewModelScope.launch {
             try {
                 if (httpResponseCode(original) == 403) {
-                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
+                    youtubeRepository.refreshVisitorDataAfterPlaybackFailure(
+                        com.ivor.ivormusic.data.httpFailureUrl(original),
+                    )
                     invalidatePrefetchedQualities()
                 } else {
                     synchronized(qualitiesCache) { qualitiesCache.remove(item.videoId) }
@@ -833,7 +866,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 }
                 cacheQualities(item.videoId, qualities)
                 loadQuality(pickDefaultQuality(qualities), startAtMs = resumeAt)
-                _exoPlayer?.play()
+                playWhenVisible()
                 _playbackError.value = null
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -945,7 +978,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     }
                     if (qualities.isNotEmpty()) {
                         loadQuality(pickDefaultQuality(qualities))
-                        _exoPlayer?.play()
+                        playWhenVisible()
                     } else {
                         // No second NewPipe extraction: it repeats the failure
                         // the resolver just had (see VideoPlayerViewModel).

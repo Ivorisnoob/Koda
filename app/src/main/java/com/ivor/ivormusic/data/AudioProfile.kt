@@ -55,8 +55,8 @@ data class AudioProfile(
      *
      * The last point at which the energy drops and stays down, so an overlap
      * anchored here begins at a musical boundary instead of over the middle of
-     * a phrase. Zero when no such point was found, which means "use the
-     * duration the user asked for".
+     * a phrase. Looked for across the last fifty seconds. Zero when no such
+     * point was found, which means "use the duration the user asked for".
      */
     val outroLeadMs: Long = 0,
 
@@ -116,6 +116,9 @@ data class AudioProfile(
         // marker explicitly, and measures the outro key independently.
         // Version 6 adds trailingSilenceMs for the AutoMix silence skip.
         // Version 7 discards silence skips inferred from failed/empty probes.
-        const val CURRENT_VERSION = 7
+        // Version 8 looks for the start of the ending up to fifty seconds
+        // out, where it was twenty, so outroLeadMs and phraseOutroLeadMs can
+        // be that large.
+        const val CURRENT_VERSION = 8
     }
 }

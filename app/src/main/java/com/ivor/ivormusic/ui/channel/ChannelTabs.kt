@@ -3,6 +3,7 @@ package com.ivor.ivormusic.ui.channel
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -955,13 +956,18 @@ private fun AboutCard(title: String, content: @Composable () -> Unit) {
  * into equal squares loses what the post was about.
  */
 @Composable
-private fun ChannelPostCard(
+internal fun ChannelPostCard(
     post: ChannelPost,
     onPlayVideo: (VideoItem) -> Unit,
     /** Null when the post has no page of its own to hang comments off. */
     onOpenComments: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> }
+    onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> },
+    /**
+     * Opens the author's channel. Null on the channel page itself, where the
+     * author is the page; set where a post is met in a feed.
+     */
+    onAuthorClick: (() -> Unit)? = null
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -970,6 +976,13 @@ private fun ChannelPostCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
+                modifier = if (onAuthorClick != null) {
+                    Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onAuthorClick)
+                } else {
+                    Modifier
+                },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {

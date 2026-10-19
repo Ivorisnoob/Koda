@@ -9,6 +9,35 @@ import kotlinx.serialization.json.Json
 private const val HOME_RECOMMENDATION_LIMIT = 30
 private const val HOME_RECOMMENDATION_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
 
+/** How many parsed songs a Home fetch keeps for a refresh to rotate through. */
+internal const val HOME_RECOMMENDATION_POOL = 90
+
+/** The songs at the head of Home that a refresh is expected to change. */
+internal const val HOME_LEAD_SIZE = 6
+
+/**
+ * Reorder a fetched Home list so a refresh leads with songs that have not led
+ * recently.
+ *
+ * YouTube Music answers a refresh with much the same list in the same order,
+ * and Home draws from the head of it, so pulling to refresh showed the same
+ * three covers every time. Songs that have not led go first, in the order
+ * YouTube ranked them; the ones that have follow, longest ago first, so the
+ * list comes round again once everything has had its turn.
+ *
+ * @param recentLeads ids that led recently, oldest first.
+ */
+internal fun rotateHomeRecommendations(
+    songs: List<Song>,
+    recentLeads: List<String>
+): List<Song> {
+    if (recentLeads.isEmpty()) return songs
+    val ledAt = HashMap<String, Int>()
+    recentLeads.forEachIndexed { index, id -> ledAt[id] = index }
+    val (led, fresh) = songs.partition { it.id in ledAt }
+    return fresh + led.sortedBy { ledAt.getValue(it.id) }
+}
+
 /** Drop renderer placeholders before they reach Home's three artwork shapes. */
 internal fun usableHomeRecommendations(
     sources: List<List<Song>>,

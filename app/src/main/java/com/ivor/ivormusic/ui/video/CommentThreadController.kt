@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  * The players still carry their own copies, interleaved with per-video
  * bookkeeping; this is the self-contained form, built for community posts,
  * that they could move onto. [viaBrowse] picks the endpoint the thread's
- * continuations answer on (see [YouTubeRepository.getCommentsPage]).
+ * continuations answer on (see [com.ivor.ivormusic.data.youtube.CommentThreads.getCommentsPage]).
  *
  * Every write lands only if the thread it was started for is still the open
  * one: [generation] moves on each [load], so a slow response for a thread

@@ -51,6 +51,14 @@ object AudioProfiler {
     private const val HEAD_WINDOW_US = 15_000_000L
     private const val TAIL_WINDOW_US = 20_000_000L
 
+    /** Loudness only, over the half minute before the tail, to find where an ending starts. */
+    private const val STRUCTURE_WINDOW_US = 30_000_000L
+    private const val MIN_STRUCTURE_WINDOW_US = 5_000_000L
+
+    /** What the structure pass may spend, and what it must leave of the whole budget. */
+    private const val STRUCTURE_BUDGET_MS = 6_000L
+    private const val STRUCTURE_RESERVE_MS = 2_000L
+
     /** Envelope resolution. Fine enough to see a fade, coarse enough to be cheap. */
     private const val WINDOW_MS = 20
 
@@ -98,7 +106,10 @@ object AudioProfiler {
             if (uri.scheme == "http" || uri.scheme == "https") {
                 val cacheFactory = factory ?: return@withContext null
                 source = CacheBackedDataSource(cacheFactory, uri, cacheKey, checkWork)
-                if (source.getSize() <= 0) return@withContext null
+                if (source.getSize() <= 0) {
+                    KLog.d(TAG, "No profile for $songId: stream size unknown")
+                    return@withContext null
+                }
                 extractor.setDataSource(source)
             } else {
                 extractor.setDataSource(context, uri, emptyMap())
@@ -124,7 +135,15 @@ object AudioProfiler {
 
             // A timeout or truncated read can leave plausible-looking samples.
             // Never persist those as the true opening/ending of the recording.
-            if (!head.complete || !tail.complete) return@withContext null
+            if (!head.complete || !tail.complete) {
+                KLog.d(
+                    TAG,
+                    "No profile for $songId: incomplete decode " +
+                        "head=${head.complete}(${head.samples.size}) " +
+                        "tail=${tail.complete}(${tail.samples.size})"
+                )
+                return@withContext null
+            }
 
             val rhythm = analyseRhythm(head)
             val outroRhythm = analyseRhythm(tail)
@@ -140,7 +159,6 @@ object AudioProfiler {
                 durationMs = measuredDurationMs,
                 beatsPerGrid = 1,
             )
-            val rawOutroLead = outroLead(tail.envelope)
             val measuredSilenceMs = measuredTailSilenceMs(tail.envelope)
                 .coerceAtMost(tailWindowUs / 1000L)
             val trailingSilenceMs = if (tailWindowUs == TAIL_WINDOW_US &&
@@ -152,15 +170,54 @@ object AudioProfiler {
             } else {
                 measuredSilenceMs
             }
+            val key = analyseKey(head.samples, head.sampleRate)
+            val outroKey = analyseKey(tail.samples, tail.sampleRate, fromEnd = true)
+            checkWork()
+
+            // Where the ending starts can be further back than the tail
+            // window: a song often drops into its outro half a minute out.
+            // The stretch before the tail is decoded for its loudness alone,
+            // and only the ending's start is read from it - tempo, key and
+            // silence still come from the tail, where they are measured
+            // without a long window's drift.
+            //
+            // Last, and on a budget of its own. [scar October 2026] It first
+            // ran before the rest, against the profile's whole budget: that
+            // stretch is rarely cached, fetching it on a slow connection used
+            // the budget up, and the song ended with no profile at all - so
+            // every mix fell back to a plain fade. Everything above is already
+            // measured; this can only add to it, and an attempt that runs out
+            // of time is dropped and the ending looked for in the tail.
+            val structureUs = minOf(STRUCTURE_WINDOW_US, tailStartUs)
+            val structureDeadlineMs = minOf(
+                deadlineMs - STRUCTURE_RESERVE_MS,
+                SystemClock.elapsedRealtime() + STRUCTURE_BUDGET_MS,
+            )
+            val structure = if (structureUs >= MIN_STRUCTURE_WINDOW_US &&
+                SystemClock.elapsedRealtime() < structureDeadlineMs
+            ) {
+                val checkStructure = {
+                    analysisContext.ensureActive()
+                    check(SystemClock.elapsedRealtime() < structureDeadlineMs) { "Structure budget exhausted" }
+                }
+                try {
+                    decodeAudio(extractor, format, tailStartUs - structureUs, structureUs, checkStructure)
+                        .takeIf { it.complete }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+            } else null
+            val rawOutroLead = outroLead(
+                if (structure != null) structure.envelope + tail.envelope else tail.envelope
+            )
             val phrase = analysePhraseBoundary(
                 rawOutroLeadMs = rawOutroLead,
                 durationMs = measuredDurationMs,
                 rhythm = outroRhythm,
                 gridOriginMs = tailStartMs + outroRhythm.downbeatOffsetMs,
             )
-            val key = analyseKey(head.samples, head.sampleRate)
-            val outroKey = analyseKey(tail.samples, tail.sampleRate, fromEnd = true)
-            checkWork()
 
             AudioProfile(
                 songId = songId,

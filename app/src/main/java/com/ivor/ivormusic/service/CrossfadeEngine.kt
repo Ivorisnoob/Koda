@@ -81,6 +81,8 @@ class CrossfadeEngine(
     private val gainFor: (player: ExoPlayer) -> Float,
     /** Per-player transition filter. Zero must be a true bypass. */
     private val setFilterSweep: (player: ExoPlayer, amount: Float) -> Unit = { _, _ -> },
+    /** Per-player echo, for an echo-out. Zero must be a true bypass. */
+    private val setEcho: (player: ExoPlayer, amount: Float, delayMs: Int) -> Unit = { _, _, _ -> },
 ) {
 
     private val playerA: ExoPlayer = playerFactory()
@@ -182,7 +184,7 @@ class CrossfadeEngine(
      *
      * Every tempo write below is relative to this rather than to 1.0. The
      * transition speeds this engine applies are small corrections around the
-     * source tempo - [MIN_TRANSITION_SPEED]..[MAX_TRANSITION_SPEED], about four
+     * source tempo - [MIN_TRANSITION_SPEED]..[MAX_TRANSITION_SPEED], about eight
      * percent either way - so they multiply the base rather than replacing it,
      * and the tempo release eases back to the base instead of to 1.0. Before
      * this existed every resting write here was a literal 1.0, so any
@@ -286,6 +288,10 @@ class CrossfadeEngine(
         filterSweepStrength: Float = 0f,
         /** Natural transitions prepare early, then begin at this remainder. */
         startAtRemainingMs: Long? = null,
+        /** How the two tracks are handed over; see [TransitionStyle]. */
+        style: TransitionStyle = TransitionStyle.BLEND,
+        /** The echo's repeat time for [TransitionStyle.ECHO_OUT]. */
+        echoDelayMs: Int = 0,
     ): Boolean {
         if (isFading) return false
         val outgoing = active
@@ -336,6 +342,8 @@ class CrossfadeEngine(
                     outgoing, incoming, fadeMs, targetIndex, outgoingItem,
                     filterSweepStrength.coerceIn(0f, 1f),
                     startAtRemainingMs,
+                    style,
+                    echoDelayMs,
                 )
             }.also { job ->
                 job.invokeOnCompletion {
@@ -360,6 +368,8 @@ class CrossfadeEngine(
         outgoingItem: MediaItem,
         filterSweepStrength: Float,
         startAtRemainingMs: Long?,
+        style: TransitionStyle,
+        echoDelayMs: Int,
     ) {
         fun queueStillMatches(): Boolean =
             active === outgoing &&
@@ -555,7 +565,27 @@ class CrossfadeEngine(
                 val angle = t * (Math.PI.toFloat() / 2f)
                 outgoing.volume = outGain * cos(angle) * duckGain
                 incoming.volume = inGain * sin(angle) * duckGain
-                setFilterSweep(outgoing, filterSweepStrength * t)
+                when (style) {
+                    TransitionStyle.BLEND -> setFilterSweep(outgoing, filterSweepStrength * t)
+                    // The low end changes hands in the middle. Two basslines
+                    // at once is the mud in a long blend, so the incoming
+                    // track arrives without its bass, and around the midpoint
+                    // it takes the bass over as the outgoing one gives it up.
+                    TransitionStyle.BASS_SWAP -> {
+                        val handover = smoothStep(BASS_SWAP_FROM, BASS_SWAP_TO, t)
+                        setFilterSweep(incoming, BASS_CUT_SWEEP * (1f - handover))
+                        setFilterSweep(
+                            outgoing,
+                            maxOf(BASS_CUT_SWEEP * handover, filterSweepStrength * t)
+                        )
+                    }
+                    // The outgoing track is cut loose into its own echo, so
+                    // two tempos that cannot be matched never play against
+                    // each other: what overlaps the new song is a repeat
+                    // dying away, not a second beat.
+                    TransitionStyle.ECHO_OUT ->
+                        setEcho(outgoing, smoothStep(ECHO_FROM, ECHO_TO, t), echoDelayMs)
+                }
 
                 if (t >= 1f) break
                 // The outgoing track running out is completion, not a race to
@@ -674,7 +704,8 @@ class CrossfadeEngine(
                 outgoing.stop()
                 outgoing.clearMediaItems()
                 outgoing.playbackParameters = baseParameters()
-                setFilterSweep(outgoing, 0f)
+                clearEffects(outgoing)
+                clearEffects(incoming)
             }.onFailure { KLog.w(TAG, "Could not fully retire outgoing player: ${it.message}") }
             runCatching { releaseTempo(incoming) }
         } catch (e: Exception) {
@@ -691,8 +722,8 @@ class CrossfadeEngine(
                 incoming.stop()
                 incoming.clearMediaItems()
                 incoming.playbackParameters = baseParameters()
-                setFilterSweep(incoming, 0f)
-                setFilterSweep(outgoing, 0f)
+                clearEffects(incoming)
+                clearEffects(outgoing)
                 outgoing.volume = gainFor(outgoing) * duckGain
             }
         } finally {
@@ -717,10 +748,21 @@ class CrossfadeEngine(
             incoming.clearMediaItems()
             incoming.volume = 0f
             incoming.playbackParameters = baseParameters()
-            setFilterSweep(incoming, 0f)
-            setFilterSweep(outgoing, 0f)
+            clearEffects(incoming)
+            clearEffects(outgoing)
             outgoing.volume = gainFor(outgoing) * duckGain
         }
+    }
+
+    /** Take every transition effect off [player]: filter and echo both. */
+    private fun clearEffects(player: ExoPlayer) {
+        setFilterSweep(player, 0f)
+        setEcho(player, 0f, 0)
+    }
+
+    private fun smoothStep(from: Float, to: Float, value: Float): Float {
+        val x = ((value - from) / (to - from)).coerceIn(0f, 1f)
+        return x * x * (3f - 2f * x)
     }
 
     /**
@@ -744,8 +786,8 @@ class CrossfadeEngine(
             standby.clearMediaItems()
             standby.volume = 0f
             standby.playbackParameters = baseParameters()
-            setFilterSweep(standby, 0f)
-            setFilterSweep(active, 0f)
+            clearEffects(standby)
+            clearEffects(active)
             active.volume = gainFor(active) * duckGain
         }
     }
@@ -824,8 +866,8 @@ class CrossfadeEngine(
     fun release() {
         fadeJob?.cancel()
         tempoReleaseJob?.cancel()
-        setFilterSweep(playerA, 0f)
-        setFilterSweep(playerB, 0f)
+        clearEffects(playerA)
+        clearEffects(playerB)
         runCatching { playerA.release() }
         runCatching { playerB.release() }
     }
@@ -899,14 +941,27 @@ class CrossfadeEngine(
          * desync [runFade]'s clock normalization from the audio it is mixing.
          */
         private const val MIN_BASE_SPEED = 0.1f
-        private const val MIN_TRANSITION_SPEED = 0.96f
-        private const val MAX_TRANSITION_SPEED = 1.04f
+        // Eight percent either way. It was four while the tempo change went
+        // through Sonic, which warbles on music; the music stretcher
+        // ([MusicTimeStretcher]) holds up further out, and eight is the range
+        // a DJ's pitch fader covers with key lock on.
+        private const val MIN_TRANSITION_SPEED = 0.92f
+        private const val MAX_TRANSITION_SPEED = 1.08f
         private const val MAX_SINK_SPEED = 8f
-        private const val TEMPO_RELEASE_MS = 2_500L
+        private const val TEMPO_RELEASE_MS = 4_000L
         // Few steps on purpose: DefaultAudioSink drains and rebuilds its
         // processor chain for every rate change [verified September 2026,
-        // 1.11.0 afterDrainParameters], and each rebuild can click. Five
-        // steps of under 1% tempo are inaudible as jumps.
+        // 1.11.0 afterDrainParameters], and each rebuild can click. Eight
+        // steps of at most 1% tempo are inaudible as jumps.
         private const val TEMPO_RELEASE_STEP_MS = 500L
+
+        /** The filter amount that takes a track's bass out: about 190 Hz. */
+        private const val BASS_CUT_SWEEP = 0.5f
+        /** Where in the overlap the low end changes hands. */
+        private const val BASS_SWAP_FROM = 0.42f
+        private const val BASS_SWAP_TO = 0.58f
+        /** The echo-out cuts the outgoing track loose early in the overlap. */
+        private const val ECHO_FROM = 0.05f
+        private const val ECHO_TO = 0.4f
     }
 }

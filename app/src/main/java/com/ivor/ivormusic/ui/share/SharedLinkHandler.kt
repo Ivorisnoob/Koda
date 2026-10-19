@@ -104,6 +104,18 @@ fun SharedLinkHandler(
         fun toast(message: String) =
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
 
+        // A Spotify playlist or album: nothing to play, so it goes to the
+        // import screen, which finds the same songs on YouTube Music.
+        if (com.ivor.ivormusic.data.SpotifyLinks.parse(pending.text) != null) {
+            if (localOnlyMode) {
+                toast("Local only mode is on. Turn it off in Settings to import from Spotify.")
+            } else {
+                onNavigateHome()
+                homeViewModel.requestSpotifyImport(pending.text)
+            }
+            return@LaunchedEffect
+        }
+
         val link = YouTubeLinkParser.parseFromSharedText(pending.text)
         if (link == null) {
             toast("No YouTube link found in what you shared")
