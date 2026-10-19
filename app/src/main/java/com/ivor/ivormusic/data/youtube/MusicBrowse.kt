@@ -27,6 +27,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Home pages read looking for Quick picks: the first answer and two continuations. */
+private const val HOME_PAGES_FOR_PICKS = 3
+
 /**
  * The pages of YouTube Music that are browsed rather than searched: Home and
  * its shelves, charts, an artist's page, a song's album, and the radio that
@@ -52,20 +55,39 @@ internal class MusicBrowse(
         try {
             // Fetch personalized home page content
             KLog.d(YOUTUBE_TAG, "Fetching personalized recommendations from FEmusic_home")
-            val jsonResponse = musicApi.fetchInternalApi("FEmusic_home")
-            
-            if (jsonResponse.isEmpty()) {
+            var json = musicApi.fetchInternalApi("FEmusic_home")
+
+            if (json.isEmpty()) {
                 KLog.e(YOUTUBE_TAG, "Empty response from FEmusic_home")
                 return@withContext fillHomeRecommendations(emptyList())
             }
-            
-            // Parse songs from the home page response
+
+            // Quick picks is no longer on Home's first page, which opens with
+            // Listen again; reading only that page made recommendations the
+            // songs already played. Follow the shelves until Quick picks
+            // arrives, usually one continuation, and lead with it.
+            val picks = mutableListOf<Song>()
+            val cards = mutableListOf<Song>()
+            var pages = 0
+            while (json.isNotEmpty()) {
+                val (rows, songCards) = parseHomeSongs(json)
+                picks += rows
+                cards += songCards
+                pages++
+                if (picks.isNotEmpty() || pages >= HOME_PAGES_FOR_PICKS) break
+                val token = homeSectionContinuationToken(json) ?: break
+                json = musicApi.fetchContinuation(token)
+            }
+
             // More than Home shows at once, so a refresh has songs to rotate to.
             val items = usableHomeRecommendations(
-                listOf(parseSongsFromInternalJson(jsonResponse)),
+                listOf(picks, cards),
                 limit = HOME_RECOMMENDATION_POOL
             )
-            KLog.d(YOUTUBE_TAG, "Parsed ${items.size} songs from recommendations")
+            KLog.d(
+                YOUTUBE_TAG,
+                "Parsed ${items.size} songs from recommendations (${picks.size} picks, $pages pages)"
+            )
 
             // Classic Home needs three valid entries for its three artwork
             // shapes. A partially parsed response is still useful, but it must

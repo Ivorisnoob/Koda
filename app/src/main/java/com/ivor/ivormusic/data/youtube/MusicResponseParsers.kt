@@ -56,6 +56,55 @@ internal fun parseSongsFromInternalJson(
     return if (preserveDuplicates) songs else songs.distinctBy { it.id }
 }
 
+/**
+ * One FEmusic_home page's songs, split by how Home draws them: list rows
+ * first, cards second. The only carousel of list rows is Quick picks,
+ * YouTube Music's recommendations; song cards are mostly Listen again and
+ * similar shelves of what was already played, so they only fill in after.
+ */
+internal fun parseHomeSongs(json: String): Pair<List<Song>, List<Song>> {
+    val rows = mutableListOf<Song>()
+    val cards = mutableListOf<Song>()
+    try {
+        val contents = findRootContents(JSONObject(json)) ?: return Pair(emptyList(), emptyList())
+        for (i in 0 until contents.length()) {
+            val shelf = contents.optJSONObject(i) ?: continue
+            for (item in parseItemsFromShelf(shelf)) {
+                item.optJSONObject("musicResponsiveListItemRenderer")
+                    ?.let(::parseResponsiveListItem)?.let(rows::add)
+                item.optJSONObject("musicTwoRowItemRenderer")
+                    ?.let(::parseTwoRowItem)?.let(cards::add)
+            }
+        }
+    } catch (e: Exception) {
+        KLog.e(YOUTUBE_TAG, "Could not parse music Home songs", e)
+    }
+    return Pair(rows, cards)
+}
+
+/**
+ * The token for the next block of Home shelves. Home's section list pages:
+ * the first answer carries it on `sectionListRenderer`, each continuation on
+ * `sectionListContinuation`. [verified October 2026: four pages signed in,
+ * and Quick picks is the first shelf of the second, no longer the first]
+ */
+internal fun homeSectionContinuationToken(json: String): String? = try {
+    val root = JSONObject(json)
+    val sectionList = root.optJSONObject("contents")
+        ?.optJSONObject("singleColumnBrowseResultsRenderer")
+        ?.optJSONArray("tabs")?.optJSONObject(0)
+        ?.optJSONObject("tabRenderer")
+        ?.optJSONObject("content")
+        ?.optJSONObject("sectionListRenderer")
+        ?: root.optJSONObject("continuationContents")?.optJSONObject("sectionListContinuation")
+    sectionList?.optJSONArray("continuations")?.optJSONObject(0)
+        ?.optJSONObject("nextContinuationData")
+        ?.optString("continuation")
+        ?.takeIf { it.isNotBlank() }
+} catch (e: Exception) {
+    null
+}
+
 internal fun parsePlaylistsFromInternalJson(json: String): List<PlaylistDisplayItem> {
     val playlists = mutableListOf<PlaylistDisplayItem>()
     try {
