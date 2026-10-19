@@ -1,9 +1,10 @@
 package com.ivor.ivormusic.data.youtube
 
-import com.ivor.ivormusic.data.NotificationItem
-import com.ivor.ivormusic.data.NotificationTarget
+import com.ivor.ivormusic.data.NotificationPage
 import com.ivor.ivormusic.data.SessionManager
+import com.ivor.ivormusic.data.YouTubeSession
 import com.ivor.ivormusic.util.KLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -137,90 +138,49 @@ internal class YouTubeAccount(
     }
 
     /**
-     * The user's notification inbox (new uploads from subscribed channels,
-     * replies, etc.). Requires login.
+     * One page of the user's notification inbox. Requires login. Null when the
+     * request failed, so a caller can tell that from an empty inbox and keep
+     * [continuation] to retry.
      *
-     * The inbox is paged, and how far it goes depends on the account. [verified
-     * September 2026] A page is about 20 items followed by a
-     * `continuationItemRenderer` whose `getNotificationMenuEndpoint.ctoken` is
-     * posted back to the same endpoint as `{"ctoken": ...}`; that account's
-     * whole inbox was three pages. [verified October 2026] Another account's
-     * was 11 items and no continuation at all. So up to
-     * [NOTIFICATION_INBOX_MAX_PAGES] are followed, and a response without a
-     * token is simply the end. [scar] Only the first page was ever read, so
-     * the sheet stopped at 20 on an account with sixty. Whatever YouTube has
-     * dropped altogether is what [NotificationHistoryStore] remembers.
+     * Reads the inbox the website reads, `FEnotifications_inbox` over WEB
+     * `/browse`; see [parseNotificationInboxPage] for its shape. [scar] This
+     * used `notification/get_notification_menu`, which YouTube stopped
+     * updating: in October 2026 it answered the same account with thirteen
+     * items three days to a month old while the website's inbox had items from
+     * hours before, and people saw a bell weeks behind. Pages are read one at
+     * a time as the sheet scrolls, the way the website does, because a fixed
+     * number of pages either stops short or spends requests nobody looks at.
+     * Whatever YouTube has dropped altogether is what [NotificationHistoryStore]
+     * remembers.
+     *
+     * [session] is the login the first page went out for; a later page sent
+     * for another one would put that account's inbox in this one's sheet.
      */
-    suspend fun getNotifications(): List<NotificationItem> = withContext(Dispatchers.IO) {
-        if (!sessionManager.isLoggedIn()) return@withContext emptyList()
+    suspend fun getNotificationsPage(
+        continuation: String? = null,
+        session: YouTubeSession? = sessionManager.captureSession(),
+    ): NotificationPage? = withContext(Dispatchers.IO) {
+        session ?: return@withContext null
         try {
-            val raw = webApi.postWatchApi(
-                "notification/get_notification_menu",
-                JSONObject()
-                    .put("context", webApi.webContext())
-                    .put("notificationsMenuRequestType", "NOTIFICATIONS_MENU_REQUEST_TYPE_INBOX")
-            ) ?: return@withContext emptyList()
-            var root = JSONObject(raw)
-            val renderers = mutableListOf<JSONObject>()
-            var page = 1
-            while (true) {
-                findObjectsByKey(root, "notificationRenderer", renderers)
-                if (page >= NOTIFICATION_INBOX_MAX_PAGES) break
-                val endpoints = mutableListOf<JSONObject>()
-                findObjectsByKey(root, "getNotificationMenuEndpoint", endpoints)
-                val token = endpoints.firstNotNullOfOrNull { endpoint ->
-                    endpoint.optString("ctoken").takeIf { it.isNotBlank() }
-                } ?: break
-                // A later page that fails keeps the pages already read.
-                val next = webApi.postWatchApi(
-                    "notification/get_notification_menu",
-                    JSONObject().put("context", webApi.webContext()).put("ctoken", token)
-                ) ?: break
-                root = JSONObject(next)
-                page++
-            }
-            renderers.distinctBy { it.optString("notificationId").ifBlank { it.toString() } }.mapNotNull { renderer ->
-                val message = renderer.optJSONObject("shortMessage")?.optString("simpleText")
-                    ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                fun lastThumb(key: String): String? {
-                    val thumbs = renderer.optJSONObject(key)?.optJSONArray("thumbnails") ?: return null
-                    var url = thumbs.optJSONObject((thumbs.length() - 1).coerceAtLeast(0))
-                        ?.optString("url")?.takeIf { it.isNotBlank() }
-                    if (url?.startsWith("//") == true) url = "https:$url"
-                    return url
-                }
-                val navigation = renderer.optJSONObject("navigationEndpoint")
-                fun endpointVideoId(key: String): String? =
-                    navigation?.optJSONObject(key)?.optString("videoId")?.takeIf { it.isNotBlank() }
-                val webUrl = navigation?.optJSONObject("commandMetadata")
-                    ?.optJSONObject("webCommandMetadata")?.optString("url")
-                    ?.takeIf { it.startsWith("/") }
-                    ?.let { "https://www.youtube.com$it" }
-                val postParams = navigation?.optJSONObject("browseEndpoint")
-                    ?.takeIf { it.optString("browseId") == POST_DETAIL_BROWSE_ID }
-                    ?.optString("params")?.takeIf { it.isNotBlank() }
-                val target = endpointVideoId("watchEndpoint")?.let { NotificationTarget.Video(it) }
-                    ?: endpointVideoId("reelWatchEndpoint")?.let { NotificationTarget.Short(it) }
-                    ?: postParams?.let { NotificationTarget.Post(it, webUrl) }
-                    ?: webUrl?.let { NotificationTarget.Link(it) }
-                NotificationItem(
-                    message = message,
-                    sentTime = renderer.optJSONObject("sentTimeText")?.optString("simpleText").orEmpty(),
-                    channelAvatarUrl = lastThumb("thumbnail"),
-                    videoThumbnailUrl = lastThumb("videoThumbnail"),
-                    target = target,
-                    isRead = renderer.optBoolean("read", false),
-                    id = renderer.optString("notificationId")
+            val body = JSONObject().put("context", webApi.webContext())
+            if (continuation == null) body.put("browseId", NOTIFICATION_INBOX_BROWSE_ID)
+            else body.put("continuation", continuation)
+            val raw = webApi.postWatchApi("browse", body, session)
+                ?.takeIf { it.isNotBlank() } ?: return@withContext null
+            val root = JSONObject(raw)
+            if (root.has("error")) return@withContext null
+            parseNotificationInboxPage(root).also { page ->
+                KLog.d(
+                    YOUTUBE_TAG,
+                    "Notifications ${if (continuation == null) "first" else "next"} page: " +
+                        "${page.items.size} items, more=${page.continuation != null}"
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            KLog.e(YOUTUBE_TAG, "getNotifications failed", e)
-            emptyList()
+            KLog.e(YOUTUBE_TAG, "Notifications page failed", e)
+            null
         }
-    }
-
-    private companion object {
-        /** Pages of the notification inbox read on one open: one request each. */
-        private const val NOTIFICATION_INBOX_MAX_PAGES = 3
     }
 }

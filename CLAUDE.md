@@ -263,7 +263,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Device videos use `device:` ids through the local-playback path; `singleTask` exists because of PiP; quality/HDR come from the decoder.
 - **Three playlist kinds**: local, the account's own, saved (references). A `PL` prefix does not mean yours - use `savedPlaylistIds`. Local video playlists use the `localvp_` prefix; routing lives in `addVideoToPlaylist`. Hidden playlists are a filter over the merged list.
 - `VideoOptionsSheet` is two panes; every surface uses `VideoOptionsSheetHost`.
-- The notification inbox reads every page YouTube offers (up to three) and shows what `NotificationHistoryStore` remembers under it; a hide is local. The video feeds are filtered where they are drawn (`VideoFeedFilter`), never in the fetch.
+- The notification inbox is the website's `FEnotifications_inbox` (the old `get_notification_menu` is frozen), read a page at a time as the sheet scrolls, with what `NotificationHistoryStore` remembers under it once the last page is in; a hide is local. The video feeds are filtered where they are drawn (`VideoFeedFilter`), never in the fetch.
 - Taste setup is one route (`taste`), opened from the `home` route once per install (new users arrive there from onboarding) and from Settings; it marks itself seen on every way out.
 
 ### Subscriptions and blocklist -> `docs/subscriptions.md`
