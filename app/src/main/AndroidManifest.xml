@@ -146,6 +146,29 @@
                 so the intent is checked again at handling time
                 (Intent.externalVideoUri) rather than trusted from the filter.
             -->
+            <!--
+                "Open with" for audio files, allowing Koda to serve as a default
+                or selectable music player for local audio files from file
+                managers, downloads and external apps.
+            -->
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+
             <intent-filter android:label="@string/app_name">
                 <action android:name="android.intent.action.VIEW" />
 
