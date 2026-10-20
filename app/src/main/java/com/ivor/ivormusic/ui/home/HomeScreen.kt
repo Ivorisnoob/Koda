@@ -1239,8 +1239,17 @@ fun HomeScreen(
                                                     viewedPlaylistFromHome = playlist
                                                     selectedTab = 2
                                                 },
-                                                onOpenLiked = { selectedTab = 2 },
-                                                onShowAllInLibrary = { selectedTab = 2 },
+                                                onOpenLiked = {
+                                                    noteLibraryReturn()
+                                                    viewedPlaylistFromHome = com.ivor.ivormusic.data.PlaylistDisplayItem(
+                                                        context.getString(R.string.liked_songs), "LM", "You", spotlightLiked.size, null
+                                                    )
+                                                    selectedTab = 2
+                                                },
+                                                onShowAllInLibrary = {
+                                                    noteLibraryReturn()
+                                                    selectedTab = 2
+                                                },
                                                 onSpinClick = { source ->
                                                     spinSource = source
                                                     spinOpen = true

@@ -386,13 +386,14 @@ fun LibraryContent(
             LibraryRoute.Main -> Spacer(Modifier.fillMaxSize())
             LibraryRoute.Playlist -> {
                 selectedPlaylist?.let { playlist ->
+                    val isAlbumRelease = playlist.releaseType != null || playlist.id.startsWith("MPRE")
                     PlaylistDetailScreen(
                         playlist = playlist,
                         onBack = { back() },
                         onPlayQueue = onPlayQueue,
                         onShuffleQueue = onShuffleQueue,
                         viewModel = viewModel,
-                        isAlbum = false,
+                        isAlbum = isAlbumRelease,
                         onSongLongPress = onSongLongPress,
                         onEnqueueSong = onEnqueueSong,
                         onAddSongsRequest = { currentRoute = LibraryRoute.ImportSongs },
@@ -3444,8 +3445,10 @@ fun PlaylistDetailScreen(
     LaunchedEffect(resolvedPlaylist.id) {
         if (preloadedSongs == null) {
             isFetching.value = true
+            val fetched = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
+            val ordered = if (isAlbum) fetched.sortedInAlbumOrder() else fetched
             songRows = playlistSongRows(
-                viewModel.fetchPlaylistSongs(resolvedPlaylist.id),
+                ordered,
                 trackKeyPrefix
             )
             isFetching.value = false
