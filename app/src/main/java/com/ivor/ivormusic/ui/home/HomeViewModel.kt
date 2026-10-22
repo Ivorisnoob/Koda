@@ -1018,6 +1018,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val localSubscriptions: StateFlow<List<com.ivor.ivormusic.data.LocalSubscription>> =
         localSubscriptionsRepository.subscriptions
 
+    /** Raw account metadata lets local entries use counts when available. */
+    val accountSubscribedChannels: StateFlow<List<com.ivor.ivormusic.data.SubscribedChannel>> =
+        _accountChannels.asStateFlow()
+
+    fun moveLocalSubscription(channelId: String, offset: Int) {
+        localSubscriptionsRepository.moveSubscription(channelId, offset)
+    }
+
     val subscriptionGroups: StateFlow<List<com.ivor.ivormusic.data.SubscriptionGroup>> =
         localSubscriptionsRepository.groups
 

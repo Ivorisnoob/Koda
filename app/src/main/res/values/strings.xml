@@ -1506,6 +1506,15 @@
     <string name="sm_import_file_sub">A NewPipe, PipePipe or Tubular export or backup, or a Google Takeout file</string>
     <string name="sm_copy_account">Copy from YouTube account</string>
     <string name="sm_copy_sub">Keeps following these channels after you sign out</string>
+    <string name="sm_sort_by">Sort by</string>
+    <string name="sm_sort_subscription_date">Recently subscribed</string>
+    <string name="sm_sort_name">Name (A–Z)</string>
+    <string name="sm_sort_recent_upload">Most recent upload</string>
+    <string name="sm_sort_subscriber_count">Subscriber count</string>
+    <string name="sm_sort_manual">Manual order</string>
+    <string name="sm_sort_hint">Move channels with the arrows in manual order.</string>
+    <string name="sm_move_up">Move %1$s up</string>
+    <string name="sm_move_down">Move %1$s down</string>
     <string name="sm_sign_in_first">Sign in to YouTube first</string>
     <string name="sm_export">Export to a file</string>
     <string name="sm_nothing_to_export">Nothing to export yet</string>
