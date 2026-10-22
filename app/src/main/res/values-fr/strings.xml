@@ -367,4 +367,10 @@
     <string name="subscribed">Abonné</string>
     <string name="subscribe">S\'abonner</string>
     <string name="like">J\'aime</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Trier les chaînes</string>
+    <string name="subscription_sort_official">Style YouTube (activité récente)</string>
+    <string name="subscription_sort_recent">Vidéos les plus récentes d’abord</string>
+    <string name="subscription_sort_name">Nom de la chaîne (A–Z)</string>
+    <string name="subscription_sort_oldest">Vidéos les plus anciennes d’abord</string>
 </resources>

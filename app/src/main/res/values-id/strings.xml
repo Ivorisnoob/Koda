@@ -362,4 +362,10 @@
     <string name="subscribed">Disubscribe</string>
     <string name="subscribe">Subscribe</string>
     <string name="like">Suka</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Urutkan kanal</string>
+    <string name="subscription_sort_official">Gaya YouTube (aktivitas terbaru)</string>
+    <string name="subscription_sort_recent">Unggahan terbaru lebih dulu</string>
+    <string name="subscription_sort_name">Nama kanal (A–Z)</string>
+    <string name="subscription_sort_oldest">Unggahan terlama lebih dulu</string>
 </resources>

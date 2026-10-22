@@ -66,6 +66,49 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val youtubeRepository = YouTubeRepository(application)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
     private val sessionManager = SessionManager(application)
+
+    // Cached account-history frequency; load only when requested, off the UI thread.
+    private val _channelWatchCounts = MutableStateFlow<Map<String, Int>>(
+        runCatching {
+            val raw = getApplication<Application>().getSharedPreferences("channel_watch_frequency", 0).getString("counts", null) ?: "{}"
+            val json = org.json.JSONObject(raw)
+            buildMap { val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, json.optInt(key, 0)) } }
+        }.getOrDefault(emptyMap())
+    )
+    val channelWatchCounts: StateFlow<Map<String, Int>> = _channelWatchCounts.asStateFlow()
+    private var channelWatchCountJob: Job? = null
+
+    fun loadChannelWatchCounts() {
+        if (_channelWatchCounts.value.isNotEmpty() || channelWatchCountJob?.isActive == true) return
+        val session = sessionManager.captureSession() ?: return
+        channelWatchCountJob = viewModelScope.launch(Dispatchers.IO) {
+            val counts = linkedMapOf<String, Int>()
+            var continuation: String? = null
+            var pageCount = 0
+            try {
+                do {
+                    val page = youtubeRepository.getWatchHistoryPage(continuation, session) ?: break
+                    page.videos.forEach { video ->
+                        val id = video.channelId?.takeIf { it.isNotBlank() }
+                            ?: video.channelName.trim().lowercase().takeIf { it.isNotEmpty() }?.let { "name:$it" }
+                        if (id != null) counts[id] = (counts[id] ?: 0) + 1
+                    }
+                    continuation = page.continuation
+                    pageCount++
+                } while (continuation != null && pageCount < 500)
+                if (counts.isNotEmpty()) {
+                    val json = org.json.JSONObject()
+                    counts.forEach { (id, count) -> json.put(id, count) }
+                    getApplication<Application>().getSharedPreferences("channel_watch_frequency", 0).edit().putString("counts", json.toString()).apply()
+                    _channelWatchCounts.value = counts
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w("HomeViewModel", "Unable to build channel watch frequency", e)
+            }
+        }
+    }
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
     private val homeRecommendationCache = HomeRecommendationCache(application)
@@ -1017,6 +1060,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Channels followed on this device. Process-wide, so a subscribe anywhere lands here. */
     val localSubscriptions: StateFlow<List<com.ivor.ivormusic.data.LocalSubscription>> =
         localSubscriptionsRepository.subscriptions
+
+    /** Raw account metadata lets local entries use counts when available. */
+    val accountSubscribedChannels: StateFlow<List<com.ivor.ivormusic.data.SubscribedChannel>> =
+        _accountChannels.asStateFlow()
+
+    fun moveLocalSubscription(channelId: String, offset: Int) {
+        localSubscriptionsRepository.moveSubscription(channelId, offset)
+    }
 
     val subscriptionGroups: StateFlow<List<com.ivor.ivormusic.data.SubscriptionGroup>> =
         localSubscriptionsRepository.groups

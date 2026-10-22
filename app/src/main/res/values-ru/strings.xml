@@ -372,4 +372,10 @@
     <string name="subscribed">Вы подписаны</string>
     <string name="subscribe">Подписаться</string>
     <string name="like">Нравится</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Сортировать каналы</string>
+    <string name="subscription_sort_official">В стиле YouTube (недавняя активность)</string>
+    <string name="subscription_sort_recent">Сначала новые видео</string>
+    <string name="subscription_sort_name">Название канала (А–Я)</string>
+    <string name="subscription_sort_oldest">Сначала старые видео</string>
 </resources>

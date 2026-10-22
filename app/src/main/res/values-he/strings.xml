@@ -371,4 +371,10 @@
     <string name="subscribed">רשום</string>
     <string name="subscribe">הירשם</string>
     <string name="like">אהבתי</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">מיון ערוצים</string>
+    <string name="subscription_sort_official">בסגנון YouTube (פעילות אחרונה)</string>
+    <string name="subscription_sort_recent">הסרטונים החדשים ביותר תחילה</string>
+    <string name="subscription_sort_name">שם הערוץ (א׳–ת׳)</string>
+    <string name="subscription_sort_oldest">הסרטונים הישנים ביותר תחילה</string>
 </resources>

@@ -369,4 +369,10 @@
     <string name="subscribed">Abonat</string>
     <string name="subscribe">Abonează-te</string>
     <string name="like">Îmi place</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Sortează canalele</string>
+    <string name="subscription_sort_official">Stil YouTube (activitate recentă)</string>
+    <string name="subscription_sort_recent">Cele mai recente încărcări primele</string>
+    <string name="subscription_sort_name">Numele canalului (A–Z)</string>
+    <string name="subscription_sort_oldest">Cele mai vechi încărcări primele</string>
 </resources>
