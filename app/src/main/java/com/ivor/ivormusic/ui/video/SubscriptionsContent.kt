@@ -282,8 +282,15 @@ fun SubscriptionsContent(
     // The rail and management screen share the same persisted sort preference.
     // "Official-style" follows recent uploads first, with alphabetical fallback.
     var channelSort by rememberSaveable { mutableStateOf("OFFICIAL") }
+    val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
+    val pinnedChannelIds = remember(context) {
+        androidx.compose.runtime.mutableStateListOf<String>().apply {
+            addAll(context.getSharedPreferences("subscription_channel_rail", 0)
+                .getString("pinned_ids", "").orEmpty().split("|").filter { it.isNotBlank() })
+        }
+    }
     var showChannelSortMenu by remember { mutableStateOf(false) }
-    val recentlyUploadingChannels = remember(channels, feed, channelSort) {
+    val recentlyUploadingChannels = remember(channels, feed, channelSort, channelWatchCounts, pinnedChannelIds.toList()) {
         val newestUploadById = mutableMapOf<String, Long>()
         val newestUploadByName = mutableMapOf<String, Long>()
         val now = System.currentTimeMillis()
@@ -306,18 +313,26 @@ fun SubscriptionsContent(
                 ?: newestUploadByName[channel.name.trim().lowercase()]
                 ?: Long.MIN_VALUE
         }.thenBy { it.name.lowercase() }
-        when (channelSort) {
-            "NAME" -> channels.sortedBy { it.name.lowercase() }
-            "OLDEST" -> channels.sortedWith(
+        val pinned = channels.filter { it.channelId in pinnedChannelIds }
+        val unpinned = channels.filterNot { it.channelId in pinnedChannelIds }
+        val sortedUnpinned = when (channelSort) {
+            "MOST_WATCHED" -> unpinned.sortedWith(
+                compareByDescending<SubscribedChannel> {
+                    channelWatchCounts[it.channelId] ?: channelWatchCounts["name:" + it.name.trim().lowercase()] ?: 0
+                }.thenBy { it.name.lowercase() }
+            )
+            "NAME" -> unpinned.sortedBy { it.name.lowercase() }
+            "OLDEST" -> unpinned.sortedWith(
                 compareBy<SubscribedChannel> { channel ->
                     newestUploadById[channel.channelId]
                         ?: newestUploadByName[channel.name.trim().lowercase()]
                         ?: Long.MIN_VALUE
                 }.thenBy { it.name.lowercase() }
             )
-            "OFFICIAL", "RECENT" -> channels.sortedWith(byRecent)
-            else -> channels.sortedWith(byRecent)
+            "OFFICIAL", "RECENT" -> unpinned.sortedWith(byRecent)
+            else -> unpinned.sortedWith(byRecent)
         }
+        pinned + sortedUnpinned
     }
 
     // Confirmation before dropping a channel, because the gesture that opens
@@ -612,6 +627,7 @@ fun SubscriptionsContent(
                                     ) {
                                         listOf(
                                             "OFFICIAL" to R.string.subscription_sort_official,
+                                            "MOST_WATCHED" to R.string.subscription_sort_most_watched,
                                             "RECENT" to R.string.subscription_sort_recent,
                                             "NAME" to R.string.subscription_sort_name,
                                             "OLDEST" to R.string.subscription_sort_oldest
@@ -620,6 +636,7 @@ fun SubscriptionsContent(
                                                 text = { Text(stringResource(label)) },
                                                 onClick = {
                                                     channelSort = key
+                                                    if (key == "MOST_WATCHED") viewModel.loadChannelWatchCounts()
                                                     showChannelSortMenu = false
                                                 }
                                             )
@@ -679,15 +696,23 @@ fun SubscriptionsContent(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                if (selected) {
-                                                    selectedChannelId = null
-                                                    viewModel.clearSelectedChannelFeed()
-                                                } else {
-                                                    selectedChannelId = channel.channelId
-                                                    viewModel.loadSelectedChannelFeed(channel)
+                                            .combinedClickable(
+                                                onClick = {
+                                                    if (selected) {
+                                                        selectedChannelId = null
+                                                        viewModel.clearSelectedChannelFeed()
+                                                    } else {
+                                                        selectedChannelId = channel.channelId
+                                                        viewModel.loadSelectedChannelFeed(channel)
+                                                    }
+                                                },
+                                                onLongClick = {
+                                                    if (channel.channelId in pinnedChannelIds) pinnedChannelIds.remove(channel.channelId)
+                                                    else pinnedChannelIds.add(channel.channelId)
+                                                    context.getSharedPreferences("subscription_channel_rail", 0)
+                                                        .edit().putString("pinned_ids", pinnedChannelIds.joinToString("|")).apply()
                                                 }
-                                            }
+                                            )
                                             .padding(4.dp)
                                             .width(64.dp)
                                     ) {

@@ -2363,6 +2363,7 @@
 
     <!-- Subscription channel rail sorting -->
     <string name="subscription_channel_sort">Sort channels</string>
+    <string name="subscription_sort_most_watched">Most watched</string>
     <string name="subscription_sort_official">YouTube-style (recent activity)</string>
     <string name="subscription_sort_recent">Latest uploads first</string>
     <string name="subscription_sort_name">Channel name (A–Z)</string>

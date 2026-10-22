@@ -2323,6 +2323,7 @@
 
     <!-- 登録チャンネルの並び替え -->
     <string name="subscription_channel_sort">チャンネルの並び替え</string>
+    <string name="subscription_sort_most_watched">よく見る順</string>
     <string name="subscription_sort_official">YouTube公式風（最近のアクティビティ）</string>
     <string name="subscription_sort_recent">最新の投稿順</string>
     <string name="subscription_sort_name">チャンネル名順（A〜Z）</string>
