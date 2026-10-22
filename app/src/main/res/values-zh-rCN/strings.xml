@@ -362,4 +362,10 @@
     <string name="subscribed">已订阅</string>
     <string name="subscribe">订阅</string>
     <string name="like">喜欢</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">频道排序</string>
+    <string name="subscription_sort_official">YouTube 风格（近期活动）</string>
+    <string name="subscription_sort_recent">最新上传优先</string>
+    <string name="subscription_sort_name">频道名称（A–Z）</string>
+    <string name="subscription_sort_oldest">最早上传优先</string>
 </resources>

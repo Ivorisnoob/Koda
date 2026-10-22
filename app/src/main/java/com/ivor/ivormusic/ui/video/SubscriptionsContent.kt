@@ -279,19 +279,17 @@ fun SubscriptionsContent(
         localSubscriptions.map { it.channelId }.toSet()
     }
 
-    // YouTube does not expose a stable ordering contract for the subscription
-    // list itself. The feed does expose the thing this rail is meant to answer:
-    // who uploaded most recently. Channels missing from the current feed stay
-    // available after those recent creators, alphabetically.
-    val recentlyUploadingChannels = remember(channels, feed) {
+    // The rail and management screen share the same persisted sort preference.
+    // "Official-style" follows recent uploads first, with alphabetical fallback.
+    var channelSort by rememberSaveable { mutableStateOf("OFFICIAL") }
+    var showChannelSortMenu by remember { mutableStateOf(false) }
+    val recentlyUploadingChannels = remember(channels, feed, channelSort) {
         val newestUploadById = mutableMapOf<String, Long>()
         val newestUploadByName = mutableMapOf<String, Long>()
         val now = System.currentTimeMillis()
         feed.forEachIndexed { index, video ->
             val uploadedAt = video.publishedAtMs
                 ?: VideoItem.parseRelativeTime(video.uploadedDate, now)
-                // The merged feed is already newest-first. Preserve that
-                // server/feed order when an item omitted its date entirely.
                 ?: (now - index)
             video.channelId?.takeIf { it.isNotBlank() }?.let { id ->
                 newestUploadById[id] = maxOf(newestUploadById[id] ?: Long.MIN_VALUE, uploadedAt)
@@ -299,18 +297,27 @@ fun SubscriptionsContent(
             val normalizedName = video.channelName.trim().lowercase()
             if (normalizedName.isNotEmpty()) {
                 newestUploadByName[normalizedName] = maxOf(
-                    newestUploadByName[normalizedName] ?: Long.MIN_VALUE,
-                    uploadedAt
+                    newestUploadByName[normalizedName] ?: Long.MIN_VALUE, uploadedAt
                 )
             }
         }
-        channels.sortedWith(
-            compareByDescending<SubscribedChannel> { channel ->
-                newestUploadById[channel.channelId]
-                    ?: newestUploadByName[channel.name.trim().lowercase()]
-                    ?: Long.MIN_VALUE
-            }.thenBy { it.name.lowercase() }
-        )
+        val byRecent = compareByDescending<SubscribedChannel> { channel ->
+            newestUploadById[channel.channelId]
+                ?: newestUploadByName[channel.name.trim().lowercase()]
+                ?: Long.MIN_VALUE
+        }.thenBy { it.name.lowercase() }
+        when (channelSort) {
+            "NAME" -> channels.sortedBy { it.name.lowercase() }
+            "OLDEST" -> channels.sortedWith(
+                compareBy<SubscribedChannel> { channel ->
+                    newestUploadById[channel.channelId]
+                        ?: newestUploadByName[channel.name.trim().lowercase()]
+                        ?: Long.MIN_VALUE
+                }.thenBy { it.name.lowercase() }
+            )
+            "OFFICIAL", "RECENT" -> channels.sortedWith(byRecent)
+            else -> channels.sortedWith(byRecent)
+        }
     }
 
     // Confirmation before dropping a channel, because the gesture that opens
@@ -587,6 +594,40 @@ fun SubscriptionsContent(
                     // Creator rail: selection filters the feed in place instead
                     // of navigating away from the uploads the user came to see.
                     if (channels.isNotEmpty()) {
+                        item(key = "channel-sort-control") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Box {
+                                    TextButton(onClick = { showChannelSortMenu = true }) {
+                                        Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(R.string.subscription_channel_sort))
+                                    }
+                                    DropdownMenu(
+                                        expanded = showChannelSortMenu,
+                                        onDismissRequest = { showChannelSortMenu = false }
+                                    ) {
+                                        listOf(
+                                            "OFFICIAL" to R.string.subscription_sort_official,
+                                            "RECENT" to R.string.subscription_sort_recent,
+                                            "NAME" to R.string.subscription_sort_name,
+                                            "OLDEST" to R.string.subscription_sort_oldest
+                                        ).forEach { (key, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(label)) },
+                                                onClick = {
+                                                    channelSort = key
+                                                    showChannelSortMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         item(key = "channel-filter") {
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),

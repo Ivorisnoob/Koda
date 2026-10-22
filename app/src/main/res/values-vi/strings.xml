@@ -363,4 +363,10 @@
     <string name="subscribed">Đã đăng ký</string>
     <string name="subscribe">Đăng ký</string>
     <string name="like">Thích</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Sắp xếp kênh</string>
+    <string name="subscription_sort_official">Kiểu YouTube (hoạt động gần đây)</string>
+    <string name="subscription_sort_recent">Video mới tải lên trước</string>
+    <string name="subscription_sort_name">Tên kênh (A–Z)</string>
+    <string name="subscription_sort_oldest">Video tải lên cũ nhất trước</string>
 </resources>

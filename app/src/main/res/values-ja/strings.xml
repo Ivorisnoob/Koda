@@ -2320,4 +2320,11 @@
     <string name="vst_sepia">セピア</string>
     <string name="vst_edge_glow">エッジグロー</string>
     <string name="vst_wobble">ウォブル</string>
+
+    <!-- 登録チャンネルの並び替え -->
+    <string name="subscription_channel_sort">チャンネルの並び替え</string>
+    <string name="subscription_sort_official">YouTube公式風（最近のアクティビティ）</string>
+    <string name="subscription_sort_recent">最新の投稿順</string>
+    <string name="subscription_sort_name">チャンネル名順（A〜Z）</string>
+    <string name="subscription_sort_oldest">古い投稿順</string>
 </resources>

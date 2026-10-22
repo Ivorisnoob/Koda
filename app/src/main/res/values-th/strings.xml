@@ -363,4 +363,10 @@
     <string name="subscribed">ติดตามแล้ว</string>
     <string name="subscribe">ติดตาม</string>
     <string name="like">ถูกใจ</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">เรียงช่อง</string>
+    <string name="subscription_sort_official">รูปแบบ YouTube (กิจกรรมล่าสุด)</string>
+    <string name="subscription_sort_recent">วิดีโอที่อัปโหลดล่าสุดก่อน</string>
+    <string name="subscription_sort_name">ชื่อช่อง (A–Z)</string>
+    <string name="subscription_sort_oldest">วิดีโอที่อัปโหลดเก่าที่สุดก่อน</string>
 </resources>

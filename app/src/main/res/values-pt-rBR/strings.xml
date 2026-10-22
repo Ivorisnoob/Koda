@@ -365,4 +365,10 @@
     <string name="subscribed">Inscrito</string>
     <string name="subscribe">Inscrever-se</string>
     <string name="like">Curtir</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Ordenar canais</string>
+    <string name="subscription_sort_official">Estilo YouTube (atividade recente)</string>
+    <string name="subscription_sort_recent">Uploads mais recentes primeiro</string>
+    <string name="subscription_sort_name">Nome do canal (A–Z)</string>
+    <string name="subscription_sort_oldest">Uploads mais antigos primeiro</string>
 </resources>

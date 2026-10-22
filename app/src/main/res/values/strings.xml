@@ -2360,4 +2360,11 @@
     <string name="vst_sepia">Sepia</string>
     <string name="vst_edge_glow">Edge glow</string>
     <string name="vst_wobble">Wobble</string>
+
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Sort channels</string>
+    <string name="subscription_sort_official">YouTube-style (recent activity)</string>
+    <string name="subscription_sort_recent">Latest uploads first</string>
+    <string name="subscription_sort_name">Channel name (A–Z)</string>
+    <string name="subscription_sort_oldest">Oldest uploads first</string>
 </resources>

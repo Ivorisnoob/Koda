@@ -372,4 +372,10 @@
     <string name="subscribed">Odebíráno</string>
     <string name="subscribe">Odebírat</string>
     <string name="like">Líbí se mi</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Seřadit kanály</string>
+    <string name="subscription_sort_official">Ve stylu YouTube (nedávná aktivita)</string>
+    <string name="subscription_sort_recent">Nejnovější videa první</string>
+    <string name="subscription_sort_name">Název kanálu (A–Z)</string>
+    <string name="subscription_sort_oldest">Nejstarší videa první</string>
 </resources>

@@ -362,4 +362,10 @@
     <string name="subscribed">구독 중</string>
     <string name="subscribe">구독</string>
     <string name="like">좋아요</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">채널 정렬</string>
+    <string name="subscription_sort_official">YouTube 스타일(최근 활동)</string>
+    <string name="subscription_sort_recent">최신 업로드순</string>
+    <string name="subscription_sort_name">채널 이름순(A–Z)</string>
+    <string name="subscription_sort_oldest">오래된 업로드순</string>
 </resources>
