@@ -94,8 +94,6 @@ internal class PlayerApi(
             // no streams, sending the chain on to the next client inside a
             // coroutine that is already dead.
             throw e
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
         } catch (e: Exception) {
             KLog.e(STREAM_TAG, "Player[${client.name}] exception videoId=$videoId", e)
             PlayerAnswer.Failed()

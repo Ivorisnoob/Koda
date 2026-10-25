@@ -626,8 +626,6 @@ class CrossfadeEngine(
             // from this cancelled coroutine can clear a new transition that
             // has already reused the standby player.
             throw e
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Transition failed; keeping the outgoing player", e)
             abortInto(outgoing, incoming)

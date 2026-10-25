@@ -1872,8 +1872,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // that would let a dead recovery keep writing loading/error state
             // over the video that replaced it.
             throw e
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
         } catch (e: Exception) {
             KLog.w("VideoPlayerVM", "Re-resolve failed for ${video.videoId}", e)
             VideoStreamResult(emptyList())
@@ -3548,6 +3546,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val isDownload = _isLocalPlayback.value && isDownloadedVideoId(video.videoId)
         if (_isLocalPlayback.value && !isDownload) return
         if (captionsLoadedForVideoId == video.videoId) return
+        // Claimed before the request, so a second call while this one is in
+        // flight does not start another; a failure below gives it back.
+        captionsLoadedForVideoId = video.videoId
         _isCaptionsLoading.value = true
         viewModelScope.launch {
             try {
@@ -3562,7 +3563,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 // Ignore stale results if the user switched videos meanwhile
                 if (_currentVideo.value?.videoId == video.videoId) {
                     _captionTracks.value = tracks
-                    captionsLoadedForVideoId = video.videoId
                     if (themePreferences.isCaptionsEnabled() && _selectedCaption.value == null) {
                         restoreSavedCaptionTrack(tracks)
                     }

@@ -231,8 +231,6 @@ internal object PlayerWidgetReader {
             // cover", which the host then published and kept: the next push
             // saw the same cover uri and reused the nothing it had stored.
             throw e
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Widget artwork failed: ${e.message}")
             null

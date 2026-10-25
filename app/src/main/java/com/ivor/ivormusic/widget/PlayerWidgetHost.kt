@@ -184,8 +184,6 @@ object PlayerWidgets {
                     // A newer push replaced this one; let it stop here rather
                     // than carry on redrawing the remaining widgets with old state.
                     throw e
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
                 } catch (e: Exception) {
                     KLog.w("PlayerWidgets", "Update failed: ${e.message}")
                 }

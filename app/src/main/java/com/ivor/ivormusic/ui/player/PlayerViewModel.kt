@@ -55,9 +55,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val controller: MediaController?
         get() = try {
             if (controllerFuture?.isDone == true) controllerFuture?.get() else null
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
         } catch (e: Exception) {
+            // Deliberately catches a cancelled future too: this is a plain
+            // getter read from the main thread, not a coroutine, and a released
+            // connection must read as "no controller" rather than throw.
             // Future may have completed exceptionally if the service connection
             // failed (e.g. onGetSession returned null during a teardown race).
             KLog.w("PlayerViewModel", "controller getter: failed future", e)
@@ -524,9 +525,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         future.addListener({
             val ctrl = try {
                 future.get()
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
             } catch (e: Exception) {
+                // A cancelled future lands here as well, on purpose: this
+                // listener runs as a plain Runnable on the main executor, where
+                // a rethrow would take the process down (the same reason
+                // PlaybackTileService.connect() keeps its runCatching).
                 // "Session not found" / connection rejected — usually a race during
                 // service teardown after the app was swiped away. Retry a couple of
                 // times with backoff so the next time the user opens the app the

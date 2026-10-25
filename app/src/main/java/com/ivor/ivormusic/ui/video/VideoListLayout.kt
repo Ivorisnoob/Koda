@@ -29,10 +29,12 @@ val LocalVideoListLayout = staticCompositionLocalOf { ThemePreferences.VIDEO_LAY
 @Composable
 fun rememberVideoGridColumns(): Int {
     if (LocalVideoListLayout.current != ThemePreferences.VIDEO_LAYOUT_GRID) return 1
-    // ~320dp is the width below which a 16:9 card's two-line title starts to
-    // clip; the cap keeps a very wide window from turning the feed into
+    // Grid on a phone has always been two across, and the user chose it for
+    // that, so two is the floor. Past that a column is added per ~320dp, the
+    // width below which a 16:9 card's two-line title starts to clip on a
+    // wide window; the cap keeps a very wide one from turning the feed into
     // thumbnail confetti.
-    return currentWindowLayout().columns(minCell = 320.dp, max = 5)
+    return currentWindowLayout().columns(minCell = 320.dp, max = 5).coerceAtLeast(2)
 }
 
 /**

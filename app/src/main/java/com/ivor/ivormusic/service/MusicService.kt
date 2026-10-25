@@ -2446,8 +2446,6 @@ class MusicService : MediaLibraryService() {
             } catch (e: CancellationException) {
                 currentCoroutineContext().ensureActive()
                 LibraryResult.ofError(SessionResult.RESULT_ERROR_INVALID_STATE)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
             } catch (e: Exception) {
                 KLog.e(TAG, "Media browse request failed", e)
                 LibraryResult.ofError(SessionResult.RESULT_ERROR_IO)
@@ -2470,8 +2468,6 @@ class MusicService : MediaLibraryService() {
     } catch (e: CancellationException) {
         currentCoroutineContext().ensureActive()
         LibraryResult.ofError(SessionResult.RESULT_ERROR_INVALID_STATE)
-    } catch (e: kotlinx.coroutines.CancellationException) {
-        throw e
     } catch (e: Exception) {
         KLog.e(TAG, "Media browse search failed", e)
         LibraryResult.ofError(SessionResult.RESULT_ERROR_IO)

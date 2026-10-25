@@ -130,8 +130,6 @@ internal class NewPipeAudioSource(
             // The budget expired or the caller went away: not an extraction
             // failure, and it must not be reported as one.
             throw e
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
         } catch (e: Exception) {
             KLog.w(STREAM_TAG, "NewPipe $what failed videoId=$videoId: ${e.message}")
             NewPipeAudio(url = null, botChecked = e.isNewPipeBotCheck())
