@@ -83,6 +83,7 @@ import com.ivor.ivormusic.ui.share.SharedLinkHandler
 import com.ivor.ivormusic.ui.share.sharedLinkText
 import com.ivor.ivormusic.ui.video.PendingExternalVideo
 import com.ivor.ivormusic.ui.video.externalVideoUri
+import com.ivor.ivormusic.ui.player.externalAudioUri
 
 /**
  * Height the floating navigation bar occupies at the bottom of the Home
@@ -114,6 +115,10 @@ class MainActivity : ComponentActivity() {
     // a file rather than by resolving anything, and the two can never both be
     // present on one intent.
     private var pendingExternalVideo by androidx.compose.runtime.mutableStateOf<PendingExternalVideo?>(null)
+
+    // The audio counterpart: an audio file opened with or shared into Koda,
+    // played through the music player rather than the video one.
+    private var pendingExternalAudio by androidx.compose.runtime.mutableStateOf<com.ivor.ivormusic.ui.player.PendingExternalAudio?>(null)
 
     // True while the app is in system Picture-in-Picture. Held here rather than
     // inside the video overlay because the whole app has to stand down in PiP:
@@ -332,6 +337,7 @@ class MainActivity : ComponentActivity() {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
                         pendingExternalVideo = pendingExternalVideo,
+                        pendingExternalAudio = pendingExternalAudio,
                         isInPipMode = isInPipMode,
                         appTimeLocked = appTimeLocked,
                         onPipStateChanged = { eligible -> pipEligible = eligible },
@@ -668,6 +674,23 @@ class MainActivity : ComponentActivity() {
             pendingExternalVideo = PendingExternalVideo(videoUri, ++sharedLinkCounter)
             return
         }
+        // An audio file, for the same reason ahead of the link path. The grant
+        // is taken the same way: the music service reads the URI long after
+        // the sending activity may have gone.
+        val audioUri = intent.externalAudioUri()
+        if (audioUri != null) {
+            if (intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0) {
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        audioUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+            }
+            neutralize(intent)
+            pendingExternalAudio = com.ivor.ivormusic.ui.player.PendingExternalAudio(audioUri, ++sharedLinkCounter)
+            return
+        }
         val text = intent.sharedLinkText() ?: return
         neutralize(intent)
         pendingSharedLink = PendingSharedLink(text, ++sharedLinkCounter)
@@ -705,6 +728,8 @@ fun MusicApp(
     pendingSharedLink: PendingSharedLink?,
     /** A video file handed in by another app, waiting to be played. */
     pendingExternalVideo: PendingExternalVideo?,
+    /** An audio file handed in by another app, waiting to be played. */
+    pendingExternalAudio: com.ivor.ivormusic.ui.player.PendingExternalAudio? = null,
     isInPipMode: Boolean,
 
     /**
@@ -1234,6 +1259,19 @@ fun MusicApp(
         // it until PiP happens to end is what left the two fighting.
         enabled = onboardingCompleted,
         videoPlayerViewModel = videoPlayerViewModel,
+        onNavigateHome = {
+            navController.navigate("home") {
+                popUpTo("home") { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    )
+
+    com.ivor.ivormusic.ui.player.ExternalAudioHandler(
+        pending = pendingExternalAudio,
+        enabled = onboardingCompleted,
+        playerViewModel = playerViewModel,
+        onEnterMusicMode = { switchPlaybackMode(false) },
         onNavigateHome = {
             navController.navigate("home") {
                 popUpTo("home") { inclusive = false }

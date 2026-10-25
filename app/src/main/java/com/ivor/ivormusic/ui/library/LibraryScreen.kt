@@ -386,6 +386,9 @@ fun LibraryContent(
             LibraryRoute.Main -> Spacer(Modifier.fillMaxSize())
             LibraryRoute.Playlist -> {
                 selectedPlaylist?.let { playlist ->
+                    // A release opened from the Library (a saved album, a
+                    // hand-off from Spotlight) reads as an album: its kind,
+                    // artist and year in the header, and no playlist editing.
                     val isAlbumRelease = playlist.releaseType != null || playlist.id.startsWith("MPRE")
                     PlaylistDetailScreen(
                         playlist = playlist,
@@ -3445,10 +3448,11 @@ fun PlaylistDetailScreen(
     LaunchedEffect(resolvedPlaylist.id) {
         if (preloadedSongs == null) {
             isFetching.value = true
-            val fetched = viewModel.fetchPlaylistSongs(resolvedPlaylist.id)
-            val ordered = if (isAlbum) fetched.sortedInAlbumOrder() else fetched
+            // Fetched as served, album or not: YouTube already lists an album
+            // in its own order, and re-sorting by its per-disc index (no disc
+            // number comes with it) would interleave the discs of a double album.
             songRows = playlistSongRows(
-                ordered,
+                viewModel.fetchPlaylistSongs(resolvedPlaylist.id),
                 trackKeyPrefix
             )
             isFetching.value = false
@@ -3975,7 +3979,10 @@ fun PlaylistDetailScreen(
                                                 leadingIcon = { Icon(Icons.Rounded.Share, null) },
                                                 onClick = {
                                                     showOverflow = false
-                                                    val shareUrl = if (isAlbum) {
+                                                    // Only a browse id has a /browse/ page; a
+                                                    // release can also arrive as its OLAK5uy_
+                                                    // playlist, which opens as a playlist.
+                                                    val shareUrl = if (isAlbum && resolvedPlaylist.id.startsWith("MPRE")) {
                                                         "https://music.youtube.com/browse/${resolvedPlaylist.id}"
                                                     } else {
                                                         "https://music.youtube.com/playlist?list=${resolvedPlaylist.id}"
