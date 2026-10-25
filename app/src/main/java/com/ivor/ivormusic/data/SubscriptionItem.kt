@@ -28,9 +28,15 @@ data class SubscribedChannel(
     val bell: ChannelBell? = null
 )
 
+/** One page of the notification inbox, and the token for the next; null at its end. */
+data class NotificationPage(
+    val items: List<NotificationItem>,
+    val continuation: String?
+)
+
 /**
- * One entry of the user's notification inbox, parsed from
- * notification/get_notification_menu (notificationRenderer items).
+ * One entry of the user's notification inbox, parsed from the website's
+ * FEnotifications_inbox browse (notificationRenderer items).
  */
 data class NotificationItem(
     val message: String,             // e.g. "penguinz0 uploaded: ..."

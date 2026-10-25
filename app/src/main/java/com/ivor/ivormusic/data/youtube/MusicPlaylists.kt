@@ -15,6 +15,12 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
+/** Songs a generated mix (`RD...`) is read to; its continuation chain need not end. */
+private const val MIX_SONG_CEILING = 500
+
+/** Continuation pages any playlist walk follows before it stops. */
+private const val MAX_PLAYLIST_PAGES = 80
+
 /**
  * The songs of a YouTube Music playlist or album, and the account's own
  * library of playlists and likes.
@@ -252,6 +258,7 @@ internal class MusicPlaylists(
         } else {
             "VL$playlistId"
         }
+        val isMix = browseId.removePrefix("VL").startsWith("RD")
         val allSongs = mutableListOf<Song>()
         val seenTokens = mutableSetOf<String>()
         var json = musicApi.browseMusic(browseId)
@@ -259,7 +266,29 @@ internal class MusicPlaylists(
 
         while (true) {
             if (json.isBlank()) return PlaylistLoadResult(allSongs, complete = false)
-            allSongs += parseSongsFromInternalJson(json, preserveDuplicates = true)
+            val page = parseSongsFromInternalJson(json, preserveDuplicates = true)
+            if (isMix) {
+                // A mix is topped up as it is read and repeats songs to do it;
+                // a repeat there is filler, not a second occurrence.
+                val seen = allSongs.mapTo(HashSet()) { it.id }
+                page.filterTo(allSongs) { seen.add(it.id) }
+                // [verified October 2026] A mix's chain need not end: one
+                // personal mix still offered a token after 110 pages and 2,600
+                // songs, and the walk below would follow it for as long as the
+                // screen waited. The ceiling still holds a Replay Mix whole
+                // (412 songs, a chain that does end).
+                if (allSongs.size >= MIX_SONG_CEILING) {
+                    return PlaylistLoadResult(allSongs.take(MIX_SONG_CEILING), complete = true)
+                }
+            } else {
+                allSongs += page
+            }
+            if (seenTokens.size >= MAX_PLAYLIST_PAGES) {
+                // Past YouTube's 5,000-item playlist limit at 100 rows a page:
+                // whatever this is, it is not ending.
+                KLog.w(YOUTUBE_TAG, "Stopped playlist $playlistId at ${allSongs.size} songs, page limit")
+                return PlaylistLoadResult(allSongs, complete = true)
+            }
             val token = extractPlaylistContinuationToken(json)
                 ?: return PlaylistLoadResult(allSongs, complete = true)
             if (!seenTokens.add(token)) {
