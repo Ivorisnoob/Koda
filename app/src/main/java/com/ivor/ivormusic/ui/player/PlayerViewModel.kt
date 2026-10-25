@@ -992,6 +992,31 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
     
+    /** Related lists already fetched this session, by song id; see [relatedSongsFor]. */
+    private val relatedSongsCache = object : LinkedHashMap<String, List<Song>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Song>>?) = size > 24
+    }
+
+    /**
+     * Songs like [song], for the player's Related tab: the radio mix YouTube
+     * Music builds from it, the seed itself left out.
+     *
+     * Asked for only when the tab is opened and kept for the session, so
+     * flipping between tabs or back to a song costs nothing more - one `/next`
+     * per song looked at, never one per play. A device file has nothing to ask
+     * about and Local Only forbids asking, so both answer empty. A failure is
+     * not cached, so opening the tab again tries again.
+     */
+    suspend fun relatedSongsFor(song: Song): List<Song> {
+        if (song.source != com.ivor.ivormusic.data.SongSource.YOUTUBE) return emptyList()
+        if (themePreferences.isLocalOnlyModeEnabled()) return emptyList()
+        synchronized(relatedSongsCache) { relatedSongsCache[song.id] }?.let { return it }
+        val related = youTubeRepository.getRelatedSongs(song.id, limit = 30)
+            .filter { it.id != song.id }
+        if (related.isNotEmpty()) synchronized(relatedSongsCache) { relatedSongsCache[song.id] = related }
+        return related
+    }
+
     /**
      * Start a radio from [song]: play it right away, then fill the queue with
      * YouTube's related-songs mix for that track (the same RDAMVM radio

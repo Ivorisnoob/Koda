@@ -982,6 +982,16 @@
     <string name="cd_repeat">Repeat</string>
     <string name="cd_local_file">Local File</string>
     <string name="ps_up_next">Up Next</string>
+    <string name="cl_tab_up_next">Up next</string>
+    <string name="cl_tab_lyrics">Lyrics</string>
+    <string name="cl_tab_related">Related</string>
+    <string name="cl_collapse">Close player</string>
+    <string name="cl_playing_next">Playing next</string>
+    <string name="cl_related_like_this">You might also like</string>
+    <string name="cl_related_more_from">More from %1$s</string>
+    <string name="cl_related_device">Related songs come from YouTube Music, so a song on this device has none.</string>
+    <string name="cl_related_none">Nothing related to show right now.</string>
+    <string name="cl_added_to_queue">Added %1$s to the queue</string>
     <string name="ps_queue_empty">Queue is empty</string>
     <string name="cd_now_playing">Now Playing</string>
     <string name="ps_queue">QUEUE</string>

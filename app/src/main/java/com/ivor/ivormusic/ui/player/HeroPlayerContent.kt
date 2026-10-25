@@ -148,7 +148,7 @@ fun HeroPlayerSheetContent(
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
 
-    var showQueue by remember { mutableStateOf(false) }
+    var showQueue by rememberPlayerQueueOpen()
     var showLyrics by remember { mutableStateOf(false) }
     var showOptions by rememberNowPlayingOptionsOpen()
 

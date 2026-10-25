@@ -140,7 +140,7 @@ fun StickerPlayerSheetContent(
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
 
-    var showQueue by remember { mutableStateOf(false) }
+    var showQueue by rememberPlayerQueueOpen()
     var showLyrics by remember { mutableStateOf(false) }
 
     // Swipe-to-skip on the song information. The sticker itself keeps its own
