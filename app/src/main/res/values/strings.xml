@@ -2182,12 +2182,21 @@
     <!-- Add songs from another playlist -->
     <string name="lib_add_from_playlists">Add from your playlists</string>
     <string name="lib_edit_details">Edit details</string>
-    <string name="lib_sort_playlist">Sort</string>
+    <string name="lib_sort_playlist">Rearrange playlist</string>
     <string name="lib_sort_title">By title</string>
     <string name="lib_sort_artist">By artist</string>
     <string name="lib_sort_album">By album</string>
     <string name="lib_sort_reverse">Reverse order</string>
     <string name="lib_sort_shuffle">Shuffle order</string>
+    <string name="lib_pl_sort_default">Default</string>
+    <string name="lib_pl_sort_creator">Creator</string>
+    <string name="pl_sort_custom">Playlist order</string>
+    <string name="pl_sort_title">Title</string>
+    <string name="pl_sort_artist">Artist</string>
+    <string name="pl_sort_album">Album</string>
+    <string name="pl_sort_duration">Duration</string>
+    <string name="pl_sort_recent">Recently added</string>
+    <string name="pl_sort_cd">Sort tracks, now by %1$s</string>
     <string name="lib_sorted">Playlist reordered</string>
     <string name="lib_playlist_empty">This playlist is empty</string>
     <string name="lib_album_empty">This album is empty</string>
