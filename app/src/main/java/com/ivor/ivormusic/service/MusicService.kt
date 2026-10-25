@@ -173,7 +173,7 @@ class MusicService : MediaLibraryService() {
     )
     private val profilingIds =
         java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
-    private val prefetchingOccurrences = mutableSetOf<Any>()
+    private val prefetchingOccurrences = java.util.concurrent.ConcurrentHashMap.newKeySet<Any>()
 
     // One warm at a time: warming must never contend with the current song's
     // own buffering for the whole prefetch window.
@@ -230,7 +230,7 @@ class MusicService : MediaLibraryService() {
 
     /** Artwork URLs already being fetched for the Live Update, so a per-second
      *  progress loop does not kick off the same load repeatedly. */
-    private val liveUpdateArtworkRequested = mutableSetOf<String>()
+    private val liveUpdateArtworkRequested = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     // Service-owned, bounded browse caches. Blocking repository work outlives
     // a timed-out waiter, so another Auto request joins it instead of duplicating it.
@@ -521,6 +521,8 @@ class MusicService : MediaLibraryService() {
     private fun streamUrlExpiryMs(url: String): Long {
         val expireSec = try {
             Uri.parse(url).getQueryParameter("expire")?.toLongOrNull()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             null
         }
@@ -1521,6 +1523,8 @@ class MusicService : MediaLibraryService() {
                     ).cache()
                     KLog.d(TAG, "Warm: cached stream tail for $videoId")
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Retryable on the next prefetch round (e.g. an expired URL
                 // that resolution will refresh).
@@ -2065,7 +2069,9 @@ class MusicService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            freshShufflePending = true
+            // Only a shuffled queue gets a fresh-first reshuffle; setting this on
+            // every set made non-shuffled restores behave as if they were shuffled.
+            if (playbackShuffleEnabled) freshShufflePending = true
             return super.onSetMediaItems(mediaSession, controller, mediaItems, startIndex, startPositionMs)
         }
 
@@ -2578,6 +2584,8 @@ class MusicService : MediaLibraryService() {
                         thumbnailUrl = entry.thumbnailUrl
                     )
                 }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load listening history for browse", e)
             emptyList()
@@ -2589,6 +2597,8 @@ class MusicService : MediaLibraryService() {
                 excludedFolders = themePreferences.excludedFolders.value,
                 manualScan = themePreferences.manualScanEnabled.value
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to scan device library for browse", e)
             emptyList()
@@ -2813,6 +2823,8 @@ class MusicService : MediaLibraryService() {
         sessionCheckpointJob = null
         try {
             snapshotSession()?.let { sessionWrites.trySend(it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Session checkpoint failed: ${e.message}")
         }
@@ -2844,6 +2856,8 @@ class MusicService : MediaLibraryService() {
     private fun writeFinalSession() {
         try {
             snapshotSession()?.let(::writeSession)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Final session write failed: ${e.message}")
         }

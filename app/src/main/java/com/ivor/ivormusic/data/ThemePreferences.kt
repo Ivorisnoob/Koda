@@ -344,6 +344,9 @@ class ThemePreferences(context: Context) {
     val libraryArtistSort: StateFlow<String?> = _libraryArtistSort.asStateFlow()
     private val _libraryAlbumSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_ALBUM_SORT, null))
     val libraryAlbumSort: StateFlow<String?> = _libraryAlbumSort.asStateFlow()
+    // The Playlists tab's, a LibraryPlaylistSort name.
+    private val _libraryPlaylistSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_PLAYLIST_SORT, null))
+    val libraryPlaylistSort: StateFlow<String?> = _libraryPlaylistSort.asStateFlow()
 
     // The Subscriptions feed's own controls. Persisted for the reason the
     // Library sort is: they were held in composition state, and the tab lives
@@ -520,6 +523,7 @@ class ThemePreferences(context: Context) {
             KEY_LIBRARY_TAB -> _libraryTab.value = getLibraryTabPreference()
             KEY_LIBRARY_ARTIST_SORT -> _libraryArtistSort.value = prefs.getString(KEY_LIBRARY_ARTIST_SORT, null)
             KEY_LIBRARY_ALBUM_SORT -> _libraryAlbumSort.value = prefs.getString(KEY_LIBRARY_ALBUM_SORT, null)
+            KEY_LIBRARY_PLAYLIST_SORT -> _libraryPlaylistSort.value = prefs.getString(KEY_LIBRARY_PLAYLIST_SORT, null)
             KEY_SUBSCRIPTION_FEED_PERIOD ->
                 _subscriptionFeedPeriod.value = getSubscriptionFeedPeriodPreference()
             KEY_SUBSCRIPTION_FEED_ORDER ->
@@ -1081,6 +1085,8 @@ class ThemePreferences(context: Context) {
         private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
         private const val KEY_LIBRARY_TAB = "library_tab"
         private const val KEY_LIBRARY_ARTIST_SORT = "library_artist_sort"
+        private const val KEY_PLAYLIST_TRACK_SORT_PREFIX = "playlist_track_sort_"
+        private const val KEY_LIBRARY_PLAYLIST_SORT = "library_playlist_sort"
         private const val KEY_LIBRARY_ALBUM_SORT = "library_album_sort"
         private const val KEY_SUBSCRIPTION_FEED_PERIOD = "subscription_feed_period"
         private const val KEY_SUBSCRIPTION_FEED_ORDER = "subscription_feed_order"
@@ -2729,6 +2735,29 @@ class ThemePreferences(context: Context) {
     fun setLibraryAlbumSort(sortName: String) {
         prefs.edit().putString(KEY_LIBRARY_ALBUM_SORT, sortName).apply()
         _libraryAlbumSort.value = sortName
+    }
+
+    fun setLibraryPlaylistSort(sortName: String) {
+        prefs.edit().putString(KEY_LIBRARY_PLAYLIST_SORT, sortName).apply()
+        _libraryPlaylistSort.value = sortName
+    }
+
+    /**
+     * How one playlist's tracks are shown, kept per playlist the way other
+     * players keep it: "Name:asc" or "Name:desc", a PlaylistTrackSort name and
+     * a direction, both frozen. Null for a playlist never sorted, which shows
+     * its own order. Read once when the page opens, so no flow; in this store
+     * so backups carry it with the other sorts.
+     */
+    fun getPlaylistTrackSort(playlistId: String): String? =
+        prefs.getString(KEY_PLAYLIST_TRACK_SORT_PREFIX + playlistId, null)
+
+    /** Null clears it, so a playlist put back in its own order leaves no key. */
+    fun setPlaylistTrackSort(playlistId: String, value: String?) {
+        prefs.edit().apply {
+            if (value == null) remove(KEY_PLAYLIST_TRACK_SORT_PREFIX + playlistId)
+            else putString(KEY_PLAYLIST_TRACK_SORT_PREFIX + playlistId, value)
+        }.apply()
     }
 
     private fun getSubscriptionFeedPeriodPreference(): String =

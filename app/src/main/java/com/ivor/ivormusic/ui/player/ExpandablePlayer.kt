@@ -249,7 +249,14 @@ fun ExpandablePlayer(
      * container is both fewer lines and better defined.
      */
     val playerScope = rememberCoroutineScope()
-    PredictiveBackHandler(enabled = isExpanded) { events ->
+    // The queue is a place inside the player, so back from it returns to the
+    // player rather than collapsing it. The queue's own BackHandler is
+    // declared after the collapse handler, so it is registered later on first
+    // composition and answers whenever it is enabled; the collapse handler
+    // also stands down while the queue is open, so neither depends on that.
+    val queueOpen = remember { mutableStateOf(false) }
+    LaunchedEffect(isExpanded) { if (!isExpanded) queueOpen.value = false }
+    PredictiveBackHandler(enabled = isExpanded && !queueOpen.value) { events ->
         try {
             events.collect { event ->
                 expand.snapTo(
@@ -265,6 +272,9 @@ fun ExpandablePlayer(
             // move and the player would sit shrunken.
             playerScope.launch { expand.animateTo(1f, expandSpec) }
         }
+    }
+    androidx.activity.compose.BackHandler(enabled = isExpanded && queueOpen.value) {
+        queueOpen.value = false
     }
 
 
@@ -729,6 +739,7 @@ fun ExpandablePlayer(
                                 LocalScrubReturnPoint provides scrubReturnPoint,
                                 LocalPlaybackSpeed provides playbackSpeed,
                                 LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
+                                LocalPlayerQueueOpen provides queueOpen,
                             ) {
                                 LandscapeNowPlaying(
                                     viewModel = viewModel,
@@ -774,6 +785,7 @@ fun ExpandablePlayer(
                             // the service's once-a-second samples.
                             LocalPlaybackSpeed provides playbackSpeed,
                             LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
+                            LocalPlayerQueueOpen provides queueOpen,
                         ) {
                         when (activeStyle) {
                             PlayerStyle.CLASSIC -> {

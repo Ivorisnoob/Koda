@@ -181,6 +181,8 @@ object PlayerWidgetStore {
                 mediaId = json.optString("mediaId", "").takeIf { it.isNotBlank() },
                 album = json.optString("album", "").takeIf { it.isNotBlank() },
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w("PlayerWidget", "Widget state unreadable: ${e.message}")
             null
@@ -299,6 +301,8 @@ internal suspend fun <T> withController(
     try {
         controller = withTimeoutOrNull(timeoutMs) { future.await() } ?: return@withContext null
         block(controller)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         KLog.w("PlayerWidget", "Session call failed: ${e.message}")
         null

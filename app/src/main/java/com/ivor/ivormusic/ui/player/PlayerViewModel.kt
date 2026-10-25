@@ -17,6 +17,9 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.QUEUE_START_ABSENT
+import com.ivor.ivormusic.data.afterQueueMove
+import com.ivor.ivormusic.data.afterQueueRemoval
+import com.ivor.ivormusic.data.afterQueueRestore
 import com.ivor.ivormusic.data.arrangedBy
 import com.ivor.ivormusic.data.playOrderQueuingUpNext
 import com.ivor.ivormusic.data.queueIndexForPlayOrder
@@ -53,6 +56,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         get() = try {
             if (controllerFuture?.isDone == true) controllerFuture?.get() else null
         } catch (e: Exception) {
+            // Deliberately catches a cancelled future too: this is a plain
+            // getter read from the main thread, not a coroutine, and a released
+            // connection must read as "no controller" rather than throw.
             // Future may have completed exceptionally if the service connection
             // failed (e.g. onGetSession returned null during a teardown race).
             KLog.w("PlayerViewModel", "controller getter: failed future", e)
@@ -130,7 +136,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      * Add to queue lines up behind the ones still to come, rather than behind
      * the whole shuffled playlist (see [playOrderQueuingUpNext]).
      */
-    private val userQueuedIds = mutableSetOf<String>()
+    private val userQueuedIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /**
      * The queue in the order it will actually be heard.
@@ -344,7 +350,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private fun seedRecentSongs() {
         viewModelScope.launch {
             val cutoff = System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1000
-            runCatching { statsRepository.loadHistory() }.getOrNull()
+            try {
+                statsRepository.loadHistory()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
                 ?.asSequence()
                 ?.takeWhile { it.timestamp >= cutoff }
                 ?.forEach { recentSongIds += it.songId }
@@ -514,6 +526,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             val ctrl = try {
                 future.get()
             } catch (e: Exception) {
+                // A cancelled future lands here as well, on purpose: this
+                // listener runs as a plain Runnable on the main executor, where
+                // a rethrow would take the process down (the same reason
+                // PlaybackTileService.connect() keeps its runCatching).
                 // "Session not found" / connection rejected — usually a race during
                 // service teardown after the app was swiped away. Retry a couple of
                 // times with backoff so the next time the user opens the app the
@@ -976,6 +992,31 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         }
     }
     
+    /** Related lists already fetched this session, by song id; see [relatedSongsFor]. */
+    private val relatedSongsCache = object : LinkedHashMap<String, List<Song>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Song>>?) = size > 24
+    }
+
+    /**
+     * Songs like [song], for the player's Related tab: the radio mix YouTube
+     * Music builds from it, the seed itself left out.
+     *
+     * Asked for only when the tab is opened and kept for the session, so
+     * flipping between tabs or back to a song costs nothing more - one `/next`
+     * per song looked at, never one per play. A device file has nothing to ask
+     * about and Local Only forbids asking, so both answer empty. A failure is
+     * not cached, so opening the tab again tries again.
+     */
+    suspend fun relatedSongsFor(song: Song): List<Song> {
+        if (song.source != com.ivor.ivormusic.data.SongSource.YOUTUBE) return emptyList()
+        if (themePreferences.isLocalOnlyModeEnabled()) return emptyList()
+        synchronized(relatedSongsCache) { relatedSongsCache[song.id] }?.let { return it }
+        val related = youTubeRepository.getRelatedSongs(song.id, limit = 30)
+            .filter { it.id != song.id }
+        if (related.isNotEmpty()) synchronized(relatedSongsCache) { relatedSongsCache[song.id] = related }
+        return related
+    }
+
     /**
      * Start a radio from [song]: play it right away, then fill the queue with
      * YouTube's related-songs mix for that track (the same RDAMVM radio
@@ -1027,6 +1068,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 if (radio.isNotEmpty() && queue.size == 1 && queue[0].song.id == song.id) {
                     appendToQueue(radio, queuedByUser = false)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e("PlayerViewModel", "Radio fetch failed for ${song.id}", e)
             } finally {
@@ -1119,6 +1162,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 if (newSongs.isNotEmpty()) {
                     appendToQueue(newSongs, queuedByUser = false)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e("PlayerViewModel", "Could not extend the music queue", e)
             } finally {
@@ -1149,9 +1194,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // played, and came back in the history as something listened to. What
         // the listener queues by hand is their own choice and is never filtered.
         val wanted = if (queuedByUser) songs else notInterestedRepository.filterSongs(songs)
-        val acceptedSongs = songsForCurrentOutput(wanted)
-        if (acceptedSongs.isEmpty()) return
-        val added = acceptedSongs.map { MusicQueueItem(song = it) }
+        if (wanted.isEmpty()) return
+        val added = wanted.map { MusicQueueItem(song = it) }
         val before = _currentQueue.value
         _currentQueue.value = before + added
         if (queuedByUser) added.forEach { userQueuedIds += it.id }
@@ -1164,9 +1208,11 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             if (queuedByUser && timelineInStep && _shuffleModeEnabled.value) {
                 val order = _playOrder.value
                 if (order.size == before.size) {
-                    playOrderQueuingUpNext(order, player.currentMediaItemIndex, added.size) { index ->
-                        before.getOrNull(index)?.id in userQueuedIds
-                    }?.let(::sendPlayOrder)
+                    playOrderQueuingUpNext(
+                        order,
+                        player.currentMediaItemIndex,
+                        added.size,
+                    ) { index -> before.getOrNull(index)?.id in userQueuedIds }?.let(::sendPlayOrder)
                 }
             }
         }
@@ -1182,19 +1228,17 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     fun playNext(songs: List<Song>) {
         if (songs.isEmpty()) return
-        val acceptedSongs = songsForCurrentOutput(songs)
-        if (acceptedSongs.isEmpty()) return
         val currentList = _currentQueue.value
         if (currentList.isEmpty() || _currentSong.value == null) {
-            playQueue(acceptedSongs)
+            playQueue(songs)
             return
         }
 
         val player = controller
-        val insertAt = ((player?.currentMediaItemIndex ?: currentIndexInQueue()) + 1)
-            .coerceIn(0, currentList.size)
+        val currentIndex = player?.currentMediaItemIndex ?: currentIndexInQueue()
+        val insertAt = (currentIndex + 1).coerceIn(0, currentList.size)
 
-        val added = acceptedSongs.map { MusicQueueItem(song = it) }
+        val added = songs.map { MusicQueueItem(song = it) }
         // Queued by the listener, so a later Add to queue lines up behind them.
         added.forEach { userQueuedIds += it.id }
         _currentQueue.value = currentList.toMutableList().apply { addAll(insertAt, added) }
@@ -1203,22 +1247,24 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // insert. Append in that case; the order is wrong either way, and the
         // next explicit jump rebuilds the timeline from the queue.
         player?.let {
+            // Read the length before the edit: a controller takes a moment to
+            // update its timeline, and the indices below address the UI queue,
+            // so they are only right when the two agreed about the length.
+            val timelineInStep = it.mediaItemCount == currentList.size
             it.addMediaItems(
                 insertAt.coerceAtMost(it.mediaItemCount),
                 added.map { createMediaItem(it) }
             )
             // Behind the last queue row an insertion looks like an append,
-            // which the shuffle order plays last; put it after the current song.
-            val order = _playOrder.value
-            val currentAt = order.indexOf(insertAt - 1)
-            if (_shuffleModeEnabled.value && insertAt == currentList.size &&
-                order.size == currentList.size && currentAt >= 0
-            ) {
-                sendPlayOrder(
-                    order.toMutableList()
-                        .apply { addAll(currentAt + 1, added.indices.map { i -> insertAt + i }) }
-                        .toIntArray()
-                )
+            // which the shuffle order plays last; put it after the current
+            // song. A mid-queue insert needs no help: the shuffle order
+            // already places it straight after the song it was inserted
+            // behind, which is what "Play next" means.
+            if (_shuffleModeEnabled.value && timelineInStep && insertAt == currentList.size) {
+                val order = _playOrder.value
+                if (order.size == currentList.size) {
+                    playOrderQueuingUpNext(order, currentIndex, added.size)?.let(::sendPlayOrder)
+                }
             }
         }
     }
@@ -1226,8 +1272,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun playNext(song: Song) = playNext(listOf(song))
 
     fun addToQueue(song: Song) = addToQueue(listOf(song))
-
-    private fun songsForCurrentOutput(songs: List<Song>): List<Song> = songs
 
     /** Where the playing song sits in [_currentQueue], or 0 if it is not in it. */
     private fun currentIndexInQueue(): Int {
@@ -1263,12 +1307,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     /**
      * Move a queue item.
      *
-     * [persist] no longer does anything: the session is saved by MusicService
-     * once the queue stops changing, which already folds a drag's steps into
-     * one write. It stays so the drag call sites need not change.
+     * Positions in the queue, not in the order it will be heard. A queue
+     * screen's drags are positions in [playOrderQueue] and go through
+     * [movePlayOrderItem]; this is the shuffle-off path it forwards to, and
+     * the plain queue edit underneath a rebuild.
      */
-    @Suppress("UNUSED_PARAMETER")
-    fun moveQueueItem(fromIndex: Int, toIndex: Int, persist: Boolean = true) {
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
         val currentList = _currentQueue.value
         if (fromIndex !in currentList.indices || toIndex !in currentList.indices || fromIndex == toIndex) return
 
@@ -1282,7 +1326,17 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // Only touch the timeline when it was in step to begin with. Out of
         // step, the UI list is the one the user is looking at and the player
         // will be rebuilt from it on the next explicit jump.
-        if (agrees) controller?.moveMediaItem(fromIndex, toIndex)
+        if (agrees) {
+            controller?.moveMediaItem(fromIndex, toIndex)
+            // ExoPlayer rewrites its shuffle order on a timeline move, and its
+            // clone puts the moved item back at a random point in the
+            // permutation; remap the order we publish instead, so the song
+            // keeps the play position it had.
+            if (_shuffleModeEnabled.value) {
+                val order = _playOrder.value
+                if (order.size == currentList.size) sendPlayOrder(order.afterQueueMove(fromIndex, toIndex))
+            }
+        }
     }
 
     /**
@@ -1295,8 +1349,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      * two songs the user was not touching. Unshuffled the two orders are the
      * same list and this is exactly the old call.
      */
-    @Suppress("UNUSED_PARAMETER")
-    fun movePlayOrderItem(fromIndex: Int, toIndex: Int, persist: Boolean = true) {
+    fun movePlayOrderItem(fromIndex: Int, toIndex: Int) {
         val order = _playOrder.value
         val size = _currentQueue.value.size
 
@@ -1335,14 +1388,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     /**
-     * The drag has settled. Nothing to do here any more: MusicService saves
-     * the session itself, a moment after the queue stops changing, so the
-     * steps of a drag already collapse into one write. Kept as the queue
-     * screens' settle hook.
-     */
-    fun commitQueueOrder() = Unit
-
-    /**
      * Take a song out of the queue.
      *
      * The last song stays: an empty queue with a song still playing is a state
@@ -1356,13 +1401,19 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         if (currentList.size <= 1) return
 
         val agrees = timelineAgreesAt(index)
-        lastQueueRemoval = QueueRemoval(currentList[index], index)
+        lastQueueRemoval = QueueRemoval(currentList[index], index, playIndexIn(index))
 
         val mutable = currentList.toMutableList()
         mutable.removeAt(index)
         _currentQueue.value = mutable
 
-        if (agrees) controller?.removeMediaItem(index)
+        if (agrees) {
+            controller?.removeMediaItem(index)
+            if (_shuffleModeEnabled.value) {
+                val order = _playOrder.value
+                if (order.size == currentList.size) sendPlayOrder(order.afterQueueRemoval(index))
+            }
+        }
     }
 
     /** Remove one exact queue occurrence without relying on a stale UI index. */
@@ -1371,8 +1422,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         if (index >= 0) removeQueueItem(index)
     }
 
+    /** Where queue index [index] sits in the play order, when that order is usable. */
+    private fun playIndexIn(index: Int): Int {
+        val order = _playOrder.value
+        if (order.size != _currentQueue.value.size) return index
+        return order.indexOf(index).takeIf { it >= 0 } ?: index
+    }
+
     /** A song just taken out of the queue, kept so the snackbar can put it back. */
-    data class QueueRemoval(val item: MusicQueueItem, val index: Int)
+    data class QueueRemoval(val item: MusicQueueItem, val index: Int, val playIndex: Int)
 
     private var lastQueueRemoval: QueueRemoval? = null
 
@@ -1381,7 +1439,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      *
      * Restoring at the recorded index rather than appending, because "undo"
      * that drops the song at the end of the queue has not undone anything the
-     * user can see.
+     * user can see. Under shuffle that is two positions: the queue row it came
+     * out of, and the play-order row it was showing on, which is where the
+     * player has to put it back.
      */
     fun undoQueueRemoval() {
         val removal = lastQueueRemoval ?: return
@@ -1393,6 +1453,12 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         controller?.let { player ->
             if (at <= player.mediaItemCount) {
                 player.addMediaItem(at, createMediaItem(removal.item))
+                if (_shuffleModeEnabled.value && player.mediaItemCount == currentList.size + 1) {
+                    val order = _playOrder.value
+                    if (order.size == currentList.size) {
+                        sendPlayOrder(order.afterQueueRestore(at, removal.playIndex))
+                    }
+                }
             }
         }
     }

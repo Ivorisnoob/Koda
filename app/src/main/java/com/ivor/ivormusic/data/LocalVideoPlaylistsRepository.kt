@@ -210,6 +210,8 @@ class LocalVideoPlaylistsRepository(context: Context) {
     private fun persist(playlist: LocalVideoPlaylist) {
         try {
             File(dir, fileNameFor(playlist.id)).writeText(encode(playlist).toString())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Could not write playlist ${playlist.id}", e)
             return
@@ -227,6 +229,8 @@ class LocalVideoPlaylistsRepository(context: Context) {
         return files.mapNotNull { file ->
             try {
                 decode(JSONObject(file.readText()))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Skipping unreadable playlist ${file.name}", e)
                 null

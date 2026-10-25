@@ -351,6 +351,8 @@ class CrossfadeEngine(
                 }
             }
             true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Could not start transition", e)
             fadingIntoId = null
@@ -699,15 +701,27 @@ class CrossfadeEngine(
             // first would publish a stopped state through it on the way out.
             // Once the session has moved, retiring the old player must never
             // roll back by stopping and clearing the newly audible one.
-            runCatching {
+            try {
                 outgoing.volume = 0f
                 outgoing.stop()
                 outgoing.clearMediaItems()
                 outgoing.playbackParameters = baseParameters()
                 clearEffects(outgoing)
                 clearEffects(incoming)
-            }.onFailure { KLog.w(TAG, "Could not fully retire outgoing player: ${it.message}") }
-            runCatching { releaseTempo(incoming) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w(TAG, "Could not fully retire outgoing player: ${e.message}")
+            }
+            try {
+                releaseTempo(incoming)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w(TAG, "Could not release tempo: ${e.message}")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Swap failed; falling back to the outgoing player", e)
             if (active === incoming) {

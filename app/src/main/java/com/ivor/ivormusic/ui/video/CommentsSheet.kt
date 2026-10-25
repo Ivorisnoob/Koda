@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.video
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -390,7 +391,7 @@ fun CommentsSheet(
     header: (@Composable () -> Unit)? = null,
     unavailableMessage: String = "Comments are unavailable for this video"
 ) {
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         // A tall sheet opens at its full height; a half-open stop on a sheet
         // that is already most of the screen is one more drag for nothing.

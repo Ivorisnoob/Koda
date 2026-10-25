@@ -180,6 +180,7 @@ fun VideoHomeContent(
     val showOfflineDownloads = isOffline && downloadedVideos.isNotEmpty()
     val isShortsLoading by viewModel.isShortsLoading.collectAsState()
     val listLayout = LocalVideoListLayout.current
+    val videoGridColumns = com.ivor.ivormusic.ui.video.rememberVideoGridColumns()
     val shortsFeedFailed by viewModel.shortsFeedFailed.collectAsState()
 
     // Notifications sheet state
@@ -399,12 +400,27 @@ fun VideoHomeContent(
                 }
                 
                 if (showOfflineDownloads) {
-                    items(downloadedVideos, key = { "download_${it.id}" }) { downloaded ->
-                        VideoCard(
-                            video = downloaded.asOfflineVideoItem(),
-                            onClick = { onDownloadedVideoClick(downloaded) },
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
+                    // The same window-derived column count the online feed
+                    // uses, so offline downloads are not a single stretched
+                    // card per row on a tablet.
+                    val offlinePerRow = videoGridColumns.coerceAtLeast(1)
+                    items(
+                        downloadedVideos.chunked(offlinePerRow),
+                        key = { row -> "download_" + row.first().id }
+                    ) { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            row.forEach { downloaded ->
+                                VideoCard(
+                                    video = downloaded.asOfflineVideoItem(),
+                                    onClick = { onDownloadedVideoClick(downloaded) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            repeat(offlinePerRow - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 } else {
                     // Video cards, with the Shorts shelf slotted in after the
@@ -429,6 +445,7 @@ fun VideoHomeContent(
                         posts = if (shortsEnabled) emptyList() else feedPosts,
                         layout = listLayout,
                         keyPrefix = "lead_",
+                        columns = videoGridColumns,
                         post = feedPostCard
                     ) { video, cell ->
                         VideoCard(
@@ -457,6 +474,7 @@ fun VideoHomeContent(
                         posts = feedPosts,
                         layout = listLayout,
                         keyPrefix = "trail_",
+                        columns = videoGridColumns,
                         post = feedPostCard
                     ) { video, cell ->
                         VideoCard(
@@ -967,7 +985,11 @@ fun VideoCard(
                 // on screen every frame.
                 val preview = LocalInlinePreview.current
                 val visibleFraction = remember(video.videoId) { mutableFloatStateOf(0f) }
-                val isPreviewing = preview?.previewingId == video.videoId
+                // Non-null only while this card is the one previewing. Keeping
+                // the claim in one nullable val means every gate below is a
+                // plain null check the compiler can smart-cast, instead of a
+                // boolean that leaves `preview` nullable inside the branch.
+                val activePreview = preview?.takeIf { it.previewingId == video.videoId }
 
                 // Thumbnail with duration overlay
                 Box(
@@ -1003,13 +1025,13 @@ fun VideoCard(
                     // frame can only render into a surface. The player had
                     // nowhere to draw, onRenderedFirstFrame never fired, and
                     // the condition guarding the surface stayed false forever.
-                    if (isPreviewing && preview != null) {
+                    if (activePreview != null) {
                         val previewAlpha by animateFloatAsState(
-                            targetValue = if (preview.isRendering) 1f else 0f,
+                            targetValue = if (activePreview.isRendering) 1f else 0f,
                             label = "previewAlpha"
                         )
                         InlinePreviewSurface(
-                            controller = preview,
+                            controller = activePreview,
                             modifier = Modifier
                                 .matchParentSize()
                                 .graphicsLayer { alpha = previewAlpha }
@@ -1041,9 +1063,9 @@ fun VideoCard(
                     // How far the preview has got, on the card itself. Drawn
                     // only while previewing, so a card at rest is exactly the
                     // card it was before this feature existed.
-                    if (isPreviewing && preview != null && preview.isRendering) {
+                    if (activePreview != null && activePreview.isRendering) {
                         androidx.compose.material3.LinearProgressIndicator(
-                            progress = { preview.progress },
+                            progress = { activePreview.progress },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(3.dp)
@@ -1060,9 +1082,9 @@ fun VideoCard(
                     // silences it again. Fixed black scrim like the duration
                     // badge, so it reads in either theme. The button consumes
                     // the tap, so the card itself does not open.
-                    if (isPreviewing && preview != null && preview.isRendering) {
+                    if (activePreview != null && activePreview.isRendering) {
                         androidx.compose.material3.IconButton(
-                            onClick = { preview.setPreviewMuted(!preview.isMuted) },
+                            onClick = { activePreview.setPreviewMuted(!activePreview.isMuted) },
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .padding(8.dp)
@@ -1073,13 +1095,13 @@ fun VideoCard(
                             )
                         ) {
                             Icon(
-                                imageVector = if (preview.isMuted) {
+                                imageVector = if (activePreview.isMuted) {
                                     Icons.AutoMirrored.Rounded.VolumeOff
                                 } else {
                                     Icons.AutoMirrored.Rounded.VolumeUp
                                 },
                                 contentDescription = stringResource(
-                                    if (preview.isMuted) R.string.cd_volume_unmute
+                                    if (activePreview.isMuted) R.string.cd_volume_unmute
                                     else R.string.cd_volume_mute
                                 ),
                                 modifier = Modifier.size(20.dp)

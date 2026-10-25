@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.player
 
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
@@ -226,7 +227,7 @@ fun NowPlayingOptionsSheet(
     // player it slid up over, whose controls were all album-coloured. The rule
     // that survives is the other half of that decision: take the scheme
     // whole. Do not pick roles from the app's palette and the player's here.
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -792,3 +793,16 @@ internal val LocalNowPlayingOptionsOpen = compositionLocalOf<MutableState<Boolea
 @Composable
 internal fun rememberNowPlayingOptionsOpen(): MutableState<Boolean> =
     LocalNowPlayingOptionsOpen.current ?: remember { mutableStateOf(false) }
+
+/**
+ * Whether the expanded player is showing its queue (in Classic, its Up next,
+ * Lyrics and Related panel). Hoisted into [ExpandablePlayer] beside
+ * [LocalNowPlayingOptionsOpen] so back can close the queue and return to the
+ * player, in every style, instead of collapsing the player from inside it.
+ * Each style falls back to its own state without it.
+ */
+internal val LocalPlayerQueueOpen = compositionLocalOf<MutableState<Boolean>?> { null }
+
+@Composable
+internal fun rememberPlayerQueueOpen(): MutableState<Boolean> =
+    LocalPlayerQueueOpen.current ?: remember { mutableStateOf(false) }

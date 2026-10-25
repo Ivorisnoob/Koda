@@ -206,6 +206,8 @@ internal class LocalSubscriptionFeed(
                 response.body?.string()
             } ?: return@withContext ChannelFeedResult.NoFeed
             ChannelFeedResult.Items(parseChannelFeedXml(body, avatarUrl))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(YOUTUBE_TAG, "getChannelFeedRss failed for $channelId", e)
             ChannelFeedResult.Failed

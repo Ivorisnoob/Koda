@@ -397,7 +397,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * and the very next poll would otherwise skip it again - and because they
      * can seek back into it later from anywhere.
      */
-    private val ignoredSegmentIds = mutableSetOf<String>()
+    private val ignoredSegmentIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var skipNoticeJob: Job? = null
 
     // Initial stream resolution and watch-next metadata belong to one specific
@@ -2990,6 +2990,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     _exoPlayer?.play()
                 }
                 _isLoading.value = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _playbackError.value = e
                 _isLoading.value = false
@@ -3375,6 +3377,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             // buildUpon rather than a fresh item: the URI, MIME type and cache
             // key all have to stay byte-identical for the update to be seamless.
             player.replaceMediaItem(0, current.buildUpon().setMediaMetadata(metadata).build())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w("VideoPlayerVM", "Could not refresh now-playing metadata", e)
         }
@@ -3542,6 +3546,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val isDownload = _isLocalPlayback.value && isDownloadedVideoId(video.videoId)
         if (_isLocalPlayback.value && !isDownload) return
         if (captionsLoadedForVideoId == video.videoId) return
+        // Claimed before the request, so a second call while this one is in
+        // flight does not start another; a failure below gives it back.
         captionsLoadedForVideoId = video.videoId
         _isCaptionsLoading.value = true
         viewModelScope.launch {
@@ -3560,6 +3566,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     if (themePreferences.isCaptionsEnabled() && _selectedCaption.value == null) {
                         restoreSavedCaptionTrack(tracks)
                     }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Allow a retry on the next call instead of permanently
+                // marking this video as caption-loaded.
+                if (_currentVideo.value?.videoId == video.videoId) {
+                    captionsLoadedForVideoId = null
                 }
             } finally {
                 if (_currentVideo.value?.videoId == video.videoId) {
@@ -4152,6 +4166,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 } else {
                     onFailure(result.error ?: "Message not sent")
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w("VideoPlayerVM", "Failed to send live chat message", e)
                 onFailure("Message not sent")

@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.shorts
 
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -94,7 +95,7 @@ fun ShortsDescriptionSheet(
         onTimestampClick = { seconds -> onSeekTo(seconds * 1000L) }
     )
 
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
