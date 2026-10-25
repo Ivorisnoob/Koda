@@ -116,6 +116,10 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 
 ### October 2026
 
+- The Classic player, redesigned in Material 3 Expressive terms: the cover is a soft square while playing and morphs into a twelve-sided cookie that sinks back on pause; transport is a standard button group with a wide filled play button that is a squircle while playing and a pill while paused; Up next, Lyrics and Related open a panel that rises over the player (`PlayerSheetContent.kt`). Related is the song's radio from `getRelatedSongs`, fetched when the tab opens and cached per song; YouTube Music's own Related page (similar artists, playlists, About) has not been probed and is not used.
+- Back from a queue returns to the player in all nine styles instead of collapsing it (`LocalPlayerQueueOpen`).
+- Library: songs inside a playlist sort by Playlist order, Title, Artist, Album, Duration or Recently added (the last on device playlists and Liked songs only), per playlist and persisted, as a view rather than a rewrite; the Playlists tab sorts by Default, Name, Most songs or Creator; the playlist page's cover is a centred square instead of a full-width banner; and a YouTube album in the Albums tab opens its release page with every track rather than the one song the Library held.
+- Spotlight keeps its chosen filter across a trip to the Library and back; audio files open with Koda play in the music player (`Intent.externalAudioUri`, `ExternalAudioHandler`).
 - The notification bell shows what is new again: it reads the inbox the website reads, `FEnotifications_inbox`, instead of `get_notification_menu`, which YouTube stopped updating and which showed items weeks old; older pages load as the sheet scrolls.
 - Music Home's recommendations come from Quick picks again, which YouTube moved to Home's second page; they had become the songs already played.
 - A personal mix in the library opens instead of loading without end: a mix is read to 500 songs, repeats dropped.
