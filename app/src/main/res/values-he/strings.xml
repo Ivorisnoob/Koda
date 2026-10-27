@@ -220,11 +220,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">הקש כדי להאזין</string>
     <string name="widget_pulse_label">פולס</string>
-    <string name="widget_pulse_description">עטיפה, שיר וניגון; הוסף שורה להתקדמות ולדילוג</string>
-    <string name="widget_console_label">קונסולה</string>
-    <string name="widget_console_description">רק הפקדים, עם ערבוב וחזרה</string>
-    <string name="widget_deck_label">דק</string>
-    <string name="widget_deck_description">נגן גבוה עם עטיפה, התקדמות וכל הפקדים</string>
     <string name="widget_lineup_label">ליינאפ</string>
     <string name="widget_lineup_description">מה מתנגן ומה הבא; הקש על רצועה כדי לדלג</string>
     <string name="widget_bloom_label">בלום</string>

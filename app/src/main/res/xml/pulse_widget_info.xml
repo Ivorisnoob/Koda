@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    4x1 that grows into a 4x2 card: cookie-cut cover, track, hero; adds progress and a transport group when made taller.
+    4x1 strip that grows into a 4x2 card: squircle cover, track, the hero and
+    next; made taller, the cover grows and previous joins the transport.
 
     MusicService pushes a redraw on each playback event; the 30-minute
     updatePeriodMillis heartbeat (the platform floor) exists only so a widget

@@ -216,11 +216,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Toucher pour écouter</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Pochette, titre et lecture ; ajoutez une ligne pour la progression et le saut</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Juste les contrôles, avec lecture aléatoire et répétition</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Un lecteur haut avec pochette, progression et tous les contrôles</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Ce qui joue et ce qui suit ; touchez un titre pour y aller</string>
     <string name="widget_bloom_label">Bloom</string>

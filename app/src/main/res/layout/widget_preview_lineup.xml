@@ -1,31 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Picker preview for the Lineup widget (4x2 queue): header plus two
-    upcoming-track rows.
+    Picker preview for the Lineup widget (4x2 queue): the now-playing header
+    over one segmented group of two upcoming rows. Fixed colours from the
+    family palette (drawable/widget_preview_card.xml).
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_preview_card"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="8dp">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="48dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <ImageView
-            android:layout_width="50dp"
-            android:layout_height="50dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:contentDescription="@null"
-            android:src="@drawable/widget_preview_art" />
+            android:src="@drawable/widget_preview_cover" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
+            android:layout_marginStart="12dp"
             android:layout_marginEnd="8dp"
             android:layout_weight="1"
             android:orientation="vertical">
@@ -36,18 +37,19 @@
                 android:ellipsize="end"
                 android:singleLine="true"
                 android:text="@string/widget_preview_title"
-                android:textColor="#FFF2DEE5"
-                android:textSize="15sp"
-                android:textStyle="bold" />
+                android:textColor="#FFF0DEE3"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
                 android:ellipsize="end"
                 android:singleLine="true"
                 android:text="@string/widget_preview_artist"
-                android:textColor="#FFD6BFC8"
-                android:textSize="11sp" />
+                android:textColor="#FFD5C2C7"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <FrameLayout
@@ -61,19 +63,19 @@
                 android:layout_gravity="center"
                 android:contentDescription="@string/widget_action_play"
                 android:tint="#FF5E1133"
-            android:src="@drawable/ic_media_play" />
+                android:src="@drawable/ic_media_play" />
         </FrameLayout>
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="43dp"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/widget_preview_row"
+        android:layout_height="38dp"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/widget_preview_row_top"
         android:gravity="center_vertical"
         android:orientation="vertical"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp">
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -81,9 +83,9 @@
             android:ellipsize="end"
             android:singleLine="true"
             android:text="@string/widget_preview_next_1"
-            android:textColor="#FFF2DEE5"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            android:textColor="#FFF0DEE3"
+            android:textSize="13sp"
+            android:fontFamily="sans-serif-medium" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -91,19 +93,19 @@
             android:ellipsize="end"
             android:singleLine="true"
             android:text="@string/widget_preview_artist"
-            android:textColor="#FFD6BFC8"
-            android:textSize="10sp" />
+            android:textColor="#FFD5C2C7"
+            android:textSize="11sp" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="43dp"
-        android:layout_marginTop="3dp"
-        android:background="@drawable/widget_preview_row"
+        android:layout_height="38dp"
+        android:layout_marginTop="2dp"
+        android:background="@drawable/widget_preview_row_bottom"
         android:gravity="center_vertical"
         android:orientation="vertical"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp">
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -111,9 +113,9 @@
             android:ellipsize="end"
             android:singleLine="true"
             android:text="@string/widget_preview_next_2"
-            android:textColor="#FFF2DEE5"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            android:textColor="#FFF0DEE3"
+            android:textSize="13sp"
+            android:fontFamily="sans-serif-medium" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -121,7 +123,7 @@
             android:ellipsize="end"
             android:singleLine="true"
             android:text="@string/widget_preview_artist"
-            android:textColor="#FFD6BFC8"
-            android:textSize="10sp" />
+            android:textColor="#FFD5C2C7"
+            android:textSize="11sp" />
     </LinearLayout>
 </LinearLayout>

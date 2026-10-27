@@ -211,11 +211,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">輕觸以聆聽</string>
     <string name="widget_pulse_label">脈搏</string>
-    <string name="widget_pulse_description">封面、曲目與播放；可新增一列顯示進度與切歌</string>
-    <string name="widget_console_label">主控台</string>
-    <string name="widget_console_description">僅保留控制按鈕，含隨機與循環</string>
-    <string name="widget_deck_label">唱盤</string>
-    <string name="widget_deck_description">高大的播放器，含封面、進度與全部控制按鈕</string>
     <string name="widget_lineup_label">排播</string>
     <string name="widget_lineup_description">顯示播放中與接下來的內容；輕觸曲目即可跳轉</string>
     <string name="widget_bloom_label">綻放</string>

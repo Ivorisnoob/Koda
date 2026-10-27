@@ -215,11 +215,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">सुनने के लिए टैप करें</string>
     <string name="widget_pulse_label">पल्स</string>
-    <string name="widget_pulse_description">कवर, ट्रैक और प्ले; प्रगति और स्किप के लिए एक पंक्ति जोड़ें</string>
-    <string name="widget_console_label">कंसोल</string>
-    <string name="widget_console_description">सिर्फ़ कंट्रोल, शफ़ल और रिपीट के साथ</string>
-    <string name="widget_deck_label">डेक</string>
-    <string name="widget_deck_description">कवर, प्रगति और सभी कंट्रोल वाला लंबा प्लेयर</string>
     <string name="widget_lineup_label">लाइनअप</string>
     <string name="widget_lineup_description">क्या बज रहा है और आगे क्या है; कूदने के लिए ट्रैक पर टैप करें</string>
     <string name="widget_bloom_label">ब्लूम</string>

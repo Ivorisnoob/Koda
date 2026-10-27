@@ -214,11 +214,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Tocca per ascoltare</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Copertina, brano e riproduzione; aggiungi una riga per avanzamento e salto</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Solo i controlli, con casuale e ripetizione</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Un player alto con copertina, avanzamento e tutti i controlli</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Cosa sta suonando e cosa segue; tocca un brano per saltarci</string>
     <string name="widget_bloom_label">Bloom</string>

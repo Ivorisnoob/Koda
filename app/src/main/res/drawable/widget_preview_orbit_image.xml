@@ -1,18 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Launcher picker fallback preview for the Orbit widget (1x1 round). -->
+<!--
+    Launcher picker fallback preview for the Orbit widget (1x1): the cover
+    as a disc, with the hero tucked against its lower edge.
+    Flat fills from the family's preview palette
+    (drawable/widget_preview_card.xml), no gradients.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="110dp"
-    android:height="110dp"
-    android:viewportWidth="110"
-    android:viewportHeight="110">
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
 
-    <path
-        android:fillColor="#FFB47BE8"
-        android:pathData="M4,55 a51,51 0 1,0 102,0 a51,51 0 1,0 -102,0 Z" />
-    <path
-        android:fillColor="#99000000"
-        android:pathData="M31,55 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M49,44 L67,55 L49,66 Z" />
+    <group android:translateX="2" android:translateY="2" android:scaleX="1.91667" android:scaleY="1.91667">
+        <clip-path android:pathData="M0,24 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z" />
+        <path android:fillColor="#FF35545C" android:pathData="M0,0 H48 V48 H0 Z" />
+        <path android:fillColor="#FFEFD2AE" android:pathData="M24,17 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 Z" />
+        <path android:fillColor="#FF2A454C" android:pathData="M0,33 C10,27 20,26 30,30 C38,33 44,31 48,28 V48 H0 Z" />
+        <path android:fillColor="#FF1C3237" android:pathData="M0,40 C12,35 26,35 48,41 V48 H0 Z" />
+    </group>
+    <path android:fillColor="#FFFFB1C8" android:pathData="M52,73 a21,21 0 1,0 42,0 a21,21 0 1,0 -42,0 Z" />
+    <group android:translateX="63" android:translateY="63" android:scaleX="0.833333" android:scaleY="0.833333">
+        <path android:fillColor="#FF5E1133" android:pathData="M8,5v14l11,-7z" />
+    </group>
 </vector>
