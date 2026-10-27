@@ -780,7 +780,7 @@ class MusicService : MediaLibraryService() {
             PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-        mediaLibrarySession = MediaLibrarySession.Builder(this, engine.active, LibrarySessionCallback())
+        mediaLibrarySession = MediaLibrarySession.Builder(this, SteadyDurationPlayer(engine.active), LibrarySessionCallback())
             .setSessionActivity(sessionIntent)
             .build()
         refreshMediaButtons()
@@ -1845,7 +1845,7 @@ class MusicService : MediaLibraryService() {
         automaticCrossfades.forgetAttempt()
         // Let a failure reach CrossfadeEngine's rollback. Swallowing it would
         // retire the old player while the session still points at that player.
-        mediaLibrarySession?.setPlayer(newActive)
+        mediaLibrarySession?.setPlayer(SteadyDurationPlayer(newActive))
         trackGain = gainForPlayer(newActive)
         engine.setPauseAtEndOfMediaItems(sleepTimer.endOfTrack)
         prefetchUpcomingSongs()
