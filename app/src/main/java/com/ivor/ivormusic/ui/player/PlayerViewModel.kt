@@ -17,12 +17,7 @@ import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.MusicQueueItem
 import com.ivor.ivormusic.data.QUEUE_START_ABSENT
-import com.ivor.ivormusic.data.afterQueueMove
-import com.ivor.ivormusic.data.afterQueueRemoval
-import com.ivor.ivormusic.data.afterQueueRestore
 import com.ivor.ivormusic.data.arrangedBy
-import com.ivor.ivormusic.data.playOrderQueuingUpNext
-import com.ivor.ivormusic.data.queueIndexForPlayOrder
 import com.ivor.ivormusic.data.queueStartIndex
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
@@ -127,44 +122,13 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private val _currentQueueItemId = MutableStateFlow<String?>(null)
     val currentQueueItemId: StateFlow<String?> = _currentQueueItemId.asStateFlow()
 
-    /** Queue positions in playing order, as last published by the service. */
-    private val _playOrder = MutableStateFlow(IntArray(0))
-
     /**
      * Occurrence ids of the rows the listener queued themselves - Add to
      * queue and Play next - in the current queue. With shuffle on, a later
      * Add to queue lines up behind the ones still to come, rather than behind
-     * the whole shuffled playlist (see [playOrderQueuingUpNext]).
+     * the whole shuffled playlist (see [appendToQueue]).
      */
     private val userQueuedIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-
-    /**
-     * The queue in the order it will actually be heard.
-     *
-     * **This, not [currentQueue], is what a queue screen draws.** With shuffle
-     * off the two are the same list. With shuffle on they are not, and every
-     * queue surface in the app used to draw [currentQueue] anyway: the order
-     * songs were added in, while the player played a different one. "Up next"
-     * named a song that was not next, the row highlighted as playing was
-     * usually somewhere in the middle, and Bento's next-track line - which
-     * takes the item at index + 1 - named a song more or less at random.
-     *
-     * The order comes from the service, which walks its own player's timeline
-     * and publishes the result. It cannot be read here: a `MediaController`'s
-     * timeline is the plain base class, whose shuffle-aware walk is
-     * `index + 1` (see [MusicService.EXTRA_PLAY_ORDER]).
-     *
-     * An order that does not cover the queue exactly once is not trusted - it
-     * is a published order that has not caught up with a queue edited a moment
-     * ago - and the plain order is drawn instead. A wrong order is worse than
-     * an unshuffled one, because only one of the two looks wrong.
-     */
-    val playOrderQueue: StateFlow<List<MusicQueueItem>> = combine(
-        _currentQueue,
-        _playOrder,
-    ) { queue, order ->
-        queue.arrangedBy(order)
-    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
 
     // Stats tracking
     private var lastRecordedSongId: String? = null
@@ -437,22 +401,21 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 "Restoring session: ${session.queue.size} songs, index=${session.currentIndex}, pos=${session.positionMs}"
             )
 
-            _currentQueue.value = session.queue
+            // Drawn in the order it plays. The service lays the timeline out
+            // the same way, and keeps the order from before the shuffle.
+            val order = session.playOrder.toIntArray()
+                .takeIf { it.isNotEmpty() && controller?.shuffleModeEnabled == true }
+            _currentQueue.value = order?.let(session.queue::arrangedBy) ?: session.queue
             _currentQueueItemId.value = queueItem.id
             _currentSong.value = song
             _progress.value = session.positionMs
             if (song.duration > 0) _duration.value = song.duration
             updateCurrentSongLikedStatus()
 
-            controller?.let { player ->
-                val items = session.queue.map { createMediaItem(it) }
-                player.setMediaItems(items, session.currentIndex, session.positionMs)
-                player.prepare()
-                // The shuffle order it was walking, so songs already heard
-                // stay behind the current one.
-                session.playOrder.takeIf { player.shuffleModeEnabled && it.size == items.size }
-                    ?.let { sendPlayOrder(it.toIntArray()) }
-            }
+            controller?.sendCustomCommand(
+                androidx.media3.session.SessionCommand(MusicService.CMD_RESTORE_PLAYBACK, android.os.Bundle.EMPTY),
+                android.os.Bundle.EMPTY,
+            )
 
             fetchLyrics(song)
         }
@@ -495,7 +458,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 ) {
                     applySleepTimerExtras(extras)
                     applyPlaybackSpeedExtras(extras)
-                    applyPlayOrderExtras(extras)
                 }
 
                 override fun onCustomCommand(
@@ -617,6 +579,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                     _shuffleModeEnabled.value = shuffleModeEnabled
                 }
 
+                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                    if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) followTimelineOrder()
+                }
+
                 override fun onRepeatModeChanged(repeatMode: Int) {
                     _repeatMode.value = repeatMode
                 }
@@ -723,15 +689,9 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                         // Fresh pref read: the settings screen toggles through
                         // its own ThemePreferences instance, so this VM's
                         // StateFlow copy is stale at decision time.
-                        // Counted in play order: shuffled, the timeline index
-                        // says nothing about how much of the queue is left.
                         val totalItems = controller?.mediaItemCount ?: 0
                         val currentIndex = controller?.currentMediaItemIndex ?: 0
-                        val order = _playOrder.value
-                        val playedThrough = if (order.size == totalItems) {
-                            order.indexOf(currentIndex).coerceAtLeast(0)
-                        } else currentIndex
-                        val songsLeft = totalItems - playedThrough - 1
+                        val songsLeft = totalItems - currentIndex - 1
 
                         if (songsLeft < 5 && !_isLoadingMore.value &&
                             themePreferences.isAutoLoadQueueEnabled()
@@ -776,10 +736,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _progress.value = ctrl.currentPosition
         _shuffleModeEnabled.value = ctrl.shuffleModeEnabled
         _repeatMode.value = ctrl.repeatMode
-        // Extras carry the shuffle seed, and onExtrasChanged only fires on a
-        // change - a controller connecting to a session that is already
-        // shuffling would otherwise never be told which permutation it is in.
-        applyPlayOrderExtras(ctrl.sessionExtras)
 
         // Rebuild queue from MediaSession
         val itemCount = ctrl.mediaItemCount
@@ -1176,13 +1132,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun addToQueue(songs: List<Song>) = appendToQueue(songs, queuedByUser = true)
 
     /**
-     * Append [songs] to the end of the queue.
+     * Add [songs] to the queue.
      *
      * [queuedByUser] separates the listener's Add to queue from the app's own
-     * top-ups (radio, auto-queue). Both land at the end of the queue; with
-     * shuffle on, the listener's songs are then moved in the play order to
-     * right after the current song and any songs queued before them, while
-     * recommendations stay at the end so they never mix into the playlist.
+     * top-ups (radio, auto-queue). Recommendations always go at the end, so
+     * they never mix into a playlist being shuffled. The listener's songs do
+     * too while unshuffled; shuffled, the end is wherever the shuffle put the
+     * last song, often hours away, so they go right after the current song and
+     * any songs queued before them, in the order they were added.
      */
     private fun appendToQueue(songs: List<Song>, queuedByUser: Boolean) {
         if (songs.isEmpty()) return
@@ -1197,24 +1154,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         if (wanted.isEmpty()) return
         val added = wanted.map { MusicQueueItem(song = it) }
         val before = _currentQueue.value
-        _currentQueue.value = before + added
         if (queuedByUser) added.forEach { userQueuedIds += it.id }
 
+        val insertAt = if (queuedByUser && _shuffleModeEnabled.value) {
+            var at = (currentIndexInQueue() + 1).coerceAtMost(before.size)
+            while (at < before.size && before[at].id in userQueuedIds) at++
+            at
+        } else before.size
+        _currentQueue.value = before.toMutableList().apply { addAll(insertAt, added) }
+
         controller?.let { player ->
-            // The new rows' queue indices are only the ones computed below
-            // when the timeline and this list agree about the queue's length.
-            val timelineInStep = player.mediaItemCount == before.size
-            player.addMediaItems(added.map { createMediaItem(it) })
-            if (queuedByUser && timelineInStep && _shuffleModeEnabled.value) {
-                val order = _playOrder.value
-                if (order.size == before.size) {
-                    playOrderQueuingUpNext(
-                        order,
-                        player.currentMediaItemIndex,
-                        added.size,
-                    ) { index -> before.getOrNull(index)?.id in userQueuedIds }?.let(::sendPlayOrder)
-                }
-            }
+            // The index addresses this list; out of step with the timeline the
+            // songs go at its end rather than at an arbitrary row.
+            val at = if (player.mediaItemCount == before.size) insertAt else player.mediaItemCount
+            player.addMediaItems(at, added.map { createMediaItem(it) })
         }
     }
 
@@ -1246,32 +1199,34 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // drifted, and Media3 throws rather than clamping an out-of-range
         // insert. Append in that case; the order is wrong either way, and the
         // next explicit jump rebuilds the timeline from the queue.
-        player?.let {
-            // Read the length before the edit: a controller takes a moment to
-            // update its timeline, and the indices below address the UI queue,
-            // so they are only right when the two agreed about the length.
-            val timelineInStep = it.mediaItemCount == currentList.size
-            it.addMediaItems(
-                insertAt.coerceAtMost(it.mediaItemCount),
-                added.map { createMediaItem(it) }
-            )
-            // Behind the last queue row an insertion looks like an append,
-            // which the shuffle order plays last; put it after the current
-            // song. A mid-queue insert needs no help: the shuffle order
-            // already places it straight after the song it was inserted
-            // behind, which is what "Play next" means.
-            if (_shuffleModeEnabled.value && timelineInStep && insertAt == currentList.size) {
-                val order = _playOrder.value
-                if (order.size == currentList.size) {
-                    playOrderQueuingUpNext(order, currentIndex, added.size)?.let(::sendPlayOrder)
-                }
-            }
-        }
+        player?.addMediaItems(insertAt.coerceAtMost(player.mediaItemCount), added.map { createMediaItem(it) })
     }
 
     fun playNext(song: Song) = playNext(listOf(song))
 
     fun addToQueue(song: Song) = addToQueue(listOf(song))
+
+    /**
+     * Take up the order the service laid the timeline out in.
+     *
+     * Edits made here update [_currentQueue] first and the timeline catches up,
+     * so this only acts on a timeline holding exactly the same rows in another
+     * order: the service shuffling, unshuffling, or shuffling a queue that just
+     * arrived. Anything else is an edit still on its way, and left to land.
+     */
+    private fun followTimelineOrder() {
+        val player = controller ?: return
+        val queue = _currentQueue.value
+        if (player.mediaItemCount != queue.size || queue.size < 2) return
+        val byId = queue.associateBy { it.id }
+        if (byId.size != queue.size) return
+        val ordered = ArrayList<MusicQueueItem>(queue.size)
+        for (index in 0 until player.mediaItemCount) {
+            val id = player.getMediaItemAt(index).mediaMetadata.extras?.getString(EXTRA_QUEUE_ITEM_ID) ?: return
+            ordered += byId[id] ?: return
+        }
+        if (ordered != queue) _currentQueue.value = ordered
+    }
 
     /** Where the playing song sits in [_currentQueue], or 0 if it is not in it. */
     private fun currentIndexInQueue(): Int {
@@ -1305,12 +1260,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     }
 
     /**
-     * Move a queue item.
-     *
-     * Positions in the queue, not in the order it will be heard. A queue
-     * screen's drags are positions in [playOrderQueue] and go through
-     * [movePlayOrderItem]; this is the shuffle-off path it forwards to, and
-     * the plain queue edit underneath a rebuild.
+     * Move a queue item. The queue is the order it plays, shuffled or not,
+     * so a row dragged on a queue screen lands where it was dropped.
      */
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
         val currentList = _currentQueue.value
@@ -1328,63 +1279,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         // will be rebuilt from it on the next explicit jump.
         if (agrees) {
             controller?.moveMediaItem(fromIndex, toIndex)
-            // ExoPlayer rewrites its shuffle order on a timeline move, and its
-            // clone puts the moved item back at a random point in the
-            // permutation; remap the order we publish instead, so the song
-            // keeps the play position it had.
-            if (_shuffleModeEnabled.value) {
-                val order = _playOrder.value
-                if (order.size == currentList.size) sendPlayOrder(order.afterQueueMove(fromIndex, toIndex))
-            }
         }
-    }
-
-    /**
-     * Move a queue item the user dragged on a queue screen.
-     *
-     * The screens draw [playOrderQueue], so both positions are positions in
-     * the play order, and with shuffle on that is not the queue: dragging row
-     * five onto row two and passing those straight to [moveQueueItem] would
-     * pick up whichever songs happen to sit at queue positions five and two -
-     * two songs the user was not touching. Unshuffled the two orders are the
-     * same list and this is exactly the old call.
-     */
-    fun movePlayOrderItem(fromIndex: Int, toIndex: Int) {
-        val order = _playOrder.value
-        val size = _currentQueue.value.size
-
-        // Shuffle off: the two orders are the same list and this is the old
-        // call, queue edit and all.
-        if (!_shuffleModeEnabled.value || order.size != size) {
-            moveQueueItem(
-                queueIndexForPlayOrder(order, size, fromIndex),
-                queueIndexForPlayOrder(order, size, toIndex),
-            )
-            return
-        }
-
-        // Shuffle on: what the user is editing is the order, not the queue, so
-        // the queue is left exactly as it is. Going through moveMediaItem here
-        // would be worse than doing nothing - ExoPlayer clones its ShuffleOrder
-        // on a timeline move and DefaultShuffleOrder.cloneAndInsert drops the
-        // item at a random position in the permutation, so the song would
-        // leave the row it was dropped on and reappear somewhere arbitrary.
-        if (fromIndex !in order.indices || toIndex !in order.indices || fromIndex == toIndex) return
-        val rearranged = order.toMutableList()
-        rearranged.add(toIndex, rearranged.removeAt(fromIndex))
-        sendPlayOrder(rearranged.toIntArray())
-    }
-
-    /** Replace the service's shuffle permutation; refused there unless it fits the queue. */
-    private fun sendPlayOrder(order: IntArray) {
-        _playOrder.value = order
-        controller?.sendCustomCommand(
-            androidx.media3.session.SessionCommand(
-                MusicService.CMD_SET_PLAY_ORDER,
-                android.os.Bundle.EMPTY,
-            ),
-            android.os.Bundle().apply { putIntArray(MusicService.ARG_PLAY_ORDER, order) },
-        )
     }
 
     /**
@@ -1401,7 +1296,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         if (currentList.size <= 1) return
 
         val agrees = timelineAgreesAt(index)
-        lastQueueRemoval = QueueRemoval(currentList[index], index, playIndexIn(index))
+        lastQueueRemoval = QueueRemoval(currentList[index], index)
 
         val mutable = currentList.toMutableList()
         mutable.removeAt(index)
@@ -1409,10 +1304,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
         if (agrees) {
             controller?.removeMediaItem(index)
-            if (_shuffleModeEnabled.value) {
-                val order = _playOrder.value
-                if (order.size == currentList.size) sendPlayOrder(order.afterQueueRemoval(index))
-            }
         }
     }
 
@@ -1422,15 +1313,8 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         if (index >= 0) removeQueueItem(index)
     }
 
-    /** Where queue index [index] sits in the play order, when that order is usable. */
-    private fun playIndexIn(index: Int): Int {
-        val order = _playOrder.value
-        if (order.size != _currentQueue.value.size) return index
-        return order.indexOf(index).takeIf { it >= 0 } ?: index
-    }
-
     /** A song just taken out of the queue, kept so the snackbar can put it back. */
-    data class QueueRemoval(val item: MusicQueueItem, val index: Int, val playIndex: Int)
+    data class QueueRemoval(val item: MusicQueueItem, val index: Int)
 
     private var lastQueueRemoval: QueueRemoval? = null
 
@@ -1439,9 +1323,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      *
      * Restoring at the recorded index rather than appending, because "undo"
      * that drops the song at the end of the queue has not undone anything the
-     * user can see. Under shuffle that is two positions: the queue row it came
-     * out of, and the play-order row it was showing on, which is where the
-     * player has to put it back.
+     * user can see.
      */
     fun undoQueueRemoval() {
         val removal = lastQueueRemoval ?: return
@@ -1451,15 +1333,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
         _currentQueue.value = currentList.toMutableList().apply { add(at, removal.item) }
         controller?.let { player ->
-            if (at <= player.mediaItemCount) {
-                player.addMediaItem(at, createMediaItem(removal.item))
-                if (_shuffleModeEnabled.value && player.mediaItemCount == currentList.size + 1) {
-                    val order = _playOrder.value
-                    if (order.size == currentList.size) {
-                        sendPlayOrder(order.afterQueueRestore(at, removal.playIndex))
-                    }
-                }
-            }
+            if (at <= player.mediaItemCount) player.addMediaItem(at, createMediaItem(removal.item))
         }
     }
 
@@ -1624,17 +1498,6 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                 putBoolean(MusicService.ARG_PLAYBACK_SPEED_PERSIST, persist)
             },
         )
-    }
-
-    /**
-     * Adopt the play order the service published, so the queue screens draw
-     * what is going to be played. Also read on connect, so a player reopened
-     * mid-session shows the order already in force rather than the order the
-     * songs were queued in.
-     */
-    private fun applyPlayOrderExtras(extras: android.os.Bundle) {
-        if (!extras.containsKey(MusicService.EXTRA_PLAY_ORDER)) return
-        _playOrder.value = extras.getIntArray(MusicService.EXTRA_PLAY_ORDER) ?: IntArray(0)
     }
 
     private fun applyPlaybackSpeedExtras(extras: android.os.Bundle) {

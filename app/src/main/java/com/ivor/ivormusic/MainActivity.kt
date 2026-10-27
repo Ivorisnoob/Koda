@@ -1047,7 +1047,7 @@ fun MusicApp(
     val moveMusicToVideo: () -> Unit = move@{
         val song = playerViewModel.currentSong.value ?: return@move
         if (!song.hasWatchableVideo(context)) return@move
-        val playOrder = playerViewModel.playOrderQueue.value
+        val playOrder = playerViewModel.currentQueue.value
         val currentAt = playOrder.indexOfFirst { it.id == playerViewModel.currentQueueItemId.value }
         val carried = (if (currentAt >= 0) playOrder.drop(currentAt + 1) else emptyList())
             .map { it.song }

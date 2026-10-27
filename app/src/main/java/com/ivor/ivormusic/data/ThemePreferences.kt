@@ -1026,7 +1026,6 @@ class ThemePreferences(context: Context) {
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
         private const val KEY_PLAYBACK_SHUFFLE = "playback_shuffle"
         private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
-        private const val KEY_PLAYBACK_SHUFFLE_SEED = "playback_shuffle_seed"
         private const val KEY_PLAYBACK_SPEED = "playback_speed"
         private const val KEY_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
         private const val KEY_SLEEP_TIMER_END_OF_TRACK = "sleep_timer_end_of_track"
@@ -2531,12 +2530,6 @@ class ThemePreferences(context: Context) {
                 speed.coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
             )
             .apply()
-    }
-
-    fun getPlaybackShuffleSeed(): Long = prefs.getLong(KEY_PLAYBACK_SHUFFLE_SEED, 0L)
-
-    fun setPlaybackShuffleSeed(seed: Long) {
-        prefs.edit().putLong(KEY_PLAYBACK_SHUFFLE_SEED, seed).apply()
     }
 
     fun getSleepTimerEndsAt(): Long = prefs.getLong(KEY_SLEEP_TIMER_ENDS_AT, 0L)

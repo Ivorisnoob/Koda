@@ -995,7 +995,7 @@ private fun ClassicUpNext(
     onLoadMore: () -> Unit
 ) {
     val context = LocalContext.current
-    val queue by viewModel.playOrderQueue.collectAsState()
+    val queue by viewModel.currentQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val downloadingIds by viewModel.downloadingIds.collectAsState()
@@ -1014,7 +1014,7 @@ private fun ClassicUpNext(
     val reorder = rememberQueueReorderState(
         listState = listState,
         keys = rowKeys,
-        onMove = { from, to -> viewModel.movePlayOrderItem(from, to) },
+        onMove = { from, to -> viewModel.moveQueueItem(from, to) },
         onSettle = {}
     )
 
