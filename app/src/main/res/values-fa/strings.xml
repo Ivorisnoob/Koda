@@ -217,11 +217,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">برای گوش دادن ضربه بزنید</string>
     <string name="widget_pulse_label">پالس</string>
-    <string name="widget_pulse_description">جلد، آهنگ و پخش؛ یک ردیف برای پیشرفت و رد کردن اضافه کنید</string>
-    <string name="widget_console_label">کنسول</string>
-    <string name="widget_console_description">فقط دکمه‌ها، با درهم‌ریزی و تکرار</string>
-    <string name="widget_deck_label">دک</string>
-    <string name="widget_deck_description">پخش‌کننده‌ای بلند با جلد، پیشرفت و همه دکمه‌ها</string>
     <string name="widget_lineup_label">لاین‌آپ</string>
     <string name="widget_lineup_description">آنچه در حال پخش است و بعدی؛ برای پرش روی یک آهنگ بزنید</string>
     <string name="widget_bloom_label">بلوم</string>

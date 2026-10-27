@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Picker preview: a secondary control on a card, one tonal step off it (secondaryContainer). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FF5B3F48" />
+    <corners android:radius="14dp" />
+</shape>

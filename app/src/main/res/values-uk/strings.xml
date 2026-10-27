@@ -221,11 +221,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Торкніться, щоб слухати</string>
     <string name="widget_pulse_label">Пульс</string>
-    <string name="widget_pulse_description">Обкладинка, трек і відтворення; додайте рядок для прогресу та перемикання</string>
-    <string name="widget_console_label">Консоль</string>
-    <string name="widget_console_description">Лише керування: перемішування та повтор</string>
-    <string name="widget_deck_label">Дека</string>
-    <string name="widget_deck_description">Високий програвач з обкладинкою, прогресом і всіма кнопками</string>
     <string name="widget_lineup_label">Лайнап</string>
     <string name="widget_lineup_description">Що грає і що далі; торкніть трек, щоб перейти</string>
     <string name="widget_bloom_label">Блум</string>

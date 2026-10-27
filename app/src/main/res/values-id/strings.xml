@@ -211,11 +211,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Ketuk untuk mendengarkan</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Sampul, lagu, dan putar; tambah baris untuk progres dan lewati</string>
-    <string name="widget_console_label">Konsol</string>
-    <string name="widget_console_description">Hanya kontrol, dengan acak dan ulangi</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Pemutar tinggi dengan sampul, progres, dan semua kontrol</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Yang diputar dan berikutnya; ketuk lagu untuk loncat</string>
     <string name="widget_bloom_label">Bloom</string>

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Picker preview for the Pulse widget (4x1 row): cover, track, one hero.
-    RemoteViews-safe: LinearLayout/ImageView/TextView only, fixed colors.
+    Picker preview for the Pulse widget (4x1 strip): squircle cover, title and
+    artist, the hero and next - the strip as it draws at a 4-cell width.
+    RemoteViews-safe: LinearLayout/FrameLayout/ImageView/TextView only, fixed
+    colours from the family palette (drawable/widget_preview_card.xml).
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -18,7 +20,7 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:contentDescription="@null"
-        android:src="@drawable/widget_preview_art" />
+        android:src="@drawable/widget_preview_cover" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -34,19 +36,19 @@
             android:ellipsize="end"
             android:singleLine="true"
             android:text="@string/widget_preview_title"
-            android:textColor="#FFF2DEE5"
+            android:textColor="#FFF0DEE3"
             android:textSize="14sp"
-            android:textStyle="bold" />
+            android:fontFamily="sans-serif-medium" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="1dp"
             android:ellipsize="end"
             android:singleLine="true"
             android:text="@string/widget_preview_artist"
-            android:textColor="#FFD6BFC8"
-            android:textSize="11sp" />
+            android:textColor="#FFD5C2C7"
+            android:textSize="12sp" />
     </LinearLayout>
 
     <FrameLayout
@@ -61,5 +63,20 @@
             android:contentDescription="@string/widget_action_play"
             android:tint="#FF5E1133"
             android:src="@drawable/ic_media_play" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/widget_preview_card_button">
+
+        <ImageView
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/widget_action_next"
+            android:tint="#FFFFD9E2"
+            android:src="@drawable/ic_media_next" />
     </FrameLayout>
 </LinearLayout>

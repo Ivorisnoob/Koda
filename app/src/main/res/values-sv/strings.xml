@@ -215,11 +215,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Tryck för att lyssna</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Omslag, låt och spela; lägg till en rad för förlopp och nästa</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Endast kontrollerna, med blanda och repetera</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">En hög spelare med omslag, förlopp och alla kontroller</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Vad som spelas och vad som kommer härnäst; tryck på en låt för att hoppa</string>
     <string name="widget_bloom_label">Bloom</string>

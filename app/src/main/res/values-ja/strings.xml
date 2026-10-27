@@ -211,11 +211,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">タップして聴く</string>
     <string name="widget_pulse_label">パルス</string>
-    <string name="widget_pulse_description">ジャケット、曲、再生を表示し、進行状況とスキップの行を追加できます</string>
-    <string name="widget_console_label">コンソール</string>
-    <string name="widget_console_description">シャッフルとリピート付きの操作部のみ</string>
-    <string name="widget_deck_label">デッキ</string>
-    <string name="widget_deck_description">ジャケット、進行状況、すべての操作部を備えた縦長のプレーヤー</string>
     <string name="widget_lineup_label">ラインナップ</string>
     <string name="widget_lineup_description">再生中と次の曲を表示し、タップで移動できます</string>
     <string name="widget_bloom_label">ブルーム</string>

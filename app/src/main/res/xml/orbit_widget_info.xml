@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    1x1 round cover with a play button centred on it.
+    1x1 round cover on the wallpaper, with the play button against its lower edge.
 
     MusicService pushes a redraw on each playback event; the 30-minute
     updatePeriodMillis heartbeat (the platform floor) exists only so a widget

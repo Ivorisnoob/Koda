@@ -215,11 +215,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Tik om te luisteren</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Hoes, nummer en afspelen; voeg een rij toe voor voortgang en overslaan</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Alleen de bediening, met shuffle en herhalen</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Een hoge speler met hoes, voortgang en alle bediening</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Wat er speelt en wat erna komt; tik een nummer om te springen</string>
     <string name="widget_bloom_label">Bloom</string>

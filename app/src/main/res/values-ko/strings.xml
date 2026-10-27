@@ -211,11 +211,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">탭하여 듣기</string>
     <string name="widget_pulse_label">펄스</string>
-    <string name="widget_pulse_description">커버, 곡, 재생 표시; 진행률과 건너뛰기 행 추가</string>
-    <string name="widget_console_label">콘솔</string>
-    <string name="widget_console_description">셔플과 반복이 있는 조작부만 표시</string>
-    <string name="widget_deck_label">덱</string>
-    <string name="widget_deck_description">커버, 진행률, 모든 조작부가 있는 세로형 플레이어</string>
     <string name="widget_lineup_label">라인업</string>
     <string name="widget_lineup_description">재생 중과 다음 곡 표시; 트랙을 탭하면 이동해요</string>
     <string name="widget_bloom_label">블룸</string>

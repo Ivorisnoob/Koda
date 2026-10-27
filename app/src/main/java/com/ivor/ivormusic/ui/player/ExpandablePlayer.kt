@@ -380,7 +380,7 @@ fun ExpandablePlayer(
     // play order, not the queue as added, so a shuffled queue peeks at what
     // actually comes next. A swipe jumps to that exact occurrence rather than
     // sending "previous", which past three seconds restarts the song instead.
-    val playOrder by viewModel.playOrderQueue.collectAsState()
+    val playOrder by viewModel.currentQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val queuePosition = playOrder.indexOfFirst { it.id == currentQueueItemId }
     val previousItem = if (queuePosition > 0) playOrder[queuePosition - 1] else null

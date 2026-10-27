@@ -112,7 +112,7 @@ fun GesturePlayerSheetContent(
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
-    val currentQueue by viewModel.playOrderQueue.collectAsState()
+    val currentQueue by viewModel.currentQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
@@ -166,7 +166,7 @@ fun GesturePlayerSheetContent(
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariantColor = onSurfaceVariantColor,
                     onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
-                    onMoveSong = { from, to -> viewModel.movePlayOrderItem(from, to) },
+                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to) },
                     onUndoRemove = { viewModel.undoQueueRemoval() }
                 )
             } else {

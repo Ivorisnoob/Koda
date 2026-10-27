@@ -37,7 +37,7 @@ import kotlinx.coroutines.sync.withLock
  * still updates each widget so that one with no live session gets one started.
  *
  * The artwork rides along with the snapshot rather than being loaded inside the
- * composition. One push decodes one cover for all six widgets, and a Glance
+ * composition. One push decodes one cover for every widget, and a Glance
  * composition is not a good place to start IO.
  */
 internal data class PlayerWidgetUi(
@@ -122,8 +122,6 @@ object PlayerWidgets {
      */
     private val family: List<Pair<GlanceAppWidget, Class<out GlanceAppWidgetReceiver>>> = listOf(
         PulseWidget() to PulseWidgetReceiver::class.java,
-        ConsoleWidget() to ConsoleWidgetReceiver::class.java,
-        DeckWidget() to DeckWidgetReceiver::class.java,
         LineupWidget() to LineupWidgetReceiver::class.java,
         BloomWidget() to BloomWidgetReceiver::class.java,
         OrbitWidget() to OrbitWidgetReceiver::class.java,
@@ -148,7 +146,7 @@ object PlayerWidgets {
      *
      * Redraws are debounced. One user action produces several event batches
      * within a few hundred milliseconds - play-when-ready, then playback state,
-     * then metadata as it resolves - and each costs six RemoteViews trees.
+     * then metadata as it resolves - and each costs a RemoteViews tree per placed widget.
      */
     fun publish(context: Context, snapshot: PlayerWidgetSnapshot) {
         val appContext = context.applicationContext

@@ -227,11 +227,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">انقر للاستماع</string>
     <string name="widget_pulse_label">نبض</string>
-    <string name="widget_pulse_description">الغلاف والمقطع والتشغيل؛ أضف صفًا للتقدم والتخطي</string>
-    <string name="widget_console_label">كونسول</string>
-    <string name="widget_console_description">عناصر التحكم فقط، مع العشوائي والتكرار</string>
-    <string name="widget_deck_label">ديك</string>
-    <string name="widget_deck_description">مشغّل طويل بالغلاف والتقدم وكل عناصر التحكم</string>
     <string name="widget_lineup_label">لاين أب</string>
     <string name="widget_lineup_description">ما يتم تشغيله وما سيليه؛ انقر مقطعًا للانتقال إليه</string>
     <string name="widget_bloom_label">بلوم</string>

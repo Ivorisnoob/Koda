@@ -218,11 +218,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Atinge pentru a asculta</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Copertă, piesă și redare; adaugă un rând pentru progres și salt</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Doar controalele, cu amestecare și repetare</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Un player înalt cu copertă, progres și toate controalele</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Ce se redă și ce urmează; atinge o piesă pentru a sări</string>
     <string name="widget_bloom_label">Bloom</string>
