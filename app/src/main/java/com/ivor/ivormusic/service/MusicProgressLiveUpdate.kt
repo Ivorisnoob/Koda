@@ -59,6 +59,17 @@ class MusicProgressLiveUpdate(private val context: Context) {
         private const val PLAYBACK_SEGMENT = 100
 
         /**
+         * The bar moves in 5% steps: about twenty posts a song rather than a
+         * hundred. Every post is a fresh notification to every app reading
+         * them, and apps that mirror now-playing read each one as a change.
+         * The chip does not need a post to move - it is a countdown.
+         */
+        private const val PROGRESS_STEP = 5
+
+        /** How far the countdown may drift before a post corrects it (seeks, speed). */
+        private const val END_TIME_SLACK_MS = 2_000L
+
+        /**
          * Create the shared playback channel. Called unconditionally from
          * MusicService.onCreate - not from this class's init - because the
          * media notification needs the channel on every API level, while this
@@ -96,9 +107,8 @@ class MusicProgressLiveUpdate(private val context: Context) {
     // Last rendered values. SystemUI redraws on every notify(), so posting an
     // identical notification once a second visibly stutters the chip.
     private var lastProgress = -1
-    private var lastChipText = ""
+    private var lastEndAt = 0L
     private var lastTitle = ""
-    private var lastArtwork: android.graphics.Bitmap? = null
 
     init {
         // Idempotent: the service creates this too, before the media provider
@@ -142,12 +152,7 @@ class MusicProgressLiveUpdate(private val context: Context) {
         currentPositionMs: Long,
         durationMs: Long,
         isPlaying: Boolean,
-        // Album art for the shade entry. Null until it has been decoded, so
-        // the notification shows immediately and gains the cover on a later
-        // tick rather than waiting on the network. It cannot reach the status
-        // bar chip - that slot is the small icon, drawn as a tinted
-        // silhouette - so this is the only place the cover can appear.
-        artwork: android.graphics.Bitmap? = null
+        speed: Float = 1f,
     ) {
         if (!isEnabled()) {
             hide()
@@ -158,28 +163,23 @@ class MusicProgressLiveUpdate(private val context: Context) {
         // switched off app-wide makes the post a silent no-op anyway.
         if (!notificationManager.areNotificationsEnabled()) return
 
-        val progress = ((currentPositionMs.toFloat() / durationMs) * 100).toInt().coerceIn(0, 100)
+        val percent = ((currentPositionMs.toFloat() / durationMs) * 100).toInt().coerceIn(0, 100)
+        val progress = percent - percent % PROGRESS_STEP
         val remainingMs = (durationMs - currentPositionMs).coerceAtLeast(0)
-        val remainingMin = (remainingMs / 60000).toInt()
-        val remainingSec = ((remainingMs % 60000) / 1000).toInt()
-
-        // The chip clips past roughly seven characters, so this is minutes
-        // until the last minute and then seconds.
-        val chipText = if (remainingMin > 0) "${remainingMin}m" else "${remainingSec}s"
+        // Wall-clock end of the song, which the chip counts down to on its own.
+        val endAt = System.currentTimeMillis() + (remainingMs / speed.coerceAtLeast(0.1f)).toLong()
 
         if (isShowing &&
             progress == lastProgress &&
-            chipText == lastChipText &&
-            songTitle == lastTitle &&
-            artwork === lastArtwork
+            kotlin.math.abs(endAt - lastEndAt) < END_TIME_SLACK_MS &&
+            songTitle == lastTitle
         ) {
             return
         }
 
         lastProgress = progress
-        lastChipText = chipText
+        lastEndAt = endAt
         lastTitle = songTitle
-        lastArtwork = artwork
 
         val contentIntent = PendingIntent.getActivity(
             context,
@@ -210,9 +210,9 @@ class MusicProgressLiveUpdate(private val context: Context) {
             .setContentTitle(songTitle)
             .setContentText(artistName)
             .setStyle(style)
-            // Album art in place of the app icon in the shade. Null is fine -
-            // the system falls back to the small icon.
-            .setLargeIcon(artwork)
+            // No cover: the media notification beside this one already shows
+            // it, and attaching the bitmap to every progress post made apps
+            // that mirror now-playing report new artwork every few seconds.
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             // Belt and braces with the channel: a progress readout that ticks
@@ -229,7 +229,12 @@ class MusicProgressLiveUpdate(private val context: Context) {
             // off; the compat layer drops it and this stays an ordinary
             // progress notification in the shade. Matches the download path.
             .setRequestPromotedOngoing(canPostLiveUpdates())
-            .setShortCriticalText(chipText)
+            // The chip is a countdown to the song's end, drawn by the system,
+            // so it stays exact between posts.
+            .setWhen(endAt)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
             .build()
 
         try {
@@ -251,9 +256,8 @@ class MusicProgressLiveUpdate(private val context: Context) {
             notificationManager.cancel(NOTIFICATION_ID)
             isShowing = false
             lastProgress = -1
-            lastChipText = ""
+            lastEndAt = 0L
             lastTitle = ""
-            lastArtwork = null
         }
     }
 
