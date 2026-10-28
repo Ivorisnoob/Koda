@@ -214,11 +214,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Tippen zum Hören</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Cover, Titel und Wiedergabe; Zeile für Fortschritt und Weiter hinzufügen</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Nur die Steuerung, mit Zufällig und Wiederholen</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Hoher Player mit Cover, Fortschritt und allen Steuerelementen</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Was läuft und was als Nächstes kommt; tippe einen Titel zum Springen an</string>
     <string name="widget_bloom_label">Bloom</string>

@@ -158,6 +158,8 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
 
         try {
             activity.setPictureInPictureParams(builder.build())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "setPictureInPictureParams refused", e)
         }

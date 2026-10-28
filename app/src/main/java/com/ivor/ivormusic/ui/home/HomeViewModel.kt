@@ -244,6 +244,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun resolvePlaylistPageFromLink(playlistId: String): PlaylistPageInfo? {
         return try {
             youtubeRepository.getPlaylistHeader(playlistId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -548,6 +550,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (!fetchedCollections.isEmpty() || _discoveryCollections.value.isEmpty()) {
                     _discoveryCollections.value = fetchedCollections
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w("HomeViewModel", "Discovery recommendations failed", e)
             } finally {
@@ -1643,6 +1647,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val caps = cm.getNetworkCapabilities(cm.activeNetwork)
         caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
             caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         // Unknown is treated as connected, so a permissions or API oddity does
         // not turn every empty feed into a bogus "check your connection".
@@ -1748,6 +1754,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 KLog.w("HomeViewModel", "Subscription feed refresh rate limited", e)
                 rateLimited = true
                 _subscriptionFeedError.value = rateLimitMessage()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Subscription feed refresh failed", e)
                 _subscriptionFeedError.value =
@@ -1970,6 +1978,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     _selectedChannelFeedError.value =
                         app.getString(R.string.hvm_channel_feed_error, channel.name)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Selected channel feed failed", e)
                 _selectedChannelFeedError.value =
@@ -2365,6 +2375,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
                 backfillLocalChannelProfiles()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Subscription import failed", e)
                 onResult(
@@ -2425,6 +2437,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         unresolved = 0
                     )
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e("HomeViewModel", "Account subscription copy failed", e)
                 onResult(
@@ -2455,6 +2469,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     getApplication<Application>().contentResolver
                         .openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
                     true
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     KLog.e("HomeViewModel", "Subscription export failed", e)
                     false
@@ -3089,6 +3105,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (publishHomeRecommendations(fetched, rotate = false)) {
                     recommendationsLoadedAtMs = System.currentTimeMillis()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // The feed keeps whatever it already had - both branches above
                 // only assign a non-empty result - so a failure here is not
@@ -3192,6 +3210,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         songSearchCache.get(key)?.let { return it }
         return try {
             youtubeRepository.search(query).also { songSearchCache.put(key, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -3207,6 +3227,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             youtubeRepository.searchNext(query).also {
                 songSearchCache.append(searchKey(query), it)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -3235,7 +3257,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val likedLocalSongs = _songs.value.filter { it.id in likedIds }
             val ytLiked = _likedSongs.value.ifEmpty {
                 if (sessionManager.isLoggedIn()) {
-                    try { youtubeRepository.getLikedMusic() } catch (e: Exception) { emptyList() }
+                    try {
+                        youtubeRepository.getLikedMusic()
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
                 } else emptyList()
             }
             return (manuallyLiked + ytLiked + likedLocalSongs).distinctBy { it.id }
@@ -3278,6 +3306,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         artistSearchCache.get(key)?.let { return it }
         return try {
             youtubeRepository.searchArtists(query).also { artistSearchCache.put(key, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -3289,6 +3319,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         albumSearchCache.get(key)?.let { return it }
         return try {
             youtubeRepository.searchAlbums(query).also { albumSearchCache.put(key, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -3300,6 +3332,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         playlistSearchCache.get(key)?.let { return it }
         return try {
             youtubeRepository.searchPlaylists(query).also { playlistSearchCache.put(key, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -3311,6 +3345,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun searchArtistSongs(artistName: String): List<Song> {
         return try {
             youtubeRepository.search(artistName)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -3319,6 +3355,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> {
         return try {
             youtubeRepository.getArtistDetails(artistId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Pair(emptyList(), emptyList())
         }
@@ -3392,6 +3430,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getRadioSongs(videoId: String): List<Song> {
         return try {
             youtubeRepository.getRelatedSongs(videoId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -3460,6 +3500,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // Reload local songs with exclusions and playlists
                 playlistRepository.refreshPlaylists()
                 _songs.value = localRepository.getSongs(excludedFolders, manualScan)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Silently fail
             } finally {
@@ -3658,6 +3700,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     _trendingVideos.value = _trendingVideos.value + fresh
                     rememberShown(fresh)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Handle error silently; the next scroll will retry
             } finally {
@@ -3888,6 +3932,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return try {
             youtubeRepository.searchVideoPlaylists(query)
                 .also { videoPlaylistSearchCache.put(key, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -3908,6 +3954,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (!channelId.startsWith("UC")) return null
         return try {
             youtubeRepository.getChannelPage(channelId)?.header
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -3920,6 +3968,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         channelSearchCache.get(key)?.let { return it }
         return try {
             youtubeRepository.searchChannels(query).also { channelSearchCache.put(key, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -4028,6 +4078,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 videoFeedContinuation = continuation
                 videoFeedExhausted = false
                 rememberShown(result)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Handle error silently; the list keeps its previous contents
             } finally {
@@ -4047,6 +4099,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun resolveVideoFromLink(videoId: String): VideoItem? {
         return try {
             youtubeRepository.getWatchNextData(videoId).updatedVideoItem
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -4056,6 +4110,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun resolvePlaylistSongsFromLink(playlistId: String): List<Song> {
         return try {
             youtubeRepository.getPlaylist(playlistId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -4065,6 +4121,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun resolvePlaylistVideosFromLink(playlistId: String): List<VideoItem> {
         return try {
             youtubeRepository.getPlaylistVideos(playlistId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }

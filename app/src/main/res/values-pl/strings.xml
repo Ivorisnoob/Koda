@@ -221,11 +221,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Dotknij, aby słuchać</string>
     <string name="widget_pulse_label">Puls</string>
-    <string name="widget_pulse_description">Okładka, utwór i odtwarzanie; dodaj wiersz postępu i pomijania</string>
-    <string name="widget_console_label">Konsola</string>
-    <string name="widget_console_description">Same przyciski, z losowaniem i powtarzaniem</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Wysoki odtwarzacz z okładką, postępem i wszystkimi przyciskami</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Co jest grane i co będzie następne; dotknij utworu, aby przeskoczyć</string>
     <string name="widget_bloom_label">Bloom</string>

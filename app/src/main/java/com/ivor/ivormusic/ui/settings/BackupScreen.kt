@@ -204,6 +204,8 @@ fun BackupScreen(
                 phase = BackupPhase.IDLE
                 failure = e.message
                 return@launch
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 null
             }

@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.video
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -496,7 +497,11 @@ fun VideoPlayerContent(
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         } else {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            // Not fullscreen: follow the app's orientation policy (large screens
+            // and "Rotate with device" rotate; phones stay portrait), rather than
+            // forcing portrait - which locked tablets and foldables into portrait
+            // while a video was open.
+            activity?.let { com.ivor.ivormusic.ui.theme.AppOrientation.apply(it) }
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
         }
 
@@ -1613,7 +1618,7 @@ fun VideoPlayerContent(
             }
         }
     } else if (showPlaybackSettings) {
-        ModalBottomSheet(
+        AdaptiveModalSheet(
             onDismissRequest = { showPlaybackSettings = false },
             sheetState = playbackSettingsSheetState,
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -2466,7 +2471,7 @@ private fun ChaptersSheet(
     keepSystemBarsHidden: Boolean = false
 ) {
     val activeIndex = currentChapterIndex(chapters, currentPositionMs)
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface
@@ -2566,7 +2571,7 @@ private fun CaptionsSheet(
     onDismiss: () -> Unit,
     keepSystemBarsHidden: Boolean = false
 ) {
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         contentColor = MaterialTheme.colorScheme.onSurface

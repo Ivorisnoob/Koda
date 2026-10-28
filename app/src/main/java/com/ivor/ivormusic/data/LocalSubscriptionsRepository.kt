@@ -273,6 +273,8 @@ class LocalSubscriptionsRepository(context: Context) {
                     subscribedAt = obj.optLong("subscribedAt", 0L)
                 )
             }.distinctBy { it.channelId }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load local subscriptions", e)
             emptyList()
@@ -308,6 +310,8 @@ class LocalSubscriptionsRepository(context: Context) {
                     }
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load subscription groups", e)
             emptyList()

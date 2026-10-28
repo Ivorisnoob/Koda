@@ -545,7 +545,7 @@ private fun StandbySurface(
 ) {
     val playWhenReady by viewModel.playWhenReady.collectAsState()
     val lyrics by viewModel.lyricsResult.collectAsState()
-    val queue by viewModel.playOrderQueue.collectAsState()
+    val queue by viewModel.currentQueue.collectAsState()
     val currentItemId by viewModel.currentQueueItemId.collectAsState()
     val skip = remember { SkipDirection() }
     val direction = skip.update(queue.indexOfFirst { it.id == currentItemId })

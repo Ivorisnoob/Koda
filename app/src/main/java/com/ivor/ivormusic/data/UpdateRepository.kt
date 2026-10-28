@@ -134,6 +134,8 @@ class UpdateRepository {
                     }
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(tag, "Error checking for updates", e)
             return UpdateResult.Error(e.message ?: "Could not reach GitHub")

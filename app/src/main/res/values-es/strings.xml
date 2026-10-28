@@ -216,11 +216,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Toca para escuchar</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Portada, canción y reproducción; añade una fila para el progreso y el salto</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Solo los controles, con aleatorio y repetición</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Un reproductor alto con portada, progreso y todos los controles</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Lo que suena y lo que sigue; toca una canción para saltar</string>
     <string name="widget_bloom_label">Bloom</string>

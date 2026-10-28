@@ -212,11 +212,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Chạm để nghe</string>
     <string name="widget_pulse_label">Nhịp</string>
-    <string name="widget_pulse_description">Bìa, bài hát và nút phát; thêm hàng tiến trình và bỏ qua</string>
-    <string name="widget_console_label">Điều khiển</string>
-    <string name="widget_console_description">Chỉ nút điều khiển, có trộn và lặp</string>
-    <string name="widget_deck_label">Kệ đĩa</string>
-    <string name="widget_deck_description">Trình phát dạng cao với bìa, tiến trình và mọi nút</string>
     <string name="widget_lineup_label">Hàng phát</string>
     <string name="widget_lineup_description">Đang phát gì và tiếp theo là gì; chạm vào bài để nhảy tới</string>
     <string name="widget_bloom_label">Bung nở</string>

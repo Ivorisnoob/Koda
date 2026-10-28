@@ -2,12 +2,12 @@ package com.ivor.ivormusic.service
 
 import com.ivor.ivormusic.util.KLog
 
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ShuffleOrder
 import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -141,33 +141,23 @@ class CrossfadeEngine(
 
     private var movedListener: Player.Listener? = null
     private var shuffleEnabled = false
-    private var shuffleSeed = 0L
     private var repeatMode = Player.REPEAT_MODE_OFF
 
-    private var shuffleRandom = java.util.Random()
-
     init {
-        playerA.setShuffleOrder(QueueShuffleOrder.startingAt(0, C.INDEX_UNSET, shuffleRandom))
-        playerB.setShuffleOrder(QueueShuffleOrder.startingAt(0, C.INDEX_UNSET, shuffleRandom))
+        // The timeline is the play order (see QueueShuffle): with the flag on,
+        // both engines still walk it in order. The unshuffled order survives
+        // every insert, removal and move, so it never needs setting again.
+        playerA.setShuffleOrder(ShuffleOrder.UnshuffledShuffleOrder(0))
+        playerB.setShuffleOrder(ShuffleOrder.UnshuffledShuffleOrder(0))
     }
 
     /**
-     * Turning shuffle on (or a new seed) reshuffles the audible queue with the
-     * current song first, so nothing is stranded before it. The permutation
-     * then lives on the active player and is copied across at each swap, so a
-     * crossfade can never generate a different order.
+     * The shuffle flag, as controllers see it. The arranging itself is the
+     * service's: it rewrites the timeline, which both engines play in order.
      */
-    fun setShuffleState(enabled: Boolean, seed: Long) {
-        if (shuffleEnabled != enabled || shuffleSeed != seed) cancelTransition()
-        val reshuffle = enabled && (!shuffleEnabled || shuffleSeed != seed)
+    fun setShuffleMode(enabled: Boolean) {
+        if (shuffleEnabled != enabled) cancelTransition()
         shuffleEnabled = enabled
-        shuffleSeed = seed
-        if (reshuffle) {
-            shuffleRandom = java.util.Random(seed)
-            active.setShuffleOrder(
-                QueueShuffleOrder.startingAt(active.mediaItemCount, active.currentMediaItemIndex, shuffleRandom)
-            )
-        }
         applyModes(playerA)
         applyModes(playerB)
     }
@@ -203,7 +193,7 @@ class CrossfadeEngine(
      * Change the resting tempo of both engines.
      *
      * A running overlap is abandoned rather than retuned, for the reason
-     * [setShuffleState] and [setRepeatMode] abandon one: the plan behind it -
+     * [setShuffleMode] and [setRepeatMode] abandon one: the plan behind it -
      * its cue, its beat alignment, and the clock speeds [runFade] captured
      * before its loop started - was made against the tempo that just changed.
      * The caller's ordinary advance is a better answer than a mix drifting
@@ -216,17 +206,6 @@ class CrossfadeEngine(
         cancelTransition()
         playerA.playbackParameters = baseParameters()
         playerB.playbackParameters = baseParameters()
-    }
-
-    /**
-     * Use [order] as the audible queue's permutation, for a queue arranged by
-     * hand or a restored session. The caller checks it addresses every queue
-     * index exactly once.
-     */
-    fun setExplicitShuffleOrder(order: IntArray) {
-        if (order.size != active.mediaItemCount) return
-        cancelTransition()
-        active.setShuffleOrder(QueueShuffleOrder.of(order, shuffleRandom))
     }
 
     fun setPauseAtEndOfMediaItems(enabled: Boolean) {
@@ -351,6 +330,8 @@ class CrossfadeEngine(
                 }
             }
             true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Could not start transition", e)
             fadingIntoId = null
@@ -678,13 +659,6 @@ class CrossfadeEngine(
             // Prepended last, so the indices used above stay valid while the
             // trailing items are appended.
             if (before.isNotEmpty()) incoming.addMediaItems(0, before)
-
-            // Carry the permutation the listener has been walking, edits and
-            // all; a regenerated one would replay or skip songs.
-            val order = outgoing.shuffleOrder
-            if (order.length == incoming.mediaItemCount) {
-                incoming.setShuffleOrder(QueueShuffleOrder.copyOf(order, shuffleRandom))
-            }
             applyModes(incoming)
             incoming.volume = inGain * duckGain
 
@@ -699,15 +673,27 @@ class CrossfadeEngine(
             // first would publish a stopped state through it on the way out.
             // Once the session has moved, retiring the old player must never
             // roll back by stopping and clearing the newly audible one.
-            runCatching {
+            try {
                 outgoing.volume = 0f
                 outgoing.stop()
                 outgoing.clearMediaItems()
                 outgoing.playbackParameters = baseParameters()
                 clearEffects(outgoing)
                 clearEffects(incoming)
-            }.onFailure { KLog.w(TAG, "Could not fully retire outgoing player: ${it.message}") }
-            runCatching { releaseTempo(incoming) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w(TAG, "Could not fully retire outgoing player: ${e.message}")
+            }
+            try {
+                releaseTempo(incoming)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.w(TAG, "Could not release tempo: ${e.message}")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Swap failed; falling back to the outgoing player", e)
             if (active === incoming) {

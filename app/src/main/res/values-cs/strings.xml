@@ -221,11 +221,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Klepněte pro poslech</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Obal, skladba a přehrávání; přidejte řádek pro průběh a přeskočení</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Jen ovládání, s náhodným přehráváním a opakováním</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Vysoký přehrávač s obalem, průběhem a všemi ovladači</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Co právě hraje a co bude dál; klepnutím na skladbu přeskočíte</string>
     <string name="widget_bloom_label">Bloom</string>

@@ -102,6 +102,8 @@ class StatsRepository(private val context: Context) {
                     history.take(MAX_HISTORY_ENTRIES)
                 } else history
                 historyFile.writeText(json.encodeToString(trimmedHistory))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e(TAG, "Error saving play event", e)
             }
@@ -116,6 +118,8 @@ class StatsRepository(private val context: Context) {
         if (!historyFile.exists()) return emptyList()
         return try {
             json.decodeFromString<List<PlayHistoryEntry>>(historyFile.readText())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error loading history", e)
             emptyList()
@@ -259,6 +263,8 @@ class StatsRepository(private val context: Context) {
             } else {
                 historyFile.writeText(json.encodeToString(entries))
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error writing history", e)
         }

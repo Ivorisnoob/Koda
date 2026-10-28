@@ -510,6 +510,12 @@ fun HomeScreen(
     // restore one list's index into the other.
     val videoHomeScrollState = rememberLazyListState()
     val musicHomeScrollState = rememberLazyListState()
+    // Spotlight's chip choice lives here for the same reason as its scroll:
+    // the tab content is disposed on a tab switch, so the Library hand-offs
+    // (Liked songs, Show all, a playlist) used to return to the All chip.
+    var spotlightFilter by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf(SpotlightFilter.All)
+    }
     // Search is one screen in both modes, but a mode switch on it has the
     // outgoing and the incoming copy composed together for the length of the
     // cross-fade, and a LazyListState can drive only one list (see the tab
@@ -1239,8 +1245,17 @@ fun HomeScreen(
                                                     viewedPlaylistFromHome = playlist
                                                     selectedTab = 2
                                                 },
-                                                onOpenLiked = { selectedTab = 2 },
-                                                onShowAllInLibrary = { selectedTab = 2 },
+                                                onOpenLiked = {
+                                                    noteLibraryReturn()
+                                                    viewedPlaylistFromHome = com.ivor.ivormusic.data.PlaylistDisplayItem(
+                                                        context.getString(R.string.liked_songs), "LM", "You", spotlightLiked.size, null
+                                                    )
+                                                    selectedTab = 2
+                                                },
+                                                onShowAllInLibrary = {
+                                                    noteLibraryReturn()
+                                                    selectedTab = 2
+                                                },
                                                 onSpinClick = { source ->
                                                     spinSource = source
                                                     spinOpen = true
@@ -1257,7 +1272,9 @@ fun HomeScreen(
                                                 onVideoModeToggle = onVideoModeToggle,
                                                 showModeToggle = showModeToggle,
                                                 modeToggleState = modeToggleState,
-                                                listState = musicHomeScrollState
+                                                listState = musicHomeScrollState,
+                                                filter = spotlightFilter,
+                                                onFilterChange = { spotlightFilter = it }
                                             )
                                         } else {
                                             // Music Mode: Show original content. The first load

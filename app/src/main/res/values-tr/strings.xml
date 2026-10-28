@@ -215,11 +215,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Dinlemek için dokun</string>
     <string name="widget_pulse_label">Nabız</string>
-    <string name="widget_pulse_description">Kapak, parça ve oynatma; ilerleme ve atlama için bir satır ekle</string>
-    <string name="widget_console_label">Konsol</string>
-    <string name="widget_console_description">Yalnızca kontroller: karıştırma ve tekrarlama ile</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Kapaklı, ilerlemeli ve tüm kontrollü uzun oynatıcı</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Ne çalıyor ve sırada ne var; atlamak için parçaya dokun</string>
     <string name="widget_bloom_label">Bloom</string>

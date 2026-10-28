@@ -75,6 +75,7 @@ fun VideoHistoryContent(
     val context = androidx.compose.ui.platform.LocalContext.current
     val historyVideos by viewModel.historyVideos.collectAsState()
     val historyListLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
+    val videoGridColumns = com.ivor.ivormusic.ui.video.rememberVideoGridColumns()
     val pageState by viewModel.historyPageState.collectAsState()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     LoadVideoPageAtEnd(listState, historyVideos.size, pageState, viewModel::loadMoreYouTubeHistory)
@@ -242,7 +243,7 @@ fun VideoHistoryContent(
                     }
                 }
             } else {
-                videoListItems(historyVideos, historyListLayout) { video, cell ->
+                videoListItems(historyVideos, historyListLayout, columns = videoGridColumns) { video, cell ->
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },

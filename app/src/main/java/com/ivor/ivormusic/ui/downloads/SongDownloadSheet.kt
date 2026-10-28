@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.downloads
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -100,7 +101,7 @@ fun SongDownloadSheet(
     val sizePending = formats == null ||
         (formats?.isEmpty() == true && quality !in fallbackBytes)
 
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,

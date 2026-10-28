@@ -146,6 +146,8 @@ internal class VideoSearch(
                 .put("params", buildVideoSearchParams(sort))
             val response = webApi.postWatchApi("search", body) ?: return null
             parseVideoSearchPage(response)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "InnerTube video search failed", e)
             null
@@ -187,6 +189,8 @@ internal class VideoSearch(
                     subtitle = item.uploaderName?.takeIf { it.isNotBlank() }
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Error searching video playlists", e)
             emptyList()
@@ -226,6 +230,8 @@ internal class VideoSearch(
                         )
                     }
                     .distinctBy { it.channelId }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e(YOUTUBE_TAG, "Error searching channels", e)
                 emptyList()
