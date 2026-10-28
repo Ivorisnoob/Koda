@@ -780,8 +780,16 @@ class MusicService : MediaLibraryService() {
             PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-        mediaLibrarySession = MediaLibrarySession.Builder(this, SteadyDurationPlayer(engine.active), LibrarySessionCallback())
+        // No periodic position updates: Media3 re-sends the whole platform
+        // PlaybackState every 3s while playing without comparing [verified
+        // October 2026, media3-session 1.11.0's
+        // ControllerLegacyCbForBroadcast.onPeriodicSessionPositionInfoChanged].
+        // Apps reading the session (Essentials' AOD wallpaper) re-read the
+        // cover on each one and redrew it as new art. Controllers and system
+        // UI extrapolate the position from speed and the last update anyway.
+        mediaLibrarySession = MediaLibrarySession.Builder(this, engine.active, LibrarySessionCallback())
             .setSessionActivity(sessionIntent)
+            .setPeriodicPositionUpdateEnabled(false)
             .build()
         refreshMediaButtons()
         // A like from the app's own heart has to reach the notification's.
@@ -1845,7 +1853,7 @@ class MusicService : MediaLibraryService() {
         automaticCrossfades.forgetAttempt()
         // Let a failure reach CrossfadeEngine's rollback. Swallowing it would
         // retire the old player while the session still points at that player.
-        mediaLibrarySession?.setPlayer(SteadyDurationPlayer(newActive))
+        mediaLibrarySession?.setPlayer(newActive)
         trackGain = gainForPlayer(newActive)
         engine.setPauseAtEndOfMediaItems(sleepTimer.endOfTrack)
         prefetchUpcomingSongs()
