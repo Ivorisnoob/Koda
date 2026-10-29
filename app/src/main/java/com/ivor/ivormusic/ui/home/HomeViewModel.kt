@@ -1887,10 +1887,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     private val _feedCommentsPost = MutableStateFlow<com.ivor.ivormusic.data.ChannelPost?>(null)
     val feedCommentsPost: StateFlow<com.ivor.ivormusic.data.ChannelPost?> = _feedCommentsPost.asStateFlow()
-    val feedPostComments = com.ivor.ivormusic.ui.video.CommentThreadController(
+    val feedPostComments = com.ivor.ivormusic.video.CommentThreadController(
         repository = youtubeRepository,
         scope = viewModelScope,
-        viaBrowse = true
+        viaBrowse = true,
+        signedIn = isYouTubeConnected,
     )
 
     fun openFeedPostComments(post: com.ivor.ivormusic.data.ChannelPost) {

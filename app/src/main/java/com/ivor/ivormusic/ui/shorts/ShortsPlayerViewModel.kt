@@ -19,7 +19,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.ThemePreferences
@@ -106,6 +105,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                     invalidatePrefetchedQualities()
                     synchronized(watchNextCache) { watchNextCache.clear() }
                     _engagement.value = null
+                    // The thread was the previous account's view of the Short.
+                    commentThread.clear()
                     maybeLoadMore(_currentIndex.value)
                     prefetchAround(_currentIndex.value)
                     val playing = _currentVideo.value ?: return@collect
@@ -483,35 +484,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val _isLoggedIn = MutableStateFlow(youtubeRepository.isLoggedIn())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
-    // ---------------- Comments (same shape VideoPlayerViewModel exposes,
-    // so CommentsSheet is reused as-is) ----------------
-
-    private val _comments = MutableStateFlow<List<CommentItem>>(emptyList())
-    val comments: StateFlow<List<CommentItem>> = _comments.asStateFlow()
-
-    private val _isCommentsLoading = MutableStateFlow(false)
-    val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading.asStateFlow()
-
-    private val _isLoadingMoreComments = MutableStateFlow(false)
-    val isLoadingMoreComments: StateFlow<Boolean> = _isLoadingMoreComments.asStateFlow()
-
-    private val _replies = MutableStateFlow<Map<String, List<CommentItem>>>(emptyMap())
-    val replies: StateFlow<Map<String, List<CommentItem>>> = _replies.asStateFlow()
-
-    private val _loadingReplyIds = MutableStateFlow<Set<String>>(emptySet())
-    val loadingReplyIds: StateFlow<Set<String>> = _loadingReplyIds.asStateFlow()
-
-    private var commentsNextToken: String? = null
-    private var commentsLoadedForVideoId: String? = null
-    private val _createCommentParams = MutableStateFlow<String?>(null)
-
-    val canComment: StateFlow<Boolean> = combine(
-        _isLoggedIn, _createCommentParams
-    ) { loggedIn, params -> loggedIn && params != null }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    private val _isPostingComment = MutableStateFlow(false)
-    val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
+    /** The open Short's comment thread; the comments sheet reads it directly. */
+    val commentThread = com.ivor.ivormusic.video.CommentThreadController(
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        viaBrowse = false,
+        signedIn = _isLoggedIn,
+    )
 
     /**
      * Stream data source factory: ChunkedStreamDataSource fetches googlevideo
@@ -1246,149 +1225,15 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
     private fun resetEngagementState() {
         _engagement.value = null
-        _comments.value = emptyList()
-        _replies.value = emptyMap()
-        _loadingReplyIds.value = emptySet()
-        commentsNextToken = null
-        commentsLoadedForVideoId = null
-        _createCommentParams.value = null
+        commentThread.clear()
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
     }
 
+    /** Open this Short's comment thread if it is not open already. */
     fun ensureCommentsLoaded() {
         val video = _currentVideo.value ?: return
-        if (commentsLoadedForVideoId == video.videoId || _isCommentsLoading.value) return
         val token = _engagement.value?.commentsToken ?: return
-        _isCommentsLoading.value = true
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    _comments.value = page.comments
-                    commentsNextToken = page.nextPageToken
-                    commentsLoadedForVideoId = video.videoId
-                    _createCommentParams.value = page.createCommentParams
-                }
-            } finally {
-                _isCommentsLoading.value = false
-            }
-        }
-    }
-
-    fun loadMoreComments() {
-        val video = _currentVideo.value ?: return
-        val token = commentsNextToken ?: return
-        if (_isLoadingMoreComments.value || _isCommentsLoading.value) return
-        _isLoadingMoreComments.value = true
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    val known = _comments.value.mapTo(HashSet()) { it.commentId }
-                    _comments.value = _comments.value + page.comments.filter { it.commentId !in known }
-                    commentsNextToken = page.nextPageToken
-                }
-            } finally {
-                _isLoadingMoreComments.value = false
-            }
-        }
-    }
-
-    fun loadReplies(comment: CommentItem) {
-        val video = _currentVideo.value ?: return
-        val token = comment.repliesToken ?: return
-        if (_replies.value.containsKey(comment.commentId) ||
-            comment.commentId in _loadingReplyIds.value
-        ) return
-        _loadingReplyIds.value = _loadingReplyIds.value + comment.commentId
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    _replies.value = _replies.value + (comment.commentId to page.comments)
-                }
-            } finally {
-                _loadingReplyIds.value = _loadingReplyIds.value - comment.commentId
-            }
-        }
-    }
-
-    fun postComment(text: String) {
-        val video = _currentVideo.value ?: return
-        val params = _createCommentParams.value ?: return
-        val trimmed = text.trim()
-        if (trimmed.isEmpty() || _isPostingComment.value) return
-        _isPostingComment.value = true
-        viewModelScope.launch {
-            try {
-                val created = youtubeRepository.createComment(params, trimmed)
-                if (created != null && _currentVideo.value?.videoId == video.videoId) {
-                    _comments.value = listOf(created) + _comments.value
-                }
-            } finally {
-                _isPostingComment.value = false
-            }
-        }
-    }
-
-    fun postReply(target: CommentItem, threadParent: CommentItem, text: String) {
-        val video = _currentVideo.value ?: return
-        val params = target.replyParams ?: return
-        val trimmed = text.trim()
-        if (trimmed.isEmpty() || _isPostingComment.value) return
-        _isPostingComment.value = true
-        viewModelScope.launch {
-            try {
-                val created = youtubeRepository.createCommentReply(params, trimmed)
-                if (created != null && _currentVideo.value?.videoId == video.videoId) {
-                    val existing = _replies.value[threadParent.commentId]
-                    if (existing != null || threadParent.repliesToken == null) {
-                        _replies.value = _replies.value +
-                            (threadParent.commentId to (existing ?: emptyList()) + created)
-                    } else {
-                        loadReplies(threadParent)
-                    }
-                }
-            } finally {
-                _isPostingComment.value = false
-            }
-        }
-    }
-
-    fun toggleCommentLike(comment: CommentItem) {
-        val action = (if (comment.isLiked) comment.unlikeParams else comment.likeParams) ?: return
-        val toggled = comment.copy(isLiked = !comment.isLiked)
-        replaceComment(toggled)
-        viewModelScope.launch {
-            if (!youtubeRepository.performCommentAction(action)) {
-                replaceComment(comment)
-            }
-        }
-    }
-
-    fun deleteComment(comment: CommentItem) {
-        val action = comment.deleteParams ?: return
-        val previousComments = _comments.value
-        val previousReplies = _replies.value
-        _comments.value = _comments.value.filterNot { it.commentId == comment.commentId }
-        _replies.value = _replies.value
-            .mapValues { (_, list) -> list.filterNot { it.commentId == comment.commentId } }
-            .filterKeys { it != comment.commentId }
-        viewModelScope.launch {
-            if (!youtubeRepository.performCommentAction(action)) {
-                _comments.value = previousComments
-                _replies.value = previousReplies
-            }
-        }
-    }
-
-    private fun replaceComment(updated: CommentItem) {
-        _comments.value = _comments.value.map {
-            if (it.commentId == updated.commentId) updated else it
-        }
-        _replies.value = _replies.value.mapValues { (_, list) ->
-            list.map { if (it.commentId == updated.commentId) updated else it }
-        }
+        commentThread.ensureLoaded(video.videoId) { token }
     }
 
     companion object {

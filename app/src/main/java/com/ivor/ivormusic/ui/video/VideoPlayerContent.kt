@@ -208,14 +208,15 @@ fun VideoPlayerContent(
     val isSubscribedToChannel by viewModel.isSubscribedToChannel.collectAsState()
     val bellWrites by viewModel.bellWrites.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
-    val comments by viewModel.comments.collectAsState()
-    val isCommentsLoading by viewModel.isCommentsLoading.collectAsState()
-    val isLoadingMoreComments by viewModel.isLoadingMoreComments.collectAsState()
-    val commentReplies by viewModel.replies.collectAsState()
-    val loadingReplyIds by viewModel.loadingReplyIds.collectAsState()
+    val commentThread = viewModel.commentThread
+    val comments by commentThread.comments.collectAsState()
+    val isCommentsLoading by commentThread.isLoading.collectAsState()
+    val isLoadingMoreComments by commentThread.isLoadingMore.collectAsState()
+    val commentReplies by commentThread.replies.collectAsState()
+    val loadingReplyIds by commentThread.loadingReplyIds.collectAsState()
     val timedComments by viewModel.timedComments.collectAsState()
-    val canComment by viewModel.canComment.collectAsState()
-    val isPostingComment by viewModel.isPostingComment.collectAsState()
+    val canComment by commentThread.canComment.collectAsState()
+    val isPostingComment by commentThread.isPosting.collectAsState()
     val videoPlaylists by viewModel.videoPlaylists.collectAsState()
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
@@ -834,16 +835,14 @@ fun VideoPlayerContent(
                         commentsAvailable = commentsToken != null,
                         canComment = canComment,
                         isPosting = isPostingComment,
-                        onLoadMore = { viewModel.loadMoreComments() },
-                        onLoadReplies = { viewModel.loadReplies(it) },
-                        onPostComment = { viewModel.postComment(it) },
-                        onPostReply = { target, threadParent, text ->
-                            viewModel.postReply(target, threadParent, text)
-                        },
+                        onLoadMore = commentThread::loadMore,
+                        onLoadReplies = commentThread::loadReplies,
+                        onPostComment = commentThread::postComment,
+                        onPostReply = commentThread::postReply,
                         onLikeComment = { comment ->
-                            requireLogin { viewModel.toggleCommentLike(comment) }
+                            requireLogin { commentThread.toggleLike(comment) }
                         },
-                        onDeleteComment = { comment -> viewModel.deleteComment(comment) },
+                        onDeleteComment = commentThread::delete,
                         onDismiss = { showCommentsSheet = false },
                         onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
                         modifier = Modifier
@@ -1234,14 +1233,12 @@ fun VideoPlayerContent(
                             commentsAvailable = engagement?.commentsToken != null,
                             canComment = canComment,
                             isPosting = isPostingComment,
-                            onLoadMore = { viewModel.loadMoreComments() },
-                            onLoadReplies = { viewModel.loadReplies(it) },
-                            onPostComment = { viewModel.postComment(it) },
-                            onPostReply = { target, threadParent, text ->
-                                viewModel.postReply(target, threadParent, text)
-                            },
-                            onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
-                            onDeleteComment = { comment -> viewModel.deleteComment(comment) },
+                            onLoadMore = commentThread::loadMore,
+                            onLoadReplies = commentThread::loadReplies,
+                            onPostComment = commentThread::postComment,
+                            onPostReply = commentThread::postReply,
+                            onLikeComment = { comment -> requireLogin { commentThread.toggleLike(comment) } },
+                            onDeleteComment = commentThread::delete,
                             onDismiss = { showCommentsSheet = false },
                             modifier = Modifier.fillMaxSize(),
                             onSeekTo = { seconds ->
