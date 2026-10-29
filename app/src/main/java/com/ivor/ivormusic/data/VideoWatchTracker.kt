@@ -8,6 +8,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** One playback's local progress and ordered, best-effort YouTube reports. Main-thread owned. */
 internal class VideoWatchTracker(
@@ -48,6 +49,11 @@ internal class VideoWatchTracker(
         var lastReport = 0L
         var lastReportedPosition: Long? = null
         var epoch = 0
+        /** When starting a report session may be tried again; see [beginSession]. */
+        val beginBackoff = RetryBackoff(
+            initialDelayMs = BEGIN_RETRY_DELAY_MS,
+            maxFailures = MAX_BEGIN_FAILURES,
+        )
 
         fun enabled() = profileId == ProfileManager.activeProfileId(context) &&
             preferences.isSaveVideoHistoryEnabled() && !IncognitoMode.isEnabled(context)
@@ -73,6 +79,7 @@ internal class VideoWatchTracker(
                 recorded = false
                 lastReportedPosition = null
                 segmentStart = position
+                beginBackoff.reset()
                 return
             }
             val item = video()?.takeIf { it.videoId == videoId } ?: return
@@ -103,8 +110,7 @@ internal class VideoWatchTracker(
             pending = scope.launch {
                 previous?.join()
                 if (!enabled() || epoch != reportEpoch) return@launch
-                val tracking = session ?: youtube.beginVideoHistorySession(videoId, start)
-                    ?.also { session = it } ?: return@launch
+                val tracking = session ?: beginSession(start) ?: return@launch
                 if (!live && enabled() && epoch == reportEpoch) {
                     // A dead session is dropped rather than retried for the rest
                     // of the video: the login it was started under is over
@@ -118,6 +124,34 @@ internal class VideoWatchTracker(
                     }
                 }
             }
+        }
+
+        /**
+         * Open the session the reports are sent under: a signed-in WEB
+         * `/player` for the tracking URLs, then the first ping.
+         *
+         * [scar] A failure used to leave the session empty for the next report
+         * to open again, so a video whose `/player` came back without tracking
+         * URLs - an address under the bot check, an age-restricted or
+         * members-only video - sent it again every 30 seconds and on every
+         * pause and seek, for as long as it played. It is now tried at most
+         * [MAX_BEGIN_FAILURES] times per video, the second after
+         * [BEGIN_RETRY_DELAY_MS], as automatic work, so a 429 hold or a
+         * bot-check verdict keeps it on the device.
+         */
+        suspend fun beginSession(start: Long): VideoHistorySession? {
+            val now = SystemClock.elapsedRealtime()
+            if (!beginBackoff.allows(now)) return null
+            val started = withContext(RequestPriority.Automatic) {
+                youtube.beginVideoHistorySession(videoId, start)
+            }
+            if (started != null) {
+                beginBackoff.succeeded()
+                session = started
+            } else {
+                beginBackoff.failed(now)
+            }
+            return started
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -144,5 +178,13 @@ internal class VideoWatchTracker(
             ticker?.cancel()
             player.removeListener(this)
         }
+    }
+
+    private companion object {
+        /** Attempts to open a report session per video; see [Watch.beginSession]. */
+        const val MAX_BEGIN_FAILURES = 2
+
+        /** Wait before the second attempt: long enough for a hold or a verdict to pass. */
+        const val BEGIN_RETRY_DELAY_MS = 2 * 60 * 1000L
     }
 }

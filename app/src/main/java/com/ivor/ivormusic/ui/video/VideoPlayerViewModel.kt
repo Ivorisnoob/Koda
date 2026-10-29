@@ -736,8 +736,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // Source failures (googlevideo 403 on a flagged token, an expired URL, a
     // network blip) are recovered by re-resolving the stream rather than by
     // replaying the dead URL. Bounded so a genuinely unplayable video still
-    // reaches the error overlay; reset on every successful playback start.
-    private var sourceRetryCount = 0
+    // reaches the error overlay, and given back only after a stretch of
+    // healthy playback - never merely on reaching READY; see the budget.
+    private val sourceRecovery = com.ivor.ivormusic.data.PlaybackRecoveryBudget(
+        maxAttempts = MAX_SOURCE_RETRIES,
+        refundAfterMs = SOURCE_RETRY_REFUND_MS,
+    )
     private var sourceRecoveryJob: kotlinx.coroutines.Job? = null
 
     // Videos skipped in a row because they would not play at all. Playlists
@@ -1226,9 +1230,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _isBuffering.value = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
                     // Playback recovered (or started cleanly): allow the
-                    // retry budget to be spent again on a later failure.
+                    // renderer budget to be spent again on a later failure.
+                    // The source budget is not refilled here: a stream refused
+                    // after its opening megabyte reaches READY first, and
+                    // refilling on READY is what made that loop. The progress
+                    // ticker gives it back once playback has stayed healthy.
                     rendererRetryCount = 0
-                    sourceRetryCount = 0
                     queueErrorSkipCount = 0
                 }
                 if (playbackState == Player.STATE_ENDED) {
@@ -1289,15 +1296,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
                 // A source failure means the URL is dead, not the video:
                 // re-resolving is the only thing that can help, and
-                // re-preparing the same URL never will.
+                // re-preparing the same URL never will. Not while the bot
+                // check's verdict stands: the re-resolve would be refused on
+                // the same address, at the cost of every fallback client.
+                // The overlay's Retry still asks, because the user did.
                 if (!_isLocalPlayback.value &&
                     isRecoverableSourceError(error) &&
-                    sourceRetryCount < MAX_SOURCE_RETRIES
+                    !YouTubeRepository.isBotCheckVerdictActive() &&
+                    sourceRecovery.tryConsume(SystemClock.elapsedRealtime())
                 ) {
-                    sourceRetryCount++
                     KLog.w(
                         "VideoPlayerVM",
-                        "Source error (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving stream",
+                        "Source error (attempt ${sourceRecovery.attemptsUsed}/$MAX_SOURCE_RETRIES); re-resolving stream",
                         error
                     )
                     recoverFromSourceError(error)
@@ -1586,6 +1596,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
+                    // Healthy playback gives the source budget back, once it
+                    // has lasted; see PlaybackRecoveryBudget.
+                    if (player.isPlaying) sourceRecovery.onHealthy(SystemClock.elapsedRealtime())
                     // Fresh reads: turning the setting off or changing its rate
                     // takes effect within a tick, without rebuilding the
                     // player. The renderer's drop counter is how the governor
@@ -1785,7 +1798,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     fun retryPlayback() {
         rendererRetryCount = 0
-        sourceRetryCount = 0
+        sourceRecovery.reset()
         _playbackError.value = null
         val video = _currentVideo.value ?: return
         if (_isLocalPlayback.value) {
@@ -2865,7 +2878,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _captionCues.value = emptyList()
         _playbackError.value = null // Clear previous error
         rendererRetryCount = 0
-        sourceRetryCount = 0
+        sourceRecovery.reset()
         hdrFallbackUsed = false
         hdrQualityToRestoreAfterMini = null
         // A recovery still in flight belongs to the previous video
@@ -4545,6 +4558,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * unplayable and the user should get the overlay instead of a spinner.
          */
         private const val MAX_SOURCE_RETRIES = 1
+
+        /**
+         * Healthy playback after a re-resolve before its attempt comes back.
+         * Far longer than a stream refused after its opening plays for, and
+         * far shorter than a URL takes to expire.
+         */
+        private const val SOURCE_RETRY_REFUND_MS = 60_000L
 
         /**
          * Unplayable videos stepped over in a row before the error overlay wins.

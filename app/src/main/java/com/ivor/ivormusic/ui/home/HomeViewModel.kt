@@ -854,7 +854,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 loadShortsFeed()
                 return
             }
-            loadTrendingVideos()
+            ensureTrendingVideos()
         } else {
             loadShortsFeed()
             loadSubscriptions()
@@ -1347,6 +1347,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var videoFeedLoadedAtMs = 0L
     private var shortsFeedLoadedAtMs = 0L
 
+    /**
+     * When Home may ask for its feed again by itself after a load brought
+     * nothing. [scar] Home loads whenever it comes back into view with an empty
+     * feed, so a feed YouTube was refusing was asked for again - account feed,
+     * then its six-request fallback - on every return to the screen. A pull to
+     * refresh and a sign-in or profile switch go around it.
+     */
+    private val videoFeedRetry = com.ivor.ivormusic.data.RetryBackoff(
+        initialDelayMs = VIDEO_FEED_RETRY_MS,
+        maxDelayMs = VIDEO_FEED_RETRY_MAX_MS,
+    )
+
     init {
         observeLocalVideoHistory()
         observeSubscriptionFeedWarmup()
@@ -1822,8 +1834,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // is followed by another rather than leaving the feed without.
                 var batchesTried = 0
                 var added = false
+                // A 429 can land inside a batch; the next batch stands down
+                // rather than finding out again.
                 while (!added && feedPostNextChannel < feedPostChannelOrder.size &&
-                    batchesTried < FEED_POST_EMPTY_BATCH_LIMIT
+                    batchesTried < FEED_POST_EMPTY_BATCH_LIMIT &&
+                    !com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()
                 ) {
                     batchesTried++
                     val batch = feedPostChannelOrder.subList(
@@ -1831,11 +1846,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         minOf(feedPostChannelOrder.size, feedPostNextChannel + FEED_POST_CHANNELS_PER_BATCH)
                     )
                     feedPostNextChannel += batch.size
-                    val fetched = batch.map { channel ->
-                        async {
-                            youtubeRepository.getChannelPosts(channel.channelId).take(FEED_POSTS_PER_CHANNEL)
-                        }
-                    }.awaitAll()
+                    val fetched = withContext(com.ivor.ivormusic.data.RequestPriority.Automatic) {
+                        batch.map { channel ->
+                            async {
+                                youtubeRepository.getChannelPosts(channel.channelId).take(FEED_POSTS_PER_CHANNEL)
+                            }
+                        }.awaitAll()
+                    }
                     if (generation != feedPostGeneration) return@launch
                     val known = _feedPosts.value.mapTo(HashSet()) { it.postId }
                     val fresh = fetched.flatten().filter { known.add(it.postId) }.shuffled(mixRandom)
@@ -2097,7 +2114,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (missing.isEmpty()) return
         if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) return
         val gate = kotlinx.coroutines.sync.Semaphore(MIX_FETCH_CONCURRENCY)
-        val fetched = kotlinx.coroutines.coroutineScope {
+        val fetched = withContext(com.ivor.ivormusic.data.RequestPriority.Automatic) {
             missing.map { channel ->
                 async {
                     gate.acquire()
@@ -3492,6 +3509,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return kotlinx.coroutines.withTimeoutOrNull(VIDEO_FEED_DEADLINE_MS) { request.await() }
     }
 
+    /**
+     * Load the feed because a screen showing it came into view, not because
+     * anyone asked: the same as [loadTrendingVideos], except that after a load
+     * that brought nothing it waits out [videoFeedRetry] first.
+     */
+    fun ensureTrendingVideos() {
+        if (_trendingVideos.value.isEmpty() &&
+            !videoFeedRetry.allows(android.os.SystemClock.elapsedRealtime())
+        ) {
+            loadShortsFeed()
+            return
+        }
+        loadTrendingVideos()
+    }
+
     fun loadTrendingVideos() {
         val generation = ++videoHomeLoadGeneration
         videoHomeLoadJob?.cancel()
@@ -3522,13 +3554,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     tasteSeedOffset = 6
                     videoFeedExhausted = false
                     rememberShown(page.videos)
+                    videoFeedRetry.succeeded()
                 } else {
                     _isVideoHomeOffline.value = page == null || !hasNetworkConnection()
+                    videoFeedRetry.failed(android.os.SystemClock.elapsedRealtime())
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
                 _isVideoHomeOffline.value = true
+                videoFeedRetry.failed(android.os.SystemClock.elapsedRealtime())
             } finally {
                 if (generation == videoHomeLoadGeneration) _isVideoLoading.value = false
             }
@@ -4027,6 +4062,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 videoFeedContinuation = continuation
                 videoFeedExhausted = false
                 rememberShown(result)
+                videoFeedRetry.succeeded()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -4378,12 +4414,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .take(MAX_DURATION_BACKFILL)
         if (missing.isEmpty() || com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) return emptyMap()
         val found = mutableMapOf<String, Long>()
-        missing.chunked(3).forEach { batch ->
-            kotlinx.coroutines.coroutineScope {
+        // Nobody asked for these lengths; a hold keeps the rest on the device.
+        withContext(com.ivor.ivormusic.data.RequestPriority.Automatic) {
+            missing.chunked(3).forEach { batch ->
                 batch.map { song ->
                     async { song.id to (youtubeRepository.getSongFromPanel(song.id)?.duration ?: 0L) }
-                }.awaitAll()
-            }.filter { it.second > 0 }.forEach { found[it.first] = it.second }
+                }.awaitAll().filter { it.second > 0 }.forEach { found[it.first] = it.second }
+            }
         }
         playlistRepository.updateSongDurations(playlistId, found)
         return found
@@ -4589,6 +4626,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
          * page that arrives late is still there for the next pull.
          */
         const val VIDEO_FEED_DEADLINE_MS = 8_000L
+
+        /**
+         * First wait before Home asks again for a feed that came back empty or
+         * failed, doubling up to [VIDEO_FEED_RETRY_MAX_MS]. Short enough that
+         * a blip clears by the next visit, long enough that walking in and out
+         * of Home is not a request each time.
+         */
+        const val VIDEO_FEED_RETRY_MS = 30_000L
+        const val VIDEO_FEED_RETRY_MAX_MS = 5 * 60 * 1000L
 
         const val MIN_FRESH_VIDEOS_ON_REFRESH = 15
 

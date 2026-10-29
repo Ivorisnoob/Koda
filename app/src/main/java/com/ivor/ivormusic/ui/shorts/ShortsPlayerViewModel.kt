@@ -314,7 +314,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         work: suspend kotlinx.coroutines.CoroutineScope.() -> Unit
     ) {
         if (prefetchJobs[key]?.isActive == true) return
-        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+        // Speculative by definition, so its requests are the app's own work.
+        // Stream ladders resolve in the shared cache's scope and are gated by
+        // canPrefetch instead; the watch-next prefetch is held by the policy.
+        val job = viewModelScope.launch(
+            com.ivor.ivormusic.data.RequestPriority.Automatic,
+            start = CoroutineStart.LAZY,
+        ) {
             try {
                 // A cancelled waiter cannot stop the shared blocking extraction.
                 // Avoid starting it at all for items passed during fast swipes.
