@@ -30,7 +30,6 @@ import com.ivor.ivormusic.data.CaptionBackground
 import com.ivor.ivormusic.data.CaptionTextColor
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CacheManager
-import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.LocalVideo
@@ -70,6 +69,7 @@ import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.videoPlaybackCacheKey
+import com.ivor.ivormusic.video.core.timedCommentsOf
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -481,7 +481,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 .collect {
                     youtubeRepository.clearSessionScopedInstanceCaches()
                     _engagement.value = null
-                    _comments.value = emptyList()
+                    // Cleared, so the next time comments come into view they
+                    // load as the new account.
+                    commentThread.clear()
                     val playing = _currentVideo.value ?: return@collect
                     val refreshed = runCatching {
                         youtubeRepository.getWatchNextData(playing.videoId, playing)
@@ -736,8 +738,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // Source failures (googlevideo 403 on a flagged token, an expired URL, a
     // network blip) are recovered by re-resolving the stream rather than by
     // replaying the dead URL. Bounded so a genuinely unplayable video still
-    // reaches the error overlay; reset on every successful playback start.
-    private var sourceRetryCount = 0
+    // reaches the error overlay, and given back only after a stretch of
+    // healthy playback - never merely on reaching READY; see the budget.
+    private val sourceRecovery = com.ivor.ivormusic.data.PlaybackRecoveryBudget(
+        maxAttempts = MAX_SOURCE_RETRIES,
+        refundAfterMs = SOURCE_RETRY_REFUND_MS,
+    )
     private var sourceRecoveryJob: kotlinx.coroutines.Job? = null
 
     // Videos skipped in a row because they would not play at all. Playlists
@@ -926,46 +932,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** Elapsed-realtime mark when the next batch is expected, for pacing. */
     private var liveChatBatchDueAt = 0L
 
-    private val _comments = MutableStateFlow<List<CommentItem>>(emptyList())
-    val comments: StateFlow<List<CommentItem>> = _comments.asStateFlow()
+    /** The open video's comment thread; the comments sheet reads it directly. */
+    val commentThread = com.ivor.ivormusic.video.CommentThreadController(
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        viaBrowse = false,
+        signedIn = _isLoggedIn,
+    )
 
-    // Comments that mention a playback timestamp, sorted by that time.
-    // Drives the timed comments overlay in the video player.
-    val timedComments: StateFlow<List<TimedComment>> = _comments
-        .map { list ->
-            list.mapNotNull { comment ->
-                parseFirstTimestampMs(comment.text)?.let { TimedComment(comment, it) }
-            }.sortedBy { it.timeMs }
-        }
+    /** Comments that mention a playback time, for the timed comments over the video. */
+    val timedComments: StateFlow<List<TimedComment>> = commentThread.comments
+        .map(::timedCommentsOf)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
-    private val _isCommentsLoading = MutableStateFlow(false)
-    val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading.asStateFlow()
-
-    private val _isLoadingMoreComments = MutableStateFlow(false)
-    val isLoadingMoreComments: StateFlow<Boolean> = _isLoadingMoreComments.asStateFlow()
-
-    // Replies keyed by parent commentId; presence of key = replies loaded (or loading)
-    private val _replies = MutableStateFlow<Map<String, List<CommentItem>>>(emptyMap())
-    val replies: StateFlow<Map<String, List<CommentItem>>> = _replies.asStateFlow()
-
-    private val _loadingReplyIds = MutableStateFlow<Set<String>>(emptySet())
-    val loadingReplyIds: StateFlow<Set<String>> = _loadingReplyIds.asStateFlow()
-
-    private var commentsNextToken: String? = null
-    private var commentsLoadedForVideoId: String? = null
-
-    // Params for posting a new top-level comment; arrives with the first comments page
-    private val _createCommentParams = MutableStateFlow<String?>(null)
-
-    /** Whether posting a comment is possible (logged in + params available). */
-    val canComment: StateFlow<Boolean> = kotlinx.coroutines.flow.combine(
-        _isLoggedIn, _createCommentParams
-    ) { loggedIn, params -> loggedIn && params != null }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    private val _isPostingComment = MutableStateFlow(false)
-    val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
 
     // ---------------- Save to playlist (Watch Later) ----------------
 
@@ -1226,9 +1204,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 _isBuffering.value = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
                     // Playback recovered (or started cleanly): allow the
-                    // retry budget to be spent again on a later failure.
+                    // renderer budget to be spent again on a later failure.
+                    // The source budget is not refilled here: a stream refused
+                    // after its opening megabyte reaches READY first, and
+                    // refilling on READY is what made that loop. The progress
+                    // ticker gives it back once playback has stayed healthy.
                     rendererRetryCount = 0
-                    sourceRetryCount = 0
                     queueErrorSkipCount = 0
                 }
                 if (playbackState == Player.STATE_ENDED) {
@@ -1289,15 +1270,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
                 // A source failure means the URL is dead, not the video:
                 // re-resolving is the only thing that can help, and
-                // re-preparing the same URL never will.
+                // re-preparing the same URL never will. Not while the bot
+                // check's verdict stands: the re-resolve would be refused on
+                // the same address, at the cost of every fallback client.
+                // The overlay's Retry still asks, because the user did.
                 if (!_isLocalPlayback.value &&
                     isRecoverableSourceError(error) &&
-                    sourceRetryCount < MAX_SOURCE_RETRIES
+                    !YouTubeRepository.isBotCheckVerdictActive() &&
+                    sourceRecovery.tryConsume(SystemClock.elapsedRealtime())
                 ) {
-                    sourceRetryCount++
                     KLog.w(
                         "VideoPlayerVM",
-                        "Source error (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving stream",
+                        "Source error (attempt ${sourceRecovery.attemptsUsed}/$MAX_SOURCE_RETRIES); re-resolving stream",
                         error
                     )
                     recoverFromSourceError(error)
@@ -1586,6 +1570,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
+                    // Healthy playback gives the source budget back, once it
+                    // has lasted; see PlaybackRecoveryBudget.
+                    if (player.isPlaying) sourceRecovery.onHealthy(SystemClock.elapsedRealtime())
                     // Fresh reads: turning the setting off or changing its rate
                     // takes effect within a tick, without rebuilding the
                     // player. The renderer's drop counter is how the governor
@@ -1785,7 +1772,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     fun retryPlayback() {
         rendererRetryCount = 0
-        sourceRetryCount = 0
+        sourceRecovery.reset()
         _playbackError.value = null
         val video = _currentVideo.value ?: return
         if (_isLocalPlayback.value) {
@@ -2865,7 +2852,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _captionCues.value = emptyList()
         _playbackError.value = null // Clear previous error
         rendererRetryCount = 0
-        sourceRetryCount = 0
+        sourceRecovery.reset()
         hdrFallbackUsed = false
         hdrQualityToRestoreAfterMini = null
         // A recovery still in flight belongs to the previous video
@@ -2875,12 +2862,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Reset engagement + comments state for the new video
         _engagement.value = null
         _dislikeCount.value = null
-        _comments.value = emptyList()
-        _replies.value = emptyMap()
-        _loadingReplyIds.value = emptySet()
-        commentsNextToken = null
-        commentsLoadedForVideoId = null
-        _createCommentParams.value = null
+        commentThread.clear()
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
 
         // Live state belongs to the previous video; the polls must stop before
@@ -4338,187 +4320,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // ---------------- Comments ----------------
 
     /**
-     * Extract the first playback timestamp mentioned in a comment ("1:23",
-     * "12:05" or "1:02:33") as milliseconds, or null when none is present.
+     * Open this video's comment thread if it is not open already. The token
+     * arrives with the watch-next response, so before that there is nothing to
+     * open and the next call (the sheet opening, a scroll) tries again.
      */
-    private fun parseFirstTimestampMs(text: String): Long? {
-        val match = TIMESTAMP_REGEX.find(text) ?: return null
-        val hours = match.groupValues[1].toLongOrNull() ?: 0L
-        val minutes = match.groupValues[2].toLongOrNull() ?: return null
-        val seconds = match.groupValues[3].toLongOrNull() ?: return null
-        if (seconds >= 60) return null
-        if (match.groupValues[1].isNotEmpty() && minutes >= 60) return null
-        return ((hours * 60 + minutes) * 60 + seconds) * 1000L
-    }
-
-    /** Load the first page of comments if not already loaded for this video. */
     fun ensureCommentsLoaded() {
         val video = _currentVideo.value ?: return
-        if (commentsLoadedForVideoId == video.videoId || _isCommentsLoading.value) return
         val token = _engagement.value?.commentsToken ?: return
-        _isCommentsLoading.value = true
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                // Ignore stale results if the user switched videos meanwhile
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    _comments.value = page.comments
-                    commentsNextToken = page.nextPageToken
-                    commentsLoadedForVideoId = video.videoId
-                    _createCommentParams.value = page.createCommentParams
-                }
-            } finally {
-                _isCommentsLoading.value = false
-            }
-        }
-    }
-
-    /** Load the next page of comments (no-op when exhausted or already loading). */
-    fun loadMoreComments() {
-        val video = _currentVideo.value ?: return
-        val token = commentsNextToken ?: return
-        if (_isLoadingMoreComments.value || _isCommentsLoading.value) return
-        _isLoadingMoreComments.value = true
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    // Guard against duplicates if YouTube repeats items across pages
-                    val known = _comments.value.mapTo(HashSet()) { it.commentId }
-                    _comments.value = _comments.value + page.comments.filter { it.commentId !in known }
-                    commentsNextToken = page.nextPageToken
-                }
-            } finally {
-                _isLoadingMoreComments.value = false
-            }
-        }
-    }
-
-    /** Load replies for a comment (first page only; collapses are handled in UI). */
-    fun loadReplies(comment: CommentItem) {
-        val video = _currentVideo.value ?: return
-        val token = comment.repliesToken ?: return
-        if (_replies.value.containsKey(comment.commentId) ||
-            comment.commentId in _loadingReplyIds.value
-        ) return
-        _loadingReplyIds.value = _loadingReplyIds.value + comment.commentId
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    _replies.value = _replies.value + (comment.commentId to page.comments)
-                }
-            } finally {
-                _loadingReplyIds.value = _loadingReplyIds.value - comment.commentId
-            }
-        }
-    }
-
-    /**
-     * Post a new top-level comment on the current video. The created comment
-     * is prepended to the list on success. Requires login.
-     */
-    fun postComment(text: String) {
-        val video = _currentVideo.value ?: return
-        val params = _createCommentParams.value ?: return
-        val trimmed = text.trim()
-        if (trimmed.isEmpty() || _isPostingComment.value) return
-        _isPostingComment.value = true
-        viewModelScope.launch {
-            try {
-                val created = youtubeRepository.createComment(params, trimmed)
-                if (created != null && _currentVideo.value?.videoId == video.videoId) {
-                    _comments.value = listOf(created) + _comments.value
-                }
-            } finally {
-                _isPostingComment.value = false
-            }
-        }
-    }
-
-    /**
-     * Post a reply into a comment thread. `target` is the comment being
-     * replied to (a top-level comment or one of its replies — replying to a
-     * reply posts into the same thread, like YouTube); `threadParent` is the
-     * top-level comment whose replies list shows the result. Requires login.
-     */
-    fun postReply(target: CommentItem, threadParent: CommentItem, text: String) {
-        val video = _currentVideo.value ?: return
-        val params = target.replyParams ?: return
-        val trimmed = text.trim()
-        if (trimmed.isEmpty() || _isPostingComment.value) return
-        _isPostingComment.value = true
-        viewModelScope.launch {
-            try {
-                val created = youtubeRepository.createCommentReply(params, trimmed)
-                if (created != null && _currentVideo.value?.videoId == video.videoId) {
-                    val existing = _replies.value[threadParent.commentId]
-                    if (existing != null || threadParent.repliesToken == null) {
-                        // Replies already visible (or none exist yet): append inline
-                        _replies.value = _replies.value +
-                            (threadParent.commentId to (existing ?: emptyList()) + created)
-                    } else {
-                        // Replies exist but are collapsed: fetch the thread so the
-                        // older replies are not hidden behind the local insert
-                        loadReplies(threadParent)
-                    }
-                }
-            } finally {
-                _isPostingComment.value = false
-            }
-        }
-    }
-
-    /**
-     * Like or unlike a comment (top-level or reply). Optimistically flips the
-     * local state, then reverts if the InnerTube action fails. Requires login
-     * and the action params that only arrive on signed-in comment fetches.
-     */
-    fun toggleCommentLike(comment: CommentItem) {
-        val action = (if (comment.isLiked) comment.unlikeParams else comment.likeParams) ?: return
-        val toggled = comment.copy(isLiked = !comment.isLiked)
-        replaceComment(toggled)
-        viewModelScope.launch {
-            if (!youtubeRepository.performCommentAction(action)) {
-                replaceComment(comment)
-            }
-        }
-    }
-
-    /**
-     * Delete one of the user's own comments (top-level or reply). The delete
-     * param only exists on own comments (CommentItem.deleteParams). Optimistic
-     * removal with restore on failure.
-     */
-    fun deleteComment(comment: CommentItem) {
-        val action = comment.deleteParams ?: return
-        val previousComments = _comments.value
-        val previousReplies = _replies.value
-        _comments.value = _comments.value.filterNot { it.commentId == comment.commentId }
-        _replies.value = _replies.value
-            .mapValues { (_, list) -> list.filterNot { it.commentId == comment.commentId } }
-            .filterKeys { it != comment.commentId }
-        viewModelScope.launch {
-            if (!youtubeRepository.performCommentAction(action)) {
-                _comments.value = previousComments
-                _replies.value = previousReplies
-            }
-        }
-    }
-
-    /** Swap a comment (matched by id) in the top-level list and all reply threads. */
-    private fun replaceComment(updated: CommentItem) {
-        _comments.value = _comments.value.map {
-            if (it.commentId == updated.commentId) updated else it
-        }
-        _replies.value = _replies.value.mapValues { (_, list) ->
-            list.map { if (it.commentId == updated.commentId) updated else it }
-        }
+        commentThread.ensureLoaded(video.videoId) { token }
     }
 
     companion object {
         private const val VIDEO_CACHE_OWNER = "video"
-        private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
 
         /** Marks a [PlayerTrackOption] as a YouTube soundtrack rather than a container track. */
         private const val YOUTUBE_AUDIO_OPTION_PREFIX = "yt-audio:"
@@ -4545,6 +4358,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * unplayable and the user should get the overlay instead of a spinner.
          */
         private const val MAX_SOURCE_RETRIES = 1
+
+        /**
+         * Healthy playback after a re-resolve before its attempt comes back.
+         * Far longer than a stream refused after its opening plays for, and
+         * far shorter than a URL takes to expire.
+         */
+        private const val SOURCE_RETRY_REFUND_MS = 60_000L
 
         /**
          * Unplayable videos stepped over in a row before the error overlay wins.

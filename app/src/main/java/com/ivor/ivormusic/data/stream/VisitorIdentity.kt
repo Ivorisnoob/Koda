@@ -117,10 +117,22 @@ internal class VisitorIdentity(
      *
      * Returns the new token, or null when the mint failed. A resolution that
      * waited on the lock while another one reminted gets that one's token
-     * instead of minting a second.
+     * instead of minting a second. Also null, keeping [refused], once
+     * [MAX_REPLACEMENTS] have been made in [REPLACEMENT_WINDOW_MS]; see
+     * [ReplacementBudget]. Minting a first token (a blank [refused]) is not a
+     * replacement and is never refused.
      */
     suspend fun replace(refused: String): String? = mutex.withLock {
         cached?.takeIf { it != refused }?.let { return@withLock it }
+        val now = System.currentTimeMillis()
+        if (refused.isNotEmpty() && !replacements.allows(now)) {
+            KLog.w(
+                STREAM_TAG,
+                "visitorData not replaced: $MAX_REPLACEMENTS replacements in the last " +
+                    "${REPLACEMENT_WINDOW_MS / 60_000} minutes already",
+            )
+            return@withLock null
+        }
         cached = null
         cachedAt = 0L
         if (prefs.getString(KEY_TOKEN, null) == refused) {
@@ -129,6 +141,7 @@ internal class VisitorIdentity(
         val fresh = mint()
         if (!fresh.isNullOrEmpty()) {
             adopt(fresh, System.currentTimeMillis())
+            if (refused.isNotEmpty()) replacements.record(now)
             KLog.i(STREAM_TAG, "visitorData replaced after a refusal")
             fresh
         } else {
@@ -284,6 +297,18 @@ internal class VisitorIdentity(
         private const val KEY_VETTED = "visitor_data_vetted"
         private const val TTL_MS = 6 * 60 * 60 * 1000L
         private val BOOTSTRAP_TOKEN = Regex("\"visitorData\":\"(.*?)\"")
+
+        /**
+         * Replacements allowed in [REPLACEMENT_WINDOW_MS]. A real refusal
+         * streak needs at most three: a stream probe going through its
+         * [PlayerSession] rounds, then one 403 recovery. Four leaves a spare.
+         */
+        private const val MAX_REPLACEMENTS = 4
+        private const val REPLACEMENT_WINDOW_MS = 10 * 60 * 1000L
+        private val replacements = ReplacementBudget(MAX_REPLACEMENTS, REPLACEMENT_WINDOW_MS)
+
+        /** The device changed network; a new address starts with a full budget. */
+        fun resetReplacementBudget() = replacements.reset()
 
         @Volatile private var cached: String? = null
         @Volatile private var cachedAt: Long = 0L

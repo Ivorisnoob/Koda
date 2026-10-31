@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.video
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -31,6 +32,8 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.LocalVideo
+import com.ivor.ivormusic.data.RetryBackoff
+import com.ivor.ivormusic.data.RetryBackoffs
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
@@ -78,6 +81,16 @@ private const val POLL_MS = 150L
 
 /** Beyond this the video is not worth waiting for; the card stays a thumbnail. */
 private const val RESOLVE_BUDGET_MS = 6_000L
+
+/**
+ * How long a video whose preview failed is passed over, doubling on each
+ * further failure up to the second figure. The feed has moved on long before.
+ */
+private const val FAILED_PREVIEW_RETRY_MS = 5 * 60 * 1000L
+private const val FAILED_PREVIEW_RETRY_MAX_MS = 30 * 60 * 1000L
+
+/** Failed previews remembered at once; more than a feed puts on screen in a session. */
+private const val FAILED_PREVIEW_MEMORY = 64
 
 /**
  * Plays one video card in place, silently, while it is rested on.
@@ -164,6 +177,18 @@ class InlinePreviewController(
     /** The id whose dwell timer is running; not yet the one playing. */
     private var claimedId: String? = null
 
+    /**
+     * Videos whose preview just failed to resolve, so they are not asked for
+     * again by themselves. [scar] A failure cleared the claim and the next
+     * poll, 150ms later, claimed the same card: a full failing resolution -
+     * visionOS, NewPipe's three new visitor ids, the native pair - about once
+     * a second for as long as the card sat on screen, and a failed ladder is
+     * not cached to stop it. A tap on the card still opens it normally.
+     */
+    private val failedPreviews = RetryBackoffs(capacity = FAILED_PREVIEW_MEMORY) {
+        RetryBackoff(initialDelayMs = FAILED_PREVIEW_RETRY_MS, maxDelayMs = FAILED_PREVIEW_RETRY_MAX_MS)
+    }
+
     /** What every card on screen currently reports about itself. */
     private val onScreen = LinkedHashMap<String, Pair<VideoItem, Float>>()
 
@@ -212,8 +237,13 @@ class InlinePreviewController(
             if (fractionOf(holder) >= RELEASE_VISIBILITY) return
             release()
         }
+        // A card whose preview just failed is passed over, so the next most
+        // visible one gets the preview instead of nobody.
+        val now = SystemClock.elapsedRealtime()
         val best = synchronized(onScreen) {
-            onScreen.values.filter { it.second >= CLAIM_VISIBILITY }.maxByOrNull { it.second }
+            onScreen.values
+                .filter { it.second >= CLAIM_VISIBILITY && failedPreviews.allows(it.first.videoId, now) }
+                .maxByOrNull { it.second }
         } ?: return
         claim(best.first)
     }
@@ -231,9 +261,11 @@ class InlinePreviewController(
             delay(RESOLVE_AFTER_MS)
             val quality = resolve(video.videoId) ?: run {
                 KLog.d(TAG, "No playable rendition for ${video.videoId}")
+                failedPreviews.failed(video.videoId, SystemClock.elapsedRealtime())
                 claimedId = null
                 return@launch
             }
+            failedPreviews.succeeded(video.videoId)
             KLog.d(TAG, "Resolved ${video.videoId}: ${quality.resolution} dash=${quality.isDASH}")
             // The rest of the dwell, after the resolve rather than before it.
             delay((DWELL_MS - RESOLVE_AFTER_MS).coerceAtLeast(0L))
@@ -278,6 +310,7 @@ class InlinePreviewController(
         LocalVideo.isDeviceVideoId(video.videoId) -> "device file"
         video.videoId.startsWith("external:") -> "external"
         YouTubeRateLimit.isHeld() -> "rate limited"
+        YouTubeRepository.isBotCheckVerdictActive() -> "bot check"
         isMetered() -> "metered connection"
         else -> "eligible"
     }
@@ -287,6 +320,9 @@ class InlinePreviewController(
         if (LocalVideo.isDeviceVideoId(video.videoId)) return false
         if (video.videoId.startsWith("external:")) return false
         if (YouTubeRateLimit.isHeld()) return false
+        // A preview resolution is not marked automatic - it runs in the shared
+        // resolution cache's own scope - so the verdict is checked here.
+        if (YouTubeRepository.isBotCheckVerdictActive()) return false
         if (isMetered()) return false
         return true
     }

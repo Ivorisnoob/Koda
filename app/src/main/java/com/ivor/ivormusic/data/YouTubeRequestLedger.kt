@@ -41,6 +41,8 @@ object YouTubeRequestLedger : Interceptor {
     private class Tally(val label: String, val startedAtMs: Long) {
         val byEndpoint = LinkedHashMap<String, Int>()
         val failures = LinkedHashMap<String, Int>()
+        /** Automatic requests [RequestPolicy] kept on the device; not in [total]. */
+        val held = LinkedHashMap<String, Int>()
         var total = 0
         var mints = 0
     }
@@ -56,7 +58,9 @@ object YouTubeRequestLedger : Interceptor {
             segment = Tally(label, System.currentTimeMillis())
             previous
         }
-        if (finished.total > 0) KLog.i(TAG, render(finished, System.currentTimeMillis()))
+        if (finished.total > 0 || finished.held.isNotEmpty()) {
+            KLog.i(TAG, render(finished, System.currentTimeMillis()))
+        }
     }
 
     /** The open segment and the session totals, for the bug report header. */
@@ -83,6 +87,15 @@ object YouTubeRequestLedger : Interceptor {
         return response
     }
 
+    /** An automatic request to [endpoint] that a hold kept from going out. */
+    internal fun noteHeld(endpoint: String) {
+        synchronized(lock) {
+            for (tally in arrayOf(segment, session)) {
+                tally.held[endpoint] = (tally.held[endpoint] ?: 0) + 1
+            }
+        }
+    }
+
     private fun record(key: String, failure: String?) {
         synchronized(lock) {
             for (tally in arrayOf(segment, session)) {
@@ -106,6 +119,10 @@ object YouTubeRequestLedger : Interceptor {
         if (tally.failures.isNotEmpty()) {
             append(" | failed: ")
             append(tally.failures.entries.joinToString(", ") { (k, v) -> if (v == 1) k else "$k x$v" })
+        }
+        if (tally.held.isNotEmpty()) {
+            append(" | held: ")
+            append(tally.held.entries.joinToString(", ") { (k, v) -> if (v == 1) k else "$k x$v" })
         }
     }
 

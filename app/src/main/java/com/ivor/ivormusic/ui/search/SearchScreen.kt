@@ -315,7 +315,7 @@ fun SearchScreen(
     val isVideoFeedLoading by viewModel.isVideoLoading.collectAsState()
     LaunchedEffect(videoMode) {
         if (videoMode && trendingVideos.isEmpty()) {
-            viewModel.loadTrendingVideos()
+            viewModel.ensureTrendingVideos()
         }
     }
     
