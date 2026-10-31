@@ -58,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -280,19 +281,34 @@ fun SubscriptionsContent(
         localSubscriptions.map { it.channelId }.toSet()
     }
 
-    // YouTube does not expose a stable ordering contract for the subscription
-    // list itself. The feed does expose the thing this rail is meant to answer:
-    // who uploaded most recently. Channels missing from the current feed stay
-    // available after those recent creators, alphabetically.
-    val recentlyUploadingChannels = remember(channels, feed) {
+    // The rail and management screen share the same persisted sort preference.
+    // "Official-style" follows recent uploads first, with alphabetical fallback.
+    var channelSort by rememberSaveable { mutableStateOf("OFFICIAL") }
+    val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
+    val railPreferences = remember(context) { context.getSharedPreferences("subscription_channel_rail", 0) }
+    val pinnedChannelPositions = remember(context) {
+        androidx.compose.runtime.mutableStateMapOf<String, Int>().apply {
+            runCatching {
+                val json = org.json.JSONObject(railPreferences.getString("pinned_positions", "{}") ?: "{}")
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val position = json.optInt(key, 0)
+                    if (position > 0) put(key, position)
+                }
+            }
+        }
+    }
+    var channelToPosition by remember { mutableStateOf<SubscribedChannel?>(null) }
+    var channelPositionInput by rememberSaveable { mutableStateOf("1") }
+    var showChannelSortMenu by remember { mutableStateOf(false) }
+    val recentlyUploadingChannels = remember(channels, feed, channelSort, channelWatchCounts, pinnedChannelPositions.toMap()) {
         val newestUploadById = mutableMapOf<String, Long>()
         val newestUploadByName = mutableMapOf<String, Long>()
         val now = System.currentTimeMillis()
         feed.forEachIndexed { index, video ->
             val uploadedAt = video.publishedAtMs
                 ?: VideoItem.parseRelativeTime(video.uploadedDate, now)
-                // The merged feed is already newest-first. Preserve that
-                // server/feed order when an item omitted its date entirely.
                 ?: (now - index)
             video.channelId?.takeIf { it.isNotBlank() }?.let { id ->
                 newestUploadById[id] = maxOf(newestUploadById[id] ?: Long.MIN_VALUE, uploadedAt)
@@ -300,18 +316,55 @@ fun SubscriptionsContent(
             val normalizedName = video.channelName.trim().lowercase()
             if (normalizedName.isNotEmpty()) {
                 newestUploadByName[normalizedName] = maxOf(
-                    newestUploadByName[normalizedName] ?: Long.MIN_VALUE,
-                    uploadedAt
+                    newestUploadByName[normalizedName] ?: Long.MIN_VALUE, uploadedAt
                 )
             }
         }
-        channels.sortedWith(
-            compareByDescending<SubscribedChannel> { channel ->
-                newestUploadById[channel.channelId]
-                    ?: newestUploadByName[channel.name.trim().lowercase()]
-                    ?: Long.MIN_VALUE
-            }.thenBy { it.name.lowercase() }
-        )
+        val byRecent = compareByDescending<SubscribedChannel> { channel ->
+            newestUploadById[channel.channelId]
+                ?: newestUploadByName[channel.name.trim().lowercase()]
+                ?: Long.MIN_VALUE
+        }.thenBy { it.name.lowercase() }
+        val sortedAll = when (channelSort) {
+            "MOST_WATCHED" -> channels.sortedWith(
+                compareByDescending<SubscribedChannel> {
+                    channelWatchCounts[it.channelId] ?: channelWatchCounts["name:" + it.name.trim().lowercase()] ?: 0
+                }.thenBy { it.name.lowercase() }
+            )
+            "NAME" -> channels.sortedBy { it.name.lowercase() }
+            "OLDEST" -> channels.sortedWith(
+                compareBy<SubscribedChannel> { channel ->
+                    newestUploadById[channel.channelId]
+                        ?: newestUploadByName[channel.name.trim().lowercase()]
+                        ?: Long.MIN_VALUE
+                }.thenBy { it.name.lowercase() }
+            )
+            "OFFICIAL", "RECENT" -> channels.sortedWith(byRecent)
+            else -> channels.sortedWith(byRecent)
+        }
+        // Fixed channels occupy absolute 1-based positions; the selected sort
+        // fills all remaining slots.
+        val ordered = MutableList<SubscribedChannel?>(channels.size) { null }
+        val channelById = channels.associateBy { it.channelId }
+        pinnedChannelPositions.entries
+            .mapNotNull { (id, position) -> channelById[id]?.let { it to position } }
+            .sortedWith(compareBy<Pair<SubscribedChannel, Int>> { it.second }.thenBy { it.first.name.lowercase() })
+            .forEach { (channel, requestedPosition) ->
+                if (ordered.isNotEmpty()) {
+                    val target = (requestedPosition - 1).coerceIn(0, ordered.lastIndex)
+                    var slot = target
+                    while (slot < ordered.size && ordered[slot] != null) slot++
+                    if (slot >= ordered.size) {
+                        slot = target
+                        while (slot >= 0 && ordered[slot] != null) slot--
+                    }
+                    if (slot >= 0) ordered[slot] = channel
+                }
+            }
+        val fixedIds = pinnedChannelPositions.keys
+        val remaining = sortedAll.filter { it.channelId !in fixedIds }.iterator()
+        ordered.indices.forEach { index -> if (ordered[index] == null && remaining.hasNext()) ordered[index] = remaining.next() }
+        ordered.filterNotNull()
     }
 
     // Confirmation before dropping a channel, because the gesture that opens
@@ -425,6 +478,49 @@ fun SubscriptionsContent(
             // tap away in the same tab.
             allowBlockChannel = false,
             onOpenChannel = onOpenChannel
+        )
+    }
+
+    channelToPosition?.let { channel ->
+        AlertDialog(
+            onDismissRequest = { channelToPosition = null },
+            title = { Text(stringResource(R.string.sm_pin_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.sm_pin_body, channel.name))
+                    OutlinedTextField(
+                        value = channelPositionInput,
+                        onValueChange = { value -> channelPositionInput = value.filter(Char::isDigit).take(3) },
+                        label = { Text(stringResource(R.string.sm_pin_position_label, channels.size.coerceAtLeast(1))) },
+                        singleLine = true
+                    )
+                    Text(stringResource(R.string.sm_pin_unpin_hint), style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val position = channelPositionInput.toIntOrNull()
+                    if (position != null && position in 1..channels.size.coerceAtLeast(1)) {
+                        pinnedChannelPositions[channel.channelId] = position
+                        val json = org.json.JSONObject()
+                        pinnedChannelPositions.forEach { (id, value) -> json.put(id, value) }
+                        railPreferences.edit().putString("pinned_positions", json.toString()).apply()
+                    }
+                    channelToPosition = null
+                }) { Text(stringResource(R.string.sm_pin_confirm)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        pinnedChannelPositions.remove(channel.channelId)
+                        val json = org.json.JSONObject()
+                        pinnedChannelPositions.forEach { (id, value) -> json.put(id, value) }
+                        railPreferences.edit().putString("pinned_positions", json.toString()).apply()
+                        channelToPosition = null
+                    }) { Text(stringResource(R.string.sm_unpin)) }
+                    TextButton(onClick = { channelToPosition = null }) { Text(stringResource(R.string.action_cancel)) }
+                }
+            }
         )
     }
 
@@ -588,6 +684,42 @@ fun SubscriptionsContent(
                     // Creator rail: selection filters the feed in place instead
                     // of navigating away from the uploads the user came to see.
                     if (channels.isNotEmpty()) {
+                        item(key = "channel-sort-control") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Box {
+                                    TextButton(onClick = { showChannelSortMenu = true }) {
+                                        Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(R.string.subscription_channel_sort))
+                                    }
+                                    DropdownMenu(
+                                        expanded = showChannelSortMenu,
+                                        onDismissRequest = { showChannelSortMenu = false }
+                                    ) {
+                                        listOf(
+                                            "OFFICIAL" to R.string.subscription_sort_official,
+                                            "MOST_WATCHED" to R.string.subscription_sort_most_watched,
+                                            "RECENT" to R.string.subscription_sort_recent,
+                                            "NAME" to R.string.subscription_sort_name,
+                                            "OLDEST" to R.string.subscription_sort_oldest
+                                        ).forEach { (key, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(label)) },
+                                                onClick = {
+                                                    channelSort = key
+                                                    if (key == "MOST_WATCHED") viewModel.loadChannelWatchCounts()
+                                                    showChannelSortMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         item(key = "channel-filter") {
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
@@ -639,15 +771,22 @@ fun SubscriptionsContent(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                if (selected) {
-                                                    selectedChannelId = null
-                                                    viewModel.clearSelectedChannelFeed()
-                                                } else {
-                                                    selectedChannelId = channel.channelId
-                                                    viewModel.loadSelectedChannelFeed(channel)
+                                            .combinedClickable(
+                                                onClick = {
+                                                    if (selected) {
+                                                        selectedChannelId = null
+                                                        viewModel.clearSelectedChannelFeed()
+                                                    } else {
+                                                        selectedChannelId = channel.channelId
+                                                        viewModel.loadSelectedChannelFeed(channel)
+                                                    }
+                                                },
+                                                onLongClick = {
+                                                    channelPositionInput = (pinnedChannelPositions[channel.channelId]
+                                                        ?: (recentlyUploadingChannels.indexOfFirst { it.channelId == channel.channelId } + 1).coerceAtLeast(1)).toString()
+                                                    channelToPosition = channel
                                                 }
-                                            }
+                                            )
                                             .padding(4.dp)
                                             .width(64.dp)
                                     ) {

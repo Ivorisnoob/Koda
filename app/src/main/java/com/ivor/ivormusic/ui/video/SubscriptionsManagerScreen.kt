@@ -27,6 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteSweep
@@ -37,6 +40,8 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
@@ -60,6 +65,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -124,10 +130,41 @@ fun SubscriptionsManagerScreen(
     // This screen is only ever opened with a particular channel in mind -
     // to put it in a group, or to drop it - so a long list without a filter
     // is the whole job done by hand.
-    var channelQuery by remember { mutableStateOf("") }
-
-    val sortedSubscriptions = remember(subscriptions) {
-        subscriptions.sortedBy { it.name.lowercase() }
+    var channelQuery by rememberSaveable { mutableStateOf("") }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var sortModeName by rememberSaveable { mutableStateOf(ManagedSubscriptionSort.NAME.name) }
+    val sortMode = remember(sortModeName) {
+        ManagedSubscriptionSort.entries.firstOrNull { it.name == sortModeName } ?: ManagedSubscriptionSort.NAME
+    }
+    val accountChannels by viewModel.accountSubscribedChannels.collectAsState()
+    val subscriptionFeed by viewModel.subscriptionFeed.collectAsState()
+    val accountCounts = remember(accountChannels) {
+        accountChannels.associate { it.channelId to parseSubscriberCount(it.subscriberCountText) }
+    }
+    val latestUploadByChannel = remember(subscriptionFeed) {
+        subscriptionFeed.asSequence().filter { !it.channelId.isNullOrBlank() }
+            .groupBy { it.channelId!! }
+            .mapValues { (_, videos) ->
+                videos.maxOfOrNull { it.publishedAtMs ?: com.ivor.ivormusic.data.VideoItem.parseRelativeTime(it.uploadedDate) ?: Long.MIN_VALUE } ?: Long.MIN_VALUE
+            }
+    }
+    val manualPosition = remember(subscriptions) {
+        subscriptions.mapIndexed { index, item -> item.channelId to index }.toMap()
+    }
+    val sortedSubscriptions = remember(subscriptions, sortMode, accountCounts, latestUploadByChannel, manualPosition) {
+        when (sortMode) {
+            ManagedSubscriptionSort.SUBSCRIPTION_DATE -> subscriptions.sortedByDescending { it.subscribedAt }
+            ManagedSubscriptionSort.NAME -> subscriptions.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            ManagedSubscriptionSort.RECENT_UPLOAD -> subscriptions.sortedWith(
+                compareByDescending<com.ivor.ivormusic.data.LocalSubscription> { latestUploadByChannel[it.channelId] ?: Long.MIN_VALUE }
+                    .thenBy { it.name.lowercase() }
+            )
+            ManagedSubscriptionSort.SUBSCRIBER_COUNT -> subscriptions.sortedWith(
+                compareByDescending<com.ivor.ivormusic.data.LocalSubscription> { accountCounts[it.channelId] ?: Long.MIN_VALUE }
+                    .thenBy { it.name.lowercase() }
+            )
+            ManagedSubscriptionSort.MANUAL -> subscriptions.sortedBy { manualPosition[it.channelId] ?: Int.MAX_VALUE }
+        }
     }
     val matchedSubscriptions = remember(sortedSubscriptions, channelQuery) {
         filterChannels(sortedSubscriptions, channelQuery)
@@ -161,6 +198,9 @@ fun SubscriptionsManagerScreen(
     // Names and avatars for imported channels arrive later than the channels
     // themselves; kick that off when the list is actually being looked at.
     LaunchedEffect(Unit) { viewModel.backfillLocalChannelProfiles() }
+    LaunchedEffect(sortMode) {
+        if (sortMode == ManagedSubscriptionSort.RECENT_UPLOAD) viewModel.loadSubscriptionFeed()
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -316,6 +356,35 @@ fun SubscriptionsManagerScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 4.dp, top = 8.dp)
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box {
+                                OutlinedButton(onClick = { sortMenuExpanded = true }) {
+                                    Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(stringResource(R.string.sm_sort_by))
+                                }
+                                DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
+                                    listOf(
+                                        ManagedSubscriptionSort.SUBSCRIPTION_DATE to R.string.sm_sort_subscription_date,
+                                        ManagedSubscriptionSort.NAME to R.string.sm_sort_name,
+                                        ManagedSubscriptionSort.RECENT_UPLOAD to R.string.sm_sort_recent_upload,
+                                        ManagedSubscriptionSort.SUBSCRIBER_COUNT to R.string.sm_sort_subscriber_count,
+                                        ManagedSubscriptionSort.MANUAL to R.string.sm_sort_manual
+                                    ).forEach { (mode, label) ->
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(label)) },
+                                            onClick = { sortModeName = mode.name; sortMenuExpanded = false },
+                                            trailingIcon = { if (sortMode == mode) Text("✓", color = MaterialTheme.colorScheme.primary) }
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.sm_sort_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (subscriptions.size >= SEARCH_FIELD_MIN_ITEMS) {
                             Spacer(Modifier.height(8.dp))
                             SearchField(
@@ -337,13 +406,27 @@ fun SubscriptionsManagerScreen(
                 }
 
                 items(matchedSubscriptions, key = { it.channelId }) { channel ->
-                    ManagedChannelRow(
-                        channel = channel,
-                        groupCount = groups.count { channel.channelId in it.channelIds },
-                        onOpenChannel = { onOpenChannel(channel.channelId) },
-                        onEditGroups = { channelForGroups = channel },
-                        onRemove = { viewModel.unsubscribeLocally(channel.channelId) }
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (sortMode == ManagedSubscriptionSort.MANUAL && channelQuery.isBlank()) {
+                            Column {
+                                IconButton(onClick = { viewModel.moveLocalSubscription(channel.channelId, -1) }, enabled = (manualPosition[channel.channelId] ?: 0) > 0) {
+                                    Icon(Icons.Rounded.ArrowUpward, contentDescription = stringResource(R.string.sm_move_up, channel.name))
+                                }
+                                IconButton(onClick = { viewModel.moveLocalSubscription(channel.channelId, 1) }, enabled = (manualPosition[channel.channelId] ?: 0) < subscriptions.lastIndex) {
+                                    Icon(Icons.Rounded.ArrowDownward, contentDescription = stringResource(R.string.sm_move_down, channel.name))
+                                }
+                            }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            ManagedChannelRow(
+                                channel = channel,
+                                groupCount = groups.count { channel.channelId in it.channelIds },
+                                onOpenChannel = { onOpenChannel(channel.channelId) },
+                                onEditGroups = { channelForGroups = channel },
+                                onRemove = { viewModel.unsubscribeLocally(channel.channelId) }
+                            )
+                        }
+                    }
                 }
 
                 // Hidden while filtering. "Remove all" sitting directly under
@@ -613,6 +696,24 @@ private fun ManagerRow(
         }
         trailing?.invoke()
     }
+}
+
+private enum class ManagedSubscriptionSort { SUBSCRIPTION_DATE, NAME, RECENT_UPLOAD, SUBSCRIBER_COUNT, MANUAL }
+
+private fun parseSubscriberCount(value: String?): Long? {
+    if (value.isNullOrBlank()) return null
+    val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*([KMB万億]?)""", RegexOption.IGNORE_CASE)
+        .find(value.replace(",", "")) ?: return null
+    val amount = match.groupValues[1].toDoubleOrNull() ?: return null
+    val multiplier = when (match.groupValues[2].uppercase()) {
+        "K" -> 1_000.0
+        "M" -> 1_000_000.0
+        "B" -> 1_000_000_000.0
+        "万" -> 10_000.0
+        "億" -> 100_000_000.0
+        else -> 1.0
+    }
+    return (amount * multiplier).toLong()
 }
 
 @Composable

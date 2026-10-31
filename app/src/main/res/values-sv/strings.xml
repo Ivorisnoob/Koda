@@ -361,4 +361,10 @@
     <string name="subscribed">Prenumererar</string>
     <string name="subscribe">Prenumerera</string>
     <string name="like">Gilla</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Sortera kanaler</string>
+    <string name="subscription_sort_official">YouTube-stil (senaste aktivitet)</string>
+    <string name="subscription_sort_recent">Senaste uppladdningar först</string>
+    <string name="subscription_sort_name">Kanalnamn (A–Ö)</string>
+    <string name="subscription_sort_oldest">Äldsta uppladdningar först</string>
 </resources>

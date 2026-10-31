@@ -361,4 +361,10 @@
     <string name="subscribed">Geabonneerd</string>
     <string name="subscribe">Abonneren</string>
     <string name="like">Leuk</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Kanalen sorteren</string>
+    <string name="subscription_sort_official">YouTube-stijl (recente activiteit)</string>
+    <string name="subscription_sort_recent">Nieuwste uploads eerst</string>
+    <string name="subscription_sort_name">Kanaalnaam (A–Z)</string>
+    <string name="subscription_sort_oldest">Oudste uploads eerst</string>
 </resources>

@@ -361,4 +361,10 @@
     <string name="subscribed">Εγγεγραμμένος</string>
     <string name="subscribe">Εγγραφή</string>
     <string name="like">Μου αρέσει</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Ταξινόμηση καναλιών</string>
+    <string name="subscription_sort_official">Στυλ YouTube (πρόσφατη δραστηριότητα)</string>
+    <string name="subscription_sort_recent">Πρώτα οι πιο πρόσφατες αναρτήσεις</string>
+    <string name="subscription_sort_name">Όνομα καναλιού (Α–Ω)</string>
+    <string name="subscription_sort_oldest">Πρώτα οι παλαιότερες αναρτήσεις</string>
 </resources>

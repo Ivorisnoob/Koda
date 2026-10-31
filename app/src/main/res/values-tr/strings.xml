@@ -361,4 +361,10 @@
     <string name="subscribed">Abone olundu</string>
     <string name="subscribe">Abone ol</string>
     <string name="like">Beğen</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Kanalları sırala</string>
+    <string name="subscription_sort_official">YouTube tarzı (son etkinlik)</string>
+    <string name="subscription_sort_recent">En yeni yüklemeler önce</string>
+    <string name="subscription_sort_name">Kanal adı (A–Z)</string>
+    <string name="subscription_sort_oldest">En eski yüklemeler önce</string>
 </resources>

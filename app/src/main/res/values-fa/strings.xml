@@ -363,4 +363,10 @@
     <string name="subscribed">عضو شده</string>
     <string name="subscribe">عضویت</string>
     <string name="like">پسند</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">مرتب‌سازی کانال‌ها</string>
+    <string name="subscription_sort_official">سبک YouTube (فعالیت اخیر)</string>
+    <string name="subscription_sort_recent">جدیدترین ویدیوها در ابتدا</string>
+    <string name="subscription_sort_name">نام کانال (الف تا ی)</string>
+    <string name="subscription_sort_oldest">قدیمی‌ترین ویدیوها در ابتدا</string>
 </resources>

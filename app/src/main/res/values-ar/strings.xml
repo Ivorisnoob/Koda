@@ -373,4 +373,10 @@
     <string name="subscribed">مشترك</string>
     <string name="subscribe">اشترك</string>
     <string name="like">أعجبني</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">ترتيب القنوات</string>
+    <string name="subscription_sort_official">على نمط YouTube (النشاط الأخير)</string>
+    <string name="subscription_sort_recent">أحدث الفيديوهات أولاً</string>
+    <string name="subscription_sort_name">اسم القناة (أ–ي)</string>
+    <string name="subscription_sort_oldest">أقدم الفيديوهات أولاً</string>
 </resources>

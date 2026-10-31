@@ -360,4 +360,10 @@
     <string name="subscribed">Iscritto</string>
     <string name="subscribe">Iscriviti</string>
     <string name="like">Mi piace</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Ordina canali</string>
+    <string name="subscription_sort_official">Stile YouTube (attività recente)</string>
+    <string name="subscription_sort_recent">Prima i video più recenti</string>
+    <string name="subscription_sort_name">Nome del canale (A–Z)</string>
+    <string name="subscription_sort_oldest">Prima i video meno recenti</string>
 </resources>
