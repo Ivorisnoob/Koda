@@ -71,7 +71,7 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 
 ### Music playback
 
-- Eight player styles: Classic, Gesture, Editorial, Canvas, Bento, Sticker, Morph, and Dial.
+- Nine player styles: Classic, Gesture, Editorial, Canvas, Bento, Sticker, Morph, Dial, and Hero.
 - A shared editable queue with Play next, Add to queue, drag-to-reorder, swipe-to-remove, and undo.
 - Shuffle and repeat that survive app restarts.
 - AutoMix transitions, manual crossfade durations, and short overlaps on manual skips.
@@ -147,7 +147,6 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 
 ### System integration
 
-- Chromecast playback for music and video, including queues, captions, and live streams.
 - Six home-screen widgets covering artwork, transport controls, progress, shuffle, repeat, and Up Next.
 - A Quick Settings tile for music playback.
 - Android Auto browsing, search, playback, and voice requests.
