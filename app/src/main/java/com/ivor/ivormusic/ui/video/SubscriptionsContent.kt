@@ -284,7 +284,7 @@ fun SubscriptionsContent(
     // Persist the rail preference independently of this tab's composition.
     val railPreferences = remember(context) { context.getSharedPreferences("subscription_channel_rail", 0) }
     var channelSort by remember(railPreferences) {
-        mutableStateOf(railPreferences.getString("sort_mode", "OFFICIAL") ?: "OFFICIAL")
+        mutableStateOf(railPreferences.getString("sort_mode", "RECENT") ?: "RECENT")
     }
     val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
     val pinnedChannelPositions = remember(context) {
