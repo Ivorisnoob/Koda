@@ -1512,6 +1512,21 @@
     <string name="sm_import_file_sub">A NewPipe, PipePipe or Tubular export or backup, or a Google Takeout file</string>
     <string name="sm_copy_account">Copy from YouTube account</string>
     <string name="sm_copy_sub">Keeps following these channels after you sign out</string>
+    <string name="sm_sort_by">Sort by</string>
+    <string name="sm_sort_subscription_date">Recently subscribed</string>
+    <string name="sm_sort_name">Name (A–Z)</string>
+    <string name="sm_sort_recent_upload">Most recent upload</string>
+    <string name="sm_sort_subscriber_count">Subscriber count</string>
+    <string name="sm_sort_manual">Manual order</string>
+    <string name="sm_sort_hint">Move channels with the arrows in manual order.</string>
+    <string name="sm_move_up">Move %1$s up</string>
+    <string name="sm_move_down">Move %1$s down</string>
+    <string name="sm_pin_title">Set pinned position</string>
+    <string name="sm_pin_body">Choose which slot in the channel rail %1$s is pinned to.</string>
+    <string name="sm_pin_position_label">Position (1–%1$d)</string>
+    <string name="sm_pin_unpin_hint">Unpinning returns it to the selected sort order.</string>
+    <string name="sm_pin_confirm">Pin position</string>
+    <string name="sm_unpin">Unpin</string>
     <string name="sm_sign_in_first">Sign in to YouTube first</string>
     <string name="sm_export">Export to a file</string>
     <string name="sm_nothing_to_export">Nothing to export yet</string>
@@ -2366,4 +2381,12 @@
     <string name="vst_sepia">Sepia</string>
     <string name="vst_edge_glow">Edge glow</string>
     <string name="vst_wobble">Wobble</string>
+
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Sort channels</string>
+    <string name="subscription_sort_most_watched">Most watched</string>
+    <string name="subscription_sort_official">YouTube-style (recent activity)</string>
+    <string name="subscription_sort_recent">Latest uploads first</string>
+    <string name="subscription_sort_name">Channel name (A–Z)</string>
+    <string name="subscription_sort_oldest">Oldest uploads first</string>
 </resources>
