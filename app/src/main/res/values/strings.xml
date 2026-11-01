@@ -524,7 +524,7 @@
     <string name="cz_info_video_feed">Choose what the Home and Subscriptions feeds show in video mode: community posts, the Shorts shelf, live streams and videos you have already watched.</string>
     <string name="cz_feed_section_mixed_in">In the feed</string>
     <string name="cz_feed_posts">Community posts</string>
-    <string name="cz_feed_posts_sub">Posts from channels you follow, between the videos</string>
+    <string name="cz_feed_posts_sub">Posts from channels you follow, between the videos on Home</string>
     <string name="cz_feed_shorts">Shorts shelf</string>
     <string name="cz_feed_shorts_sub">A row of Shorts near the top of Home</string>
     <string name="cz_feed_shorts_blocked">Shorts are blocked everywhere in Content settings</string>
@@ -1577,6 +1577,11 @@
     <string name="wifi">Wi-Fi</string>
     <string name="mobile_data">Mobile data</string>
     <string name="ch_post_open_comments">Open comments on this post</string>
+    <string name="sc_tab_videos">Videos</string>
+    <string name="sc_tab_posts">Posts</string>
+    <string name="sc_posts_empty">No posts from the channels you follow yet</string>
+    <string name="sc_posts_empty_channel">%1$s hasn\'t posted anything yet</string>
+    <string name="ch_post_photo_position">Photo %1$d of %2$d</string>
     <string name="ch_post_comments_unavailable">Comments aren\'t available for this post</string>
     <string name="cm_delete_q">Delete comment?</string>
     <string name="cm_delete_body">Your comment will be permanently deleted.</string>

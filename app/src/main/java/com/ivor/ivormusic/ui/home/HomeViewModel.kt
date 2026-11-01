@@ -1788,6 +1788,48 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             else posts.filterNot { post -> blocked.any { it.channelId == post.channelId } }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /**
+     * Every post the same channel browses brought, up to
+     * [SUBSCRIPTION_POSTS_PER_CHANNEL] per channel, for the Subscriptions tab's
+     * Posts view. Filled by the same top-ups as [_feedPosts] - one browse
+     * serves both - so opening the Posts view after scrolling Home costs
+     * nothing for the channels already asked.
+     */
+    private val _subscriptionPosts = MutableStateFlow<List<com.ivor.ivormusic.data.ChannelPost>>(emptyList())
+
+    /**
+     * The Posts view: newest first by [com.ivor.ivormusic.data.ChannelPost.publishedAtMs],
+     * posts whose time could not be read after the rest, ties kept in the
+     * order they arrived (a stable sort), minus blocked channels.
+     */
+    val subscriptionPosts: StateFlow<List<com.ivor.ivormusic.data.ChannelPost>> =
+        combine(_subscriptionPosts, notInterestedRepository.blockedChannels) { posts, blocked ->
+            val visible = if (blocked.isEmpty()) posts
+            else posts.filterNot { post -> blocked.any { it.channelId == post.channelId } }
+            sortPostsNewestFirst(visible)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _isFeedPostsLoading = MutableStateFlow(false)
+    /** A top-up is in flight: the Posts view shows its skeleton or a footer spinner. */
+    val isFeedPostsLoading: StateFlow<Boolean> = _isFeedPostsLoading.asStateFlow()
+
+    private val _feedPostsExhausted = MutableStateFlow(false)
+    /** Every followed channel has been asked; there are no more posts to fetch. */
+    val feedPostsExhausted: StateFlow<Boolean> = _feedPostsExhausted.asStateFlow()
+
+    private val _subscriptionPostsTab = MutableStateFlow(false)
+    /**
+     * Whether the Subscriptions tab shows Posts rather than Videos. Held here
+     * rather than in rememberSaveable: the tab lives inside Home's
+     * AnimatedContent, so leaving it would dispose saved state and the choice
+     * would reset on every return.
+     */
+    val subscriptionPostsTab: StateFlow<Boolean> = _subscriptionPostsTab.asStateFlow()
+
+    fun setSubscriptionPostsTab(showPosts: Boolean) {
+        _subscriptionPostsTab.value = showPosts
+    }
+
     private var feedPostChannelOrder: List<com.ivor.ivormusic.data.SubscribedChannel> = emptyList()
     private var feedPostNextChannel = 0
     private var feedPostsStarted = false
@@ -1801,12 +1843,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * asked.
      */
     fun ensureFeedPosts(videoCount: Int) {
+        topUpFeedPosts {
+            _feedPosts.value.size >= videoCount / com.ivor.ivormusic.ui.video.FEED_VIDEOS_PER_POST
+        }
+    }
+
+    /**
+     * Make sure the Posts view holds at least [minimum] posts, asking more
+     * followed channels when it does not. Called as the Posts view scrolls.
+     */
+    fun ensureSubscriptionPosts(minimum: Int) {
+        topUpFeedPosts { _subscriptionPosts.value.size >= minimum }
+    }
+
+    private fun topUpFeedPosts(satisfied: () -> Boolean) {
         if (themePreferences.isLocalOnlyModeEnabled()) return
         if (feedPostJob?.isActive == true) return
-        if (_feedPosts.value.size >= videoCount / com.ivor.ivormusic.ui.video.FEED_VIDEOS_PER_POST) return
+        if (satisfied()) return
         if (feedPostsStarted && feedPostNextChannel >= feedPostChannelOrder.size) return
         if (com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()) return
         val generation = feedPostGeneration
+        _isFeedPostsLoading.value = true
         feedPostJob = viewModelScope.launch {
             try {
                 if (!feedPostsStarted) {
@@ -1833,14 +1890,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     feedPostNextChannel += batch.size
                     val fetched = batch.map { channel ->
                         async {
-                            youtubeRepository.getChannelPosts(channel.channelId).take(FEED_POSTS_PER_CHANNEL)
+                            stampPostTimes(
+                                youtubeRepository.getChannelPosts(channel.channelId)
+                                    .take(SUBSCRIPTION_POSTS_PER_CHANNEL)
+                            )
                         }
                     }.awaitAll()
                     if (generation != feedPostGeneration) return@launch
-                    val known = _feedPosts.value.mapTo(HashSet()) { it.postId }
-                    val fresh = fetched.flatten().filter { known.add(it.postId) }.shuffled(mixRandom)
-                    if (fresh.isNotEmpty()) {
-                        _feedPosts.value = _feedPosts.value + fresh
+                    // Home keeps its two per channel, scattered in a shuffled
+                    // order; the Posts view keeps everything and sorts it.
+                    val knownFeed = _feedPosts.value.mapTo(HashSet()) { it.postId }
+                    val freshFeed = fetched
+                        .flatMap { it.take(FEED_POSTS_PER_CHANNEL) }
+                        .filter { knownFeed.add(it.postId) }
+                        .shuffled(mixRandom)
+                    if (freshFeed.isNotEmpty()) {
+                        _feedPosts.value = _feedPosts.value + freshFeed
+                    }
+                    val knownAll = _subscriptionPosts.value.mapTo(HashSet()) { it.postId }
+                    val freshAll = fetched.flatten().filter { knownAll.add(it.postId) }
+                    if (freshAll.isNotEmpty()) {
+                        _subscriptionPosts.value = _subscriptionPosts.value + freshAll
                         added = true
                     }
                 }
@@ -1848,9 +1918,32 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 throw cancelled
             } catch (e: Exception) {
                 KLog.w("HomeViewModel", "Feed posts failed", e)
+            } finally {
+                if (generation == feedPostGeneration) {
+                    _isFeedPostsLoading.value = false
+                    _feedPostsExhausted.value =
+                        feedPostsStarted && feedPostNextChannel >= feedPostChannelOrder.size
+                }
             }
         }
     }
+
+    /** Estimate each post's time from its "2 days ago" text, against one clock reading. */
+    private fun stampPostTimes(
+        posts: List<com.ivor.ivormusic.data.ChannelPost>
+    ): List<com.ivor.ivormusic.data.ChannelPost> {
+        val now = System.currentTimeMillis()
+        return posts.map { post ->
+            if (post.publishedAtMs != null) post
+            else post.copy(publishedAtMs = VideoItem.parseRelativeTime(post.publishedText, now))
+        }
+    }
+
+    private fun sortPostsNewestFirst(
+        posts: List<com.ivor.ivormusic.data.ChannelPost>
+    ): List<com.ivor.ivormusic.data.ChannelPost> =
+        // sortedWith is stable, so equal times keep their arrival order.
+        posts.sortedWith(compareByDescending { it.publishedAtMs ?: Long.MIN_VALUE })
 
     /** A pull to refresh: different channels, different posts. */
     fun refreshFeedPosts() = clearFeedPosts()
@@ -1862,6 +1955,57 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         feedPostNextChannel = 0
         feedPostsStarted = false
         _feedPosts.value = emptyList()
+        _subscriptionPosts.value = emptyList()
+        _isFeedPostsLoading.value = false
+        _feedPostsExhausted.value = false
+        clearSelectedChannelPosts()
+    }
+
+    // ---------------- One creator's posts (Subscriptions, Posts view) ----------------
+
+    private val _selectedChannelPosts = MutableStateFlow<List<com.ivor.ivormusic.data.ChannelPost>>(emptyList())
+    /** The selected creator's own Posts tab, newest first. */
+    val selectedChannelPosts: StateFlow<List<com.ivor.ivormusic.data.ChannelPost>> =
+        _selectedChannelPosts.asStateFlow()
+    private val _isSelectedChannelPostsLoading = MutableStateFlow(false)
+    val isSelectedChannelPostsLoading: StateFlow<Boolean> = _isSelectedChannelPostsLoading.asStateFlow()
+    private var selectedChannelPostsJob: Job? = null
+    private var selectedChannelPostsId: String? = null
+
+    /**
+     * Load one creator's posts for the Posts view with that creator selected:
+     * their whole Posts tab rather than whatever the shared top-ups happened
+     * to bring. Does nothing when that creator's posts are already in hand.
+     */
+    fun loadSelectedChannelPosts(channelId: String, force: Boolean = false) {
+        if (!force && selectedChannelPostsId == channelId &&
+            (_isSelectedChannelPostsLoading.value || _selectedChannelPosts.value.isNotEmpty())
+        ) return
+        selectedChannelPostsJob?.cancel()
+        selectedChannelPostsId = channelId
+        _selectedChannelPosts.value = emptyList()
+        _isSelectedChannelPostsLoading.value = true
+        selectedChannelPostsJob = viewModelScope.launch {
+            try {
+                val posts = stampPostTimes(youtubeRepository.getChannelPosts(channelId))
+                if (selectedChannelPostsId == channelId) {
+                    _selectedChannelPosts.value = sortPostsNewestFirst(posts)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                KLog.w("HomeViewModel", "Selected channel posts failed", e)
+            } finally {
+                if (selectedChannelPostsId == channelId) _isSelectedChannelPostsLoading.value = false
+            }
+        }
+    }
+
+    fun clearSelectedChannelPosts() {
+        selectedChannelPostsJob?.cancel()
+        selectedChannelPostsId = null
+        _selectedChannelPosts.value = emptyList()
+        _isSelectedChannelPostsLoading.value = false
     }
 
     /**
@@ -4625,6 +4769,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         /** Posts taken from one channel, so no creator fills the feed's post slots alone. */
         const val FEED_POSTS_PER_CHANNEL = 2
+
+        /**
+         * Posts kept from one channel's browse for the Subscriptions Posts
+         * view. The browse costs the same however many are kept; the cap
+         * keeps one prolific channel from burying everyone else.
+         */
+        const val SUBSCRIPTION_POSTS_PER_CHANNEL = 6
 
         /** Consecutive post-less channel batches one top-up will try before giving up. */
         const val FEED_POST_EMPTY_BATCH_LIMIT = 3

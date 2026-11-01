@@ -202,7 +202,15 @@ data class ChannelPost(
      * The channel the post was fetched from. Set only where a post is shown
      * away from its channel page (the feeds), so its author can be opened.
      */
-    val channelId: String? = null
+    val channelId: String? = null,
+    /**
+     * When the post went up, as epoch millis, estimated from [publishedText]
+     * ("2 days ago") at the moment it was fetched. YouTube serves posts no
+     * absolute time, so this is only as precise as that text; null when it
+     * could not be read. Set where posts from several channels are ordered
+     * together (the Subscriptions Posts tab).
+     */
+    val publishedAtMs: Long? = null
 )
 
 /**

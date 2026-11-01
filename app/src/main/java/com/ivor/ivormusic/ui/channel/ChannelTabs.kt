@@ -951,9 +951,10 @@ private fun AboutCard(title: String, content: @Composable () -> Unit) {
 /**
  * One community post: text, then whichever single attachment it carried.
  *
- * Images are shown at their natural-ish ratio in a row rather than a grid,
- * because a multi-image post is a carousel on YouTube and cropping four photos
- * into equal squares loses what the post was about.
+ * A single image is shown at its own ratio. A multi-image post is a carousel
+ * on YouTube, so it is one here too: a swipeable pager of square pages with a
+ * page indicator ([PostImageCarousel]), each page opening the fullscreen
+ * viewer on that photo.
  */
 @Composable
 internal fun ChannelPostCard(
@@ -1034,19 +1035,10 @@ internal fun ChannelPostCard(
                         contentScale = ContentScale.FillWidth
                     )
                 } else {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        itemsIndexed(post.images) { index, image ->
-                            AsyncImage(
-                                model = image,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(180.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .combinedClickableCompat { onOpenPhotos(post.images, index) },
-                                contentScale = ContentScale.Crop
-                            )
-                        }
-                    }
+                    PostImageCarousel(
+                        images = post.images,
+                        onOpenPhoto = { index -> onOpenPhotos(post.images, index) }
+                    )
                 }
             }
 
@@ -1354,6 +1346,108 @@ internal fun ChannelSearchPane(
         }
     }
 }
+
+/**
+ * A multi-image post's photos as a swipeable pager: square pages cropped the
+ * way YouTube's own carousel crops them, a "2 / 5" badge on the photo and a
+ * row of dots under it. A tap opens the fullscreen viewer on the photo shown.
+ *
+ * The pager sits inside vertical lists (the channel's Posts tab, the
+ * Subscriptions Posts view); a horizontal drag goes to the pager and a
+ * vertical one still scrolls the list. Pages are not keyed by URL, because a
+ * post can carry the same image twice and a duplicate key would crash.
+ */
+@Composable
+private fun PostImageCarousel(
+    images: List<String>,
+    onOpenPhoto: (Int) -> Unit
+) {
+    val pagerState = rememberPagerState { images.size }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                pageSpacing = 8.dp,
+                beyondViewportPageCount = 1
+            ) { page ->
+                AsyncImage(
+                    model = images[page],
+                    contentDescription = stringResource(
+                        R.string.ch_post_photo_position,
+                        page + 1,
+                        images.size
+                    ),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(14.dp))
+                        .combinedClickableCompat { onOpenPhoto(page) },
+                    contentScale = ContentScale.Crop
+                )
+            }
+            com.ivor.ivormusic.ui.components.ThumbnailBadge(
+                text = "${pagerState.currentPage + 1} / ${images.size}",
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        PostPageIndicator(
+            pageCount = images.size,
+            currentPage = pagerState.currentPage
+        )
+    }
+}
+
+/**
+ * Dots under a post's carousel; the current one stretches into a pill. Past
+ * [MAX_DOTS] pages only the badge on the photo counts, since a row of twenty
+ * dots says nothing a "7 / 20" does not.
+ */
+@Composable
+private fun PostPageIndicator(pageCount: Int, currentPage: Int) {
+    if (pageCount > MAX_DOTS) return
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(pageCount) { index ->
+            val selected = index == currentPage
+            val width by androidx.compose.animation.core.animateDpAsState(
+                targetValue = if (selected) 18.dp else 6.dp,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
+                ),
+                label = "postPageDot"
+            )
+            val color by androidx.compose.animation.animateColorAsState(
+                targetValue = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                },
+                label = "postPageDotColor"
+            )
+            Box(
+                modifier = Modifier
+                    .height(6.dp)
+                    .width(width)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+        }
+    }
+}
+
+private const val MAX_DOTS = 10
 
 /**
  * `clickable` with the ripple clipped to the shape already applied above it,
