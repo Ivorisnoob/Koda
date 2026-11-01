@@ -2477,6 +2477,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         selectedAudioTrackId = null
     }
 
+    /**
+     * The dub playing for [videoId], or null when it is the original or that
+     * video is not the one playing. Read by the download sheet so a download
+     * started from the player keeps the language being listened to.
+     */
+    fun playingAudioTrackId(videoId: String): String? =
+        selectedDub()?.id?.takeIf { _currentVideo.value?.videoId == videoId }
+
     /** The dub to play in place of the original, or null for the original. */
     private fun selectedDub(): YouTubeAudioTrack? =
         selectedAudioTrackId

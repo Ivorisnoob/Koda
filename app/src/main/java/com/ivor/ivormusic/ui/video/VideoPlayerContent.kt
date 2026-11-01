@@ -1357,6 +1357,10 @@ fun VideoPlayerContent(
     downloadTargetVideo?.let { target ->
         VideoDownloadSheet(
             video = target,
+            // Null unless this is the playing video and a dub is on.
+            preferredAudioTrackId = remember(target.videoId) {
+                viewModel.playingAudioTrackId(target.videoId)
+            },
             onDismiss = { downloadTargetVideo = null }
         )
     }
