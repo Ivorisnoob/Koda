@@ -132,7 +132,13 @@ fun VideoDownloadSheet(
     // neither an MP4 nor an .m4a can hold it.
     var audioTracks by remember(video.videoId) { mutableStateOf<List<YouTubeAudioTrack>>(emptyList()) }
     var selectedTrackId by remember(video.videoId) { mutableStateOf<String?>(null) }
-    var audioOnly by remember(video.videoId) { mutableStateOf(false) }
+    // Opens on the kind already queued or paused for this video, so the sheet
+    // shows that download's state instead of offering a second one.
+    var audioOnly by remember(video.videoId) {
+        mutableStateOf(
+            downloadRepository.downloadProgress.value[video.videoId]?.request?.isVideo == false
+        )
+    }
     val selectedTrack = audioTracks.firstOrNull { it.id == selectedTrackId }
     // The original travels with the ladder already, so only another track is
     // named on the request.
@@ -148,7 +154,15 @@ fun VideoDownloadSheet(
     } else {
         downloadedVideos.any { it.id == video.videoId }
     }
-    val activeEntry = progressMap[video.videoId]
+    // Video and audio-only downloads share the video id, so the queue holds at
+    // most one of them. Only an entry of the kind picked here drives this
+    // sheet's progress and resume; one of the other kind blocks a new request.
+    val entryForId = progressMap[video.videoId]
+    val entryHeld = entryForId?.status.let {
+        it == DownloadStatus.DOWNLOADING || it == DownloadStatus.QUEUED || it == DownloadStatus.PAUSED
+    }
+    val otherKindBusy = entryHeld && entryForId?.request?.isVideo == audioOnly
+    val activeEntry = entryForId?.takeUnless { otherKindBusy }
     val inFlight = activeEntry?.status.let {
         it == DownloadStatus.DOWNLOADING || it == DownloadStatus.QUEUED
     }
@@ -337,7 +351,7 @@ fun VideoDownloadSheet(
 
             // Video or just its sound. Offered once the streams are in, since
             // a failed load has neither to give.
-            if (options != null && !loadFailed) {
+            if (options != null && !loadFailed && !video.isLive) {
                 Text(
                     text = stringResource(R.string.vd_download_as),
                     style = MaterialTheme.typography.titleSmall,
@@ -591,7 +605,7 @@ fun VideoDownloadSheet(
                 },
                 // Resuming needs neither the quality ladder nor the size: the
                 // paused request already carries its choice.
-                enabled = !queued && !alreadyDownloaded && !inFlight &&
+                enabled = !queued && !alreadyDownloaded && !inFlight && !otherKindBusy &&
                     (paused || (
                         (if (audioOnly) options != null && !loadFailed else selectedLabel != null) &&
                             !sizeLoading && sizeResolved
@@ -628,6 +642,12 @@ fun VideoDownloadSheet(
                                     "${((activeEntry?.progress ?: 0f) * 100).toInt()}%"
                                 else -> stringResource(R.string.dl_preparing)
                             },
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    otherKindBusy -> {
+                        Text(
+                            text = stringResource(R.string.vd_other_kind_busy),
                             fontWeight = FontWeight.SemiBold
                         )
                     }

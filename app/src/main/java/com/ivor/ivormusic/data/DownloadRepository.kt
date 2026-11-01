@@ -760,6 +760,9 @@ class DownloadRepository private constructor(private val context: Context) {
      * the original and goes through the ordinary music download path.
      */
     suspend fun downloadVideoAudio(video: VideoItem, audioTrackId: String? = null) {
+        // A live broadcast has no finished file to save, the same guard
+        // downloadVideos applies.
+        if (video.isLive) return
         val song = Song.fromYouTube(
             videoId = video.videoId,
             title = video.title,
@@ -1237,7 +1240,18 @@ class DownloadRepository private constructor(private val context: Context) {
         streams: VideoStreamResult? = null,
     ): YouTubeAudioTrack? {
         val id = request.audioTrackId ?: return null
-        val tracks = (streams ?: youtubeRepository.getVideoStreamResult(request.id)).audioTracks
+        // A failed lookup is treated like a missing track: the caller then
+        // takes its ordinary path, so an audio-only dub still saves the
+        // original instead of failing outright. Cancellation still propagates.
+        val resolved = streams ?: try {
+            youtubeRepository.getVideoStreamResult(request.id)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w(TAG, "Could not look up audio track $id for ${request.title}; keeping the original", e)
+            return null
+        }
+        val tracks = resolved.audioTracks
         val track = tracks.firstOrNull { it.id == id }
         return when {
             track == null -> {
