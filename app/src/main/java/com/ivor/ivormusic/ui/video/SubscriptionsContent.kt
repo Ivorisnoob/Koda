@@ -281,11 +281,12 @@ fun SubscriptionsContent(
         localSubscriptions.map { it.channelId }.toSet()
     }
 
-    // The rail and management screen share the same persisted sort preference.
-    // "Official-style" follows recent uploads first, with alphabetical fallback.
-    var channelSort by rememberSaveable { mutableStateOf("OFFICIAL") }
-    val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
+    // Persist the rail preference independently of this tab's composition.
     val railPreferences = remember(context) { context.getSharedPreferences("subscription_channel_rail", 0) }
+    var channelSort by remember(railPreferences) {
+        mutableStateOf(railPreferences.getString("sort_mode", "OFFICIAL") ?: "OFFICIAL")
+    }
+    val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
     val pinnedChannelPositions = remember(context) {
         androidx.compose.runtime.mutableStateMapOf<String, Int>().apply {
             runCatching {
@@ -339,7 +340,10 @@ fun SubscriptionsContent(
                         ?: Long.MIN_VALUE
                 }.thenBy { it.name.lowercase() }
             )
-            "OFFICIAL", "RECENT" -> channels.sortedWith(byRecent)
+            // Official keeps YouTube's source subscription order. Recent is
+            // explicitly ranked by the newest upload found in the loaded feed.
+            "OFFICIAL" -> channels
+            "RECENT" -> channels.sortedWith(byRecent)
             else -> channels.sortedWith(byRecent)
         }
         // Fixed channels occupy absolute 1-based positions; the selected sort
@@ -711,6 +715,7 @@ fun SubscriptionsContent(
                                                 text = { Text(stringResource(label)) },
                                                 onClick = {
                                                     channelSort = key
+                                                    railPreferences.edit().putString("sort_mode", key).apply()
                                                     if (key == "MOST_WATCHED") viewModel.loadChannelWatchCounts()
                                                     showChannelSortMenu = false
                                                 }

@@ -703,8 +703,10 @@ private enum class ManagedSubscriptionSort { SUBSCRIPTION_DATE, NAME, RECENT_UPL
 private fun parseSubscriberCount(value: String?): Long? {
     if (value.isNullOrBlank()) return null
     val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*([KMB万億]?)""", RegexOption.IGNORE_CASE)
-        .find(value.replace(",", "")) ?: return null
-    val amount = match.groupValues[1].toDoubleOrNull() ?: return null
+        .find(value) ?: return null
+    // A comma can be the decimal separator in localized values ("1,2 M").
+    // Keep it until after matching; deleting it would turn 1.2M into 12M.
+    val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return null
     val multiplier = when (match.groupValues[2].uppercase()) {
         "K" -> 1_000.0
         "M" -> 1_000_000.0

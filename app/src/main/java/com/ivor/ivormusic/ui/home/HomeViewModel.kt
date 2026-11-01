@@ -79,7 +79,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var channelWatchCountJob: Job? = null
 
     fun loadChannelWatchCounts() {
-        if (_channelWatchCounts.value.isNotEmpty() || channelWatchCountJob?.isActive == true) return
+        // Keep the last successful cache visible while refreshing it. A cached
+        // value is a fallback, not a reason to skip future refreshes.
+        if (channelWatchCountJob?.isActive == true) return
         val session = sessionManager.captureSession() ?: return
         channelWatchCountJob = viewModelScope.launch(Dispatchers.IO) {
             val counts = linkedMapOf<String, Int>()
@@ -95,13 +97,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     continuation = page.continuation
                     pageCount++
-                } while (continuation != null && pageCount < 500)
-                if (counts.isNotEmpty()) {
-                    val json = org.json.JSONObject()
-                    counts.forEach { (id, count) -> json.put(id, count) }
-                    getApplication<Application>().getSharedPreferences("channel_watch_frequency", 0).edit().putString("counts", json.toString()).apply()
-                    _channelWatchCounts.value = counts
-                }
+                } while (continuation != null && pageCount < 50)
+                // Persist even an empty result so a genuinely empty history can
+                // clear stale counts from a previous account/session.
+                val json = org.json.JSONObject()
+                counts.forEach { (id, count) -> json.put(id, count) }
+                getApplication<Application>().getSharedPreferences("channel_watch_frequency", 0)
+                    .edit().putString("counts", json.toString()).apply()
+                _channelWatchCounts.value = counts
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
