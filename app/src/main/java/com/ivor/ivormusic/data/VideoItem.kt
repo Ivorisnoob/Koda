@@ -71,7 +71,13 @@ data class VideoItem(
     /** Last playback position as a fraction; null means no progress was supplied. */
     val watchedProgress: Float? = null,
     /** Snapshot time used to choose between local playback and refreshed account history. */
-    val watchProgressUpdatedAtMs: Long = 0L
+    val watchProgressUpdatedAtMs: Long = 0L,
+    /**
+     * True when the source said this is a Short: a `/shorts/` link in a
+     * channel's Atom feed, or a lockup whose tap opens the Shorts player. Lets
+     * feeds that mix Shorts in with videos honour "Fully block Shorts".
+     */
+    val isShort: Boolean = false
 ) {
     /**
      * Destination understood by the channel screen.
