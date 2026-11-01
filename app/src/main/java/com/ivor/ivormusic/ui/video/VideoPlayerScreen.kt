@@ -62,6 +62,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -715,6 +719,17 @@ fun FullscreenPlayerContent(
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
                         .background(Brush.verticalGradient(colors = listOf(Color.Black.copy(0.7f), Color.Transparent)))
+                        // The video runs into the camera cutout (the window
+                        // draws there on every edge), so the scrim does too,
+                        // but Back, the title and the actions stand clear of
+                        // it: on a phone on its side the notch sits on the
+                        // short edge right beside them. Zero where there is
+                        // no cutout on that edge, so nothing moves there.
+                        .windowInsetsPadding(
+                            WindowInsets.displayCutout.only(
+                                WindowInsetsSides.Horizontal + WindowInsetsSides.Top
+                            )
+                        )
                         .padding(
                             horizontal = if (compactChrome) 16.dp else 24.dp,
                             vertical = 12.dp
@@ -813,6 +828,13 @@ fun FullscreenPlayerContent(
                         .background(
                             Brush.verticalGradient(
                                 listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                            )
+                        )
+                        // Seek bar and buttons clear of the cutout, scrim
+                        // under it - see the top bar.
+                        .windowInsetsPadding(
+                            WindowInsets.displayCutout.only(
+                                WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
                             )
                         )
                         .padding(
@@ -999,6 +1021,11 @@ fun FullscreenPlayerContent(
             ),
             modifier = Modifier
                 .align(Alignment.BottomStart)
+                .windowInsetsPadding(
+                    WindowInsets.displayCutout.only(
+                        WindowInsetsSides.Start + WindowInsetsSides.Bottom
+                    )
+                )
                 .padding(
                     start = if (compactChrome) 16.dp else 24.dp,
                     // The system bars are hidden here, so the inset reads zero:
