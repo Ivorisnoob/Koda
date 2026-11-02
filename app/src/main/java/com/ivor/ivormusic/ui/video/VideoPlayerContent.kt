@@ -223,15 +223,16 @@ fun VideoPlayerContent(
     val liveTargetOffsetMs by viewModel.liveTargetOffsetMs.collectAsState()
     val isLocalPlayback by viewModel.isLocalPlayback.collectAsState()
     val isPortraitVideo by viewModel.isPortraitVideo.collectAsState()
-    val liveViewerCount by viewModel.liveViewerCount.collectAsState()
-    val liveChatMessages by viewModel.liveChatMessages.collectAsState()
-    val liveChatBanner by viewModel.liveChatBanner.collectAsState()
-    val isLiveChatAvailable by viewModel.isLiveChatAvailable.collectAsState()
-    val isLiveChatLoading by viewModel.isLiveChatLoading.collectAsState()
-    val canSendLiveChat by viewModel.canSendLiveChat.collectAsState()
-    val isSendingLiveChat by viewModel.isSendingLiveChat.collectAsState()
-    val liveChatMaxLength by viewModel.liveChatMaxLength.collectAsState()
-    val liveChatRestriction by viewModel.liveChatRestriction.collectAsState()
+    val liveSession = viewModel.liveSession
+    val liveViewerCount by liveSession.viewerCount.collectAsState()
+    val liveChatMessages by liveSession.chatMessages.collectAsState()
+    val liveChatBanner by liveSession.chatBanner.collectAsState()
+    val isLiveChatAvailable by liveSession.isChatAvailable.collectAsState()
+    val isLiveChatLoading by liveSession.isChatLoading.collectAsState()
+    val canSendLiveChat by liveSession.canSendChat.collectAsState()
+    val isSendingLiveChat by liveSession.isSendingChat.collectAsState()
+    val liveChatMaxLength by liveSession.chatMaxLength.collectAsState()
+    val liveChatRestriction by liveSession.chatRestriction.collectAsState()
 
     val selectableQualities by viewModel.selectableQualities.collectAsState()
 
@@ -450,7 +451,7 @@ fun VideoPlayerContent(
     // so it needs the poll running without anyone opening a panel.
     val liveChatOnScreen = isLive && (showLiveChat || verticalLiveImmersive)
     LaunchedEffect(liveChatOnScreen, isLive) {
-        if (liveChatOnScreen) viewModel.ensureLiveChatStarted() else viewModel.stopLiveChat()
+        if (liveChatOnScreen) liveSession.ensureChatStarted() else liveSession.stopChat()
         if (!isLive) showLiveChat = false
     }
 
@@ -877,7 +878,7 @@ fun VideoPlayerContent(
                         maxMessageLength = liveChatMaxLength,
                         restriction = liveChatRestriction,
                         onSend = { body, onFailure ->
-                            viewModel.sendLiveChatMessage(body, onFailure)
+                            liveSession.sendChatMessage(body, onFailure)
                         },
                         onDismiss = { showLiveChat = false },
                         compact = true,
@@ -992,7 +993,7 @@ fun VideoPlayerContent(
                         maxMessageLength = liveChatMaxLength,
                         restriction = liveChatRestriction,
                         onSend = { body, onFailure ->
-                            viewModel.sendLiveChatMessage(body, onFailure)
+                            liveSession.sendChatMessage(body, onFailure)
                         },
                         onDismiss = { showLiveChat = false },
                         modifier = Modifier.fillMaxSize()
@@ -1272,7 +1273,7 @@ fun VideoPlayerContent(
                             maxMessageLength = liveChatMaxLength,
                             restriction = liveChatRestriction,
                             onSend = { body, onFailure ->
-                                viewModel.sendLiveChatMessage(body, onFailure)
+                                liveSession.sendChatMessage(body, onFailure)
                             },
                             onDismiss = { showLiveChat = false },
                             modifier = Modifier.fillMaxSize()
