@@ -199,7 +199,7 @@ fun SubscriptionsManagerScreen(
     // SAF rather than a path: the file arrives as a content uri that cannot be
     // opened as a File, and asking for storage permission to read one export
     // would be a far worse trade.
-    val context = androidx.compose.ui.platform.LocalContext.current
+
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
