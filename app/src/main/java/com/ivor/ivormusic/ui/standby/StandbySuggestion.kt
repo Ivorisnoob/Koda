@@ -73,9 +73,11 @@ import kotlinx.coroutines.launch
  * and the side has to be held for a moment before anything appears, so
  * picking the phone up does not flash the offer.
  *
- * It never opens Standby on its own. Once per charge: shown, tapped or
- * dismissed, it stays away until the phone comes off the charger. Swipe it up
- * or tap the cross to dismiss; it also leaves by itself after a few seconds.
+ * It never opens Standby on its own. Once per setting-down: shown, tapped or
+ * dismissed, it stays away until the phone is picked up or stood upright for
+ * a moment, or comes off the charger, so the next time it is laid on its side
+ * the offer comes back. Swipe it up or tap the cross to dismiss; it also
+ * leaves by itself after a few seconds.
  */
 @Composable
 fun StandbySuggestion(viewModel: PlayerViewModel) {
@@ -92,8 +94,20 @@ fun StandbySuggestion(viewModel: PlayerViewModel) {
     var spent by remember { mutableStateOf(false) }
     LaunchedEffect(charging) { if (!charging) spent = false }
 
+    // The sensor keeps listening while spent, or nothing would see the phone
+    // leave its side and the offer would never come back until unplugged.
+    val sideways by rememberPhoneOnItsSide(active = charging && song != null)
+    // Off its side long enough to not be a wobble: the next time it is set
+    // down is a new offer. Standby open or just closed with the phone still
+    // on its side leaves it spent, so closing it never brings the offer back.
+    LaunchedEffect(sideways) {
+        if (!sideways) {
+            delay(SETTLE_MS)
+            spent = false
+        }
+    }
+
     val armed = charging && playing && song != null && !standbyOpen && !spent
-    val sideways by rememberPhoneOnItsSide(active = armed)
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(armed && sideways) {
         if (armed && sideways) {
