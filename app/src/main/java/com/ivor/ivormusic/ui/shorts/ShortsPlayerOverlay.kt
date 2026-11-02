@@ -53,6 +53,9 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
@@ -163,13 +166,14 @@ fun ShortsPlayerOverlay(
     val isSubscribed by viewModel.isSubscribedToChannel.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
 
-    val comments by viewModel.comments.collectAsState()
-    val commentReplies by viewModel.replies.collectAsState()
-    val loadingReplyIds by viewModel.loadingReplyIds.collectAsState()
-    val isCommentsLoading by viewModel.isCommentsLoading.collectAsState()
-    val isLoadingMoreComments by viewModel.isLoadingMoreComments.collectAsState()
-    val canComment by viewModel.canComment.collectAsState()
-    val isPostingComment by viewModel.isPostingComment.collectAsState()
+    val commentThread = viewModel.commentThread
+    val comments by commentThread.comments.collectAsState()
+    val commentReplies by commentThread.replies.collectAsState()
+    val loadingReplyIds by commentThread.loadingReplyIds.collectAsState()
+    val isCommentsLoading by commentThread.isLoading.collectAsState()
+    val isLoadingMoreComments by commentThread.isLoadingMore.collectAsState()
+    val canComment by commentThread.canComment.collectAsState()
+    val isPostingComment by commentThread.isPosting.collectAsState()
 
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
@@ -264,6 +268,25 @@ fun ShortsPlayerOverlay(
         snapshotFlow { pagerState.settledPage }.collect { page ->
             viewModel.onPageSelected(page)
         }
+    }
+
+    // The ViewModel can move on by itself (auto-advance at the end of a
+    // Short, or the next button in picture-in-picture), so the pager follows
+    // its index. A swipe already set the same index, which makes this a no-op.
+    val currentIndex by viewModel.currentIndex.collectAsState()
+    LaunchedEffect(currentIndex, shorts.size) {
+        if (currentIndex in shorts.indices && currentIndex != pagerState.currentPage &&
+            !pagerState.isScrollInProgress
+        ) {
+            pagerState.animateScrollToPage(currentIndex)
+        }
+    }
+    val autoAdvance by viewModel.autoAdvance.collectAsState()
+    // Nobody wants the Short changing under the comments they are reading.
+    val sheetOpen = showCommentsSheet || showDescriptionSheet || showOptionsSheet || showDismissSheet
+    DisposableEffect(sheetOpen) {
+        viewModel.setAutoAdvanceHeld(sheetOpen)
+        onDispose { viewModel.setAutoAdvanceHeld(false) }
     }
 
     // Playback progress for the wavy line at the bottom
@@ -509,6 +532,49 @@ fun ShortsPlayerOverlay(
                 color = Color.White
             )
             Spacer(modifier = Modifier.weight(1f))
+            // Loop this Short, or move on to the next one when it ends.
+            IconButton(
+                onClick = { viewModel.setAutoAdvance(!autoAdvance) },
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = if (autoAdvance) {
+                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.95f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f)
+                    },
+                    contentColor = if (autoAdvance) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+            ) {
+                Icon(
+                    imageVector = if (autoAdvance) Icons.Rounded.SkipNext else Icons.Rounded.RepeatOne,
+                    contentDescription = stringResource(
+                        if (autoAdvance) R.string.cd_shorts_auto_advance_on
+                        else R.string.cd_shorts_auto_advance_off
+                    )
+                )
+            }
+            if (activity != null && supportsShortsPip(activity)) {
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = { enterShortsPip(activity, viewModel) },
+                    enabled = currentVideo != null,
+                    shapes = IconButtonDefaults.shapes(),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PictureInPictureAlt,
+                        contentDescription = stringResource(R.string.cd_shorts_pip)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
             // The overflow, in the one piece of chrome this player has that is
             // not the action rail. It cannot go in the rail: that column is a
             // set of single-purpose taps the thumb rests on while swiping, and
@@ -790,14 +856,12 @@ fun ShortsPlayerOverlay(
             commentsAvailable = engagement?.commentsToken != null,
             canComment = canComment,
             isPosting = isPostingComment,
-            onLoadMore = { viewModel.loadMoreComments() },
-            onLoadReplies = { viewModel.loadReplies(it) },
-            onPostComment = { viewModel.postComment(it) },
-            onPostReply = { target, threadParent, text ->
-                viewModel.postReply(target, threadParent, text)
-            },
-            onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
-            onDeleteComment = { comment -> viewModel.deleteComment(comment) },
+            onLoadMore = commentThread::loadMore,
+            onLoadReplies = commentThread::loadReplies,
+            onPostComment = commentThread::postComment,
+            onPostReply = commentThread::postReply,
+            onLikeComment = { comment -> requireLogin { commentThread.toggleLike(comment) } },
+            onDeleteComment = commentThread::delete,
             onDismiss = { showCommentsSheet = false },
             onOpenAuthor = { channelId ->
                 showCommentsSheet = false

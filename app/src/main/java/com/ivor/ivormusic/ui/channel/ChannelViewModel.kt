@@ -193,6 +193,9 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
     private val _isLoggedIn = MutableStateFlow(sessionManager.isLoggedIn())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
+    /** Likes and poll votes on this channel's posts. */
+    val postInteractions = com.ivor.ivormusic.video.PostInteractions(youtubeRepository, viewModelScope)
+
     private var loadedChannelId: String? = null
     private var searchJob: Job? = null
 
@@ -297,10 +300,11 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
      */
     private val _commentsPost = MutableStateFlow<com.ivor.ivormusic.data.ChannelPost?>(null)
     val commentsPost: StateFlow<com.ivor.ivormusic.data.ChannelPost?> = _commentsPost.asStateFlow()
-    val postComments = com.ivor.ivormusic.ui.video.CommentThreadController(
+    val postComments = com.ivor.ivormusic.video.CommentThreadController(
         repository = youtubeRepository,
         scope = viewModelScope,
-        viaBrowse = true
+        viaBrowse = true,
+        signedIn = isLoggedIn,
     )
 
     fun openPostComments(post: com.ivor.ivormusic.data.ChannelPost) {

@@ -30,7 +30,7 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
  */
 
 /** Videos a feed shows for each community post scattered into it. */
-internal const val FEED_VIDEOS_PER_POST = 8
+internal const val FEED_VIDEOS_PER_POST = 6
 
 /** Videos ahead of the first post, so a feed never opens on one. */
 private const val FEED_POST_FIRST_AFTER = 4
@@ -159,8 +159,22 @@ fun FeedPostCard(
     photoViewer: MutableState<Pair<List<String>, Int>?>
 ) {
     val channelId = post.channelId
+    val signedIn by viewModel.isYouTubeConnected.collectAsState()
+    val edits by viewModel.postInteractions.edits.collectAsState()
     ChannelPostCard(
         post = post,
+        actions = com.ivor.ivormusic.video.PostCardActions(
+            signedIn = signedIn,
+            edits = edits,
+            onToggleLike = { target ->
+                if (signedIn) viewModel.postInteractions.toggleLike(target)
+                else viewModel.postSignInAsked.value = true
+            },
+            onPollChoice = { target, index ->
+                if (signedIn) viewModel.postInteractions.tapPollChoice(target, index)
+                else viewModel.postSignInAsked.value = true
+            },
+        ),
         onPlayVideo = onPlayVideo,
         onOpenComments = if (post.detailParams != null) {
             { viewModel.openFeedPostComments(post) }
@@ -238,14 +252,21 @@ fun FeedPostOverlays(
             unavailableMessage = stringResource(R.string.ch_post_comments_unavailable)
         )
     }
-    if (showCommentSignIn) {
+    val postSignInAsked by viewModel.postSignInAsked.collectAsState()
+    if (showCommentSignIn || postSignInAsked) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
-            onDismiss = { showCommentSignIn = false },
+            onDismiss = {
+                showCommentSignIn = false
+                viewModel.postSignInAsked.value = false
+            },
             onAuthSuccess = {
                 showCommentSignIn = false
+                viewModel.postSignInAsked.value = false
                 viewModel.checkYouTubeConnection(force = true)
                 // The thread was fetched signed out: no composer, no like state.
                 viewModel.reloadFeedPostComments()
+                // So were the posts: they carry no like or vote tokens.
+                viewModel.refreshFeedPosts()
             }
         )
     }

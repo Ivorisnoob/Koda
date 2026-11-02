@@ -35,10 +35,12 @@ internal fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoIte
     var thumbnailUrl: String? = null
     var description: String? = null
     var viewCount: Long? = null
+    var isShort = false
 
     fun reset() {
         videoId = null; channelId = null; title = null; author = null
         publishedAtMs = null; thumbnailUrl = null; description = null; viewCount = null
+        isShort = false
     }
 
     var event = parser.eventType
@@ -65,6 +67,12 @@ internal fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoIte
                 "media:description" -> if (inEntry) {
                     description = runCatching { parser.nextText() }.getOrNull()
                 }
+                // A Short's entry links to /shorts/<id> instead of /watch.
+                "link" -> if (inEntry &&
+                    parser.getAttributeValue(null, "href")?.contains("/shorts/") == true
+                ) {
+                    isShort = true
+                }
                 "media:statistics" -> if (inEntry) {
                     viewCount = parser.getAttributeValue(null, "views")?.toLongOrNull()
                 }
@@ -88,7 +96,8 @@ internal fun parseChannelFeedXml(xml: String, avatarUrl: String?): List<VideoIte
                                 viewCount = VideoItem.formatViewCount(viewCount),
                                 uploadedDate = publishedAtMs?.let { VideoItem.formatRelativeTime(it) },
                                 description = description,
-                                publishedAtMs = publishedAtMs
+                                publishedAtMs = publishedAtMs,
+                                isShort = isShort
                             )
                         )
                     }

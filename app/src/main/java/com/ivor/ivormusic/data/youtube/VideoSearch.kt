@@ -2,6 +2,7 @@ package com.ivor.ivormusic.data.youtube
 
 import android.content.Context
 import com.ivor.ivormusic.data.SubscribedChannel
+import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoFeedPage
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
@@ -23,10 +24,9 @@ import org.schabi.newpipe.extractor.search.SearchExtractor
 /**
  * Search on www.youtube.com: videos, playlists and channels.
  *
- * A sorted or date-filtered video search goes to InnerTube, which is the only
- * source that honours them; plain relevance uses NewPipe. A cursor belongs to
- * its query and sort, and an exhausted InnerTube cursor never resumes a
- * NewPipe one.
+ * Every search goes to InnerTube, with NewPipe behind it only as
+ * [searchFallbackAllowed] permits. A cursor belongs to its query and sort, and
+ * an exhausted InnerTube cursor never resumes a NewPipe one.
  */
 internal class VideoSearch(
     private val context: Context,
@@ -54,9 +54,8 @@ internal class VideoSearch(
      * Search for videos on YouTube (not YouTube Music).
      * Returns VideoItem objects with view counts, channel info, etc.
      * [dateFilter] restricts results by upload date via the `after:` search operator.
-     * [sort] picks the result order; anything but relevance goes through a direct
-     * InnerTube /search call (NewPipe's YouTube search cannot sort), falling back
-     * to the relevance-ordered NewPipe path if that call fails.
+     * [sort] picks the result order; NewPipe cannot sort, so its fallback comes
+     * back in relevance order.
      */
     suspend fun searchVideos(
         query: String,
@@ -69,15 +68,14 @@ internal class VideoSearch(
         videoSearchNextPageCache.remove(key)
         videoSearchContinuations.remove(key)
 
-        if (sort != VideoSearchSort.RELEVANCE) {
-            val sorted = searchVideosInnerTube(effectiveQuery, sort)
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            if (sorted != null) {
-                videoSearchContinuations[key] = sorted.continuation
-                return@withContext sorted.videos
-            }
-            KLog.w(YOUTUBE_TAG, "Sorted video search failed, falling back to relevance order")
+        val direct = searchVideosInnerTube(effectiveQuery, sort)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (direct != null) {
+            videoSearchContinuations[key] = direct.continuation
+            return@withContext direct.videos
         }
+        if (!searchFallbackAllowed(noResults = false)) return@withContext emptyList()
+        KLog.w(YOUTUBE_TAG, "Direct video search failed, falling back to NewPipe")
 
         try {
             // Use YouTube videos filter (not music_videos)
@@ -113,7 +111,7 @@ internal class VideoSearch(
                     .put("context", webApi.webContext()).put("continuation", token))
                     ?: return@withContext emptyList()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                val page = parseVideoSearchPage(response)
+                val page = parseVideoSearchPage(response, dropShorts())
                 videoSearchContinuations[key] = page.continuation?.takeUnless { it == token }
                 return@withContext page.videos
             }
@@ -133,10 +131,11 @@ internal class VideoSearch(
     }
 
     /**
-     * Video search through a direct InnerTube /search call, used when a
-     * non-default sort order is picked. Results arrive as videoRenderers
-     * (legacy shape, still what /search returns signed out) or lockupViewModels;
-     * both parsers already exist for the feed. Verified July 2026.
+     * Video search through a direct InnerTube /search call. Results arrive as
+     * videoRenderers (legacy shape, still what /search returns signed out) or
+     * lockupViewModels; both parsers already exist for the feed. Verified
+     * November 2026. Null when YouTube did not answer the search, which is not
+     * the same as a search that found nothing.
      */
     private fun searchVideosInnerTube(query: String, sort: VideoSearchSort): VideoFeedPage? {
         return try {
@@ -145,11 +144,37 @@ internal class VideoSearch(
                 .put("query", query)
                 .put("params", buildVideoSearchParams(sort))
             val response = webApi.postWatchApi("search", body) ?: return null
-            parseVideoSearchPage(response)
+            parseVideoSearchPage(response, dropShorts()).takeIf {
+                it.videos.isNotEmpty() || isEmptyVideoSearch(JSONObject(response))
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "InnerTube video search failed", e)
+            null
+        }
+    }
+
+    private fun dropShorts(): Boolean = ThemePreferences.isShortsHardBlocked(context)
+
+    /** One filtered /search, parsed; null when the fallback should be asked. */
+    private fun <T> searchFiltered(
+        query: String,
+        params: String,
+        parse: (JSONObject) -> List<T>,
+    ): List<T>? {
+        val body = JSONObject()
+            .put("context", webApi.webContext())
+            .put("query", query)
+            .put("params", params)
+        return try {
+            val root = webApi.postWatchApi("search", body)?.let(::JSONObject)
+            val results = root?.let(parse).orEmpty()
+            results.takeIf { it.isNotEmpty() || (root != null && isEmptyVideoSearch(root)) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e(YOUTUBE_TAG, "Direct filtered search failed", e)
             null
         }
     }
@@ -171,6 +196,9 @@ internal class VideoSearch(
      * page and models the video Library tab uses.
      */
     suspend fun searchVideoPlaylists(query: String): List<VideoPlaylist> = withContext(Dispatchers.IO) {
+        searchFiltered(query, PARAMS_PLAYLISTS, ::parsePlaylistSearchResults)
+            ?.let { return@withContext it }
+        if (!searchFallbackAllowed(noResults = false)) return@withContext emptyList()
         try {
             val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_PLAYLISTS), "")
             searchExtractor.fetchPage()
@@ -199,14 +227,12 @@ internal class VideoSearch(
 
     /**
      * Channels matching [query], for video mode's Channels search filter.
-     *
-     * NewPipe's channel filter rather than an InnerTube search: it already
-     * returns the canonical UC id, the avatar, the subscriber count and the
-     * verified flag in one shape, and the channel page this feeds only needs
-     * the id. Mirrors [MusicSearch.searchArtists], which does the same on the music side.
      */
     suspend fun searchChannels(query: String): List<SubscribedChannel> =
         withContext(Dispatchers.IO) {
+            searchFiltered(query, PARAMS_CHANNELS, ::parseChannelSearchResults)
+                ?.let { return@withContext it }
+            if (!searchFallbackAllowed(noResults = false)) return@withContext emptyList()
             try {
                 val searchExtractor =
                     newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_YOUTUBE_CHANNELS), "")
@@ -238,6 +264,10 @@ internal class VideoSearch(
             }
         }
 }
+
+// The filter sheet's `params` on www.youtube.com. Verified November 2026.
+private const val PARAMS_PLAYLISTS = "EgIQAw%3D%3D"
+private const val PARAMS_CHANNELS = "EgIQAg%3D%3D"
 
 // NewPipe's content filters for a search on www.youtube.com.
 private const val FILTER_YOUTUBE_VIDEOS = "videos"

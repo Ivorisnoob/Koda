@@ -54,6 +54,7 @@ internal class MusicApi(
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful || body.isBlank()) {
                     KLog.w(YOUTUBE_TAG, "Music $endpoint HTTP ${response.code}: ${body.take(200)}")
+                    YouTubeRateLimit.note(response.code, "music $endpoint", response.header("Retry-After"))
                     null
                 } else {
                     http.noteSessionState(body, session)

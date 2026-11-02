@@ -67,9 +67,12 @@ import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.DownloadedCaptionStore
 import com.ivor.ivormusic.data.DownloadStatus
+import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoQuality
+import com.ivor.ivormusic.data.YouTubeAudioTrack
+import com.ivor.ivormusic.data.YouTubeAudioTrackKind
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.ui.downloads.formatDownloadSize
 import kotlinx.coroutines.delay
@@ -86,12 +89,19 @@ import kotlinx.coroutines.launch
  * actually produce: MP4 adaptive pairs the muxer accepts, with the muxed
  * progressive stream as the last resort. DASH and webm/HDR entries are
  * excluded on purpose — see DownloadRepository.attemptVideoDownload.
+ *
+ * A video with dubs or an audio description gets an audio track row, opening
+ * on [preferredAudioTrackId] (the dub the player is on) or else the original;
+ * the pick replaces the pair's audio half, like the player's own switch. The
+ * "Audio only" format saves just the chosen soundtrack as a song download.
+ * Neither choice is remembered: a language is a per-video decision.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun VideoDownloadSheet(
     video: VideoItem,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    preferredAudioTrackId: String? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -117,10 +127,42 @@ fun VideoDownloadSheet(
     var selectedCaptions by remember(video.videoId) { mutableStateOf<Set<String>>(emptySet()) }
     var showAllCaptions by remember(video.videoId) { mutableStateOf(false) }
 
+    // Soundtracks to choose from: empty unless there are at least two, which
+    // is when the row appears. A dub served only as WebM is left out, since
+    // neither an MP4 nor an .m4a can hold it.
+    var audioTracks by remember(video.videoId) { mutableStateOf<List<YouTubeAudioTrack>>(emptyList()) }
+    var selectedTrackId by remember(video.videoId) { mutableStateOf<String?>(null) }
+    // Opens on the kind already queued or paused for this video, so the sheet
+    // shows that download's state instead of offering a second one.
+    var audioOnly by remember(video.videoId) {
+        mutableStateOf(
+            downloadRepository.downloadProgress.value[video.videoId]?.request?.isVideo == false
+        )
+    }
+    val selectedTrack = audioTracks.firstOrNull { it.id == selectedTrackId }
+    // The original travels with the ladder already, so only another track is
+    // named on the request.
+    val requestedTrackId = selectedTrack?.takeUnless { it.isOriginal }?.id
+
     val downloadedVideos by downloadRepository.downloadedVideos.collectAsState()
+    val downloadedSongs by downloadRepository.downloadedSongs.collectAsState()
     val progressMap by downloadRepository.downloadProgress.collectAsState()
-    val alreadyDownloaded = downloadedVideos.any { it.id == video.videoId }
-    val activeEntry = progressMap[video.videoId]
+    // Audio only is saved as a song, so it is already there when the music
+    // library holds this video's id.
+    val alreadyDownloaded = if (audioOnly) {
+        downloadedSongs.any { it.id == video.videoId }
+    } else {
+        downloadedVideos.any { it.id == video.videoId }
+    }
+    // Video and audio-only downloads share the video id, so the queue holds at
+    // most one of them. Only an entry of the kind picked here drives this
+    // sheet's progress and resume; one of the other kind blocks a new request.
+    val entryForId = progressMap[video.videoId]
+    val entryHeld = entryForId?.status.let {
+        it == DownloadStatus.DOWNLOADING || it == DownloadStatus.QUEUED || it == DownloadStatus.PAUSED
+    }
+    val otherKindBusy = entryHeld && entryForId?.request?.isVideo == audioOnly
+    val activeEntry = entryForId?.takeUnless { otherKindBusy }
     val inFlight = activeEntry?.status.let {
         it == DownloadStatus.DOWNLOADING || it == DownloadStatus.QUEUED
     }
@@ -133,7 +175,18 @@ fun VideoDownloadSheet(
 
     LaunchedEffect(video.videoId) {
         try {
-            val qualities = youtubeRepository.getVideoStreamQualities(video.videoId)
+            val streams = youtubeRepository.getVideoStreamResult(video.videoId)
+            val qualities = streams.qualities
+            val tracks = streams.audioTracks
+                .filter { it.isOriginal || it.isMp4Audio }
+                .takeIf { it.size > 1 }
+                .orEmpty()
+            audioTracks = tracks
+            selectedTrackId = (
+                tracks.firstOrNull { it.id == preferredAudioTrackId }
+                    ?: tracks.firstOrNull { it.isOriginal }
+                    ?: tracks.firstOrNull()
+                )?.id
             // Same eligibility rules as the download worker: MP4 adaptive
             // pairs first, else the muxed progressive stream (typically 360p).
             val mp4Adaptive = qualities.filter {
@@ -179,8 +232,43 @@ fun VideoDownloadSheet(
         captionTracks = tracks
     }
 
-    LaunchedEffect(selectedLabel, options) {
+    LaunchedEffect(selectedLabel, options, audioOnly, selectedTrackId) {
+        val dub = selectedTrack?.takeUnless { it.isOriginal }
+        if (audioOnly) {
+            if (options == null || loadFailed) {
+                estimatedBytes = null
+                sizeLoading = false
+                sizeResolved = false
+                return@LaunchedEffect
+            }
+            estimatedBytes = null
+            sizeResolved = false
+            sizeLoading = true
+            estimatedBytes = if (dub != null) {
+                downloadRepository.estimateMediaBytes(dub.url)
+            } else {
+                downloadRepository.estimateSongDownloadBytes(
+                    Song.fromYouTube(
+                        videoId = video.videoId,
+                        title = video.title,
+                        artist = video.channelName,
+                        album = "",
+                        duration = video.duration * 1000,
+                        thumbnailUrl = video.thumbnailUrl
+                    )
+                )
+            }
+            sizeLoading = false
+            sizeResolved = true
+            return@LaunchedEffect
+        }
         val selected = options.orEmpty().firstOrNull { it.resolution == selectedLabel }
+            ?.let { quality ->
+                // Size the file that will be written: the dub replaces the
+                // audio half, and a progressive stream has none to replace.
+                if (dub != null && quality.audioUrl != null) quality.copy(audioUrl = dub.url)
+                else quality
+            }
         if (selected == null) {
             estimatedBytes = null
             sizeLoading = false
@@ -261,49 +349,114 @@ fun VideoDownloadSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            Text(
-                text = stringResource(R.string.sp_video_quality),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            when {
-                options == null -> Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    ContainedLoadingIndicator()
-                }
-                options.orEmpty().isEmpty() -> Row(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.ErrorOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (loadFailed) stringResource(R.string.vd_load_failed)
-                            else stringResource(R.string.vd_no_stream),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                else -> FlowRow(
+            // Video or just its sound. Offered once the streams are in, since
+            // a failed load has neither to give.
+            if (options != null && !loadFailed && !video.isLive) {
+                Text(
+                    text = stringResource(R.string.vd_download_as),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    options.orEmpty().forEach { quality ->
+                    QualityPill(
+                        label = stringResource(R.string.vd_format_video),
+                        selected = !audioOnly,
+                        onClick = { audioOnly = false }
+                    )
+                    QualityPill(
+                        label = stringResource(R.string.vd_format_audio_only),
+                        selected = audioOnly,
+                        onClick = { audioOnly = true }
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+            }
+
+            if (!audioOnly) {
+                Text(
+                    text = stringResource(R.string.sp_video_quality),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                when {
+                    options == null -> Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ContainedLoadingIndicator()
+                    }
+                    options.orEmpty().isEmpty() -> Row(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ErrorOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (loadFailed) stringResource(R.string.vd_load_failed)
+                                else stringResource(R.string.vd_no_stream),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    else -> FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        options.orEmpty().forEach { quality ->
+                            QualityPill(
+                                label = quality.resolution,
+                                selected = quality.resolution == selectedLabel,
+                                onClick = { selectedLabel = quality.resolution }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // The soundtrack: original, dubs, audio description. Hidden for
+            // the single-track videos that are most of them.
+            if (audioTracks.size > 1 && (audioOnly || selectedLabel != null)) {
+                if (!audioOnly) Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = stringResource(R.string.vpc_audio_track),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    audioTracks.forEach { track ->
+                        // YouTube's name says the language and marks the
+                        // original; a machine dub and an audio description
+                        // are said in so neither is picked by mistake.
+                        val kind = when (track.kind) {
+                            YouTubeAudioTrackKind.AUTO_DUBBED ->
+                                stringResource(R.string.vpc_audio_track_auto_dubbed)
+                            YouTubeAudioTrackKind.DESCRIPTIVE ->
+                                stringResource(R.string.vpc_audio_track_descriptive)
+                            else -> null
+                        }
                         QualityPill(
-                            label = quality.resolution,
-                            selected = quality.resolution == selectedLabel,
-                            onClick = { selectedLabel = quality.resolution }
+                            label = kind?.let {
+                                stringResource(R.string.vd_audio_track_labelled, track.displayName, it)
+                            } ?: track.displayName,
+                            selected = track.id == selectedTrackId,
+                            onClick = { selectedTrackId = track.id }
                         )
                     }
                 }
@@ -312,7 +465,7 @@ fun VideoDownloadSheet(
             // Captions to keep offline. Only for a video that can be downloaded
             // and has some: tap to add or drop a language, none is allowed.
             val tracks = captionTracks.orEmpty()
-            if (selectedLabel != null && tracks.isNotEmpty()) {
+            if (!audioOnly && selectedLabel != null && tracks.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(20.dp))
                 Text(
                     text = stringResource(R.string.vp_captions),
@@ -359,7 +512,7 @@ fun VideoDownloadSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (selectedLabel != null) {
+            if (audioOnly || selectedLabel != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -398,8 +551,9 @@ fun VideoDownloadSheet(
             }
 
             // Remember-as-default switch: persisted only when the download
-            // actually starts, so browsing pills never rewrites the default
-            Row(
+            // actually starts, so browsing pills never rewrites the default.
+            // A video quality, so not offered for audio only.
+            if (!audioOnly) Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -432,18 +586,30 @@ fun VideoDownloadSheet(
                         queued = true
                         return@Button
                     }
+                    if (audioOnly) {
+                        val trackId = requestedTrackId
+                        scope.launch { downloadRepository.downloadVideoAudio(video, trackId) }
+                        queued = true
+                        return@Button
+                    }
                     val label = selectedLabel ?: return@Button
                     if (rememberQuality) themePreferences.setDownloadVideoQuality(label)
                     // Null while the caption list has not arrived: the
                     // download then keeps the likely ones rather than none.
                     val captions = selectedCaptions.takeIf { captionTracks != null }
-                    scope.launch { downloadRepository.downloadVideo(video, label, captions) }
+                    val trackId = requestedTrackId
+                    scope.launch {
+                        downloadRepository.downloadVideo(video, label, captions, trackId)
+                    }
                     queued = true
                 },
                 // Resuming needs neither the quality ladder nor the size: the
                 // paused request already carries its choice.
-                enabled = !queued && !alreadyDownloaded && !inFlight &&
-                    (paused || (selectedLabel != null && !sizeLoading && sizeResolved)),
+                enabled = !queued && !alreadyDownloaded && !inFlight && !otherKindBusy &&
+                    (paused || (
+                        (if (audioOnly) options != null && !loadFailed else selectedLabel != null) &&
+                            !sizeLoading && sizeResolved
+                        )),
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -476,6 +642,12 @@ fun VideoDownloadSheet(
                                     "${((activeEntry?.progress ?: 0f) * 100).toInt()}%"
                                 else -> stringResource(R.string.dl_preparing)
                             },
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    otherKindBusy -> {
+                        Text(
+                            text = stringResource(R.string.vd_other_kind_busy),
                             fontWeight = FontWeight.SemiBold
                         )
                     }

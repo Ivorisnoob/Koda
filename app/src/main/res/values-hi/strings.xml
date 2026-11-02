@@ -361,4 +361,10 @@
     <string name="subscribed">सब्सक्राइब्ड</string>
     <string name="subscribe">सब्सक्राइब करें</string>
     <string name="like">पसंद</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">चैनल क्रमबद्ध करें</string>
+    <string name="subscription_sort_official">YouTube शैली (हाल की गतिविधि)</string>
+    <string name="subscription_sort_recent">नवीनतम अपलोड पहले</string>
+    <string name="subscription_sort_name">चैनल का नाम (A–Z)</string>
+    <string name="subscription_sort_oldest">सबसे पुराने अपलोड पहले</string>
 </resources>

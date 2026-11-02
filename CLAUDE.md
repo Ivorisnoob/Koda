@@ -87,7 +87,7 @@ MVVM with StateFlow and **no DI framework**: ViewModels build repositories direc
 |---|---|---|
 | Stream resolution, feeds, parsers | `data/youtube/`, `data/stream/`, behind the `data/YouTubeRepository.kt` front | `youtube-data.md`, `playback-streams.md` |
 | Music playback, queue, notification, crossfade | `service/MusicService.kt`, `CrossfadeEngine` | `playback-music.md` |
-| Video playback, PiP, captions, chapters | `ui/video/VideoPlayerViewModel.kt` | `playback-video.md` |
+| Video playback, PiP, captions, chapters | `ui/video/VideoPlayerViewModel.kt`, `video/` | `playback-video.md` |
 | Screens, tabs, overlays | `MainActivity.kt`, `ui/home/HomeScreen.kt` | `screens.md` |
 | Adding a setting | `data/ThemePreferences.kt` + 4 files + search index | `settings.md` |
 | Sign-in, accounts, incognito, backup | `SessionManager`, `ProfileManager`, `AccountSwitcher`, `IncognitoMode`, `BackupRepository` | `identity.md` |
@@ -219,14 +219,15 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### YouTube data layer -> `docs/youtube-data.md`
 - **`YouTubeRepository` is a front that only delegates.** The code is in `data/youtube/` (transport, one class per area, parsers as top-level functions) and `data/stream/`; a new call goes in its area's piece plus a one-line function on the front. Parsers are pinned by `ParserFixturesTest` against reduced live responses (`.probe/parser_fixtures.py`).
-- Two mechanisms: **NewPipe** (video/artist/playlist search, stream URLs, fallbacks) and **raw InnerTube JSON over OkHttp** parsed by hand with `org.json` (`findObjectsByKey`, `findContinuationTokens`, `getRunText()`), no kotlinx-serialization.
+- **Every search asks InnerTube first**; `searchFallbackAllowed` keeps NewPipe out of a real "no results", a 429 hold and a bot-check verdict.
+- Two mechanisms: **NewPipe** (stream and search fallbacks) and **raw InnerTube JSON over OkHttp** parsed by hand with `org.json` (`findObjectsByKey`, `findContinuationTokens`, `getRunText()`), no kotlinx-serialization.
 - **Probe first, never parse from memory**: `py .probe/probe.py <endpoint> '<json>' [--music]` (never commit `.probe/`). Signed-in probes sign SAPISIDHASH **per origin**; confirm a session by `logged_in: 1`, never HTTP 200. Note "verified <month year>" in the parser's KDoc.
 - Clients: WEB for browse/next/engagement, WEB_REMIX for music.youtube.com, **one direct visionOS `/player` under Koda's own visitorData for music, video and Shorts** (NewPipe's Android-reel/visionOS chain only as the fallback - each extraction mints three fresh visitor ids), ANDROID_VR -> IOS only as last-resort fallback and caption source. `YouTubeRequestLedger` logs per-open request counts under `YTRequests`. **Plain `ANDROID` is SABR-only - no URLs.** Pinned client versions need periodic bumps (HTTP 400 on browse = too old).
 - **`visitorData` rides on every InnerTube call**; a missing one now gets `LOGIN_REQUIRED`, and a googlevideo 403 means remint (`refreshVisitorDataAfterPlaybackFailure(failedUrl)`), not a UA problem. A refusal is traced to the token that signed it through the URL's `ei`, so a stale URL replaces nothing; a new token is vetted by its last byte before music or video plays on it (`PlayerSession.visionOsVetted`).
 - Music metadata comes from **links and page types** (`MUSIC_PAGE_TYPE_ARTIST/ALBUM`), never subtitle positions; release type/year are data (`Song.albumId`, `releaseType`, `releaseYear`).
 - Signed out: public browse ids work anonymously, **account browse ids return a valid empty shell** (gate on `isLoggedIn()`), playlists come back as `lockupViewModel`s. Continuations answer under `appendContinuationItemsAction` (`continuationItemsOrNull`), and token scoping matters.
 - **Missing text is blank, never invented**, and a value with one home is read from its container (`firstObjectByKey`), an entity by its key (`entityKeyNames`); `findObjectsByKey` is for collecting a list.
-- **Only HTTP 429 arms `YouTubeRateLimit`**, which gates discretionary fan-out and Shorts prefetch only. One `/next` feeds many features - be frugal per user action.
+- **Only HTTP 429 arms `YouTubeRateLimit`**, which gates discretionary fan-out and Shorts prefetch only. Work nobody asked for runs under `RequestPriority.Automatic`, so a hold keeps it on the device; what a person asked for always goes out. One `/next` feeds many features - be frugal per user action.
 
 ### Music playback -> `docs/playback-music.md`
 - `MusicService` (Media3 `MediaLibraryService`) + `PlayerViewModel` over a `MediaController`. Video is a separate pipeline: the ViewModel owns the player and `VideoPlaybackService` only wraps it in a media session.
@@ -252,6 +253,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Video playback -> `docs/playback-video.md`
 - `VideoPlayerViewModel` owns its `ExoPlayer` (built lazily); `VideoPlaybackService` borrows it for the media session and never releases it. Load is two phases: stream qualities, then one `/next` for everything else - add no extractions.
+- `VideoPlayerViewModel` is split into `video/` (`CommentThreadController`, `LiveSession`, `VideoRecovery`, `VideoLoader`), with pure logic in `video/core/` (`VideoRecoveryPolicy`, `LiveChatBuffer`, `pickStartingVideoQuality`). It keeps the `ExoPlayer` and the media source; a new responsibility gets a part, not more ViewModel.
 - `VideoWatchTracker` owns history qualification, local progress and authenticated watch-time reports, rechecking history-off/incognito/profile before remote writes.
 - Mini-to-expanded is the music player's container transform (`PlayerContainerTransform.kt`, shared with `ExpandablePlayer`); portrait uses a TextureView except HDR and vertical live, which keep the curtain (`supportsAnimatedMinimize`). Never read transition progress in composition; only one view holds the surface.
 - `VideoQueue` is index-addressed; `playQueue` establishes it and `playVideo` clears it. Resume has two stores (active session vs per-video history). Chromecast is gone; do not reintroduce a `Player` indirection.
@@ -276,7 +278,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Account and device subscription stores; `SubscriptionActions` alone decides what a tap means. Unsubscribe clears both; the button binds to `isSubscribedToChannel`.
 - The account bell (`ChannelBellActions`) shows only for account subscriptions, writes YouTube's served params back, and drives `UploadCheckWorker` for channels on All.
 - The local feed is per-channel Atom RSS with a browse fallback (never on 429), 6 at a time, namespace-unaware parser.
-- Only the account feed pages (`loadMoreSubscriptionFeed`); its first page is taken whole. Community posts in Home and Subscriptions are fetched from followed channels' Posts tabs as the feed scrolls (`ensureFeedPosts`, `ui/video/FeedPosts.kt`) - the feeds themselves carry none.
+- Only the account feed pages (`loadMoreSubscriptionFeed`); its first page is taken whole. Community posts in Home and Subscriptions are fetched from followed channels' Posts tabs as the feed scrolls (`ensureFeedPosts`, `ui/video/FeedPosts.kt`) - the feeds themselves carry none. In Subscriptions they are a Posts view of their own, newest first. Likes and poll votes go through `PostInteractions`, on tokens only a signed-in fetch carries.
 - Imports are sniffed by content (NewPipe JSON, PipePipe/NewPipe zip, Takeout CSV, OPML); handles resolve to UC ids.
 - `NotInterestedRepository` is the engine, applied as a **derived filter, never a write into the fetch** (Shorts filter on ingestion). Signed-in dismissals also go to YouTube, fire-and-forget. Music shares the store; the device library is never filtered.
 

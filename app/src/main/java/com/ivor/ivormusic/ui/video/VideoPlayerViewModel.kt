@@ -18,9 +18,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -30,7 +28,6 @@ import com.ivor.ivormusic.data.CaptionBackground
 import com.ivor.ivormusic.data.CaptionTextColor
 import com.ivor.ivormusic.data.CaptionTrack
 import com.ivor.ivormusic.data.CacheManager
-import com.ivor.ivormusic.data.CommentItem
 import com.ivor.ivormusic.data.DownloadedVideo
 import com.ivor.ivormusic.data.LikeStatus
 import com.ivor.ivormusic.data.LocalVideo
@@ -41,22 +38,17 @@ import com.ivor.ivormusic.data.audioTrackLabel
 import com.ivor.ivormusic.data.localVideoQualityLabel
 import com.ivor.ivormusic.data.textTrackLabel
 import com.ivor.ivormusic.data.SegmentAction
-import com.ivor.ivormusic.data.SponsorBlockRepository
 import com.ivor.ivormusic.data.SponsorSegment
-import com.ivor.ivormusic.data.activeCategories
 import com.ivor.ivormusic.data.segmentAt
 import com.ivor.ivormusic.data.LocalSubscription
 import com.ivor.ivormusic.data.BellLevel
 import com.ivor.ivormusic.data.ChannelBellActions
 import com.ivor.ivormusic.data.SubscriptionActions
 import com.ivor.ivormusic.data.SubscriptionStore
-import com.ivor.ivormusic.data.LiveChatBanner
-import com.ivor.ivormusic.data.LiveChatMessage
 import com.ivor.ivormusic.data.VideoStreamResult
 import com.ivor.ivormusic.data.bestSdrFallback
 import com.ivor.ivormusic.data.cappedAtHeight
 import com.ivor.ivormusic.data.deviceVideoHeightCap
-import com.ivor.ivormusic.data.LiveChatPage
 import com.ivor.ivormusic.data.TimedComment
 import com.ivor.ivormusic.data.VideoEngagement
 import com.ivor.ivormusic.data.VideoItem
@@ -70,8 +62,8 @@ import com.ivor.ivormusic.data.VttCue
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.videoPlaybackCacheKey
+import com.ivor.ivormusic.video.core.timedCommentsOf
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -368,8 +360,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /* ---------------- SponsorBlock ---------------- */
 
-    private val sponsorBlockRepository = SponsorBlockRepository()
-    private var sponsorBlockJob: Job? = null
 
     private val _sponsorSegments = MutableStateFlow<List<SponsorSegment>>(emptyList())
     val sponsorSegments: StateFlow<List<SponsorSegment>> = _sponsorSegments.asStateFlow()
@@ -400,14 +390,46 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val ignoredSegmentIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var skipNoticeJob: Job? = null
 
-    // Initial stream resolution and watch-next metadata belong to one specific
-    // startVideo invocation. Cancellation handles the normal case; the
-    // generation check is still required because NewPipe's blocking fetch can
-    // finish after cancellation and because a forced retry can reuse the same
-    // video id.
-    private var streamLoadJob: Job? = null
-    private var watchNextJob: Job? = null
-    private var videoLoadGeneration = 0L
+    /** The network half of opening a video; what comes back lands here. */
+    private val videoLoader = com.ivor.ivormusic.video.VideoLoader(
+        repository = youtubeRepository,
+        themePreferences = themePreferences,
+        scope = viewModelScope,
+        host = object : com.ivor.ivormusic.video.VideoLoadHost {
+            override val currentVideoId get() = _currentVideo.value?.videoId
+            override val isLive get() = _isLive.value
+
+            override fun allowsHdr() = themePreferences.isPreferHdrEnabled() &&
+                hasHdrDisplay(context) && !effectGraphBlocksHdr()
+
+            override fun clearMedia() {
+                _exoPlayer?.stop()
+                _exoPlayer?.clearMediaItems()
+            }
+
+            override fun onStreamsResolved(
+                video: VideoItem,
+                result: VideoStreamResult,
+                resume: com.ivor.ivormusic.video.VideoResume,
+            ) = applyResolvedStreams(video, result, resume)
+
+            override fun onStreamsFailed(error: Exception) {
+                _playbackError.value = error
+                _isLoading.value = false
+            }
+
+            override fun onSponsorSegments(segments: List<SponsorSegment>) {
+                _sponsorSegments.value = segments
+            }
+
+            override fun onWatchNext(data: com.ivor.ivormusic.data.WatchNextData) =
+                applyWatchNext(data)
+
+            override fun onDislikeCount(text: String) {
+                _dislikeCount.value = text
+            }
+        },
+    )
 
     // A cold-process restore initially rebuilds only the visible player state.
     // Keeping the resume point here avoids preparing an ExoPlayer source (and
@@ -481,7 +503,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 .collect {
                     youtubeRepository.clearSessionScopedInstanceCaches()
                     _engagement.value = null
-                    _comments.value = emptyList()
+                    // Cleared, so the next time comments come into view they
+                    // load as the new account.
+                    commentThread.clear()
                     val playing = _currentVideo.value ?: return@collect
                     val refreshed = runCatching {
                         youtubeRepository.getWatchNextData(playing.videoId, playing)
@@ -672,18 +696,55 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
-    /**
-     * Network advice for the current error when YouTube refused the connection
-     * rather than the video; see [com.ivor.ivormusic.data.connectionAdviceFor].
-     * While it stands, a network change retries on its own.
-     */
-    private val _connectionAdvice = MutableStateFlow<com.ivor.ivormusic.data.ConnectionAdvice?>(null)
-    val connectionAdvice: StateFlow<com.ivor.ivormusic.data.ConnectionAdvice?> =
-        _connectionAdvice.asStateFlow()
+    /** What happens when a video breaks; the error overlay reads it directly. */
+    val recovery = com.ivor.ivormusic.video.VideoRecovery(
+        context = context,
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        playbackError = _playbackError,
+        host = object : com.ivor.ivormusic.video.VideoRecoveryHost {
+            override val currentVideo get() = _currentVideo.value
+            override val queue get() = _queue.value
+            override val isLocalPlayback get() = _isLocalPlayback.value
+            override val hasPlayer get() = _exoPlayer != null
+            override val hasPlayableBytes
+                get() = (_exoPlayer?.currentPosition ?: 0L) > 0L ||
+                    (_exoPlayer?.bufferedPosition ?: 0L) > 0L
 
-    private val connectionWatcher = com.ivor.ivormusic.data.NetworkChangeWatcher(context) {
-        viewModelScope.launch { retryAfterNetworkChange() }
-    }
+            override fun sdrFallback(): VideoQuality? {
+                val failed = _currentQuality.value?.takeIf { it.isHdr } ?: return null
+                return bestSdrFallback(localVideoQualityOptions(_availableQualities.value), failed)
+            }
+
+            override fun fallBackToSdr(quality: VideoQuality) {
+                hdrQualityToRestoreAfterMini = null
+                reloadPreservingPosition(quality)
+            }
+
+            override fun rePrepare() {
+                _exoPlayer?.prepare()
+            }
+
+            override fun pause() {
+                _exoPlayer?.pause()
+            }
+
+            override fun setLoading(loading: Boolean) {
+                _isLoading.value = loading
+            }
+
+            override fun clearBuffering() {
+                _isBuffering.value = false
+            }
+
+            override fun playQueueEntry(index: Int) = playQueueIndex(index)
+
+            override fun restart(video: VideoItem) = startVideo(video, forceRestart = true)
+
+            override suspend fun reresolveAndReload(video: VideoItem) =
+                this@VideoPlayerViewModel.reresolveAndReload(video)
+        },
+    )
 
     init {
         // The Video shaders page writes through its own ThemePreferences, with
@@ -695,16 +756,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         viewModelScope.launch {
             themePreferences.videoShaders.collect { previewVideoShaders(it) }
         }
-        viewModelScope.launch {
-            _playbackError.collect { error ->
-                // A device video never asked YouTube for anything.
-                val advice = error
-                    ?.takeUnless { _isLocalPlayback.value }
-                    ?.let { com.ivor.ivormusic.data.connectionAdviceFor(context, it) }
-                _connectionAdvice.value = advice
-                if (advice != null) connectionWatcher.start() else connectionWatcher.stop()
-            }
-        }
         // The system's previous/next buttons appear and disappear with the
         // queue, which the ExoPlayer never sees.
         viewModelScope.launch {
@@ -714,42 +765,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
-    private suspend fun retryAfterNetworkChange() {
-        if (_connectionAdvice.value == null) return
-        KLog.i("VideoPlayerVM", "Network changed while YouTube was refusing the connection; retrying")
-        YouTubeRepository.forgetConnectionVerdicts()
-        youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
-        // The user may have moved on or retried while the remint ran.
-        if (_connectionAdvice.value != null) retryPlayback()
-    }
-
     // Video rendering is suspended while the app is not visible - see onEnterBackground()
     private var isVideoSuspended = false
 
-    // Renderer/decoder failures are usually transient (surface torn down, codec
-    // reclaimed by another app). Retry in place a couple of times before the
-    // error reaches the UI; reset on every successful playback start.
-    private var rendererRetryCount = 0
-    private var hdrFallbackUsed = false
     private var hdrQualityToRestoreAfterMini: VideoQuality? = null
-
-    // Source failures (googlevideo 403 on a flagged token, an expired URL, a
-    // network blip) are recovered by re-resolving the stream rather than by
-    // replaying the dead URL. Bounded so a genuinely unplayable video still
-    // reaches the error overlay; reset on every successful playback start.
-    private var sourceRetryCount = 0
-    private var sourceRecoveryJob: kotlinx.coroutines.Job? = null
-
-    // Videos skipped in a row because they would not play at all. Playlists
-    // collect deleted, private and region-blocked entries over time, and one of
-    // those must not end the run - but a network that has gone away fails every
-    // video too, and racing to the end of the playlist on that is worse than
-    // stopping. Bounded, and reset the moment anything actually plays.
-    private var queueErrorSkipCount = 0
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
 
-    private val returnDislikeRepository = com.ivor.ivormusic.data.ReturnDislikeRepository()
     private val _dislikeCount = MutableStateFlow<String?>(null)
     val dislikeCount: StateFlow<String?> = _dislikeCount.asStateFlow()
 
@@ -857,115 +879,27 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _isPortraitVideo = MutableStateFlow(false)
     val isPortraitVideo: StateFlow<Boolean> = _isPortraitVideo.asStateFlow()
 
-    /** Concurrent viewers, e.g. "14,618 watching now". Live videos only. */
-    private val _liveViewerCount = MutableStateFlow<String?>(null)
-    val liveViewerCount: StateFlow<String?> = _liveViewerCount.asStateFlow()
+    /** The open broadcast's viewer count and chat; the screens read it directly. */
+    val liveSession = com.ivor.ivormusic.video.LiveSession(
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        signedIn = _isLoggedIn,
+        isLive = _isLive,
+        currentVideoId = { _currentVideo.value?.videoId },
+    )
 
-    /** Null until the first chat poll answers; false when chat is unavailable. */
-    private val _isLiveChatAvailable = MutableStateFlow<Boolean?>(null)
-    val isLiveChatAvailable: StateFlow<Boolean?> = _isLiveChatAvailable.asStateFlow()
+    /** The open video's comment thread; the comments sheet reads it directly. */
+    val commentThread = com.ivor.ivormusic.video.CommentThreadController(
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        viaBrowse = false,
+        signedIn = _isLoggedIn,
+    )
 
-    private val _liveChatMessages = MutableStateFlow<List<LiveChatMessage>>(emptyList())
-    val liveChatMessages: StateFlow<List<LiveChatMessage>> = _liveChatMessages.asStateFlow()
-
-    private val _liveChatBanner = MutableStateFlow<LiveChatBanner?>(null)
-    val liveChatBanner: StateFlow<LiveChatBanner?> = _liveChatBanner.asStateFlow()
-
-    private val _isLiveChatLoading = MutableStateFlow(false)
-    val isLiveChatLoading: StateFlow<Boolean> = _isLiveChatLoading.asStateFlow()
-
-    private val _isSendingLiveChat = MutableStateFlow(false)
-    val isSendingLiveChat: StateFlow<Boolean> = _isSendingLiveChat.asStateFlow()
-
-    private val _liveChatSendParams = MutableStateFlow<String?>(null)
-
-    /**
-     * Posting needs both an account and a chat that accepts messages. The send
-     * token is present in the poll response even when signed out, so it is not
-     * on its own permission to post.
-     */
-    val canSendLiveChat: StateFlow<Boolean> = kotlinx.coroutines.flow.combine(
-        _isLoggedIn, _liveChatSendParams
-    ) { loggedIn, params -> loggedIn && params != null }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    private val _liveChatMaxLength = MutableStateFlow(200)
-    val liveChatMaxLength: StateFlow<Int> = _liveChatMaxLength.asStateFlow()
-
-    /**
-     * Why the composer is closed - subscribers-only, members-only, slow mode, a
-     * ban. Null when the viewer may post. Distinct from [canSendLiveChat], which
-     * is about having an account at all.
-     */
-    private val _liveChatRestriction = MutableStateFlow<String?>(null)
-    val liveChatRestriction: StateFlow<String?> = _liveChatRestriction.asStateFlow()
-
-    private var liveChatJob: Job? = null
-    private var liveMetadataJob: Job? = null
-    private var liveChatStartedForVideoId: String? = null
-
-    /**
-     * Chat start token lifted from Phase 2's watch-next response, so opening the
-     * panel does not re-fetch and re-parse that multi-megabyte tree.
-     */
-    private var liveChatContinuation: String? = null
-
-    /**
-     * Messages that have arrived from the server but are not on screen yet.
-     *
-     * A poll returns ten seconds of chat in one lump; releasing it in one frame
-     * is what made the panel feel like a stuttering wall rather than a live
-     * conversation. Both the poll loop and the drain loop run on viewModelScope's
-     * main dispatcher, so this needs no synchronization.
-     */
-    private val pendingLiveChat = ArrayDeque<LiveChatMessage>()
-
-    /** Ids already queued or displayed, so a re-delivered message is dropped. */
-    private val seenLiveChatIds = LinkedHashSet<String>()
-
-    /** Elapsed-realtime mark when the next batch is expected, for pacing. */
-    private var liveChatBatchDueAt = 0L
-
-    private val _comments = MutableStateFlow<List<CommentItem>>(emptyList())
-    val comments: StateFlow<List<CommentItem>> = _comments.asStateFlow()
-
-    // Comments that mention a playback timestamp, sorted by that time.
-    // Drives the timed comments overlay in the video player.
-    val timedComments: StateFlow<List<TimedComment>> = _comments
-        .map { list ->
-            list.mapNotNull { comment ->
-                parseFirstTimestampMs(comment.text)?.let { TimedComment(comment, it) }
-            }.sortedBy { it.timeMs }
-        }
+    /** Comments that mention a playback time, for the timed comments over the video. */
+    val timedComments: StateFlow<List<TimedComment>> = commentThread.comments
+        .map(::timedCommentsOf)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
-    private val _isCommentsLoading = MutableStateFlow(false)
-    val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading.asStateFlow()
-
-    private val _isLoadingMoreComments = MutableStateFlow(false)
-    val isLoadingMoreComments: StateFlow<Boolean> = _isLoadingMoreComments.asStateFlow()
-
-    // Replies keyed by parent commentId; presence of key = replies loaded (or loading)
-    private val _replies = MutableStateFlow<Map<String, List<CommentItem>>>(emptyMap())
-    val replies: StateFlow<Map<String, List<CommentItem>>> = _replies.asStateFlow()
-
-    private val _loadingReplyIds = MutableStateFlow<Set<String>>(emptySet())
-    val loadingReplyIds: StateFlow<Set<String>> = _loadingReplyIds.asStateFlow()
-
-    private var commentsNextToken: String? = null
-    private var commentsLoadedForVideoId: String? = null
-
-    // Params for posting a new top-level comment; arrives with the first comments page
-    private val _createCommentParams = MutableStateFlow<String?>(null)
-
-    /** Whether posting a comment is possible (logged in + params available). */
-    val canComment: StateFlow<Boolean> = kotlinx.coroutines.flow.combine(
-        _isLoggedIn, _createCommentParams
-    ) { loggedIn, params -> loggedIn && params != null }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    private val _isPostingComment = MutableStateFlow(false)
-    val isPostingComment: StateFlow<Boolean> = _isPostingComment.asStateFlow()
 
     // ---------------- Save to playlist (Watch Later) ----------------
 
@@ -1024,7 +958,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), current)
                     if (fallback != null) reloadPreservingPosition(fallback)
                 } else if (enabled && !current.isHdr) {
-                    val streamResult = resolvePlayableStreamResult(video.videoId)
+                    val streamResult = videoLoader.resolveStreams(video.videoId)
                     if (_currentVideo.value?.videoId != video.videoId) return@collect
                     _availableQualities.value = streamResult.qualities
                     applyYouTubeAudioTracks(streamResult.audioTracks)
@@ -1225,11 +1159,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             override fun onPlaybackStateChanged(playbackState: Int) {
                 _isBuffering.value = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
-                    // Playback recovered (or started cleanly): allow the
-                    // retry budget to be spent again on a later failure.
-                    rendererRetryCount = 0
-                    sourceRetryCount = 0
-                    queueErrorSkipCount = 0
+                    recovery.onReady()
                 }
                 if (playbackState == Player.STATE_ENDED) {
                     if (watchProfileId == com.ivor.ivormusic.data.ProfileManager.activeProfileId(context) &&
@@ -1246,88 +1176,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (fallbackFromHdr(error)) return
-
-                // A renderer/decoder failure is not a broken stream: the
-                // codec lost its surface or was reclaimed. Re-prepare in
-                // place (position is kept) instead of dead-ending the
-                // player on an error overlay the user cannot dismiss.
-                if (isTransientRendererError(error) && rendererRetryCount < MAX_RENDERER_RETRIES) {
-                    rendererRetryCount++
-                    KLog.w(
-                        "VideoPlayerVM",
-                        "Transient renderer error (attempt $rendererRetryCount/$MAX_RENDERER_RETRIES); re-preparing",
-                        error
-                    )
-                    _exoPlayer?.prepare()
-                    return
-                }
-
-                // CacheDataSource serves every contiguous byte it has before
-                // asking upstream. If that upstream is unavailable, keep the
-                // current item, surface and controls intact: the cached part
-                // was valid playback, and throwing it away turns a temporary
-                // connection loss into a blank player. Retry later re-resolves
-                // and continues from this exact position.
-                if (isRecoverableSourceError(error) && !networkPlaybackAllowed()) {
-                    val hadPlayableBytes = (_exoPlayer?.currentPosition ?: 0L) > 0L ||
-                        (_exoPlayer?.bufferedPosition ?: 0L) > 0L
-                    _exoPlayer?.pause()
-                    _playbackError.value = Exception(
-                        context.getString(
-                            if (hadPlayableBytes) {
-                                com.ivor.ivormusic.R.string.video_cached_portion_ended
-                            } else {
-                                com.ivor.ivormusic.R.string.video_not_cached_offline
-                            }
-                        )
-                    )
-                    _isBuffering.value = false
-                    _isLoading.value = false
-                    return
-                }
-
-                // A source failure means the URL is dead, not the video:
-                // re-resolving is the only thing that can help, and
-                // re-preparing the same URL never will.
-                if (!_isLocalPlayback.value &&
-                    isRecoverableSourceError(error) &&
-                    sourceRetryCount < MAX_SOURCE_RETRIES
-                ) {
-                    sourceRetryCount++
-                    KLog.w(
-                        "VideoPlayerVM",
-                        "Source error (attempt $sourceRetryCount/$MAX_SOURCE_RETRIES); re-resolving stream",
-                        error
-                    )
-                    recoverFromSourceError(error)
-                    return
-                }
-
-                // Both retry budgets are spent, so this video is genuinely
-                // unplayable. Inside a playlist that is almost always one
-                // deleted or private entry among many, and stopping the run
-                // on it is not what the user asked for by opening the
-                // playlist - so step over it, up to the bounded number of
-                // times above.
-                val activeQueue = _queue.value
-                if (activeQueue != null &&
-                    activeQueue.hasNext &&
-                    queueErrorSkipCount < MAX_QUEUE_ERROR_SKIPS
-                ) {
-                    queueErrorSkipCount++
-                    KLog.w(
-                        "VideoPlayerVM",
-                        "Unplayable video in the queue at ${activeQueue.index} " +
-                            "(skip $queueErrorSkipCount/$MAX_QUEUE_ERROR_SKIPS); moving on",
-                        error
-                    )
-                    viewModelScope.launch { playQueueIndex(activeQueue.index + 1) }
-                    return
-                }
-
-                _playbackError.value = error
-                _isBuffering.value = false
+                recovery.onPlayerError(error)
             }
         })
     }
@@ -1586,6 +1435,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
+                    if (player.isPlaying) recovery.onPlaying()
                     // Fresh reads: turning the setting off or changing its rate
                     // takes effect within a tick, without rebuilding the
                     // player. The renderer's drop counter is how the governor
@@ -1664,7 +1514,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * run would hold a set nothing will ever read again.
      */
     private fun resetSponsorBlock() {
-        sponsorBlockJob?.cancel()
+        videoLoader.cancelSponsorBlock()
         skipNoticeJob?.cancel()
         _sponsorSegments.value = emptyList()
         _manualSegment.value = null
@@ -1779,74 +1629,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Retry after playback failed, from the error overlay. Re-resolves the
-     * stream and rebuilds the media source at the current position; falls back
-     * to re-running the whole load when there is no player to reload into.
-     */
-    fun retryPlayback() {
-        rendererRetryCount = 0
-        sourceRetryCount = 0
-        _playbackError.value = null
-        val video = _currentVideo.value ?: return
-        if (_isLocalPlayback.value) {
-            startVideo(video, forceRestart = true)
-            return
-        }
-        if (_exoPlayer == null) {
-            // startVideo, not playVideo: retrying the video that failed is not
-            // leaving the playlist it belongs to.
-            startVideo(video, forceRestart = true)
-            return
-        }
-        // Always re-resolve rather than replaying _currentQuality: its URL is
-        // what just failed, and googlevideo URLs are short-lived, so handing
-        // the same one back to the player fails identically every time.
-        _isLoading.value = true
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = viewModelScope.launch {
-            if (!reresolveAndReload(video)) {
-                _playbackError.value = Exception("Unable to load video stream")
-                _isLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * Rescue a source failure without bothering the user: mint a fresh
-     * visitorData when googlevideo refused us outright (403 means the token or
-     * the request's client signature was rejected at the media layer - stream
-     * resolution itself answered 200 and never sees this), then re-resolve and
-     * reload. Falls back to surfacing [original] so the error overlay and its
-     * Retry button still appear when recovery cannot help.
-     */
-    private fun recoverFromSourceError(original: PlaybackException) {
-        val video = _currentVideo.value
-        if (video == null) {
-            _playbackError.value = original
-            _isBuffering.value = false
-            return
-        }
-        // _isLoading, not _isBuffering: a fatal error drives the player to
-        // STATE_IDLE, whose onPlaybackStateChanged sets _isBuffering back to
-        // false and would leave the re-resolve showing a frozen frame with no
-        // spinner. Nothing else writes _isLoading, and "resolving a stream" is
-        // exactly what it already means during the initial load.
-        _isLoading.value = true
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = viewModelScope.launch {
-            if (httpResponseCode(original) == 403) {
-                youtubeRepository.refreshVisitorDataAfterPlaybackFailure(
-                    com.ivor.ivormusic.data.httpFailureUrl(original),
-                )
-            }
-            if (!reresolveAndReload(video)) {
-                _playbackError.value = original
-                _isLoading.value = false
-            }
-        }
-    }
-
-    /**
      * Re-resolve [video]'s stream URLs and rebuild the media source, keeping
      * the quality the user was watching when it is still on offer.
      *
@@ -1866,7 +1648,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (_exoPlayer == null) return false
         youtubeRepository.invalidateVideoStreamResult(video.videoId)
         val streamResult = try {
-            resolvePlayableStreamResult(video.videoId)
+            videoLoader.resolveStreams(video.videoId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
             // that would let a dead recovery keep writing loading/error state
@@ -1918,55 +1700,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _playbackError.value = null
         _isLoading.value = false
         return true
-    }
-
-    /**
-     * Source-level failures - dead URL, 403, malformed container - are worth
-     * re-resolving for. Renderer failures are not: [isTransientRendererError]
-     * already re-prepares those in place, and this runs after it.
-     */
-    private fun isRecoverableSourceError(error: PlaybackException): Boolean {
-        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_SOURCE) {
-            return true
-        }
-        return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
-    }
-
-    private fun networkPlaybackAllowed(): Boolean {
-        if (ThemePreferences.isLocalOnly(context)) return false
-        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE)
-            as? android.net.ConnectivityManager ?: return false
-        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
-            ?: return false
-        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    }
-
-    /** HTTP status behind a source error, or null when it was not an HTTP failure. */
-    private fun httpResponseCode(error: PlaybackException): Int? {
-        var cause: Throwable? = error.cause
-        while (cause != null) {
-            if (cause is HttpDataSource.InvalidResponseCodeException) return cause.responseCode
-            cause = cause.cause
-        }
-        return null
-    }
-
-    /**
-     * Renderer-level failures (surface torn down, codec reclaimed by another
-     * app, transient decode error) are worth re-preparing for. Source-level
-     * failures - dead URL, unsupported format - are not, and must reach the UI.
-     */
-    private fun isTransientRendererError(error: PlaybackException): Boolean {
-        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_RENDERER) {
-            return true
-        }
-        return when (error.errorCode) {
-            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
-            PlaybackException.ERROR_CODE_DECODING_FAILED -> true
-            else -> false
-        }
     }
 
     fun setAutoplayEnabled(enabled: Boolean) {
@@ -2053,7 +1786,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         leaveLocalPlayback()
         _queue.value = queue.at(queue.index)
         lastQueueRemoval = null
-        queueErrorSkipCount = 0
+        recovery.onQueueMoved()
         startVideo(
             target,
             forceRestart = true,
@@ -2115,7 +1848,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         lastQueueRemoval = null
         // A new playlist gets the full skip budget: whatever was wrong with the
         // last one has nothing to say about this one.
-        queueErrorSkipCount = 0
+        recovery.onQueueMoved()
         val target = normalized.current ?: return
         if (_currentVideo.value?.videoId == target.videoId) {
             _isExpanded.value = true
@@ -2264,7 +1997,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             title = title,
         )
         lastQueueRemoval = null
-        queueErrorSkipCount = 0
+        recovery.onQueueMoved()
         startVideo(target, forceRestart = true)
     }
 
@@ -2476,6 +2209,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         youtubeAudioTracks = emptyList()
         selectedAudioTrackId = null
     }
+
+    /**
+     * The dub playing for [videoId], or null when it is the original or that
+     * video is not the one playing. Read by the download sheet so a download
+     * started from the player keeps the language being listened to.
+     */
+    fun playingAudioTrackId(videoId: String): String? =
+        selectedDub()?.id?.takeIf { _currentVideo.value?.videoId == videoId }
 
     /** The dub to play in place of the original, or null for the original. */
     private fun selectedDub(): YouTubeAudioTrack? =
@@ -2822,9 +2563,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // explicit seek is something the viewer just did.
         _resumedFromMs.value = checkpointMs?.takeIf { it > 0L }
 
-        val loadGeneration = ++videoLoadGeneration
-        streamLoadJob?.cancel()
-        watchNextJob?.cancel()
+        videoLoader.begin()
         if (!deferStreamLoad) deferredRestorePositionMs = null
 
         // Decide from the item, not merely from the queue that introduced it.
@@ -2842,6 +2581,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         _isExpanded.value = expand
         _isLoading.value = true
+        clearPreviousVideo(video)
+
+        if (deferStreamLoad) {
+            showDeferredSession(video, effectiveResumePositionMs)
+            return
+        }
+
+        // Captions that were on for the last video stay on for this one: the
+        // track list is fetched up front rather than waiting for a CC tap.
+        // Downloads included; ensureCaptionsLoaded leaves device files alone.
+        if (themePreferences.isCaptionsEnabled()) {
+            ensureCaptionsLoaded()
+        }
+
+        // Publish to the system's media controls. Started here, from a user tap,
+        // because a foreground service may not be started from the background;
+        // repeat calls once it is up are no-ops.
+        _exoPlayer?.let {
+            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it, sessionQueueControls)
+        }
+
+        if (localSource != null) {
+            playLocalSource(video, localSource, effectiveResumePositionMs, resumePaused)
+            return
+        }
+
+        videoLoader.load(
+            video,
+            com.ivor.ivormusic.video.VideoResume(effectiveResumePositionMs, resumePaused),
+        )
+        startWatchTracking()
+    }
+
+    /** Nothing of the previous video may survive into this one. */
+    private fun clearPreviousVideo(video: VideoItem) {
         // Zero the progress for the new video rather than letting the previous
         // one's position sit in the seek bar until the first poll lands.
         resetProgress()
@@ -2864,28 +2638,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         captionCuesJob?.cancel()
         _captionCues.value = emptyList()
         _playbackError.value = null // Clear previous error
-        rendererRetryCount = 0
-        sourceRetryCount = 0
-        hdrFallbackUsed = false
         hdrQualityToRestoreAfterMini = null
-        // A recovery still in flight belongs to the previous video
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = null
+        recovery.onNewVideo()
 
         // Reset engagement + comments state for the new video
         _engagement.value = null
         _dislikeCount.value = null
-        _comments.value = emptyList()
-        _replies.value = emptyMap()
-        _loadingReplyIds.value = emptySet()
-        commentsNextToken = null
-        commentsLoadedForVideoId = null
-        _createCommentParams.value = null
+        commentThread.clear()
         _isLoggedIn.value = youtubeRepository.isLoggedIn()
 
-        // Live state belongs to the previous video; the polls must stop before
-        // their next tick can write into the new video's chat.
-        stopLivePolling()
+        liveSession.reset()
         // Track selection outlives media items, so a height cap picked on a
         // live stream would silently limit the next video too - and on a VOD,
         // where quality is a source swap, that cap is invisible in the UI.
@@ -2904,17 +2666,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // the same snap the parse-time read exists to avoid, just one video
         // late. 16:9 is the right thing to show while the shape is unknown.
         _videoAspectRatio.value = null
-        _liveViewerCount.value = null
-        _isLiveChatAvailable.value = null
-        _liveChatMessages.value = emptyList()
-        _liveChatBanner.value = null
-        _liveChatSendParams.value = null
-        _liveChatRestriction.value = null
-        _isLiveChatLoading.value = false
-        liveChatStartedForVideoId = null
-        liveChatContinuation = null
-        pendingLiveChat.clear()
-        seenLiveChatIds.clear()
 
         // Speed carries over like YouTube: the rate the user last picked is
         // re-applied to the next video. Live broadcasts always play at 1x
@@ -2926,223 +2677,134 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         _playbackSpeed.value = rememberedSpeed
         _exoPlayer?.setPlaybackSpeed(rememberedSpeed)
+    }
 
-        if (deferStreamLoad) {
-            val position = effectiveResumePositionMs?.coerceAtLeast(0L) ?: 0L
-            val duration = (video.duration.coerceAtLeast(0L) * 1_000L)
-            deferredRestorePositionMs = position
-            _positionMs.value = position
-            _durationMs.value = duration
-            _progress.value = if (duration > 0L) {
-                (position.toFloat() / duration).coerceIn(0f, 1f)
-            } else {
-                0f
+    /** A cold restore's chrome, with no media until the user presses Play. */
+    private fun showDeferredSession(video: VideoItem, resumePositionMs: Long?) {
+        val position = resumePositionMs?.coerceAtLeast(0L) ?: 0L
+        val duration = (video.duration.coerceAtLeast(0L) * 1_000L)
+        deferredRestorePositionMs = position
+        _positionMs.value = position
+        _durationMs.value = duration
+        _progress.value = if (duration > 0L) {
+            (position.toFloat() / duration).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        _bufferedProgress.value = 0f
+        _isPlaying.value = false
+        _isBuffering.value = false
+        _isLoading.value = false
+    }
+
+    /** A device file or download: no network, so it starts here and now. */
+    private fun playLocalSource(
+        video: VideoItem,
+        localSource: LocalPlaybackSource,
+        resumePositionMs: Long?,
+        resumePaused: Boolean,
+    ) {
+        watchTracker.close()
+        clearVideoPlaybackSession()
+        try {
+            _exoPlayer?.stop()
+            _exoPlayer?.clearMediaItems()
+            localSource.aspectRatio?.let { _videoAspectRatio.value = it }
+            val localQuality = VideoQuality(
+                resolution = localSource.label,
+                url = localSource.uri.toString(),
+                format = "video/mp4",
+                sourceAspectRatio = localSource.aspectRatio,
+            )
+            _availableQualities.value = listOf(localQuality)
+            _currentQuality.value = localQuality
+            _seekPreview.value = VideoSeekPreview.local(localSource.uri.toString())
+            // Subtitles start off unless the user had captions on, and a
+            // container's default-flagged track would otherwise switch them
+            // back on by itself the moment the file is read.
+            applyEmbeddedTextDefault()
+            _exoPlayer?.setMediaItem(nowPlayingMediaItem(localSource.uri.toString()))
+            _exoPlayer?.prepare()
+            if (resumePositionMs != null && resumePositionMs > 0) {
+                _exoPlayer?.let { seekPlayerTo(it, resumePositionMs, precise = true) }
             }
-            _bufferedProgress.value = 0f
-            _isPlaying.value = false
-            _isBuffering.value = false
+            if (resumePaused) {
+                _exoPlayer?.pause()
+            } else {
+                _exoPlayer?.play()
+            }
+            _isLoading.value = false
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _playbackError.value = e
+            _isLoading.value = false
+        }
+        recordLocalWatch(video)
+    }
+
+    /** Stream URLs arrived for the video being opened: start it. */
+    private fun applyResolvedStreams(
+        video: VideoItem,
+        result: VideoStreamResult,
+        resume: com.ivor.ivormusic.video.VideoResume,
+    ) {
+        val qualities = result.qualities
+        _availableQualities.value = qualities
+        _seekPreview.value = result.seekPreview
+        // Held now, published once a quality is loaded: the menu depends on
+        // that quality being a split pair.
+        youtubeAudioTracks = result.audioTracks
+        _isLive.value = qualities.any { it.isLive }
+        if (_isLive.value) {
+            // Some entry points do not know a broadcast is live until its
+            // stream qualities arrive. Remove any prior snapshot once that
+            // verdict is definitive.
+            clearVideoPlaybackSession()
+        }
+        // Before the first frame: the stream dimensions are the only shape
+        // signal there is, and both the vertical live layout and the watch
+        // page's video box are sized from it.
+        qualities.firstNotNullOfOrNull { it.sourceAspectRatio }?.let { ratio ->
+            _videoAspectRatio.value = ratio
+            if (ratio < 1f) _isPortraitVideo.value = true
+        }
+        if (_isLive.value) liveSession.startViewerCount(video.videoId)
+
+        if (qualities.isEmpty()) {
+            // No second extraction here. The old "legacy stream URL" fallback
+            // ran a whole NewPipe fetchPage (about seven requests) again
+            // straight after the resolver had failed, so it failed the same
+            // way - and it could not add anything when extraction succeeded,
+            // because every muxed URL it picked from is already in that ladder.
+            _playbackError.value = Exception("Unable to load video stream")
             _isLoading.value = false
             return
         }
+        loadQuality(pickDefaultQuality(qualities))
+        seekAndResumeAfterLoad(resume.positionMs, resume.paused)
+    }
 
-        // Captions that were on for the last video stay on for this one: the
-        // track list is fetched up front rather than waiting for a CC tap.
-        // Downloads included; ensureCaptionsLoaded leaves device files alone.
-        if (themePreferences.isCaptionsEnabled()) {
-            ensureCaptionsLoaded()
+    /** The one `/next` for this video arrived. */
+    private fun applyWatchNext(watchNext: com.ivor.ivormusic.data.WatchNextData) {
+        _engagement.value = watchNext.engagement
+        if (watchNext.updatedVideoItem != null) {
+            val wasNameless = _currentVideo.value?.title.isNullOrBlank()
+            _currentVideo.value = watchNext.updatedVideoItem
+            // A video opened from a shared link starts out nameless - give the
+            // lock screen and shade the real title now that there is one.
+            // Deliberately only for that case: every other entry point already
+            // carries a title, and touching the media item is not worth it just
+            // to swap a thumbnail size.
+            if (wasNameless) refreshNowPlayingMetadata()
         }
-
-        // Publish to the system's media controls. Started here, from a user tap,
-        // because a foreground service may not be started from the background;
-        // repeat calls once it is up are no-ops.
-        _exoPlayer?.let {
-            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it, sessionQueueControls)
+        if (watchNext.relatedVideos.isNotEmpty()) {
+            _relatedVideos.value = watchNext.relatedVideos
         }
-
-        if (localSource != null) {
-            watchTracker.close()
-            clearVideoPlaybackSession()
-            try {
-                _exoPlayer?.stop()
-                _exoPlayer?.clearMediaItems()
-                localSource.aspectRatio?.let { _videoAspectRatio.value = it }
-                val localQuality = VideoQuality(
-                    resolution = localSource.label,
-                    url = localSource.uri.toString(),
-                    format = "video/mp4",
-                    sourceAspectRatio = localSource.aspectRatio,
-                )
-                _availableQualities.value = listOf(localQuality)
-                _currentQuality.value = localQuality
-                _seekPreview.value = VideoSeekPreview.local(localSource.uri.toString())
-                // Subtitles start off unless the user had captions on, and a
-                // container's default-flagged track would otherwise switch them
-                // back on by itself the moment the file is read.
-                applyEmbeddedTextDefault()
-                _exoPlayer?.setMediaItem(nowPlayingMediaItem(localSource.uri.toString()))
-                _exoPlayer?.prepare()
-                if (effectiveResumePositionMs != null && effectiveResumePositionMs > 0) {
-                    _exoPlayer?.let { seekPlayerTo(it, effectiveResumePositionMs, precise = true) }
-                }
-                if (resumePaused) {
-                    _exoPlayer?.pause()
-                } else {
-                    _exoPlayer?.play()
-                }
-                _isLoading.value = false
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _playbackError.value = e
-                _isLoading.value = false
-            }
-            recordLocalWatch(video)
-            return
-        }
-
-        // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
-        // Uses lightweight getVideoStreamQualities() which ONLY fetches stream URLs
-        streamLoadJob = viewModelScope.launch {
-            try {
-                if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
-                _exoPlayer?.stop()
-                _exoPlayer?.clearMediaItems()
-                
-                // NewPipe's fetchPage() is blocking. A coroutine withTimeout
-                // cannot interrupt it; when extraction took 17-21 seconds it
-                // waited for valid qualities and then discarded them as timed
-                // out. The downloader's connect/read timeouts are the actual
-                // network bounds, while the generation checks below still
-                // prevent a cancelled load from touching a newer video.
-                run resolve@ {
-                    // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
-                    val streamResult = resolvePlayableStreamResult(video.videoId)
-                    if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
-                    val qualities = streamResult.qualities
-                    _availableQualities.value = qualities
-                    _seekPreview.value = streamResult.seekPreview
-                    // Held now, published once a quality is loaded: the menu
-                    // depends on that quality being a split pair.
-                    youtubeAudioTracks = streamResult.audioTracks
-                    _isLive.value = qualities.any { it.isLive }
-                    if (_isLive.value) {
-                        // Some entry points do not know a broadcast is live
-                        // until its stream qualities arrive. Remove any prior
-                        // snapshot once that verdict is definitive.
-                        clearVideoPlaybackSession()
-                    }
-                    // Before the first frame: the stream dimensions are the only
-                    // shape signal there is, and both the vertical live layout
-                    // and the watch page's video box are sized from it.
-                    qualities.firstNotNullOfOrNull { it.sourceAspectRatio }?.let { ratio ->
-                        _videoAspectRatio.value = ratio
-                        if (ratio < 1f) _isPortraitVideo.value = true
-                    }
-                    if (_isLive.value) startLiveMetadataPolling(video.videoId)
-
-                    if (qualities.isNotEmpty()) {
-                        val chosen = pickDefaultQuality(qualities)
-                        if (chosen == null) {
-                            _playbackError.value =
-                                Exception("Unable to load video stream")
-                            _isLoading.value = false
-                            return@resolve
-                        }
-                        loadQuality(chosen)
-                        seekAndResumeAfterLoad(effectiveResumePositionMs, resumePaused)
-                    } else {
-                        // No second extraction here. The old "legacy stream URL"
-                        // fallback ran a whole NewPipe fetchPage (about seven
-                        // requests) again straight after the resolver above had
-                        // failed, so it failed the same way - and it could not
-                        // add anything when extraction succeeded, because every
-                        // muxed URL it picked from is already in that ladder.
-                        _playbackError.value = Exception("Unable to load video stream")
-                        _isLoading.value = false
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
-                    KLog.e("VideoPlayerVM", "Initial stream load failed for ${video.videoId}", e)
-                    _playbackError.value = e
-                    _isLoading.value = false
-                }
-            }
-        }
-        
-        // ========== SPONSORBLOCK ==========
-        // Its own job rather than a step inside Phase 2: the lookup is keyed on
-        // the video id alone and needs nothing watch-next returns, so making it
-        // wait behind that response would delay skipping for no reason. It must
-        // never join Phase 1, which is stream URLs only - a third-party service
-        // being slow must not delay the first frame.
-        sponsorBlockJob = viewModelScope.launch {
-            // Fresh reads: the settings screen writes through its own
-            // ThemePreferences instance, and the user may have changed either
-            // of these since this ViewModel was built.
-            if (!themePreferences.isSponsorBlockEnabled()) return@launch
-            val actions = themePreferences.sponsorBlockActionsNow()
-            val categories = activeCategories(actions)
-            if (categories.isEmpty()) return@launch
-
-            val segments = sponsorBlockRepository.getSegments(video.videoId, categories)
-            if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
-            // A live broadcast has no fixed timeline to key segments against,
-            // and _isLive is resolved in Phase 1, so by here it is known.
-            if (_isLive.value) return@launch
-            _sponsorSegments.value = segments
-        }
-
-        // ========== PHASE 2: ENGAGEMENT + METADATA + RELATED ==========
-        // One watch-next call answers all three (the old code paid for an
-        // engagement /next call AND a full NewPipe extraction here, competing
-        // with Phase 1's initial buffering for bandwidth).
-        watchNextJob = viewModelScope.launch {
-            try {
-                val watchNext = youtubeRepository.getWatchNextData(video.videoId, video)
-                // Guard against a video switch that happened mid-flight
-                if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
-                _engagement.value = watchNext.engagement
-                if (themePreferences.isReturnDislikeEnabled() && video.videoId.length == 11) {
-                    launch {
-                        val count = returnDislikeRepository.getDislikes(video.videoId) ?: return@launch
-                        if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
-                            _dislikeCount.value = android.icu.text.CompactDecimalFormat
-                                .getInstance(java.util.Locale.getDefault(), android.icu.text.CompactDecimalFormat.CompactStyle.SHORT)
-                                .format(count)
-                        }
-                    }
-                }
-                if (watchNext.updatedVideoItem != null) {
-                    val wasNameless = _currentVideo.value?.title.isNullOrBlank()
-                    _currentVideo.value = watchNext.updatedVideoItem
-                    // A video opened from a shared link starts out nameless -
-                    // give the lock screen and shade the real title now that
-                    // there is one. Deliberately only for that case: every other
-                    // entry point already carries a title, and touching the
-                    // media item is not worth it just to swap a thumbnail size.
-                    if (wasNameless) refreshNowPlayingMetadata()
-                }
-                if (watchNext.relatedVideos.isNotEmpty()) {
-                    _relatedVideos.value = watchNext.relatedVideos
-                }
-                _chapters.value = watchNext.chapters
-                // Opening the chat panel now costs one poll instead of a second
-                // watch-next round trip plus its parse.
-                liveChatContinuation = watchNext.liveChatContinuation
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Phase 2 errors are non-critical - playback already started
-                if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
-                    KLog.w("VideoPlayerVM", "Failed to load watch-next data", e)
-                }
-            }
-        }
-        
-        startWatchTracking()
+        _chapters.value = watchNext.chapters
+        // Opening the chat panel now costs one poll instead of a second
+        // watch-next round trip plus its parse.
+        liveSession.setChatContinuation(watchNext.liveChatContinuation)
     }
 
     private fun startWatchTracking() {
@@ -3152,9 +2814,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private fun recordLocalWatch(video: VideoItem) {
         if (!video.videoId.startsWith("external:")) startWatchTracking()
     }
-
-    private fun isCurrentVideoLoad(videoId: String, generation: Long): Boolean =
-        videoLoadGeneration == generation && _currentVideo.value?.videoId == videoId
 
     /**
      * Seek-and-resume tail shared by every load path.
@@ -3178,46 +2837,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Pick the starting quality based on the Settings preference for the
-     * current network (Wi-Fi vs mobile data). Fresh pref read because Settings
-     * toggles through its own ThemePreferences instance.
-     * The list from getVideoStreamQualities() is sorted highest-first with
-     * 60fps variants before 30fps, so the first label at or below the target
-     * height is the best match; if the video has nothing at or below it, take
-     * the lowest available.
+     * Pick the starting quality from the Settings preference for the current
+     * network (Wi-Fi vs mobile data). Fresh pref read because Settings toggles
+     * through its own ThemePreferences instance. Capped before anything else,
+     * so Auto and an explicit 4K preference both land on the best rung this
+     * panel can show. Never empty, so the pick is always safe.
      */
-    private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
-        fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
-        // Capped before anything else, so Auto and an explicit 4K preference
-        // both land on the best rung this panel can show. Never empty, so the
-        // first()/last() picks below stay safe.
-        val baseOptions = localVideoQualityOptions(qualities).cappedAtHeight(deviceQualityCap)
-        val options = if (!_isExpanded.value) {
-            baseOptions.filterNot(VideoQuality::isHdr).ifEmpty { baseOptions }
-        } else {
-            baseOptions
-        }
-        val preferred = themePreferences.getDefaultVideoQuality()
-
-        // The live ladder leads with an "Auto" entry (height 0) that the VOD
-        // branches below would skip over, so it picks its own entry: Auto when
-        // the setting says auto, otherwise the best rendition at or below the
-        // target, falling back to Auto rather than to the lowest available.
-        if (options.firstOrNull()?.isLive == true) {
-            if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) return options.first()
-            val targetHeight = height(preferred)
-            return options.firstOrNull { height(it.resolution) in 1..targetHeight }
-                ?: options.first()
-        }
-
-        if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
-            return options.firstOrNull { height(it.resolution) > 0 } ?: options.first()
-        }
-        val targetHeight = height(preferred)
-        return options.firstOrNull { height(it.resolution) in 1..targetHeight }
-            ?: options.lastOrNull { height(it.resolution) > 0 }
-            ?: options.first()
-    }
+    private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality =
+        com.ivor.ivormusic.video.core.pickStartingVideoQuality(
+            capped = localVideoQualityOptions(qualities).cappedAtHeight(deviceQualityCap),
+            preferred = themePreferences.getDefaultVideoQuality(),
+            isExpanded = _isExpanded.value,
+        )
 
     /**
      * Build the media source for [quality].
@@ -3495,48 +3126,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         player.addListener(listener)
     }
 
-    private suspend fun resolvePlayableStreamResult(videoId: String): VideoStreamResult {
-        // The preference is intent; the display capability decides whether
-        // HDR can produce a visible benefit. This also handles an enabled
-        // value restored onto an SDR-only phone.
-        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context) &&
-            !effectGraphBlocksHdr()
-        val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
-        val qualities = if (includeHdr) {
-            result.qualities
-        } else {
-            result.qualities.filterNot(VideoQuality::isHdr)
-        }
-        return result.copy(qualities = qualities)
-    }
-
-    /**
-     * One-shot HDR-to-SDR recovery shared by source and decoder failures.
-     *
-     * Not for a 403. HDR and SDR come from one visionOS response, signed under
-     * one token, so a refused HDR URL means the SDR one beside it is refused
-     * too: reloading it only failed again and spent a second token replacement
-     * on the way. [recoverFromSourceError] re-resolves the whole ladder instead,
-     * and the fallback stays armed for a failure HDR itself causes.
-     */
-    private fun fallbackFromHdr(error: PlaybackException): Boolean {
-        val failed = _currentQuality.value ?: return false
-        if (!failed.isHdr || hdrFallbackUsed) return false
-        if (httpResponseCode(error) == 403) return false
-        val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), failed)
-            ?: return false
-
-        hdrFallbackUsed = true
-        hdrQualityToRestoreAfterMini = null
-        KLog.w(
-            "VideoPlayerVM",
-            "HDR ${failed.displayLabel} failed; falling back to ${fallback.displayLabel}",
-            error,
-        )
-        reloadPreservingPosition(fallback)
-        return true
-    }
-
     /** Load the caption track list for the current video, once, on demand. */
     fun ensureCaptionsLoaded() {
         val video = _currentVideo.value ?: return
@@ -3686,8 +3275,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Track selection outlives media items: a player closed while the video
         // track is suspended would come back audio-only on the next video.
         onEnterForeground()
-        stopLivePolling()
-        liveChatStartedForVideoId = null
+        liveSession.stop()
         _currentVideo.value = null
         _queue.value = null
         deferredRestorePositionMs = null
@@ -3891,292 +3479,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         player.play()
     }
 
-    // ---------------- Live chat ----------------
-
-    /**
-     * Start the chat stream. Called when the chat panel opens rather than when
-     * the video loads: a live stream watched without the panel open should not
-     * pay for a poll every 10 seconds.
-     */
-    fun ensureLiveChatStarted() {
-        val videoId = _currentVideo.value?.videoId ?: return
-        if (!_isLive.value) return
-        if (liveChatStartedForVideoId == videoId && liveChatJob?.isActive == true) return
-        liveChatStartedForVideoId = videoId
-        startLiveChatPolling(videoId)
-    }
-
-    /**
-     * Stop polling when the panel closes. Messages are kept so reopening shows
-     * the conversation immediately while the fresh backlog loads behind it -
-     * the poll dedupes by id, so the overlap costs nothing.
-     */
-    fun stopLiveChat() {
-        liveChatJob?.cancel()
-        liveChatJob = null
-        liveChatStartedForVideoId = null
-        _isLiveChatLoading.value = false
-    }
-
-    /**
-     * Run the chat: one coroutine polling the server, one releasing what it
-     * fetched onto the screen.
-     *
-     * They are separate because their rhythms are: the server hands over ten
-     * seconds of chat in a single response, and rendering that in one frame is
-     * what made the panel feel broken. The drain loop spreads a batch across the
-     * interval until the next one is due, so messages arrive at roughly the rate
-     * people actually typed them.
-     */
-    private fun startLiveChatPolling(videoId: String) {
-        liveChatJob?.cancel()
-        pendingLiveChat.clear()
-        seenLiveChatIds.clear()
-        _liveChatMessages.value.forEach { seenLiveChatIds.add(it.id) }
-
-        liveChatJob = viewModelScope.launch {
-            _isLiveChatLoading.value = true
-
-            // Phase 2 usually has the token already; only a chat opened before
-            // watch-next lands pays for a fetch.
-            val start = liveChatContinuation
-                ?: youtubeRepository.getLiveChatSession(videoId)?.continuation
-            if (_currentVideo.value?.videoId != videoId) return@launch
-            if (start == null) {
-                // No conversationBar in the watch-next response: chat is
-                // disabled or unavailable for this broadcast, which is a state
-                // to render, not an error.
-                _isLiveChatAvailable.value = false
-                _isLiveChatLoading.value = false
-                return@launch
-            }
-            liveChatContinuation = start
-
-            coroutineScope {
-                val drain = launch { drainLiveChatQueue() }
-                try {
-                    pollLiveChatLoop(videoId, start)
-                } finally {
-                    drain.cancel()
-                    // Anything still queued was already fetched; drop it on
-                    // screen rather than losing it on the way out.
-                    flushPendingLiveChat()
-                    _isLiveChatLoading.value = false
-                }
-            }
-        }
-    }
-
-    /**
-     * Fetch pages on the cadence the server dictates.
-     *
-     * Every response hands back the next token and the delay before it should be
-     * used (10s on every stream sampled). The wait subtracts the time the request
-     * itself took, so the cycle stays a true 10s instead of drifting further
-     * behind live by one round trip per poll.
-     *
-     * The first response carries the visible backlog - that is history, not new
-     * chat, so it goes straight to the screen; only later pages are paced.
-     */
-    private suspend fun pollLiveChatLoop(videoId: String, firstContinuation: String) {
-        var continuation: String? = firstContinuation
-        var consecutiveFailures = 0
-        var isFirstPage = true
-
-        while (true) {
-            val token = continuation ?: break
-            val startedAt = SystemClock.elapsedRealtime()
-            val page = youtubeRepository.pollLiveChat(token)
-            if (_currentVideo.value?.videoId != videoId) return
-
-            if (page == null) {
-                // A failed poll is usually transient (the stream is still
-                // there), so back off and retry the same token a few times
-                // before declaring the chat gone.
-                consecutiveFailures++
-                if (consecutiveFailures > MAX_LIVE_CHAT_POLL_FAILURES) {
-                    if (_isLiveChatAvailable.value == null) _isLiveChatAvailable.value = false
-                    return
-                }
-                kotlinx.coroutines.delay(LIVE_CHAT_RETRY_DELAY_MS)
-                continue
-            }
-            consecutiveFailures = 0
-
-            _isLiveChatAvailable.value = true
-            _isLiveChatLoading.value = false
-            page.sendParams?.let { _liveChatSendParams.value = it }
-            _liveChatMaxLength.value = page.maxMessageLength
-            _liveChatRestriction.value = page.restrictionMessage
-            if (page.bannerCleared) _liveChatBanner.value = null
-            page.banner?.let { _liveChatBanner.value = it }
-
-            applyLiveChatModeration(page)
-
-            val fresh = page.messages.filter { seenLiveChatIds.add(it.id) }
-            if (isFirstPage) {
-                appendLiveChatMessages(fresh)
-                isFirstPage = false
-            } else {
-                pendingLiveChat.addAll(fresh)
-            }
-            trimSeenLiveChatIds()
-
-            continuation = page.nextContinuation
-            val window = page.timeoutMs.coerceIn(LIVE_CHAT_MIN_WINDOW_MS, LIVE_CHAT_MAX_WINDOW_MS)
-            val wait = (window - (SystemClock.elapsedRealtime() - startedAt))
-                .coerceAtLeast(LIVE_CHAT_MIN_WINDOW_MS)
-            liveChatBatchDueAt = SystemClock.elapsedRealtime() + wait
-            kotlinx.coroutines.delay(wait)
-        }
-    }
-
-    /**
-     * Release queued messages one at a time, spread over the time remaining
-     * until the next batch lands, so the queue empties just as it arrives.
-     *
-     * The first message of a batch shows immediately - the pacing only applies
-     * to the ones behind it - so a quiet chat has no added latency while a busy
-     * one flows instead of arriving in slabs. Falling behind (a burst larger
-     * than the window can pace) collapses the gap to the floor and catches up.
-     */
-    private suspend fun drainLiveChatQueue() {
-        while (true) {
-            val next = pendingLiveChat.removeFirstOrNull()
-            if (next == null) {
-                kotlinx.coroutines.delay(LIVE_CHAT_DRAIN_IDLE_MS)
-                continue
-            }
-            appendLiveChatMessages(listOf(next))
-
-            val remaining = pendingLiveChat.size
-            if (remaining == 0) {
-                kotlinx.coroutines.delay(LIVE_CHAT_DRAIN_IDLE_MS)
-                continue
-            }
-            val budget = liveChatBatchDueAt - SystemClock.elapsedRealtime()
-            kotlinx.coroutines.delay(
-                (budget / (remaining + 1))
-                    .coerceIn(LIVE_CHAT_MIN_GAP_MS, LIVE_CHAT_MAX_GAP_MS)
-            )
-        }
-    }
-
-    /** Put everything still queued on screen at once. */
-    private fun flushPendingLiveChat() {
-        if (pendingLiveChat.isEmpty()) return
-        val rest = pendingLiveChat.toList()
-        pendingLiveChat.clear()
-        appendLiveChatMessages(rest)
-    }
-
-    /**
-     * Append to the visible list, capped at [MAX_LIVE_CHAT_MESSAGES] - the same
-     * cap YouTube declares in the response - so a stream left open overnight
-     * cannot grow the list without bound.
-     */
-    private fun appendLiveChatMessages(new: List<LiveChatMessage>) {
-        if (new.isEmpty()) return
-        _liveChatMessages.update { current -> (current + new).takeLast(MAX_LIVE_CHAT_MESSAGES) }
-    }
-
-    /**
-     * Apply deletions and edits to both the visible list and the queue - a
-     * message deleted while still waiting to be shown must never reach the
-     * screen.
-     */
-    private fun applyLiveChatModeration(page: LiveChatPage) {
-        if (page.removedIds.isEmpty() &&
-            page.removedAuthorIds.isEmpty() &&
-            page.replacements.isEmpty()
-        ) return
-
-        fun survives(message: LiveChatMessage): Boolean =
-            message.id !in page.removedIds &&
-                message.author?.channelId?.let { it !in page.removedAuthorIds } != false
-
-        pendingLiveChat.retainAll { survives(it) }
-        _liveChatMessages.update { current ->
-            current.mapNotNull { message ->
-                if (!survives(message)) null else page.replacements[message.id] ?: message
-            }
-        }
-    }
-
-    /**
-     * Keep the dedupe set from growing for the lifetime of a long stream. Only
-     * ids that are still visible or queued can be re-delivered in a way that
-     * matters.
-     */
-    private fun trimSeenLiveChatIds() {
-        if (seenLiveChatIds.size <= MAX_LIVE_CHAT_MESSAGES * 3) return
-        val live = HashSet<String>(_liveChatMessages.value.size + pendingLiveChat.size)
-        _liveChatMessages.value.forEach { live.add(it.id) }
-        pendingLiveChat.forEach { live.add(it.id) }
-        seenLiveChatIds.retainAll(live)
-    }
-
-    /**
-     * Keep the concurrent viewer count fresh. The endpoint asks for a 5s tick,
-     * which is far more often than a phone needs, so this runs on
-     * [LIVE_METADATA_POLL_MS] instead.
-     */
-    private fun startLiveMetadataPolling(videoId: String) {
-        liveMetadataJob?.cancel()
-        liveMetadataJob = viewModelScope.launch {
-            while (true) {
-                val metadata = youtubeRepository.getLiveMetadata(videoId)
-                if (_currentVideo.value?.videoId != videoId) return@launch
-                metadata?.viewerCountText?.let { _liveViewerCount.value = it }
-                kotlinx.coroutines.delay(LIVE_METADATA_POLL_MS)
-            }
-        }
-    }
-
-    /** Stop both live polls. Safe to call when nothing is live. */
-    fun stopLivePolling() {
-        liveChatJob?.cancel()
-        liveChatJob = null
-        liveMetadataJob?.cancel()
-        liveMetadataJob = null
-    }
-
-    /**
-     * Post a message to the live chat.
-     *
-     * The response echoes the accepted message back, so it goes on screen at
-     * once instead of waiting up to a poll interval to come round - it is marked
-     * seen, so the poll that eventually redelivers it is a no-op.
-     *
-     * [onFailure] reports a rejection (slow mode, a word filter, a ban) so the
-     * composer can put the text back rather than silently swallowing it.
-     */
-    fun sendLiveChatMessage(text: String, onFailure: (String) -> Unit = {}) {
-        val body = text.trim()
-        if (body.isEmpty() || _isSendingLiveChat.value) return
-        val params = _liveChatSendParams.value ?: return
-        viewModelScope.launch {
-            _isSendingLiveChat.value = true
-            try {
-                val result = youtubeRepository.sendLiveChatMessage(params, body)
-                if (result.success) {
-                    result.echo?.let { echo ->
-                        if (seenLiveChatIds.add(echo.id)) appendLiveChatMessages(listOf(echo))
-                    }
-                } else {
-                    onFailure(result.error ?: "Message not sent")
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                KLog.w("VideoPlayerVM", "Failed to send live chat message", e)
-                onFailure("Message not sent")
-            } finally {
-                _isSendingLiveChat.value = false
-            }
-        }
-    }
-
     // ---------------- Save to playlist / Watch Later ----------------
 
     /** Load the user's YouTube playlists for the save sheet. Requires login. */
@@ -4338,187 +3640,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // ---------------- Comments ----------------
 
     /**
-     * Extract the first playback timestamp mentioned in a comment ("1:23",
-     * "12:05" or "1:02:33") as milliseconds, or null when none is present.
+     * Open this video's comment thread if it is not open already. The token
+     * arrives with the watch-next response, so before that there is nothing to
+     * open and the next call (the sheet opening, a scroll) tries again.
      */
-    private fun parseFirstTimestampMs(text: String): Long? {
-        val match = TIMESTAMP_REGEX.find(text) ?: return null
-        val hours = match.groupValues[1].toLongOrNull() ?: 0L
-        val minutes = match.groupValues[2].toLongOrNull() ?: return null
-        val seconds = match.groupValues[3].toLongOrNull() ?: return null
-        if (seconds >= 60) return null
-        if (match.groupValues[1].isNotEmpty() && minutes >= 60) return null
-        return ((hours * 60 + minutes) * 60 + seconds) * 1000L
-    }
-
-    /** Load the first page of comments if not already loaded for this video. */
     fun ensureCommentsLoaded() {
         val video = _currentVideo.value ?: return
-        if (commentsLoadedForVideoId == video.videoId || _isCommentsLoading.value) return
         val token = _engagement.value?.commentsToken ?: return
-        _isCommentsLoading.value = true
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                // Ignore stale results if the user switched videos meanwhile
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    _comments.value = page.comments
-                    commentsNextToken = page.nextPageToken
-                    commentsLoadedForVideoId = video.videoId
-                    _createCommentParams.value = page.createCommentParams
-                }
-            } finally {
-                _isCommentsLoading.value = false
-            }
-        }
-    }
-
-    /** Load the next page of comments (no-op when exhausted or already loading). */
-    fun loadMoreComments() {
-        val video = _currentVideo.value ?: return
-        val token = commentsNextToken ?: return
-        if (_isLoadingMoreComments.value || _isCommentsLoading.value) return
-        _isLoadingMoreComments.value = true
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    // Guard against duplicates if YouTube repeats items across pages
-                    val known = _comments.value.mapTo(HashSet()) { it.commentId }
-                    _comments.value = _comments.value + page.comments.filter { it.commentId !in known }
-                    commentsNextToken = page.nextPageToken
-                }
-            } finally {
-                _isLoadingMoreComments.value = false
-            }
-        }
-    }
-
-    /** Load replies for a comment (first page only; collapses are handled in UI). */
-    fun loadReplies(comment: CommentItem) {
-        val video = _currentVideo.value ?: return
-        val token = comment.repliesToken ?: return
-        if (_replies.value.containsKey(comment.commentId) ||
-            comment.commentId in _loadingReplyIds.value
-        ) return
-        _loadingReplyIds.value = _loadingReplyIds.value + comment.commentId
-        viewModelScope.launch {
-            try {
-                val page = youtubeRepository.getCommentsPage(token)
-                if (_currentVideo.value?.videoId == video.videoId && page != null) {
-                    _replies.value = _replies.value + (comment.commentId to page.comments)
-                }
-            } finally {
-                _loadingReplyIds.value = _loadingReplyIds.value - comment.commentId
-            }
-        }
-    }
-
-    /**
-     * Post a new top-level comment on the current video. The created comment
-     * is prepended to the list on success. Requires login.
-     */
-    fun postComment(text: String) {
-        val video = _currentVideo.value ?: return
-        val params = _createCommentParams.value ?: return
-        val trimmed = text.trim()
-        if (trimmed.isEmpty() || _isPostingComment.value) return
-        _isPostingComment.value = true
-        viewModelScope.launch {
-            try {
-                val created = youtubeRepository.createComment(params, trimmed)
-                if (created != null && _currentVideo.value?.videoId == video.videoId) {
-                    _comments.value = listOf(created) + _comments.value
-                }
-            } finally {
-                _isPostingComment.value = false
-            }
-        }
-    }
-
-    /**
-     * Post a reply into a comment thread. `target` is the comment being
-     * replied to (a top-level comment or one of its replies — replying to a
-     * reply posts into the same thread, like YouTube); `threadParent` is the
-     * top-level comment whose replies list shows the result. Requires login.
-     */
-    fun postReply(target: CommentItem, threadParent: CommentItem, text: String) {
-        val video = _currentVideo.value ?: return
-        val params = target.replyParams ?: return
-        val trimmed = text.trim()
-        if (trimmed.isEmpty() || _isPostingComment.value) return
-        _isPostingComment.value = true
-        viewModelScope.launch {
-            try {
-                val created = youtubeRepository.createCommentReply(params, trimmed)
-                if (created != null && _currentVideo.value?.videoId == video.videoId) {
-                    val existing = _replies.value[threadParent.commentId]
-                    if (existing != null || threadParent.repliesToken == null) {
-                        // Replies already visible (or none exist yet): append inline
-                        _replies.value = _replies.value +
-                            (threadParent.commentId to (existing ?: emptyList()) + created)
-                    } else {
-                        // Replies exist but are collapsed: fetch the thread so the
-                        // older replies are not hidden behind the local insert
-                        loadReplies(threadParent)
-                    }
-                }
-            } finally {
-                _isPostingComment.value = false
-            }
-        }
-    }
-
-    /**
-     * Like or unlike a comment (top-level or reply). Optimistically flips the
-     * local state, then reverts if the InnerTube action fails. Requires login
-     * and the action params that only arrive on signed-in comment fetches.
-     */
-    fun toggleCommentLike(comment: CommentItem) {
-        val action = (if (comment.isLiked) comment.unlikeParams else comment.likeParams) ?: return
-        val toggled = comment.copy(isLiked = !comment.isLiked)
-        replaceComment(toggled)
-        viewModelScope.launch {
-            if (!youtubeRepository.performCommentAction(action)) {
-                replaceComment(comment)
-            }
-        }
-    }
-
-    /**
-     * Delete one of the user's own comments (top-level or reply). The delete
-     * param only exists on own comments (CommentItem.deleteParams). Optimistic
-     * removal with restore on failure.
-     */
-    fun deleteComment(comment: CommentItem) {
-        val action = comment.deleteParams ?: return
-        val previousComments = _comments.value
-        val previousReplies = _replies.value
-        _comments.value = _comments.value.filterNot { it.commentId == comment.commentId }
-        _replies.value = _replies.value
-            .mapValues { (_, list) -> list.filterNot { it.commentId == comment.commentId } }
-            .filterKeys { it != comment.commentId }
-        viewModelScope.launch {
-            if (!youtubeRepository.performCommentAction(action)) {
-                _comments.value = previousComments
-                _replies.value = previousReplies
-            }
-        }
-    }
-
-    /** Swap a comment (matched by id) in the top-level list and all reply threads. */
-    private fun replaceComment(updated: CommentItem) {
-        _comments.value = _comments.value.map {
-            if (it.commentId == updated.commentId) updated else it
-        }
-        _replies.value = _replies.value.mapValues { (_, list) ->
-            list.map { if (it.commentId == updated.commentId) updated else it }
-        }
+        commentThread.ensureLoaded(video.videoId) { token }
     }
 
     companion object {
         private const val VIDEO_CACHE_OWNER = "video"
-        private val TIMESTAMP_REGEX = Regex("""(?<!\d)(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)""")
 
         /** Marks a [PlayerTrackOption] as a YouTube soundtrack rather than a container track. */
         private const val YOUTUBE_AUDIO_OPTION_PREFIX = "yt-audio:"
@@ -4534,63 +3667,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
         /** How long a surface hand-off's size reports are left to settle before a paused redraw. */
         private const val GRAPH_REDRAW_SETTLE_MS = 150L
-
-        /** Silent re-prepare attempts before a renderer error reaches the UI. */
-        private const val MAX_RENDERER_RETRIES = 2
-
-        /**
-         * Silent re-resolve attempts before a source error reaches the UI. One
-         * is enough: the first pass already remints a rejected visitorData and
-         * fetches brand-new URLs, so a second failure means the video really is
-         * unplayable and the user should get the overlay instead of a spinner.
-         */
-        private const val MAX_SOURCE_RETRIES = 1
-
-        /**
-         * Unplayable videos stepped over in a row before the error overlay wins.
-         *
-         * Three, because that is comfortably more than the run of dead entries a
-         * real playlist has in one place and far fewer than it takes to burn
-         * through a playlist when the network is the thing that is broken. The
-         * count resets on the first video that actually reaches STATE_READY.
-         */
-        private const val MAX_QUEUE_ERROR_SKIPS = 3
-
-        /**
-         * Chat backlog kept in memory. Matches the cap YouTube declares in the
-         * response itself (itemList.liveChatItemListRenderer.maxItemsToDisplay),
-         * so a stream left open for hours cannot grow the list without bound.
-         */
-        private const val MAX_LIVE_CHAT_MESSAGES = 250
-
-        /** Consecutive failed polls tolerated before the chat is given up on. */
-        private const val MAX_LIVE_CHAT_POLL_FAILURES = 3
-        private const val LIVE_CHAT_RETRY_DELAY_MS = 5_000L
-
-        /**
-         * Bounds on the server's requested poll interval. Live streams ask for
-         * 10s; a replay can ask for much less, and a misparse must not turn into
-         * a hot loop.
-         */
-        private const val LIVE_CHAT_MIN_WINDOW_MS = 2_000L
-        private const val LIVE_CHAT_MAX_WINDOW_MS = 30_000L
-
-        /**
-         * Pacing bounds for releasing a batch. The floor keeps a burst from
-         * animating one message per frame; the ceiling stops a sparse batch from
-         * sitting in the queue for seconds when there is nothing behind it.
-         */
-        private const val LIVE_CHAT_MIN_GAP_MS = 45L
-        private const val LIVE_CHAT_MAX_GAP_MS = 700L
-
-        /** Poll interval of the drain loop while the queue is empty. */
-        private const val LIVE_CHAT_DRAIN_IDLE_MS = 120L
-
-        /**
-         * Viewer-count refresh. The endpoint asks for 5s; a phone showing one
-         * number does not need it that often.
-         */
-        private const val LIVE_METADATA_POLL_MS = 25_000L
 
         /**
          * How often the playhead is sampled for the seek bar.
@@ -4619,21 +3695,16 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     override fun onCleared() {
-        connectionWatcher.stop()
+        recovery.close()
         watchTracker.close()
         super.onCleared()
         // Remove quality change listener to prevent leaks
         qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
         qualityChangeListener = null
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = null
-        streamLoadJob?.cancel()
-        streamLoadJob = null
-        watchNextJob?.cancel()
-        watchNextJob = null
+        videoLoader.close()
         progressJob?.cancel()
         progressJob = null
-        stopLivePolling()
+        liveSession.stop()
         // Before the release below, not after: stop() drops the MediaSession
         // synchronously on this thread, and a session outliving the player it
         // wraps crashes the next time Media3 reads state off it.

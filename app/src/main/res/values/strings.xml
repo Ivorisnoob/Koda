@@ -524,7 +524,7 @@
     <string name="cz_info_video_feed">Choose what the Home and Subscriptions feeds show in video mode: community posts, the Shorts shelf, live streams and videos you have already watched.</string>
     <string name="cz_feed_section_mixed_in">In the feed</string>
     <string name="cz_feed_posts">Community posts</string>
-    <string name="cz_feed_posts_sub">Posts from channels you follow, between the videos</string>
+    <string name="cz_feed_posts_sub">Posts from channels you follow, between the videos on Home</string>
     <string name="cz_feed_shorts">Shorts shelf</string>
     <string name="cz_feed_shorts_sub">A row of Shorts near the top of Home</string>
     <string name="cz_feed_shorts_blocked">Shorts are blocked everywhere in Content settings</string>
@@ -1021,6 +1021,9 @@
     <!-- Shorts -->
     <string name="sh_playback_failed">Playback failed</string>
     <string name="cd_close_shorts">Close Shorts</string>
+    <string name="cd_shorts_auto_advance_on">Auto-play next Short: on</string>
+    <string name="cd_shorts_auto_advance_off">Auto-play next Short: off</string>
+    <string name="cd_shorts_pip">Picture-in-picture</string>
     <string name="subscribed">Subscribed</string>
     <string name="subscribe">Subscribe</string>
     <string name="bell_level_all">All</string>
@@ -1512,6 +1515,21 @@
     <string name="sm_import_file_sub">A NewPipe, PipePipe or Tubular export or backup, or a Google Takeout file</string>
     <string name="sm_copy_account">Copy from YouTube account</string>
     <string name="sm_copy_sub">Keeps following these channels after you sign out</string>
+    <string name="sm_sort_by">Sort by</string>
+    <string name="sm_sort_subscription_date">Recently subscribed</string>
+    <string name="sm_sort_name">Name (A–Z)</string>
+    <string name="sm_sort_recent_upload">Most recent upload</string>
+    <string name="sm_sort_subscriber_count">Subscriber count</string>
+    <string name="sm_sort_manual">Manual order</string>
+    <string name="sm_sort_hint">Move channels with the arrows in manual order.</string>
+    <string name="sm_move_up">Move %1$s up</string>
+    <string name="sm_move_down">Move %1$s down</string>
+    <string name="sm_pin_title">Set pinned position</string>
+    <string name="sm_pin_body">Choose which slot in the channel rail %1$s is pinned to.</string>
+    <string name="sm_pin_position_label">Position (1–%1$d)</string>
+    <string name="sm_pin_unpin_hint">Unpinning returns it to the selected sort order.</string>
+    <string name="sm_pin_confirm">Pin position</string>
+    <string name="sm_unpin">Unpin</string>
     <string name="sm_sign_in_first">Sign in to YouTube first</string>
     <string name="sm_export">Export to a file</string>
     <string name="sm_nothing_to_export">Nothing to export yet</string>
@@ -1577,6 +1595,18 @@
     <string name="wifi">Wi-Fi</string>
     <string name="mobile_data">Mobile data</string>
     <string name="ch_post_open_comments">Open comments on this post</string>
+    <string name="ch_post_like">Like this post</string>
+    <string name="ch_post_unlike">Remove your like from this post</string>
+    <string name="sc_tab_videos">Videos</string>
+    <string name="sc_tab_posts">Posts</string>
+    <string name="sc_posts_empty">No posts from the channels you follow yet</string>
+    <string name="sc_posts_empty_channel">%1$s hasn\'t posted anything yet</string>
+    <string name="sc_posts_none_yet">No posts from the channels checked so far</string>
+    <string name="sc_posts_check_more">Check more channels</string>
+    <string name="sc_posts_failed">Couldn\'t load posts. Check your connection and try again.</string>
+    <string name="sc_posts_rate_limited">YouTube is limiting requests right now. Try again in a few minutes.</string>
+    <string name="sc_posts_local_only">Posts aren\'t available in Local Only mode</string>
+    <string name="ch_post_photo_position">Photo %1$d of %2$d</string>
     <string name="ch_post_comments_unavailable">Comments aren\'t available for this post</string>
     <string name="cm_delete_q">Delete comment?</string>
     <string name="cm_delete_body">Your comment will be permanently deleted.</string>
@@ -1614,6 +1644,11 @@
     <string name="vd_already">Already downloaded</string>
     <string name="vd_added">Added to downloads</string>
     <string name="vd_captions_more">%1$d more</string>
+    <string name="vd_download_as">Download as</string>
+    <string name="vd_format_video">Video</string>
+    <string name="vd_format_audio_only">Audio only</string>
+    <string name="vd_audio_track_labelled">%1$s (%2$s)</string>
+    <string name="vd_other_kind_busy">Another download of this video is in progress</string>
     <string name="sd_title">Download song</string>
     <string name="sd_artwork_note">Artwork and lyrics may add a little to the final size.</string>
     <string name="sd_quality">Quality</string>
@@ -2366,4 +2401,12 @@
     <string name="vst_sepia">Sepia</string>
     <string name="vst_edge_glow">Edge glow</string>
     <string name="vst_wobble">Wobble</string>
+
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Sort channels</string>
+    <string name="subscription_sort_most_watched">Most watched</string>
+    <string name="subscription_sort_official">YouTube-style (recent activity)</string>
+    <string name="subscription_sort_recent">Latest uploads first</string>
+    <string name="subscription_sort_name">Channel name (A–Z)</string>
+    <string name="subscription_sort_oldest">Oldest uploads first</string>
 </resources>

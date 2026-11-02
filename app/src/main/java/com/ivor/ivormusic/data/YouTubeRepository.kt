@@ -72,7 +72,7 @@ class YouTubeRepository(private val context: Context) {
     // --- YouTube ---
     private val videoSearch = VideoSearch(context, webApi, newPipeGateway)
     private val watchPage = WatchPage(webApi, sessionManager)
-    private val videoFeeds = VideoFeeds(context, http, webApi, videoSearch, watchPage, sessionManager)
+    private val videoFeeds = VideoFeeds(context, webApi, videoSearch, watchPage, sessionManager)
     private val videoPlaylists = VideoPlaylists(context, webApi, sessionManager)
     private val liveChat = LiveChat(webApi, watchPage, sessionManager)
     private val commentThreads = CommentThreads(webApi, sessionManager)
@@ -155,6 +155,7 @@ class YouTubeRepository(private val context: Context) {
          */
         fun forgetConnectionVerdicts() {
             BotCheckVerdict.reset()
+            VisitorIdentity.resetReplacementBudget()
             YouTubeRateLimit.clear()
             VideoStreamResolutionCache.clear()
         }
@@ -484,6 +485,9 @@ class YouTubeRepository(private val context: Context) {
     suspend fun getChannelAbout(token: String): ChannelAbout? = channelPages.getChannelAbout(token)
 
     suspend fun getChannelPosts(channelId: String): List<ChannelPost> = channelPages.getChannelPosts(channelId)
+
+    suspend fun getChannelPostsOrNull(channelId: String): List<ChannelPost>? =
+        channelPages.getChannelPostsOrNull(channelId)
 
     suspend fun getChannelVideos(channel: SubscribedChannel): List<VideoItem> = channelPages.getChannelVideos(channel)
 

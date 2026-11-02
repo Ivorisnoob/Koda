@@ -360,4 +360,10 @@
     <string name="subscribed">Abonniert</string>
     <string name="subscribe">Abonnieren</string>
     <string name="like">Gefällt mir</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Kanäle sortieren</string>
+    <string name="subscription_sort_official">Wie bei YouTube (letzte Aktivität)</string>
+    <string name="subscription_sort_recent">Neueste Uploads zuerst</string>
+    <string name="subscription_sort_name">Kanalname (A–Z)</string>
+    <string name="subscription_sort_oldest">Älteste Uploads zuerst</string>
 </resources>

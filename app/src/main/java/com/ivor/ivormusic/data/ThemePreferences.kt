@@ -269,6 +269,10 @@ class ThemePreferences(context: Context) {
     private val _shortsCacheEnabled = MutableStateFlow(getShortsCacheEnabledPreference())
     val shortsCacheEnabled: StateFlow<Boolean> = _shortsCacheEnabled.asStateFlow()
 
+    // Off by default: a Short loops until it is swiped, the way it always has.
+    private val _shortsAutoAdvance = MutableStateFlow(prefs.getBoolean(KEY_SHORTS_AUTO_ADVANCE, false))
+    val shortsAutoAdvance: StateFlow<Boolean> = _shortsAutoAdvance.asStateFlow()
+
     private val _playbackPreloadEnabled = MutableStateFlow(getPlaybackPreloadEnabledPreference())
     val playbackPreloadEnabled: StateFlow<Boolean> = _playbackPreloadEnabled.asStateFlow()
     
@@ -497,6 +501,7 @@ class ThemePreferences(context: Context) {
             KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
             KEY_VIDEO_CACHE_ENABLED -> _videoCacheEnabled.value = getVideoCacheEnabledPreference()
             KEY_SHORTS_CACHE_ENABLED -> _shortsCacheEnabled.value = getShortsCacheEnabledPreference()
+            KEY_SHORTS_AUTO_ADVANCE -> _shortsAutoAdvance.value = prefs.getBoolean(KEY_SHORTS_AUTO_ADVANCE, false)
             KEY_PLAYBACK_PRELOAD_ENABLED -> _playbackPreloadEnabled.value = getPlaybackPreloadEnabledPreference()
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
             KEY_AUTO_LOAD_QUEUE -> _autoLoadQueue.value = getAutoLoadQueuePreference()
@@ -994,6 +999,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_CACHE_ENABLED = "cache_enabled"
         private const val KEY_VIDEO_CACHE_ENABLED = "video_cache_enabled"
         private const val KEY_SHORTS_CACHE_ENABLED = "shorts_cache_enabled"
+        private const val KEY_SHORTS_AUTO_ADVANCE = "shorts_auto_advance"
         private const val KEY_PLAYBACK_PRELOAD_ENABLED = "playback_preload_enabled"
 
         /**
@@ -2413,6 +2419,11 @@ class ThemePreferences(context: Context) {
     fun setShortsCacheEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SHORTS_CACHE_ENABLED, enabled).apply()
         _shortsCacheEnabled.value = enabled
+    }
+
+    fun setShortsAutoAdvance(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHORTS_AUTO_ADVANCE, enabled).apply()
+        _shortsAutoAdvance.value = enabled
     }
 
     private fun getPlaybackPreloadEnabledPreference(): Boolean = prefs.getBoolean(KEY_PLAYBACK_PRELOAD_ENABLED, true)

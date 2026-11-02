@@ -1,5 +1,9 @@
 package com.ivor.ivormusic.ui.channel
 
+import androidx.compose.ui.draw.drawBehind
+import com.ivor.ivormusic.video.core.hasVoted
+import com.ivor.ivormusic.video.core.shareRatio
+import com.ivor.ivormusic.video.core.shareText
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -18,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +50,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Visibility
@@ -143,7 +149,8 @@ internal fun LazyGridScope.channelTabContent(
     /** Open post photos in the fullscreen zoomable viewer, at [Int]. */
     onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> },
     /** Open a community post's comments. Required: a default would ship posts with a dead button. */
-    onOpenComments: (ChannelPost) -> Unit
+    onOpenComments: (ChannelPost) -> Unit,
+    postActions: com.ivor.ivormusic.video.PostCardActions
 ) {
     if (tabKind == ChannelTabKind.ABOUT) {
         aboutTab(about = about, isLoading = isAboutLoading)
@@ -198,7 +205,8 @@ internal fun LazyGridScope.channelTabContent(
                 onOpenPlaylist = onOpenPlaylist,
                 onOpenChannel = onOpenChannel,
                 onOpenPhotos = onOpenPhotos,
-                onOpenComments = onOpenComments
+                onOpenComments = onOpenComments,
+                postActions = postActions
             )
         }
     }
@@ -231,6 +239,7 @@ internal fun LazyGridScope.channelTabContent(
     spanItems(page.posts, key = { "post_${it.postId}" }) { post ->
         ChannelPostCard(
             post = post,
+            actions = postActions,
             onPlayVideo = onPlayVideo,
             onOpenPhotos = onOpenPhotos,
             onOpenComments = post.detailParams?.let { { onOpenComments(post) } }
@@ -442,7 +451,8 @@ private fun ChannelShelfRow(
     onOpenPlaylist: (VideoPlaylist) -> Unit,
     onOpenChannel: (String) -> Unit,
     onOpenPhotos: (List<String>, Int) -> Unit = { _, _ -> },
-    onOpenComments: (ChannelPost) -> Unit
+    onOpenComments: (ChannelPost) -> Unit,
+    postActions: com.ivor.ivormusic.video.PostCardActions
 ) {
     Column(modifier = Modifier.bleedHorizontally().fillMaxWidth()) {
         Text(
@@ -483,6 +493,7 @@ private fun ChannelShelfRow(
             items(shelf.posts, key = { "spo_${it.postId}" }) { post ->
                 ChannelPostCard(
                     post = post,
+                    actions = postActions,
                     onPlayVideo = onPlayVideo,
                     onOpenPhotos = onOpenPhotos,
                     onOpenComments = post.detailParams?.let { { onOpenComments(post) } },
@@ -951,13 +962,15 @@ private fun AboutCard(title: String, content: @Composable () -> Unit) {
 /**
  * One community post: text, then whichever single attachment it carried.
  *
- * Images are shown at their natural-ish ratio in a row rather than a grid,
- * because a multi-image post is a carousel on YouTube and cropping four photos
- * into equal squares loses what the post was about.
+ * A single image is shown at its own ratio. A multi-image post is a carousel
+ * on YouTube, so it is one here too: a swipeable pager of square pages with a
+ * page indicator ([PostImageCarousel]), each page opening the fullscreen
+ * viewer on that photo.
  */
 @Composable
 internal fun ChannelPostCard(
     post: ChannelPost,
+    actions: com.ivor.ivormusic.video.PostCardActions,
     onPlayVideo: (VideoItem) -> Unit,
     /** Null when the post has no page of its own to hang comments off. */
     onOpenComments: (() -> Unit)?,
@@ -969,6 +982,7 @@ internal fun ChannelPostCard(
      */
     onAuthorClick: (() -> Unit)? = null
 ) {
+    val shown = actions.edits[post.postId] ?: post
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -1012,13 +1026,14 @@ internal fun ChannelPostCard(
 
             if (!post.text.isBlank) {
                 Spacer(Modifier.height(10.dp))
-                // The post's own link spans, parsed all along and drawn as
-                // plain text until now.
-                Text(
-                    text = com.ivor.ivormusic.ui.components.rememberLinkedText(post.text),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                // Press and hold to select or copy; the links still open on a tap.
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(
+                        text = com.ivor.ivormusic.ui.components.rememberLinkedText(post.text),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
             if (post.images.isNotEmpty()) {
@@ -1034,19 +1049,10 @@ internal fun ChannelPostCard(
                         contentScale = ContentScale.FillWidth
                     )
                 } else {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        itemsIndexed(post.images) { index, image ->
-                            AsyncImage(
-                                model = image,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(180.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .combinedClickableCompat { onOpenPhotos(post.images, index) },
-                                contentScale = ContentScale.Crop
-                            )
-                        }
-                    }
+                    PostImageCarousel(
+                        images = post.images,
+                        onOpenPhoto = { index -> onOpenPhotos(post.images, index) }
+                    )
                 }
             }
 
@@ -1059,57 +1065,24 @@ internal fun ChannelPostCard(
                 )
             }
 
-            if (post.pollChoices.isNotEmpty()) {
+            if (shown.pollChoices.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    post.pollChoices.forEach { choice ->
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ) {
-                            Text(
-                                text = choice.text,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                            )
-                        }
-                    }
-                    post.pollTotalText?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                PostPoll(
+                    post = shown,
+                    showResults = shown.hasVoted || !actions.signedIn,
+                    onChoose = { index -> actions.onPollChoice(shown, index) }
+                )
             }
 
-            if (post.voteCountText != null || post.replyCountText != null || onOpenComments != null) {
-                Spacer(Modifier.height(8.dp))
+            if (shown.voteCountText != null || shown.likeAction != null ||
+                post.replyCountText != null || onOpenComments != null
+            ) {
+                Spacer(Modifier.height(10.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    post.voteCountText?.let {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.ThumbUp,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    PostLikeButton(post = shown, onClick = { actions.onToggleLike(shown) })
                     if (onOpenComments != null) {
                         PostCommentsButton(countText = post.replyCountText, onClick = onOpenComments)
                     } else {
@@ -1126,6 +1099,139 @@ internal fun ChannelPostCard(
         }
     }
 }
+
+/** Like and its count, on the same pill as the comments button beside it. */
+@Composable
+private fun PostLikeButton(post: ChannelPost, onClick: () -> Unit) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val description = stringResource(
+        if (post.isLiked) R.string.ch_post_unlike else R.string.ch_post_like
+    )
+    Surface(
+        onClick = {
+            haptics.subtle()
+            onClick()
+        },
+        shape = CircleShape,
+        color = if (post.isLiked) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        contentColor = if (post.isLiked) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        modifier = Modifier
+            .heightIn(min = 40.dp)
+            .semantics { contentDescription = description }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            Icon(Icons.Rounded.ThumbUp, contentDescription = null, modifier = Modifier.size(18.dp))
+            post.voteCountText?.let { Text(text = it, style = MaterialTheme.typography.labelLarge) }
+        }
+    }
+}
+
+/**
+ * A community poll. Results stay hidden until you vote, as on YouTube, so they
+ * cannot sway the vote; signed out there is no vote to give, so they show.
+ * Tapping your own choice takes the vote back.
+ */
+@Composable
+private fun PostPoll(post: ChannelPost, showResults: Boolean, onChoose: (Int) -> Unit) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        post.pollChoices.forEachIndexed { index, choice ->
+            val share by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (showResults) choice.shareRatio() else 0f,
+                animationSpec = androidx.compose.animation.core.tween(350),
+                label = "pollShare"
+            )
+            val fill = pollFill(choice.isSelected)
+            Surface(
+                onClick = {
+                    haptics.subtle()
+                    onChoose(index)
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Box(contentAlignment = Alignment.CenterStart) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .drawBehind {
+                                drawRect(
+                                    color = fill,
+                                    size = size.copy(width = size.width * share)
+                                )
+                            }
+                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        choice.imageUrl?.let { image ->
+                            AsyncImage(
+                                model = image,
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                        Text(
+                            text = choice.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (choice.isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (choice.isSelected) {
+                            Icon(
+                                Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        if (showResults) {
+                            choice.shareText()?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        post.pollTotalText?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun pollFill(selected: Boolean): androidx.compose.ui.graphics.Color =
+    if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    }
 
 /**
  * The post a comments sheet belongs to, compact: who, when, and the first
@@ -1354,6 +1460,117 @@ internal fun ChannelSearchPane(
         }
     }
 }
+
+/**
+ * A multi-image post's photos as a swipeable pager: square pages cropped the
+ * way YouTube's own carousel crops them, a "2 / 5" badge on the photo and a
+ * row of dots under it. A tap opens the fullscreen viewer on the photo shown.
+ *
+ * The pager sits inside vertical lists (the channel's Posts tab, the
+ * Subscriptions Posts view); a horizontal drag goes to the pager and a
+ * vertical one still scrolls the list. Pages are not keyed by URL, because a
+ * post can carry the same image twice and a duplicate key would crash.
+ */
+@Composable
+private fun PostImageCarousel(
+    images: List<String>,
+    onOpenPhoto: (Int) -> Unit
+) {
+    val pagerState = rememberPagerState { images.size }
+    // A square as wide as a landscape window is taller than that window.
+    val maxSide = minOf(POST_CAROUSEL_MAX_SIDE, com.ivor.ivormusic.ui.theme.windowDpSize().height * 0.8f)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .widthIn(max = maxSide)
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                pageSpacing = 8.dp,
+                beyondViewportPageCount = 1
+            ) { page ->
+                AsyncImage(
+                    model = images[page],
+                    contentDescription = stringResource(
+                        R.string.ch_post_photo_position,
+                        page + 1,
+                        images.size
+                    ),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(14.dp))
+                        .combinedClickableCompat { onOpenPhoto(page) },
+                    contentScale = ContentScale.Crop
+                )
+            }
+            com.ivor.ivormusic.ui.components.ThumbnailBadge(
+                text = "${pagerState.currentPage + 1} / ${images.size}",
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        PostPageIndicator(
+            pageCount = images.size,
+            currentPage = pagerState.currentPage
+        )
+    }
+}
+
+/**
+ * Dots under a post's carousel; the current one stretches into a pill. Past
+ * [MAX_DOTS] pages only the badge on the photo counts, since a row of twenty
+ * dots says nothing a "7 / 20" does not.
+ */
+@Composable
+private fun PostPageIndicator(pageCount: Int, currentPage: Int) {
+    if (pageCount > MAX_DOTS) return
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(pageCount) { index ->
+            val selected = index == currentPage
+            val width by androidx.compose.animation.core.animateDpAsState(
+                targetValue = if (selected) 18.dp else 6.dp,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
+                ),
+                label = "postPageDot"
+            )
+            val color by androidx.compose.animation.animateColorAsState(
+                targetValue = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                },
+                label = "postPageDotColor"
+            )
+            Box(
+                modifier = Modifier
+                    .height(6.dp)
+                    .width(width)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+        }
+    }
+}
+
+private const val MAX_DOTS = 10
+
+/** Widest a post's carousel is drawn, on any surface. */
+private val POST_CAROUSEL_MAX_SIDE = 480.dp
 
 /**
  * `clickable` with the ripple clipped to the shape already applied above it,

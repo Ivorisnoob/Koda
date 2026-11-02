@@ -71,7 +71,13 @@ data class VideoItem(
     /** Last playback position as a fraction; null means no progress was supplied. */
     val watchedProgress: Float? = null,
     /** Snapshot time used to choose between local playback and refreshed account history. */
-    val watchProgressUpdatedAtMs: Long = 0L
+    val watchProgressUpdatedAtMs: Long = 0L,
+    /**
+     * True when the source said this is a Short: a `/shorts/` link in a
+     * channel's Atom feed, or a lockup whose tap opens the Shorts player. Lets
+     * feeds that mix Shorts in with videos honour "Fully block Shorts".
+     */
+    val isShort: Boolean = false
 ) {
     /**
      * Destination understood by the channel screen.
@@ -487,6 +493,25 @@ data class YouTubeAudioTrack(
     val url: String,
 ) {
     val isOriginal: Boolean get() = kind == YouTubeAudioTrackKind.ORIGINAL
+
+    /**
+     * Whether this file is AAC in an MP4 container, judged by the `mime`
+     * parameter googlevideo puts on every media URL. Downloads need it: the MP4
+     * muxer and the `.m4a` a music download is saved as both take AAC only. The
+     * best-format rule already prefers AAC, so this is only false for a track
+     * YouTube served as WebM alone. A URL that names no MIME type is let
+     * through, the way a missing codec is for the video ladder.
+     */
+    val isMp4Audio: Boolean
+        get() {
+            val raw = MIME_PARAM.find(url)?.groupValues?.get(1) ?: return true
+            val mime = runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+            return mime.startsWith("audio/mp4", ignoreCase = true)
+        }
+
+    private companion object {
+        val MIME_PARAM = Regex("""[?&]mime=([^&]*)""")
+    }
 }
 
 /**

@@ -5,6 +5,7 @@ import com.ivor.ivormusic.data.ChannelPost
 import com.ivor.ivormusic.data.RichLink
 import com.ivor.ivormusic.data.RichLinkTarget
 import com.ivor.ivormusic.data.RichText
+import com.ivor.ivormusic.data.linkifyPlainText
 import org.json.JSONObject
 
 // Community posts (backstagePostRenderer) and the rich text inside them. Pure.
@@ -57,7 +58,14 @@ internal fun parseBackstagePost(renderer: JSONObject): ChannelPost? {
                 text = label,
                 imageUrl = bestThumbnail(
                     choice.optJSONObject("image")?.optJSONArray("thumbnails")
-                )
+                ),
+                isSelected = choice.optBoolean("selected"),
+                selectAction = commentAction(choice.optJSONObject("selectServiceEndpoint")),
+                deselectAction = commentAction(choice.optJSONObject("deselectServiceEndpoint")),
+                ratioIfSelected = choice.optRatio("voteRatioIfSelected"),
+                percentIfSelected = getRunText(choice.optJSONObject("votePercentageIfSelected")),
+                ratioIfNotSelected = choice.optRatio("voteRatioIfNotSelected"),
+                percentIfNotSelected = getRunText(choice.optJSONObject("votePercentageIfNotSelected")),
             )
         }
     }.orEmpty()
@@ -65,10 +73,16 @@ internal fun parseBackstagePost(renderer: JSONObject): ChannelPost? {
     // The reply button and the timestamp both link to the post's own page
     // [verified September 2026]; the reply button is the one a comments-off
     // post may lack, so the timestamp is the backstop.
-    val replyButton = renderer.optJSONObject("actionButtons")
+    val actionButtons = renderer.optJSONObject("actionButtons")
         ?.optJSONObject("commentActionButtonsRenderer")
+    val replyButton = actionButtons
         ?.optJSONObject("replyButton")
         ?.optJSONObject("buttonRenderer")
+    val likeButton = actionButtons
+        ?.optJSONObject("likeButton")
+        ?.optJSONObject("toggleButtonRenderer")
+    val likeEndpoint = likeButton?.optJSONObject("defaultServiceEndpoint")
+    val unlikeEndpoint = likeButton?.optJSONObject("toggledServiceEndpoint")
     val detailParams = listOfNotNull(
         replyButton?.optJSONObject("navigationEndpoint"),
         renderer.optJSONObject("publishedTimeText")?.optJSONArray("runs")
@@ -92,9 +106,28 @@ internal fun parseBackstagePost(renderer: JSONObject): ChannelPost? {
         images = images,
         video = video,
         pollChoices = pollChoices,
-        pollTotalText = getRunText(poll?.optJSONObject("totalVotes"))
+        pollTotalText = getRunText(poll?.optJSONObject("totalVotes")),
+        isLiked = renderer.optString("voteStatus") == "LIKE",
+        likeAction = commentAction(likeEndpoint),
+        unlikeAction = commentAction(unlikeEndpoint),
+        likedCountText = votedCountText(likeEndpoint),
+        unlikedCountText = votedCountText(unlikeEndpoint),
     )
 }
+
+/** The token a `performCommentActionEndpoint` carries. Verified November 2026, signed in. */
+private fun commentAction(endpoint: JSONObject?): String? =
+    endpoint?.optJSONObject("performCommentActionEndpoint")?.optString("action")
+        ?.takeIf { it.isNotBlank() }
+
+/** The like count the endpoint's own client action says to show once it has run. */
+private fun votedCountText(endpoint: JSONObject?): String? =
+    endpoint?.optJSONObject("performCommentActionEndpoint")?.optJSONArray("clientActions")
+        ?.optJSONObject(0)?.optJSONObject("updateCommentVoteAction")
+        ?.optJSONObject("voteCount")?.optString("simpleText")?.takeIf { it.isNotBlank() }
+
+private fun JSONObject.optRatio(key: String): Float? =
+    if (has(key)) optDouble(key).takeUnless(Double::isNaN)?.toFloat() else null
 
 /**
  * A legacy `{runs: [...]}` text object as [RichText], keeping the links.
@@ -120,7 +153,13 @@ private fun parseRunListAsRichText(node: JSONObject?): RichText {
         while (end > start && builder[end - 1].isWhitespace()) end--
         if (end > start) links.add(RichLink(start, end, target))
     }
-    return RichText(builder.toString(), links)
+    // A web address typed without a scheme arrives as plain text, not a link
+    // run. YouTube's own spans win wherever the two overlap.
+    val text = builder.toString()
+    val found = linkifyPlainText(text, bareDomains = true).links.filter { candidate ->
+        links.none { candidate.start < it.endExclusive && it.start < candidate.endExclusive }
+    }
+    return RichText(text, (links + found).sortedBy { it.start })
 }
 
 private fun parseRunLinkTarget(command: JSONObject): RichLinkTarget? {
