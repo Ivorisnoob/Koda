@@ -49,7 +49,13 @@ data class Profile(
      * anonymous. Per-profile on purpose: a single global flag would badge the
      * wrong row the moment there is more than one account.
      */
-    val expired: Boolean = false
+    val expired: Boolean = false,
+    /**
+     * The brand channel this profile acts as ([BrandChannel.pageId]), or null
+     * for the Google account's personal channel. A brand channel is its own
+     * row with its own data, sharing a copy of the Google login it came from.
+     */
+    val pageId: String? = null,
 ) {
     val isLocal: Boolean get() = kind == ProfileKind.LOCAL
 }
@@ -125,7 +131,9 @@ class ProfileManager(context: Context) {
     internal fun captureSession(): YouTubeSession? = synchronized(LOCK) {
         val profile = active()
         if (profile.isLocal) return@synchronized null
-        cookiesFor(profile.id)?.let { YouTubeSession(profile.id, prefs.getLong(keyGeneration(profile.id), 0L), it) }
+        cookiesFor(profile.id)?.let {
+            YouTubeSession(profile.id, prefs.getLong(keyGeneration(profile.id), 0L), it, profile.pageId)
+        }
     }
 
     /**
@@ -139,7 +147,7 @@ class ProfileManager(context: Context) {
             val profile = get(session.profileId) ?: return@synchronized null
             if (profile.isLocal || (requireActive && active().id != profile.id)) return@synchronized null
             if (prefs.getLong(keyGeneration(profile.id), 0L) != session.generation) return@synchronized null
-            cookiesFor(profile.id)?.let { session.copy(cookies = it) }
+            cookiesFor(profile.id)?.let { session.copy(cookies = it, pageId = profile.pageId) }
         }
 
     /** Fold rotated cookies into the profile that sent the request. */
@@ -201,6 +209,58 @@ class ProfileManager(context: Context) {
         saveCookiesFor(profile.id, cookies)
         upsert(profile)
         return profile
+    }
+
+    /**
+     * Add a row for [channel], acting through the Google login stored on
+     * [fromProfileId], or return the row that already stands for it.
+     *
+     * A channel is recognised by its datasyncId, which is what
+     * [YouTubeRepository.fetchAccountInfo] stores once a profile's first call
+     * answers, so picking a channel that already has a row switches to that
+     * row instead of adding a second one; a brand channel's page id is the
+     * fallback. A matched row with no session (restored from a backup) or an
+     * expired one is given a copy of [fromProfileId]'s login. Null when
+     * [fromProfileId] has no stored login to copy.
+     */
+    fun addChannelProfile(fromProfileId: String, channel: BrandChannel): Profile? = synchronized(LOCK) {
+        val roster = sharedProfiles!!.value
+        // datasyncId first; a brand channel's page id as well, since it names
+        // that channel whatever format the datasyncId turns out to arrive in.
+        // The personal channel has no page id, so it can only match by
+        // datasyncId.
+        val existing = channel.datasyncId?.let { sync ->
+            roster.firstOrNull { !it.isLocal && it.datasyncId == sync }
+        } ?: channel.pageId?.let { page ->
+            roster.firstOrNull { !it.isLocal && it.pageId == page }
+        }
+        val cookies = cookiesFor(fromProfileId)
+        if (existing != null) {
+            // A row restored from a backup has no session, and an expired one
+            // a dead copy; the login the channel was just picked from can act
+            // as it, so lend it that rather than switching into a row that
+            // asks to be signed into again.
+            if (cookies != null && (existing.expired || cookiesFor(existing.id) == null)) {
+                saveCookiesFor(existing.id, cookies)
+                val repaired = existing.copy(expired = false, pageId = channel.pageId)
+                upsert(repaired)
+                return@synchronized repaired
+            }
+            return@synchronized existing
+        }
+        val login = cookies ?: return@synchronized null
+        val profile = Profile(
+            id = UUID.randomUUID().toString(),
+            kind = ProfileKind.YOUTUBE,
+            name = channel.name,
+            handle = channel.handle,
+            avatarUrl = channel.avatarUrl,
+            datasyncId = channel.datasyncId,
+            pageId = channel.pageId,
+        )
+        saveCookiesFor(profile.id, login)
+        upsert(profile)
+        profile
     }
 
     /** Create a device-only profile. Needs no account and never makes a request. */
@@ -286,7 +346,8 @@ class ProfileManager(context: Context) {
                 handle = null,
                 avatarUrl = null,
                 datasyncId = null,
-                expired = false
+                expired = false,
+                pageId = null
             )
         )
     }
@@ -463,6 +524,7 @@ class ProfileManager(context: Context) {
         put("datasyncId", datasyncId ?: JSONObject.NULL)
         put("addedAt", addedAt)
         put("expired", expired)
+        put("pageId", pageId ?: JSONObject.NULL)
     }
 
     private fun fromJson(obj: JSONObject): Profile? {
@@ -477,7 +539,8 @@ class ProfileManager(context: Context) {
             avatarUrl = str("avatarUrl"),
             datasyncId = str("datasyncId"),
             addedAt = obj.optLong("addedAt", 0L),
-            expired = obj.optBoolean("expired", false)
+            expired = obj.optBoolean("expired", false),
+            pageId = str("pageId")
         )
     }
 

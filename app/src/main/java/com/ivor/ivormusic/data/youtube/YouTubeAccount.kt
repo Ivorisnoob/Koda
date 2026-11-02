@@ -142,6 +142,27 @@ internal class YouTubeAccount(
     }
 
     /**
+     * Every channel the signed-in Google account can act as: its personal
+     * channel and any brand accounts. Null when the request failed, so the
+     * picker can tell that from an account with one channel.
+     */
+    suspend fun fetchBrandChannels(): List<com.ivor.ivormusic.data.BrandChannel>? = withContext(Dispatchers.IO) {
+        sessionManager.captureSession() ?: return@withContext null
+        try {
+            val raw = musicApi.fetchInternalApi("account/accounts_list").takeIf { it.isNotBlank() }
+                ?: return@withContext null
+            val root = JSONObject(raw)
+            if (root.has("error")) return@withContext null
+            parseBrandChannels(root).also { KLog.d(YOUTUBE_TAG, "Account channels: ${it.size}") }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e(YOUTUBE_TAG, "Account channels request failed", e)
+            null
+        }
+    }
+
+    /**
      * One page of the user's notification inbox. Requires login. Null when the
      * request failed, so a caller can tell that from an empty inbox and keep
      * [continuation] to retry.

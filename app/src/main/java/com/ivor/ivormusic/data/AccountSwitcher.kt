@@ -145,6 +145,24 @@ class AccountSwitcher(context: Context) {
     }
 
     /**
+     * Act as [channel] from the active profile's Google login: switch to the
+     * row that already stands for it, or add one and switch to it.
+     *
+     * A brand channel gets a row of its own, not a change to the current one,
+     * because it is a different YouTube identity with its own subscriptions,
+     * history and library, and keeping them in separate rows is what stops
+     * one channel's feed showing up under the other. Returns false when there
+     * is no stored login to act through.
+     */
+    fun useChannel(channel: BrandChannel): Boolean {
+        val from = profileManager.active()
+        if (from.isLocal) return false
+        val profile = profileManager.addChannelProfile(from.id, channel) ?: return false
+        if (!switchTo(profile.id)) invalidateForProfileChange()
+        return true
+    }
+
+    /**
      * The profile a long-press on the avatar would flip to, or null when there
      * is nothing to flip back to yet.
      */

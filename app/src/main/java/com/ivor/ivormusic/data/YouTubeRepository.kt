@@ -236,6 +236,9 @@ class YouTubeRepository(private val context: Context) {
         youtubeAccount.fetchAccountInfo()
     }
 
+    /** The channels (personal and brand) the signed-in account can act as; null on failure. */
+    suspend fun fetchBrandChannels(): List<BrandChannel>? = youtubeAccount.fetchBrandChannels()
+
     suspend fun getNotificationsPage(continuation: String? = null): NotificationPage? =
         youtubeAccount.getNotificationsPage(continuation)
 

@@ -225,7 +225,8 @@ class BackupRepository(context: Context) {
                     handle = profile.handle,
                     avatarUrl = profile.avatarUrl,
                     datasyncId = profile.datasyncId,
-                    addedAt = profile.addedAt
+                    addedAt = profile.addedAt,
+                    pageId = profile.pageId
                 )
             },
             activeProfileId = profileManager.activeProfileId.value.takeIf { it.isNotBlank() },
@@ -495,6 +496,7 @@ class BackupRepository(context: Context) {
                     handle = backup.handle,
                     avatarUrl = backup.avatarUrl,
                     datasyncId = backup.datasyncId,
+                    pageId = backup.pageId,
                     addedAt = backup.addedAt.takeIf { it > 0L } ?: System.currentTimeMillis(),
                     // A restored YouTube profile has an identity and no
                     // session, which is exactly what the expired badge already

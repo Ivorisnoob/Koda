@@ -2414,4 +2414,10 @@
     <string name="subscription_sort_recent">Latest uploads first</string>
     <string name="subscription_sort_name">Channel name (A–Z)</string>
     <string name="subscription_sort_oldest">Oldest uploads first</string>
+    <string name="switch_channel">Switch channel</string>
+    <string name="switch_channel_subtitle">Use a brand account on this Google account</string>
+    <string name="channel_picker_title">Choose a channel</string>
+    <string name="channel_picker_failed">Couldn\'t load your channels. Check your connection and try again.</string>
+    <string name="channel_picker_only_one">This Google account has no brand accounts. Brand accounts you create on YouTube show up here.</string>
+    <string name="cd_current_channel">Current channel</string>
 </resources>
