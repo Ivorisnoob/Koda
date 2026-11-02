@@ -351,6 +351,11 @@ class ThemePreferences(context: Context) {
     // The Playlists tab's, a LibraryPlaylistSort name.
     private val _libraryPlaylistSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_PLAYLIST_SORT, null))
     val libraryPlaylistSort: StateFlow<String?> = _libraryPlaylistSort.asStateFlow()
+    // Playlist ids in the listener's own order, for the Custom sort. Ids that
+    // are not listed right now stay in it: another profile's account playlists
+    // come back to their places when that profile does.
+    private val _libraryPlaylistOrder = MutableStateFlow(readLibraryPlaylistOrder())
+    val libraryPlaylistOrder: StateFlow<List<String>> = _libraryPlaylistOrder.asStateFlow()
 
     // The Subscriptions feed's own controls. Persisted for the reason the
     // Library sort is: they were held in composition state, and the tab lives
@@ -378,6 +383,8 @@ class ThemePreferences(context: Context) {
     // them; centred is the choice. Stored as "centred" so the default is false.
     private val _lyricsCentered = MutableStateFlow(getLyricsCenteredPreference())
     val lyricsCentered: StateFlow<Boolean> = _lyricsCentered.asStateFlow()
+    private val _lyricsRomanized = MutableStateFlow(getLyricsRomanizedPreference())
+    val lyricsRomanized: StateFlow<Boolean> = _lyricsRomanized.asStateFlow()
 
     // Two ways the app suggests things you did not ask for. Stated as what is
     // shown rather than what is hidden, so the switch position and the sentence
@@ -537,6 +544,7 @@ class ThemePreferences(context: Context) {
             KEY_STANDBY_SUGGEST -> _standbySuggest.value = getStandbySuggestPreference()
             KEY_STANDBY_DIM -> _standbyDim.value = getStandbyDimPreference()
             KEY_LYRICS_CENTERED -> _lyricsCentered.value = getLyricsCenteredPreference()
+            KEY_LYRICS_ROMANIZED -> _lyricsRomanized.value = getLyricsRomanizedPreference()
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
@@ -1092,6 +1100,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_LIBRARY_ARTIST_SORT = "library_artist_sort"
         private const val KEY_PLAYLIST_TRACK_SORT_PREFIX = "playlist_track_sort_"
         private const val KEY_LIBRARY_PLAYLIST_SORT = "library_playlist_sort"
+        private const val KEY_LIBRARY_PLAYLIST_ORDER = "library_playlist_order"
         private const val KEY_LIBRARY_ALBUM_SORT = "library_album_sort"
         private const val KEY_SUBSCRIPTION_FEED_PERIOD = "subscription_feed_period"
         private const val KEY_SUBSCRIPTION_FEED_ORDER = "subscription_feed_order"
@@ -1099,6 +1108,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_STANDBY_SUGGEST = "standby_suggest_charging"
         private const val KEY_STANDBY_DIM = "standby_dim_idle"
         private const val KEY_LYRICS_CENTERED = "lyrics_centered"
+        private const val KEY_LYRICS_ROMANIZED = "lyrics_romanized"
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
         private const val KEY_INLINE_PREVIEWS = "inline_previews"
@@ -2746,6 +2756,23 @@ class ThemePreferences(context: Context) {
         _libraryPlaylistSort.value = sortName
     }
 
+    private fun readLibraryPlaylistOrder(): List<String> {
+        val stored = prefs.getString(KEY_LIBRARY_PLAYLIST_ORDER, null) ?: return emptyList()
+        return try {
+            val ids = org.json.JSONArray(stored)
+            List(ids.length()) { ids.getString(it) }
+        } catch (e: org.json.JSONException) {
+            emptyList()
+        }
+    }
+
+    /** Puts [ids] first, in that order, and keeps every id not listed after them. */
+    fun setLibraryPlaylistOrder(ids: List<String>) {
+        val order = (ids + _libraryPlaylistOrder.value).distinct()
+        prefs.edit().putString(KEY_LIBRARY_PLAYLIST_ORDER, org.json.JSONArray(order).toString()).apply()
+        _libraryPlaylistOrder.value = order
+    }
+
     /**
      * How one playlist's tracks are shown, kept per playlist the way other
      * players keep it: "Name:asc" or "Name:desc", a PlaylistTrackSort name and
@@ -2815,6 +2842,14 @@ class ThemePreferences(context: Context) {
     fun setLyricsCentered(centered: Boolean) {
         prefs.edit().putBoolean(KEY_LYRICS_CENTERED, centered).apply()
         _lyricsCentered.value = centered
+    }
+
+    private fun getLyricsRomanizedPreference(): Boolean =
+        prefs.getBoolean(KEY_LYRICS_ROMANIZED, false)
+
+    fun setLyricsRomanized(romanized: Boolean) {
+        prefs.edit().putBoolean(KEY_LYRICS_ROMANIZED, romanized).apply()
+        _lyricsRomanized.value = romanized
     }
 
     private fun getShowRecentSearchesPreference(): Boolean =

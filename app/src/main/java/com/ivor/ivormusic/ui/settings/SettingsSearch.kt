@@ -206,6 +206,10 @@ internal fun buildSettingsSearchIndex(
         "lyrics_alignment", stringResource(R.string.lyrics_alignment), stringResource(R.string.lyrics_settings_title), Icons.Rounded.MusicNote,
         listOf("lyrics", "align", "alignment", "left", "centre", "center", "centered", "justify", "layout")
     ) { onOpenPage(SettingsPage.LYRICS) }
+    entry(
+        "lyrics_romanized", stringResource(R.string.lyrics_romanized), stringResource(R.string.lyrics_settings_title), Icons.Rounded.MusicNote,
+        listOf("lyrics", "romanized", "romanised", "romaji", "pinyin", "phonetic", "transliterate", "japanese", "korean", "chinese", "hindi")
+    ) { onOpenPage(SettingsPage.LYRICS) }
 
     entry("lastfm", stringResource(R.string.lastfm_title), "Last.fm", Icons.Rounded.History,
         listOf("lastfm", "last.fm", "scrobble", "scrobbling", "sync", "api key", "login", "listening history")) {

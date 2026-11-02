@@ -973,6 +973,8 @@
     <string name="cz_standby_summary_menu">From the player menu</string>
     <string name="lyrics_alignment">Alignment</string>
     <string name="lyrics_alignment_sub">How lyric lines line up, in the player and in Standby</string>
+    <string name="lyrics_romanized">Romanized lyrics</string>
+    <string name="lyrics_romanized_sub">Show Latin letters under lines in other scripts. Japanese kanji stay as written</string>
     <string name="lyrics_alignment_left">Left</string>
     <string name="lyrics_alignment_centre">Centre</string>
     <string name="cd_repeat">Repeat</string>
@@ -2231,6 +2233,9 @@
     <string name="lib_sort_shuffle">Shuffle order</string>
     <string name="lib_pl_sort_default">Default</string>
     <string name="lib_pl_sort_creator">Creator</string>
+    <string name="lib_pl_sort_custom">Custom order</string>
+    <string name="lib_pl_arrange_title">Arrange playlists</string>
+    <string name="lib_pl_arrange_hint">Drag a playlist by its handle. Choose Custom order again to come back here.</string>
     <string name="pl_sort_custom">Playlist order</string>
     <string name="pl_sort_title">Title</string>
     <string name="pl_sort_artist">Artist</string>

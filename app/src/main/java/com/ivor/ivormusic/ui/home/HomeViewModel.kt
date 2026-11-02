@@ -1219,7 +1219,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun restoreCachedSubscriptionFeed(): Boolean {
         val interval = themePreferences.subscriptionRefreshMinutes()
         if (interval == com.ivor.ivormusic.data.ThemePreferences.SUBS_REFRESH_ON_OPEN) return false
-        val snapshot = subscriptionFeedCache.read() ?: return false
+        val snapshot = subscriptionFeedCache.read(_selectedGroupId.value) ?: return false
         if (snapshot.key != subscriptionFeedKey() || snapshot.videos.isEmpty()) return false
         val age = System.currentTimeMillis() - snapshot.fetchedAtMs
         if (interval != com.ivor.ivormusic.data.ThemePreferences.SUBS_REFRESH_MANUAL && age > interval * 60_000L) return false
@@ -1749,7 +1749,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 subscriptionFeedContinuation = accountPage.continuation
                 subscriptionFeedTokenUnknown = false
                 if (_subscriptionFeed.value.isNotEmpty()) {
-                    subscriptionFeedCache.write(_subscriptionFeed.value, subscriptionFeedKey())
+                    subscriptionFeedCache.write(_subscriptionFeed.value, subscriptionFeedKey(), _selectedGroupId.value)
                     _subscriptionFeedUpdatedAt.value = System.currentTimeMillis()
                 }
                 if (_subscriptionFeed.value.isEmpty() && (useAccount || channels.isNotEmpty())) {
@@ -2481,7 +2481,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun selectSubscriptionGroup(groupId: String?) {
         if (_selectedGroupId.value == groupId) return
         _selectedGroupId.value = groupId
-        loadSubscriptionFeed(force = true)
+        // A filter is not a refresh: the refresh setting decides, and only a
+        // group never fetched yet has to go out. A load already running was for
+        // the last group, so it queues one for this one rather than racing it.
+        if (_isSubscriptionFeedLoading.value || !restoreCachedSubscriptionFeed()) {
+            loadSubscriptionFeed(force = true)
+        }
     }
 
     /**

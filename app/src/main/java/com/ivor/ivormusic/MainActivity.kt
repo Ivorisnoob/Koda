@@ -1104,6 +1104,19 @@ fun MusicApp(
      * A's "Featured channels" shelf has to push a second entry, or back from B
      * would leave the app rather than return to A.
      */
+    // The page under the player when a commenter's channel was opened. Back
+    // landing on it again, however many channels deep it went, is the way back
+    // to the comments.
+    var commentsReturnEntryId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(navController) {
+        navController.currentBackStackEntryFlow.collect { entry ->
+            if (entry.id == commentsReturnEntryId) {
+                commentsReturnEntryId = null
+                videoPlayerViewModel.returnToComments()
+            }
+        }
+    }
+
     val openChannel: (String) -> Unit = openChannel@{ channelId ->
         if (channelId.isBlank()) return@openChannel
         videoPlayerViewModel.setExpanded(false)
@@ -1850,7 +1863,12 @@ fun MusicApp(
             viewModel = videoPlayerViewModel,
             timedCommentsEnabled = timedCommentsEnabled,
             showRelatedVideos = showRelatedVideos,
-            onOpenChannel = openChannel,
+            onOpenChannel = { channelId ->
+                val leftFrom = navController.currentBackStackEntry?.id
+                val fromComments = videoPlayerViewModel.isLeavingComments
+                openChannel(channelId)
+                if (fromComments) commentsReturnEntryId = leftFrom
+            },
             onListenAsMusic = moveVideoToMusic,
             hostBottomChrome = videoMiniBottomChrome,
             hostChromeFollowOffsetPx = videoMiniFollowOffsetPx,

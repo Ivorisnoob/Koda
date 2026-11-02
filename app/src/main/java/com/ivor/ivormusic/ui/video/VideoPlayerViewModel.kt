@@ -3234,6 +3234,42 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
+    /** Where the comments were when a commenter's channel was opened from them. */
+    data class CommentsReturn(
+        val videoId: String,
+        val firstVisibleItem: Int,
+        val firstVisibleItemOffset: Int,
+    )
+
+    private var commentsReturn: CommentsReturn? = null
+
+    val isLeavingComments: Boolean get() = commentsReturn != null
+
+    fun leaveCommentsAt(firstVisibleItem: Int, firstVisibleItemOffset: Int) {
+        commentsReturn = _currentVideo.value?.let {
+            CommentsReturn(it.videoId, firstVisibleItem, firstVisibleItemOffset)
+        }
+    }
+
+    /** The place left in the comments of the video playing now, once. */
+    fun takeCommentsReturn(): CommentsReturn? {
+        val left = commentsReturn
+        commentsReturn = null
+        return left?.takeIf { it.videoId == _currentVideo.value?.videoId }
+    }
+
+    /**
+     * Back from a commenter's channel: reopens the player on the comments,
+     * unless another video started in the meantime. That one keeps its place.
+     */
+    fun returnToComments() {
+        if (commentsReturn?.videoId == _currentVideo.value?.videoId) {
+            setExpanded(true)
+        } else {
+            commentsReturn = null
+        }
+    }
+
     fun setExpanded(expanded: Boolean) {
         if (_isExpanded.value == expanded) return
         _isExpanded.value = expanded
