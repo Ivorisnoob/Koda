@@ -58,17 +58,13 @@ Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor a
 
 **Playlist editing leftovers** ([#109](https://github.com/Ivorisnoob/Koda/issues/109)). Multi-select from library and search results into a playlist ([#253](https://github.com/Ivorisnoob/Koda/issues/253) is the toolbar for it); a generated cover derived from the playlist's contents rather than only the palette. Know the storage first: each local playlist rewrites its whole `Song` list on every add (`docs/screens.md`).
 
-**Respect reduced motion** ([#112](https://github.com/Ivorisnoob/Koda/issues/112)). Lyrics, motion artwork, the visualizer and the connection card read `ANIMATOR_DURATION_SCALE`; player-style springs and screen entrances do not. Fix with one shared motion vocabulary that collapses when the scale is zero. Decide rather than assume: meaningful transitions (player expanding, a sheet arriving) become instant rather than vanish, and motion-defined styles (Morph, Sticker) need a designed still state.
-
 **Predictive back, the panels.** Every screen stack and overlay is done (`docs/screens.md`). Left: the video player's comments and live-chat panels, its fullscreen quality sheet, and the player style wheel - panels over content, which want their own treatment rather than `PredictiveBackStack`. The cancel path must spring back cleanly.
 
 ### Playback
 
-**YouTube Music-first catalogue** ([#182](https://github.com/Ivorisnoob/Koda/issues/182)). Song/release search and playlist browse already read WEB_REMIX with canonical album links and release metadata. Left: a source-aware result model, deterministic ranking and deduplication (official releases, Topic tracks and album-linked recordings first; live/acoustic/remix kept distinct), parser fixtures per entity, an honest unavailable state, and signed-in/out playback tests. Ordinary YouTube stays an explicit fallback, never a silent substitute.
-
 **Listen as music without the gap.** It ships pause-first. The follow-up: disable the video track at once, have `MusicService` resolve and buffer the same id at the current position, and swap only when it reports ready (the warm-then-swap `prefetchUpcomingSongs` already applies to skips). Tear down one media session as the other comes up, or Bluetooth controls point at the wrong player.
 
-**SABR playback** ([#259](https://github.com/Ivorisnoob/Koda/issues/259)) and **dubbed audio / translated captions** ([#201](https://github.com/Ivorisnoob/Koda/issues/201)) are open; PO tokens are settled as not the fix for extraction (`docs/rules.md`).
+**Dubbed audio / translated captions** ([#201](https://github.com/Ivorisnoob/Koda/issues/201)) are open; PO tokens are settled as not the fix for extraction (`docs/rules.md`).
 
 ### Foundations
 
@@ -98,6 +94,10 @@ Decided against in September and November 2026; each issue's closing comment has
 - **Wear OS, in any form** ([#130](https://github.com/Ivorisnoob/Koda/issues/130), [#169](https://github.com/Ivorisnoob/Koda/issues/169), [#170](https://github.com/Ivorisnoob/Koda/issues/170), [#171](https://github.com/Ivorisnoob/Koda/issues/171)) and **the `:core` module split** ([#133](https://github.com/Ivorisnoob/Koda/issues/133)) standalone playback would need: dropped from the plan in November 2026. For standalone playback, the phone's login cannot leave the device, and a watch battery cannot carry the extra YouTube requests.
 - **One heading system** ([#118](https://github.com/Ivorisnoob/Koda/issues/118)): dropped from the plan in November 2026. Screens keep their own title scales.
 - **The car app quality audit** ([#172](https://github.com/Ivorisnoob/Koda/issues/172)): dropped from the plan in November 2026. It was the checklist for a Play listing.
+- **Spotify Canvas** ([#348](https://github.com/Ivorisnoob/Koda/issues/348)): set aside in November 2026, to come back later. It needs a Spotify sign-in and song matching for a small feature, on access Spotify can change at any time.
+- **YouTube Music-first catalogue** ([#182](https://github.com/Ivorisnoob/Koda/issues/182)): dropped from the plan in November 2026. Song and release search already read WEB_REMIX.
+- **SABR playback** ([#259](https://github.com/Ivorisnoob/Koda/issues/259)): set aside in November 2026, to come back later. Streams work without it today.
+- **Respect reduced motion** ([#112](https://github.com/Ivorisnoob/Koda/issues/112)): set aside in November 2026, to come back later. Lyrics, motion artwork, the visualizer and the connection card already read `ANIMATOR_DURATION_SCALE`; player-style springs and screen entrances do not.
 - **Cast** ([#132](https://github.com/Ivorisnoob/Koda/issues/132)): the first version was removed for not working; the receiver hits YouTube's client restrictions and cannot merge split streams. A rebuild would start from nothing.
 - **Music-video loops behind Canvas** ([#246](https://github.com/Ivorisnoob/Koda/issues/246)): a second stream per song in data, battery and YouTube requests; motion artwork covers it.
 - **Spotify/CSV playlist import** ([#188](https://github.com/Ivorisnoob/Koda/issues/188)): text-only exports mean one search per track and confident wrong matches.
