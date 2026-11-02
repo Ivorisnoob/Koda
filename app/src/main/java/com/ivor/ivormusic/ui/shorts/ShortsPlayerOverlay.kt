@@ -53,6 +53,9 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
@@ -266,6 +269,19 @@ fun ShortsPlayerOverlay(
             viewModel.onPageSelected(page)
         }
     }
+
+    // The ViewModel can move on by itself (auto-advance at the end of a
+    // Short, or the next button in picture-in-picture), so the pager follows
+    // its index. A swipe already set the same index, which makes this a no-op.
+    val currentIndex by viewModel.currentIndex.collectAsState()
+    LaunchedEffect(currentIndex, shorts.size) {
+        if (currentIndex in shorts.indices && currentIndex != pagerState.currentPage &&
+            !pagerState.isScrollInProgress
+        ) {
+            pagerState.animateScrollToPage(currentIndex)
+        }
+    }
+    val autoAdvance by viewModel.autoAdvance.collectAsState()
 
     // Playback progress for the wavy line at the bottom
     var progress by remember { mutableFloatStateOf(0f) }
@@ -510,6 +526,49 @@ fun ShortsPlayerOverlay(
                 color = Color.White
             )
             Spacer(modifier = Modifier.weight(1f))
+            // Loop this Short, or move on to the next one when it ends.
+            IconButton(
+                onClick = { viewModel.setAutoAdvance(!autoAdvance) },
+                shapes = IconButtonDefaults.shapes(),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = if (autoAdvance) {
+                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.95f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f)
+                    },
+                    contentColor = if (autoAdvance) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+            ) {
+                Icon(
+                    imageVector = if (autoAdvance) Icons.Rounded.SkipNext else Icons.Rounded.RepeatOne,
+                    contentDescription = stringResource(
+                        if (autoAdvance) R.string.cd_shorts_auto_advance_on
+                        else R.string.cd_shorts_auto_advance_off
+                    )
+                )
+            }
+            if (activity != null && supportsShortsPip(activity)) {
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = { enterShortsPip(activity, viewModel) },
+                    enabled = currentVideo != null,
+                    shapes = IconButtonDefaults.shapes(),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PictureInPictureAlt,
+                        contentDescription = stringResource(R.string.cd_shorts_pip)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
             // The overflow, in the one piece of chrome this player has that is
             // not the action rail. It cannot go in the rail: that column is a
             // set of single-purpose taps the thumb rests on while swiping, and
