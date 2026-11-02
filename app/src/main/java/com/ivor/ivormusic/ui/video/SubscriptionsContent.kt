@@ -336,6 +336,8 @@ fun SubscriptionsContent(
     // Persist the rail preference independently of this tab's composition.
     val railPreferences = remember(context) { context.getSharedPreferences("subscription_channel_rail", 0) }
     var channelSort by remember(railPreferences) {
+        // OFFICIAL is retained as a stored key for compatibility, but now uses
+        // the original FEchannels/local order instead of a name-sorted list.
         mutableStateOf(railPreferences.getString("sort_mode", "RECENT") ?: "RECENT")
     }
     val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
@@ -484,6 +486,12 @@ fun SubscriptionsContent(
     // ViewModel also warms this before the tab is composed; this non-forced
     // call simply covers account connection without duplicating an in-flight
     // local refresh.
+    LaunchedEffect(isYouTubeConnected, channelSort) {
+        if (isYouTubeConnected && channelSort == "MOST_WATCHED") {
+            viewModel.loadChannelWatchCounts()
+        }
+    }
+
     LaunchedEffect(isYouTubeConnected, localSubscriptions.size) {
         viewModel.loadSubscriptionFeed()
         viewModel.loadSubscriptions()
