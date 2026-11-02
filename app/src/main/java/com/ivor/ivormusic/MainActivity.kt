@@ -1220,8 +1220,9 @@ fun MusicApp(
     // composition, in onUserLeaveHint on Android 11. Match the same proven 4.5
     // eligibility used by VideoPipController: bounds and playback state are not
     // prerequisites for entering PiP.
+    val isShortsOpen by shortsPlayerViewModel.isActive.collectAsState()
     androidx.compose.runtime.SideEffect {
-        onPipStateChanged(overlayVideo != null && isVideoOverlayExpanded)
+        onPipStateChanged((overlayVideo != null && isVideoOverlayExpanded) || isShortsOpen)
     }
 
     // Keep the ViewModel's PiP flag current so it can suppress auto-play
@@ -1283,14 +1284,22 @@ fun MusicApp(
     // Drives the PiP window's shape and its transport controls. Composed above
     // the early return so the package-scoped receiver remains alive when the
     // normal app UI is replaced by the dedicated video-only PiP surface.
-    com.ivor.ivormusic.ui.video.VideoPipController(viewModel = videoPlayerViewModel)
+    com.ivor.ivormusic.ui.video.VideoPipController(
+        viewModel = videoPlayerViewModel,
+        suspended = isShortsOpen
+    )
+    com.ivor.ivormusic.ui.shorts.ShortsPipController(viewModel = shortsPlayerViewModel)
 
     // In system PiP the app is just a video surface. Returning here keeps the
     // NavHost, both players and every overlay out of the composition entirely,
     // rather than letting them draw and animate behind a window nobody can see
     // them in.
     if (isInPipMode) {
-        com.ivor.ivormusic.ui.video.PipVideoSurface(viewModel = videoPlayerViewModel)
+        if (isShortsOpen) {
+            com.ivor.ivormusic.ui.shorts.ShortsPipSurface(viewModel = shortsPlayerViewModel)
+        } else {
+            com.ivor.ivormusic.ui.video.PipVideoSurface(viewModel = videoPlayerViewModel)
+        }
         return
     }
 

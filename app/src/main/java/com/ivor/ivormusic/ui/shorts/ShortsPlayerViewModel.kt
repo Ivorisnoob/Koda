@@ -69,6 +69,19 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private var _exoPlayer: ExoPlayer? = null
     val exoPlayer: ExoPlayer? get() = _exoPlayer
 
+    /**
+     * Move on to the next Short when one finishes, instead of looping it.
+     * Off by default, so a Short keeps looping until it is swiped.
+     */
+    val autoAdvance: StateFlow<Boolean> = themePreferences.shortsAutoAdvance
+
+    fun setAutoAdvance(enabled: Boolean) {
+        themePreferences.setShortsAutoAdvance(enabled)
+    }
+
+    private fun repeatModeFor(autoAdvance: Boolean): Int =
+        if (autoAdvance) Player.REPEAT_MODE_OFF else Player.REPEAT_MODE_ONE
+
     // ---------------- Feed / pager state ----------------
 
     private val notInterestedRepository =
@@ -523,6 +536,11 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     init {
         observeProfileSwitches()
         viewModelScope.launch {
+            autoAdvance.collect { enabled ->
+                _exoPlayer?.repeatMode = repeatModeFor(enabled)
+            }
+        }
+        viewModelScope.launch {
             YouTubeRateLimit.heldUntil.collect {
                 if (YouTubeRateLimit.isHeld()) cancelPrefetch()
             }
@@ -561,8 +579,8 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
             .setHandleAudioBecomingNoisy(true)
             .build().apply {
                 playWhenReady = true
-                // Shorts loop, YouTube-style
-                repeatMode = Player.REPEAT_MODE_ONE
+                // Shorts loop, YouTube-style, unless auto-advance is on
+                repeatMode = repeatModeFor(autoAdvance.value)
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         _isPlaying.value = isPlaying
@@ -570,6 +588,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         _isBuffering.value = playbackState == Player.STATE_BUFFERING
+                        if (playbackState == Player.STATE_ENDED) onShortEnded()
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
@@ -607,6 +626,45 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         playIndex(index)
         prefetchAround(index)
         maybeLoadMore(index)
+    }
+
+    /**
+     * A Short played to its end with auto-advance on (with it off the player
+     * loops and never reaches ENDED). Move to the next one; at the end of the
+     * loaded feed, replay this one rather than stopping on a frozen frame
+     * while the next page is still loading.
+     */
+    private fun onShortEnded() {
+        if (!_isActive.value) return
+        if (!playNext()) {
+            _exoPlayer?.seekTo(0L)
+            playWhenVisible()
+        }
+    }
+
+    /**
+     * Step to the next Short. The pager follows [currentIndex], so this works
+     * the same whether the feed is on screen or the app is in picture-in-picture
+     * with no pager composed. Returns false when there is no next Short yet.
+     */
+    fun playNext(): Boolean {
+        if (!_isActive.value) return false
+        val next = _currentIndex.value + 1
+        if (next > _shorts.value.lastIndex) {
+            maybeLoadMore(_currentIndex.value)
+            return false
+        }
+        onPageSelected(next)
+        return true
+    }
+
+    /** Step back to the previous Short, if there is one. */
+    fun playPrevious(): Boolean {
+        if (!_isActive.value) return false
+        val previous = _currentIndex.value - 1
+        if (previous < 0) return false
+        onPageSelected(previous)
+        return true
     }
 
     /** Called by the pager when the user settles on a page. */
@@ -692,7 +750,14 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     }
 
     fun togglePlayPause() {
-        if (_isPlaying.value) _exoPlayer?.pause() else _exoPlayer?.play()
+        if (_isPlaying.value) _exoPlayer?.pause() else play()
+    }
+
+    /** Resume, restarting a Short that finished at the end of the feed. */
+    fun play() {
+        val player = _exoPlayer ?: return
+        if (player.playbackState == Player.STATE_ENDED) player.seekTo(0L)
+        player.play()
     }
 
     /** Pause without closing (e.g. app backgrounded while a Short is open). */
