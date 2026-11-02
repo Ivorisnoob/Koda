@@ -217,6 +217,21 @@ private fun LyricsContent(
     val duet = remember(lines) { lines.any { it.voice == LyricVoice.DUET } }
     val isSynced = syncType != LyricsSyncType.PLAIN
 
+    // Read here for the reason the alignment is. Off the main thread, and made
+    // again only for a new song: building ICU's rules takes a moment.
+    val context = LocalContext.current
+    val romanize by remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
+        .lyricsRomanized.collectAsState()
+    val romanizedLines by produceState<List<String?>>(emptyList(), lines, romanize) {
+        // Cleared first: the last song's readings must not sit under this one's.
+        value = emptyList()
+        if (romanize) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.ivor.ivormusic.data.LyricsRomanizer.romanize(lines.map { it.text })
+            }
+        }
+    }
+
     // Montserrat for the lyric itself, where it can draw the song's script -
     // see lyricsFitDisplayFont for why that is a question and why it is asked
     // once per song. Null means "leave the theme's font alone", which is what
@@ -340,6 +355,7 @@ private fun LyricsContent(
                         translationY = cascade.offsetFor(index, cascade.frameNanos)
                     },
                     line = line,
+                    romanized = romanizedLines.getOrNull(index),
                     isCurrent = index == currentLineIndex,
                     isSynced = isSynced,
                     onTap = { onSeekTo(line.timeMs) },
@@ -366,10 +382,14 @@ private const val WORD_LINE_DISSOLVE_MS = 320
 private const val DUET_INSET_FRACTION = 0.12f
 
 /** The edge a lyric line is set from. Start and end are mirrored in RTL. */
-internal enum class LyricSide(val boxAlignment: Alignment, val textAlign: TextAlign) {
-    START(Alignment.CenterStart, TextAlign.Start),
-    CENTER(Alignment.Center, TextAlign.Center),
-    END(Alignment.CenterEnd, TextAlign.End),
+internal enum class LyricSide(
+    val boxAlignment: Alignment,
+    val columnAlignment: Alignment.Horizontal,
+    val textAlign: TextAlign,
+) {
+    START(Alignment.CenterStart, Alignment.Start, TextAlign.Start),
+    CENTER(Alignment.Center, Alignment.CenterHorizontally, TextAlign.Center),
+    END(Alignment.CenterEnd, Alignment.End, TextAlign.End),
 }
 
 /**
@@ -471,6 +491,8 @@ private const val CASCADE_TOTAL_NANOS = 1_600_000_000L
 private fun LyricLine(
     modifier: Modifier = Modifier,
     line: LrcLine,
+    /** The line in Latin letters, drawn under it; null where there is none. */
+    romanized: String? = null,
     isCurrent: Boolean,
     isSynced: Boolean,
     onTap: () -> Unit,
@@ -539,6 +561,10 @@ private fun LyricLine(
             ),
         contentAlignment = side.boxAlignment
     ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = side.columnAlignment
+        ) {
         if (wordTimed) {
             // The two views wrap a line identically (see KaraokeWordFlow), so
             // a crossfade between them reads as the colour settling, not as
@@ -589,6 +615,18 @@ private fun LyricLine(
                 color = lineColor,
                 textAlign = side.textAlign
             )
+        }
+        // Stays still under the line: the singing is followed in the line
+        // itself, and word timings describe that script, not this one.
+        if (romanized != null) {
+            Text(
+                text = romanized,
+                style = MaterialTheme.typography.titleMedium,
+                color = onSurfaceColor.copy(alpha = 0.7f),
+                textAlign = side.textAlign,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
         }
     }
 }
