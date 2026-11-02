@@ -92,12 +92,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         readChannelWatchCounts(profileManager.activeProfileId.value)
     )
     val channelWatchCounts: StateFlow<Map<String, Int>> = _channelWatchCounts.asStateFlow()
+    private val _channelWatchCountsProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val channelWatchCountsProgress: StateFlow<Pair<Int, Int>?> = _channelWatchCountsProgress.asStateFlow()
     private var channelWatchCountJob: Job? = null
 
     fun loadChannelWatchCounts() {
         if (channelWatchCountJob?.isActive == true) return
         val session = sessionManager.captureSession() ?: return
         val profileId = profileManager.activeProfileId.value
+        _channelWatchCountsProgress.value = 0 to 0
         channelWatchCountJob = viewModelScope.launch(Dispatchers.IO) {
             val counts = linkedMapOf<String, Int>()
             var continuation: String? = null
@@ -112,6 +115,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     continuation = page.continuation
                     pageCount++
+                    _channelWatchCountsProgress.value = pageCount to counts.values.sum()
                 } while (continuation != null && pageCount < 50)
 
                 // A response from a profile that was switched away from must
@@ -130,6 +134,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 throw e
             } catch (e: Exception) {
                 KLog.w("HomeViewModel", "Unable to build channel watch frequency", e)
+            } finally {
+                _channelWatchCountsProgress.value = null
             }
         }
     }
@@ -137,6 +143,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun clearActiveChannelWatchCounts() {
         channelWatchCountJob?.cancel()
         channelWatchCountJob = null
+        _channelWatchCountsProgress.value = null
         channelWatchPreferences.edit()
             .remove(channelWatchCountsKey(profileManager.activeProfileId.value))
             .apply()
