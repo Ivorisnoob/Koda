@@ -4417,6 +4417,43 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         playlistRepository.setCustomCover(playlistId, source)
     }
 
+    /**
+     * Make a playlist's cover from its own songs' artwork: four different
+     * covers as a grid, or the one cover there is. Different by image, so an
+     * album listed four times is one tile rather than four of the same.
+     *
+     * @return false when no song had artwork that could be read.
+     */
+    suspend fun coverLocalPlaylistFromSongs(playlistId: String, songs: List<Song>): Boolean {
+        val app = getApplication<Application>()
+        val models = songs.asSequence()
+            .mapNotNull { song -> song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl }
+            .distinctBy { it.toString() }
+            .take(12)
+            .toList()
+        val tiles = mutableListOf<android.graphics.Bitmap>()
+        for (model in models) {
+            if (tiles.size == 4) break
+            val bitmap = try {
+                val request = coil.request.ImageRequest.Builder(app)
+                    .data(if (model is String) com.ivor.ivormusic.data.googleImageAtSize(model, 500) else model)
+                    .allowHardware(false)
+                    .size(500)
+                    .build()
+                (coil.Coil.imageLoader(app).execute(request).drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (bitmap != null) tiles += bitmap
+        }
+        // Two or three covers would leave a hole in the grid; the first one
+        // alone reads better than a grid with a gap.
+        val laid = if (tiles.size >= 4) tiles else tiles.take(1)
+        return playlistRepository.setCoverFromArtwork(playlistId, laid)
+    }
+
     /** Drop a chosen cover and go back to the generated one. */
     fun resetLocalPlaylistCover(playlistId: String) {
         viewModelScope.launch {
@@ -4623,11 +4660,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-    suspend fun exportLocalPlaylist(songs: List<Song>, uri: android.net.Uri): Boolean =
+    /** Write a playlist's songs out as m3u8, or as CSV when [csv]. */
+    suspend fun exportPlaylist(songs: List<Song>, uri: android.net.Uri, csv: Boolean = false): Boolean =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
+                val text = if (csv) {
+                    com.ivor.ivormusic.data.PlaylistTransfer.buildCsv(songs)
+                } else {
+                    com.ivor.ivormusic.data.PlaylistTransfer.buildM3u(songs)
+                }
                 getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use {
-                    it.write(com.ivor.ivormusic.data.PlaylistTransfer.buildM3u(songs).toByteArray(Charsets.UTF_8))
+                    it.write(text.toByteArray(Charsets.UTF_8))
                 } != null
             }.getOrDefault(false)
         }
