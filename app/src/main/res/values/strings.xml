@@ -1614,6 +1614,11 @@
     <string name="vd_already">Already downloaded</string>
     <string name="vd_added">Added to downloads</string>
     <string name="vd_captions_more">%1$d more</string>
+    <string name="vd_download_as">Download as</string>
+    <string name="vd_format_video">Video</string>
+    <string name="vd_format_audio_only">Audio only</string>
+    <string name="vd_audio_track_labelled">%1$s (%2$s)</string>
+    <string name="vd_other_kind_busy">Another download of this video is in progress</string>
     <string name="sd_title">Download song</string>
     <string name="sd_artwork_note">Artwork and lyrics may add a little to the final size.</string>
     <string name="sd_quality">Quality</string>
