@@ -366,6 +366,18 @@ fun SubscriptionsContent(
         // the original FEchannels/local order instead of a name-sorted list.
         mutableStateOf(railPreferences.getString("sort_mode", "RECENT") ?: "RECENT")
     }
+
+    // Keep the rail in sync when its primary sort control is changed on the
+    // subscription manager screen without requiring the tab to be recreated.
+    androidx.compose.runtime.DisposableEffect(railPreferences) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == "sort_mode") {
+                channelSort = prefs?.getString("sort_mode", "RECENT") ?: "RECENT"
+            }
+        }
+        railPreferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { railPreferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
     val channelWatchCountsProgress by viewModel.channelWatchCountsProgress.collectAsState()
     val pinnedChannelPositions = remember(context) {
