@@ -21,11 +21,11 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 /**
  * Search on YouTube Music: songs, albums, artists and playlists.
  *
- * Songs and albums ask WEB_REMIX first, because its rows carry the album and
- * artist links that NewPipe's `StreamInfoItem` throws away; NewPipe is the
- * fallback and the only source for artists and playlists. Each query keeps
- * its own cursor so "load more" walks forward instead of repeating page two,
- * and a cursor never crosses from one source to the other.
+ * Every search asks WEB_REMIX first, because its rows carry the album and
+ * artist links that NewPipe's `StreamInfoItem` throws away; NewPipe sits behind
+ * it only as [searchFallbackAllowed] permits. Each query keeps its own cursor
+ * so "load more" walks forward instead of repeating page two, and a cursor
+ * never crosses from one source to the other.
  */
 internal class MusicSearch(
     private val musicApi: MusicApi,
@@ -73,6 +73,9 @@ internal class MusicSearch(
                     searchNextPageCache.remove(query)
                     return@withContext songs
                 }
+            }
+            if (!searchFallbackAllowed(response?.let(::isEmptyMusicSearch) == true)) {
+                return@withContext emptyList()
             }
         }
         try {
@@ -154,14 +157,16 @@ internal class MusicSearch(
 
     /**
      * Search for albums on YouTube Music.
-     * Note: Albums are often returned as PlaylistInfoItem in NewPipe for YouTube Music.
      */
     suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
+        var noResults = false
         musicApi.postMusicMetadata("search", JSONObject().put("query", query)
             .put("params", "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"))?.let { root ->
             val releases = MusicMetadata.releaseRows(root)
             if (releases.isNotEmpty()) return@withContext releases
+            noResults = isEmptyMusicSearch(root)
         }
+        if (!searchFallbackAllowed(noResults)) return@withContext emptyList()
         try {
             val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_ALBUMS), "")
             searchExtractor.fetchPage()
@@ -186,6 +191,14 @@ internal class MusicSearch(
      * Search for artists on YouTube Music.
      */
     suspend fun searchArtists(query: String): List<ArtistItem> = withContext(Dispatchers.IO) {
+        var noResults = false
+        musicApi.postMusicMetadata("search", JSONObject().put("query", query)
+            .put("params", PARAMS_ARTISTS))?.let { root ->
+            val artists = MusicMetadata.artistRows(root)
+            if (artists.isNotEmpty()) return@withContext artists
+            noResults = isEmptyMusicSearch(root)
+        }
+        if (!searchFallbackAllowed(noResults)) return@withContext emptyList()
         try {
             val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_ARTISTS), "")
             searchExtractor.fetchPage()
@@ -211,6 +224,14 @@ internal class MusicSearch(
      * Search for playlists on YouTube Music.
      */
     suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> = withContext(Dispatchers.IO) {
+        var noResults = false
+        musicApi.postMusicMetadata("search", JSONObject().put("query", query)
+            .put("params", PARAMS_PLAYLISTS))?.let { root ->
+            val playlists = MusicMetadata.playlistRows(root)
+            if (playlists.isNotEmpty()) return@withContext playlists
+            noResults = isEmptyMusicSearch(root)
+        }
+        if (!searchFallbackAllowed(noResults)) return@withContext emptyList()
         try {
             val searchExtractor = newPipeGateway.regionalSearchExtractor(query, listOf(FILTER_PLAYLISTS), "")
             searchExtractor.fetchPage()
@@ -231,6 +252,10 @@ internal class MusicSearch(
         }
     }
 }
+
+// The `params` NewPipe's own filters send. Verified November 2026.
+private const val PARAMS_ARTISTS = "Eg-KAQwIABAAGAAgASgAMABqChAEEAMQCRAFEAo%3D"
+private const val PARAMS_PLAYLISTS = "Eg-KAQwIABAAGAAgACgBMABqChAEEAMQCRAFEAo%3D"
 
 // NewPipe's content filters for a YouTube Music search.
 internal const val FILTER_SONGS = "music_songs"
