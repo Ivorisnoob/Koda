@@ -118,6 +118,30 @@ private enum class SubscriptionFeedOrder(val label: String) {
     OLDEST("Oldest first")
 }
 
+private fun parseRailSubscriberCount(value: String?): Long? {
+    if (value.isNullOrBlank()) return null
+    val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\\s*([KMB万億]?)""", RegexOption.IGNORE_CASE)
+        .find(value) ?: return null
+    val raw = match.groupValues[1]
+    val suffix = match.groupValues[2]
+    val normalized = when {
+        ',' !in raw -> raw
+        suffix.isNotEmpty() -> raw.replace(',', '.')
+        raw.substringAfterLast(',').length == 3 -> raw.replace(",", "")
+        else -> raw.replace(',', '.')
+    }
+    val amount = normalized.toDoubleOrNull() ?: return null
+    val multiplier = when (suffix.uppercase()) {
+        "K" -> 1_000.0
+        "M" -> 1_000_000.0
+        "B" -> 1_000_000_000.0
+        "万" -> 10_000.0
+        "億" -> 100_000_000.0
+        else -> 1.0
+    }
+    return (amount * multiplier).toLong()
+}
+
 /**
  * Subscriptions tab for Video Mode. Default view is the subscriptions feed
  * (latest uploads across all subscribed channels) topped by a horizontal
@@ -413,7 +437,7 @@ fun SubscriptionsContent(
                     .thenBy { it.name.lowercase() }
             )
             "SUBSCRIPTION_DATE" -> channels.sortedWith(
-                compareByDescending<SubscribedChannel> { localSubscriptionPositions[it.channelId] ?: Int.MIN_VALUE }
+                compareByDescending<SubscribedChannel> { localSubscriptionDates[it.channelId] ?: Long.MIN_VALUE }
                     .thenBy { it.name.lowercase() }
             )
             "NAME" -> channels.sortedBy { it.name.lowercase() }
