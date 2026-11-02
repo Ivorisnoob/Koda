@@ -120,7 +120,7 @@ private enum class SubscriptionFeedOrder(val label: String) {
 
 private fun parseRailSubscriberCount(value: String?): Long? {
     if (value.isNullOrBlank()) return null
-    val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\\s*([KMB万億]?)""", RegexOption.IGNORE_CASE)
+    val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*([KMB万億]?)""", RegexOption.IGNORE_CASE)
         .find(value) ?: return null
     val raw = match.groupValues[1]
     val suffix = match.groupValues[2]
@@ -409,22 +409,11 @@ fun SubscriptionsContent(
                 ?: newestUploadByName[channel.name.trim().lowercase()]
                 ?: Long.MIN_VALUE
         }.thenBy { it.name.lowercase() }
-        val localSubscriptionPositions = localSubscriptions.mapIndexed { index, item ->
-            item.channelId to index
-        }.toMap()
+        val localSubscriptionDates = localSubscriptions.associate { item ->
+            item.channelId to item.subscribedAt
+        }
         val subscriberCounts = accountChannels.associate { accountChannel ->
-            val raw = accountChannel.subscriberCountText.orEmpty()
-            val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*([KMB万億]?)""", RegexOption.IGNORE_CASE).find(raw)
-            val amount = match?.groupValues?.get(1)?.replace(',', '.')?.toDoubleOrNull()
-            val multiplier = when (match?.groupValues?.get(2)?.uppercase()) {
-                "K" -> 1_000.0
-                "M" -> 1_000_000.0
-                "B" -> 1_000_000_000.0
-                "万" -> 10_000.0
-                "億" -> 100_000_000.0
-                else -> 1.0
-            }
-            accountChannel.channelId to ((amount ?: 0.0) * multiplier).toLong()
+            accountChannel.channelId to parseRailSubscriberCount(accountChannel.subscriberCountText)
         }
         val sortedAll = when (channelSort) {
             "MOST_WATCHED" -> channels.sortedWith(
