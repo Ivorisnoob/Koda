@@ -1159,6 +1159,10 @@ fun HomeScreen(
                                 )
                             } else if (videoModeContent) {
                                 VideoHomeContent(
+                                    navigationHiddenFraction = {
+                                        if (nonExpressiveNavigationBar || useRail || !barHidesOnScroll) 1f
+                                        else floatingToolbarState.hiddenFraction()
+                                    },
                                     compact = compactVideoHome,
                                     inlinePreviews = inlinePreviews,
                                     // Recommendations off: a shuffle across the

@@ -573,7 +573,22 @@ fun VideoPlayerContent(
     var showSleepTimerSheet by remember { mutableStateOf(false) }
 
     // Comments Sheet + Sign-in Dialog State
-    var showCommentsSheet by remember { mutableStateOf(false) }
+    // A page opened from a comment collapses this player, and back brings it
+    // up new: the sheet and its place are read from what was left behind. The
+    // replies stay open on their own, in the comment thread.
+    val commentsReturn = remember { viewModel.takeCommentsReturn() }
+    var showCommentsSheet by remember { mutableStateOf(commentsReturn != null) }
+    val commentsListState = androidx.compose.foundation.lazy.rememberLazyListState(
+        commentsReturn?.firstVisibleItem ?: 0,
+        commentsReturn?.firstVisibleItemOffset ?: 0
+    )
+    val openCommentAuthor: (String) -> Unit = { channelId ->
+        viewModel.leaveCommentsAt(
+            commentsListState.firstVisibleItemIndex,
+            commentsListState.firstVisibleItemScrollOffset
+        )
+        onOpenChannel(channelId)
+    }
     var showSignInDialog by remember { mutableStateOf(false) }
 
     // The sheet outlives the video it was opened on, so playing a live stream
@@ -827,7 +842,8 @@ fun VideoPlayerContent(
                         .fillMaxHeight()
                 ) {
                     CommentsPanel(
-                        onOpenAuthor = onOpenChannel,
+                        onOpenAuthor = openCommentAuthor,
+                        listState = commentsListState,
                         comments = comments,
                         replies = commentReplies,
                         loadingReplyIds = loadingReplyIds,
@@ -1225,7 +1241,8 @@ fun VideoPlayerContent(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         CommentsPanel(
-                            onOpenAuthor = onOpenChannel,
+                            onOpenAuthor = openCommentAuthor,
+                            listState = commentsListState,
                             comments = comments,
                             replies = commentReplies,
                             loadingReplyIds = loadingReplyIds,

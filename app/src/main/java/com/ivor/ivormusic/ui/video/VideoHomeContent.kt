@@ -148,7 +148,14 @@ fun VideoHomeContent(
      * Off by default here as well as in preferences: a caller that has not
      * thought about it gets the feed that does not move on its own.
      */
-    inlinePreviews: Boolean = false
+    inlinePreviews: Boolean = false,
+    /**
+     * How far the floating navigation bar has left, 0 to 1. The top bar follows
+     * it back as soon as the page scrolls up, rather than waiting for the top
+     * of the list. A host whose bar never hides answers 1, and the top bar
+     * stays with the list. Read in the draw phase only.
+     */
+    navigationHiddenFraction: () -> Float
 ) {
     // Null when the setting is off, and then the cards read a null local and
     // draw exactly what they drew before this existed.
@@ -344,6 +351,27 @@ fun VideoHomeContent(
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalInlinePreview provides previewController
             ) {
+            val topBar: @Composable () -> Unit = {
+                VideoTopBarSection(
+                    onProfileClick = onProfileClick,
+                    onSettingsClick = onSettingsClick,
+                    onDownloadsClick = onDownloadsClick,
+                    onNotificationsClick = {
+                        if (isYouTubeConnected) {
+                            viewModel.loadNotifications(force = true)
+                            showNotificationsSheet = true
+                        } else {
+                            onProfileClick()
+                        }
+                    },
+                    viewModel = viewModel,
+                    videoMode = videoMode,
+                    onVideoModeToggle = onVideoModeToggle,
+                    showModeToggle = showModeToggle,
+                    modeToggleState = modeToggleState
+                )
+            }
+            Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -353,26 +381,7 @@ fun VideoHomeContent(
                 verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp)
             ) {
                 // Top Bar
-                item {
-                    VideoTopBarSection(
-                        onProfileClick = onProfileClick,
-                        onSettingsClick = onSettingsClick,
-                        onDownloadsClick = onDownloadsClick,
-                        onNotificationsClick = {
-                            if (isYouTubeConnected) {
-                                viewModel.loadNotifications(force = true)
-                                showNotificationsSheet = true
-                            } else {
-                                onProfileClick()
-                            }
-                        },
-                        viewModel = viewModel,
-                        videoMode = videoMode,
-                        onVideoModeToggle = onVideoModeToggle,
-                        showModeToggle = showModeToggle,
-                        modeToggleState = modeToggleState
-                    )
-                }
+                item { topBar() }
                 
                 // Section title - changes based on whether user is logged in
                 // or recommendations are disabled (in which case subscriptions are shown).
@@ -564,6 +573,28 @@ fun VideoHomeContent(
                 }
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
+            }
+
+            // The list's own top bar comes back only with the top of the list,
+            // so a copy rides with the navigation bar over it. It stays until
+            // the list is fully at the top, where the two lie exactly over each
+            // other and the swap cannot be seen.
+            val scrolledAway by remember(listState) {
+                androidx.compose.runtime.derivedStateOf {
+                    listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                }
+            }
+            if (scrolledAway) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { translationY = -size.height * navigationHiddenFraction() }
+                        .background(backgroundColor)
+                        .padding(top = contentPadding.calculateTopPadding())
+                ) {
+                    topBar()
+                }
+            }
             }
             }
         }

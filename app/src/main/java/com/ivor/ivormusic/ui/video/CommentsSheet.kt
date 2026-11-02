@@ -103,9 +103,10 @@ fun CommentsPanel(
      */
     header: (@Composable () -> Unit)? = null,
     /** Shown when the thread could not be opened at all. */
-    unavailableMessage: String = "Comments are unavailable for this video"
+    unavailableMessage: String = "Comments are unavailable for this video",
+    /** Passed in by a host that brings the panel back where it was left. */
+    listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState()
 ) {
-    val listState = rememberLazyListState()
 
     // Trigger pagination when the user nears the end of the list
     val shouldLoadMore by remember {

@@ -140,6 +140,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -218,8 +219,17 @@ private fun StandbyHost(
                     if (exiting) return
                     exiting = true
                     scope.launch {
-                        offset.animateTo(heightPx, appleSpring(0.42f), initialVelocity = velocity.coerceAtLeast(0f))
-                        currentOnGone()
+                        // In a finally: this animation can be cancelled by anything
+                        // else that moves the sheet, and leaving must still finish.
+                        // [scar] #332: a touch during the exit stopped it short of
+                        // the edge with nothing left to close it. The window stayed
+                        // covered, and the drag handlers refused every later gesture
+                        // or sprang it open again, as if Standby had restarted itself.
+                        try {
+                            offset.animateTo(heightPx, appleSpring(0.42f), initialVelocity = velocity.coerceAtLeast(0f))
+                        } finally {
+                            if (isActive) currentOnGone()
+                        }
                     }
                 }
 
@@ -300,6 +310,7 @@ private fun StandbyHost(
                             var pastThreshold = false
                             detectVerticalDragGestures(
                                 onDragStart = {
+                                    if (exiting) return@detectVerticalDragGestures
                                     tracker.resetTracking()
                                     // Caught mid-flight: start from where it is.
                                     raw = offset.value
@@ -320,6 +331,7 @@ private fun StandbyHost(
                                     scope.launch { offset.snapTo(shown) }
                                 },
                                 onDragEnd = {
+                                    if (exiting) return@detectVerticalDragGestures
                                     val velocity = tracker.calculateVelocity().y
                                     val landing = offset.value + projectedDistance(velocity)
                                     if (landing > heightPx * DISMISS_FRACTION && velocity > -300f) {
@@ -338,7 +350,7 @@ private fun StandbyHost(
                                     }
                                 },
                                 onDragCancel = {
-                                    scope.launch { offset.animateTo(0f, appleSpring(0.42f)) }
+                                    if (!exiting) scope.launch { offset.animateTo(0f, appleSpring(0.42f)) }
                                 },
                             )
                         }
