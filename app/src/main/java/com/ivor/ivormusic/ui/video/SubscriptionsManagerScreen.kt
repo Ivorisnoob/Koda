@@ -168,7 +168,7 @@ fun SubscriptionsManagerScreen(
     val manualPosition = remember(subscriptions) {
         subscriptions.mapIndexed { index, item -> item.channelId to index }.toMap()
     }
-    val sortedSubscriptions = remember(subscriptions, sortMode, accountCounts, latestUploadByChannel, manualPosition) {
+    val sortedSubscriptions = remember(subscriptions, sortMode, accountCounts, latestUploadByChannel, manualPosition, channelWatchCounts) {
         when (sortMode) {
             ManagedSubscriptionSort.SUBSCRIPTION_DATE -> subscriptions.sortedByDescending { it.subscribedAt }
             ManagedSubscriptionSort.NAME -> subscriptions.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
