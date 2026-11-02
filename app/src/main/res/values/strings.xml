@@ -2414,4 +2414,49 @@
     <string name="subscription_sort_recent">Latest uploads first</string>
     <string name="subscription_sort_name">Channel name (A–Z)</string>
     <string name="subscription_sort_oldest">Oldest uploads first</string>
+    <string name="sel_select">Select</string>
+    <string name="sel_select_subtitle">Pick more songs to add, queue or download together</string>
+    <string name="sel_close">Stop selecting</string>
+    <string name="sel_select_all">Select all</string>
+    <string name="sel_select_none">Clear selection</string>
+    <string name="sel_add_to_playlist">Add to playlist</string>
+    <string name="sel_remove">Remove from playlist</string>
+    <string name="sel_nothing_to_download">Those songs are already on this device</string>
+    <string name="sel_already_in_playlist">Those songs are already in %1$s</string>
+    <plurals name="sel_count">
+        <item quantity="one">%d song selected</item>
+        <item quantity="other">%d songs selected</item>
+    </plurals>
+    <plurals name="sel_played_next">
+        <item quantity="one">%d song plays next</item>
+        <item quantity="other">%d songs play next</item>
+    </plurals>
+    <plurals name="sel_queued">
+        <item quantity="one">Added %d song to the queue</item>
+        <item quantity="other">Added %d songs to the queue</item>
+    </plurals>
+    <plurals name="sel_downloading">
+        <item quantity="one">Downloading %d song</item>
+        <item quantity="other">Downloading %d songs</item>
+    </plurals>
+    <plurals name="sel_added_to_playlist">
+        <item quantity="one">Added %1$d song to %2$s</item>
+        <item quantity="other">Added %1$d songs to %2$s</item>
+    </plurals>
+    <plurals name="sel_removed">
+        <item quantity="one">Removed %d song</item>
+        <item quantity="other">Removed %d songs</item>
+    </plurals>
+    <string name="pl_export_title">Export playlist</string>
+    <string name="pl_export_m3u">M3U8 playlist</string>
+    <string name="pl_export_m3u_sub">Opens in Metrolist, ArchiveTune, VLC and most music players</string>
+    <string name="pl_export_csv">CSV spreadsheet</string>
+    <string name="pl_export_csv_sub">For spreadsheets and playlist transfer services, with a link to each song</string>
+    <plurals name="pl_export_count">
+        <item quantity="one">%d song, with its title, artist and length</item>
+        <item quantity="other">%d songs, with their titles, artists and lengths</item>
+    </plurals>
+    <string name="lib_cover_from_songs">Cover from songs</string>
+    <string name="lib_cover_from_songs_done">Cover made from your songs</string>
+    <string name="lib_cover_from_songs_failed">Couldn\'t load the songs\' artwork</string>
 </resources>

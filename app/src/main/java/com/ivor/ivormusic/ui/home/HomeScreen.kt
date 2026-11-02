@@ -681,6 +681,20 @@ fun HomeScreen(
     // level, and the Library's sub-routes would each otherwise need their own.
     var songOptionsTarget by remember { mutableStateOf<Song?>(null) }
 
+    // Songs picked to act on together. It belongs to the page it was started
+    // on, so another tab, the other mode or the full player ends it; and while
+    // it is on, the navigation bar is the deck of actions, so it is brought
+    // back into view if a scroll had sent it away.
+    val songSelection = com.ivor.ivormusic.ui.components.LocalSongSelection.current
+    LaunchedEffect(selectedTab, videoMode) { songSelection.clear() }
+    LaunchedEffect(showPlayerSheet) { if (showPlayerSheet) songSelection.clear() }
+    LaunchedEffect(songSelection.isActive) {
+        if (songSelection.isActive) {
+            floatingToolbarState.offset = 0f
+            floatingToolbarState.contentOffset = 0f
+        }
+    }
+
     // Update check state
     val updateRepository = remember { UpdateRepository() }
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
@@ -1830,11 +1844,20 @@ fun HomeScreen(
                 }
             }
         } else {
+            // Gives way to the selection deck in the same place, so the bar
+            // reads as changing what it holds rather than being replaced.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !songSelection.isActive,
+                enter = androidx.compose.animation.fadeIn() +
+                    androidx.compose.animation.scaleIn(initialScale = 0.9f),
+                exit = androidx.compose.animation.fadeOut() +
+                    androidx.compose.animation.scaleOut(targetScale = 0.9f),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
             HorizontalFloatingToolbar(
                 expanded = true,
                 scrollBehavior = if (barHidesOnScroll) floatingToolbarScrollBehavior else null,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 20.dp)
                     .navBarScrub(navScrub),
@@ -1916,6 +1939,23 @@ fun HomeScreen(
                         }
                     }
                 }
+            )
+            }
+        }
+
+        // Where the bar for picked songs stands: in the floating bar's own
+        // place, and above a standard bar or the mini player beside a rail,
+        // which stay where they are.
+        if (!videoMode) {
+            SongSelectionDeck(
+                homeViewModel = viewModel,
+                playerViewModel = playerViewModel,
+                bottomPadding = when {
+                    useRail -> 96.dp
+                    nonExpressiveNavigationBar -> 92.dp
+                    else -> 20.dp
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
 
@@ -2109,7 +2149,8 @@ fun HomeScreen(
             } else null,
             onBlockArtist = if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) {
                 { viewModel.blockArtist(song) }
-            } else null
+            } else null,
+            onSelect = { songSelection.start(song) }
         )
     }
 
