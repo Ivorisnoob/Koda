@@ -19,10 +19,6 @@
     <string name="widget_tap_to_listen">Toque para ouvir</string>
     <string name="widget_pulse_label">Pulse</string>
     <string name="widget_pulse_description">Capa, faixa e reprodução; inclui barra de progresso e controles de pular</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Apenas os controles, com reprodução aleatória e repetição</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Reprodutor vertical com capa, progresso e todos os controles</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">O que está tocando e o que vem a seguir; toque em uma faixa para pular para ela</string>
     <string name="widget_bloom_label">Bloom</string>
@@ -993,8 +989,6 @@
     <string name="pd_already_complete">Já disponível offline</string>
     <string name="pd_download_full">Baixar playlist completa</string>
     <!-- Library detail -->
-    <string name="cd_close_menu">Fechar menu</string>
-    <string name="cd_library_actions">Ações da biblioteca</string>
     <string name="ready_offline">Pronto para uso offline</string>
     <string name="lib_everything_in_order">Tudo o que você reproduz, em ordem</string>
     <string name="lib_edit_playlist">Editar playlist</string>
@@ -1054,7 +1048,6 @@
     <!-- Library top level -->
     <string name="library_empty_title">Sua biblioteca está vazia</string>
     <string name="library_empty_subtitle">As músicas que você baixar ou curtir aparecerão aqui</string>
-    <string name="library_create_playlist_hint">Crie uma usando o botão + abaixo</string>
     <string name="fab_downloads">Downloads</string>
     <string name="fab_listening_history">Histórico de reprodução</string>
     <string name="fab_statistics">Estatísticas</string>
@@ -1421,4 +1414,9 @@
         <item quantity="one">%1$d música salva em %2$s</item>
         <item quantity="other">%1$d músicas salvas em %2$s</item>
     </plurals>
+    <string name="subscription_channel_sort">Ordenar canais</string>
+    <string name="subscription_sort_name">Nome do canal (A–Z)</string>
+    <string name="subscription_sort_official">Estilo YouTube (atividade recente)</string>
+    <string name="subscription_sort_oldest">Uploads mais antigos primeiro</string>
+    <string name="subscription_sort_recent">Uploads mais recentes primeiro</string>
 </resources>
