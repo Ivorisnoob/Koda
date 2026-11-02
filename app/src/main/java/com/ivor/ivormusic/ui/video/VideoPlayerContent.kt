@@ -201,36 +201,38 @@ fun VideoPlayerContent(
     val sleepTimerEndOfVideo by viewModel.sleepTimerEndOfVideo.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
-    val connectionAdvice by viewModel.connectionAdvice.collectAsState()
+    val connectionAdvice by viewModel.recovery.connectionAdvice.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     // Account subscription OR device subscription - engagement only knows the
     // first, and read alone it showed "Subscribe" for locally followed channels.
     val isSubscribedToChannel by viewModel.isSubscribedToChannel.collectAsState()
     val bellWrites by viewModel.bellWrites.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
-    val comments by viewModel.comments.collectAsState()
-    val isCommentsLoading by viewModel.isCommentsLoading.collectAsState()
-    val isLoadingMoreComments by viewModel.isLoadingMoreComments.collectAsState()
-    val commentReplies by viewModel.replies.collectAsState()
-    val loadingReplyIds by viewModel.loadingReplyIds.collectAsState()
+    val commentThread = viewModel.commentThread
+    val comments by commentThread.comments.collectAsState()
+    val isCommentsLoading by commentThread.isLoading.collectAsState()
+    val isLoadingMoreComments by commentThread.isLoadingMore.collectAsState()
+    val commentReplies by commentThread.replies.collectAsState()
+    val loadingReplyIds by commentThread.loadingReplyIds.collectAsState()
     val timedComments by viewModel.timedComments.collectAsState()
-    val canComment by viewModel.canComment.collectAsState()
-    val isPostingComment by viewModel.isPostingComment.collectAsState()
+    val canComment by commentThread.canComment.collectAsState()
+    val isPostingComment by commentThread.isPosting.collectAsState()
     val videoPlaylists by viewModel.videoPlaylists.collectAsState()
     val isVideoPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
     val isLive by viewModel.isLive.collectAsState()
     val liveTargetOffsetMs by viewModel.liveTargetOffsetMs.collectAsState()
     val isLocalPlayback by viewModel.isLocalPlayback.collectAsState()
     val isPortraitVideo by viewModel.isPortraitVideo.collectAsState()
-    val liveViewerCount by viewModel.liveViewerCount.collectAsState()
-    val liveChatMessages by viewModel.liveChatMessages.collectAsState()
-    val liveChatBanner by viewModel.liveChatBanner.collectAsState()
-    val isLiveChatAvailable by viewModel.isLiveChatAvailable.collectAsState()
-    val isLiveChatLoading by viewModel.isLiveChatLoading.collectAsState()
-    val canSendLiveChat by viewModel.canSendLiveChat.collectAsState()
-    val isSendingLiveChat by viewModel.isSendingLiveChat.collectAsState()
-    val liveChatMaxLength by viewModel.liveChatMaxLength.collectAsState()
-    val liveChatRestriction by viewModel.liveChatRestriction.collectAsState()
+    val liveSession = viewModel.liveSession
+    val liveViewerCount by liveSession.viewerCount.collectAsState()
+    val liveChatMessages by liveSession.chatMessages.collectAsState()
+    val liveChatBanner by liveSession.chatBanner.collectAsState()
+    val isLiveChatAvailable by liveSession.isChatAvailable.collectAsState()
+    val isLiveChatLoading by liveSession.isChatLoading.collectAsState()
+    val canSendLiveChat by liveSession.canSendChat.collectAsState()
+    val isSendingLiveChat by liveSession.isSendingChat.collectAsState()
+    val liveChatMaxLength by liveSession.chatMaxLength.collectAsState()
+    val liveChatRestriction by liveSession.chatRestriction.collectAsState()
 
     val selectableQualities by viewModel.selectableQualities.collectAsState()
 
@@ -449,7 +451,7 @@ fun VideoPlayerContent(
     // so it needs the poll running without anyone opening a panel.
     val liveChatOnScreen = isLive && (showLiveChat || verticalLiveImmersive)
     LaunchedEffect(liveChatOnScreen, isLive) {
-        if (liveChatOnScreen) viewModel.ensureLiveChatStarted() else viewModel.stopLiveChat()
+        if (liveChatOnScreen) liveSession.ensureChatStarted() else liveSession.stopChat()
         if (!isLive) showLiveChat = false
     }
 
@@ -767,7 +769,7 @@ fun VideoPlayerContent(
                 onZoomedToFillChange = { isZoomedToFill = it },
                 zoomToFillAvailable = zoomToFillAvailable,
                 videoAspectRatio = videoAspectRatio,
-                onRetry = { viewModel.retryPlayback() }
+                onRetry = { viewModel.recovery.retry() }
             )
 
                 // Timed comments are anchored to a position in a finished
@@ -834,16 +836,14 @@ fun VideoPlayerContent(
                         commentsAvailable = commentsToken != null,
                         canComment = canComment,
                         isPosting = isPostingComment,
-                        onLoadMore = { viewModel.loadMoreComments() },
-                        onLoadReplies = { viewModel.loadReplies(it) },
-                        onPostComment = { viewModel.postComment(it) },
-                        onPostReply = { target, threadParent, text ->
-                            viewModel.postReply(target, threadParent, text)
-                        },
+                        onLoadMore = commentThread::loadMore,
+                        onLoadReplies = commentThread::loadReplies,
+                        onPostComment = commentThread::postComment,
+                        onPostReply = commentThread::postReply,
                         onLikeComment = { comment ->
-                            requireLogin { viewModel.toggleCommentLike(comment) }
+                            requireLogin { commentThread.toggleLike(comment) }
                         },
-                        onDeleteComment = { comment -> viewModel.deleteComment(comment) },
+                        onDeleteComment = commentThread::delete,
                         onDismiss = { showCommentsSheet = false },
                         onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
                         modifier = Modifier
@@ -878,7 +878,7 @@ fun VideoPlayerContent(
                         maxMessageLength = liveChatMaxLength,
                         restriction = liveChatRestriction,
                         onSend = { body, onFailure ->
-                            viewModel.sendLiveChatMessage(body, onFailure)
+                            liveSession.sendChatMessage(body, onFailure)
                         },
                         onDismiss = { showLiveChat = false },
                         compact = true,
@@ -965,7 +965,7 @@ fun VideoPlayerContent(
                     onSettings = { showPlaybackSettings = true },
                     onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },
-                    onRetry = { viewModel.retryPlayback() },
+                    onRetry = { viewModel.recovery.retry() },
                     onMinimizeDragDelta = onMinimizeDragDelta,
                     onMinimizeDragRelease = onMinimizeDragRelease
                 )
@@ -993,7 +993,7 @@ fun VideoPlayerContent(
                         maxMessageLength = liveChatMaxLength,
                         restriction = liveChatRestriction,
                         onSend = { body, onFailure ->
-                            viewModel.sendLiveChatMessage(body, onFailure)
+                            liveSession.sendChatMessage(body, onFailure)
                         },
                         onDismiss = { showLiveChat = false },
                         modifier = Modifier.fillMaxSize()
@@ -1103,7 +1103,7 @@ fun VideoPlayerContent(
                             onMinimizeDragDelta(delta)
                         },
                         onMinimizeDragRelease = onMinimizeDragRelease,
-                        onRetry = { viewModel.retryPlayback() }
+                        onRetry = { viewModel.recovery.retry() }
                     )
 
                     if (timedCommentsFeatureEnabled && timedCommentsActive && !isLive) {
@@ -1234,14 +1234,12 @@ fun VideoPlayerContent(
                             commentsAvailable = engagement?.commentsToken != null,
                             canComment = canComment,
                             isPosting = isPostingComment,
-                            onLoadMore = { viewModel.loadMoreComments() },
-                            onLoadReplies = { viewModel.loadReplies(it) },
-                            onPostComment = { viewModel.postComment(it) },
-                            onPostReply = { target, threadParent, text ->
-                                viewModel.postReply(target, threadParent, text)
-                            },
-                            onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
-                            onDeleteComment = { comment -> viewModel.deleteComment(comment) },
+                            onLoadMore = commentThread::loadMore,
+                            onLoadReplies = commentThread::loadReplies,
+                            onPostComment = commentThread::postComment,
+                            onPostReply = commentThread::postReply,
+                            onLikeComment = { comment -> requireLogin { commentThread.toggleLike(comment) } },
+                            onDeleteComment = commentThread::delete,
                             onDismiss = { showCommentsSheet = false },
                             modifier = Modifier.fillMaxSize(),
                             onSeekTo = { seconds ->
@@ -1275,7 +1273,7 @@ fun VideoPlayerContent(
                             maxMessageLength = liveChatMaxLength,
                             restriction = liveChatRestriction,
                             onSend = { body, onFailure ->
-                                viewModel.sendLiveChatMessage(body, onFailure)
+                                liveSession.sendChatMessage(body, onFailure)
                             },
                             onDismiss = { showLiveChat = false },
                             modifier = Modifier.fillMaxSize()

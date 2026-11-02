@@ -1,12 +1,14 @@
 package com.ivor.ivormusic.data.youtube
 
 import android.content.Context
+import com.ivor.ivormusic.data.RequestPriority
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ShortsFeedPage
 import com.ivor.ivormusic.data.ShortsItem
 import com.ivor.ivormusic.data.VideoFeedPage
 import com.ivor.ivormusic.data.VideoHistoryRepository
 import com.ivor.ivormusic.data.VideoItem
+import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeSession
 import com.ivor.ivormusic.data.isMissingChannelName
 import com.ivor.ivormusic.data.items
@@ -16,13 +18,11 @@ import com.ivor.ivormusic.data.videoListContinuationToken
 import com.ivor.ivormusic.util.KLog
 import java.io.IOException
 import java.time.Year
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -35,7 +35,6 @@ import org.json.JSONObject
  */
 internal class VideoFeeds(
     private val context: Context,
-    private val http: YouTubeHttp,
     private val webApi: WebApi,
     private val videoSearch: VideoSearch,
     private val watchPage: WatchPage,
@@ -58,25 +57,36 @@ internal class VideoFeeds(
         KLog.d(YOUTUBE_TAG, "getTrendingVideos - isLoggedIn: $isLoggedIn")
 
         if (isLoggedIn) {
-            try {
-                val page = getPersonalizedVideoRecommendations()
-                if (page.videos.isNotEmpty()) {
-                    KLog.d(YOUTUBE_TAG, "Got ${page.videos.size} personalized videos (continuation=${page.continuation != null})")
-                    return@withContext page
-                }
-                KLog.w(YOUTUBE_TAG, "Personalized recommendations empty, using taste-based feed")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                KLog.e(YOUTUBE_TAG, "Error fetching personalized videos", e)
+            val page = getPersonalizedVideoRecommendations()
+            if (page != null && page.videos.isNotEmpty()) {
+                KLog.d(YOUTUBE_TAG, "Got ${page.videos.size} personalized videos (continuation=${page.continuation != null})")
+                return@withContext page
             }
+            KLog.w(
+                YOUTUBE_TAG,
+                if (page == null) "Personalized feed request failed" else "Personalized feed empty",
+            )
+            // Each fallback below is several requests: six watch-next calls at
+            // once for the taste feed, a search after it. [scar] They used to
+            // follow a 429 on the account's own feed straight to the server
+            // that had just refused it, and the 429 itself was never recorded.
+            if (YouTubeRateLimit.isHeld()) return@withContext VideoFeedPage(emptyList())
         }
+        // Signed in, these stand in for a feed that failed, so they are the
+        // app's own work and stop the moment a hold begins. Signed out they
+        // are the feed itself, which someone is waiting for.
+        withContext(if (isLoggedIn) RequestPriority.Automatic else EmptyCoroutineContext) {
+            fallbackVideoFeed()
+        }
+    }
 
+    /** What Home shows without the account's own feed: the taste mix, else a search. */
+    private suspend fun fallbackVideoFeed(): VideoFeedPage {
         try {
             val tasteFeed = getTasteBasedVideos()
             if (tasteFeed.isNotEmpty()) {
                 KLog.d(YOUTUBE_TAG, "Got ${tasteFeed.size} taste-based videos")
-                return@withContext VideoFeedPage(tasteFeed)
+                return VideoFeedPage(tasteFeed)
             }
         } catch (e: CancellationException) {
             throw e
@@ -84,8 +94,10 @@ internal class VideoFeeds(
             KLog.e(YOUTUBE_TAG, "Error building taste-based feed", e)
         }
 
-        // Cold start: nothing watched yet and not logged in
-        try {
+        // Cold start: nothing watched yet. Not into a limit that began while
+        // the taste feed was being asked for.
+        if (YouTubeRateLimit.isHeld()) return VideoFeedPage(emptyList())
+        return try {
             VideoFeedPage(videoSearch.searchVideos("trending videos ${Year.now().value}"))
         } catch (e: CancellationException) {
             throw e
@@ -96,69 +108,41 @@ internal class VideoFeeds(
     }
 
     /**
-     * Get personalized video recommendations from YouTube (requires login).
-     * Uses the YouTube homepage API to get personalized suggestions. The
-     * returned page carries the rich-grid continuation token so the home feed
-     * can keep loading (feed shape verified July 2026).
+     * The account's own Home feed (`FEwhat_to_watch`), with the rich-grid
+     * continuation so it can keep loading (feed shape verified July 2026).
+     *
+     * Null when the request failed, as opposed to an empty page YouTube
+     * actually sent: the caller falls back differently for the two.
+     *
+     * [scar] This was the one call in the app built by hand: a Chrome 120
+     * User-Agent against a 2026 client version, no visitorData and none of the
+     * client headers every other WEB call sends, and the body parsed whatever
+     * the status - so a 429 was never recorded, and `logged_in=0` never marked
+     * the session expired. It now goes through [WebApi.postWatchApi] like the
+     * rest. [verified October 2026, signed in, `.probe/scratch/home_feed_session_probe.py`:
+     * both shapes `logged_in=1`, 26 lockups and a continuation]
      */
-    private suspend fun getPersonalizedVideoRecommendations(): VideoFeedPage = withContext(Dispatchers.IO) {
-        val empty = VideoFeedPage(emptyList())
-        val session = sessionManager.captureSession() ?: return@withContext empty
-        val origin = "https://www.youtube.com"
-
-        // Use YouTube browse endpoint for "What to Watch" (home page recommendations)
-        val url = "https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false"
-        
-        val jsonBody = """
-            {
-                "context": {
-                    "client": {
-                        "clientName": "WEB",
-                        "clientVersion": "$WEB_VERSION",
-                        "hl": "en",
-                        "gl": "${http.contentRegion()}",
-                        "originalUrl": "https://www.youtube.com/",
-                        "platform": "DESKTOP"
-                    },
-                    "user": {
-                        "lockedSafetyMode": false
-                    }
-                },
-                "browseId": "FEwhat_to_watch"
-            }
-        """.trimIndent()
-
-        val request = Request.Builder()
-            .url(url)
-            .post(jsonBody.toRequestBody("application/json".toMediaType()))
-            .authenticate(session, origin)
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .addHeader("Origin", origin)
-            .addHeader("Referer", "$origin/")
-            .addHeader("X-Origin", origin)
-            .addHeader("Accept", "*/*")
-            .addHeader("Accept-Language", "en-US,en;q=0.9")
-            .build()
-
+    private suspend fun getPersonalizedVideoRecommendations(): VideoFeedPage? = withContext(Dispatchers.IO) {
+        val session = sessionManager.captureSession() ?: return@withContext VideoFeedPage(emptyList())
+        val context = webApi.webContext().apply {
+            optJSONObject("client")
+                ?.put("originalUrl", "https://www.youtube.com/")
+                ?.put("platform", "DESKTOP")
+            put("user", JSONObject().put("lockedSafetyMode", false))
+        }
+        val body = JSONObject().put("context", context).put("browseId", "FEwhat_to_watch")
+        // postWatchApi has already logged an HTTP failure or a changed login.
+        val raw = webApi.postWatchApi("browse", body, session) ?: return@withContext null
         try {
-            // Never place Authorization material or response bodies in KLog:
-            // users can deliberately attach its release ring buffer to a bug
-            // report, and these values may carry account/feed information.
-            KLog.d(YOUTUBE_TAG, "Making personalized video request")
-            val response = http.okHttpClient.newCall(request).execute()
-            val responseBody = response.body?.string() ?: return@withContext empty
-            response.close()
-
-            KLog.d(YOUTUBE_TAG, "Personalized response received")
-            val root = JSONObject(responseBody)
-            val videos = parseVideosFromYouTubeJson(responseBody)
+            val root = JSONObject(raw)
+            val videos = parseVideosFromYouTubeJson(raw, parsedRoot = root)
             KLog.d(YOUTUBE_TAG, "Parsed ${videos.size} personalized videos")
             VideoFeedPage(videos, extractRichGridContinuation(root))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e(YOUTUBE_TAG, "Error in getPersonalizedVideoRecommendations", e)
-            empty
+            KLog.e(YOUTUBE_TAG, "Error parsing the personalized feed", e)
+            null
         }
     }
 

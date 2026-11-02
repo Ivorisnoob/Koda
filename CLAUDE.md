@@ -87,7 +87,7 @@ MVVM with StateFlow and **no DI framework**: ViewModels build repositories direc
 |---|---|---|
 | Stream resolution, feeds, parsers | `data/youtube/`, `data/stream/`, behind the `data/YouTubeRepository.kt` front | `youtube-data.md`, `playback-streams.md` |
 | Music playback, queue, notification, crossfade | `service/MusicService.kt`, `CrossfadeEngine` | `playback-music.md` |
-| Video playback, PiP, captions, chapters | `ui/video/VideoPlayerViewModel.kt` | `playback-video.md` |
+| Video playback, PiP, captions, chapters | `ui/video/VideoPlayerViewModel.kt`, `video/` | `playback-video.md` |
 | Screens, tabs, overlays | `MainActivity.kt`, `ui/home/HomeScreen.kt` | `screens.md` |
 | Adding a setting | `data/ThemePreferences.kt` + 4 files + search index | `settings.md` |
 | Sign-in, accounts, incognito, backup | `SessionManager`, `ProfileManager`, `AccountSwitcher`, `IncognitoMode`, `BackupRepository` | `identity.md` |
@@ -226,7 +226,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 - Music metadata comes from **links and page types** (`MUSIC_PAGE_TYPE_ARTIST/ALBUM`), never subtitle positions; release type/year are data (`Song.albumId`, `releaseType`, `releaseYear`).
 - Signed out: public browse ids work anonymously, **account browse ids return a valid empty shell** (gate on `isLoggedIn()`), playlists come back as `lockupViewModel`s. Continuations answer under `appendContinuationItemsAction` (`continuationItemsOrNull`), and token scoping matters.
 - **Missing text is blank, never invented**, and a value with one home is read from its container (`firstObjectByKey`), an entity by its key (`entityKeyNames`); `findObjectsByKey` is for collecting a list.
-- **Only HTTP 429 arms `YouTubeRateLimit`**, which gates discretionary fan-out and Shorts prefetch only. One `/next` feeds many features - be frugal per user action.
+- **Only HTTP 429 arms `YouTubeRateLimit`**, which gates discretionary fan-out and Shorts prefetch only. Work nobody asked for runs under `RequestPriority.Automatic`, so a hold keeps it on the device; what a person asked for always goes out. One `/next` feeds many features - be frugal per user action.
 
 ### Music playback -> `docs/playback-music.md`
 - `MusicService` (Media3 `MediaLibraryService`) + `PlayerViewModel` over a `MediaController`. Video is a separate pipeline: the ViewModel owns the player and `VideoPlaybackService` only wraps it in a media session.
@@ -252,6 +252,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Video playback -> `docs/playback-video.md`
 - `VideoPlayerViewModel` owns its `ExoPlayer` (built lazily); `VideoPlaybackService` borrows it for the media session and never releases it. Load is two phases: stream qualities, then one `/next` for everything else - add no extractions.
+- `VideoPlayerViewModel` is split into `video/` (`CommentThreadController`, `LiveSession`, `VideoRecovery`, `VideoLoader`), with pure logic in `video/core/` (`VideoRecoveryPolicy`, `LiveChatBuffer`, `pickStartingVideoQuality`). It keeps the `ExoPlayer` and the media source; a new responsibility gets a part, not more ViewModel.
 - `VideoWatchTracker` owns history qualification, local progress and authenticated watch-time reports, rechecking history-off/incognito/profile before remote writes.
 - Mini-to-expanded is the music player's container transform (`PlayerContainerTransform.kt`, shared with `ExpandablePlayer`); portrait uses a TextureView except HDR and vertical live, which keep the curtain (`supportsAnimatedMinimize`). Never read transition progress in composition; only one view holds the surface.
 - `VideoQueue` is index-addressed; `playQueue` establishes it and `playVideo` clears it. Resume has two stores (active session vs per-video history). Chromecast is gone; do not reintroduce a `Player` indirection.

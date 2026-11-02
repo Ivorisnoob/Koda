@@ -163,13 +163,14 @@ fun ShortsPlayerOverlay(
     val isSubscribed by viewModel.isSubscribedToChannel.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
 
-    val comments by viewModel.comments.collectAsState()
-    val commentReplies by viewModel.replies.collectAsState()
-    val loadingReplyIds by viewModel.loadingReplyIds.collectAsState()
-    val isCommentsLoading by viewModel.isCommentsLoading.collectAsState()
-    val isLoadingMoreComments by viewModel.isLoadingMoreComments.collectAsState()
-    val canComment by viewModel.canComment.collectAsState()
-    val isPostingComment by viewModel.isPostingComment.collectAsState()
+    val commentThread = viewModel.commentThread
+    val comments by commentThread.comments.collectAsState()
+    val commentReplies by commentThread.replies.collectAsState()
+    val loadingReplyIds by commentThread.loadingReplyIds.collectAsState()
+    val isCommentsLoading by commentThread.isLoading.collectAsState()
+    val isLoadingMoreComments by commentThread.isLoadingMore.collectAsState()
+    val canComment by commentThread.canComment.collectAsState()
+    val isPostingComment by commentThread.isPosting.collectAsState()
 
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
@@ -790,14 +791,12 @@ fun ShortsPlayerOverlay(
             commentsAvailable = engagement?.commentsToken != null,
             canComment = canComment,
             isPosting = isPostingComment,
-            onLoadMore = { viewModel.loadMoreComments() },
-            onLoadReplies = { viewModel.loadReplies(it) },
-            onPostComment = { viewModel.postComment(it) },
-            onPostReply = { target, threadParent, text ->
-                viewModel.postReply(target, threadParent, text)
-            },
-            onLikeComment = { comment -> requireLogin { viewModel.toggleCommentLike(comment) } },
-            onDeleteComment = { comment -> viewModel.deleteComment(comment) },
+            onLoadMore = commentThread::loadMore,
+            onLoadReplies = commentThread::loadReplies,
+            onPostComment = commentThread::postComment,
+            onPostReply = commentThread::postReply,
+            onLikeComment = { comment -> requireLogin { commentThread.toggleLike(comment) } },
+            onDeleteComment = commentThread::delete,
             onDismiss = { showCommentsSheet = false },
             onOpenAuthor = { channelId ->
                 showCommentsSheet = false

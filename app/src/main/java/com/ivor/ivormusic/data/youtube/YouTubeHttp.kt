@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data.youtube
 
 import android.content.Context
+import com.ivor.ivormusic.data.RequestPolicy
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.SessionRefreshInterceptor
 import com.ivor.ivormusic.data.ThemePreferences
@@ -43,6 +44,10 @@ internal class YouTubeHttp(
             }
             chain.proceed(chain.request())
         }
+        // Keeps automatic work's requests on the device during a 429 hold or
+        // a bot-check verdict (RequestPriority). Ahead of the ledger, which
+        // lists them as held instead of counting them as sent.
+        .addInterceptor(RequestPolicy)
         // After the kill-switch, so a request local-only mode refused is not
         // counted as one YouTube saw.
         .addInterceptor(YouTubeRequestLedger)

@@ -297,10 +297,11 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
      */
     private val _commentsPost = MutableStateFlow<com.ivor.ivormusic.data.ChannelPost?>(null)
     val commentsPost: StateFlow<com.ivor.ivormusic.data.ChannelPost?> = _commentsPost.asStateFlow()
-    val postComments = com.ivor.ivormusic.ui.video.CommentThreadController(
+    val postComments = com.ivor.ivormusic.video.CommentThreadController(
         repository = youtubeRepository,
         scope = viewModelScope,
-        viaBrowse = true
+        viaBrowse = true,
+        signedIn = isLoggedIn,
     )
 
     fun openPostComments(post: com.ivor.ivormusic.data.ChannelPost) {

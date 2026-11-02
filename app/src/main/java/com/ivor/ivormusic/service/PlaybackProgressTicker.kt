@@ -2,7 +2,6 @@ package com.ivor.ivormusic.service
 
 import android.content.Context
 import androidx.media3.common.Player
-import com.ivor.ivormusic.data.NotificationArtworkLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -30,10 +29,6 @@ internal class PlaybackProgressTicker(
 ) {
     private var job: Job? = null
 
-    /** Artwork URLs already being fetched for the Live Update, so the loop
-     *  does not kick off the same load every second. */
-    private val artworkRequested = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-
     fun start() {
         job?.cancel()
         job = scope.launch {
@@ -48,29 +43,13 @@ internal class PlaybackProgressTicker(
                     // Android 16 Live Update
                     if (duration > 0) {
                         val mediaItem = current.currentMediaItem
-                        // Fetch the cover once per URL, off the notification
-                        // path: this tick posts without it and the next one
-                        // picks it up from the cache. Same approach as
-                        // DownloadService.
-                        val artUrl = mediaItem?.mediaMetadata?.artworkUri?.toString()
-                        if (artUrl != null && NotificationArtworkLoader.cached(artUrl) == null &&
-                            artworkRequested.add(artUrl)
-                        ) {
-                            scope.launch {
-                                try {
-                                    NotificationArtworkLoader.load(context, artUrl)
-                                } finally {
-                                    artworkRequested.remove(artUrl)
-                                }
-                            }
-                        }
                         liveUpdate()?.updateProgress(
                             songTitle = mediaItem?.mediaMetadata?.title?.toString() ?: "Unknown",
                             artistName = mediaItem?.mediaMetadata?.artist?.toString() ?: "Unknown",
                             currentPositionMs = position,
                             durationMs = duration,
                             isPlaying = true,
-                            artwork = NotificationArtworkLoader.cached(artUrl)
+                            speed = current.playbackParameters.speed,
                         )
                     }
 
