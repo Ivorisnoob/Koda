@@ -201,7 +201,7 @@ fun VideoPlayerContent(
     val sleepTimerEndOfVideo by viewModel.sleepTimerEndOfVideo.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val playbackError by viewModel.playbackError.collectAsState()
-    val connectionAdvice by viewModel.connectionAdvice.collectAsState()
+    val connectionAdvice by viewModel.recovery.connectionAdvice.collectAsState()
     val engagement by viewModel.engagement.collectAsState()
     // Account subscription OR device subscription - engagement only knows the
     // first, and read alone it showed "Subscribe" for locally followed channels.
@@ -769,7 +769,7 @@ fun VideoPlayerContent(
                 onZoomedToFillChange = { isZoomedToFill = it },
                 zoomToFillAvailable = zoomToFillAvailable,
                 videoAspectRatio = videoAspectRatio,
-                onRetry = { viewModel.retryPlayback() }
+                onRetry = { viewModel.recovery.retry() }
             )
 
                 // Timed comments are anchored to a position in a finished
@@ -965,7 +965,7 @@ fun VideoPlayerContent(
                     onSettings = { showPlaybackSettings = true },
                     onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },
-                    onRetry = { viewModel.retryPlayback() },
+                    onRetry = { viewModel.recovery.retry() },
                     onMinimizeDragDelta = onMinimizeDragDelta,
                     onMinimizeDragRelease = onMinimizeDragRelease
                 )
@@ -1103,7 +1103,7 @@ fun VideoPlayerContent(
                             onMinimizeDragDelta(delta)
                         },
                         onMinimizeDragRelease = onMinimizeDragRelease,
-                        onRetry = { viewModel.retryPlayback() }
+                        onRetry = { viewModel.recovery.retry() }
                     )
 
                     if (timedCommentsFeatureEnabled && timedCommentsActive && !isLive) {

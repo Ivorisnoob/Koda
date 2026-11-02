@@ -14,7 +14,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.ExoPlaybackException
+import com.ivor.ivormusic.video.httpResponseCode
+import com.ivor.ivormusic.video.isRecoverableSourceError
+import com.ivor.ivormusic.video.isTransientRendererError
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -196,7 +198,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
-    /** Network advice for a connection refusal; see VideoPlayerViewModel.connectionAdvice. */
+    /** Network advice for a connection refusal; see VideoRecovery.connectionAdvice. */
     private val _connectionAdvice = MutableStateFlow<com.ivor.ivormusic.data.ConnectionAdvice?>(null)
     val connectionAdvice: StateFlow<com.ivor.ivormusic.data.ConnectionAdvice?> =
         _connectionAdvice.asStateFlow()
@@ -863,46 +865,6 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
                 }
             }
         }
-    }
-
-    /**
-     * Source-level failures - dead URL, 403, malformed container - are worth
-     * re-resolving for. Renderer failures are not: [isTransientRendererError]
-     * already re-prepares those in place, and this runs after it.
-     */
-    private fun isRecoverableSourceError(error: PlaybackException): Boolean {
-        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_SOURCE) {
-            return true
-        }
-        return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
-    }
-
-    /**
-     * Renderer-level failures (surface torn down, codec reclaimed by another
-     * app, transient decode error) are worth re-preparing for.
-     */
-    private fun isTransientRendererError(error: PlaybackException): Boolean {
-        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_RENDERER) {
-            return true
-        }
-        return when (error.errorCode) {
-            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
-            PlaybackException.ERROR_CODE_DECODING_FAILED -> true
-            else -> false
-        }
-    }
-
-    /** HTTP status behind a source error, or null when it was not an HTTP failure. */
-    private fun httpResponseCode(error: PlaybackException): Int? {
-        var cause: Throwable? = error.cause
-        while (cause != null) {
-            if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
-                return cause.responseCode
-            }
-            cause = cause.cause
-        }
-        return null
     }
 
     private fun playIndex(index: Int) {

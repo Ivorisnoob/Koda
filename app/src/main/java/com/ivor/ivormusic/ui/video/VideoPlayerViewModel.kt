@@ -18,9 +18,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -671,18 +669,55 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _playbackError = MutableStateFlow<Throwable?>(null)
     val playbackError: StateFlow<Throwable?> = _playbackError.asStateFlow()
 
-    /**
-     * Network advice for the current error when YouTube refused the connection
-     * rather than the video; see [com.ivor.ivormusic.data.connectionAdviceFor].
-     * While it stands, a network change retries on its own.
-     */
-    private val _connectionAdvice = MutableStateFlow<com.ivor.ivormusic.data.ConnectionAdvice?>(null)
-    val connectionAdvice: StateFlow<com.ivor.ivormusic.data.ConnectionAdvice?> =
-        _connectionAdvice.asStateFlow()
+    /** What happens when a video breaks; the error overlay reads it directly. */
+    val recovery = com.ivor.ivormusic.video.VideoRecovery(
+        context = context,
+        repository = youtubeRepository,
+        scope = viewModelScope,
+        playbackError = _playbackError,
+        host = object : com.ivor.ivormusic.video.VideoRecoveryHost {
+            override val currentVideo get() = _currentVideo.value
+            override val queue get() = _queue.value
+            override val isLocalPlayback get() = _isLocalPlayback.value
+            override val hasPlayer get() = _exoPlayer != null
+            override val hasPlayableBytes
+                get() = (_exoPlayer?.currentPosition ?: 0L) > 0L ||
+                    (_exoPlayer?.bufferedPosition ?: 0L) > 0L
 
-    private val connectionWatcher = com.ivor.ivormusic.data.NetworkChangeWatcher(context) {
-        viewModelScope.launch { retryAfterNetworkChange() }
-    }
+            override fun sdrFallback(): VideoQuality? {
+                val failed = _currentQuality.value?.takeIf { it.isHdr } ?: return null
+                return bestSdrFallback(localVideoQualityOptions(_availableQualities.value), failed)
+            }
+
+            override fun fallBackToSdr(quality: VideoQuality) {
+                hdrQualityToRestoreAfterMini = null
+                reloadPreservingPosition(quality)
+            }
+
+            override fun rePrepare() {
+                _exoPlayer?.prepare()
+            }
+
+            override fun pause() {
+                _exoPlayer?.pause()
+            }
+
+            override fun setLoading(loading: Boolean) {
+                _isLoading.value = loading
+            }
+
+            override fun clearBuffering() {
+                _isBuffering.value = false
+            }
+
+            override fun playQueueEntry(index: Int) = playQueueIndex(index)
+
+            override fun restart(video: VideoItem) = startVideo(video, forceRestart = true)
+
+            override suspend fun reresolveAndReload(video: VideoItem) =
+                this@VideoPlayerViewModel.reresolveAndReload(video)
+        },
+    )
 
     init {
         // The Video shaders page writes through its own ThemePreferences, with
@@ -694,16 +729,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         viewModelScope.launch {
             themePreferences.videoShaders.collect { previewVideoShaders(it) }
         }
-        viewModelScope.launch {
-            _playbackError.collect { error ->
-                // A device video never asked YouTube for anything.
-                val advice = error
-                    ?.takeUnless { _isLocalPlayback.value }
-                    ?.let { com.ivor.ivormusic.data.connectionAdviceFor(context, it) }
-                _connectionAdvice.value = advice
-                if (advice != null) connectionWatcher.start() else connectionWatcher.stop()
-            }
-        }
         // The system's previous/next buttons appear and disappear with the
         // queue, which the ExoPlayer never sees.
         viewModelScope.launch {
@@ -713,42 +738,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
     }
 
-    private suspend fun retryAfterNetworkChange() {
-        if (_connectionAdvice.value == null) return
-        KLog.i("VideoPlayerVM", "Network changed while YouTube was refusing the connection; retrying")
-        YouTubeRepository.forgetConnectionVerdicts()
-        youtubeRepository.refreshVisitorDataAfterPlaybackFailure()
-        // The user may have moved on or retried while the remint ran.
-        if (_connectionAdvice.value != null) retryPlayback()
-    }
-
     // Video rendering is suspended while the app is not visible - see onEnterBackground()
     private var isVideoSuspended = false
 
-    // Renderer/decoder failures are usually transient (surface torn down, codec
-    // reclaimed by another app). Retry in place a couple of times before the
-    // error reaches the UI; reset on every successful playback start.
-    private var rendererRetryCount = 0
-    private var hdrFallbackUsed = false
     private var hdrQualityToRestoreAfterMini: VideoQuality? = null
-
-    // Source failures (googlevideo 403 on a flagged token, an expired URL, a
-    // network blip) are recovered by re-resolving the stream rather than by
-    // replaying the dead URL. Bounded so a genuinely unplayable video still
-    // reaches the error overlay, and given back only after a stretch of
-    // healthy playback - never merely on reaching READY; see the budget.
-    private val sourceRecovery = com.ivor.ivormusic.data.PlaybackRecoveryBudget(
-        maxAttempts = MAX_SOURCE_RETRIES,
-        refundAfterMs = SOURCE_RETRY_REFUND_MS,
-    )
-    private var sourceRecoveryJob: kotlinx.coroutines.Job? = null
-
-    // Videos skipped in a row because they would not play at all. Playlists
-    // collect deleted, private and region-blocked entries over time, and one of
-    // those must not end the run - but a network that has gone away fails every
-    // video too, and racing to the end of the playlist on that is worse than
-    // stopping. Bounded, and reset the moment anything actually plays.
-    private var queueErrorSkipCount = 0
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
 
@@ -1140,14 +1133,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             override fun onPlaybackStateChanged(playbackState: Int) {
                 _isBuffering.value = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
-                    // Playback recovered (or started cleanly): allow the
-                    // renderer budget to be spent again on a later failure.
-                    // The source budget is not refilled here: a stream refused
-                    // after its opening megabyte reaches READY first, and
-                    // refilling on READY is what made that loop. The progress
-                    // ticker gives it back once playback has stayed healthy.
-                    rendererRetryCount = 0
-                    queueErrorSkipCount = 0
+                    recovery.onReady()
                 }
                 if (playbackState == Player.STATE_ENDED) {
                     if (watchProfileId == com.ivor.ivormusic.data.ProfileManager.activeProfileId(context) &&
@@ -1164,91 +1150,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (fallbackFromHdr(error)) return
-
-                // A renderer/decoder failure is not a broken stream: the
-                // codec lost its surface or was reclaimed. Re-prepare in
-                // place (position is kept) instead of dead-ending the
-                // player on an error overlay the user cannot dismiss.
-                if (isTransientRendererError(error) && rendererRetryCount < MAX_RENDERER_RETRIES) {
-                    rendererRetryCount++
-                    KLog.w(
-                        "VideoPlayerVM",
-                        "Transient renderer error (attempt $rendererRetryCount/$MAX_RENDERER_RETRIES); re-preparing",
-                        error
-                    )
-                    _exoPlayer?.prepare()
-                    return
-                }
-
-                // CacheDataSource serves every contiguous byte it has before
-                // asking upstream. If that upstream is unavailable, keep the
-                // current item, surface and controls intact: the cached part
-                // was valid playback, and throwing it away turns a temporary
-                // connection loss into a blank player. Retry later re-resolves
-                // and continues from this exact position.
-                if (isRecoverableSourceError(error) && !networkPlaybackAllowed()) {
-                    val hadPlayableBytes = (_exoPlayer?.currentPosition ?: 0L) > 0L ||
-                        (_exoPlayer?.bufferedPosition ?: 0L) > 0L
-                    _exoPlayer?.pause()
-                    _playbackError.value = Exception(
-                        context.getString(
-                            if (hadPlayableBytes) {
-                                com.ivor.ivormusic.R.string.video_cached_portion_ended
-                            } else {
-                                com.ivor.ivormusic.R.string.video_not_cached_offline
-                            }
-                        )
-                    )
-                    _isBuffering.value = false
-                    _isLoading.value = false
-                    return
-                }
-
-                // A source failure means the URL is dead, not the video:
-                // re-resolving is the only thing that can help, and
-                // re-preparing the same URL never will. Not while the bot
-                // check's verdict stands: the re-resolve would be refused on
-                // the same address, at the cost of every fallback client.
-                // The overlay's Retry still asks, because the user did.
-                if (!_isLocalPlayback.value &&
-                    isRecoverableSourceError(error) &&
-                    !YouTubeRepository.isBotCheckVerdictActive() &&
-                    sourceRecovery.tryConsume(SystemClock.elapsedRealtime())
-                ) {
-                    KLog.w(
-                        "VideoPlayerVM",
-                        "Source error (attempt ${sourceRecovery.attemptsUsed}/$MAX_SOURCE_RETRIES); re-resolving stream",
-                        error
-                    )
-                    recoverFromSourceError(error)
-                    return
-                }
-
-                // Both retry budgets are spent, so this video is genuinely
-                // unplayable. Inside a playlist that is almost always one
-                // deleted or private entry among many, and stopping the run
-                // on it is not what the user asked for by opening the
-                // playlist - so step over it, up to the bounded number of
-                // times above.
-                val activeQueue = _queue.value
-                if (activeQueue != null &&
-                    activeQueue.hasNext &&
-                    queueErrorSkipCount < MAX_QUEUE_ERROR_SKIPS
-                ) {
-                    queueErrorSkipCount++
-                    KLog.w(
-                        "VideoPlayerVM",
-                        "Unplayable video in the queue at ${activeQueue.index} " +
-                            "(skip $queueErrorSkipCount/$MAX_QUEUE_ERROR_SKIPS); moving on",
-                        error
-                    )
-                    viewModelScope.launch { playQueueIndex(activeQueue.index + 1) }
-                    return
-                }
-
-                _playbackError.value = error
-                _isBuffering.value = false
+                recovery.onPlayerError(error)
             }
         })
     }
@@ -1507,9 +1409,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         progressJob = viewModelScope.launch {
             while (isActive) {
                 _exoPlayer?.let { player ->
-                    // Healthy playback gives the source budget back, once it
-                    // has lasted; see PlaybackRecoveryBudget.
-                    if (player.isPlaying) sourceRecovery.onHealthy(SystemClock.elapsedRealtime())
+                    if (player.isPlaying) recovery.onPlaying()
                     // Fresh reads: turning the setting off or changing its rate
                     // takes effect within a tick, without rebuilding the
                     // player. The renderer's drop counter is how the governor
@@ -1703,74 +1603,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Retry after playback failed, from the error overlay. Re-resolves the
-     * stream and rebuilds the media source at the current position; falls back
-     * to re-running the whole load when there is no player to reload into.
-     */
-    fun retryPlayback() {
-        rendererRetryCount = 0
-        sourceRecovery.reset()
-        _playbackError.value = null
-        val video = _currentVideo.value ?: return
-        if (_isLocalPlayback.value) {
-            startVideo(video, forceRestart = true)
-            return
-        }
-        if (_exoPlayer == null) {
-            // startVideo, not playVideo: retrying the video that failed is not
-            // leaving the playlist it belongs to.
-            startVideo(video, forceRestart = true)
-            return
-        }
-        // Always re-resolve rather than replaying _currentQuality: its URL is
-        // what just failed, and googlevideo URLs are short-lived, so handing
-        // the same one back to the player fails identically every time.
-        _isLoading.value = true
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = viewModelScope.launch {
-            if (!reresolveAndReload(video)) {
-                _playbackError.value = Exception("Unable to load video stream")
-                _isLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * Rescue a source failure without bothering the user: mint a fresh
-     * visitorData when googlevideo refused us outright (403 means the token or
-     * the request's client signature was rejected at the media layer - stream
-     * resolution itself answered 200 and never sees this), then re-resolve and
-     * reload. Falls back to surfacing [original] so the error overlay and its
-     * Retry button still appear when recovery cannot help.
-     */
-    private fun recoverFromSourceError(original: PlaybackException) {
-        val video = _currentVideo.value
-        if (video == null) {
-            _playbackError.value = original
-            _isBuffering.value = false
-            return
-        }
-        // _isLoading, not _isBuffering: a fatal error drives the player to
-        // STATE_IDLE, whose onPlaybackStateChanged sets _isBuffering back to
-        // false and would leave the re-resolve showing a frozen frame with no
-        // spinner. Nothing else writes _isLoading, and "resolving a stream" is
-        // exactly what it already means during the initial load.
-        _isLoading.value = true
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = viewModelScope.launch {
-            if (httpResponseCode(original) == 403) {
-                youtubeRepository.refreshVisitorDataAfterPlaybackFailure(
-                    com.ivor.ivormusic.data.httpFailureUrl(original),
-                )
-            }
-            if (!reresolveAndReload(video)) {
-                _playbackError.value = original
-                _isLoading.value = false
-            }
-        }
-    }
-
-    /**
      * Re-resolve [video]'s stream URLs and rebuild the media source, keeping
      * the quality the user was watching when it is still on offer.
      *
@@ -1842,55 +1674,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _playbackError.value = null
         _isLoading.value = false
         return true
-    }
-
-    /**
-     * Source-level failures - dead URL, 403, malformed container - are worth
-     * re-resolving for. Renderer failures are not: [isTransientRendererError]
-     * already re-prepares those in place, and this runs after it.
-     */
-    private fun isRecoverableSourceError(error: PlaybackException): Boolean {
-        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_SOURCE) {
-            return true
-        }
-        return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
-    }
-
-    private fun networkPlaybackAllowed(): Boolean {
-        if (ThemePreferences.isLocalOnly(context)) return false
-        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE)
-            as? android.net.ConnectivityManager ?: return false
-        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
-            ?: return false
-        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    }
-
-    /** HTTP status behind a source error, or null when it was not an HTTP failure. */
-    private fun httpResponseCode(error: PlaybackException): Int? {
-        var cause: Throwable? = error.cause
-        while (cause != null) {
-            if (cause is HttpDataSource.InvalidResponseCodeException) return cause.responseCode
-            cause = cause.cause
-        }
-        return null
-    }
-
-    /**
-     * Renderer-level failures (surface torn down, codec reclaimed by another
-     * app, transient decode error) are worth re-preparing for. Source-level
-     * failures - dead URL, unsupported format - are not, and must reach the UI.
-     */
-    private fun isTransientRendererError(error: PlaybackException): Boolean {
-        if (error is ExoPlaybackException && error.type == ExoPlaybackException.TYPE_RENDERER) {
-            return true
-        }
-        return when (error.errorCode) {
-            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
-            PlaybackException.ERROR_CODE_DECODING_FAILED -> true
-            else -> false
-        }
     }
 
     fun setAutoplayEnabled(enabled: Boolean) {
@@ -1977,7 +1760,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         leaveLocalPlayback()
         _queue.value = queue.at(queue.index)
         lastQueueRemoval = null
-        queueErrorSkipCount = 0
+        recovery.onQueueMoved()
         startVideo(
             target,
             forceRestart = true,
@@ -2039,7 +1822,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         lastQueueRemoval = null
         // A new playlist gets the full skip budget: whatever was wrong with the
         // last one has nothing to say about this one.
-        queueErrorSkipCount = 0
+        recovery.onQueueMoved()
         val target = normalized.current ?: return
         if (_currentVideo.value?.videoId == target.videoId) {
             _isExpanded.value = true
@@ -2188,7 +1971,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             title = title,
         )
         lastQueueRemoval = null
-        queueErrorSkipCount = 0
+        recovery.onQueueMoved()
         startVideo(target, forceRestart = true)
     }
 
@@ -2788,13 +2571,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         captionCuesJob?.cancel()
         _captionCues.value = emptyList()
         _playbackError.value = null // Clear previous error
-        rendererRetryCount = 0
-        sourceRecovery.reset()
-        hdrFallbackUsed = false
         hdrQualityToRestoreAfterMini = null
-        // A recovery still in flight belongs to the previous video
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = null
+        recovery.onNewVideo()
 
         // Reset engagement + comments state for the new video
         _engagement.value = null
@@ -3416,33 +3194,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         return result.copy(qualities = qualities)
     }
 
-    /**
-     * One-shot HDR-to-SDR recovery shared by source and decoder failures.
-     *
-     * Not for a 403. HDR and SDR come from one visionOS response, signed under
-     * one token, so a refused HDR URL means the SDR one beside it is refused
-     * too: reloading it only failed again and spent a second token replacement
-     * on the way. [recoverFromSourceError] re-resolves the whole ladder instead,
-     * and the fallback stays armed for a failure HDR itself causes.
-     */
-    private fun fallbackFromHdr(error: PlaybackException): Boolean {
-        val failed = _currentQuality.value ?: return false
-        if (!failed.isHdr || hdrFallbackUsed) return false
-        if (httpResponseCode(error) == 403) return false
-        val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), failed)
-            ?: return false
-
-        hdrFallbackUsed = true
-        hdrQualityToRestoreAfterMini = null
-        KLog.w(
-            "VideoPlayerVM",
-            "HDR ${failed.displayLabel} failed; falling back to ${fallback.displayLabel}",
-            error,
-        )
-        reloadPreservingPosition(fallback)
-        return true
-    }
-
     /** Load the caption track list for the current video, once, on demand. */
     fun ensureCaptionsLoaded() {
         val video = _currentVideo.value ?: return
@@ -3985,34 +3736,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         /** How long a surface hand-off's size reports are left to settle before a paused redraw. */
         private const val GRAPH_REDRAW_SETTLE_MS = 150L
 
-        /** Silent re-prepare attempts before a renderer error reaches the UI. */
-        private const val MAX_RENDERER_RETRIES = 2
-
-        /**
-         * Silent re-resolve attempts before a source error reaches the UI. One
-         * is enough: the first pass already remints a rejected visitorData and
-         * fetches brand-new URLs, so a second failure means the video really is
-         * unplayable and the user should get the overlay instead of a spinner.
-         */
-        private const val MAX_SOURCE_RETRIES = 1
-
-        /**
-         * Healthy playback after a re-resolve before its attempt comes back.
-         * Far longer than a stream refused after its opening plays for, and
-         * far shorter than a URL takes to expire.
-         */
-        private const val SOURCE_RETRY_REFUND_MS = 60_000L
-
-        /**
-         * Unplayable videos stepped over in a row before the error overlay wins.
-         *
-         * Three, because that is comfortably more than the run of dead entries a
-         * real playlist has in one place and far fewer than it takes to burn
-         * through a playlist when the network is the thing that is broken. The
-         * count resets on the first video that actually reaches STATE_READY.
-         */
-        private const val MAX_QUEUE_ERROR_SKIPS = 3
-
         /**
          * How often the playhead is sampled for the seek bar.
          *
@@ -4040,14 +3763,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     override fun onCleared() {
-        connectionWatcher.stop()
+        recovery.close()
         watchTracker.close()
         super.onCleared()
         // Remove quality change listener to prevent leaks
         qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
         qualityChangeListener = null
-        sourceRecoveryJob?.cancel()
-        sourceRecoveryJob = null
         streamLoadJob?.cancel()
         streamLoadJob = null
         watchNextJob?.cancel()

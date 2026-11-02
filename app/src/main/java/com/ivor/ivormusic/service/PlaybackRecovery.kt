@@ -166,7 +166,7 @@ internal class PlaybackRecovery(
             // 200 and never sees this refusal, so without it the flagged
             // token stays in prefs and is replayed for its whole 6h TTL -
             // every uncached song failing until the user clears app data.
-            // Mirrors VideoPlayerViewModel.recoverFromSourceError. A URL signed
+            // Mirrors VideoRecovery.recoverFromSourceError. A URL signed
             // under a token another surface already replaced keeps the current
             // one; the queue below is dropped either way, since it may hold
             // URLs from before that replacement.
