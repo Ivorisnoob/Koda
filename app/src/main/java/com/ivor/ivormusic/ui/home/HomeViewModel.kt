@@ -67,23 +67,37 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val youtubeRepository = YouTubeRepository(application)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
     private val sessionManager = SessionManager(application)
+    private val profileManager = com.ivor.ivormusic.data.ProfileManager(application)
+    private val channelWatchPreferences =
+        application.getSharedPreferences("channel_watch_frequency", 0)
 
-    // Cached account-history frequency; load only when requested, off the UI thread.
-    private val _channelWatchCounts = MutableStateFlow<Map<String, Int>>(
+    private fun channelWatchCountsKey(profileId: String) = "counts_$profileId"
+
+    private fun readChannelWatchCounts(profileId: String): Map<String, Int> =
         runCatching {
-            val raw = getApplication<Application>().getSharedPreferences("channel_watch_frequency", 0).getString("counts", null) ?: "{}"
+            val raw = channelWatchPreferences.getString(channelWatchCountsKey(profileId), null) ?: "{}"
             val json = org.json.JSONObject(raw)
-            buildMap { val keys = json.keys(); while (keys.hasNext()) { val key = keys.next(); put(key, json.optInt(key, 0)) } }
+            buildMap {
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    put(key, json.optInt(key, 0))
+                }
+            }
         }.getOrDefault(emptyMap())
+
+    // Watch-history rankings belong to the active profile, never to the device
+    // as a whole. Legacy unscoped "counts" are intentionally not imported.
+    private val _channelWatchCounts = MutableStateFlow(
+        readChannelWatchCounts(profileManager.activeProfileId.value)
     )
     val channelWatchCounts: StateFlow<Map<String, Int>> = _channelWatchCounts.asStateFlow()
     private var channelWatchCountJob: Job? = null
 
     fun loadChannelWatchCounts() {
-        // Keep the last successful cache visible while refreshing it. A cached
-        // value is a fallback, not a reason to skip future refreshes.
         if (channelWatchCountJob?.isActive == true) return
         val session = sessionManager.captureSession() ?: return
+        val profileId = profileManager.activeProfileId.value
         channelWatchCountJob = viewModelScope.launch(Dispatchers.IO) {
             val counts = linkedMapOf<String, Int>()
             var continuation: String? = null
@@ -99,12 +113,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     continuation = page.continuation
                     pageCount++
                 } while (continuation != null && pageCount < 50)
-                // Persist even an empty result so a genuinely empty history can
-                // clear stale counts from a previous account/session.
+
+                // A response from a profile that was switched away from must
+                // never overwrite the active profile's ranking.
+                if (profileManager.activeProfileId.value != profileId ||
+                    sessionManager.currentSession(session) == null
+                ) return@launch
+
                 val json = org.json.JSONObject()
                 counts.forEach { (id, count) -> json.put(id, count) }
-                getApplication<Application>().getSharedPreferences("channel_watch_frequency", 0)
-                    .edit().putString("counts", json.toString()).apply()
+                channelWatchPreferences.edit()
+                    .putString(channelWatchCountsKey(profileId), json.toString())
+                    .apply()
                 _channelWatchCounts.value = counts
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -112,6 +132,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 KLog.w("HomeViewModel", "Unable to build channel watch frequency", e)
             }
         }
+    }
+
+    private fun clearActiveChannelWatchCounts() {
+        channelWatchCountJob?.cancel()
+        channelWatchCountJob = null
+        channelWatchPreferences.edit()
+            .remove(channelWatchCountsKey(profileManager.activeProfileId.value))
+            .apply()
+        _channelWatchCounts.value = emptyMap()
     }
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(application, youtubeRepository)
@@ -1104,11 +1133,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val channel = entry.toSubscribedChannel()
                 accountBells[channel.channelId]?.let { channel.copy(bell = it) } ?: channel
             }
+            // Preserve each source's order: local subscriptions carry the
+            // user's manual order, while FEchannels carries YouTube's source
+            // order. Sorting here used to erase both before the rail could use them.
             when (source) {
                 com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_LOCAL -> localAsChannels
                 com.ivor.ivormusic.data.ThemePreferences.SUBSCRIPTIONS_YOUTUBE -> account
                 else -> (localAsChannels + account).distinctBy { it.channelId }
-            }.sortedBy { it.name.lowercase() }
+            }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val bellActions = com.ivor.ivormusic.data.ChannelBellActions(application, youtubeRepository)
@@ -1522,6 +1554,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _userAvatar.value = sessionManager.getUserAvatar()
         _userName.value = sessionManager.getUserName()
         _isYouTubeConnected.value = sessionManager.isLoggedIn()
+
+        channelWatchCountJob?.cancel()
+        channelWatchCountJob = null
+        _channelWatchCounts.value = readChannelWatchCounts(profileManager.activeProfileId.value)
+        if (_isYouTubeConnected.value &&
+            getApplication<Application>().getSharedPreferences("subscription_channel_rail", 0)
+                .getString("sort_mode", "RECENT") == "MOST_WATCHED"
+        ) {
+            loadChannelWatchCounts()
+        }
 
         _youtubeSongs.value = homeRecommendationCache.load()
         _likedSongs.value = emptyList()
@@ -3683,6 +3725,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         resetVideoLibraryPagination()
         clearShortsFeed()
+        clearActiveChannelWatchCounts()
         sessionManager.clearSession()
         _isYouTubeConnected.value = false
         _userAvatar.value = null
