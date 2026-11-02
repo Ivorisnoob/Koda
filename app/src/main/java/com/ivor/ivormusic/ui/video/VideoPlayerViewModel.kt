@@ -38,9 +38,7 @@ import com.ivor.ivormusic.data.audioTrackLabel
 import com.ivor.ivormusic.data.localVideoQualityLabel
 import com.ivor.ivormusic.data.textTrackLabel
 import com.ivor.ivormusic.data.SegmentAction
-import com.ivor.ivormusic.data.SponsorBlockRepository
 import com.ivor.ivormusic.data.SponsorSegment
-import com.ivor.ivormusic.data.activeCategories
 import com.ivor.ivormusic.data.segmentAt
 import com.ivor.ivormusic.data.LocalSubscription
 import com.ivor.ivormusic.data.BellLevel
@@ -66,7 +64,6 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.videoPlaybackCacheKey
 import com.ivor.ivormusic.video.core.timedCommentsOf
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -363,8 +360,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /* ---------------- SponsorBlock ---------------- */
 
-    private val sponsorBlockRepository = SponsorBlockRepository()
-    private var sponsorBlockJob: Job? = null
 
     private val _sponsorSegments = MutableStateFlow<List<SponsorSegment>>(emptyList())
     val sponsorSegments: StateFlow<List<SponsorSegment>> = _sponsorSegments.asStateFlow()
@@ -395,14 +390,46 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val ignoredSegmentIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var skipNoticeJob: Job? = null
 
-    // Initial stream resolution and watch-next metadata belong to one specific
-    // startVideo invocation. Cancellation handles the normal case; the
-    // generation check is still required because NewPipe's blocking fetch can
-    // finish after cancellation and because a forced retry can reuse the same
-    // video id.
-    private var streamLoadJob: Job? = null
-    private var watchNextJob: Job? = null
-    private var videoLoadGeneration = 0L
+    /** The network half of opening a video; what comes back lands here. */
+    private val videoLoader = com.ivor.ivormusic.video.VideoLoader(
+        repository = youtubeRepository,
+        themePreferences = themePreferences,
+        scope = viewModelScope,
+        host = object : com.ivor.ivormusic.video.VideoLoadHost {
+            override val currentVideoId get() = _currentVideo.value?.videoId
+            override val isLive get() = _isLive.value
+
+            override fun allowsHdr() = themePreferences.isPreferHdrEnabled() &&
+                hasHdrDisplay(context) && !effectGraphBlocksHdr()
+
+            override fun clearMedia() {
+                _exoPlayer?.stop()
+                _exoPlayer?.clearMediaItems()
+            }
+
+            override fun onStreamsResolved(
+                video: VideoItem,
+                result: VideoStreamResult,
+                resume: com.ivor.ivormusic.video.VideoResume,
+            ) = applyResolvedStreams(video, result, resume)
+
+            override fun onStreamsFailed(error: Exception) {
+                _playbackError.value = error
+                _isLoading.value = false
+            }
+
+            override fun onSponsorSegments(segments: List<SponsorSegment>) {
+                _sponsorSegments.value = segments
+            }
+
+            override fun onWatchNext(data: com.ivor.ivormusic.data.WatchNextData) =
+                applyWatchNext(data)
+
+            override fun onDislikeCount(text: String) {
+                _dislikeCount.value = text
+            }
+        },
+    )
 
     // A cold-process restore initially rebuilds only the visible player state.
     // Keeping the resume point here avoids preparing an ExoPlayer source (and
@@ -745,7 +772,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     // ---------------- Engagement (likes / subscribe / comments) ----------------
 
-    private val returnDislikeRepository = com.ivor.ivormusic.data.ReturnDislikeRepository()
     private val _dislikeCount = MutableStateFlow<String?>(null)
     val dislikeCount: StateFlow<String?> = _dislikeCount.asStateFlow()
 
@@ -932,7 +958,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                     val fallback = bestSdrFallback(localVideoQualityOptions(_availableQualities.value), current)
                     if (fallback != null) reloadPreservingPosition(fallback)
                 } else if (enabled && !current.isHdr) {
-                    val streamResult = resolvePlayableStreamResult(video.videoId)
+                    val streamResult = videoLoader.resolveStreams(video.videoId)
                     if (_currentVideo.value?.videoId != video.videoId) return@collect
                     _availableQualities.value = streamResult.qualities
                     applyYouTubeAudioTracks(streamResult.audioTracks)
@@ -1488,7 +1514,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * run would hold a set nothing will ever read again.
      */
     private fun resetSponsorBlock() {
-        sponsorBlockJob?.cancel()
+        videoLoader.cancelSponsorBlock()
         skipNoticeJob?.cancel()
         _sponsorSegments.value = emptyList()
         _manualSegment.value = null
@@ -1622,7 +1648,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (_exoPlayer == null) return false
         youtubeRepository.invalidateVideoStreamResult(video.videoId)
         val streamResult = try {
-            resolvePlayableStreamResult(video.videoId)
+            videoLoader.resolveStreams(video.videoId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             // playVideo() cancels this job when the user moves on. Swallowing
             // that would let a dead recovery keep writing loading/error state
@@ -2529,9 +2555,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // explicit seek is something the viewer just did.
         _resumedFromMs.value = checkpointMs?.takeIf { it > 0L }
 
-        val loadGeneration = ++videoLoadGeneration
-        streamLoadJob?.cancel()
-        watchNextJob?.cancel()
+        videoLoader.begin()
         if (!deferStreamLoad) deferredRestorePositionMs = null
 
         // Decide from the item, not merely from the queue that introduced it.
@@ -2549,6 +2573,41 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         _isExpanded.value = expand
         _isLoading.value = true
+        clearPreviousVideo(video)
+
+        if (deferStreamLoad) {
+            showDeferredSession(video, effectiveResumePositionMs)
+            return
+        }
+
+        // Captions that were on for the last video stay on for this one: the
+        // track list is fetched up front rather than waiting for a CC tap.
+        // Downloads included; ensureCaptionsLoaded leaves device files alone.
+        if (themePreferences.isCaptionsEnabled()) {
+            ensureCaptionsLoaded()
+        }
+
+        // Publish to the system's media controls. Started here, from a user tap,
+        // because a foreground service may not be started from the background;
+        // repeat calls once it is up are no-ops.
+        _exoPlayer?.let {
+            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it, sessionQueueControls)
+        }
+
+        if (localSource != null) {
+            playLocalSource(video, localSource, effectiveResumePositionMs, resumePaused)
+            return
+        }
+
+        videoLoader.load(
+            video,
+            com.ivor.ivormusic.video.VideoResume(effectiveResumePositionMs, resumePaused),
+        )
+        startWatchTracking()
+    }
+
+    /** Nothing of the previous video may survive into this one. */
+    private fun clearPreviousVideo(video: VideoItem) {
         // Zero the progress for the new video rather than letting the previous
         // one's position sit in the seek bar until the first poll lands.
         resetProgress()
@@ -2610,223 +2669,134 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         _playbackSpeed.value = rememberedSpeed
         _exoPlayer?.setPlaybackSpeed(rememberedSpeed)
+    }
 
-        if (deferStreamLoad) {
-            val position = effectiveResumePositionMs?.coerceAtLeast(0L) ?: 0L
-            val duration = (video.duration.coerceAtLeast(0L) * 1_000L)
-            deferredRestorePositionMs = position
-            _positionMs.value = position
-            _durationMs.value = duration
-            _progress.value = if (duration > 0L) {
-                (position.toFloat() / duration).coerceIn(0f, 1f)
-            } else {
-                0f
+    /** A cold restore's chrome, with no media until the user presses Play. */
+    private fun showDeferredSession(video: VideoItem, resumePositionMs: Long?) {
+        val position = resumePositionMs?.coerceAtLeast(0L) ?: 0L
+        val duration = (video.duration.coerceAtLeast(0L) * 1_000L)
+        deferredRestorePositionMs = position
+        _positionMs.value = position
+        _durationMs.value = duration
+        _progress.value = if (duration > 0L) {
+            (position.toFloat() / duration).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        _bufferedProgress.value = 0f
+        _isPlaying.value = false
+        _isBuffering.value = false
+        _isLoading.value = false
+    }
+
+    /** A device file or download: no network, so it starts here and now. */
+    private fun playLocalSource(
+        video: VideoItem,
+        localSource: LocalPlaybackSource,
+        resumePositionMs: Long?,
+        resumePaused: Boolean,
+    ) {
+        watchTracker.close()
+        clearVideoPlaybackSession()
+        try {
+            _exoPlayer?.stop()
+            _exoPlayer?.clearMediaItems()
+            localSource.aspectRatio?.let { _videoAspectRatio.value = it }
+            val localQuality = VideoQuality(
+                resolution = localSource.label,
+                url = localSource.uri.toString(),
+                format = "video/mp4",
+                sourceAspectRatio = localSource.aspectRatio,
+            )
+            _availableQualities.value = listOf(localQuality)
+            _currentQuality.value = localQuality
+            _seekPreview.value = VideoSeekPreview.local(localSource.uri.toString())
+            // Subtitles start off unless the user had captions on, and a
+            // container's default-flagged track would otherwise switch them
+            // back on by itself the moment the file is read.
+            applyEmbeddedTextDefault()
+            _exoPlayer?.setMediaItem(nowPlayingMediaItem(localSource.uri.toString()))
+            _exoPlayer?.prepare()
+            if (resumePositionMs != null && resumePositionMs > 0) {
+                _exoPlayer?.let { seekPlayerTo(it, resumePositionMs, precise = true) }
             }
-            _bufferedProgress.value = 0f
-            _isPlaying.value = false
-            _isBuffering.value = false
+            if (resumePaused) {
+                _exoPlayer?.pause()
+            } else {
+                _exoPlayer?.play()
+            }
+            _isLoading.value = false
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _playbackError.value = e
+            _isLoading.value = false
+        }
+        recordLocalWatch(video)
+    }
+
+    /** Stream URLs arrived for the video being opened: start it. */
+    private fun applyResolvedStreams(
+        video: VideoItem,
+        result: VideoStreamResult,
+        resume: com.ivor.ivormusic.video.VideoResume,
+    ) {
+        val qualities = result.qualities
+        _availableQualities.value = qualities
+        _seekPreview.value = result.seekPreview
+        // Held now, published once a quality is loaded: the menu depends on
+        // that quality being a split pair.
+        youtubeAudioTracks = result.audioTracks
+        _isLive.value = qualities.any { it.isLive }
+        if (_isLive.value) {
+            // Some entry points do not know a broadcast is live until its
+            // stream qualities arrive. Remove any prior snapshot once that
+            // verdict is definitive.
+            clearVideoPlaybackSession()
+        }
+        // Before the first frame: the stream dimensions are the only shape
+        // signal there is, and both the vertical live layout and the watch
+        // page's video box are sized from it.
+        qualities.firstNotNullOfOrNull { it.sourceAspectRatio }?.let { ratio ->
+            _videoAspectRatio.value = ratio
+            if (ratio < 1f) _isPortraitVideo.value = true
+        }
+        if (_isLive.value) liveSession.startViewerCount(video.videoId)
+
+        if (qualities.isEmpty()) {
+            // No second extraction here. The old "legacy stream URL" fallback
+            // ran a whole NewPipe fetchPage (about seven requests) again
+            // straight after the resolver had failed, so it failed the same
+            // way - and it could not add anything when extraction succeeded,
+            // because every muxed URL it picked from is already in that ladder.
+            _playbackError.value = Exception("Unable to load video stream")
             _isLoading.value = false
             return
         }
+        loadQuality(pickDefaultQuality(qualities))
+        seekAndResumeAfterLoad(resume.positionMs, resume.paused)
+    }
 
-        // Captions that were on for the last video stay on for this one: the
-        // track list is fetched up front rather than waiting for a CC tap.
-        // Downloads included; ensureCaptionsLoaded leaves device files alone.
-        if (themePreferences.isCaptionsEnabled()) {
-            ensureCaptionsLoaded()
+    /** The one `/next` for this video arrived. */
+    private fun applyWatchNext(watchNext: com.ivor.ivormusic.data.WatchNextData) {
+        _engagement.value = watchNext.engagement
+        if (watchNext.updatedVideoItem != null) {
+            val wasNameless = _currentVideo.value?.title.isNullOrBlank()
+            _currentVideo.value = watchNext.updatedVideoItem
+            // A video opened from a shared link starts out nameless - give the
+            // lock screen and shade the real title now that there is one.
+            // Deliberately only for that case: every other entry point already
+            // carries a title, and touching the media item is not worth it just
+            // to swap a thumbnail size.
+            if (wasNameless) refreshNowPlayingMetadata()
         }
-
-        // Publish to the system's media controls. Started here, from a user tap,
-        // because a foreground service may not be started from the background;
-        // repeat calls once it is up are no-ops.
-        _exoPlayer?.let {
-            com.ivor.ivormusic.service.VideoPlaybackService.start(context, it, sessionQueueControls)
+        if (watchNext.relatedVideos.isNotEmpty()) {
+            _relatedVideos.value = watchNext.relatedVideos
         }
-
-        if (localSource != null) {
-            watchTracker.close()
-            clearVideoPlaybackSession()
-            try {
-                _exoPlayer?.stop()
-                _exoPlayer?.clearMediaItems()
-                localSource.aspectRatio?.let { _videoAspectRatio.value = it }
-                val localQuality = VideoQuality(
-                    resolution = localSource.label,
-                    url = localSource.uri.toString(),
-                    format = "video/mp4",
-                    sourceAspectRatio = localSource.aspectRatio,
-                )
-                _availableQualities.value = listOf(localQuality)
-                _currentQuality.value = localQuality
-                _seekPreview.value = VideoSeekPreview.local(localSource.uri.toString())
-                // Subtitles start off unless the user had captions on, and a
-                // container's default-flagged track would otherwise switch them
-                // back on by itself the moment the file is read.
-                applyEmbeddedTextDefault()
-                _exoPlayer?.setMediaItem(nowPlayingMediaItem(localSource.uri.toString()))
-                _exoPlayer?.prepare()
-                if (effectiveResumePositionMs != null && effectiveResumePositionMs > 0) {
-                    _exoPlayer?.let { seekPlayerTo(it, effectiveResumePositionMs, precise = true) }
-                }
-                if (resumePaused) {
-                    _exoPlayer?.pause()
-                } else {
-                    _exoPlayer?.play()
-                }
-                _isLoading.value = false
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _playbackError.value = e
-                _isLoading.value = false
-            }
-            recordLocalWatch(video)
-            return
-        }
-
-        // ========== PHASE 1: START PLAYBACK ASAP (fast) ==========
-        // Uses lightweight getVideoStreamQualities() which ONLY fetches stream URLs
-        streamLoadJob = viewModelScope.launch {
-            try {
-                if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
-                _exoPlayer?.stop()
-                _exoPlayer?.clearMediaItems()
-                
-                // NewPipe's fetchPage() is blocking. A coroutine withTimeout
-                // cannot interrupt it; when extraction took 17-21 seconds it
-                // waited for valid qualities and then discarded them as timed
-                // out. The downloader's connect/read timeouts are the actual
-                // network bounds, while the generation checks below still
-                // prevent a cancelled load from touching a newer video.
-                run resolve@ {
-                    // FAST: Get stream URLs only (no metadata, no related, no channel avatar)
-                    val streamResult = resolvePlayableStreamResult(video.videoId)
-                    if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@resolve
-                    val qualities = streamResult.qualities
-                    _availableQualities.value = qualities
-                    _seekPreview.value = streamResult.seekPreview
-                    // Held now, published once a quality is loaded: the menu
-                    // depends on that quality being a split pair.
-                    youtubeAudioTracks = streamResult.audioTracks
-                    _isLive.value = qualities.any { it.isLive }
-                    if (_isLive.value) {
-                        // Some entry points do not know a broadcast is live
-                        // until its stream qualities arrive. Remove any prior
-                        // snapshot once that verdict is definitive.
-                        clearVideoPlaybackSession()
-                    }
-                    // Before the first frame: the stream dimensions are the only
-                    // shape signal there is, and both the vertical live layout
-                    // and the watch page's video box are sized from it.
-                    qualities.firstNotNullOfOrNull { it.sourceAspectRatio }?.let { ratio ->
-                        _videoAspectRatio.value = ratio
-                        if (ratio < 1f) _isPortraitVideo.value = true
-                    }
-                    if (_isLive.value) liveSession.startViewerCount(video.videoId)
-
-                    if (qualities.isNotEmpty()) {
-                        val chosen = pickDefaultQuality(qualities)
-                        if (chosen == null) {
-                            _playbackError.value =
-                                Exception("Unable to load video stream")
-                            _isLoading.value = false
-                            return@resolve
-                        }
-                        loadQuality(chosen)
-                        seekAndResumeAfterLoad(effectiveResumePositionMs, resumePaused)
-                    } else {
-                        // No second extraction here. The old "legacy stream URL"
-                        // fallback ran a whole NewPipe fetchPage (about seven
-                        // requests) again straight after the resolver above had
-                        // failed, so it failed the same way - and it could not
-                        // add anything when extraction succeeded, because every
-                        // muxed URL it picked from is already in that ladder.
-                        _playbackError.value = Exception("Unable to load video stream")
-                        _isLoading.value = false
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
-                    KLog.e("VideoPlayerVM", "Initial stream load failed for ${video.videoId}", e)
-                    _playbackError.value = e
-                    _isLoading.value = false
-                }
-            }
-        }
-        
-        // ========== SPONSORBLOCK ==========
-        // Its own job rather than a step inside Phase 2: the lookup is keyed on
-        // the video id alone and needs nothing watch-next returns, so making it
-        // wait behind that response would delay skipping for no reason. It must
-        // never join Phase 1, which is stream URLs only - a third-party service
-        // being slow must not delay the first frame.
-        sponsorBlockJob = viewModelScope.launch {
-            // Fresh reads: the settings screen writes through its own
-            // ThemePreferences instance, and the user may have changed either
-            // of these since this ViewModel was built.
-            if (!themePreferences.isSponsorBlockEnabled()) return@launch
-            val actions = themePreferences.sponsorBlockActionsNow()
-            val categories = activeCategories(actions)
-            if (categories.isEmpty()) return@launch
-
-            val segments = sponsorBlockRepository.getSegments(video.videoId, categories)
-            if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
-            // A live broadcast has no fixed timeline to key segments against,
-            // and _isLive is resolved in Phase 1, so by here it is known.
-            if (_isLive.value) return@launch
-            _sponsorSegments.value = segments
-        }
-
-        // ========== PHASE 2: ENGAGEMENT + METADATA + RELATED ==========
-        // One watch-next call answers all three (the old code paid for an
-        // engagement /next call AND a full NewPipe extraction here, competing
-        // with Phase 1's initial buffering for bandwidth).
-        watchNextJob = viewModelScope.launch {
-            try {
-                val watchNext = youtubeRepository.getWatchNextData(video.videoId, video)
-                // Guard against a video switch that happened mid-flight
-                if (!isCurrentVideoLoad(video.videoId, loadGeneration)) return@launch
-                _engagement.value = watchNext.engagement
-                if (themePreferences.isReturnDislikeEnabled() && video.videoId.length == 11) {
-                    launch {
-                        val count = returnDislikeRepository.getDislikes(video.videoId) ?: return@launch
-                        if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
-                            _dislikeCount.value = android.icu.text.CompactDecimalFormat
-                                .getInstance(java.util.Locale.getDefault(), android.icu.text.CompactDecimalFormat.CompactStyle.SHORT)
-                                .format(count)
-                        }
-                    }
-                }
-                if (watchNext.updatedVideoItem != null) {
-                    val wasNameless = _currentVideo.value?.title.isNullOrBlank()
-                    _currentVideo.value = watchNext.updatedVideoItem
-                    // A video opened from a shared link starts out nameless -
-                    // give the lock screen and shade the real title now that
-                    // there is one. Deliberately only for that case: every other
-                    // entry point already carries a title, and touching the
-                    // media item is not worth it just to swap a thumbnail size.
-                    if (wasNameless) refreshNowPlayingMetadata()
-                }
-                if (watchNext.relatedVideos.isNotEmpty()) {
-                    _relatedVideos.value = watchNext.relatedVideos
-                }
-                _chapters.value = watchNext.chapters
-                // Opening the chat panel now costs one poll instead of a second
-                // watch-next round trip plus its parse.
-                liveSession.setChatContinuation(watchNext.liveChatContinuation)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Phase 2 errors are non-critical - playback already started
-                if (isCurrentVideoLoad(video.videoId, loadGeneration)) {
-                    KLog.w("VideoPlayerVM", "Failed to load watch-next data", e)
-                }
-            }
-        }
-        
-        startWatchTracking()
+        _chapters.value = watchNext.chapters
+        // Opening the chat panel now costs one poll instead of a second
+        // watch-next round trip plus its parse.
+        liveSession.setChatContinuation(watchNext.liveChatContinuation)
     }
 
     private fun startWatchTracking() {
@@ -2836,9 +2806,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private fun recordLocalWatch(video: VideoItem) {
         if (!video.videoId.startsWith("external:")) startWatchTracking()
     }
-
-    private fun isCurrentVideoLoad(videoId: String, generation: Long): Boolean =
-        videoLoadGeneration == generation && _currentVideo.value?.videoId == videoId
 
     /**
      * Seek-and-resume tail shared by every load path.
@@ -2862,46 +2829,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     }
 
     /**
-     * Pick the starting quality based on the Settings preference for the
-     * current network (Wi-Fi vs mobile data). Fresh pref read because Settings
-     * toggles through its own ThemePreferences instance.
-     * The list from getVideoStreamQualities() is sorted highest-first with
-     * 60fps variants before 30fps, so the first label at or below the target
-     * height is the best match; if the video has nothing at or below it, take
-     * the lowest available.
+     * Pick the starting quality from the Settings preference for the current
+     * network (Wi-Fi vs mobile data). Fresh pref read because Settings toggles
+     * through its own ThemePreferences instance. Capped before anything else,
+     * so Auto and an explicit 4K preference both land on the best rung this
+     * panel can show. Never empty, so the pick is always safe.
      */
-    private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality {
-        fun height(label: String): Int = label.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
-        // Capped before anything else, so Auto and an explicit 4K preference
-        // both land on the best rung this panel can show. Never empty, so the
-        // first()/last() picks below stay safe.
-        val baseOptions = localVideoQualityOptions(qualities).cappedAtHeight(deviceQualityCap)
-        val options = if (!_isExpanded.value) {
-            baseOptions.filterNot(VideoQuality::isHdr).ifEmpty { baseOptions }
-        } else {
-            baseOptions
-        }
-        val preferred = themePreferences.getDefaultVideoQuality()
-
-        // The live ladder leads with an "Auto" entry (height 0) that the VOD
-        // branches below would skip over, so it picks its own entry: Auto when
-        // the setting says auto, otherwise the best rendition at or below the
-        // target, falling back to Auto rather than to the lowest available.
-        if (options.firstOrNull()?.isLive == true) {
-            if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) return options.first()
-            val targetHeight = height(preferred)
-            return options.firstOrNull { height(it.resolution) in 1..targetHeight }
-                ?: options.first()
-        }
-
-        if (preferred == ThemePreferences.VIDEO_QUALITY_AUTO) {
-            return options.firstOrNull { height(it.resolution) > 0 } ?: options.first()
-        }
-        val targetHeight = height(preferred)
-        return options.firstOrNull { height(it.resolution) in 1..targetHeight }
-            ?: options.lastOrNull { height(it.resolution) > 0 }
-            ?: options.first()
-    }
+    private fun pickDefaultQuality(qualities: List<VideoQuality>): VideoQuality =
+        com.ivor.ivormusic.video.core.pickStartingVideoQuality(
+            capped = localVideoQualityOptions(qualities).cappedAtHeight(deviceQualityCap),
+            preferred = themePreferences.getDefaultVideoQuality(),
+            isExpanded = _isExpanded.value,
+        )
 
     /**
      * Build the media source for [quality].
@@ -3177,21 +3116,6 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         }
         qualityChangeListener = listener
         player.addListener(listener)
-    }
-
-    private suspend fun resolvePlayableStreamResult(videoId: String): VideoStreamResult {
-        // The preference is intent; the display capability decides whether
-        // HDR can produce a visible benefit. This also handles an enabled
-        // value restored onto an SDR-only phone.
-        val includeHdr = themePreferences.isPreferHdrEnabled() && hasHdrDisplay(context) &&
-            !effectGraphBlocksHdr()
-        val result = youtubeRepository.getVideoStreamResult(videoId, includeHdr)
-        val qualities = if (includeHdr) {
-            result.qualities
-        } else {
-            result.qualities.filterNot(VideoQuality::isHdr)
-        }
-        return result.copy(qualities = qualities)
     }
 
     /** Load the caption track list for the current video, once, on demand. */
@@ -3769,10 +3693,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         // Remove quality change listener to prevent leaks
         qualityChangeListener?.let { _exoPlayer?.removeListener(it) }
         qualityChangeListener = null
-        streamLoadJob?.cancel()
-        streamLoadJob = null
-        watchNextJob?.cancel()
-        watchNextJob = null
+        videoLoader.close()
         progressJob?.cancel()
         progressJob = null
         liveSession.stop()
