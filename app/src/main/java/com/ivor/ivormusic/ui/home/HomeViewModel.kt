@@ -2049,14 +2049,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Estimate each post's time from its "2 days ago" text, against one clock reading. */
+    /**
+     * Estimate each of one channel's posts' times from its "2 days ago" text,
+     * against one clock reading, spread within each phrase in the order the
+     * channel served them so a week of posts does not tie.
+     */
     private fun stampPostTimes(
         posts: List<com.ivor.ivormusic.data.ChannelPost>
     ): List<com.ivor.ivormusic.data.ChannelPost> {
-        val now = System.currentTimeMillis()
-        return posts.map { post ->
+        val estimates = VideoItem.estimatePublishTimes(posts.map { it.publishedText })
+        return posts.mapIndexed { index, post ->
             if (post.publishedAtMs != null) post
-            else post.copy(publishedAtMs = VideoItem.parseRelativeTime(post.publishedText, now))
+            else post.copy(publishedAtMs = estimates[index])
         }
     }
 
@@ -2201,7 +2205,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _selectedChannelFeedError.value = null
             _isSelectedChannelFeedLoading.value = true
             try {
-                val videos = youtubeRepository.getChannelVideos(channel)
+                // Stamped in served order, so both orders on the Subscriptions
+                // tab sort this one channel exactly rather than in week-long ties.
+                val videos = com.ivor.ivormusic.data.withEstimatedPublishTimes(
+                    youtubeRepository.getChannelVideos(channel)
+                )
                 _selectedChannelFeed.value = videos
                 if (videos.isEmpty()) {
                     _selectedChannelFeedError.value =

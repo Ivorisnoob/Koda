@@ -210,6 +210,60 @@ data class VideoItem(
             return nowMs - value * unitSeconds * 1000
         }
 
+        /**
+         * Publish times for one channel's list, read from its prose dates, in
+         * the order the channel served them (newest first).
+         *
+         * [parseRelativeTime] puts every "1 week ago" at the same instant, so a
+         * sort on it alone ties a week of uploads together and leaves them in
+         * whatever order they were fetched: across channels the feed reads as
+         * shuffled, and "Oldest first" keeps each tie newest first. YouTube
+         * rounds down ("1 week ago" is 7 to 13 days), so a run of entries
+         * sharing one phrase is spread evenly across that span in the order
+         * served. One channel's list then sorts exactly as served, and lists
+         * from different channels interleave on a reasonable guess rather than
+         * clumping. A run only covers equal neighbours, so a pinned old entry
+         * at the top does not drag the rest down with it.
+         */
+        fun estimatePublishTimes(texts: List<String?>, nowMs: Long = System.currentTimeMillis()): List<Long?> {
+            val parsed = texts.map { parseRelativeSpan(it) }
+            val out = arrayOfNulls<Long>(texts.size)
+            var start = 0
+            while (start < parsed.size) {
+                val span = parsed[start]
+                var end = start + 1
+                while (end < parsed.size && span != null && parsed[end] == span) end++
+                if (span != null) {
+                    val runLength = end - start
+                    val unitMs = span.second * 1000
+                    for (i in start until end) {
+                        val within = ((i - start) + 0.5) / runLength
+                        out[i] = nowMs - span.first * unitMs - (within * unitMs).toLong()
+                    }
+                }
+                start = end
+            }
+            return out.toList()
+        }
+
+        /** (value, unit seconds) of a prose date, or null when it has none. */
+        private fun parseRelativeSpan(text: String?): Pair<Long, Long>? {
+            if (text.isNullOrBlank()) return null
+            val match = RELATIVE_TIME.find(text) ?: return null
+            val value = match.groupValues[1].toLongOrNull() ?: return null
+            val unitSeconds = when (match.groupValues[2].lowercase()) {
+                "second" -> 1L
+                "minute" -> 60L
+                "hour" -> 3_600L
+                "day" -> 86_400L
+                "week" -> 604_800L
+                "month" -> 2_592_000L
+                "year" -> 31_536_000L
+                else -> return null
+            }
+            return value to unitSeconds
+        }
+
         private val RELATIVE_TIME =
             Regex("""(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago""", RegexOption.IGNORE_CASE)
 
@@ -363,6 +417,21 @@ fun isMissingChannelName(name: String?): Boolean =
 
 /** [raw] as a channel name: blank when it is missing or the old placeholder. */
 fun cleanChannelName(raw: String?): String = raw?.takeUnless(::isMissingChannelName).orEmpty()
+
+/**
+ * One channel's videos, in the order it served them, with
+ * [VideoItem.publishedAtMs] filled in from the prose dates where it is missing
+ * ([VideoItem.estimatePublishTimes]). An exact time already present is kept.
+ */
+fun withEstimatedPublishTimes(
+    videos: List<VideoItem>,
+    nowMs: Long = System.currentTimeMillis()
+): List<VideoItem> {
+    val estimates = VideoItem.estimatePublishTimes(videos.map { it.uploadedDate }, nowMs)
+    return videos.mapIndexed { index, video ->
+        if (video.publishedAtMs != null) video else video.copy(publishedAtMs = estimates[index])
+    }
+}
 
 /**
  * A single chapter marker in a video, parsed from the watch-next player bar

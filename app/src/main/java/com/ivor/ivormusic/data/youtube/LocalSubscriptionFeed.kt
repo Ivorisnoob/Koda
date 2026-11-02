@@ -5,6 +5,7 @@ import com.ivor.ivormusic.data.LocalSubscription
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.YouTubeRateLimit
 import com.ivor.ivormusic.data.YouTubeRateLimitedException
+import com.ivor.ivormusic.data.withEstimatedPublishTimes
 import com.ivor.ivormusic.util.KLog
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
@@ -249,14 +250,11 @@ internal class LocalSubscriptionFeed(
      * The browse path has durations and live badges, which RSS lacks, but only
      * prose dates ("3 days ago"), so [VideoItem.publishedAtMs] has to be
      * derived from those to sort alongside RSS items carrying real timestamps.
+     * Spread within each phrase in the channel's own order
+     * ([VideoItem.estimatePublishTimes]), so a week of uploads does not tie.
      */
     private suspend fun channelVideosWithTimestamps(channel: LocalSubscription): List<VideoItem> =
-        channelPages.getChannelVideos(channel.toSubscribedChannel()).map { video ->
-            video.copy(
-                publishedAtMs = video.publishedAtMs
-                    ?: VideoItem.parseRelativeTime(video.uploadedDate)
-            )
-        }
+        withEstimatedPublishTimes(channelPages.getChannelVideos(channel.toSubscribedChannel()))
 
     /**
      * Turns parsed import entries into storable subscriptions, resolving the
