@@ -300,11 +300,28 @@ internal fun parseLockupViewModel(lockupViewModel: JSONObject?): VideoItem? {
             dismissal = parseDismissalTokens(metadata),
             collaborators = collaborators,
             watchedProgress = parseVideoWatchProgress(lockupViewModel),
-            watchProgressUpdatedAtMs = System.currentTimeMillis()
+            watchProgressUpdatedAtMs = System.currentTimeMillis(),
+            isShort = isShortsLockup(lockupViewModel)
         )
     } catch (e: Exception) {
         return null
     }
+}
+
+/** A lockup whose tap opens the Shorts player rather than the watch page. */
+internal fun isShortsLockup(lockupViewModel: JSONObject): Boolean {
+    val command = lockupViewModel
+        .optJSONObject("rendererContext")
+        ?.optJSONObject("commandContext")
+        ?.optJSONObject("onTap")
+        ?.optJSONObject("innertubeCommand")
+        ?: return false
+    if (command.has("reelWatchEndpoint")) return true
+    val url = command.optJSONObject("commandMetadata")
+        ?.optJSONObject("webCommandMetadata")
+        ?.optString("url")
+        .orEmpty()
+    return url.startsWith("/shorts/")
 }
 
 /**

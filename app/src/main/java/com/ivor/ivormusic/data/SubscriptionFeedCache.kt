@@ -32,6 +32,7 @@ class SubscriptionFeedCache(context: Context) {
                 viewCount = o.optString("viewCount"),
                 uploadedDate = o.optString("uploaded").takeIf { it.isNotBlank() },
                 isLive = o.optBoolean("isLive", false),
+                isShort = o.optBoolean("isShort", false),
                 publishedAtMs = o.optLong("publishedAt", 0L).takeIf { it > 0L }
             )
         }
@@ -54,6 +55,7 @@ class SubscriptionFeedCache(context: Context) {
                     put("viewCount", v.viewCount)
                     v.uploadedDate?.let { put("uploaded", it) }
                     put("isLive", v.isLive)
+                    if (v.isShort) put("isShort", true)
                     v.publishedAtMs?.let { put("publishedAt", it) }
                 })
             }

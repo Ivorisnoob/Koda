@@ -1168,7 +1168,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (snapshot.key != subscriptionFeedKey() || snapshot.videos.isEmpty()) return false
         val age = System.currentTimeMillis() - snapshot.fetchedAtMs
         if (interval != com.ivor.ivormusic.data.ThemePreferences.SUBS_REFRESH_MANUAL && age > interval * 60_000L) return false
-        _subscriptionFeed.value = snapshot.videos
+        _subscriptionFeed.value = snapshot.videos.withoutBlockedShorts()
         resetSubscriptionFeedPaging()
         subscriptionFeedTokenUnknown = true
         _subscriptionFeedError.value = null
@@ -1690,7 +1690,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     ) { done, total -> _subscriptionFeedProgress.value = done to total }
                 } else emptyList()
 
-                _subscriptionFeed.value = mergeFeeds(accountFeed, localFeed)
+                _subscriptionFeed.value = mergeFeeds(accountFeed, localFeed).withoutBlockedShorts()
                 subscriptionFeedContinuation = accountPage.continuation
                 subscriptionFeedTokenUnknown = false
                 if (_subscriptionFeed.value.isNotEmpty()) {
@@ -1769,7 +1769,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 subscriptionFeedTokenUnknown = false
                 subscriptionFeedContinuation = page.continuation
                 val known = _subscriptionFeed.value.mapTo(HashSet()) { it.videoId }
-                val fresh = page.videos.filter { known.add(it.videoId) }
+                val fresh = page.videos.withoutBlockedShorts().filter { known.add(it.videoId) }
                 if (fresh.isNotEmpty()) _subscriptionFeed.value = _subscriptionFeed.value + fresh
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -2196,6 +2196,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 it.publishedAtMs ?: VideoItem.parseRelativeTime(it.uploadedDate, now) ?: Long.MIN_VALUE
             }
     }
+
+    /**
+     * The feed minus Shorts when "Fully block Shorts" is on. The account feed
+     * and device follows' Atom feeds both mix Shorts in with uploads, so the
+     * block has to apply here as well as in search and on channel pages (#306).
+     */
+    private fun List<VideoItem>.withoutBlockedShorts(): List<VideoItem> =
+        if (com.ivor.ivormusic.data.ThemePreferences.isShortsHardBlocked(app)) filterNot { it.isShort }
+        else this
 
     /** Local channels the selected group allows through, or all of them. */
     private fun groupFilteredLocalChannels(): List<com.ivor.ivormusic.data.LocalSubscription> =
