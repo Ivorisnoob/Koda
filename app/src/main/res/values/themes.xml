@@ -17,6 +17,12 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:enforceStatusBarContrast">false</item>
         <item name="android:enforceNavigationBarContrast">false</item>
+        <!-- Draw into the camera cutout on every edge from the moment the
+             window exists. MainActivity also sets this at runtime, but
+             like the bar colours above, some OEM skins only honour what
+             the window was created with, which left landscape boxed in
+             beside the notch. Screens keep their controls clear of it. -->
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
     </style>
 
     <!-- Splash Screen Theme (Android 12+) -->
@@ -29,5 +35,8 @@
         <item name="windowSplashScreenAnimationDuration">800</item>
         <!-- Post-splash theme (the actual app theme) -->
         <item name="postSplashScreenTheme">@style/Theme.IvorMusic</item>
+        <!-- The activity window is created under this theme, so the
+             cutout mode has to be declared here too. -->
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
     </style>
 </resources>

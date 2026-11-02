@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -800,6 +801,17 @@ fun HomeScreen(
         else -> HOME_FLOATING_RAIL_RESERVE
     }
     val contentEndInset = safeEndInset
+    // The pages themselves run past the camera cutout on the end edge: on a
+    // phone on its side the notch is a small hole, and keeping the whole page
+    // clear of it left an empty band down that side. A system bar there
+    // (three-button navigation) is still kept clear. The start edge needs
+    // nothing new, since the rail already stands between the cutout and the
+    // page, and the floating chrome (rail, mini player, the shell top bar)
+    // keeps the full safe area.
+    val pageEndInset = WindowInsets.systemBars
+        .only(androidx.compose.foundation.layout.WindowInsetsSides.Horizontal)
+        .asPaddingValues()
+        .calculateEndPadding(shellLayoutDirection)
     // The standard non-expressive NavigationBar is 80dp tall. The expressive
     // toolbar occupies 84dp including its bottom breathing room. Keep the same
     // clearance above either variant so overlaid controls do not jump or
@@ -1079,7 +1091,7 @@ fun HomeScreen(
         // Main content
         if (!loadLocalSongs || permissionState.isGranted) {
             androidx.compose.animation.AnimatedContent(
-                modifier = Modifier.padding(start = contentStartInset, end = contentEndInset),
+                modifier = Modifier.padding(start = contentStartInset, end = pageEndInset),
                 // Keyed on the mode as well as the tab so the spec below can
                 // tell a tab move from a mode switch. They deserve different
                 // motion and used to share one.
