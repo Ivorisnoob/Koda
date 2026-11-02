@@ -1,5 +1,11 @@
 package com.ivor.ivormusic.ui.channel
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.draw.drawBehind
 import com.ivor.ivormusic.video.core.hasVoted
 import com.ivor.ivormusic.video.core.shareRatio
@@ -9,8 +15,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1606,24 +1610,22 @@ internal fun ChannelPhotoViewer(
         val pagerState = rememberPagerState(
             initialPage = startIndex.coerceIn(images.indices)
         ) { images.size }
-        // A zoomed photo owns the finger: the pager only scrolls while every
-        // photo is at rest scale, otherwise pinch-panning would fling pages.
-        var pagerLocked by remember { mutableStateOf(false) }
         BackHandler(onBack = onDismiss)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
+            // Always scrollable: a zoomed photo keeps the finger only while it
+            // has picture left to pan towards (see ZoomableChannelImage).
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = !pagerLocked,
                 key = { images[it] }
             ) { page ->
                 ZoomableChannelImage(
                     imageUrl = images[page],
-                    onZoomChanged = { pagerLocked = it }
+                    isCurrent = pagerState.settledPage == page
                 )
             }
             Row(
@@ -1670,14 +1672,22 @@ internal fun ChannelPhotoViewer(
 /**
  * One photo with pinch and double-tap zoom, 1x to 4x. Panning is clamped to
  * the zoomed frame so the picture cannot be thrown off screen, and dropping
- * back to 1x re-centres it. Reports zoom state so the viewer can pin the
- * pager while a photo owns the finger.
+ * back to 1x re-centres it.
+ *
+ * The photo and the pager share one finger the way a gallery does. At rest
+ * scale the photo takes nothing and the pager swipes. Zoomed, one finger pans
+ * the photo until it reaches its left or right edge; pushing on past the edge
+ * leaves the movement unconsumed, so the pager takes it and turns the page. A
+ * gesture that pinched at any point stays a zoom to its end, so pinching in
+ * near an edge never turns the page by surprise.
+ *
+ * Swiped away, the photo goes back to 1x, so coming back to it starts whole.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ZoomableChannelImage(
     imageUrl: String,
-    onZoomChanged: (Boolean) -> Unit
+    isCurrent: Boolean
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -1695,19 +1705,48 @@ private fun ZoomableChannelImage(
                 (offset.y + pan.y).coerceIn(-maxY, maxY)
             )
         }
-        onZoomChanged(scale > 1.02f)
     }
 
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        setZoom(scale * zoomChange, panChange)
+    LaunchedEffect(isCurrent) {
+        if (!isCurrent) {
+            scale = 1f
+            offset = Offset.Zero
+        }
     }
+
     AsyncImage(
         model = imageUrl,
         contentDescription = null,
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { layoutSize = it }
-            .transformable(transformState)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var pinched = false
+                    do {
+                        val event = awaitPointerEvent()
+                        val fingers = event.changes.count { it.pressed }
+                        if (fingers >= 2) {
+                            pinched = true
+                            val zoom = event.calculateZoom()
+                            val pan = event.calculatePan()
+                            setZoom(scale * zoom, pan)
+                            event.changes.forEach { it.consume() }
+                        } else if (scale > 1.02f && event.changes.none { it.isConsumed }) {
+                            val pan = event.calculatePan()
+                            val before = offset
+                            setZoom(scale, pan)
+                            val movedX = offset.x - before.x
+                            // Mostly sideways and the picture could not follow:
+                            // it is at that edge, so the page may turn.
+                            val againstEdge = kotlin.math.abs(pan.x) > kotlin.math.abs(pan.y) &&
+                                kotlin.math.abs(movedX) < kotlin.math.abs(pan.x) * 0.5f
+                            if (pinched || !againstEdge) event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
             .graphicsLayer(
                 scaleX = scale,
                 scaleY = scale,
