@@ -704,10 +704,19 @@ private fun parseSubscriberCount(value: String?): Long? {
     if (value.isNullOrBlank()) return null
     val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*([KMB万億]?)""", RegexOption.IGNORE_CASE)
         .find(value) ?: return null
-    // A comma can be the decimal separator in localized values ("1,2 M").
-    // Keep it until after matching; deleting it would turn 1.2M into 12M.
-    val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return null
-    val multiplier = when (match.groupValues[2].uppercase()) {
+    val rawAmount = match.groupValues[1]
+    val suffix = match.groupValues[2]
+    // A comma before a magnitude suffix is a localized decimal separator
+    // ("1,2 M"). Without a suffix, three trailing digits indicate grouping
+    // ("1,234 subscribers"), not a fractional value.
+    val normalizedAmount = when {
+        ',' !in rawAmount -> rawAmount
+        suffix.isNotEmpty() -> rawAmount.replace(',', '.')
+        rawAmount.substringAfterLast(',').length == 3 -> rawAmount.replace(",", "")
+        else -> rawAmount.replace(',', '.')
+    }
+    val amount = normalizedAmount.toDoubleOrNull() ?: return null
+    val multiplier = when (suffix.uppercase()) {
         "K" -> 1_000.0
         "M" -> 1_000_000.0
         "B" -> 1_000_000_000.0
