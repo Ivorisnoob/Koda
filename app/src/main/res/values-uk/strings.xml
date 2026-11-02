@@ -367,4 +367,10 @@
     <string name="subscribed">Ви підписані</string>
     <string name="subscribe">Підписатися</string>
     <string name="like">Подобається</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Сортувати канали</string>
+    <string name="subscription_sort_official">У стилі YouTube (нещодавня активність)</string>
+    <string name="subscription_sort_recent">Спочатку найновіші відео</string>
+    <string name="subscription_sort_name">Назва каналу (А–Я)</string>
+    <string name="subscription_sort_oldest">Спочатку найстаріші відео</string>
 </resources>
