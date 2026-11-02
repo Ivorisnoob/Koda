@@ -1022,9 +1022,6 @@ class ThemePreferences(context: Context) {
         fun isShortsCacheEnabled(context: Context): Boolean =
             switch(context, KEY_SHORTS_CACHE_ENABLED, true)
 
-        fun isShortsAutoAdvance(context: Context): Boolean =
-            switch(context, KEY_SHORTS_AUTO_ADVANCE, false)
-
         fun isPlaybackPreloadEnabled(context: Context): Boolean =
             switch(context, KEY_PLAYBACK_PRELOAD_ENABLED, true)
 

@@ -80,6 +80,13 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
         themePreferences.setShortsAutoAdvance(enabled)
     }
 
+    /** True while a sheet is open over the Short: it keeps replaying instead. */
+    private var autoAdvanceHeld = false
+
+    fun setAutoAdvanceHeld(held: Boolean) {
+        autoAdvanceHeld = held
+    }
+
     private fun repeatModeFor(autoAdvance: Boolean): Int =
         if (autoAdvance) Player.REPEAT_MODE_OFF else Player.REPEAT_MODE_ONE
 
@@ -623,7 +630,7 @@ class ShortsPlayerViewModel(application: android.app.Application) : AndroidViewM
      */
     private fun onShortEnded() {
         if (!_isActive.value) return
-        if (!playNext()) {
+        if (autoAdvanceHeld || !playNext()) {
             _exoPlayer?.seekTo(0L)
             playWhenVisible()
         }

@@ -486,6 +486,9 @@ class YouTubeRepository(private val context: Context) {
 
     suspend fun getChannelPosts(channelId: String): List<ChannelPost> = channelPages.getChannelPosts(channelId)
 
+    suspend fun getChannelPostsOrNull(channelId: String): List<ChannelPost>? =
+        channelPages.getChannelPostsOrNull(channelId)
+
     suspend fun getChannelVideos(channel: SubscribedChannel): List<VideoItem> = channelPages.getChannelVideos(channel)
 
     suspend fun getChannelMixPool(channel: SubscribedChannel): ChannelMixPool = channelPages.getChannelMixPool(channel)

@@ -282,6 +282,12 @@ fun ShortsPlayerOverlay(
         }
     }
     val autoAdvance by viewModel.autoAdvance.collectAsState()
+    // Nobody wants the Short changing under the comments they are reading.
+    val sheetOpen = showCommentsSheet || showDescriptionSheet || showOptionsSheet || showDismissSheet
+    DisposableEffect(sheetOpen) {
+        viewModel.setAutoAdvanceHeld(sheetOpen)
+        onDispose { viewModel.setAutoAdvanceHeld(false) }
+    }
 
     // Playback progress for the wavy line at the bottom
     var progress by remember { mutableFloatStateOf(0f) }

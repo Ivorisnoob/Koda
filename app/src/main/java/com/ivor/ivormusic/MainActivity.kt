@@ -1221,8 +1221,11 @@ fun MusicApp(
     // eligibility used by VideoPipController: bounds and playback state are not
     // prerequisites for entering PiP.
     val isShortsOpen by shortsPlayerViewModel.isActive.collectAsState()
+    val currentShort by shortsPlayerViewModel.currentVideo.collectAsState()
     androidx.compose.runtime.SideEffect {
-        onPipStateChanged((overlayVideo != null && isVideoOverlayExpanded) || isShortsOpen)
+        onPipStateChanged(
+            (overlayVideo != null && isVideoOverlayExpanded) || (isShortsOpen && currentShort != null)
+        )
     }
 
     // Keep the ViewModel's PiP flag current so it can suppress auto-play

@@ -233,9 +233,13 @@ internal class ChannelPages(
      * A channel's newest community posts, for the posts the feeds scatter
      * between videos. One browse straight at the Posts tab, each post stamped
      * with the channel it was asked of. Empty for a channel with no Posts tab
-     * and on any failure: a missing post is not worth an error anywhere.
+     * and on any failure: a missing post is not worth an error in a feed.
      */
-    suspend fun getChannelPosts(channelId: String): List<ChannelPost> = withContext(Dispatchers.IO) {
+    suspend fun getChannelPosts(channelId: String): List<ChannelPost> =
+        getChannelPostsOrNull(channelId).orEmpty()
+
+    /** [getChannelPosts], telling a failure (null) from a channel with no posts. */
+    suspend fun getChannelPostsOrNull(channelId: String): List<ChannelPost>? = withContext(Dispatchers.IO) {
         try {
             val raw = webApi.postWatchApi(
                 "browse",
@@ -243,7 +247,7 @@ internal class ChannelPages(
                     .put("context", webApi.webContext())
                     .put("browseId", channelId)
                     .put("params", CHANNEL_POSTS_TAB_PARAMS)
-            ) ?: return@withContext emptyList()
+            ) ?: return@withContext null
             val postRenderers = mutableListOf<JSONObject>()
             findObjectsByKey(JSONObject(raw), "backstagePostRenderer", postRenderers)
             postRenderers.mapNotNull { parseBackstagePost(it) }
@@ -253,7 +257,7 @@ internal class ChannelPages(
             throw e
         } catch (e: Exception) {
             KLog.w(YOUTUBE_TAG, "getChannelPosts failed for $channelId", e)
-            emptyList()
+            null
         }
     }
 

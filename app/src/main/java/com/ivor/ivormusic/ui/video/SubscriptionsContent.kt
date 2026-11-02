@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Subscriptions
+import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,6 +64,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -72,6 +76,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -93,9 +99,11 @@ import com.ivor.ivormusic.ui.components.SearchEmptyState
 import com.ivor.ivormusic.ui.components.SearchField
 import com.ivor.ivormusic.ui.components.SkeletonList
 import com.ivor.ivormusic.ui.components.VideoCardSkeleton
+import com.ivor.ivormusic.data.SubscriptionPostsIssue
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.util.MatchField
 import com.ivor.ivormusic.util.fuzzyScore
+import kotlinx.coroutines.launch
 
 private enum class SubscriptionFeedPeriod(val label: String, val ageMs: Long?) {
     ALL("Any time", null),
@@ -256,19 +264,63 @@ fun SubscriptionsContent(
         }
     }
 
-    // Community posts from followed channels, scattered between the uploads.
-    // Not while one creator is selected: that view is a filter on one
-    // channel, and another channel's post in it would be a wrong answer.
-    val feedPosts by viewModel.feedPosts.collectAsState()
+    // Community posts from followed channels live in their own Posts view
+    // rather than between the uploads: scattered in a shuffled order they had
+    // no sense of time, and a dedicated list can be newest first. With one
+    // creator selected the view is that creator's own Posts tab.
+    val showPostsTab by viewModel.subscriptionPostsTab.collectAsState()
+    val subscriptionPosts by viewModel.subscriptionPosts.collectAsState()
+    val isFeedPostsLoading by viewModel.isFeedPostsLoading.collectAsState()
+    val feedPostsExhausted by viewModel.feedPostsExhausted.collectAsState()
+    val feedPostsPaused by viewModel.feedPostsPaused.collectAsState()
+    val subscriptionPostsIssue by viewModel.subscriptionPostsIssue.collectAsState()
+    val selectedChannelPostsFailed by viewModel.selectedChannelPostsFailed.collectAsState()
+    val selectedChannelPosts by viewModel.selectedChannelPosts.collectAsState()
+    val isSelectedChannelPostsLoading by viewModel.isSelectedChannelPostsLoading.collectAsState()
     val postPhotoViewer = remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     FeedPostOverlays(viewModel, postPhotoViewer, onOpenChannel)
-    FeedPostDemand(
-        viewModel = viewModel,
-        listState = feedListState,
-        videoCount = visibleFeed.size,
-        postCount = feedPosts.size,
-        enabled = selectedChannelId == null && feedOptions.showPosts
-    )
+    val shownPosts = if (selectedChannelId != null) selectedChannelPosts else subscriptionPosts
+    val shownPostsLoading = if (selectedChannelId != null) {
+        isSelectedChannelPostsLoading
+    } else {
+        isFeedPostsLoading
+    }
+    // Set once this view has asked for its posts, so the first frame shows the
+    // skeleton rather than flashing the empty state before the request starts.
+    var postsAsked by remember(showPostsTab, selectedChannelId) { mutableStateOf(false) }
+    val nearListEnd by remember(feedListState) {
+        derivedStateOf {
+            val info = feedListState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            info.totalItemsCount == 0 || lastVisible >= info.totalItemsCount - SUBS_POSTS_LOOKAHEAD
+        }
+    }
+    LaunchedEffect(
+        showPostsTab,
+        selectedChannelId,
+        nearListEnd,
+        subscriptionPosts.size,
+        isFeedPostsLoading,
+        feedPostsExhausted,
+        feedPostsPaused,
+        subscriptionPostsIssue
+    ) {
+        if (!showPostsTab) return@LaunchedEffect
+        val channelId = selectedChannelId
+        if (channelId != null) {
+            viewModel.loadSelectedChannelPosts(channelId)
+        } else if (!isFeedPostsLoading && !feedPostsExhausted && !feedPostsPaused &&
+            (nearListEnd || subscriptionPosts.isEmpty())
+        ) {
+            // Asked a page at a time as the list nears its end. Posts from
+            // channels asked later slot in by date, so the list is newest
+            // first across every channel asked so far.
+            viewModel.ensureSubscriptionPosts(subscriptionPosts.size + SUBS_POSTS_PAGE)
+        }
+        postsAsked = true
+    }
+    val postsScope = rememberCoroutineScope()
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     LaunchedEffect(channels, selectedChannelId) {
         if (selectedChannelId != null && channels.none { it.channelId == selectedChannelId }) {
@@ -459,14 +511,23 @@ fun SubscriptionsContent(
             ExpressivePullToRefresh(
                 // As above: the pull spinner covers refreshes over existing
                 // videos, the skeleton covers the empty first load.
-                isRefreshing = if (selectedChannelId != null) {
+                isRefreshing = if (showPostsTab) {
+                    // A refresh empties the posts, so the skeleton covers it.
+                    false
+                } else if (selectedChannelId != null) {
                     isSelectedChannelFeedLoading && selectedChannelFeed.isNotEmpty()
                 } else {
                     isFeedLoading && feed.isNotEmpty()
                 },
                 onRefresh = {
                     val selected = channels.firstOrNull { it.channelId == selectedChannelId }
-                    if (selected != null) {
+                    if (showPostsTab) {
+                        if (selected != null) {
+                            viewModel.loadSelectedChannelPosts(selected.channelId, force = true)
+                        } else {
+                            viewModel.refreshFeedPosts()
+                        }
+                    } else if (selected != null) {
                         viewModel.loadSelectedChannelFeed(selected)
                     } else {
                         viewModel.refreshFeedPosts()
@@ -528,6 +589,25 @@ fun SubscriptionsContent(
                         }
                     }
 
+                    // Videos or Posts. Item 1, so a switch made deep in the
+                    // list can bring the switch itself to the top.
+                    item(key = "feed-kind") {
+                        SubscriptionsKindSwitch(
+                            showPosts = showPostsTab,
+                            onSelect = { posts ->
+                                if (posts != showPostsTab) {
+                                    haptics.subtle()
+                                    viewModel.setSubscriptionPostsTab(posts)
+                                    postsScope.launch {
+                                        if (feedListState.firstVisibleItemIndex > 1) {
+                                            feedListState.scrollToItem(1)
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+
                     // Group filter. Only shown once groups exist, so a user who
                     // has never made one never sees a row of chrome that does
                     // nothing.
@@ -564,7 +644,7 @@ fun SubscriptionsContent(
                     // "42 of 130 channels" during a device-local refresh. That
                     // refresh is one request per channel, so on a large list an
                     // indeterminate spinner reads as a hang.
-                    feedProgress?.let { (done, total) ->
+                    feedProgress?.takeIf { !showPostsTab }?.let { (done, total) ->
                         item(key = "feed-progress") {
                             Column(
                                 modifier = Modifier
@@ -674,7 +754,7 @@ fun SubscriptionsContent(
                             }
                         }
 
-                        item(key = "feed-controls") {
+                        if (!showPostsTab) item(key = "feed-controls") {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -740,7 +820,85 @@ fun SubscriptionsContent(
                         }
                     }
 
-                    if (isSelectedChannelFeedLoading && selectedChannelId != null) {
+                    if (showPostsTab) {
+                        val selectedName = channels.firstOrNull { it.channelId == selectedChannelId }?.name
+                        if (shownPosts.isEmpty() && (shownPostsLoading || !postsAsked)) {
+                            item(key = "posts-loading") {
+                                SkeletonList(
+                                    count = 3,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                ) { alpha -> VideoCardSkeleton(alpha = alpha) }
+                            }
+                        } else if (shownPosts.isEmpty()) {
+                            item(key = "posts-empty") {
+                                PostsEmptyState(
+                                    channelName = selectedName,
+                                    hasChannels = channels.isNotEmpty(),
+                                    issue = when {
+                                        selectedChannelId == null -> subscriptionPostsIssue
+                                        selectedChannelPostsFailed -> SubscriptionPostsIssue.FAILED
+                                        else -> SubscriptionPostsIssue.NONE
+                                    },
+                                    moreToCheck = selectedChannelId == null && !feedPostsExhausted,
+                                    onRetry = {
+                                        val channelId = selectedChannelId
+                                        when {
+                                            channelId != null ->
+                                                viewModel.loadSelectedChannelPosts(channelId, force = true)
+                                            feedPostsExhausted -> viewModel.refreshFeedPosts()
+                                            else -> viewModel.resumeSubscriptionPosts()
+                                        }
+                                    }
+                                )
+                            }
+                        } else {
+                            items(
+                                shownPosts,
+                                key = { "subs_post_" + it.postId },
+                                contentType = { "feed_post" }
+                            ) { post ->
+                                // Capped and centred: on a wide window a
+                                // full-width card would make every photo a
+                                // poster.
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.TopCenter
+                                ) {
+                                    Box(modifier = Modifier.widthIn(max = SUBS_POST_MAX_WIDTH)) {
+                                        FeedPostCard(post, viewModel, onVideoClick, onOpenChannel, postPhotoViewer)
+                                    }
+                                }
+                            }
+                            if (shownPostsLoading) {
+                                item(key = "posts-loading-more") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        androidx.compose.material3.LoadingIndicator(
+                                            modifier = Modifier.size(36.dp),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            } else if (selectedChannelId == null && feedPostsPaused && !feedPostsExhausted) {
+                                item(key = "posts-check-more") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        OutlinedButton(onClick = viewModel::resumeSubscriptionPosts) {
+                                            Text(stringResource(R.string.sc_posts_check_more))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if (isSelectedChannelFeedLoading && selectedChannelId != null) {
                         item(key = "selected-channel-loading") {
                             SkeletonList(
                                 count = 3,
@@ -803,18 +961,10 @@ fun SubscriptionsContent(
                                 )
                             }
                         }
-                        videoListItemsWithPosts(
+                        videoListItems(
                             videos = visibleFeed,
-                            posts = if (selectedChannelId == null && feedOptions.showPosts) {
-                                feedPosts
-                            } else {
-                                emptyList()
-                            },
                             layout = listLayout,
-                            columns = videoGridColumns,
-                            post = { post ->
-                                FeedPostCard(post, viewModel, onVideoClick, onOpenChannel, postPhotoViewer)
-                            }
+                            columns = videoGridColumns
                         ) { video, cell ->
                             VideoCard(
                                 video = video,
@@ -1051,6 +1201,113 @@ private fun SubscriptionsEmptyWall(
                 Icon(Icons.Rounded.Login, null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.log_in_youtube))
+            }
+        }
+    }
+}
+
+/** Posts asked for beyond those in hand each time the Posts view nears its end. */
+private const val SUBS_POSTS_PAGE = 10
+
+/** Rows from the end of the Posts view at which the next page is asked for. */
+private const val SUBS_POSTS_LOOKAHEAD = 4
+
+/** Widest a post card is drawn in the Posts view. */
+private val SUBS_POST_MAX_WIDTH = 640.dp
+
+/**
+ * Videos | Posts: the two things the Subscriptions feed shows, as a connected
+ * button group like the channel page's tab strip.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SubscriptionsKindSwitch(
+    showPosts: Boolean,
+    onSelect: (posts: Boolean) -> Unit
+) {
+    val options = listOf(
+        false to stringResource(R.string.sc_tab_videos),
+        true to stringResource(R.string.sc_tab_posts)
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+    ) {
+        options.forEachIndexed { index, (posts, label) ->
+            val selected = posts == showPosts
+            ToggleButton(
+                checked = selected,
+                onCheckedChange = { onSelect(posts) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(42.dp),
+                shapes = if (index == 0) {
+                    ButtonGroupDefaults.connectedLeadingButtonShapes()
+                } else {
+                    ButtonGroupDefaults.connectedTrailingButtonShapes()
+                }
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+/** The Posts view with nothing to show: nobody followed has posted, or one creator has not. */
+@Composable
+private fun PostsEmptyState(
+    channelName: String?,
+    hasChannels: Boolean,
+    issue: SubscriptionPostsIssue,
+    moreToCheck: Boolean,
+    onRetry: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp, vertical = 40.dp)
+    ) {
+        Icon(
+            Icons.AutoMirrored.Rounded.Article,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(40.dp)
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = when {
+                issue == SubscriptionPostsIssue.LOCAL_ONLY -> stringResource(R.string.sc_posts_local_only)
+                issue == SubscriptionPostsIssue.RATE_LIMITED -> stringResource(R.string.sc_posts_rate_limited)
+                issue == SubscriptionPostsIssue.FAILED -> stringResource(R.string.sc_posts_failed)
+                channelName != null -> stringResource(R.string.sc_posts_empty_channel, channelName)
+                !hasChannels -> stringResource(R.string.sc_not_following)
+                moreToCheck -> stringResource(R.string.sc_posts_none_yet)
+                else -> stringResource(R.string.sc_posts_empty)
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        if (hasChannels && issue != SubscriptionPostsIssue.LOCAL_ONLY) {
+            Spacer(Modifier.height(20.dp))
+            OutlinedButton(onClick = onRetry) {
+                Text(
+                    stringResource(
+                        if (moreToCheck && issue == SubscriptionPostsIssue.NONE) {
+                            R.string.sc_posts_check_more
+                        } else {
+                            R.string.action_try_again
+                        }
+                    )
+                )
             }
         }
     }

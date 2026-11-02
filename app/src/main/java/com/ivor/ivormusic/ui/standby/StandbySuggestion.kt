@@ -97,12 +97,13 @@ fun StandbySuggestion(viewModel: PlayerViewModel) {
     // The sensor keeps listening while spent, or nothing would see the phone
     // leave its side and the offer would never come back until unplugged.
     val sideways by rememberPhoneOnItsSide(active = charging && song != null)
-    // Off its side long enough to not be a wobble: the next time it is set
+    // Off its side long enough to not be a wobble, or a stand leaning far
+    // enough back to lose the reading for a moment: the next time it is set
     // down is a new offer. Standby open or just closed with the phone still
     // on its side leaves it spent, so closing it never brings the offer back.
     LaunchedEffect(sideways) {
         if (!sideways) {
-            delay(SETTLE_MS)
+            delay(REARM_MS)
             spent = false
         }
     }
@@ -267,6 +268,9 @@ private fun rememberPhoneOnItsSide(active: Boolean): State<Boolean> {
 
 /** Held on its side this long before the offer appears. */
 private const val SETTLE_MS = 1_500L
+
+/** Off its side this long before a dismissed offer may come back. */
+private const val REARM_MS = 4_000L
 
 /** How long the offer stays if left alone. */
 private const val SHOWN_MS = 9_000L
