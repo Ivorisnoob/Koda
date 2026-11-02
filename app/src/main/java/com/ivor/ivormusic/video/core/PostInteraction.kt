@@ -8,6 +8,18 @@ import com.ivor.ivormusic.data.ChannelPost
  * YouTube refuses. Pure, so the rules are testable away from the network.
  */
 
+/**
+ * Whether a post is new enough to appear in a feed. A post whose age could not
+ * be read stays out: nothing says it is recent.
+ */
+fun isRecentPost(post: ChannelPost, nowMs: Long): Boolean {
+    val publishedAt = post.publishedAtMs ?: return false
+    return nowMs - publishedAt <= FEED_POST_MAX_AGE_MS
+}
+
+/** A month: "3 weeks ago" belongs in a feed, "3 years ago" does not. */
+private const val FEED_POST_MAX_AGE_MS = 31L * 24 * 60 * 60 * 1000
+
 /** The post as it reads with the like on or off. */
 fun ChannelPost.withLike(liked: Boolean): ChannelPost = copy(
     isLiked = liked,

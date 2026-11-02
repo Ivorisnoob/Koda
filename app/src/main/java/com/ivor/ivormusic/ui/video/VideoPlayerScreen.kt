@@ -3258,38 +3258,37 @@ fun VideoInfoSection(
         ) {
             // Title & Stats Group
             item(key = "title") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.fillMaxWidth()
+                VideoTitleCard(
+                    video = video,
+                    showStats = !isLive && !isOffline,
+                    showDescription = !isLive && !isOffline,
+                    onSeekTo = onSeekTo,
+                    status = {
+                        // A live stream's "view count" is a concurrent-viewer number that
+                        // moves, and its upload date is meaningless, so the badge replaces
+                        // the static line rather than sitting next to it.
+                        if (isLive) {
+                            LiveBadge(
+                                viewerCount = liveViewerCount ?: video.viewCount.takeIf { it.isNotEmpty() }
+                            )
+                        } else if (isOffline) {
+                            Text(
+                                text = stringResource(R.string.vh_available_offline),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Text(
+                                text = buildString {
+                                    if (video.viewCount.isNotEmpty()) append(video.viewCount)
+                                    if (!video.uploadedDate.isNullOrEmpty()) append(" • ${video.uploadedDate}")
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 )
-
-                // A live stream's "view count" is a concurrent-viewer number that
-                // moves, and its upload date is meaningless, so the badge replaces
-                // the static line rather than sitting next to it.
-                if (isLive) {
-                    LiveBadge(
-                        viewerCount = liveViewerCount ?: video.viewCount.takeIf { it.isNotEmpty() }
-                    )
-                } else if (isOffline) {
-                    Text(
-                        text = stringResource(R.string.vh_available_offline),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                } else {
-                    Text(
-                        text = buildString {
-                            if (video.viewCount.isNotEmpty()) append(video.viewCount)
-                            if (!video.uploadedDate.isNullOrEmpty()) append(" • ${video.uploadedDate}")
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
             }
 
             // The playlist this is being watched through. Directly under the title
@@ -3492,10 +3491,8 @@ fun VideoInfoSection(
             }
             }
 
-            // Comments + description share one card now. The comments half stays
-            // a door - the list itself is never rendered inline, it slides up on
-            // tap - and the card itself is never clickable, so the comments row
-            // and the description links keep their own tap targets.
+            // Comments stay a door: the list itself is never rendered inline, it
+            // slides up on tap. The description lives in VideoTitleCard.
             if (!isLive && !isOffline) {
                 item(key = "about_${video.videoId}") { Surface(
                     shape = RoundedCornerShape(20.dp),
@@ -3533,75 +3530,6 @@ fun VideoInfoSection(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-            
-                    // Description Surface
-                    if (!video.description.isNullOrBlank()) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-                    Column(Modifier.padding(16.dp)) {
-                        Text(
-                            text = stringResource(R.string.vp_description),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        
-                        var isDescriptionExpanded by remember { mutableStateOf(false) }
-                        // YouTube's link offsets are measured against the raw
-                        // attributedDescription text, so it must not be rewritten
-                        // when we have them. Only the NewPipe-sourced descriptions
-                        // (which carry no links) still need HTML unescaping.
-                        val cleanedDescription = remember(video.description, video.descriptionLinks) {
-                            when {
-                                video.description == null -> ""
-                                video.descriptionLinks.isNotEmpty() -> video.description
-                                else -> androidx.core.text.HtmlCompat.fromHtml(
-                                    video.description,
-                                    androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY
-                                ).toString().trim()
-                            }
-                        }
-                        val describedText = com.ivor.ivormusic.ui.components.rememberLinkedText(
-                            rich = com.ivor.ivormusic.data.RichText(
-                                cleanedDescription,
-                                video.descriptionLinks
-                            ),
-                            onTimestampClick = onSeekTo
-                        )
-
-                        if (cleanedDescription.isNotEmpty()) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                androidx.compose.foundation.text.selection.SelectionContainer {
-                                    Text(
-                                        text = describedText,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = if (isDescriptionExpanded) Int.MAX_VALUE else 3,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-
-                                if (cleanedDescription.length > 100 || cleanedDescription.count { it == '\n' } > 2) {
-                                    // Only this row toggles expansion. It used to be
-                                    // the whole block, which would now fight the
-                                    // links inside the text for the same tap.
-                                    Text(
-                                        text = if (isDescriptionExpanded) stringResource(R.string.vp_show_less) else stringResource(R.string.action_show_more),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .clickable { isDescriptionExpanded = !isDescriptionExpanded }
-                                            .padding(top = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    } // if (!video.description.isNullOrBlank())
                     } // merged info card Column
                 } // Surface
                 } // item

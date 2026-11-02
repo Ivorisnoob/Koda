@@ -1955,9 +1955,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (!feedPostsStarted) {
                     val channels = subscribedChannelsForMix()
                     if (generation != feedPostGeneration) return@launch
-                    feedPostChannelOrder = channels
+                    // Channels uploading now are the likeliest to have posted
+                    // now, so they are asked first. With hundreds followed and
+                    // only recent posts wanted, a plain shuffle spends its
+                    // browses on channels that went quiet years ago.
+                    val active = (_subscriptionFeed.value + _trendingVideos.value)
+                        .mapNotNullTo(HashSet()) { it.channelId }
+                    val (uploading, quiet) = channels
                         .filterNot { notInterestedRepository.isChannelBlocked(it.channelId) }
                         .shuffled(mixRandom)
+                        .partition { it.channelId in active }
+                    feedPostChannelOrder = uploading + quiet
                     feedPostNextChannel = 0
                     feedPostsStarted = true
                 }
@@ -1968,7 +1976,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // A 429 can land inside a batch; the next batch stands down
                 // rather than finding out again.
                 while (!added && feedPostNextChannel < feedPostChannelOrder.size &&
-                    batchesTried < FEED_POST_EMPTY_BATCH_LIMIT &&
+                    batchesTried < (if (forPostsView) FEED_POST_EMPTY_BATCH_LIMIT else HOME_POST_BATCH_LIMIT) &&
                     !com.ivor.ivormusic.data.YouTubeRateLimit.isHeld()
                 ) {
                     batchesTried++
@@ -1995,21 +2003,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         break
                     }
                     val fetched = answers.filterNotNull()
-                    // Home keeps its two per channel, scattered in a shuffled
-                    // order; the Posts view keeps everything and sorts it.
+                    // Home keeps a few recent posts per channel, scattered. A
+                    // channel's two newest can be years old when it has gone
+                    // quiet, and an old post in a feed reads as a bug; the Posts
+                    // view keeps everything and sorts it.
                     val knownFeed = _feedPosts.value.mapTo(HashSet()) { it.postId }
                     val freshFeed = fetched
                         .flatMap { it.take(FEED_POSTS_PER_CHANNEL) }
+                        .filter { com.ivor.ivormusic.video.core.isRecentPost(it, System.currentTimeMillis()) }
                         .filter { knownFeed.add(it.postId) }
                         .shuffled(mixRandom)
                     if (freshFeed.isNotEmpty()) {
                         _feedPosts.value = _feedPosts.value + freshFeed
+                        // An old post found for the Posts view is not one for
+                        // Home, whose search has to carry on.
+                        if (!forPostsView) added = true
                     }
                     val knownAll = _subscriptionPosts.value.mapTo(HashSet()) { it.postId }
                     val freshAll = fetched.flatten().filter { knownAll.add(it.postId) }
                     if (freshAll.isNotEmpty()) {
                         _subscriptionPosts.value = _subscriptionPosts.value + freshAll
-                        added = true
+                        if (forPostsView) added = true
                     }
                 }
                 // A top-up that found nothing waits to be asked. Left to the
@@ -4927,8 +4941,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         /** Channels asked for posts at once; each is one browse of about half a megabyte. */
         const val FEED_POST_CHANNELS_PER_BATCH = 3
 
+        /**
+         * Batches one Home top-up will try for a recent post. More than the
+         * Posts view's, since most channels have nothing from this month; each
+         * top-up is still asked for by scrolling.
+         */
+        const val HOME_POST_BATCH_LIMIT = 8
+
         /** Posts taken from one channel, so no creator fills the feed's post slots alone. */
-        const val FEED_POSTS_PER_CHANNEL = 2
+        const val FEED_POSTS_PER_CHANNEL = 3
 
         /**
          * Posts kept from one channel's browse for the Subscriptions Posts

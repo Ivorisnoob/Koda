@@ -72,6 +72,15 @@ class PostInteractionTest {
     }
 
     @Test
+    fun `a feed keeps recent posts and drops old or undated ones`() {
+        val day = 24L * 60 * 60 * 1000
+        val now = 1_000L * day
+        assertTrue(isRecentPost(post.copy(publishedAtMs = now - 3 * day), now))
+        assertFalse(isRecentPost(post.copy(publishedAtMs = now - 1_095 * day), now))
+        assertFalse(isRecentPost(post.copy(publishedAtMs = null), now))
+    }
+
+    @Test
     fun `bare domains link only when asked for`() {
         val text = "Merch at shop.example.com/new and example.io, v2.0 e.g. Node.js"
         assertEquals(2, linkifyPlainText(text, bareDomains = true).links.size)

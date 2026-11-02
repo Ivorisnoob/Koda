@@ -30,7 +30,7 @@ import com.ivor.ivormusic.ui.home.HomeViewModel
  */
 
 /** Videos a feed shows for each community post scattered into it. */
-internal const val FEED_VIDEOS_PER_POST = 8
+internal const val FEED_VIDEOS_PER_POST = 6
 
 /** Videos ahead of the first post, so a feed never opens on one. */
 private const val FEED_POST_FIRST_AFTER = 4
