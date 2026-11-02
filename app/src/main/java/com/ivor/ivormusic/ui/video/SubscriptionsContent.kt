@@ -704,6 +704,40 @@ fun SubscriptionsContent(
                                         }
                                     }
                                 }
+                            },
+                            trailing = {
+                                if (channels.isNotEmpty()) {
+                                Box {
+                                    IconButton(onClick = { showChannelSortMenu = true }) {
+                                        Icon(
+                                            Icons.AutoMirrored.Rounded.Sort,
+                                            contentDescription = stringResource(R.string.subscription_channel_sort)
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showChannelSortMenu,
+                                        onDismissRequest = { showChannelSortMenu = false }
+                                    ) {
+                                        listOf(
+                                            "OFFICIAL" to R.string.subscription_sort_official,
+                                            "MOST_WATCHED" to R.string.subscription_sort_most_watched,
+                                            "RECENT" to R.string.subscription_sort_recent,
+                                            "NAME" to R.string.subscription_sort_name,
+                                            "OLDEST" to R.string.subscription_sort_oldest
+                                        ).forEach { (key, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(label)) },
+                                                onClick = {
+                                                    channelSort = key
+                                                    railPreferences.edit().putString("sort_mode", key).apply()
+                                                    if (key == "MOST_WATCHED") viewModel.loadChannelWatchCounts()
+                                                    showChannelSortMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                }
                             }
                         )
                     }
@@ -768,43 +802,6 @@ fun SubscriptionsContent(
                     // Creator rail: selection filters the feed in place instead
                     // of navigating away from the uploads the user came to see.
                     if (channels.isNotEmpty()) {
-                        item(key = "channel-sort-control") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                Box {
-                                    TextButton(onClick = { showChannelSortMenu = true }) {
-                                        Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = null)
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(stringResource(R.string.subscription_channel_sort))
-                                    }
-                                    DropdownMenu(
-                                        expanded = showChannelSortMenu,
-                                        onDismissRequest = { showChannelSortMenu = false }
-                                    ) {
-                                        listOf(
-                                            "OFFICIAL" to R.string.subscription_sort_official,
-                                            "MOST_WATCHED" to R.string.subscription_sort_most_watched,
-                                            "RECENT" to R.string.subscription_sort_recent,
-                                            "NAME" to R.string.subscription_sort_name,
-                                            "OLDEST" to R.string.subscription_sort_oldest
-                                        ).forEach { (key, label) ->
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(label)) },
-                                                onClick = {
-                                                    channelSort = key
-                                                    railPreferences.edit().putString("sort_mode", key).apply()
-                                                    if (key == "MOST_WATCHED") viewModel.loadChannelWatchCounts()
-                                                    showChannelSortMenu = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         item(key = "channel-filter") {
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
@@ -1367,7 +1364,8 @@ private val SUBS_POST_MAX_WIDTH = 640.dp
 @Composable
 private fun SubscriptionsKindSwitch(
     showPosts: Boolean,
-    onSelect: (posts: Boolean) -> Unit
+    onSelect: (posts: Boolean) -> Unit,
+    trailing: @Composable () -> Unit
 ) {
     val options = listOf(
         false to stringResource(R.string.sc_tab_videos),
@@ -1377,8 +1375,13 @@ private fun SubscriptionsKindSwitch(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+        ) {
         options.forEachIndexed { index, (posts, label) ->
             val selected = posts == showPosts
             ToggleButton(
@@ -1386,7 +1389,8 @@ private fun SubscriptionsKindSwitch(
                 onCheckedChange = { onSelect(posts) },
                 modifier = Modifier
                     .weight(1f)
-                    .height(42.dp),
+                    .height(40.dp),
+                colors = com.ivor.ivormusic.ui.settings.settingsChoiceButtonColors(),
                 shapes = if (index == 0) {
                     ButtonGroupDefaults.connectedLeadingButtonShapes()
                 } else {
@@ -1401,6 +1405,8 @@ private fun SubscriptionsKindSwitch(
                 )
             }
         }
+        }
+        trailing()
     }
 }
 

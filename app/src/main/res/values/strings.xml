@@ -1595,6 +1595,8 @@
     <string name="wifi">Wi-Fi</string>
     <string name="mobile_data">Mobile data</string>
     <string name="ch_post_open_comments">Open comments on this post</string>
+    <string name="ch_post_like">Like this post</string>
+    <string name="ch_post_unlike">Remove your like from this post</string>
     <string name="sc_tab_videos">Videos</string>
     <string name="sc_tab_posts">Posts</string>
     <string name="sc_posts_empty">No posts from the channels you follow yet</string>

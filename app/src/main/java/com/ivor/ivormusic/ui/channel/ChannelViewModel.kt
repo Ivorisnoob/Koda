@@ -193,6 +193,9 @@ class ChannelViewModel(application: Application) : AndroidViewModel(application)
     private val _isLoggedIn = MutableStateFlow(sessionManager.isLoggedIn())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
+    /** Likes and poll votes on this channel's posts. */
+    val postInteractions = com.ivor.ivormusic.video.PostInteractions(youtubeRepository, viewModelScope)
+
     private var loadedChannelId: String? = null
     private var searchJob: Job? = null
 

@@ -2067,6 +2067,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _feedPostsExhausted.value = false
         _feedPostsPaused.value = false
         _subscriptionPostsIssue.value = SubscriptionPostsIssue.NONE
+        postInteractions.clear()
         clearSelectedChannelPosts()
     }
 
@@ -2134,6 +2135,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viaBrowse = true,
         signedIn = isYouTubeConnected,
     )
+
+    /** Likes and poll votes on the posts in the feeds. */
+    val postInteractions = com.ivor.ivormusic.video.PostInteractions(youtubeRepository, viewModelScope)
+
+    /** Someone signed out tried to like or vote. */
+    val postSignInAsked = MutableStateFlow(false)
 
     fun openFeedPostComments(post: com.ivor.ivormusic.data.ChannelPost) {
         val params = post.detailParams ?: return

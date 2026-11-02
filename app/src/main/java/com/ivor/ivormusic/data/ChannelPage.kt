@@ -164,10 +164,21 @@ data class ChannelAbout(
     val canonicalUrl: String? = null
 )
 
-/** One option of a community poll, with the share of the vote YouTube reports. */
+/**
+ * One option of a community poll. YouTube sends the choice's share for both
+ * cases, picked and not, so a vote redraws the bars without another request.
+ */
 data class ChannelPollChoice(
     val text: String,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val isSelected: Boolean = false,
+    /** `perform_comment_action` tokens; absent on a post fetched signed out. */
+    val selectAction: String? = null,
+    val deselectAction: String? = null,
+    val ratioIfSelected: Float? = null,
+    val percentIfSelected: String? = null,
+    val ratioIfNotSelected: Float? = null,
+    val percentIfNotSelected: String? = null,
 )
 
 /**
@@ -210,7 +221,14 @@ data class ChannelPost(
      * could not be read. Set where posts from several channels are ordered
      * together (the Subscriptions Posts tab).
      */
-    val publishedAtMs: Long? = null
+    val publishedAtMs: Long? = null,
+    val isLiked: Boolean = false,
+    /** `perform_comment_action` tokens; absent on a post fetched signed out. */
+    val likeAction: String? = null,
+    val unlikeAction: String? = null,
+    /** The count YouTube says to show after a like and after taking it back. */
+    val likedCountText: String? = null,
+    val unlikedCountText: String? = null,
 )
 
 /**
