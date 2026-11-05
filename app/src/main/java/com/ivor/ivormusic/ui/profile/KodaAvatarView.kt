@@ -1,6 +1,9 @@
 package com.ivor.ivormusic.ui.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
@@ -75,9 +78,17 @@ fun KodaAvatarView(avatar: KodaAvatar, modifier: Modifier = Modifier) {
     val fill = Color(colors.fill)
     val ink = Color(colors.ink)
     val blush = Color(colors.blush)
+    val shape = rememberAvatarShape(avatar.shape)
+    // The fill is the avatar's own and ignores the theme, so on a page of
+    // nearly the same lightness it has no edge: a butter face on the White
+    // palette's page, a night face on Black's. Only then does it get a hairline
+    // in the theme's outline, which is what gives it a shape again.
+    val page = MaterialTheme.colorScheme.background
+    val needsEdge = remember(fill, page) { contrastRatio(fill, page) < AVATAR_EDGE_CONTRAST }
+    val edge = MaterialTheme.colorScheme.outline
     Box(
         modifier = modifier
-            .clip(rememberAvatarShape(avatar.shape))
+            .clip(shape)
             .background(fill)
             .drawBehind {
                 drawRect(fill)
@@ -87,8 +98,19 @@ fun KodaAvatarView(avatar: KodaAvatar, modifier: Modifier = Modifier) {
                 drawMouth(avatar.mouth, ink, blush)
                 drawExtraFront(avatar.extra, ink, blush)
             }
+            .then(if (needsEdge) Modifier.border(1.5.dp, edge, shape) else Modifier)
     )
 }
+
+/** WCAG contrast ratio between two colours, 1 (identical) to 21. */
+private fun contrastRatio(a: Color, b: Color): Float {
+    val la = a.luminance()
+    val lb = b.luminance()
+    return (kotlin.math.max(la, lb) + 0.05f) / (kotlin.math.min(la, lb) + 0.05f)
+}
+
+/** Below this an avatar's fill and the page behind it read as one surface. */
+private const val AVATAR_EDGE_CONTRAST = 1.5f
 
 private fun DrawScope.at(x: Float, y: Float) = Offset(size.width * x, size.height * y)
 private fun DrawScope.unit(value: Float) = size.minDimension * value
