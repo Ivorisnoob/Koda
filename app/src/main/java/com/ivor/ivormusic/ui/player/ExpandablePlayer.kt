@@ -169,6 +169,7 @@ fun ExpandablePlayer(
     // that interpolates between samples has to know how fast the clock is
     // running. It changes only when somebody moves the speed slider.
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
+    val audioQuality by viewModel.audioQuality.collectAsState()
     LaunchedEffect(isExpanded) {
         if (!isExpanded) styleWheel.dismiss()
     }
@@ -738,6 +739,7 @@ fun ExpandablePlayer(
                                 LocalPlayerScrubInteraction provides scrubInteraction,
                                 LocalScrubReturnPoint provides scrubReturnPoint,
                                 LocalPlaybackSpeed provides playbackSpeed,
+                                LocalPlaybackAudioQuality provides audioQuality,
                                 LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
                                 LocalPlayerQueueOpen provides queueOpen,
                             ) {
@@ -784,6 +786,7 @@ fun ExpandablePlayer(
                             // The rate every style's bar extrapolates at between
                             // the service's once-a-second samples.
                             LocalPlaybackSpeed provides playbackSpeed,
+                            LocalPlaybackAudioQuality provides audioQuality,
                             LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
                             LocalPlayerQueueOpen provides queueOpen,
                         ) {

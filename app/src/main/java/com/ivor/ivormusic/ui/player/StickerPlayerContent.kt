@@ -340,6 +340,11 @@ fun StickerPlayerSheetContent(
                                 }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
+                        PlayerAudioQualityBadge(
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(top = 2.dp)
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))

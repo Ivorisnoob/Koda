@@ -518,6 +518,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             syncStateFromController(ctrl)
 
             ctrl.addListener(object : Player.Listener {
+                override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                    _audioQuality.value = PlaybackAudioQuality.from(tracks)
+                }
+
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     _isPlaying.value = isPlaying
                     // Clear buffering state when playback actually starts
@@ -728,6 +732,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      * Called when the app reconnects to a session that's already playing.
      */
     private fun syncStateFromController(ctrl: MediaController) {
+        _audioQuality.value = PlaybackAudioQuality.from(ctrl.currentTracks)
         // Sync playback state
         _isPlaying.value = ctrl.isPlaying
         _playWhenReady.value = ctrl.playWhenReady
@@ -1470,6 +1475,14 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     private val _playbackSpeed = MutableStateFlow(ThemePreferences.DEFAULT_PLAYBACK_SPEED)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
+    /**
+     * What the player is decoding when it is lossless, null otherwise: read
+     * off the selected audio track, so it holds for lossless streams,
+     * lossless downloads and the device's own FLACs alike.
+     */
+    private val _audioQuality = MutableStateFlow<PlaybackAudioQuality?>(null)
+    val audioQuality: StateFlow<PlaybackAudioQuality?> = _audioQuality.asStateFlow()
 
     /**
      * Set the playback rate.

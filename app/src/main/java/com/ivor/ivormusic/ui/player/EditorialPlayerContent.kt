@@ -438,6 +438,7 @@ private fun EditorialNowPlayingView(
                     .clickable(enabled = artistName != "Unknown Artist") { onArtistClick(artistName) }
                     .padding(horizontal = 4.dp, vertical = 4.dp)
             )
+            PlayerAudioQualityBadge(modifier = Modifier.padding(start = 24.dp, top = 4.dp))
         }
 
         Spacer(modifier = Modifier.height(16.dp))

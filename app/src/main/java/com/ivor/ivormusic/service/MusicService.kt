@@ -128,14 +128,20 @@ class MusicService : MediaLibraryService() {
         },
     )
 
+    /** See [LosslessStreamSource]. */
+    private val losslessStreams by lazy { LosslessStreamSource(this) }
+
     /** See [MusicStreamResolver]. */
-    private val streamResolver = MusicStreamResolver(
-        resolveScope = resolveScope,
-        youtube = { youtubeRepository },
-        downloadedSongs = { downloadRepository.downloadedSongs.value },
-        cacheEnabled = { isCacheEnabled },
-        cachedSong = { browseTree.cachedSong(it) },
-    )
+    private val streamResolver by lazy {
+        MusicStreamResolver(
+            resolveScope = resolveScope,
+            youtube = { youtubeRepository },
+            downloadedSongs = { downloadRepository.downloadedSongs.value },
+            cacheEnabled = { isCacheEnabled },
+            cachedSong = { browseTree.cachedSong(it) },
+            lossless = losslessStreams,
+        )
+    }
 
     /** See [StreamCacheWarmer]. */
     private val streamWarmer by lazy {
@@ -167,6 +173,7 @@ class MusicService : MediaLibraryService() {
             youtube = { youtubeRepository },
             forgetWarmed = { streamWarmer.clear() },
             announce = ::announcePlaybackFailure,
+            losslessFailed = { losslessStreams.playbackFailed(it) },
         )
     }
 
@@ -720,7 +727,10 @@ class MusicService : MediaLibraryService() {
             ExoPlayer.Builder(this)
                 .setRenderersFactory(renderersFactory)
                 .setMediaSourceFactory(
-                    DefaultMediaSourceFactory(this).setDataSourceFactory(smartDataSourceFactory)
+                    LosslessAwareMediaSourceFactory(
+                        context = this,
+                        fallback = DefaultMediaSourceFactory(this).setDataSourceFactory(smartDataSourceFactory),
+                    )
                 )
                 .setLoadControl(buildLoadControl())
                 .setAudioAttributes(AudioAttributes.DEFAULT, false)

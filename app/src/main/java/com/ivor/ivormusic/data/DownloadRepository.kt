@@ -23,6 +23,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.ivor.ivormusic.service.DownloadService
+import com.ivor.ivormusic.data.lossless.DashManifest
+import com.ivor.ivormusic.data.lossless.LosslessAudioFile
+import com.ivor.ivormusic.data.lossless.LosslessAudioFiles
+import com.ivor.ivormusic.data.lossless.LosslessClient
+import com.ivor.ivormusic.data.lossless.LosslessConfig
+import com.ivor.ivormusic.data.lossless.LosslessDownloadInfo
+import com.ivor.ivormusic.data.lossless.LosslessSettings
+import com.ivor.ivormusic.data.lossless.LosslessSource
+import com.ivor.ivormusic.data.lossless.LosslessUnavailableException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -161,6 +170,9 @@ class DownloadRepository private constructor(private val context: Context) {
         private const val MAX_ATTEMPTS = 3
         private const val RETRY_BACKOFF_MS = 2_000L
         private const val BUFFER_SIZE = 8192
+
+        /** Tries per DASH segment of a lossless download before the attempt fails. */
+        private const val SEGMENT_ATTEMPTS = 4
         private const val DOWNLOAD_ARTWORK_SIZE_PX = 1024
         private const val DOWNLOAD_ARTWORK_JPEG_QUALITY = 92
 
@@ -273,6 +285,14 @@ class DownloadRepository private constructor(private val context: Context) {
 
     private val _downloadedSongs = MutableStateFlow<List<Song>>(emptyList())
     val downloadedSongs: StateFlow<List<Song>> = _downloadedSongs.asStateFlow()
+
+    /**
+     * Downloaded songs that came from the lossless server, by id, with what
+     * their file holds. Kept in the same metadata file as the songs, so the
+     * pill on a downloaded row needs no look into the file itself.
+     */
+    private val _losslessDownloads = MutableStateFlow<Map<String, LosslessDownloadInfo>>(emptyMap())
+    val losslessDownloads: StateFlow<Map<String, LosslessDownloadInfo>> = _losslessDownloads.asStateFlow()
 
     private val _downloadingIds = MutableStateFlow<Set<String>>(emptySet())
     val downloadingIds: StateFlow<Set<String>> = _downloadingIds.asStateFlow()
@@ -409,6 +429,7 @@ class DownloadRepository private constructor(private val context: Context) {
             val jsonArray = JSONArray(downloadsFile.readText())
             val liveUris = storage.listExisting(DownloadMediaType.MUSIC).keys
             val songs = mutableListOf<Song>()
+            val lossless = mutableMapOf<String, LosslessDownloadInfo>()
             var prunedAny = false
             var backfilledAny = false
             var companionStateChanged = false
@@ -458,6 +479,9 @@ class DownloadRepository private constructor(private val context: Context) {
                     backfilledAny = true
                     backfillAnchor - (entryCount - i) * 1000L
                 }
+                obj.optJSONObject("lossless")?.let(LosslessDownloadInfo::fromJson)?.let {
+                    lossless[obj.optString("id")] = it
+                }
                 songs.add(
                     Song(
                         id = obj.optString("id"),
@@ -481,6 +505,7 @@ class DownloadRepository private constructor(private val context: Context) {
             }
 
             _downloadedSongs.value = songs
+            _losslessDownloads.value = lossless
             // Persist the pruned list so externally deleted files do not get
             // re-checked on every launch, and so backfilled timestamps stick.
             if (prunedAny || backfilledAny || companionStateChanged) saveMetadata()
@@ -551,6 +576,7 @@ class DownloadRepository private constructor(private val context: Context) {
                     }
                     song.lyricsUri?.let { put("lyricsUri", it.toString()) }
                     song.dateAdded?.let { put("addedAt", it) }
+                    _losslessDownloads.value[song.id]?.let { put("lossless", it.toJson()) }
                 }
                 jsonArray.put(obj)
             }
@@ -984,6 +1010,14 @@ class DownloadRepository private constructor(private val context: Context) {
                 if (ok) return
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (e: com.ivor.ivormusic.data.lossless.LosslessUnavailableException) {
+                // The server does not have the song and the listener asked for
+                // no YouTube copy in its place. Asking again finds the same
+                // nothing, so this fails now with the reason.
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                lastError = e
+                KLog.w(TAG, "No lossless copy of ${request.title}: ${e.message}")
+                break
             } catch (e: Exception) {
                 // Pause and cancel also cancel the HTTP call, and a read blocked
                 // on the socket reports that as an IOException rather than a
@@ -1035,15 +1069,23 @@ class DownloadRepository private constructor(private val context: Context) {
             var audioTemp: File? = null
             var taggedAudioTemp: File? = null
             var artworkTemp: File? = null
+            var lossless: LosslessAudioFile? = null
             val privateStorage = ThemePreferences.usePrivateDownloadStorage(context)
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
             try {
-                val streamUrl = requestedAudioTrack(request)?.url
-                    ?: youtubeRepository
-                        .getDownloadAudioStreamUrl(request.id, request.audioQuality)
-                        .getOrNull()
-                    ?: throw java.io.IOException("No stream URL for ${request.id}")
+                // Lossless when the sheet picked it, or when nobody picked and
+                // the listener made it the default. A dub is a YouTube
+                // soundtrack the server cannot have, so it never goes there.
+                val losslessConfig = LosslessSettings.read(context).takeIf { config ->
+                    config.isConfigured && request.audioTrackId == null && (
+                        request.audioQuality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS ||
+                            (request.audioQuality == null && config.offersDownloads && config.downloadByDefault)
+                        )
+                }
+                // YouTube is asked only when it is the source, or once the
+                // server has said it has nothing.
+                val streamUrl = if (losslessConfig != null) null else youtubeAudioUrl(request)
                 val keepLyrics = request.saveLyrics
                     ?: ThemePreferences.saveLyricsWithDownloads(context)
 
@@ -1062,7 +1104,18 @@ class DownloadRepository private constructor(private val context: Context) {
                     }
                     val artworkDeferred = async { loadDownloadArtwork(song) }
 
-                    audioTemp = downloadStream(request, streamUrl, "music", 0.1f, 0.82f)
+                    val losslessFile = losslessConfig?.let { config ->
+                        downloadLossless(request, song, config)
+                            ?: if (config.downloadFallback) {
+                                KLog.i(TAG, "No lossless copy of ${song.title}; saving it from YouTube")
+                                null
+                            } else {
+                                throw LosslessUnavailableException("Not on your lossless server")
+                            }
+                    }
+                    lossless = losslessFile
+                    audioTemp = losslessFile?.file
+                        ?: downloadStream(request, streamUrl ?: youtubeAudioUrl(request), "music", 0.1f, 0.82f)
 
                     ensureActive()
                     updateProgress(request, 0.84f, DownloadStatus.DOWNLOADING, finishing = true)
@@ -1103,16 +1156,30 @@ class DownloadRepository private constructor(private val context: Context) {
                     ensureActive()
                     updateProgress(request, 0.92f, DownloadStatus.DOWNLOADING, finishing = true)
 
-                    val audioName = storage.buildFileName(
-                        request.title,
-                        request.subtitle,
-                        DownloadMediaType.MUSIC
-                    )
-                    val audioTarget = storage.createPending(
-                        audioName,
-                        DownloadMediaType.MUSIC,
-                        privateStorage
-                    )
+                    val savedLossless = lossless
+                    val audioTarget = if (savedLossless == null) {
+                        val audioName = storage.buildFileName(
+                            request.title,
+                            request.subtitle,
+                            DownloadMediaType.MUSIC
+                        )
+                        storage.createPending(
+                            audioName,
+                            DownloadMediaType.MUSIC,
+                            privateStorage
+                        )
+                    } else {
+                        // Same folder as every song, under its own extension and type.
+                        storage.createPendingMusicCompanion(
+                            storage.buildMusicCompanionFileName(
+                                request.title,
+                                request.subtitle,
+                                savedLossless.extension
+                            ),
+                            savedLossless.mimeType,
+                            privateStorage
+                        )
+                    }
                         ?: throw java.io.IOException("Could not create audio storage entry")
                     pendingTargets += audioTarget
                     copyToPending(audioToPublish, audioTarget)
@@ -1170,6 +1237,11 @@ class DownloadRepository private constructor(private val context: Context) {
                         lyricsUri = lyricsTarget,
                         dateAdded = System.currentTimeMillis()
                     )
+                    _losslessDownloads.value = if (savedLossless != null) {
+                        _losslessDownloads.value + (request.id to LosslessDownloadInfo.of(savedLossless))
+                    } else {
+                        _losslessDownloads.value - request.id
+                    }
                     _downloadedSongs.value = _downloadedSongs.value + downloaded
                     saveMetadata()
                 }
@@ -1191,9 +1263,143 @@ class DownloadRepository private constructor(private val context: Context) {
             } finally {
                 taggedAudioTemp?.delete()
                 artworkTemp?.delete()
+                lossless?.file?.delete()
                 activeDownloadCalls.remove(request.id)
             }
         }
+
+    /** The YouTube audio this request saves when the lossless server is not the source. */
+    private suspend fun youtubeAudioUrl(request: DownloadRequest): String =
+        requestedAudioTrack(request)?.url
+            ?: youtubeRepository
+                .getDownloadAudioStreamUrl(request.id, request.audioQuality)
+                .getOrNull()
+            ?: throw java.io.IOException("No stream URL for ${request.id}")
+
+    /**
+     * The song from the listener's lossless server, as a finished FLAC (or
+     * lossless MP4) in the cache directory, or null when the server has no
+     * convincing copy of it. Transport failures throw, so [runTask] retries
+     * them like any other download.
+     *
+     * A manifest is fetched segment by segment - each a bounded request, each
+     * retried on its own - and joined, then [LosslessAudioFiles] lifts the
+     * FLAC out of the MP4 it arrives in. A single file goes through
+     * [downloadStream], ranged and resumable like a YouTube download.
+     */
+    private suspend fun downloadLossless(
+        request: DownloadRequest,
+        song: Song,
+        config: LosslessConfig,
+    ): LosslessAudioFile? {
+        val client = LosslessClient(context, config)
+        val found = try {
+            client.resolve(song.title, song.artist, song.duration, config.downloadQuality)
+        } catch (e: LosslessUnavailableException) {
+            null
+        } ?: return null
+        val (track, source) = found
+        KLog.i(TAG, "Lossless: ${song.title} -> ${track.title} by ${track.artist} (${track.quality})")
+        updateProgress(request, 0.06f, DownloadStatus.DOWNLOADING)
+
+        val raw = when (source) {
+            is LosslessSource.File -> downloadStream(request, source.url, "lossless", 0.06f, 0.8f)
+            is LosslessSource.Dash -> {
+                val segments = DashManifest.parse(source.manifest, source.url)
+                File.createTempFile("koda_lossless_dash_", ".mp4", context.cacheDir).also { target ->
+                    try {
+                        downloadSegments(request, listOfNotNull(segments.initUrl) + segments.mediaUrls, target, 0.06f, 0.8f)
+                    } catch (e: Throwable) {
+                        target.delete()
+                        throw e
+                    }
+                }
+            }
+        }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        updateProgress(request, 0.82f, DownloadStatus.DOWNLOADING, finishing = true)
+        return try {
+            LosslessAudioFiles.finish(raw, context.cacheDir)
+        } catch (e: LosslessUnavailableException) {
+            raw.delete()
+            KLog.w(TAG, "Lossless file for ${song.title} refused: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Joins [urls] into [target] in order. Every segment is its own bounded
+     * request, registered for pause and cancel like any transfer, and retried a
+     * few times before the attempt fails: one dropped segment out of a hundred
+     * should not cost the other ninety-nine.
+     */
+    private suspend fun downloadSegments(
+        request: DownloadRequest,
+        urls: List<String>,
+        target: File,
+        fromFraction: Float,
+        toFraction: Float,
+    ) {
+        val buffer = ByteArray(BUFFER_SIZE)
+        var written = 0L
+        target.outputStream().buffered(1 shl 16).use { out ->
+            urls.forEachIndexed { index, url ->
+                var attempt = 0
+                val segment = java.io.ByteArrayOutputStream()
+                while (true) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    // A failed try leaves part of the segment behind; start clean.
+                    segment.reset()
+                    try {
+                        val call = client.newCall(
+                            Request.Builder().url(url)
+                                .header("User-Agent", LosslessClient.USER_AGENT)
+                                .build()
+                        )
+                        activeDownloadCalls[request.id] = call
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        call.execute().use { response ->
+                            // Not a MediaHttpException: a refusal here is the
+                            // lossless server's, and must not re-mint YouTube's
+                            // visitorData the way a googlevideo 403 does.
+                            if (!response.isSuccessful) {
+                                throw java.io.IOException("HTTP ${response.code} for a lossless segment")
+                            }
+                            val body = response.body ?: throw java.io.IOException("Empty segment")
+                            body.byteStream().use { input ->
+                                while (true) {
+                                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                    val read = input.read(buffer)
+                                    if (read == -1) break
+                                    segment.write(buffer, 0, read)
+                                }
+                            }
+                        }
+                        break
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: java.io.IOException) {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (++attempt >= SEGMENT_ATTEMPTS) throw e
+                        kotlinx.coroutines.delay(RETRY_BACKOFF_MS / 2 * attempt)
+                    }
+                }
+                out.write(segment.toByteArray())
+                written += segment.size()
+                val done = index + 1
+                // Segments are about equal in length, so the bytes so far
+                // scaled by the share of segments done is a fair total.
+                val estimatedTotal = written * urls.size / done
+                updateProgress(
+                    request,
+                    fromFraction + (toFraction - fromFraction) * done / urls.size,
+                    DownloadStatus.DOWNLOADING,
+                    written,
+                    estimatedTotal
+                )
+            }
+        }
+    }
 
     /** Decode a bounded, software-backed cover through Coil's shared cache. */
     private suspend fun loadDownloadArtwork(song: Song): Bitmap? {
@@ -1790,6 +1996,7 @@ class DownloadRepository private constructor(private val context: Context) {
 
         currentList.remove(songToDelete)
         _downloadedSongs.value = currentList
+        _losslessDownloads.value = _losslessDownloads.value - songId
         saveMetadata()
         pruneEmptyDownloadedPlaylists()
     }

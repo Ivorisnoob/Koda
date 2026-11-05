@@ -421,6 +421,7 @@ fun PosterPlayerSheetContent(
                                             }
                                             .padding(vertical = 2.dp)
                                     )
+                                    PlayerAudioQualityBadge(modifier = Modifier.padding(top = 6.dp))
                                 }
                                 EditorialChip(
                                     checked = isFavorite,

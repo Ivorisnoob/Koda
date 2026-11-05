@@ -85,7 +85,10 @@ internal fun createMetadataCopy(
 ): Result<File> {
     var taggedCopy: File? = null
     return runCatching {
-        File.createTempFile("koda_tagged_", ".m4a", tempDirectory).also { copy ->
+        // jaudiotagger picks its reader by extension: a lossless download is
+        // a FLAC (Vorbis comments and a picture block), not an M4A.
+        val extension = sourceAudio.extension.takeIf { it.equals("flac", ignoreCase = true) } ?: "m4a"
+        File.createTempFile("koda_tagged_", ".$extension", tempDirectory).also { copy ->
             taggedCopy = copy
             sourceAudio.copyTo(copy, overwrite = true)
             writer(copy)

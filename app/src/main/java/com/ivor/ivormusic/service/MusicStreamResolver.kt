@@ -5,6 +5,7 @@ import androidx.media3.common.MediaItem
 import com.ivor.ivormusic.data.CacheManager
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.data.lossless.LosslessStreamUri
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +34,8 @@ internal class MusicStreamResolver(
     private val cacheEnabled: () -> Boolean,
     private val cachedSong: (videoId: String) -> Song?,
     singleFlight: DeferredSingleFlight<String, MediaItem>? = null,
+    /** The listener's lossless server; null where there is none (tests). */
+    private val lossless: LosslessStreamSource? = null,
 ) {
     // Work is published before it starts so cache hits may complete
     // immediately without recursively mutating a ConcurrentHashMap computation.
@@ -99,15 +102,38 @@ internal class MusicStreamResolver(
             return withUri(originalItem, downloaded.uri, downloaded.duration)
         }
 
+        // Read once: whether the lossless server should be asked for this song.
+        // A remembered address only counts while it is the kind wanted now, so
+        // flipping lossless streaming in Settings applies to the next play.
+        val losslessWanted = lossless?.wanted(videoId) == true
+
         // 2. Cache (Memory) — only while the underlying googlevideo URL is
         // still valid; expired entries are re-resolved instead of replayed.
         uriCache[videoId]?.let { cached ->
-            if (cached.expiresAtMs > System.currentTimeMillis()) {
+            val cachedUri = Uri.parse(cached.uri)
+            val kindMatches = LosslessStreamUri.isLossless(cachedUri) == losslessWanted
+            if (cached.expiresAtMs > System.currentTimeMillis() && kindMatches) {
                 KLog.d(TAG, "Resolution: Found cached URI for $videoId")
-                return withUri(originalItem, Uri.parse(cached.uri))
+                return withUri(originalItem, cachedUri)
             }
-            KLog.d(TAG, "Resolution: Cached URI expired for $videoId, re-resolving")
+            KLog.d(TAG, "Resolution: Cached URI expired or of the other kind for $videoId, re-resolving")
             uriCache.remove(videoId)
+        }
+
+        // 2b. The listener's lossless server, ahead of the disk cache: someone
+        // who turned lossless streaming on wants it over the AAC copy already
+        // on disk. Null for anything short of a playable lossless address, and
+        // the steps below carry on as if this one did not exist.
+        if (losslessWanted) {
+            val described = describedForLookup(originalItem)
+            lossless?.resolve(described)?.let { losslessUri ->
+                uriCache[videoId] = CachedUri(
+                    losslessUri.toString(),
+                    System.currentTimeMillis() + LosslessStreamSource.URI_TTL_MS
+                )
+                KLog.d(TAG, "Resolution: Lossless for $videoId")
+                return withUri(originalItem, losslessUri)
+            }
         }
 
         // 3. Disk Cache (Fully Cached - Instant Playback). Skipped when the
@@ -149,6 +175,25 @@ internal class MusicStreamResolver(
             KLog.e(TAG, "Resolution: Exception for $videoId", e)
             withUri(originalItem, Uri.parse("error://exception/$videoId"))
         }
+    }
+
+    /**
+     * [item] with a title, artist and length to search by. A row restored from
+     * a session can arrive with bare metadata; the browse tree's copy of the
+     * song fills it in.
+     */
+    private fun describedForLookup(item: MediaItem): MediaItem {
+        if (!item.mediaMetadata.title.isNullOrBlank()) return item
+        val song = cachedSong(item.mediaId) ?: return item
+        return item.buildUpon()
+            .setMediaMetadata(
+                item.mediaMetadata.buildUpon()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setDurationMs(song.duration.takeIf { it > 0L })
+                    .build()
+            )
+            .build()
     }
 
     private fun withUri(original: MediaItem, uri: Uri, duration: Long? = null): MediaItem {
