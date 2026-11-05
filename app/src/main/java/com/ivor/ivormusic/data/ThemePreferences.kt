@@ -279,6 +279,10 @@ class ThemePreferences(context: Context) {
     private val _maxCacheSizeMb = MutableStateFlow(getMaxCacheSizeMbPreference())
     val maxCacheSizeMb: StateFlow<Long> = _maxCacheSizeMb.asStateFlow()
     
+    // Pitch: a control offered in the player's menu only when this is on.
+    private val _pitchControlEnabled = MutableStateFlow(prefs.getBoolean(KEY_PITCH_CONTROL, false))
+    val pitchControlEnabled: StateFlow<Boolean> = _pitchControlEnabled.asStateFlow()
+
     // Queue Settings
     private val _autoLoadQueue = MutableStateFlow(getAutoLoadQueuePreference())
     val autoLoadQueue: StateFlow<Boolean> = _autoLoadQueue.asStateFlow()
@@ -512,6 +516,7 @@ class ThemePreferences(context: Context) {
             KEY_PLAYBACK_PRELOAD_ENABLED -> _playbackPreloadEnabled.value = getPlaybackPreloadEnabledPreference()
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
             KEY_AUTO_LOAD_QUEUE -> _autoLoadQueue.value = getAutoLoadQueuePreference()
+            KEY_PITCH_CONTROL -> _pitchControlEnabled.value = prefs.getBoolean(KEY_PITCH_CONTROL, false)
             KEY_CROSSFADE_ENABLED -> _crossfadeEnabled.value = getCrossfadeEnabledPreference()
             KEY_CROSSFADE_AUTO -> _crossfadeAuto.value = getCrossfadeAutoPreference()
             KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
@@ -1041,6 +1046,16 @@ class ThemePreferences(context: Context) {
         private const val KEY_PLAYBACK_SHUFFLE = "playback_shuffle"
         private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
         private const val KEY_PLAYBACK_SPEED = "playback_speed"
+        private const val KEY_PITCH_CONTROL = "pitch_control_enabled"
+        private const val KEY_PLAYBACK_PITCH = "playback_pitch_semitones"
+
+        /** An octave either way: past that a voice is a cartoon, not a key change. */
+        const val MIN_PITCH_SEMITONES = -12
+        const val MAX_PITCH_SEMITONES = 12
+
+        /** The pitch factor for a shift of [semitones], equal-tempered. */
+        fun pitchFactor(semitones: Int): Float =
+            Math.pow(2.0, semitones / 12.0).toFloat()
         private const val KEY_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
         private const val KEY_SLEEP_TIMER_END_OF_TRACK = "sleep_timer_end_of_track"
 
@@ -1107,6 +1122,9 @@ class ThemePreferences(context: Context) {
         private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
         private const val KEY_STANDBY_SUGGEST = "standby_suggest_charging"
         private const val KEY_STANDBY_DIM = "standby_dim_idle"
+        private const val KEY_STANDBY_FACE = "standby_face"
+        private const val KEY_STANDBY_STACK_PREFIX = "standby_stack_"
+        private const val KEY_STANDBY_LOOK_PREFIX = "standby_look_"
         private const val KEY_LYRICS_CENTERED = "lyrics_centered"
         private const val KEY_LYRICS_ROMANIZED = "lyrics_romanized"
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
@@ -2478,6 +2496,33 @@ class ThemePreferences(context: Context) {
         _autoLoadQueue.value = enabled
     }
 
+    // --- Pitch ---
+
+    /** Fresh read: whether the pitch control is offered, and so whether a stored pitch applies. */
+    fun isPitchControlEnabled(): Boolean = prefs.getBoolean(KEY_PITCH_CONTROL, false)
+
+    /**
+     * Turning the control off also puts the pitch back to normal: a shift the
+     * listener can no longer see or undo would sound like a broken song.
+     */
+    fun setPitchControlEnabled(enabled: Boolean) {
+        prefs.edit().apply {
+            putBoolean(KEY_PITCH_CONTROL, enabled)
+            if (!enabled) putInt(KEY_PLAYBACK_PITCH, 0)
+        }.apply()
+        _pitchControlEnabled.value = enabled
+    }
+
+    /** The stored pitch shift in semitones, whether or not the control is on. */
+    fun getPlaybackPitchSemitones(): Int =
+        prefs.getInt(KEY_PLAYBACK_PITCH, 0).coerceIn(MIN_PITCH_SEMITONES, MAX_PITCH_SEMITONES)
+
+    fun setPlaybackPitchSemitones(semitones: Int) {
+        prefs.edit()
+            .putInt(KEY_PLAYBACK_PITCH, semitones.coerceIn(MIN_PITCH_SEMITONES, MAX_PITCH_SEMITONES))
+            .apply()
+    }
+
     // --- Crossfade Settings ---
 
     private fun getCrossfadeEnabledPreference(): Boolean {
@@ -2834,6 +2879,30 @@ class ThemePreferences(context: Context) {
     fun setStandbyDim(dim: Boolean) {
         prefs.edit().putBoolean(KEY_STANDBY_DIM, dim).apply()
         _standbyDim.value = dim
+    }
+
+    /**
+     * Standby's chosen face and what each widget stack was last left on, by
+     * stored id (`StandbyFace.id`, `StandbyWidget.id`: frozen). Read once
+     * when Standby opens and written as the listener swipes, so no flow.
+     */
+    fun getStandbyFace(): String? = prefs.getString(KEY_STANDBY_FACE, null)
+
+    fun setStandbyFace(id: String) {
+        prefs.edit().putString(KEY_STANDBY_FACE, id).apply()
+    }
+
+    /** One of Standby's look choices (clock style, colour, background), by frozen id. */
+    fun getStandbyLook(key: String): String? = prefs.getString("$KEY_STANDBY_LOOK_PREFIX$key", null)
+
+    fun setStandbyLook(key: String, id: String) {
+        prefs.edit().putString("$KEY_STANDBY_LOOK_PREFIX$key", id).apply()
+    }
+
+    fun getStandbyStackWidget(stack: Int): String? = prefs.getString("$KEY_STANDBY_STACK_PREFIX$stack", null)
+
+    fun setStandbyStackWidget(stack: Int, id: String) {
+        prefs.edit().putString("$KEY_STANDBY_STACK_PREFIX$stack", id).apply()
     }
 
     private fun getLyricsCenteredPreference(): Boolean =

@@ -1501,7 +1501,34 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         )
     }
 
+    /** The pitch shift in semitones, mirrored from the service as the speed is. */
+    private val _playbackPitch = MutableStateFlow(0)
+    val playbackPitch: StateFlow<Int> = _playbackPitch.asStateFlow()
+
+    /** Set the pitch shift; [persist] false while a slider is still under the finger. */
+    fun setPlaybackPitch(semitones: Int, persist: Boolean = true) {
+        val bounded = semitones.coerceIn(
+            ThemePreferences.MIN_PITCH_SEMITONES,
+            ThemePreferences.MAX_PITCH_SEMITONES,
+        )
+        _playbackPitch.value = bounded
+        val ctrl = controller ?: return
+        ctrl.sendCustomCommand(
+            androidx.media3.session.SessionCommand(
+                MusicService.CMD_SET_PLAYBACK_PITCH,
+                android.os.Bundle.EMPTY,
+            ),
+            android.os.Bundle().apply {
+                putInt(MusicService.ARG_PLAYBACK_PITCH, bounded)
+                putBoolean(MusicService.ARG_PLAYBACK_PITCH_PERSIST, persist)
+            },
+        )
+    }
+
     private fun applyPlaybackSpeedExtras(extras: android.os.Bundle) {
+        if (extras.containsKey(MusicService.EXTRA_PLAYBACK_PITCH)) {
+            _playbackPitch.value = extras.getInt(MusicService.EXTRA_PLAYBACK_PITCH, 0)
+        }
         if (!extras.containsKey(MusicService.EXTRA_PLAYBACK_SPEED)) return
         _playbackSpeed.value = extras.getFloat(
             MusicService.EXTRA_PLAYBACK_SPEED,

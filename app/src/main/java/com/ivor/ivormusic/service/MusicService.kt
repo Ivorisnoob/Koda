@@ -357,6 +357,9 @@ class MusicService : MediaLibraryService() {
         const val CMD_SET_PLAYBACK_SPEED = "com.ivor.ivormusic.SET_PLAYBACK_SPEED"
         const val ARG_PLAYBACK_SPEED = "playback_speed"
         const val ARG_PLAYBACK_SPEED_PERSIST = "playback_speed_persist"
+        const val CMD_SET_PLAYBACK_PITCH = "com.ivor.ivormusic.SET_PLAYBACK_PITCH"
+        const val ARG_PLAYBACK_PITCH = "playback_pitch"
+        const val ARG_PLAYBACK_PITCH_PERSIST = "playback_pitch_persist"
 
         /** The media notification's repeat button: off -> all -> one -> off. */
         const val CMD_CYCLE_REPEAT = "com.ivor.ivormusic.CYCLE_REPEAT"
@@ -378,6 +381,7 @@ class MusicService : MediaLibraryService() {
 
         /** Session-extras key the current playback rate is published under. */
         const val EXTRA_PLAYBACK_SPEED = "playback_speed"
+        const val EXTRA_PLAYBACK_PITCH = "playback_pitch"
 
     }
 
@@ -878,6 +882,7 @@ class MusicService : MediaLibraryService() {
 
     private fun restorePlaybackModes() {
         applyPlaybackSpeed(themePreferences.getPlaybackSpeed(), persist = false)
+        applyPlaybackPitch(themePreferences.getPlaybackPitchSemitones(), persist = false)
         playbackRepeatMode = themePreferences.getPlaybackRepeatMode()
         engine.setShuffleMode(themePreferences.isPlaybackShuffleEnabled())
         engine.setRepeatMode(playbackRepeatMode)
@@ -936,6 +941,12 @@ class MusicService : MediaLibraryService() {
                     engine.cancelTransition()
                     engine.applyIdleVolumes()
                 }
+            }
+        }
+        // Switching the pitch control off in Settings puts the key back at once.
+        serviceScope.launch {
+            themePreferences.pitchControlEnabled.collect {
+                applyPlaybackPitch(themePreferences.getPlaybackPitchSemitones(), persist = false)
             }
         }
         serviceScope.launch {
@@ -1402,6 +1413,7 @@ class MusicService : MediaLibraryService() {
                     .add(SessionCommand(CMD_SKIP_TO_INDEX, Bundle.EMPTY))
                     .add(SessionCommand(CMD_RESTORE_PLAYBACK, Bundle.EMPTY))
                     .add(SessionCommand(CMD_SET_PLAYBACK_SPEED, Bundle.EMPTY))
+                    .add(SessionCommand(CMD_SET_PLAYBACK_PITCH, Bundle.EMPTY))
                     .add(SessionCommand(CMD_CYCLE_REPEAT, Bundle.EMPTY))
                     .add(SessionCommand(CMD_TOGGLE_LIKE, Bundle.EMPTY))
                     .add(SessionCommand(CMD_REFRESH_STREAM, Bundle.EMPTY))
@@ -1495,6 +1507,13 @@ class MusicService : MediaLibraryService() {
                 applyPlaybackSpeed(
                     args.getFloat(ARG_PLAYBACK_SPEED, ThemePreferences.DEFAULT_PLAYBACK_SPEED),
                     persist = args.getBoolean(ARG_PLAYBACK_SPEED_PERSIST, true),
+                )
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            CMD_SET_PLAYBACK_PITCH -> {
+                applyPlaybackPitch(
+                    args.getInt(ARG_PLAYBACK_PITCH, 0),
+                    persist = args.getBoolean(ARG_PLAYBACK_PITCH_PERSIST, true),
                 )
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
@@ -1633,6 +1652,28 @@ class MusicService : MediaLibraryService() {
         publishSessionState()
     }
 
+    /** The listener's pitch shift in semitones; heard only while the pitch control is on. */
+    private var playbackPitchSemitones: Int = 0
+
+    /**
+     * Apply a pitch shift to both engines. The setting is read fresh: with the
+     * control switched off a stored shift is not applied, so nothing can
+     * change the key from where the listener cannot see it.
+     */
+    private fun applyPlaybackPitch(semitones: Int, persist: Boolean) {
+        val bounded = semitones.coerceIn(
+            ThemePreferences.MIN_PITCH_SEMITONES,
+            ThemePreferences.MAX_PITCH_SEMITONES,
+        )
+        val enabled = themePreferences.isPitchControlEnabled()
+        playbackPitchSemitones = if (enabled) bounded else 0
+        if (::engine.isInitialized) {
+            engine.setBasePitch(ThemePreferences.pitchFactor(playbackPitchSemitones))
+        }
+        if (persist && enabled) themePreferences.setPlaybackPitchSemitones(bounded)
+        publishSessionState()
+    }
+
     /**
      * Keep [queueShuffle] in step with a queue edit, and shuffle a whole new
      * queue that arrives while shuffle is on, with its start song first. A
@@ -1698,6 +1739,7 @@ class MusicService : MediaLibraryService() {
                     putLong(EXTRA_SLEEP_TIMER_ENDS_AT, sleepTimer.endsAt)
                     putBoolean(EXTRA_SLEEP_TIMER_END_OF_TRACK, sleepTimer.endOfTrack)
                     putFloat(EXTRA_PLAYBACK_SPEED, playbackSpeed)
+                    putInt(EXTRA_PLAYBACK_PITCH, playbackPitchSemitones)
                 }
             )
         }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Refresh
@@ -174,6 +175,8 @@ fun NowPlayingOptionsSheet(
     // hides itself on a device whose output volume cannot be moved.
     val volume = rememberMediaVolume()
     val lyrics by viewModel.lyricsResult.collectAsState()
+    // Off by default; Settings, Playback turns it on.
+    val pitchControl by remember(context) { ThemePreferences(context) }.pitchControlEnabled.collectAsState()
     val hasShareableLyrics = (lyrics as? com.ivor.ivormusic.data.LyricsResult.Success)
         ?.lines?.any { it.text.isNotBlank() } == true
     val likedIds by viewModel.likedSongIds.collectAsState()
@@ -506,6 +509,10 @@ fun NowPlayingOptionsSheet(
             // The two controls, last and together - see the deck's own note.
             OptionGroup {
                 PlaybackSpeedRow(viewModel)
+                if (pitchControl) {
+                    OptionRowDivider()
+                    PlaybackPitchRow(viewModel)
+                }
                 if (volume.isAvailable) {
                     OptionRowDivider()
                     VolumeRow(volume)
@@ -663,6 +670,76 @@ private fun PlaybackSpeedRow(viewModel: PlayerViewModel) {
                 dragging = false
                 viewModel.setPlaybackSpeed(sliderSpeed)
             },
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/**
+ * The key, a semitone at a time, an octave either way: for singing along in a
+ * comfortable range or matching a song to an instrument. Offered only when
+ * the pitch control is on in Settings.
+ *
+ * It follows the speed row's rules: heard as it moves, stored once when the
+ * finger lifts, a tick on every semitone and a reset only when there is
+ * something to reset.
+ */
+@Composable
+private fun PlaybackPitchRow(viewModel: PlayerViewModel) {
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val pitch by viewModel.playbackPitch.collectAsState()
+    var dragging by remember { mutableStateOf(false) }
+    var sliderPitch by remember { mutableFloatStateOf(pitch.toFloat()) }
+    LaunchedEffect(pitch, dragging) { if (!dragging) sliderPitch = pitch.toFloat() }
+    val semitones = sliderPitch.roundToInt()
+
+    ControlRow(
+        icon = Icons.Rounded.GraphicEq,
+        iconTint = MaterialTheme.colorScheme.primary,
+        label = stringResource(R.string.np_pitch),
+        valueText = when {
+            semitones == 0 -> stringResource(R.string.np_pitch_normal)
+            semitones > 0 -> "+$semitones"
+            else -> "\u2212${-semitones}"
+        },
+        valueAccented = semitones != 0,
+        trailing = {
+            AnimatedVisibility(visible = semitones != 0) {
+                IconButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        dragging = false
+                        sliderPitch = 0f
+                        viewModel.setPlaybackPitch(0)
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = stringResource(R.string.cd_pitch_reset),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    ) {
+        Slider(
+            value = sliderPitch,
+            onValueChange = { position ->
+                dragging = true
+                val snapped = position.roundToInt()
+                if (snapped != sliderPitch.roundToInt()) {
+                    haptics.performHapticFeedback(
+                        if (snapped == 0) HapticFeedbackType.Confirm else HapticFeedbackType.SegmentTick
+                    )
+                    viewModel.setPlaybackPitch(snapped, persist = false)
+                }
+                sliderPitch = snapped.toFloat()
+            },
+            onValueChangeFinished = {
+                dragging = false
+                viewModel.setPlaybackPitch(sliderPitch.roundToInt())
+            },
+            valueRange = ThemePreferences.MIN_PITCH_SEMITONES.toFloat()..ThemePreferences.MAX_PITCH_SEMITONES.toFloat(),
             modifier = Modifier.fillMaxWidth()
         )
     }

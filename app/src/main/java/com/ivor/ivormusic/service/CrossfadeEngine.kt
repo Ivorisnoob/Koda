@@ -183,8 +183,24 @@ class CrossfadeEngine(
      */
     private var baseSpeed = 1f
 
-    /** [PlaybackParameters] at the user's rate: this engine's resting tempo. */
-    private fun baseParameters() = PlaybackParameters(baseSpeed, 1f)
+    /**
+     * The listener's pitch factor, 1f being the recorded key. Carried on every
+     * parameter write here, transitions included, so a mix never drops back to
+     * the recorded key partway through a song.
+     */
+    private var basePitch = 1f
+
+    /** [PlaybackParameters] at the user's rate and pitch: this engine's resting tempo. */
+    private fun baseParameters() = PlaybackParameters(baseSpeed, basePitch)
+
+    /** Change the pitch of both engines, leaving any running transition alone. */
+    fun setBasePitch(pitch: Float) {
+        val next = pitch.coerceIn(0.25f, 4f)
+        if (kotlin.math.abs(next - basePitch) < 0.0001f) return
+        basePitch = next
+        playerA.playbackParameters = PlaybackParameters(playerA.playbackParameters.speed, basePitch)
+        playerB.playbackParameters = PlaybackParameters(playerB.playbackParameters.speed, basePitch)
+    }
 
     /** The sink clamps above 8x while the player reports the unclamped rate. */
     private fun transitionSpeed(factor: Float) = (baseSpeed * factor).coerceAtMost(MAX_SINK_SPEED)
@@ -310,7 +326,7 @@ class CrossfadeEngine(
             incoming.setMediaItem(nextItem, incomingStartMs.coerceAtLeast(0L))
             incoming.playbackParameters = PlaybackParameters(
                 transitionSpeed(incomingSpeed.coerceIn(MIN_TRANSITION_SPEED, MAX_TRANSITION_SPEED)),
-                1f
+                basePitch
             )
             incoming.volume = 0f
             incoming.prepare()
@@ -837,7 +853,7 @@ class CrossfadeEngine(
                 ) return@launch
                 val t = (index + 1f) / steps
                 player.playbackParameters =
-                    PlaybackParameters(start + (baseSpeed - start) * t, 1f)
+                    PlaybackParameters(start + (baseSpeed - start) * t, basePitch)
                 delay(TEMPO_RELEASE_STEP_MS)
             }
         }

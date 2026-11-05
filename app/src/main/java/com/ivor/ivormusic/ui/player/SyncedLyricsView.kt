@@ -137,7 +137,13 @@ fun SyncedLyricsView(
      * following a beat after the one above. False is the plain scroll, kept
      * for Standby's small panel, which was tuned around it.
      */
-    cascadeScroll: Boolean = true
+    cascadeScroll: Boolean = true,
+    /**
+     * False for a screen that only shows the words (Standby): no tap to seek,
+     * no scrolling by hand, so a swipe or a hold over the lyrics reaches the
+     * screen behind them. The lyrics still follow the song.
+     */
+    interactive: Boolean = true
 ) {
     val hasWordTiming = lyricsResult is LyricsResult.Success &&
         lyricsResult.syncType == LyricsSyncType.WORD
@@ -196,7 +202,8 @@ fun SyncedLyricsView(
                         centered = centered,
                         horizontalGutter = horizontalGutter,
                         anchorFraction = anchorFraction,
-                        cascadeScroll = cascadeScroll
+                        cascadeScroll = cascadeScroll,
+                        interactive = interactive
                     )
                 }
             }
@@ -216,10 +223,11 @@ private fun LyricsContent(
     centered: Boolean,
     horizontalGutter: androidx.compose.ui.unit.Dp?,
     anchorFraction: Float,
-    cascadeScroll: Boolean
+    cascadeScroll: Boolean,
+    interactive: Boolean
 ) {
     val listState = rememberLazyListState()
-    val onLineLongPress = LocalLyricLongPress.current
+    val onLineLongPress = LocalLyricLongPress.current.takeIf { interactive }
     val longPressHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val cascade = remember { LyricCascade() }
     val cascading = cascadeScroll && motionEnabled
@@ -334,6 +342,8 @@ private fun LyricsContent(
         
         LazyColumn(
             state = listState,
+            // Display only: the list still scrolls itself to the sung line.
+            userScrollEnabled = interactive,
             modifier = Modifier
                 .fillMaxSize()
                 // Fade the lyrics themselves out toward the edges instead of
@@ -369,6 +379,7 @@ private fun LyricsContent(
                     romanized = romanizedLines.getOrNull(index),
                     isCurrent = index == currentLineIndex,
                     isSynced = isSynced,
+                    tappable = interactive,
                     onTap = { onSeekTo(line.timeMs) },
                     onLongPress = onLineLongPress?.let { open ->
                         {
@@ -514,6 +525,8 @@ private fun LyricLine(
     romanized: String? = null,
     isCurrent: Boolean,
     isSynced: Boolean,
+    /** False on a display-only surface: the line takes no touch at all. */
+    tappable: Boolean = true,
     onTap: () -> Unit,
     /** Opens the share screen on this line; null where sharing is not offered. */
     onLongPress: (() -> Unit)? = null,
@@ -568,7 +581,7 @@ private fun LyricLine(
             onClick = { if (isSynced) onTap() },
             onLongClick = onLongPress
         )
-        isSynced -> Modifier.clickable(
+        isSynced && tappable -> Modifier.clickable(
             interactionSource = interactionSource,
             indication = null,
             onClick = onTap

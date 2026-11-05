@@ -89,7 +89,15 @@ Music writes the session once on release (`moveQueueItem(..., persist = false)` 
 
 **The offer appears when the phone is set down, never Standby itself.** `StandbySuggestion` drops a capsule from the top when the phone is charging, music is playing and the phone itself is on its side for 1.5s. The phone, not the window: on a phone Koda is held upright unless "Rotate with device" is on, so the window never goes landscape. The orientation sensor is read only while the other conditions hold. Once per charge (shown, tapped or dismissed), swipe up or the cross to dismiss, gone by itself after nine seconds. `standbySuggest`, on by default; both switches are on Customization, Standby.
 
-Left for later phases of #280: templates and a block editor, the screensaver (`DreamService`), brightness and volume swipes, the visualizer, and a true shared-element flight of the cover out of each player style (each of the nine places its cover differently, so v1 rises as a whole screen instead).
+**Faces, swiped sideways, and a picker under a long press.** [judgement November 2026] Standby is four faces in a `HorizontalPager` (`StandbyFace`, ids frozen, the last one used remembered): Now playing (phase one's screen), Widgets, Lyrics and Clock (`StandbyFaces.kt`). Widgets is two smart stacks, each a `VerticalPager` through six widgets (`StandbyWidget`: now playing, digital and analog clocks, lyrics, up next, calendar) that remembers where it was left. Holding the screen zooms the pager out (`EDIT_SCALE`) into a carousel: each face a rounded card, its neighbours drawn in by a translation proportional to its page offset, a tap on a neighbour going to it and on the chosen one settling back, with Done, the face's name and its dots riding in on the same spring. The cards take no other touch while zoomed out, and swipe-to-dismiss is off. [scar] That spring overshoots both ends, and a corner radius from an undershoot below zero crashed on close; anything but scale reads it clamped to 0..1.
+
+**Look, chosen in the picker.** `StandbyLook` holds three remembered choices: the Clock face's style (Analog, Bold, Minimal), the colour (Album, or Mono, the same scheme built `MONOCHROME`) and the background (the cover's glow, or Black, which takes the backdrop away as AMOLED does). They are frosted capsules beside Done (`StandbyLookBar`) and apply at once.
+
+**Lyrics on Standby are display-only.** `SyncedLyricsView(interactive = false)`: no tap to seek, no hand scrolling, no share long press, so a swipe or a hold over the words reaches the pager, the stack or the picker; they still follow the song.
+
+**Clock digits are never clipped.** [scar] The display font is downloadable: `StandbyClock` measured its slots once against the fallback, the real font arrived wider, and every 0 drew as a C. A slot's measured width is a minimum and its text overflows visibly; clocks sized to a room (`rememberFittedClockStyle`) leave a margin for the late font.
+
+Left for later phases of #280: the screensaver (`DreamService`), brightness and volume swipes, the visualizer, night mode, choosing which widgets a stack holds, and a true shared-element flight of the cover out of each player style (each of the nine places its cover differently, so v1 rises as a whole screen instead).
 
 ## Lyrics share (`ui/lyricsshare/`)
 
