@@ -45,8 +45,23 @@ data class LosslessConfig(
     val downloadQuality: LosslessQuality = LosslessQuality.HI_RES,
     /** A song the server does not have is saved from YouTube instead of failing. */
     val downloadFallback: Boolean = true,
+    /** Keep played lossless songs on the device so they are never fetched twice. */
+    val cacheEnabled: Boolean = true,
+    val cacheSize: LosslessCacheSize = LosslessCacheSize.DEFAULT,
 ) {
     val isConfigured: Boolean get() = serverUrl.isNotBlank()
+
+    /**
+     * Changes whenever the address or the secret does. Whatever was learnt
+     * from the server - addresses it handed out, songs it lacked, a refusal -
+     * belongs to one fingerprint and is forgotten when it changes, so fixing a
+     * wrong secret works on the next song rather than minutes later.
+     */
+    val fingerprint: String
+        get() = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("${serverUrl.trim()}\n${secret.trim()}".toByteArray(Charsets.UTF_8))
+            .take(8)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     val streamsLossless: Boolean get() = isConfigured && streaming
     val offersDownloads: Boolean get() = isConfigured && downloads
 
@@ -79,6 +94,8 @@ object LosslessSettings {
     private const val KEY_DOWNLOAD_DEFAULT = "download_by_default"
     private const val KEY_DOWNLOAD_QUALITY = "download_quality"
     private const val KEY_DOWNLOAD_FALLBACK = "download_fallback"
+    private const val KEY_CACHE_ENABLED = "cache_enabled"
+    private const val KEY_CACHE_SIZE = "cache_size"
 
     @Volatile
     private var handle: SharedPreferences? = null
@@ -107,6 +124,8 @@ object LosslessSettings {
             downloadByDefault = p.getBoolean(KEY_DOWNLOAD_DEFAULT, false),
             downloadQuality = LosslessQuality.fromId(p.getString(KEY_DOWNLOAD_QUALITY, null)),
             downloadFallback = p.getBoolean(KEY_DOWNLOAD_FALLBACK, true),
+            cacheEnabled = p.getBoolean(KEY_CACHE_ENABLED, true),
+            cacheSize = LosslessCacheSize.fromId(p.getString(KEY_CACHE_SIZE, null)),
         )
     }
 
@@ -121,6 +140,8 @@ object LosslessSettings {
             .putBoolean(KEY_DOWNLOAD_DEFAULT, config.downloadByDefault)
             .putString(KEY_DOWNLOAD_QUALITY, config.downloadQuality.id)
             .putBoolean(KEY_DOWNLOAD_FALLBACK, config.downloadFallback)
+            .putBoolean(KEY_CACHE_ENABLED, config.cacheEnabled)
+            .putString(KEY_CACHE_SIZE, config.cacheSize.id)
             .apply()
     }
 

@@ -519,7 +519,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
             ctrl.addListener(object : Player.Listener {
                 override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                    _audioQuality.value = PlaybackAudioQuality.from(tracks)
+                    publishTracks(tracks)
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -732,7 +732,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      * Called when the app reconnects to a session that's already playing.
      */
     private fun syncStateFromController(ctrl: MediaController) {
-        _audioQuality.value = PlaybackAudioQuality.from(ctrl.currentTracks)
+        publishTracks(ctrl.currentTracks)
         // Sync playback state
         _isPlaying.value = ctrl.isPlaying
         _playWhenReady.value = ctrl.playWhenReady
@@ -1483,6 +1483,15 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     private val _audioQuality = MutableStateFlow<PlaybackAudioQuality?>(null)
     val audioQuality: StateFlow<PlaybackAudioQuality?> = _audioQuality.asStateFlow()
+
+    /** The selected audio track's facts, lossless or not, for the quality sheet. */
+    private val _audioTrack = MutableStateFlow<AudioTrackInfo?>(null)
+    val audioTrack: StateFlow<AudioTrackInfo?> = _audioTrack.asStateFlow()
+
+    private fun publishTracks(tracks: androidx.media3.common.Tracks) {
+        _audioQuality.value = PlaybackAudioQuality.from(tracks)
+        _audioTrack.value = AudioTrackInfo.from(tracks)
+    }
 
     /**
      * Set the playback rate.

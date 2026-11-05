@@ -194,6 +194,10 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
     private var filled = 0
     private var windowEnergy = 0.0
 
+    /** The quality sheet's frequency check reads longer windows of its own. */
+    private val probeWindow = FloatArray(SpectrumProbe.FFT_SIZE)
+    private var probeFilled = 0
+
     private var bands = FloatArray(0)
     private var edges = IntArray(0)
 
@@ -214,7 +218,7 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
         inputBuffer.order(ByteOrder.nativeOrder())
         output.put(inputBuffer)
         output.flip()
-        if (!VisualizerBus.isActive && !WaveformTap.isActive) return
+        if (!VisualizerBus.isActive && !WaveformTap.isActive && !SpectrumProbe.isActive) return
         // Read the copy rather than rewinding the input: the pipeline decides
         // whether to keep feeding this processor from what the input buffer has
         // left, so putting its position back would re-queue the same PCM.
@@ -227,6 +231,13 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
             var sum = 0f
             for (channel in 0 until channels) sum += samples.short / 32768f
             val mono = sum / channels
+            if (SpectrumProbe.isActive) {
+                probeWindow[probeFilled++] = mono
+                if (probeFilled == SpectrumProbe.FFT_SIZE) {
+                    probeFilled = 0
+                    SpectrumProbe.submit(probeWindow, inputAudioFormat.sampleRate)
+                }
+            }
             window[filled++] = mono
             windowEnergy += mono.toDouble() * mono
             if (filled == VisualizerMath.FFT_SIZE) {
@@ -252,11 +263,13 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
 
     override fun onFlush() {
         filled = 0
+        probeFilled = 0
         windowEnergy = 0.0
     }
 
     override fun onReset() {
         filled = 0
+        probeFilled = 0
         windowEnergy = 0.0
         bands = FloatArray(0)
         edges = IntArray(0)

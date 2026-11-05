@@ -170,6 +170,9 @@ fun ExpandablePlayer(
     // running. It changes only when somebody moves the speed slider.
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val audioQuality by viewModel.audioQuality.collectAsState()
+    // The Audio quality sheet, opened from the pill in any style.
+    var showAudioQuality by remember { mutableStateOf(false) }
+    val openAudioQuality = remember { { showAudioQuality = true } }
     LaunchedEffect(isExpanded) {
         if (!isExpanded) styleWheel.dismiss()
     }
@@ -699,6 +702,11 @@ fun ExpandablePlayer(
                         base = MaterialTheme.colorScheme
                     )
                     MaterialTheme(colorScheme = playerColorScheme) {
+                    // In the player's scheme, as its other sheets are. A window
+                    // of its own, so where it sits in this tree draws nothing.
+                    if (showAudioQuality) {
+                        AudioQualitySheet(viewModel = viewModel, onDismiss = { showAudioQuality = false })
+                    }
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
@@ -740,6 +748,7 @@ fun ExpandablePlayer(
                                 LocalScrubReturnPoint provides scrubReturnPoint,
                                 LocalPlaybackSpeed provides playbackSpeed,
                                 LocalPlaybackAudioQuality provides audioQuality,
+                                LocalOpenAudioQuality provides openAudioQuality,
                                 LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
                                 LocalPlayerQueueOpen provides queueOpen,
                             ) {
@@ -787,6 +796,7 @@ fun ExpandablePlayer(
                             // the service's once-a-second samples.
                             LocalPlaybackSpeed provides playbackSpeed,
                             LocalPlaybackAudioQuality provides audioQuality,
+                            LocalOpenAudioQuality provides openAudioQuality,
                             LocalNowPlayingOptionsOpen provides nowPlayingOptionsOpen,
                             LocalPlayerQueueOpen provides queueOpen,
                         ) {

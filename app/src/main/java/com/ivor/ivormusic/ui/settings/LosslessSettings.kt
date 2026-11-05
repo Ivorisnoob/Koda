@@ -54,7 +54,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.OfflinePin
+import androidx.compose.material.icons.rounded.Storage
 import com.ivor.ivormusic.data.lossless.LosslessAuthException
+import com.ivor.ivormusic.data.lossless.LosslessCache
+import com.ivor.ivormusic.data.lossless.LosslessCacheSize
 import com.ivor.ivormusic.data.lossless.LosslessClient
 import com.ivor.ivormusic.data.lossless.LosslessConfig
 import com.ivor.ivormusic.data.lossless.LosslessQuality
@@ -94,15 +99,22 @@ internal fun LosslessSettingsPage(onBack: () -> Unit) {
     var confirmForget by remember { mutableStateOf(false) }
     var test by remember { mutableStateOf<ServerTest>(ServerTest.Idle) }
 
+    var cacheBytes by remember { mutableStateOf(0L) }
+
     LaunchedEffect(Unit) {
         config = withContext(Dispatchers.IO) {
             runCatching { LosslessSettings.read(context) }.getOrDefault(LosslessConfig())
         }
+        cacheBytes = withContext(Dispatchers.IO) { runCatching { LosslessCache.sizeBytes(context) }.getOrDefault(0L) }
     }
 
     fun save(next: LosslessConfig) {
         config = next
-        scope.launch(Dispatchers.IO) { runCatching { LosslessSettings.write(context, next) } }
+        scope.launch(Dispatchers.IO) {
+            runCatching { LosslessSettings.write(context, next) }
+            // The switch and the limit apply to the very next song, not the next resolution.
+            LosslessCache.apply(next)
+        }
     }
 
     fun runTest(target: LosslessConfig) {
@@ -239,6 +251,56 @@ internal fun LosslessSettingsPage(onBack: () -> Unit) {
                             ),
                             enabled = current.downloadFallback,
                             onToggle = { on -> save(current.copy(downloadFallback = on)) }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.lossless_section_cache)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.OfflinePin,
+                        title = stringResource(R.string.lossless_cache),
+                        subtitle = stringResource(
+                            if (configured) R.string.lossless_cache_sub else R.string.lossless_needs_server
+                        ),
+                        enabled = current?.cacheEnabled == true && configured,
+                        onToggle = { on -> current?.let { save(it.copy(cacheEnabled = on)) } },
+                        available = configured,
+                        explanation = stringResource(R.string.lossless_cache_explanation)
+                    )
+                    if (configured && current?.cacheEnabled == true) {
+                        val sizes = LosslessCacheSize.entries
+                        SettingsChoiceRow(
+                            icon = Icons.Rounded.Storage,
+                            title = stringResource(R.string.lossless_cache_size),
+                            subtitle = stringResource(R.string.lossless_cache_size_sub, formatBytes(cacheBytes)),
+                            labels = sizes.map { "${it.id} GB" },
+                            selectedIndex = sizes.indexOf(current.cacheSize).coerceAtLeast(0),
+                            onSelect = { index ->
+                                val next = current.copy(cacheSize = sizes[index])
+                                save(next)
+                                scope.launch(Dispatchers.IO) {
+                                    LosslessCache.apply(next)
+                                    cacheBytes = LosslessCache.sizeBytes(context)
+                                }
+                            }
+                        )
+                    }
+                    if (cacheBytes > 0L) {
+                        SettingsRow(
+                            icon = Icons.Rounded.DeleteSweep,
+                            title = stringResource(R.string.lossless_cache_clear),
+                            subtitle = stringResource(R.string.lossless_cache_clear_sub, formatBytes(cacheBytes)),
+                            onClick = {
+                                scope.launch(Dispatchers.IO) {
+                                    LosslessCache.clear(context)
+                                    cacheBytes = LosslessCache.sizeBytes(context)
+                                }
+                            },
+                            tint = SettingsRowDefaults.destructiveTint
                         )
                     }
                 }
@@ -471,6 +533,12 @@ private fun LosslessServerDialog(
             }
         )
     }
+}
+
+private fun formatBytes(bytes: Long): String {
+    val mib = bytes / (1024.0 * 1024.0)
+    return if (mib >= 1024.0) String.format(java.util.Locale.US, "%.1f GB", mib / 1024.0)
+    else String.format(java.util.Locale.US, "%.0f MB", mib)
 }
 
 private fun isServerUrl(text: String): Boolean {

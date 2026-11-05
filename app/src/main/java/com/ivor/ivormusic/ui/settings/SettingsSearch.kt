@@ -800,7 +800,8 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "lossless", "flac", "hi-res", "hires", "hi res", "cd quality", "24-bit", "24 bit",
             "audiophile", "bit perfect", "server", "lossless server", "lossless download",
-            "lossless streaming", "high quality", "best quality", "audio quality"
+            "lossless streaming", "high quality", "best quality", "audio quality",
+            "kept songs", "lossless cache", "offline lossless", "verify quality", "spectrum"
         )
     ) { onOpenPage(SettingsPage.LOSSLESS) }
     entry(

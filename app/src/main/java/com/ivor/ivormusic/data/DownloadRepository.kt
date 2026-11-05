@@ -26,6 +26,7 @@ import com.ivor.ivormusic.service.DownloadService
 import com.ivor.ivormusic.data.lossless.DashManifest
 import com.ivor.ivormusic.data.lossless.LosslessAudioFile
 import com.ivor.ivormusic.data.lossless.LosslessAudioFiles
+import com.ivor.ivormusic.data.lossless.LosslessCache
 import com.ivor.ivormusic.data.lossless.LosslessClient
 import com.ivor.ivormusic.data.lossless.LosslessConfig
 import com.ivor.ivormusic.data.lossless.LosslessDownloadInfo
@@ -1292,6 +1293,25 @@ class DownloadRepository private constructor(private val context: Context) {
         song: Song,
         config: LosslessConfig,
     ): LosslessAudioFile? {
+        // Downloads run one at a time, so any lossless temp still here is a
+        // leftover from an attempt that died (a crash, a kill): 70 MB apiece.
+        context.cacheDir.listFiles { file -> file.name.startsWith("koda_lossless_") }
+            ?.forEach { it.delete() }
+
+        // Played already and kept whole: a copy off the disk, not a transfer.
+        LosslessCache.apply(config)
+        val prefix = LosslessCache.prefix(config.downloadQuality, request.id)
+        val fromCache = File.createTempFile("koda_lossless_kept_", ".bin", context.cacheDir)
+        val copied = runCatching {
+            fromCache.outputStream().buffered(1 shl 16).use { LosslessCache.copyKept(context, prefix, it) }
+        }.getOrDefault(false)
+        if (copied) {
+            KLog.i(TAG, "Lossless: ${song.title} copied from the lossless cache")
+            updateProgress(request, 0.82f, DownloadStatus.DOWNLOADING, finishing = true)
+            return finishLossless(fromCache, song)
+        }
+        fromCache.delete()
+
         val client = LosslessClient(context, config)
         val found = try {
             client.resolve(song.title, song.artist, song.duration, config.downloadQuality)
@@ -1318,14 +1338,29 @@ class DownloadRepository private constructor(private val context: Context) {
         }
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         updateProgress(request, 0.82f, DownloadStatus.DOWNLOADING, finishing = true)
-        return try {
+        return finishLossless(raw, song)
+    }
+
+    /**
+     * The arrived bytes as a file to publish, or null when they are lossy.
+     *
+     * [scar November 2026] A failure here used to escape as an ordinary
+     * exception, so a complete 71 MB download was retried from scratch three
+     * times and each copy left behind in the cache. [LosslessAudioFiles] now
+     * keeps anything lossless it cannot remux as it came; whatever still goes
+     * wrong is logged, the temp deleted, and the attempt fails once.
+     */
+    private fun finishLossless(raw: File, song: Song): LosslessAudioFile? =
+        try {
             LosslessAudioFiles.finish(raw, context.cacheDir)
         } catch (e: LosslessUnavailableException) {
             raw.delete()
             KLog.w(TAG, "Lossless file for ${song.title} refused: ${e.message}")
             null
+        } catch (e: Exception) {
+            raw.delete()
+            throw java.io.IOException("Could not finish the lossless file for ${song.title}", e)
         }
-    }
 
     /**
      * Joins [urls] into [target] in order. Every segment is its own bounded

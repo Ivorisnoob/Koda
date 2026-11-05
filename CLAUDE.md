@@ -154,6 +154,7 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | An effect-graph rule keyed on Smooth motion alone rather than `playerHasEffectGraph()` | A player carrying only the shader stage misses it: paused, it went fullscreen as a small rectangle in one corner | `playback-video.md` |
 | A GLSL name that is a reserved word (`flat`, `packed`) | Compiles as Kotlin; on the phone that one shader fails to build and its frames are copied instead. Run `.probe/scratch/video-shaders/validate.py` | `playback-video.md` |
 | A lossless row (`LosslessStreamUri` fragment) written through the music cache, or a new cache writer that does not skip it | FLAC bytes under the song id are later served as the YouTube stream | `playback-streams.md` |
+| `MediaExtractor` asked for the track of the lossless server's FLAC-in-MP4 | Throws `IllegalArgumentException` from `getTrackFormatNative`; a complete download is retried and leaked. Read it with `Mp4FlacDemuxer` | `playback-streams.md` |
 | Removing core library desugaring | Every search throws `NoSuchMethodError` on API 30-32, compiles fine | section 6 below |
 | A swipe-to-dismiss row in a lazy list brought back under the same key | Its saved swipe state comes back with it: the row returns still swiped away, as an empty strip. Snap it to settled when composed | `screens.md` |
 | A queue index held across a suspension point | The queue is replaced under it; playback lands on the wrong track | `playback-music.md` |

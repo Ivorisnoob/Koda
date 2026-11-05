@@ -4,10 +4,16 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.lossless.LosslessAuthException
+import com.ivor.ivormusic.data.lossless.LosslessCache
 import com.ivor.ivormusic.data.lossless.LosslessClient
+import com.ivor.ivormusic.data.lossless.LosslessConfig
+import com.ivor.ivormusic.data.lossless.LosslessOrigin
+import com.ivor.ivormusic.data.lossless.LosslessOrigins
 import com.ivor.ivormusic.data.lossless.LosslessSettings
+import com.ivor.ivormusic.data.lossless.LosslessSource
 import com.ivor.ivormusic.data.lossless.LosslessStreamUri
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.CancellationException
@@ -15,8 +21,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * The lossless step of [MusicStreamResolver]: asks the listener's lossless
- * server for the song before YouTube is asked.
+ * The lossless step of [MusicStreamResolver]: a song kept whole in
+ * [LosslessCache] first, then the listener's lossless server, both before
+ * YouTube is asked.
  *
  * It only ever adds a better source and never takes one away. Whatever goes
  * wrong - streaming off, a metered network the listener kept it off, Local
@@ -26,8 +33,12 @@ import java.util.concurrent.ConcurrentHashMap
  * server does not carry costs one search per song, not one per play.
  *
  * Settings are read fresh on every call ([LosslessSettings] holds no copy), so
- * a switch flipped in Settings applies to the next song.
+ * a switch flipped in Settings applies to the next song. Everything learnt from
+ * the server belongs to the address and secret it was learnt under
+ * ([LosslessConfig.fingerprint]): a change of either forgets it at once, and
+ * bumps [generation] so the resolver drops the addresses it remembered.
  */
+@UnstableApi
 internal class LosslessStreamSource(context: Context) {
     private val appContext = context.applicationContext
 
@@ -38,9 +49,49 @@ internal class LosslessStreamSource(context: Context) {
     @Volatile
     private var serverRestUntil = 0L
 
+    @Volatile
+    private var fingerprint: String? = null
+
+    /** Changes with the server's address or secret; see [MusicStreamResolver]'s URI cache. */
+    @Volatile
+    var generation: Int = 0
+        private set
+
+    /** A fresh read, with what was learnt under another address or secret forgotten. */
+    private fun config(): LosslessConfig? {
+        val config = runCatching { LosslessSettings.read(appContext) }.getOrNull() ?: return null
+        LosslessCache.apply(config)
+        val current = config.fingerprint
+        if (current != fingerprint) {
+            if (fingerprint != null) KLog.i(TAG, "Lossless server changed; forgetting what the old one said")
+            fingerprint = current
+            restUntil.clear()
+            serverRestUntil = 0L
+            generation++
+        }
+        return config
+    }
+
+    /** Whether lossless streaming is on at all, network aside. */
+    fun enabled(): Boolean = config()?.streamsLossless == true
+
+    /**
+     * The song kept whole in [LosslessCache], marked, or null. Needs no
+     * network, so it answers on mobile data, offline and in Local Only too.
+     */
+    fun kept(item: MediaItem): Uri? {
+        val config = config() ?: return null
+        if (!config.streamsLossless || !config.cacheEnabled) return null
+        val quality = config.streamingQuality
+        val kept = LosslessCache.kept(appContext, LosslessCache.prefix(quality, item.mediaId)) ?: return null
+        KLog.d(TAG, "Lossless from the cache: ${item.mediaId}")
+        LosslessOrigins.record(item.mediaId, LosslessOrigin.KEPT)
+        return LosslessStreamUri.mark(kept.url, kept.dash, quality)
+    }
+
     /** Whether a resolution of [videoId] should try the server at all right now. */
     fun wanted(videoId: String): Boolean {
-        val config = runCatching { LosslessSettings.read(appContext) }.getOrNull() ?: return false
+        val config = config() ?: return false
         if (!config.streamsLossless) return false
         if (ThemePreferences.isLocalOnly(appContext)) return false
         if (config.streamingUnmeteredOnly && ThemePreferences.isNetworkMetered(appContext)) return false
@@ -57,13 +108,14 @@ internal class LosslessStreamSource(context: Context) {
         val title = metadata.title?.toString()?.takeIf { it.isNotBlank() } ?: return null
         val artist = metadata.artist?.toString().orEmpty()
         val duration = metadata.durationMs ?: 0L
-        val config = LosslessSettings.read(appContext)
+        val config = config() ?: return null
+        val quality = config.streamingQuality
         val client = LosslessClient(appContext, config)
 
         return try {
             var timedOut = true
             val found = withTimeoutOrNull(BUDGET_MS) {
-                client.resolve(title, artist, duration, config.streamingQuality)
+                client.resolve(title, artist, duration, quality)
                     .also { timedOut = false }
             }
             if (found == null) {
@@ -71,14 +123,22 @@ internal class LosslessStreamSource(context: Context) {
                 rest(videoId, if (timedOut) FAILURE_REST_MS else NOT_FOUND_REST_MS)
                 null
             } else {
+                val source = found.second
                 KLog.d(TAG, "Lossless: $videoId -> ${found.first.quality.ifBlank { "lossless" }}")
-                LosslessStreamUri.mark(found.second)
+                LosslessCache.prepareFresh(
+                    appContext,
+                    LosslessCache.prefix(quality, videoId),
+                    source.url,
+                    dash = source is LosslessSource.Dash
+                )
+                LosslessOrigins.record(videoId, LosslessOrigin.SERVER)
+                LosslessStreamUri.mark(source, quality)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LosslessAuthException) {
             // A wrong address or secret fails every song the same way; stop
-            // asking until it is likely to have been fixed.
+            // asking until it changes (see config()) or a few minutes pass.
             KLog.w(TAG, "Lossless server refused access; pausing it", e)
             serverRestUntil = SystemClock.elapsedRealtime() + SERVER_REST_MS
             null

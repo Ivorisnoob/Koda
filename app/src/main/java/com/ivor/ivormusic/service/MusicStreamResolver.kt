@@ -45,7 +45,8 @@ internal class MusicStreamResolver(
     // googlevideo URLs die after ~6h (their `expire` param) and on network/IP
     // changes, so each entry carries an expiry and is dropped instead of being
     // replayed as a guaranteed 403.
-    private class CachedUri(val uri: String, val expiresAtMs: Long)
+    /** [losslessGeneration] is the server generation a lossless address was handed out under. */
+    private class CachedUri(val uri: String, val expiresAtMs: Long, val losslessGeneration: Int = -1)
     private val uriCache = java.util.Collections.synchronizedMap(
         object : LinkedHashMap<String, CachedUri>(MAX_RESOLVED_URI_ENTRIES, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedUri>): Boolean =
@@ -102,6 +103,13 @@ internal class MusicStreamResolver(
             return withUri(originalItem, downloaded.uri, downloaded.duration)
         }
 
+        // 1b. A lossless song kept whole on the device: no server, no network,
+        // and it wins over everything but a download.
+        lossless?.kept(originalItem)?.let { keptUri ->
+            KLog.d(TAG, "Resolution: Lossless from the cache for $videoId")
+            return withUri(originalItem, keptUri)
+        }
+
         // Read once: whether the lossless server should be asked for this song.
         // A remembered address only counts while it is the kind wanted now, so
         // flipping lossless streaming in Settings applies to the next play.
@@ -111,7 +119,11 @@ internal class MusicStreamResolver(
         // still valid; expired entries are re-resolved instead of replayed.
         uriCache[videoId]?.let { cached ->
             val cachedUri = Uri.parse(cached.uri)
-            val kindMatches = LosslessStreamUri.isLossless(cachedUri) == losslessWanted
+            val isLossless = LosslessStreamUri.isLossless(cachedUri)
+            // A lossless address from before the server's address or secret
+            // changed belongs to the old one.
+            val kindMatches = isLossless == losslessWanted &&
+                (!isLossless || cached.losslessGeneration == lossless?.generation)
             if (cached.expiresAtMs > System.currentTimeMillis() && kindMatches) {
                 KLog.d(TAG, "Resolution: Found cached URI for $videoId")
                 return withUri(originalItem, cachedUri)
@@ -129,7 +141,8 @@ internal class MusicStreamResolver(
             lossless?.resolve(described)?.let { losslessUri ->
                 uriCache[videoId] = CachedUri(
                     losslessUri.toString(),
-                    System.currentTimeMillis() + LosslessStreamSource.URI_TTL_MS
+                    System.currentTimeMillis() + LosslessStreamSource.URI_TTL_MS,
+                    losslessGeneration = lossless?.generation ?: -1
                 )
                 KLog.d(TAG, "Resolution: Lossless for $videoId")
                 return withUri(originalItem, losslessUri)
