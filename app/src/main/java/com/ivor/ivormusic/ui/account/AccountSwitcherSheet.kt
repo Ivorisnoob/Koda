@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.SwitchAccount
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -51,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +71,8 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.data.IncognitoMode
 import com.ivor.ivormusic.data.AccountSwitcher
 import com.ivor.ivormusic.data.Profile
+import com.ivor.ivormusic.data.BrandChannel
+import com.ivor.ivormusic.data.YouTubeRepository
 
 /**
  * The profile switcher.
@@ -106,6 +110,7 @@ fun AccountSwitcherSheet(
 
     var pendingRemoval by remember { mutableStateOf<Profile?>(null) }
     var showAddLocal by remember { mutableStateOf(false) }
+    var showChannelPicker by remember { mutableStateOf(false) }
 
     /**
      * YouTube profiles with no stored session: restored from a backup, or
@@ -184,6 +189,19 @@ fun AccountSwitcherSheet(
                     onAddYouTubeAccount()
                 }
             )
+            // A Google account that manages brand channels signs in as its
+            // personal channel; this is the way onto the others. Only offered
+            // for a working login, since the list comes from the account.
+            val active = profiles.firstOrNull { it.id == activeId }
+            if (active != null && !active.isLocal && !active.expired && active.id !in needSignIn) {
+                Spacer(Modifier.height(8.dp))
+                AddRow(
+                    icon = Icons.Rounded.SwitchAccount,
+                    title = stringResource(R.string.switch_channel),
+                    subtitle = stringResource(R.string.switch_channel_subtitle),
+                    onClick = { showChannelPicker = true }
+                )
+            }
             Spacer(Modifier.height(8.dp))
             AddRow(
                 icon = Icons.Rounded.PhoneAndroid,
@@ -214,6 +232,18 @@ fun AccountSwitcherSheet(
                 onDismiss()
             },
             onDismiss = { showAddLocal = false }
+        )
+    }
+
+    if (showChannelPicker) {
+        ChannelPickerDialog(
+            activeProfile = profiles.firstOrNull { it.id == activeId },
+            onPick = { channel ->
+                showChannelPicker = false
+                switcher.useChannel(channel)
+                onDismiss()
+            },
+            onDismiss = { showChannelPicker = false }
         )
     }
 
@@ -576,5 +606,131 @@ private fun RemoveProfileDialog(
             TextButton(onClick = onConfirm) { Text(if (isSignOutOnly) stringResource(R.string.sign_out) else stringResource(R.string.remove)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
+    )
+}
+
+/**
+ * The channels the active profile's Google account can act as, read from the
+ * account each time the dialog opens, since brand channels are added and
+ * removed on YouTube rather than here.
+ *
+ * The current channel is ticked and does nothing when tapped. Picking another
+ * one switches to its row, adding the row the first time.
+ */
+@Composable
+private fun ChannelPickerDialog(
+    activeProfile: Profile?,
+    onPick: (BrandChannel) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val repository = remember(context) { YouTubeRepository(context) }
+    var channels by remember { mutableStateOf<List<BrandChannel>?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    var attempt by remember { mutableStateOf(0) }
+
+    LaunchedEffect(attempt) {
+        failed = false
+        channels = null
+        val result = repository.fetchBrandChannels()
+        if (result == null) failed = true else channels = result
+    }
+
+    fun isCurrent(channel: BrandChannel): Boolean =
+        activeProfile != null && (
+            (channel.datasyncId != null && channel.datasyncId == activeProfile.datasyncId) ||
+                (channel.pageId != null && channel.pageId == activeProfile.pageId) ||
+                (activeProfile.datasyncId == null && channel.pageId == activeProfile.pageId)
+            )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Rounded.SwitchAccount, contentDescription = null) },
+        title = { Text(stringResource(R.string.channel_picker_title)) },
+        text = {
+            val list = channels
+            when {
+                failed -> Text(
+                    text = stringResource(R.string.channel_picker_failed),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                list == null -> Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) { CircularProgressIndicator() }
+                list.size <= 1 -> Text(
+                    text = stringResource(R.string.channel_picker_only_one),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                else -> Column(Modifier.verticalScroll(rememberScrollState())) {
+                    list.forEach { channel ->
+                        val current = isCurrent(channel)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable(enabled = !current) { onPick(channel) }
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (channel.avatarUrl != null) {
+                                AsyncImage(
+                                    model = channel.avatarUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp).clip(CircleShape)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.PersonOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = channel.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                channel.handle?.let {
+                                    Text(
+                                        text = it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            if (current) {
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    contentDescription = stringResource(R.string.cd_current_channel),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (failed) {
+                TextButton(onClick = { attempt++ }) { Text(stringResource(R.string.action_try_again)) }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
     )
 }

@@ -17,7 +17,18 @@ import okhttp3.Cookie
  * [SessionManager.currentSession] before each use rather than replaying a held
  * copy.
  */
-internal data class YouTubeSession(val profileId: String, val generation: Long, val cookies: String) {
+internal data class YouTubeSession(
+    val profileId: String,
+    val generation: Long,
+    val cookies: String,
+    /**
+     * The brand channel this login acts as, or null for the Google account's
+     * personal channel. Sent with every call ([authenticate],
+     * [com.ivor.ivormusic.data.youtube.BrandChannelInterceptor]); without it
+     * YouTube answers as the personal channel whatever the profile shows.
+     */
+    val pageId: String? = null,
+) {
     /** Never log a cookie string: KLog's release ring buffer ends up in bug reports. */
     override fun toString(): String = "YouTubeSession(profileId=$profileId, generation=$generation)"
 }

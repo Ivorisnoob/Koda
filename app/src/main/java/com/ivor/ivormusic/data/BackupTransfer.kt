@@ -327,6 +327,7 @@ object BackupTransfer {
                     put("handle", profile.handle ?: JSONObject.NULL)
                     put("avatarUrl", profile.avatarUrl ?: JSONObject.NULL)
                     put("datasyncId", profile.datasyncId ?: JSONObject.NULL)
+                    put("pageId", profile.pageId ?: JSONObject.NULL)
                     put("addedAt", profile.addedAt)
                 })
             }
@@ -347,6 +348,7 @@ object BackupTransfer {
                 handle = str("handle"),
                 avatarUrl = str("avatarUrl"),
                 datasyncId = str("datasyncId"),
+                pageId = str("pageId"),
                 addedAt = entry.optLong("addedAt", 0L)
             )
         }
@@ -520,7 +522,9 @@ data class BackupProfile(
     val handle: String? = null,
     val avatarUrl: String? = null,
     val datasyncId: String? = null,
-    val addedAt: Long = 0L
+    val addedAt: Long = 0L,
+    /** The brand channel the profile acts as; see [Profile.pageId]. */
+    val pageId: String? = null
 )
 
 /**

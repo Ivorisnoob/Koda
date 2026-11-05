@@ -51,6 +51,9 @@ internal class YouTubeHttp(
         // After the kill-switch, so a request local-only mode refused is not
         // counted as one YouTube saw.
         .addInterceptor(YouTubeRequestLedger)
+        // Points a brand channel's calls at that channel rather than the
+        // Google account's personal one. See BrandChannelInterceptor.
+        .addInterceptor(BrandChannelInterceptor)
         // Folds Google's rotated session cookies back into storage. Without it
         // the login snapshot goes stale on its own and every authenticated
         // endpoint quietly answers as signed out. A *network* interceptor
@@ -223,5 +226,6 @@ internal fun Request.Builder.authenticate(
         addHeader("Authorization", it)
         addHeader("X-Goog-AuthUser", "0")
     }
+    session.pageId?.let { addHeader("X-Goog-PageId", it) }
     return tag(YouTubeSession::class.java, session)
 }
