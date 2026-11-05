@@ -1491,6 +1491,8 @@
     <string name="vpc_soft">Soft</string>
     <string name="vpc_solid">Solid</string>
     <string name="vpc_text_size">Text size</string>
+    <string name="vpc_text_color">Text color</string>
+    <string name="vpc_caption_background">Background</string>
 
     <!-- Mini video player -->
     <string name="mv_close_player">Close video player</string>
