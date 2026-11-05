@@ -118,6 +118,32 @@ private enum class SubscriptionFeedOrder(val label: String) {
 }
 
 /**
+ * The feed in [order]. Each video's time is read once, against one clock
+ * reading: a comparator that re-parsed "2 days ago" against a fresh clock on
+ * every comparison gave equal phrases different times from one comparison to
+ * the next, and the order came out different on every pass. Equal times keep
+ * the order they arrived in (the source's own newest-first order), and Oldest
+ * is exactly Newest reversed, so a tie is not newest first inside an
+ * oldest-first list. Videos with no readable time stay at the bottom in both.
+ */
+private fun sortFeedByTime(
+    videos: List<VideoItem>,
+    order: SubscriptionFeedOrder,
+    now: Long
+): List<VideoItem> {
+    val (dated, undated) = videos
+        .mapIndexed { index, video ->
+            Triple(video, index, video.publishedAtMs ?: VideoItem.parseRelativeTime(video.uploadedDate, now))
+        }
+        .partition { it.third != null }
+    val newestFirst = dated
+        .sortedWith(compareByDescending<Triple<VideoItem, Int, Long?>> { it.third }.thenBy { it.second })
+        .map { it.first }
+    val ordered = if (order == SubscriptionFeedOrder.NEWEST) newestFirst else newestFirst.asReversed()
+    return ordered + undated.map { it.first }
+}
+
+/**
  * Subscriptions tab for Video Mode. Default view is the subscriptions feed
  * (latest uploads across all subscribed channels) topped by a horizontal
  * rail of channel avatars. The rail is a feed filter: tapping a creator shows
@@ -228,10 +254,8 @@ fun SubscriptionsContent(
             // The Video feed setting. Not while one creator is selected: that
             // view is everything from one channel, live included.
             .filter { video -> feedOptions.showLive || selectedChannel != null || !video.isLive }
-            .sortedWith(compareBy<VideoItem> {
-                it.publishedAtMs ?: VideoItem.parseRelativeTime(it.uploadedDate) ?: Long.MIN_VALUE
-            }.let { if (feedOrder == SubscriptionFeedOrder.NEWEST) it.reversed() else it })
             .toList()
+            .let { sortFeedByTime(it, feedOrder, now) }
     }
 
     // Endless feed: ask for the account feed's next page when the last

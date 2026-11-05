@@ -1254,6 +1254,7 @@ fun AllSongsList(
     val yesterdayLabel = stringResource(R.string.lh_yesterday)
     val likedIds = remember(likedSongs) { likedSongs.map { it.id }.toSet() }
     val downloadedIds = remember(downloadedSongs) { downloadedSongs.map { it.id }.toSet() }
+    OfferSongsForSelection(songs)
 
     LazyColumn(
         state = listState,
@@ -2805,10 +2806,13 @@ fun SongListItem(
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier.size(48.dp)
                 ) {
-                    if (song.albumArtUri != null || song.thumbnailUrl != null)
-                        AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
-                    else
-                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Box {
+                        if (song.albumArtUri != null || song.thumbnailUrl != null)
+                            AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        else
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize())
+                    }
                 }
             },
             trailingContent = trailingContent ?: if (isLiked || isDownloaded || showDuration || trailingLabel != null) {
@@ -2850,7 +2854,7 @@ fun SongListItem(
                     }
                 }
             } else null,
-            modifier = Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick),
+            modifier = Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick, song = song),
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
     }
@@ -2862,14 +2866,29 @@ fun SongListItem(
  * Falls back to a plain `clickable` when there is no long-press action, because
  * `combinedClickable` with a null `onLongClick` still consumes the long press
  * and swallows it from anything underneath.
+ *
+ * Given its [song], the row also takes part in picking songs
+ * ([com.ivor.ivormusic.ui.components.SongSelection]): while songs are being
+ * picked, a tap or a hold ticks this one instead of playing it.
  */
 @Composable
 internal fun Modifier.songRowClick(
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)?
+    onLongClick: (() -> Unit)?,
+    song: Song? = null
 ): Modifier {
-    if (onLongClick == null) return this.clickable(onClick = onClick)
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val selection = com.ivor.ivormusic.ui.components.LocalSongSelection.current
+    if (song != null && selection.isActive) {
+        val pick = {
+            haptics.performHapticFeedback(
+                if (selection.isSelected(song)) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+            )
+            selection.toggle(song)
+        }
+        return this.combinedClickable(onClick = pick, onLongClick = pick)
+    }
+    if (onLongClick == null) return this.clickable(onClick = onClick)
     return this.combinedClickable(
         onClick = onClick,
         onLongClick = {
@@ -2877,6 +2896,35 @@ internal fun Modifier.songRowClick(
             onLongClick()
         }
     )
+}
+
+/**
+ * Tells the song selection what this page lists, for Select all, and what
+ * Remove means here. Withdrawn when the page leaves, so the deck never offers
+ * a page's songs, or its removal, from somewhere else. A selection made here
+ * ends with the page as well: leaving it is the user moving on.
+ */
+@Composable
+internal fun OfferSongsForSelection(
+    songs: List<Song>,
+    remove: ((List<Song>) -> Unit)? = null
+) {
+    val selection = com.ivor.ivormusic.ui.components.LocalSongSelection.current
+    val currentRemove by rememberUpdatedState(remove)
+    val hasRemove = remove != null
+    DisposableEffect(selection, songs, hasRemove) {
+        selection.available = songs
+        selection.removeAction = if (hasRemove) { picked -> currentRemove?.invoke(picked) } else null
+        onDispose {
+            if (selection.available === songs) {
+                selection.available = emptyList()
+                selection.removeAction = null
+            }
+        }
+    }
+    DisposableEffect(selection) {
+        onDispose { selection.clear() }
+    }
 }
 
 /** Compact "when was this added" label for the Recently added sort. */
@@ -3214,7 +3262,7 @@ private fun PlaylistTrackRow(
         // headline starved the trailing duration to zero width.
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = (if (manageEnabled) Modifier else Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick))
+            modifier = (if (manageEnabled) Modifier else Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick, song = song))
                 .fillMaxWidth()
                 .heightIn(min = 72.dp)
                 .padding(start = 16.dp, end = if (manageEnabled) 4.dp else 16.dp, top = 8.dp, bottom = 8.dp)
@@ -3239,6 +3287,7 @@ private fun PlaylistTrackRow(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize())
                     // Playing: the bars over a scrim on the artwork, moving
                     // while it plays and resting while paused.
                     androidx.compose.animation.AnimatedVisibility(
@@ -3672,15 +3721,34 @@ fun PlaylistDetailScreen(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
     }
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("audio/x-mpegurl")
-    ) { uri ->
-        if (uri != null) scope.launch {
-            val ok = viewModel.exportLocalPlaylist(songRows.map { it.song }, uri)
+    val exportDone: (Boolean) -> Unit = { ok ->
+        scope.launch {
             snackbarHostState.showSnackbar(
                 shareContext.getString(if (ok) R.string.pl_export_done else R.string.pl_export_failed)
             )
         }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { uri ->
+        if (uri != null) scope.launch { exportDone(viewModel.exportPlaylist(songRows.map { it.song }, uri)) }
+    }
+    val exportCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) scope.launch { exportDone(viewModel.exportPlaylist(songRows.map { it.song }, uri, csv = true)) }
+    }
+    var showExportSheet by remember { mutableStateOf(false) }
+    if (showExportSheet) {
+        PlaylistExportSheet(
+            songCount = songRows.size,
+            onPick = { csv ->
+                showExportSheet = false
+                val base = (resolvedPlaylist.name ?: "playlist").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                if (csv) exportCsvLauncher.launch("$base.csv") else exportLauncher.launch("$base.m3u8")
+            },
+            onDismiss = { showExportSheet = false }
+        )
     }
 
     // Drag state. The dragged row is addressed by its lazy list key so the
@@ -3979,6 +4047,37 @@ fun PlaylistDetailScreen(
         }
     }
 
+    // Picking songs on this page: Select all takes what the page shows (the
+    // search filter included), and a device playlist can drop the picked
+    // songs in one go, with the same undo a single removal gets.
+    OfferSongsForSelection(
+        songs = filteredSongs,
+        remove = if (isLocalPlaylist && !isReorderMode) {
+            { picked ->
+                val ids = picked.mapTo(HashSet()) { it.id }
+                val previous = songRows
+                songRows = songRows.filterNot { it.song.id in ids }
+                if (songRows.size != previous.size) {
+                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songRows.map { it.song })
+                    reorderDirty = false
+                    scope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = shareContext.resources.getQuantityString(
+                                R.plurals.sel_removed, previous.size - songRows.size, previous.size - songRows.size
+                            ),
+                            actionLabel = shareContext.getString(R.string.undo),
+                            duration = SnackbarDuration.Short
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            songRows = previous
+                            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, previous.map { it.song })
+                        }
+                    }
+                }
+            }
+        } else null
+    )
+
     // A swipe direction names its action in settings. Remove only arms where
     // this page can actually remove, queue only where someone above handed a
     // queue over, options only where a sheet exists to open. A YouTube list
@@ -4148,15 +4247,13 @@ fun PlaylistDetailScreen(
                                                 }
                                             )
                                         }
-                                        if (isLocalPlaylist && songs.isNotEmpty()) {
+                                        if (songs.isNotEmpty()) {
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.pl_export)) },
                                                 leadingIcon = { Icon(Icons.Rounded.FileUpload, null) },
                                                 onClick = {
                                                     showOverflow = false
-                                                    val base = (resolvedPlaylist.name ?: "playlist")
-                                                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                                    exportLauncher.launch("$base.m3u8")
+                                                    showExportSheet = true
                                                 }
                                             )
                                         }
@@ -4179,6 +4276,27 @@ fun PlaylistDetailScreen(
                                                     pickCover()
                                                 }
                                             )
+                                            if (songs.any { it.highResThumbnailUrl != null || it.albumArtUri != null || it.thumbnailUrl != null }) {
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.lib_cover_from_songs)) },
+                                                    leadingIcon = { Icon(Icons.Rounded.GridView, null) },
+                                                    onClick = {
+                                                        showOverflow = false
+                                                        scope.launch {
+                                                            val ok = viewModel.coverLocalPlaylistFromSongs(
+                                                                resolvedPlaylist.id,
+                                                                songRows.map { it.song }
+                                                            )
+                                                            snackbarHostState.showSnackbar(
+                                                                shareContext.getString(
+                                                                    if (ok) R.string.lib_cover_from_songs_done
+                                                                    else R.string.lib_cover_from_songs_failed
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                )
+                                            }
                                             // Only offered once there is
                                             // something to undo: on a generated
                                             // cover it would do nothing visible.

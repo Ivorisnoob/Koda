@@ -113,6 +113,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -1827,7 +1828,7 @@ private fun SearchSongCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .songRowClick(onClick = onClick, onLongClick = onLongClick),
+            .songRowClick(onClick = onClick, onLongClick = onLongClick, song = song),
         shape = shape,
         color = cardColor,
         tonalElevation = 1.dp
@@ -1859,6 +1860,7 @@ private fun SearchSongCard(
                         .clip(RoundedCornerShape(14.dp)),
                     contentAlignment = Alignment.Center
                 ) {
+                    com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize().zIndex(1f))
                     if (song.albumArtUri != null || song.thumbnailUrl != null) {
                         AsyncImage(
                             model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
@@ -2028,7 +2030,7 @@ private fun SearchTopResultCard(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
-            .songRowClick(onClick = onPlay, onLongClick = onLongClick)
+            .songRowClick(onClick = onPlay, onLongClick = onLongClick, song = song)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             AsyncImage(

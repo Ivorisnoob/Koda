@@ -29,11 +29,21 @@ data class PlaylistImportFile(
 )
 
 /**
- * Playlist interchange: m3u/m3u8 both ways, plus NewPipe/PipePipe backup
- * archives in. Sniffed by content like [SubscriptionTransfer]. The NewPipe
- * schema is read by column name (`playlists`, `playlist_stream_join`,
- * `streams`, `remote_playlists`) [judgement: not yet checked against a real
- * playlist export].
+ * Playlist interchange: m3u/m3u8 both ways, CSV out, plus NewPipe/PipePipe
+ * backup archives in. Sniffed by content like [SubscriptionTransfer].
+ *
+ * The NewPipe schema is read by column name (`playlists`, `playlist_stream_join`,
+ * `streams`, `remote_playlists`) [verified November 2026 against the Room
+ * entities in PipePipe's source, which keeps NewPipe's names: `uid`, `name`,
+ * `playlist_id`, `stream_id`, `join_index`, `service_id`, `url`, `title`,
+ * `uploader`, `duration`, `thumbnail_url`, `stream_count`].
+ *
+ * Out, the m3u8 is the format the YouTube Music clients import (Metrolist and
+ * ArchiveTune read `#EXTINF:<seconds>,<artist> - <title>`, splitting artists on
+ * `;`, and match each line by search), and CSV is for spreadsheets and the
+ * playlist transfer services. A NewPipe backup is deliberately not written:
+ * NewPipe's import replaces its whole database, so a file of one playlist
+ * would wipe everything else the person had there. [judgement]
  */
 object PlaylistTransfer {
 
@@ -122,6 +132,32 @@ object PlaylistTransfer {
             append("#EXTINF:").append(seconds).append(',').append(label.replace('\n', ' ')).append('\n')
             append(location).append('\n')
         }
+    }
+
+    /**
+     * The songs as CSV with a header row, in the column names the playlist
+     * transfer services look for. RFC 4180 quoting, so a title holding a comma
+     * or a quote survives. Device files have no address another app could open
+     * and leave the URL column empty rather than dropping the row.
+     */
+    fun buildCsv(songs: List<Song>): String = buildString {
+        append("Track name,Artist name,Album,Duration (seconds),URL\r\n")
+        songs.forEach { song ->
+            val url = if (song.source == SongSource.YOUTUBE) "https://music.youtube.com/watch?v=${song.id}" else ""
+            val fields = listOf(
+                song.title,
+                song.artist.takeUnless { isUnknownArtist(it) }.orEmpty(),
+                song.album,
+                if (song.duration > 0) (song.duration / 1000).toString() else "",
+                url,
+            )
+            append(fields.joinToString(",") { csvField(it) }).append("\r\n")
+        }
+    }
+
+    internal fun csvField(value: String): String {
+        val flat = value.replace("\r", " ").replace("\n", " ")
+        return if (flat.any { it == ',' || it == '"' }) "\"" + flat.replace("\"", "\"\"") + "\"" else flat
     }
 
     /**
