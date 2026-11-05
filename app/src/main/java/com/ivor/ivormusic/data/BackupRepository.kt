@@ -96,6 +96,7 @@ class BackupRepository(context: Context) {
             "ivor_music_theme_prefs",   // every setting, palette and player style
             "saved_playlists",          // playlists kept as references, both modes
             "hidden_playlists",         // playlists the user told Koda not to show
+            "playlist_modes",           // playlists kept to music or video mode
             "ivor_track_loudness",      // measured per-track gain
             "koda_icon_styles"          // icon looks the user mixed themselves
         )

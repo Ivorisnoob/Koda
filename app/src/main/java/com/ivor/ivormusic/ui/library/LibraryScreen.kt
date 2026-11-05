@@ -92,6 +92,7 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.PlaylistMode
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
@@ -505,6 +506,7 @@ fun LibraryContent(
                 StatsScreen(
                     onBack = { back() },
                     viewModel = viewModel,
+                    onPlayQueue = onPlayQueue,
                     contentPadding = contentPadding
                 )
             }
@@ -915,7 +917,8 @@ fun LibraryMainScreen(
     onSongLongPress: ((Song) -> Unit)? = null,
     allSongsListState: LazyListState = rememberLazyListState()
 ) {
-    val userPlaylists by viewModel.userPlaylists.collectAsState()
+    val musicModePlaylists by viewModel.musicModePlaylists.collectAsState()
+    val playlistModes by viewModel.playlistModes.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
     val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
     val hiddenPlaylists by viewModel.hiddenPlaylists.collectAsState()
@@ -1145,7 +1148,7 @@ fun LibraryMainScreen(
                     }
                     LibraryTab.Playlists -> {
                         PlaylistsGrid(
-                            playlists = userPlaylists,
+                            playlists = musicModePlaylists,
                             localPlaylistIds = localPlaylistIds,
                             savedPlaylistIds = savedPlaylistIds,
                             likedSongs = likedSongs,
@@ -1173,6 +1176,8 @@ fun LibraryMainScreen(
                             hiddenPlaylists = hiddenPlaylists,
                             onHidePlaylist = { playlist -> viewModel.hidePlaylist(playlist) },
                             onUnhidePlaylist = { id -> viewModel.unhidePlaylist(id) },
+                            playlistModes = playlistModes,
+                            onPlaylistModeChange = viewModel::setPlaylistMode,
                             contentPadding = contentPadding,
                             isLoggedIn = isYouTubeConnected,
                             importAction = { PlaylistImportButton(viewModel) },
@@ -1727,6 +1732,9 @@ fun PlaylistsGrid(
     hiddenPlaylists: List<com.ivor.ivormusic.data.HiddenPlaylist> = emptyList(),
     onHidePlaylist: (PlaylistDisplayItem) -> Unit = {},
     onUnhidePlaylist: (String) -> Unit = {},
+    /** Playlists kept to one mode, and the way to change that (#357). One call site, wired. */
+    playlistModes: Map<String, PlaylistMode>,
+    onPlaylistModeChange: (String, PlaylistMode?) -> Unit,
     /** Signed in, so the account's own playlists live on YouTube for real. */
     isLoggedIn: Boolean = false,
     importAction: @Composable () -> Unit,
@@ -1873,6 +1881,9 @@ fun PlaylistsGrid(
                 onDeleteConfirmed = { onDeletePlaylist(playlist) },
                 onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
                 onHide = { onHidePlaylist(playlist) },
+                modeAction = PlaylistModeAction(playlistModes[playlist.id], PlaylistMode.MUSIC) { mode ->
+                    onPlaylistModeChange(playlist.id, mode)
+                },
                 selected = LocalLibraryOpenItem.current?.playlistId == playlist.id,
                 onClick = { onPlaylistClick(playlist) }
             )
@@ -1897,6 +1908,9 @@ fun PlaylistsGrid(
                     subtitle = playlist.displaySubtitle(),
                     thumbnailUrl = playlist.thumbnailUrl,
                     onHide = { onHidePlaylist(playlist) },
+                    modeAction = PlaylistModeAction(playlistModes[playlist.id], PlaylistMode.MUSIC) { mode ->
+                        onPlaylistModeChange(playlist.id, mode)
+                    },
                     selected = LocalLibraryOpenItem.current?.playlistId == playlist.id,
                     onClick = { onPlaylistClick(playlist) }
                 )
@@ -2480,6 +2494,8 @@ fun ExpressivePlaylistCard(
      * non-null it is offered on every card, editable or not.
      */
     onHide: (() -> Unit)? = null,
+    /** Keep this playlist to one mode (#357); null where the card offers no such choice. */
+    modeAction: PlaylistModeAction? = null,
     onEditConfirmed: (String, String?) -> Unit = { _, _ -> },
     onDeleteConfirmed: () -> Unit = {},
     onRemoveSaved: () -> Unit = {},
@@ -2612,7 +2628,7 @@ fun ExpressivePlaylistCard(
                     maxLines = 1
                 )
             }
-            if (isEditable || isSaved || onHide != null) {
+            if (isEditable || isSaved || onHide != null || modeAction != null) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Rounded.MoreVert, contentDescription = "Playlist options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2635,6 +2651,9 @@ fun ExpressivePlaylistCard(
                                 }
                             )
                         }
+                        modeAction?.let { action ->
+                            PlaylistModeMenuItem(action, onDone = { showMenu = false })
+                        }
                         if (isSaved) {
                             // Removing the reference, not the playlist: no
                             // confirmation dialog, because nothing is destroyed
@@ -2649,7 +2668,7 @@ fun ExpressivePlaylistCard(
                                     Icon(Icons.Rounded.BookmarkRemove, contentDescription = null)
                                 }
                             )
-                        } else {
+                        } else if (isEditable) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.action_edit)) },
                                 onClick = {

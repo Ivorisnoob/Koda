@@ -19,6 +19,7 @@ import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.ArtistItem
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.PlaylistPageInfo
+import com.ivor.ivormusic.data.showsIn
 import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.data.SubscriptionPostsIssue
 import com.ivor.ivormusic.data.YouTubeRepository
@@ -328,6 +329,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val hiddenPlaylistsRepository =
         com.ivor.ivormusic.data.HiddenPlaylistsRepository(application)
 
+    // Playlists kept to one mode (#357). Declared before every list that
+    // filters on it, which is most of the playlist flows below.
+    private val playlistModeStore = com.ivor.ivormusic.data.PlaylistModeStore(application)
+
+    /** Playlist id to the only mode it shows in; absent means both. */
+    val playlistModes: StateFlow<Map<String, com.ivor.ivormusic.data.PlaylistMode>> =
+        playlistModeStore.modes
+
+    /** Keep a playlist to [mode], or show it in both modes again when null. */
+    fun setPlaylistMode(playlistId: String, mode: com.ivor.ivormusic.data.PlaylistMode?) =
+        playlistModeStore.set(playlistId, mode)
+
     // Video playlists held on the device, with the videos embedded. The video
     // counterpart of playlistRepository, and the reason video mode can save
     // anything at all signed out. See LocalVideoPlaylistsRepository.
@@ -358,6 +371,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // the playlist straight back without a refetch.
         val hiddenIds = hidden.map { it.playlistId }.toSet()
         (localItems + savedItems + ytPlaylists).filterNot { it.id in hiddenIds }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * [userPlaylists] less the ones kept to video mode: what music Home and the
+     * Library grid draw. A separate list on purpose, because [userPlaylists] also
+     * answers "is this in my library", feeds import and the add-to-playlist
+     * paths, and a playlist kept to video mode is still the user's own.
+     */
+    val musicModePlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
+        userPlaylists,
+        playlistModeStore.modes
+    ) { playlists, modes ->
+        playlists.filter { modes.showsIn(it.id, com.ivor.ivormusic.data.PlaylistMode.MUSIC) }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- Spotlight's YouTube Music tabs (home, explore, charts, new, a mood) ---
@@ -601,10 +627,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     val videoPlaylistsForMusic: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
         localVideoPlaylistsRepository.playlists,
-        hiddenPlaylistsRepository.hiddenPlaylists
-    ) { local, hidden ->
+        hiddenPlaylistsRepository.hiddenPlaylists,
+        playlistModeStore.modes
+    ) { local, hidden, modes ->
         val hiddenIds = hidden.map { it.playlistId }.toSet()
-        local.filter { it.videos.isNotEmpty() && it.id !in hiddenIds }.map { playlist ->
+        local.filter {
+            it.videos.isNotEmpty() && it.id !in hiddenIds &&
+                modes.showsIn(it.id, com.ivor.ivormusic.data.PlaylistMode.MUSIC)
+        }.map { playlist ->
             com.ivor.ivormusic.data.PlaylistDisplayItem(
                 name = playlist.name,
                 url = playlist.id,
@@ -623,11 +653,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     val musicPlaylistsForVideo: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = combine(
         playlistRepository.userPlaylists,
-        hiddenPlaylistsRepository.hiddenPlaylists
-    ) { local, hidden ->
+        hiddenPlaylistsRepository.hiddenPlaylists,
+        playlistModeStore.modes
+    ) { local, hidden, modes ->
         val hiddenIds = hidden.map { it.playlistId }.toSet()
         local.mapNotNull { playlist ->
             if (playlist.id in hiddenIds) return@mapNotNull null
+            if (!modes.showsIn(playlist.id, com.ivor.ivormusic.data.PlaylistMode.VIDEO)) return@mapNotNull null
             val watchable = playlist.songs.filter { it.source == SongSource.YOUTUBE }
             if (watchable.isEmpty()) return@mapNotNull null
             com.ivor.ivormusic.data.VideoPlaylist(
@@ -1360,6 +1392,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val savedVideoPlaylistIds: StateFlow<Set<String>> = savedVideoPlaylists
         .map { playlists -> playlists.map { it.playlistId }.toSet() }
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptySet())
+
+    /**
+     * [videoPlaylists] less the ones kept to music mode, for video mode's
+     * Library list. The full list still feeds the save-to-playlist sheets and
+     * the account checks, for the reason [musicModePlaylists] is separate.
+     */
+    val videoModePlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = combine(
+        videoPlaylists,
+        playlistModeStore.modes
+    ) { playlists, modes ->
+        playlists.filter { modes.showsIn(it.playlistId, com.ivor.ivormusic.data.PlaylistMode.VIDEO) }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** [savedVideoPlaylists] less the ones kept to music mode, for the same list. */
+    val videoModeSavedPlaylists: StateFlow<List<com.ivor.ivormusic.data.VideoPlaylist>> = combine(
+        savedVideoPlaylists,
+        playlistModeStore.modes
+    ) { playlists, modes ->
+        playlists.filter { modes.showsIn(it.playlistId, com.ivor.ivormusic.data.PlaylistMode.VIDEO) }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
      * Keep or drop a playlist found in video mode. Returns the state after the

@@ -1720,6 +1720,10 @@
     <string name="lib_upload_ytm_partial">Uploaded %1$d of %2$d songs to YouTube Music.</string>
     <string name="lib_upload_ytm_failed">Couldn\'t upload to YouTube Music</string>
     <string name="lib_hide_playlist">Hide from Koda</string>
+    <string name="pl_mode_only_video">Show only in video mode</string>
+    <string name="pl_mode_only_music">Show only in music mode</string>
+    <string name="pl_mode_also_video">Show in video mode too</string>
+    <string name="pl_mode_also_music">Show in music mode too</string>
     <string name="lib_hidden_playlists">Hidden playlists</string>
     <string name="lib_hidden_count">%1$d hidden</string>
     <string name="lib_unhide">Unhide</string>
