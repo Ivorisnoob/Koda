@@ -1,6 +1,8 @@
 package com.ivor.ivormusic.data
 
+import android.graphics.BitmapFactory
 import org.jaudiotagger.audio.AudioFileIO
+import org.jaudiotagger.tag.flac.FlacTag
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.images.ArtworkFactory
 import java.io.File
@@ -60,12 +62,34 @@ internal object DownloadedAudioMetadata {
 
         artworkFile?.takeIf { it.isFile && it.length() > 0L }?.let { cover ->
             tag.deleteArtworkField()
-            tag.setField(
-                ArtworkFactory.createArtworkFromFile(cover).apply {
-                    description = "Cover"
-                    pictureType = FRONT_COVER_PICTURE_TYPE
-                }
-            )
+            if (tag is FlacTag) {
+                // [scar November 2026] FlacTag.setField(Artwork) reads the
+                // picture's size through javax.imageio, which Android does not
+                // have: NoClassDefFoundError, and a lossless download was
+                // published with no tags at all. The picture block is built
+                // directly, with the size Android reads from the JPEG itself.
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(cover.path, bounds)
+                tag.setField(
+                    tag.createArtworkField(
+                        cover.readBytes(),
+                        FRONT_COVER_PICTURE_TYPE,
+                        "image/jpeg",
+                        "Cover",
+                        bounds.outWidth.coerceAtLeast(0),
+                        bounds.outHeight.coerceAtLeast(0),
+                        24,
+                        0
+                    )
+                )
+            } else {
+                tag.setField(
+                    ArtworkFactory.createArtworkFromFile(cover).apply {
+                        description = "Cover"
+                        pictureType = FRONT_COVER_PICTURE_TYPE
+                    }
+                )
+            }
         }
 
         taggedAudio.commit()

@@ -536,18 +536,28 @@ private fun SpectrumChart(
             drawRect(shade, topLeft = Offset(x(cutoff), top), size = Size(right - x(cutoff), bottom - top))
         }
 
-        // Reference lines a fake gives itself away against.
+        // Reference lines a fake gives itself away against, labelled in order
+        // of importance: on a 96 kHz chart 20, 22.05 and 24 kHz sit a few
+        // pixels apart, and a label that would touch one already drawn is
+        // left off (its line stays) rather than printed over it.
         val references = buildList {
-            add(16_000); add(20_000); add(22_050)
+            add(22_050)
             if (nyquist > 24_000) add(24_000)
+            add(16_000); add(20_000)
             if (nyquist > 40_000) add(40_000)
         }.filter { it < nyquist }
         val dash = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
+        val gap = 4.dp.toPx()
+        val taken = mutableListOf<ClosedFloatingPointRange<Float>>()
         for (hz in references) {
             drawLine(grid, Offset(x(hz), top), Offset(x(hz), bottom), strokeWidth = 1.dp.toPx(), pathEffect = dash)
-            val text = LosslessDownloadInfo.formatKhz(hz).removeSuffix(" kHz")
+            val text = if (hz == 22_050) "22.05" else (hz / 1000).toString()
             val laid = measurer.measure(text, labelStyle)
-            drawText(laid, topLeft = Offset(x(hz) - laid.size.width / 2f, 3.dp.toPx()))
+            val start = (x(hz) - laid.size.width / 2f).coerceIn(left, right - laid.size.width)
+            val span = (start - gap)..(start + laid.size.width + gap)
+            if (taken.any { it.start < span.endInclusive && span.start < it.endInclusive }) continue
+            taken += span
+            drawText(laid, topLeft = Offset(start, 3.dp.toPx()))
         }
 
         // The spectrum as a filled shape.
