@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Refresh
@@ -172,6 +173,9 @@ fun NowPlayingOptionsSheet(
     // Follows the hardware keys and the system panel while the sheet is open;
     // hides itself on a device whose output volume cannot be moved.
     val volume = rememberMediaVolume()
+    val lyrics by viewModel.lyricsResult.collectAsState()
+    val hasShareableLyrics = (lyrics as? com.ivor.ivormusic.data.LyricsResult.Success)
+        ?.lines?.any { it.text.isNotBlank() } == true
     val likedIds by viewModel.likedSongIds.collectAsState()
     val isLiked = song.id in likedIds
     // Keyed on the store's own flows so the row follows a download that
@@ -461,6 +465,23 @@ fun NowPlayingOptionsSheet(
                                         thumbnailUrl = song.highResThumbnailUrl ?: song.thumbnailUrl,
                                     )
                                 )
+                            }
+                        )
+                        needsDivider = true
+                    }
+                    // The lines of this song as a card to share. Only with
+                    // lyrics to share: a row that opens onto nothing is worse
+                    // than no row.
+                    if (hasShareableLyrics) {
+                        if (needsDivider) OptionRowDivider()
+                        OptionRow(
+                            icon = Icons.Rounded.FormatQuote,
+                            title = stringResource(R.string.lyrics_share_title),
+                            subtitle = stringResource(R.string.lyrics_share_row_subtitle),
+                            trailing = OptionRowTrailing.CHEVRON,
+                            onClick = {
+                                onDismiss()
+                                viewModel.openLyricsShare()
                             }
                         )
                         needsDivider = true

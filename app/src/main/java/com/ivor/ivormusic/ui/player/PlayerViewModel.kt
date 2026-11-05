@@ -22,6 +22,7 @@ import com.ivor.ivormusic.data.queueStartIndex
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
 import com.ivor.ivormusic.data.LyricsResult
+import com.ivor.ivormusic.ui.lyricsshare.LyricsShareRequest
 import com.ivor.ivormusic.service.MusicService
 import com.ivor.ivormusic.service.EXTRA_QUEUE_ITEM_ID
 import com.ivor.ivormusic.service.toPlaybackMediaItem
@@ -1731,6 +1732,45 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun closeStandby() {
         _isStandbyOpen.value = false
     }
+
+    /**
+     * The lyrics share screen, opened from the player's menu or a long press on
+     * a lyric line and drawn above everything in MainActivity, as Standby is.
+     *
+     * The song and its lines are taken at the moment it opens, so a card being
+     * made is not swapped for the next song's lyrics when this one ends.
+     */
+    private val _lyricsShare = MutableStateFlow<LyricsShareRequest?>(null)
+    val lyricsShare: StateFlow<LyricsShareRequest?> = _lyricsShare.asStateFlow()
+
+    /** Open the share screen with [lineIndex] picked, or the line being sung when null. */
+    fun openLyricsShare(lineIndex: Int? = null) {
+        val song = _currentSong.value ?: return
+        val lyrics = _lyricsResult.value as? LyricsResult.Success ?: return
+        val lines = lyrics.lines.filter { it.text.isNotBlank() }
+        if (lines.isEmpty()) return
+        val start = when {
+            lineIndex != null -> lyrics.lines.getOrNull(lineIndex)?.let { picked -> lines.indexOf(picked) }
+            lyrics.syncType != com.ivor.ivormusic.data.LyricsSyncType.PLAIN ->
+                lines.indexOfLast { it.timeMs <= _progress.value }
+            else -> null
+        }?.takeIf { it >= 0 }
+        _lyricsShare.value = LyricsShareRequest(song, lines.map { tidyLyricLine(it.text) }, start)
+    }
+
+    fun closeLyricsShare() {
+        _lyricsShare.value = null
+    }
+
+    /**
+     * A line as it should read on a card: providers often write ad-libs hard
+     * against the words ("(Yes)I know"), which reads as a typo set large.
+     */
+    private fun tidyLyricLine(text: String): String = text
+        .replace(Regex("\\)(?=[\\p{L}\\p{N}])"), ") ")
+        .replace(Regex("(?<=[\\p{L}\\p{N}])\\("), " (")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
     fun pauseDownload(id: String) = downloadRepository.pauseDownload(id)
     fun resumeDownload(id: String) = downloadRepository.resumeDownload(id)

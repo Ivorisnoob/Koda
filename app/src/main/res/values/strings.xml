@@ -1492,6 +1492,29 @@
     <string name="vpc_solid">Solid</string>
     <string name="vpc_text_size">Text size</string>
     <string name="vpc_text_color">Text color</string>
+    <string name="lyrics_share_title">Share lyrics</string>
+    <string name="lyrics_share_row_subtitle">Turn your favorite lines into a card</string>
+    <string name="lyrics_share_pick_hint">Tap the lines you want to share</string>
+    <string name="lyrics_share_count">%1$d of %2$d lines</string>
+    <string name="lyrics_share_limit">Up to %1$d lines fit on a card</string>
+    <string name="lyrics_share_next">Next</string>
+    <string name="lyrics_share_clear">Clear</string>
+    <string name="lyrics_share_card_title">Lyrics card</string>
+    <string name="lyrics_card_album">Album</string>
+    <string name="lyrics_card_glow">Glow</string>
+    <string name="lyrics_card_poster">Poster</string>
+    <string name="lyrics_card_shape">Shape</string>
+    <string name="lyrics_share_story">Story</string>
+    <string name="lyrics_share_square">Square</string>
+    <string name="lyrics_share_copy">Copy</string>
+    <string name="lyrics_share_copied">Copied</string>
+    <string name="lyrics_share_save">Save</string>
+    <string name="lyrics_share_saved">Saved</string>
+    <string name="lyrics_share_send">Share</string>
+    <string name="lyrics_share_failed">Could not make the image. Try again.</string>
+    <string name="lyrics_share_close">Close</string>
+    <string name="lyrics_share_back">Back to lines</string>
+    <string name="lyrics_share_colour">Card color %1$d</string>
     <string name="vpc_caption_background">Background</string>
 
     <!-- Mini video player -->
