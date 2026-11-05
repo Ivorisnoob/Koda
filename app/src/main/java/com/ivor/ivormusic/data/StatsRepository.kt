@@ -36,7 +36,12 @@ data class SongStats(
     val artist: String,
     val thumbnailUrl: String? = null,
     val playCount: Int,
-    val totalPlayTime: Long
+    val totalPlayTime: Long,
+    // What Stats needs to play the song from its row, taken from the newest
+    // play the way the History page does.
+    val album: String = "",
+    val durationMs: Long = 0,
+    val source: SongSource = SongSource.YOUTUBE
 )
 
 @Serializable
@@ -139,7 +144,10 @@ class StatsRepository(private val context: Context) {
                 artist = first.artist,
                 thumbnailUrl = first.thumbnailUrl,
                 playCount = entries.size,
-                totalPlayTime = entries.sumOf { it.duration }
+                totalPlayTime = entries.sumOf { it.duration },
+                album = first.album,
+                durationMs = first.duration,
+                source = first.source
             )
         }.sortedByDescending { it.playCount }
         val artistStats = history.groupBy { it.artist }.map { (name, entries) ->

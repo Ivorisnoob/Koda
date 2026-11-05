@@ -109,6 +109,8 @@ import coil.compose.AsyncImage
 import com.ivor.ivormusic.ui.components.VideoThumbnail
 import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.data.LocalVideoPlaylistsRepository
+import com.ivor.ivormusic.data.PlaylistMode
+import com.ivor.ivormusic.ui.library.PlaylistModeAction
 import com.ivor.ivormusic.data.VideoItem
 import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
@@ -198,11 +200,15 @@ fun VideoLibraryContent(
 ) {
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
     val historyVideos by viewModel.historyVideos.collectAsState()
-    val playlists by viewModel.videoPlaylists.collectAsState()
+    // Less the ones kept to music mode (#357); the save sheets still see them all.
+    val playlists by viewModel.videoModePlaylists.collectAsState()
+    // Every playlist the user owns, kept to music mode or not, for write checks.
+    val writablePlaylists by viewModel.videoPlaylists.collectAsState()
     val isPlaylistsLoading by viewModel.isVideoPlaylistsLoading.collectAsState()
     // Playlists kept as references, from either mode. Device-local, so unlike
     // the account's own they are there signed out.
-    val savedPlaylists by viewModel.savedVideoPlaylists.collectAsState()
+    val savedPlaylists by viewModel.videoModeSavedPlaylists.collectAsState()
+    val playlistModes by viewModel.playlistModes.collectAsState()
 
     val deviceVideos by viewModel.deviceVideos.collectAsState()
     val deviceFolders by viewModel.deviceVideoFolders.collectAsState()
@@ -297,7 +303,9 @@ fun VideoLibraryContent(
                 importAction = {
                     com.ivor.ivormusic.ui.library.PlaylistImportButton(viewModel, videos = true)
                 },
-                fromMusicMode = viewModel.musicPlaylistsForVideo.collectAsState().value
+                fromMusicMode = viewModel.musicPlaylistsForVideo.collectAsState().value,
+                playlistModes = playlistModes,
+                onPlaylistModeChange = viewModel::setPlaylistMode
             )
 
             // Undo for a removal taken from the root's history row. Hosted here
@@ -440,7 +448,7 @@ fun VideoLibraryContent(
                 // through initialPlaylist - and on those the write fails, which
                 // showed as the row disappearing and coming back.
                 allowRemove = target.playlist.playlistId in WRITABLE_PINNED_PLAYLIST_IDS ||
-                    playlists.any { it.playlistId == target.playlist.playlistId },
+                    writablePlaylists.any { it.playlistId == target.playlist.playlistId },
                 onEnqueueVideo = onEnqueueVideo,
                 onOpenChannel = onOpenChannel
             )
@@ -480,8 +488,15 @@ private fun LibraryRoot(
     /** The playlist import button; supplied by the caller, which holds the ViewModel. */
     importAction: @Composable () -> Unit = {},
     /** Music mode's device playlists, as videos. */
-    fromMusicMode: List<VideoPlaylist> = emptyList()
+    fromMusicMode: List<VideoPlaylist> = emptyList(),
+    /** Playlists kept to one mode, and the way to change that (#357). One call site, wired. */
+    playlistModes: Map<String, PlaylistMode>,
+    onPlaylistModeChange: (String, PlaylistMode?) -> Unit
 ) {
+    fun modeAction(playlist: VideoPlaylist) =
+        PlaylistModeAction(playlistModes[playlist.playlistId], PlaylistMode.VIDEO) { mode ->
+            onPlaylistModeChange(playlist.playlistId, mode)
+        }
     var showCreateDialog by remember { mutableStateOf(false) }
 
     if (showCreateDialog) {
@@ -670,6 +685,7 @@ private fun LibraryRoot(
                         onClick = { onOpenPlaylist(playlist) },
                         isSaved = true,
                         onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
+                        modeAction = modeAction(playlist),
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                     PlaylistRowDivider()
@@ -713,6 +729,7 @@ private fun LibraryRoot(
                             onRename = if (isLocal) {
                                 { name -> onRenamePlaylist(playlist, name) }
                             } else null,
+                            modeAction = modeAction(playlist),
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
                         PlaylistRowDivider()
@@ -738,6 +755,7 @@ private fun LibraryRoot(
                         PlaylistRow(
                             playlist = playlist,
                             onClick = { onOpenPlaylist(playlist) },
+                            modeAction = modeAction(playlist),
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
                         PlaylistRowDivider()
@@ -1195,7 +1213,9 @@ private fun PlaylistRow(
      * to be renamed from.
      */
     isLocal: Boolean = false,
-    onRename: ((String) -> Unit)? = null
+    onRename: ((String) -> Unit)? = null,
+    /** Keep this playlist to one mode (#357); null where the row offers no such choice. */
+    modeAction: com.ivor.ivormusic.ui.library.PlaylistModeAction? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -1326,7 +1346,8 @@ private fun PlaylistRow(
                     )
                 }
             }
-            if (isSaved && onRemoveSaved != null) {
+            val removesSaved = isSaved && onRemoveSaved != null
+            if (removesSaved || onDelete != null || modeAction != null) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
@@ -1339,54 +1360,48 @@ private fun PlaylistRow(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
-                        // Removing the reference, not the playlist: no
-                        // confirmation, because nothing is destroyed and saving
-                        // it again is one tap on its page.
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.cd_remove_from_library)) },
-                            onClick = {
-                                showMenu = false
-                                onRemoveSaved()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.BookmarkRemove, contentDescription = null)
-                            }
-                        )
-                    }
-                }
-            } else if (onDelete != null) {
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(
-                            imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = stringResource(R.string.cd_playlist_options),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        if (onRename != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_rename)) },
-                                onClick = {
-                                    showMenu = false
-                                    showRenameDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Rounded.Edit, contentDescription = null)
-                                }
+                        modeAction?.let { action ->
+                            com.ivor.ivormusic.ui.library.PlaylistModeMenuItem(
+                                action,
+                                onDone = { showMenu = false }
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.delete_playlist)) },
-                            onClick = {
-                                showMenu = false
-                                showDeleteConfirm = true
-                            },
-                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) }
-                        )
+                        if (removesSaved) {
+                            // Removing the reference, not the playlist: no
+                            // confirmation, because nothing is destroyed and saving
+                            // it again is one tap on its page.
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.cd_remove_from_library)) },
+                                onClick = {
+                                    showMenu = false
+                                    onRemoveSaved?.invoke()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.BookmarkRemove, contentDescription = null)
+                                }
+                            )
+                        } else if (onDelete != null) {
+                            if (onRename != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_rename)) },
+                                    onClick = {
+                                        showMenu = false
+                                        showRenameDialog = true
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Edit, contentDescription = null)
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.delete_playlist)) },
+                                onClick = {
+                                    showMenu = false
+                                    showDeleteConfirm = true
+                                },
+                                leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) }
+                            )
+                        }
                     }
                 }
             } else {

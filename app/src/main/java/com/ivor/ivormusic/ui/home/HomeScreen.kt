@@ -1244,7 +1244,7 @@ fun HomeScreen(
                                         // tab differs, which is the move the video toggle
                                         // already established.
                                         if (spotlightHome) {
-                                            val spotlightPlaylists by viewModel.userPlaylists.collectAsState()
+                                            val spotlightPlaylists by viewModel.musicModePlaylists.collectAsState()
                                             val spotlightLiked by viewModel.likedSongs.collectAsState()
                                             SpotlightHomeContent(
                                                 songs = songs,
@@ -1312,7 +1312,7 @@ fun HomeScreen(
                                             // data-backed sections rather than a full-screen
                                             // spinner - the top bar, titles and nav have
                                             // nothing to wait for.
-                                            val classicPlaylists by viewModel.userPlaylists.collectAsState()
+                                            val classicPlaylists by viewModel.musicModePlaylists.collectAsState()
                                             val classicRecentAlbums by viewModel.recentAlbums.collectAsState()
                                             val classicLiked by viewModel.likedSongs.collectAsState()
                                             val classicTopArtists by viewModel.topArtists.collectAsState()

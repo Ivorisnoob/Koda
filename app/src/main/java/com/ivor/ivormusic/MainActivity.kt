@@ -1785,6 +1785,7 @@ fun MusicApp(
                 com.ivor.ivormusic.ui.library.StatsScreen(
                     onBack = { navController.popBackStack() },
                     viewModel = homeViewModel,
+                    onPlayQueue = { songs, song -> playerViewModel.playQueue(songs, song) },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 160.dp)
                 )
             }
