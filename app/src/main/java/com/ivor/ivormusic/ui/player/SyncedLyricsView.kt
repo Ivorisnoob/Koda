@@ -14,6 +14,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
@@ -82,6 +83,14 @@ private fun TextStyle.withLyricsFont(family: FontFamily?): TextStyle =
  * enlarging it after layout instead draws outside its bounds (the clipping
  * scar in docs/playback-music.md).
  */
+/**
+ * What a long press on a lyric line does, given the line's index in the
+ * lyrics: open the share screen with that line picked. Provided once by
+ * [ExpandablePlayer] above every player style, so no style has to be wired to
+ * it; where nothing provides it (Standby) a long press does nothing.
+ */
+internal val LocalLyricLongPress = staticCompositionLocalOf<((Int) -> Unit)?> { null }
+
 @Composable
 private fun lyricLineStyle(): TextStyle =
     MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold)
@@ -128,7 +137,13 @@ fun SyncedLyricsView(
      * following a beat after the one above. False is the plain scroll, kept
      * for Standby's small panel, which was tuned around it.
      */
-    cascadeScroll: Boolean = true
+    cascadeScroll: Boolean = true,
+    /**
+     * False for a screen that only shows the words (Standby): no tap to seek,
+     * no scrolling by hand, so a swipe or a hold over the lyrics reaches the
+     * screen behind them. The lyrics still follow the song.
+     */
+    interactive: Boolean = true
 ) {
     val hasWordTiming = lyricsResult is LyricsResult.Success &&
         lyricsResult.syncType == LyricsSyncType.WORD
@@ -187,7 +202,8 @@ fun SyncedLyricsView(
                         centered = centered,
                         horizontalGutter = horizontalGutter,
                         anchorFraction = anchorFraction,
-                        cascadeScroll = cascadeScroll
+                        cascadeScroll = cascadeScroll,
+                        interactive = interactive
                     )
                 }
             }
@@ -207,9 +223,12 @@ private fun LyricsContent(
     centered: Boolean,
     horizontalGutter: androidx.compose.ui.unit.Dp?,
     anchorFraction: Float,
-    cascadeScroll: Boolean
+    cascadeScroll: Boolean,
+    interactive: Boolean
 ) {
     val listState = rememberLazyListState()
+    val onLineLongPress = LocalLyricLongPress.current.takeIf { interactive }
+    val longPressHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val cascade = remember { LyricCascade() }
     val cascading = cascadeScroll && motionEnabled
     // A duet is drawn as a conversation, whatever the alignment setting:
@@ -323,6 +342,8 @@ private fun LyricsContent(
         
         LazyColumn(
             state = listState,
+            // Display only: the list still scrolls itself to the sung line.
+            userScrollEnabled = interactive,
             modifier = Modifier
                 .fillMaxSize()
                 // Fade the lyrics themselves out toward the edges instead of
@@ -358,7 +379,16 @@ private fun LyricsContent(
                     romanized = romanizedLines.getOrNull(index),
                     isCurrent = index == currentLineIndex,
                     isSynced = isSynced,
+                    tappable = interactive,
                     onTap = { onSeekTo(line.timeMs) },
+                    onLongPress = onLineLongPress?.let { open ->
+                        {
+                            longPressHaptics.performHapticFeedback(
+                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                            )
+                            open(index)
+                        }
+                    },
                     primaryColor = primaryColor,
                     onSurfaceColor = onSurfaceColor,
                     motionEnabled = motionEnabled,
@@ -495,7 +525,11 @@ private fun LyricLine(
     romanized: String? = null,
     isCurrent: Boolean,
     isSynced: Boolean,
+    /** False on a display-only surface: the line takes no touch at all. */
+    tappable: Boolean = true,
     onTap: () -> Unit,
+    /** Opens the share screen on this line; null where sharing is not offered. */
+    onLongPress: (() -> Unit)? = null,
     primaryColor: Color,
     onSurfaceColor: Color,
     motionEnabled: Boolean,
@@ -539,14 +573,20 @@ private fun LyricLine(
     )
 
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val tapModifier = if (isSynced) {
-        Modifier.clickable(
+    // A tap seeks (synced lyrics only); a long press shares, plain lyrics too.
+    val tapModifier = when {
+        onLongPress != null -> Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = { if (isSynced) onTap() },
+            onLongClick = onLongPress
+        )
+        isSynced && tappable -> Modifier.clickable(
             interactionSource = interactionSource,
             indication = null,
             onClick = onTap
         )
-    } else {
-        Modifier
+        else -> Modifier
     }
 
     Box(

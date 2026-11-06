@@ -22,6 +22,7 @@ import com.ivor.ivormusic.data.queueStartIndex
 import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.LyricsRepository
 import com.ivor.ivormusic.data.LyricsResult
+import com.ivor.ivormusic.ui.lyricsshare.LyricsShareRequest
 import com.ivor.ivormusic.service.MusicService
 import com.ivor.ivormusic.service.EXTRA_QUEUE_ITEM_ID
 import com.ivor.ivormusic.service.toPlaybackMediaItem
@@ -1522,7 +1523,34 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         )
     }
 
+    /** The pitch shift in semitones, mirrored from the service as the speed is. */
+    private val _playbackPitch = MutableStateFlow(0)
+    val playbackPitch: StateFlow<Int> = _playbackPitch.asStateFlow()
+
+    /** Set the pitch shift; [persist] false while a slider is still under the finger. */
+    fun setPlaybackPitch(semitones: Int, persist: Boolean = true) {
+        val bounded = semitones.coerceIn(
+            ThemePreferences.MIN_PITCH_SEMITONES,
+            ThemePreferences.MAX_PITCH_SEMITONES,
+        )
+        _playbackPitch.value = bounded
+        val ctrl = controller ?: return
+        ctrl.sendCustomCommand(
+            androidx.media3.session.SessionCommand(
+                MusicService.CMD_SET_PLAYBACK_PITCH,
+                android.os.Bundle.EMPTY,
+            ),
+            android.os.Bundle().apply {
+                putInt(MusicService.ARG_PLAYBACK_PITCH, bounded)
+                putBoolean(MusicService.ARG_PLAYBACK_PITCH_PERSIST, persist)
+            },
+        )
+    }
+
     private fun applyPlaybackSpeedExtras(extras: android.os.Bundle) {
+        if (extras.containsKey(MusicService.EXTRA_PLAYBACK_PITCH)) {
+            _playbackPitch.value = extras.getInt(MusicService.EXTRA_PLAYBACK_PITCH, 0)
+        }
         if (!extras.containsKey(MusicService.EXTRA_PLAYBACK_SPEED)) return
         _playbackSpeed.value = extras.getFloat(
             MusicService.EXTRA_PLAYBACK_SPEED,
@@ -1753,6 +1781,45 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun closeStandby() {
         _isStandbyOpen.value = false
     }
+
+    /**
+     * The lyrics share screen, opened from the player's menu or a long press on
+     * a lyric line and drawn above everything in MainActivity, as Standby is.
+     *
+     * The song and its lines are taken at the moment it opens, so a card being
+     * made is not swapped for the next song's lyrics when this one ends.
+     */
+    private val _lyricsShare = MutableStateFlow<LyricsShareRequest?>(null)
+    val lyricsShare: StateFlow<LyricsShareRequest?> = _lyricsShare.asStateFlow()
+
+    /** Open the share screen with [lineIndex] picked, or the line being sung when null. */
+    fun openLyricsShare(lineIndex: Int? = null) {
+        val song = _currentSong.value ?: return
+        val lyrics = _lyricsResult.value as? LyricsResult.Success ?: return
+        val lines = lyrics.lines.filter { it.text.isNotBlank() }
+        if (lines.isEmpty()) return
+        val start = when {
+            lineIndex != null -> lyrics.lines.getOrNull(lineIndex)?.let { picked -> lines.indexOf(picked) }
+            lyrics.syncType != com.ivor.ivormusic.data.LyricsSyncType.PLAIN ->
+                lines.indexOfLast { it.timeMs <= _progress.value }
+            else -> null
+        }?.takeIf { it >= 0 }
+        _lyricsShare.value = LyricsShareRequest(song, lines.map { tidyLyricLine(it.text) }, start)
+    }
+
+    fun closeLyricsShare() {
+        _lyricsShare.value = null
+    }
+
+    /**
+     * A line as it should read on a card: providers often write ad-libs hard
+     * against the words ("(Yes)I know"), which reads as a typo set large.
+     */
+    private fun tidyLyricLine(text: String): String = text
+        .replace(Regex("\\)(?=[\\p{L}\\p{N}])"), ") ")
+        .replace(Regex("(?<=[\\p{L}\\p{N}])\\("), " (")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
     fun pauseDownload(id: String) = downloadRepository.pauseDownload(id)
     fun resumeDownload(id: String) = downloadRepository.resumeDownload(id)

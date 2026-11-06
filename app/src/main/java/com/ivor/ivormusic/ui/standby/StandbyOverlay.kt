@@ -195,7 +195,8 @@ private fun StandbyHost(
 ) {
     val song = viewModel.currentSong.collectAsState().value ?: return
     StandbyWindowEffect()
-    val (scheme, amoled) = rememberStandbyColorScheme(song)
+    val look = rememberStandbyLook()
+    val (scheme, amoled) = rememberStandbyColorScheme(song, look.tint)
 
     MaterialTheme(
         colorScheme = scheme,
@@ -252,18 +253,23 @@ private fun StandbyHost(
                 // after a few minutes, and any touch resets both.
                 var lastTouch by remember { mutableLongStateOf(System.currentTimeMillis()) }
                 var chromeVisible by remember { mutableStateOf(true) }
+                // Holding the screen zooms out to the face picker; Done, a tap on
+                // the chosen face or back returns.
+                var editing by remember { mutableStateOf(false) }
+                val editingNow by rememberUpdatedState(editing)
+                androidx.activity.compose.BackHandler(enabled = editing && !exiting) { editing = false }
                 var dimmed by remember { mutableStateOf(false) }
-                LaunchedEffect(lastTouch, chromeVisible) {
-                    if (chromeVisible) {
+                LaunchedEffect(lastTouch, chromeVisible, editing) {
+                    if (chromeVisible && !editing) {
                         delay(CHROME_IDLE_MS)
                         chromeVisible = false
                     }
                 }
                 val context = LocalContext.current
                 val dimWhenIdle by remember(context) { ThemePreferences(context) }.standbyDim.collectAsState()
-                LaunchedEffect(lastTouch, dimWhenIdle) {
+                LaunchedEffect(lastTouch, dimWhenIdle, editing) {
                     dimmed = false
-                    if (!dimWhenIdle) return@LaunchedEffect
+                    if (!dimWhenIdle || editing) return@LaunchedEffect
                     delay(DIM_IDLE_MS)
                     dimmed = true
                 }
@@ -310,7 +316,7 @@ private fun StandbyHost(
                             var pastThreshold = false
                             detectVerticalDragGestures(
                                 onDragStart = {
-                                    if (exiting) return@detectVerticalDragGestures
+                                    if (exiting || editingNow) return@detectVerticalDragGestures
                                     tracker.resetTracking()
                                     // Caught mid-flight: start from where it is.
                                     raw = offset.value
@@ -318,7 +324,7 @@ private fun StandbyHost(
                                     scope.launch { offset.stop() }
                                 },
                                 onVerticalDrag = { change, dy ->
-                                    if (exiting) return@detectVerticalDragGestures
+                                    if (exiting || editingNow) return@detectVerticalDragGestures
                                     change.consume()
                                     tracker.addPosition(change.uptimeMillis, change.position)
                                     raw += dy
@@ -331,7 +337,7 @@ private fun StandbyHost(
                                     scope.launch { offset.snapTo(shown) }
                                 },
                                 onDragEnd = {
-                                    if (exiting) return@detectVerticalDragGestures
+                                    if (exiting || editingNow) return@detectVerticalDragGestures
                                     val velocity = tracker.calculateVelocity().y
                                     val landing = offset.value + projectedDistance(velocity)
                                     if (landing > heightPx * DISMISS_FRACTION && velocity > -300f) {
@@ -355,7 +361,19 @@ private fun StandbyHost(
                             )
                         }
                         .pointerInput(Unit) {
-                            detectTapGestures(onTap = { chromeVisible = !chromeVisible })
+                            detectTapGestures(
+                                onTap = {
+                                    if (editingNow) editing = false else chromeVisible = !chromeVisible
+                                },
+                                onLongPress = {
+                                    if (!exiting) {
+                                        haptics.performHapticFeedback(
+                                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                                        )
+                                        editing = !editingNow
+                                    }
+                                },
+                            )
                         }
                         .graphicsLayer {
                             val y = offset.value
@@ -371,17 +389,20 @@ private fun StandbyHost(
                             clip = card > 0f
                         }
                 ) {
-                    StandbyBackdrop(song = song, amoled = amoled)
+                    StandbyBackdrop(song = song, amoled = amoled || look.background == StandbyBackground.BLACK)
                     StandbySurface(
                         viewModel = viewModel,
                         song = song,
                         chromeVisible = chromeVisible,
+                        editing = editing,
+                        onEditingChange = { editing = it },
+                        look = look,
                         onInteraction = { lastTouch = System.currentTimeMillis() },
                     )
                     // The grabber: says "this pulls down", and is the way out for
                     // anyone who cannot swipe.
                     Grabber(
-                        visible = chromeVisible,
+                        visible = chromeVisible && !editing,
                         onClick = { dismiss(0f) },
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
@@ -439,7 +460,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
  * leaves true black.
  */
 @Composable
-private fun rememberStandbyColorScheme(song: Song): Pair<ColorScheme, Boolean> {
+private fun rememberStandbyColorScheme(song: Song, tint: StandbyTint): Pair<ColorScheme, Boolean> {
     val context = LocalContext.current
     val prefs = remember(context) { ThemePreferences(context) }
     val artworkColors by prefs.playerArtworkColors.collectAsState()
@@ -451,8 +472,11 @@ private fun rememberStandbyColorScheme(song: Song): Pair<ColorScheme, Boolean> {
     val base = remember(context, configuration, palette, amoled, style) {
         kodaColorScheme(context, darkTheme = true, colorPalette = palette, amoledDark = amoled, paletteStyle = style)
     }
-    val target = remember(base, seed, style, amoled) {
-        seed?.let { buildSeedColorScheme(it, dark = true, style = style) }
+    val target = remember(base, seed, style, amoled, tint) {
+        // Mono keeps the same light and dark, in greys: quieter at night.
+        val schemeStyle = if (tint == StandbyTint.MONO) com.ivor.ivormusic.ui.theme.PaletteStyle.MONOCHROME else style
+        (seed ?: base.primary.takeIf { tint == StandbyTint.MONO })
+            ?.let { buildSeedColorScheme(it, dark = true, style = schemeStyle) }
             ?.let { if (amoled) with(AmoledScheme) { it.amoled() } else it }
             ?: base
     }
@@ -539,7 +563,7 @@ private class SkipDirection {
 }
 
 /** Everything Standby draws, given the state it is in. */
-private class StandbyState(
+internal class StandbyState(
     val song: Song,
     val paused: State<Float>,
     val isPaused: Boolean,
@@ -553,6 +577,9 @@ private fun StandbySurface(
     viewModel: PlayerViewModel,
     song: Song,
     chromeVisible: Boolean,
+    editing: Boolean,
+    onEditingChange: (Boolean) -> Unit,
+    look: StandbyLook,
     onInteraction: () -> Unit,
 ) {
     val playWhenReady by viewModel.playWhenReady.collectAsState()
@@ -603,10 +630,189 @@ private fun StandbySurface(
             }
             .windowInsetsPadding(WindowInsets.displayCutout)
     ) {
-        if (maxWidth > maxHeight) {
-            StandbyLandscape(viewModel, state, maxWidth, maxHeight, onInteraction)
-        } else {
-            StandbyPortrait(viewModel, state, maxWidth, maxHeight, onInteraction)
+        StandbyFacePager(
+            viewModel = viewModel,
+            state = state,
+            landscape = maxWidth > maxHeight,
+            editing = editing,
+            onEditingChange = onEditingChange,
+            look = look,
+            onInteraction = onInteraction,
+        )
+    }
+}
+
+/**
+ * The faces, side by side: swipe sideways to change, as iOS StandBy does.
+ *
+ * Held, the whole screen zooms out ([EDIT_SCALE]) into a carousel: each face
+ * becomes a rounded card with its neighbours drawn in beside it, under a Done
+ * button and the face's name, and the cards take no touches but a tap - on a
+ * neighbour to go to it, on the chosen one to settle back. One spring drives
+ * the zoom both ways, so it can be reversed mid-flight. The chosen face is
+ * remembered.
+ */
+@Composable
+private fun StandbyFacePager(
+    viewModel: PlayerViewModel,
+    state: StandbyState,
+    landscape: Boolean,
+    editing: Boolean,
+    onEditingChange: (Boolean) -> Unit,
+    look: StandbyLook,
+    onInteraction: () -> Unit,
+) {
+    val context = LocalContext.current
+    val prefs = remember(context) { ThemePreferences(context) }
+    val faces = StandbyFace.entries
+    val pager = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = remember { faces.indexOf(StandbyFace.fromId(prefs.getStandbyFace())) },
+    ) { faces.size }
+    val haptics = rememberKodaHaptics()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(pager) {
+        var first = true
+        androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page ->
+            prefs.setStandbyFace(faces[page].id)
+            if (!first) haptics.threshold()
+            first = false
+            onInteraction()
+        }
+    }
+    val editSpring by animateFloatAsState(
+        targetValue = if (editing) 1f else 0f,
+        animationSpec = appleSpring(0.5f, 0.86f),
+        label = "StandbyEdit",
+    )
+    // The spring overshoots a little past both ends. Scale may follow it, but
+    // a corner radius or an alpha below zero is an error, not an overshoot:
+    // [scar] closing the picker crashed on a negative corner size.
+    val edit = editSpring.coerceIn(0f, 1f)
+    val density = LocalDensity.current
+    val gapPx = with(density) { 18.dp.toPx() }
+
+    Box(Modifier.fillMaxSize()) {
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pager,
+            modifier = Modifier.fillMaxSize(),
+            beyondViewportPageCount = 1,
+            key = { faces[it].id },
+        ) { page ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        // Where this face sits relative to the chosen one, in pages.
+                        val f = page - (pager.currentPage + pager.currentPageOffsetFraction)
+                        val s = lerpFloat(1f, EDIT_SCALE, edit)
+                        scaleX = s
+                        scaleY = s
+                        // Zoomed out, neighbours are pulled in to peek beside it.
+                        translationX = f * (size.width * s + gapPx * edit - size.width)
+                        shape = RoundedCornerShape((EDIT_CORNER_DP * edit).dp)
+                        clip = edit > 0.001f
+                    }
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.35f * edit))
+            ) {
+                when (faces[page]) {
+                    StandbyFace.NOW_PLAYING -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                        if (landscape) {
+                            StandbyLandscape(viewModel, state, maxWidth, maxHeight, onInteraction)
+                        } else {
+                            StandbyPortrait(viewModel, state, maxWidth, maxHeight, onInteraction)
+                        }
+                    }
+                    StandbyFace.WIDGETS -> WidgetsFace(viewModel, state, landscape, onInteraction)
+                    StandbyFace.LYRICS -> LyricsFace(viewModel, state, landscape)
+                    StandbyFace.CLOCK -> ClockFace(viewModel, state, landscape, look)
+                }
+                // Zoomed out, a face is a card to pick, not a surface to use.
+                if (editing) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                if (page == pager.currentPage) {
+                                    haptics.confirm()
+                                    onEditingChange(false)
+                                } else {
+                                    haptics.tick()
+                                    scope.launch { pager.animateScrollToPage(page, animationSpec = appleSpring(0.5f)) }
+                                }
+                            }
+                    )
+                }
+            }
+        }
+
+        // The picker's own controls, rising in with the zoom.
+        if (edit > 0.001f) {
+            // The options at the start, Done at the end; the options scroll
+            // sideways rather than run under Done on a narrow screen.
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 12.dp)
+                    .graphicsLayer {
+                        alpha = edit
+                        translationY = (1f - edit) * -40f
+                    },
+            ) {
+                StandbyLookBar(
+                    look = look,
+                    face = faces[pager.currentPage],
+                    modifier = Modifier.align(Alignment.CenterStart).padding(end = 112.dp),
+                )
+                Box(Modifier.align(Alignment.CenterEnd)) {
+                    DoneCapsule(onClick = { onEditingChange(false) })
+                }
+            }
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp)
+                    .graphicsLayer {
+                        alpha = edit
+                        translationY = (1f - edit) * 40f
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                AnimatedContent(
+                    targetState = faces[pager.currentPage],
+                    transitionSpec = {
+                        (fadeIn(tween(200)) + androidx.compose.animation.slideInVertically(appleSpring(0.35f)) { it / 2 }) togetherWith
+                            (fadeOut(tween(120)) + androidx.compose.animation.slideOutVertically(appleSpring(0.35f)) { -it / 2 })
+                    },
+                    label = "StandbyFaceName",
+                ) { face ->
+                    Text(
+                        text = stringResource(face.titleRes),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    faces.indices.forEach { i ->
+                        val selected = i == pager.currentPage
+                        val w by animateDpAsState(if (selected) 20.dp else 7.dp, appleSpring(0.35f, 0.7f), label = "faceDot")
+                        Box(
+                            Modifier
+                                .size(width = w, height = 7.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = if (selected) 0.9f else 0.35f)
+                                )
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -921,13 +1127,15 @@ private fun LyricsRegion(viewModel: PlayerViewModel, state: StandbyState) {
                 // line and the plain scroll; it keeps both.
                 anchorFraction = 0.5f,
                 cascadeScroll = false,
+                // A bedside screen shows the words; it does not take touches.
+                interactive = false,
             )
         }
     }
 }
 
 @Composable
-private fun StandbyCover(song: Song, direction: Int, modifier: Modifier = Modifier) {
+internal fun StandbyCover(song: Song, direction: Int, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(COVER_CORNER_DP.dp)
     Box(
@@ -1216,7 +1424,7 @@ private fun StandbyTransport(viewModel: PlayerViewModel, paused: Boolean) {
  * appears behind it; on release it springs back with a little life.
  */
 @Composable
-private fun GlyphButton(
+internal fun GlyphButton(
     contentDescription: String,
     size: Dp,
     onClick: () -> Unit,
@@ -1289,6 +1497,9 @@ private fun Grabber(visible: Boolean, onClick: () -> Unit, modifier: Modifier = 
 }
 
 private const val DISMISS_FRACTION = 0.25f
+/** How far the faces shrink when the picker opens. */
+private const val EDIT_SCALE = 0.74f
+private const val EDIT_CORNER_DP = 36f
 private const val BACK_SCALE_DEPTH = 0.08f
 private const val CARD_CORNER_DP = 36f
 private const val COVER_CORNER_DP = 28f
@@ -1303,3 +1514,35 @@ private const val DRIFT_DP = 6f
 private const val DRIFT_INTERVAL_MS = 60_000L
 private const val DRIFT_MOVE_MS = 4_000
 private const val SCHEME_FADE_MS = 700
+
+/** The picker's way out: the options' frosted capsule, its label in the accent. */
+@Composable
+private fun DoneCapsule(onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (pressed) 0.9f else 1f,
+        if (pressed) appleSpring(0.16f) else appleSpring(0.38f, 0.6f),
+        label = "doneScale",
+    )
+    Box(
+        Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(CircleShape)
+            .background(scheme.primary)
+            .semantics { role = Role.Button }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 22.dp, vertical = 12.dp),
+    ) {
+        Text(
+            stringResource(R.string.standby_done),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = scheme.onPrimary,
+        )
+    }
+}

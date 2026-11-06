@@ -477,6 +477,11 @@ internal fun buildSettingsSearchIndex(
         listOf("queue", "autoplay", "radio", "recommended", "keep playing", "endless")
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
+        "pitch_control", stringResource(R.string.sp_pitch_control), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.GraphicEq,
+        listOf("pitch", "key", "semitone", "transpose", "karaoke", "tune", "lower", "higher")
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
         "music_history", stringResource(R.string.sp_save_listening_history), stringResource(R.string.settings_playback_and_quality),
         Icons.Rounded.History,
         listOf(

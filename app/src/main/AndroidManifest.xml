@@ -369,6 +369,21 @@
             android:grantUriPermissions="false" />
 
         <!--
+            Images Koda hands to another app (the lyrics share card), served
+            from cache/shared only and readable solely by the app a share
+            grants it to. Not exported: access is by per-share URI grant.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
+
+        <!--
             Quick Settings playback tile. A pure session client: it binds a
             MediaController to MusicService, so the tile's play/pause and its
             state are the same playback the app shows. The BIND_QUICK_SETTINGS

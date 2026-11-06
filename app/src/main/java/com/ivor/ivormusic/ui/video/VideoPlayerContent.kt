@@ -41,6 +41,8 @@ import com.ivor.ivormusic.service.FrameInterpolationStatus
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -266,7 +268,10 @@ fun VideoPlayerContent(
     var screenLocked by remember { mutableStateOf(false) }
     LaunchedEffect(isFullscreen) { if (!isFullscreen) screenLocked = false }
     var showChaptersSheet by remember { mutableStateOf(false) }
-    var showCaptionsSheet by remember { mutableStateOf(false) }
+    // Which deck the playback settings open on. The settings button opens on
+    // quality; the captions button opens the same panel on its Captions tab, so
+    // captions have one home rather than a sheet of their own.
+    var settingsDeck by remember { mutableStateOf(SettingsPicker.QUALITY) }
     // Keyed on the playlist, so the flag cannot outlive the queue it belongs to.
     // Running off the end of a playlist drops the queue and takes the sheet off
     // screen without ever calling its onDismiss; left un-keyed, the flag would
@@ -566,6 +571,14 @@ fun VideoPlayerContent(
     val videoShadersInstalled by viewModel.videoShadersInstalled.collectAsState()
     var showPlaybackSettings by remember { mutableStateOf(false) }
     val playbackSettingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    fun openPlaybackSettings(deck: SettingsPicker) {
+        settingsDeck = deck
+        showPlaybackSettings = true
+    }
+    // The track list is fetched on first need, whichever way the tab was reached.
+    LaunchedEffect(showPlaybackSettings, settingsDeck) {
+        if (showPlaybackSettings && settingsDeck == SettingsPicker.CAPTIONS) viewModel.ensureCaptionsLoaded()
+    }
 
     // Sleep timer sheet. Opened from playback settings, which closes first:
     // a picker sheet stacked over the settings sheet is the nesting the
@@ -749,15 +762,12 @@ fun VideoPlayerContent(
                     isFullscreen = false
                     fullscreenIsPortrait = false
                 },
-                onSettings = { showPlaybackSettings = true },
+                onSettings = { openPlaybackSettings(SettingsPicker.QUALITY) },
                 chapters = chapters,
                 sponsorSegments = sponsorSegments,
                 onOpenChapters = { showChaptersSheet = true },
                 captionsActive = selectedCaption != null || embeddedTextTracks.any { it.isSelected },
-                onCaptionsClick = {
-                    viewModel.ensureCaptionsLoaded()
-                    showCaptionsSheet = true
-                },
+                onCaptionsClick = { openPlaybackSettings(SettingsPicker.CAPTIONS) },
                 captionCues = captionCues,
                 embeddedCueText = embeddedCueText,
                 captionTextSize = captionTextSize,
@@ -974,11 +984,8 @@ fun VideoPlayerContent(
                     onBack = onBackClick,
                     onExitToPage = { showVideoPageForVerticalLive = true },
                     onOpenFullChat = { showLiveChat = true },
-                    onCaptionsClick = {
-                        viewModel.ensureCaptionsLoaded()
-                        showCaptionsSheet = true
-                    },
-                    onSettings = { showPlaybackSettings = true },
+                    onCaptionsClick = { openPlaybackSettings(SettingsPicker.CAPTIONS) },
+                    onSettings = { openPlaybackSettings(SettingsPicker.QUALITY) },
                     onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },
                     onRetry = { viewModel.recovery.retry() },
@@ -1086,15 +1093,12 @@ fun VideoPlayerContent(
                             fullscreenIsPortrait = portraitFullscreenAvailable
                             isFullscreen = true
                         },
-                        onSettings = { showPlaybackSettings = true },
+                        onSettings = { openPlaybackSettings(SettingsPicker.QUALITY) },
                         chapters = chapters,
                         sponsorSegments = sponsorSegments,
                         onOpenChapters = { showChaptersSheet = true },
                         captionsActive = selectedCaption != null || embeddedTextTracks.any { it.isSelected },
-                        onCaptionsClick = {
-                            viewModel.ensureCaptionsLoaded()
-                            showCaptionsSheet = true
-                        },
+                        onCaptionsClick = { openPlaybackSettings(SettingsPicker.CAPTIONS) },
                         captionCues = captionCues,
                         embeddedCueText = embeddedCueText,
                         captionTextSize = captionTextSize,
@@ -1432,33 +1436,6 @@ fun VideoPlayerContent(
         )
     }
 
-    // Captions / subtitles sheet
-    if (showCaptionsSheet) {
-        CaptionsSheet(
-            tracks = captionTracks,
-            selected = selectedCaption,
-            embeddedTracks = embeddedTextTracks,
-            onEmbeddedSelect = {
-                viewModel.setEmbeddedTextTrack(it)
-                showCaptionsSheet = false
-            },
-            isLocalMedia = isLocalPlayback,
-            isLoading = isCaptionsLoading,
-            textSize = captionTextSize,
-            textColor = captionTextColor,
-            background = captionBackground,
-            onSelect = {
-                viewModel.setCaptionTrack(it)
-                showCaptionsSheet = false
-            },
-            onTextSizeChanged = viewModel::setCaptionTextSize,
-            onTextColorChanged = viewModel::setCaptionTextColor,
-            onBackgroundChanged = viewModel::setCaptionBackground,
-            onDismiss = { showCaptionsSheet = false },
-            keepSystemBarsHidden = isFullscreen
-        )
-    }
-
     // Sign-in dialog for like/dislike/subscribe when logged out
     if (showSignInDialog) {
         com.ivor.ivormusic.ui.auth.YouTubeAuthDialog(
@@ -1484,6 +1461,8 @@ fun VideoPlayerContent(
     }
     val playbackSettingsContent: @Composable () -> Unit = {
         PlayerSettingsSections(
+            deck = settingsDeck,
+            onDeckChange = { settingsDeck = it },
             isLoading = isLoading,
             qualities = selectableQualities,
             currentQuality = currentQuality,
@@ -1565,7 +1544,25 @@ fun VideoPlayerContent(
             videoShaders = videoShaders,
             videoShadersInstalled = videoShadersInstalled,
             onVideoShadersPreview = viewModel::previewVideoShaders,
-            onVideoShadersChanged = viewModel::setVideoShaders
+            onVideoShadersChanged = viewModel::setVideoShaders,
+            // Picking a language leaves the panel open, as a quality does: in
+            // fullscreen the captions appear beside it, and the style below is
+            // judged on them.
+            captions = CaptionsDeckState(
+                tracks = captionTracks,
+                selected = selectedCaption,
+                embeddedTracks = embeddedTextTracks,
+                isLocalMedia = isLocalPlayback,
+                isLoading = isCaptionsLoading,
+                textSize = captionTextSize,
+                textColor = captionTextColor,
+                background = captionBackground,
+            ),
+            onCaptionSelected = viewModel::setCaptionTrack,
+            onEmbeddedCaptionSelected = viewModel::setEmbeddedTextTrack,
+            onCaptionTextSizeChanged = viewModel::setCaptionTextSize,
+            onCaptionTextColorChanged = viewModel::setCaptionTextColor,
+            onCaptionBackgroundChanged = viewModel::setCaptionBackground
         )
     }
 
@@ -1682,6 +1679,9 @@ fun VideoPlayerContent(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun PlayerSettingsSections(
+    /** The deck on show, held by the host so the captions button can open on its tab. */
+    deck: SettingsPicker,
+    onDeckChange: (SettingsPicker) -> Unit,
     isLoading: Boolean,
     qualities: List<VideoQuality>,
     currentQuality: VideoQuality?,
@@ -1737,7 +1737,13 @@ private fun PlayerSettingsSections(
     videoShadersInstalled: Boolean,
     /** A slider mid-drag: drawn, not stored. */
     onVideoShadersPreview: (VideoShaderCustomization) -> Unit,
-    onVideoShadersChanged: (VideoShaderCustomization) -> Unit
+    onVideoShadersChanged: (VideoShaderCustomization) -> Unit,
+    captions: CaptionsDeckState,
+    onCaptionSelected: (CaptionTrack?) -> Unit,
+    onEmbeddedCaptionSelected: (PlayerTrackOption?) -> Unit,
+    onCaptionTextSizeChanged: (Float) -> Unit,
+    onCaptionTextColorChanged: (CaptionTextColor) -> Unit,
+    onCaptionBackgroundChanged: (CaptionBackground) -> Unit
 ) {
     val showVideoShaders = videoShaders.masterEnabled
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
@@ -1746,9 +1752,8 @@ private fun PlayerSettingsSections(
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
-    // Exactly one deck, quality first: it is what this panel is most often
-    // opened for, so it costs one tap rather than two.
-    var deck by remember { mutableStateOf(SettingsPicker.QUALITY) }
+    // Exactly one deck. The settings button opens on quality, what this panel
+    // is most often opened for; the captions button opens on Captions.
     // The next video in a queue can have a single audio track, which takes the
     // tab away under an open panel.
     val shownDeck = when {
@@ -1821,6 +1826,13 @@ private fun PlayerSettingsSections(
                             )
                         )
                     }
+                    add(
+                        Triple(
+                            SettingsPicker.CAPTIONS,
+                            stringResource(R.string.vp_captions),
+                            captions.selectedLabel() ?: stringResource(R.string.vpc_off)
+                        )
+                    )
                     if (showVideoShaders) {
                         add(
                             Triple(
@@ -1857,7 +1869,7 @@ private fun PlayerSettingsSections(
                             onCheckedChange = {
                                 if (!selected) {
                                     haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                    deck = picker
+                                    onDeckChange(picker)
                                 }
                             },
                             modifier = Modifier
@@ -2023,6 +2035,22 @@ private fun PlayerSettingsSections(
                             installed = videoShadersInstalled,
                             onPreview = onVideoShadersPreview,
                             onChange = onVideoShadersChanged
+                        )
+
+                        SettingsPicker.CAPTIONS -> CaptionsDeck(
+                            state = captions,
+                            optionColors = optionColors,
+                            onSelect = { track ->
+                                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                onCaptionSelected(track)
+                            },
+                            onEmbeddedSelect = { track ->
+                                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                onEmbeddedCaptionSelected(track)
+                            },
+                            onTextSizeChanged = onCaptionTextSizeChanged,
+                            onTextColorChanged = onCaptionTextColorChanged,
+                            onBackgroundChanged = onCaptionBackgroundChanged
                         )
                     }
                 }
@@ -2394,7 +2422,7 @@ private fun SettingsGrid(cells: List<@Composable (Modifier) -> Unit>) {
 }
 
 /** Which deck the playback settings are showing; exactly one, chosen by the tabs. */
-private enum class SettingsPicker { QUALITY, SPEED, AUDIO, SHADERS }
+private enum class SettingsPicker { QUALITY, SPEED, AUDIO, CAPTIONS, SHADERS }
 
 /** Columns in the playback settings panel: deck cells, tiles and shortcuts share them. */
 private const val SETTINGS_COLUMNS = 4
@@ -2559,171 +2587,157 @@ private fun ChaptersSheet(
     }
 }
 
-/**
- * Bottom sheet listing available caption tracks with an "Off" option at the
- * top. The selected track is checked. Shows a spinner while the track list is
- * still loading and an empty-state when the video has no captions.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CaptionsSheet(
-    tracks: List<CaptionTrack>,
-    selected: CaptionTrack?,
+/** What the Captions deck draws: the tracks on offer and the caption style. */
+private class CaptionsDeckState(
+    val tracks: List<CaptionTrack>,
+    val selected: CaptionTrack?,
     /**
      * Subtitle tracks inside the file being played, for device videos. When
      * this is non-empty it replaces [tracks] in the language list: the two can
      * never coexist, since one comes from a YouTube watch page and the other
      * from a container on disk.
      */
-    embeddedTracks: List<PlayerTrackOption>,
-    onEmbeddedSelect: (PlayerTrackOption?) -> Unit,
+    val embeddedTracks: List<PlayerTrackOption>,
     /** Changes only the empty-state wording, which differs materially. */
-    isLocalMedia: Boolean,
-    isLoading: Boolean,
-    textSize: Float,
-    textColor: CaptionTextColor,
-    background: CaptionBackground,
+    val isLocalMedia: Boolean,
+    val isLoading: Boolean,
+    val textSize: Float,
+    val textColor: CaptionTextColor,
+    val background: CaptionBackground,
+) {
+    /** The language showing, for the tab; null when captions are off. */
+    fun selectedLabel(): String? =
+        embeddedTracks.firstOrNull { it.isSelected }?.label
+            ?: selected?.let(::captionLabel)
+}
+
+private fun captionLabel(track: CaptionTrack): String =
+    if (track.isAutoGenerated) "${track.name} (auto)" else track.name
+
+/**
+ * The Captions deck of the playback settings: the languages as rows (Off
+ * first), then the caption style - size, colour, background.
+ *
+ * Captions were a sheet of their own, opened from the CC button, which drew
+ * differently from this panel and stacked a second modal over the video in
+ * fullscreen. They live here now, and the CC button opens this panel on this
+ * tab. Rows rather than cells for the languages, as for audio tracks: "English
+ * (auto)" and "English" cut short in a quarter of the panel are the same word.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun CaptionsDeck(
+    state: CaptionsDeckState,
+    optionColors: ToggleButtonColors,
     onSelect: (CaptionTrack?) -> Unit,
+    onEmbeddedSelect: (PlayerTrackOption?) -> Unit,
     onTextSizeChanged: (Float) -> Unit,
     onTextColorChanged: (CaptionTextColor) -> Unit,
-    onBackgroundChanged: (CaptionBackground) -> Unit,
-    onDismiss: () -> Unit,
-    keepSystemBarsHidden: Boolean = false
+    onBackgroundChanged: (CaptionBackground) -> Unit
 ) {
-    AdaptiveModalSheet(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        contentColor = MaterialTheme.colorScheme.onSurface
-    ) {
-        KeepSystemBarsHidden(keepSystemBarsHidden)
-        Text(
-            text = stringResource(R.string.vp_captions),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
-        )
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 560.dp),
-            contentPadding = PaddingValues(bottom = 32.dp)
-        ) {
-            item {
-                Text(
-                    text = stringResource(R.string.vpc_language),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        when {
+            state.embeddedTracks.isNotEmpty() -> CaptionLanguageRows(
+                offChecked = state.embeddedTracks.none { it.isSelected },
+                onOff = { onEmbeddedSelect(null) },
+                rows = state.embeddedTracks.map { track ->
+                    Triple(track.label, track.isSelected) { onEmbeddedSelect(track) }
+                }
+            )
+            // A local file's subtitle tracks are known the moment it is read, so
+            // an empty list here is the answer, not a pending one. A download is
+            // local too but brings the captions saved beside it, in [tracks].
+            state.isLocalMedia && state.tracks.isEmpty() && !state.isLoading ->
+                CaptionsEmpty(stringResource(R.string.vpc_no_embedded_subtitles))
+            state.isLoading && state.tracks.isEmpty() -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                ContainedLoadingIndicator()
             }
-            when {
-                embeddedTracks.isNotEmpty() -> {
-                    item {
-                        CaptionRow(
-                            label = stringResource(R.string.vpc_off),
-                            checked = embeddedTracks.none { it.isSelected },
-                            onClick = { onEmbeddedSelect(null) }
-                        )
-                    }
-                    items(embeddedTracks, key = { it.id }) { track ->
-                        CaptionRow(
-                            label = track.label,
-                            checked = track.isSelected,
-                            onClick = { onEmbeddedSelect(track) }
-                        )
-                    }
+            state.tracks.isEmpty() -> CaptionsEmpty(stringResource(R.string.vpc_no_captions))
+            else -> CaptionLanguageRows(
+                offChecked = state.selected == null,
+                onOff = { onSelect(null) },
+                rows = state.tracks.map { track ->
+                    Triple(captionLabel(track), state.selected == track) { onSelect(track) }
                 }
-                // A local file's subtitle tracks are known the moment it is
-                // read, so there is nothing to wait for and no spinner: an
-                // empty list here is the answer, not a pending one. A download
-                // is local too but brings the captions saved beside it, which
-                // arrive in [tracks] and are listed below.
-                isLocalMedia && tracks.isEmpty() && !isLoading -> item {
-                    Text(
-                        text = stringResource(R.string.vpc_no_embedded_subtitles),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
-                    )
-                }
-                isLoading && tracks.isEmpty() -> item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        ContainedLoadingIndicator()
-                    }
-                }
-                tracks.isEmpty() -> item {
-                    Text(
-                        text = stringResource(R.string.vpc_no_captions),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
-                    )
-                }
-                else -> {
-                    item {
-                        CaptionRow(
-                            label = stringResource(R.string.vpc_off),
-                            checked = selected == null,
-                            onClick = { onSelect(null) }
-                        )
-                    }
-                    itemsIndexed(
-                        items = tracks,
-                        key = { index, track -> "${track.languageCode}:${track.isAutoGenerated}:$index" }
-                    ) { _, track ->
-                        val label = if (track.isAutoGenerated) "${track.name} (auto)" else track.name
-                        CaptionRow(
-                            label = label,
-                            checked = selected == track,
-                            onClick = { onSelect(track) }
-                        )
-                    }
-                }
-            }
+            )
+        }
 
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                Text(
-                    text = stringResource(R.string.settings_appearance),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                )
-            }
-            item {
-                CaptionTextSizeSlider(
-                    value = textSize,
-                    onValueCommitted = onTextSizeChanged
-                )
-            }
-            item {
-                CaptionChoiceRow(
-                    label = "Text color",
-                    options = listOf(
-                        CaptionTextColor.WHITE to stringResource(R.string.vpc_white),
-                        CaptionTextColor.YELLOW to stringResource(R.string.vpc_yellow)
-                    ),
-                    selected = textColor,
-                    onSelect = onTextColorChanged
-                )
-            }
-            item {
-                CaptionChoiceRow(
-                    label = "Background",
-                    options = listOf(
-                        CaptionBackground.NONE to stringResource(R.string.vpc_none),
-                        CaptionBackground.TRANSLUCENT to stringResource(R.string.vpc_soft),
-                        CaptionBackground.SOLID to stringResource(R.string.vpc_solid)
-                    ),
-                    selected = background,
-                    onSelect = onBackgroundChanged
-                )
-            }
+        CaptionTextSizeSlider(
+            value = state.textSize,
+            onValueCommitted = onTextSizeChanged
+        )
+        CaptionChoiceRow(
+            label = stringResource(R.string.vpc_text_color),
+            options = listOf(
+                CaptionTextColor.WHITE to stringResource(R.string.vpc_white),
+                CaptionTextColor.YELLOW to stringResource(R.string.vpc_yellow)
+            ),
+            selected = state.textColor,
+            colors = optionColors,
+            onSelect = onTextColorChanged
+        )
+        CaptionChoiceRow(
+            label = stringResource(R.string.vpc_caption_background),
+            options = listOf(
+                CaptionBackground.NONE to stringResource(R.string.vpc_none),
+                CaptionBackground.TRANSLUCENT to stringResource(R.string.vpc_soft),
+                CaptionBackground.SOLID to stringResource(R.string.vpc_solid)
+            ),
+            selected = state.background,
+            colors = optionColors,
+            onSelect = onBackgroundChanged
+        )
+    }
+}
+
+@Composable
+private fun CaptionLanguageRows(
+    offChecked: Boolean,
+    onOff: () -> Unit,
+    rows: List<Triple<String, Boolean, () -> Unit>>
+) {
+    Column(modifier = Modifier.clip(RoundedCornerShape(16.dp))) {
+        com.ivor.ivormusic.ui.player.OptionRow(
+            icon = Icons.Rounded.ClosedCaptionOff,
+            title = stringResource(R.string.vpc_off),
+            trailing = if (offChecked) {
+                com.ivor.ivormusic.ui.player.OptionRowTrailing.CHECK
+            } else {
+                com.ivor.ivormusic.ui.player.OptionRowTrailing.NONE
+            },
+            onClick = { if (!offChecked) onOff() }
+        )
+        rows.forEach { (label, checked, onClick) ->
+            com.ivor.ivormusic.ui.player.OptionRow(
+                icon = Icons.Rounded.ClosedCaption,
+                title = label,
+                trailing = if (checked) {
+                    com.ivor.ivormusic.ui.player.OptionRowTrailing.CHECK
+                } else {
+                    com.ivor.ivormusic.ui.player.OptionRowTrailing.NONE
+                },
+                onClick = { if (!checked) onClick() }
+            )
         }
     }
+}
+
+@Composable
+private fun CaptionsEmpty(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp)
+    )
 }
 
 @Composable
@@ -2735,7 +2749,7 @@ private fun CaptionTextSizeSlider(
     val percent = (sliderValue * 100f).roundToInt()
 
     Column(
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        modifier = Modifier.padding(horizontal = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Row(
@@ -2783,15 +2797,17 @@ private fun CaptionTextSizeSlider(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun <T> CaptionChoiceRow(
     label: String,
     options: List<Pair<T, String>>,
     selected: T,
+    colors: ToggleButtonColors,
     onSelect: (T) -> Unit
 ) {
     Column(
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        modifier = Modifier.padding(horizontal = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
@@ -2801,52 +2817,24 @@ private fun <T> CaptionChoiceRow(
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
         ) {
-            options.forEach { (value, optionLabel) ->
-                FilterChip(
-                    selected = selected == value,
-                    onClick = { onSelect(value) },
-                    label = {
-                        Text(
-                            text = optionLabel,
-                            maxLines = 1,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center
-                        )
+            options.forEachIndexed { index, (value, optionLabel) ->
+                val checked = selected == value
+                ToggleButton(
+                    checked = checked,
+                    onCheckedChange = { if (!checked) onSelect(value) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                     },
-                    modifier = Modifier.weight(1f)
-                )
+                    colors = colors
+                ) {
+                    Text(optionLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-        }
-    }
-}
-
-@Composable
-private fun CaptionRow(label: String, checked: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = if (checked) FontWeight.Bold else FontWeight.Medium,
-            color = if (checked) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f)
-        )
-        if (checked) {
-            Icon(
-                Icons.Rounded.Check,
-                contentDescription = stringResource(R.string.cd_selected),
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
         }
     }
 }

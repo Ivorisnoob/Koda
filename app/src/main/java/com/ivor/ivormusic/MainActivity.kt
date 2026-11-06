@@ -1891,6 +1891,9 @@ fun MusicApp(
         // both players and Shorts; its offer sits just under it.
         com.ivor.ivormusic.ui.standby.StandbySuggestion(viewModel = playerViewModel)
         com.ivor.ivormusic.ui.standby.StandbyOverlay(viewModel = playerViewModel)
+        // Opened from the player's menu or a lyric line in any player style,
+        // and drawn the same whichever one it came from.
+        com.ivor.ivormusic.ui.lyricsshare.LyricsShareOverlay(viewModel = playerViewModel)
 
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the

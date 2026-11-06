@@ -733,8 +733,14 @@ fun ExpandablePlayer(
                         ) {
                         // Any artwork can host the wheel's hold gesture
                         // through this local, without per-style plumbing.
+                        // A long press on any lyric line, in any style or the
+                        // companion panel, opens the share screen on that line.
+                        val lyricLongPress = remember(viewModel) {
+                            { index: Int -> viewModel.openLyricsShare(index) }
+                        }
                         CompositionLocalProvider(
-                            LocalPlayerStyleWheelController provides styleWheel
+                            LocalPlayerStyleWheelController provides styleWheel,
+                            LocalLyricLongPress provides lyricLongPress
                         ) {
                         if (playerFrame.kind == PlayerFrameKind.LANDSCAPE) {
                             // Every style shares this one layout on its side,
