@@ -41,6 +41,13 @@ internal class AutoMixProfiling(
         val id = mediaItem.mediaId
         val uri = mediaItem.localConfiguration?.uri ?: return
         if (uri.toString().startsWith(MusicStreamResolver.PLACEHOLDER_PREFIX)) return
+        // Profiling reads through the music cache under the song id, where a
+        // lossless stream must not land (see LosslessStreamUri). Such a song
+        // mixes as a plain fade.
+        if (com.ivor.ivormusic.data.lossless.LosslessStreamUri.isLossless(uri)) {
+            KLog.d(TAG, "Profile: skipped $id, lossless stream")
+            return
+        }
         val store = store()
         if (store.peek(id) != null) return
         val factory = cacheFactory()

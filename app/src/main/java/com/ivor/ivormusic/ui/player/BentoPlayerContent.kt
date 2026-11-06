@@ -363,6 +363,7 @@ fun BentoPlayerSheetContent(
                                         onArtistClick(artistName)
                                     }
                             )
+                            PlayerAudioQualityBadge(modifier = Modifier.padding(top = 6.dp))
                         }
                     }
 

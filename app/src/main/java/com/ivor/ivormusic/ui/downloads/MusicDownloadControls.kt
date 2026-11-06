@@ -33,6 +33,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DataSaverOn
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.HighQuality
+import com.ivor.ivormusic.ui.components.LosslessPill
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
@@ -56,7 +58,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.lossless.LosslessConfig
+import com.ivor.ivormusic.data.lossless.LosslessQuality
+import com.ivor.ivormusic.data.lossless.LosslessSettings
 import com.ivor.ivormusic.util.rememberKodaHaptics
+import android.content.Context
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * What one quality card says under its name. [size] is null while unknown;
@@ -67,6 +77,8 @@ internal data class MusicQualityCardInfo(
     val size: String? = null,
     val sizeLoading: Boolean = false,
     val available: Boolean = true,
+    /** Said in place of [detail] when not [available]; the generic line when null. */
+    val unavailableText: String? = null,
 )
 
 /**
@@ -83,12 +95,21 @@ internal fun MusicQualityPicker(
     onSelect: (String) -> Unit,
     info: (String) -> MusicQualityCardInfo,
     modifier: Modifier = Modifier,
+    /**
+     * The lossless server's card, under the pair and as wide as both; null
+     * where the listener has no server or keeps it out of downloads.
+     */
+    lossless: MusicQualityCardInfo? = null,
+    losslessHiRes: Boolean = false,
 ) {
+    Column(
+        modifier = modifier.selectableGroup(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Max)
-            .selectableGroup(),
+            .height(IntrinsicSize.Max),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         MusicQualityCard(
@@ -112,6 +133,18 @@ internal fun MusicQualityPicker(
                 .fillMaxHeight()
         )
     }
+    if (lossless != null) {
+        MusicQualityCard(
+            icon = Icons.Rounded.HighQuality,
+            title = stringResource(R.string.sd_quality_lossless),
+            info = lossless,
+            selected = selected == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS,
+            onClick = { onSelect(ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS) },
+            modifier = Modifier.fillMaxWidth(),
+            tag = { LosslessPill(hiRes = losslessHiRes, compact = true) }
+        )
+    }
+    }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -123,6 +156,8 @@ private fun MusicQualityCard(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** A small mark beside the icon; the lossless card's pill. */
+    tag: (@Composable () -> Unit)? = null,
 ) {
     val haptics = rememberKodaHaptics()
     val interactionSource = remember { MutableInteractionSource() }
@@ -183,6 +218,10 @@ private fun MusicQualityCard(
                     contentDescription = null,
                     modifier = Modifier.size(24.dp)
                 )
+                if (tag != null) {
+                    Spacer(Modifier.width(10.dp))
+                    tag()
+                }
                 Spacer(Modifier.weight(1f))
                 Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                     androidx.compose.animation.AnimatedVisibility(
@@ -217,7 +256,7 @@ private fun MusicQualityCard(
             )
             Text(
                 text = if (info.available) info.detail
-                    else stringResource(R.string.sd_quality_unavailable),
+                    else info.unavailableText ?: stringResource(R.string.sd_quality_unavailable),
                 style = MaterialTheme.typography.bodySmall,
                 color = muted,
                 maxLines = 2,
@@ -312,3 +351,56 @@ internal fun musicBitrateLabel(bitsPerSecond: Int): String =
 /** Nominal bitrates, for when a size has to be estimated before any stream is resolved. */
 internal fun nominalMusicBitrate(quality: String): Int =
     if (quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER) 48_000 else 128_000
+
+/**
+ * A FLAC's typical bitrate, for the "about" size on the Lossless card. FLAC
+ * varies with the music far more than AAC does, so this is only ever shown as
+ * an estimate: about 900 kbps at CD quality, 2.3 Mbps at 24-bit / 96 kHz.
+ */
+internal fun nominalLosslessBitrate(quality: LosslessQuality): Int =
+    if (quality == LosslessQuality.HI_RES) 2_300_000 else 900_000
+
+/**
+ * The listener's lossless server settings for a download sheet, read off the
+ * main thread (the store is encrypted); null until read, and null after when
+ * downloads are not offered from it.
+ */
+@Composable
+internal fun rememberLosslessDownloadOffer(): LosslessConfig? {
+    val context = LocalContext.current
+    val config by produceState<LosslessConfig?>(initialValue = null, context) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { LosslessSettings.read(context) }.getOrNull()
+        }?.takeIf { it.offersDownloads && !ThemePreferences.isLocalOnly(context) }
+    }
+    return config
+}
+
+/**
+ * Stores a sheet's quality as the default. Lossless is a server setting, not
+ * one of the AAC defaults: choosing it turns "Download lossless by default"
+ * on, and choosing an AAC quality turns it off again.
+ */
+internal fun rememberMusicDownloadQuality(context: Context, quality: String, offersLossless: Boolean) {
+    val appContext = context.applicationContext
+    if (quality != ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS) {
+        ThemePreferences.setDownloadMusicQuality(appContext, quality)
+    }
+    if (!offersLossless) return
+    // Off the main thread (the store is encrypted), and not in the sheet's
+    // scope: the sheet closes as soon as the download is confirmed.
+    kotlin.concurrent.thread(name = "koda-lossless-default") {
+        runCatching {
+            LosslessSettings.update(appContext) {
+                it.copy(downloadByDefault = quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS)
+            }
+        }
+    }
+}
+
+/** "Hi-Res" or "CD quality" out of the server's own quality name, null when it gives none. */
+internal fun losslessTierOf(serverQuality: String): Boolean? = when {
+    serverQuality.isBlank() -> null
+    serverQuality.contains("hi", ignoreCase = true) && serverQuality.contains("res", ignoreCase = true) -> true
+    else -> false
+}

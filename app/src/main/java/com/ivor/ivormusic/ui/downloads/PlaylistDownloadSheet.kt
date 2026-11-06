@@ -80,6 +80,7 @@ import com.ivor.ivormusic.data.DownloadProgress
 import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.DownloadStatus
 import com.ivor.ivormusic.data.MusicDownloadOptions
+import com.ivor.ivormusic.data.lossless.LosslessQuality
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
@@ -395,6 +396,15 @@ private fun PlaylistDownloadSheet(
     var saveLyrics by remember {
         mutableStateOf(ThemePreferences.saveLyricsWithDownloads(context))
     }
+    // The lossless server's card. Not asked per song here - that would be a
+    // search apiece - so the card says what happens to songs it lacks.
+    val losslessOffer = if (kind == PlaylistDownloadKind.MUSIC) rememberLosslessDownloadOffer() else null
+    var musicQualityTouched by remember { mutableStateOf(false) }
+    LaunchedEffect(losslessOffer) {
+        if (losslessOffer?.downloadByDefault == true && !musicQualityTouched) {
+            musicQuality = ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS
+        }
+    }
     var queued by remember { mutableStateOf(false) }
     var queueing by remember { mutableStateOf(false) }
     var queueFailed by remember { mutableStateOf(false) }
@@ -621,9 +631,29 @@ private fun PlaylistDownloadSheet(
                                 nominalMusicBitrate(ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER)
                             )
                             val aboutSize = stringResource(R.string.sd_about_size)
+                            val losslessInfo = losslessOffer?.let { config ->
+                                MusicQualityCardInfo(
+                                    detail = stringResource(
+                                        if (config.downloadFallback) R.string.pd_lossless_fallback
+                                        else R.string.pd_lossless_skip
+                                    ),
+                                    size = remainingMusicDurationMs?.let { ms ->
+                                        aboutSize.format(
+                                            formatDownloadSize(
+                                                ms / 1000L * nominalLosslessBitrate(config.downloadQuality) / 8L
+                                            )
+                                        )
+                                    }
+                                )
+                            }
                             MusicQualityPicker(
                                 selected = musicQuality,
-                                onSelect = { musicQuality = it },
+                                onSelect = {
+                                    musicQualityTouched = true
+                                    musicQuality = it
+                                },
+                                lossless = losslessInfo,
+                                losslessHiRes = losslessOffer?.downloadQuality == LosslessQuality.HI_RES,
                                 info = { option ->
                                     MusicQualityCardInfo(
                                         detail = if (option == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER) {
@@ -758,7 +788,11 @@ private fun PlaylistDownloadSheet(
                                     preferences.setDownloadVideoQuality(selectedQuality)
                                 }
                                 if (kind == PlaylistDownloadKind.MUSIC && rememberQuality) {
-                                    ThemePreferences.setDownloadMusicQuality(context, musicQuality)
+                                    rememberMusicDownloadQuality(
+                                        context,
+                                        musicQuality,
+                                        offersLossless = losslessOffer != null
+                                    )
                                     ThemePreferences.setSaveLyricsWithDownloads(context, saveLyrics)
                                 }
                                 queued = true
