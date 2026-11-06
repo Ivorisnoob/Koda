@@ -121,6 +121,8 @@ class HiddenPlaylistsRepository(context: Context) {
                     hiddenAt = obj.optLong(KEY_AT, 0L)
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             // A corrupt store must not take the Library down with it; the worst
             // case is that hidden playlists come back, which is visible and

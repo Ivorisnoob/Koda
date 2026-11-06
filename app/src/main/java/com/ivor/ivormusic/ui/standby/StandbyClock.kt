@@ -17,6 +17,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -149,9 +150,20 @@ internal fun StandbyClock(
                         shown == ':' -> colonWidth
                         else -> digitWidth
                     }
-                    Box(Modifier.width(width), contentAlignment = Alignment.Center) {
+                    // A floor, not a fixed width, and never clipped. [scar] The
+                    // display font is downloadable: the slot was measured once
+                    // against the fallback font, the real one arrived wider, and
+                    // every 0 drew with its right half cut off ("7:CC").
+                    Box(Modifier.widthIn(min = width), contentAlignment = Alignment.Center) {
                         if (shown != ' ') {
-                            Text(text = shown.toString(), style = style, textAlign = TextAlign.Center, maxLines = 1, softWrap = false)
+                            Text(
+                                text = shown.toString(),
+                                style = style,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Visible,
+                            )
                         }
                     }
                 }

@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.library
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -91,6 +92,7 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import com.ivor.ivormusic.ui.components.PredictiveBackStack
 import com.ivor.ivormusic.data.PlaylistDisplayItem
+import com.ivor.ivormusic.data.PlaylistMode
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.ThemePreferences
@@ -246,6 +248,45 @@ fun LibraryContent(
     var returnsToCaller by remember { mutableStateOf(false) }
     var selectedAlbumName by remember { mutableStateOf<String?>(null) }
     var selectedAlbumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    // What the Library already holds of a YouTube album opened as a release
+    // page, shown if the full track list cannot be fetched (offline). Keyed by
+    // the release id, so it never reaches a playlist opened any other way.
+    var selectedPlaylistFallback by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
+
+    /**
+     * Open an album from the Library's own songs.
+     *
+     * The Albums tab groups the songs the Library holds - history, likes,
+     * downloads - so for a YouTube album that is often one song, the one that
+     * was played. Opening it as that group showed an album of one. When the
+     * songs name their release (`albumId`, an MPRE browse id) and none is a
+     * device file, the release page opens instead: the whole album, in its
+     * order, with what is already here as the offline fallback. A device
+     * album is its files, so it opens as before.
+     */
+    fun openAlbum(album: String, albumSongs: List<Song>) {
+        val releaseId = albumSongs
+            .mapNotNull { it.albumId?.takeIf { id -> id.startsWith("MPRE") } }
+            .groupingBy { it }.eachCount()
+            .maxByOrNull { it.value }?.key
+        if (releaseId != null && albumSongs.none { it.source == SongSource.LOCAL }) {
+            val first = albumSongs.first()
+            selectedPlaylist = PlaylistDisplayItem(
+                name = album,
+                url = releaseId,
+                uploaderName = first.artist,
+                thumbnailUrl = first.highResThumbnailUrl ?: first.thumbnailUrl,
+                releaseType = first.releaseType,
+                releaseYear = first.releaseYear
+            )
+            selectedPlaylistFallback = releaseId to albumSongs
+            currentRoute = LibraryRoute.Playlist
+        } else {
+            selectedAlbumName = album
+            selectedAlbumSongs = albumSongs
+            currentRoute = LibraryRoute.Album
+        }
+    }
 
     // Handle initial deep link to artist
     LaunchedEffect(initialArtist) {
@@ -279,10 +320,8 @@ fun LibraryContent(
                 it.album.trim().equals(requested, ignoreCase = true)
             }.sortedInAlbumOrder()
             if (albumSongs.isNotEmpty()) {
-                selectedAlbumName = initialAlbum
-                selectedAlbumSongs = albumSongs
                 returnsToCaller = initialReturnToCaller
-                currentRoute = LibraryRoute.Album
+                openAlbum(initialAlbum, albumSongs)
                 onInitialAlbumConsumed()
             }
         }
@@ -353,11 +392,7 @@ fun LibraryContent(
                     returnsToCaller = false
                     currentRoute = LibraryRoute.Artist
                 },
-                onNavigateToAlbum = { album, songs ->
-                    selectedAlbumName = album
-                    selectedAlbumSongs = songs
-                    currentRoute = LibraryRoute.Album
-                },
+                onNavigateToAlbum = { album, songs -> openAlbum(album, songs) },
                 onNavigateToStats = {
                     currentRoute = LibraryRoute.Stats
                 },
@@ -386,13 +421,19 @@ fun LibraryContent(
             LibraryRoute.Main -> Spacer(Modifier.fillMaxSize())
             LibraryRoute.Playlist -> {
                 selectedPlaylist?.let { playlist ->
+                    // A release opened from the Library (a saved album, a
+                    // hand-off from Spotlight) reads as an album: its kind,
+                    // artist and year in the header, and no playlist editing.
+                    val isAlbumRelease = playlist.releaseType != null || playlist.id.startsWith("MPRE")
                     PlaylistDetailScreen(
                         playlist = playlist,
                         onBack = { back() },
                         onPlayQueue = onPlayQueue,
                         onShuffleQueue = onShuffleQueue,
                         viewModel = viewModel,
-                        isAlbum = false,
+                        isAlbum = isAlbumRelease,
+                        fallbackSongs = selectedPlaylistFallback
+                            ?.takeIf { it.first == playlist.id }?.second.orEmpty(),
                         onSongLongPress = onSongLongPress,
                         onEnqueueSong = onEnqueueSong,
                         onAddSongsRequest = { currentRoute = LibraryRoute.ImportSongs },
@@ -441,11 +482,7 @@ fun LibraryContent(
                         onPlayQueue = onPlayQueue,
                         onShuffleQueue = onShuffleQueue,
                         onSongClick = onSongClick,
-                        onAlbumClick = { album, songs ->
-                            selectedAlbumName = album
-                            selectedAlbumSongs = songs
-                            currentRoute = LibraryRoute.Album
-                        },
+                        onAlbumClick = { album, songs -> openAlbum(album, songs) },
                         onOpenAlbum = { albumItem ->
                             selectedPlaylist = albumItem
                             currentRoute = LibraryRoute.Playlist
@@ -469,6 +506,7 @@ fun LibraryContent(
                 StatsScreen(
                     onBack = { back() },
                     viewModel = viewModel,
+                    onPlayQueue = onPlayQueue,
                     contentPadding = contentPadding
                 )
             }
@@ -729,51 +767,115 @@ private fun GroupSortHeader(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
         )
-        Box {
-            var open by remember { mutableStateOf(false) }
-            val sortLabel = stringResource(sort.label)
-            FilledTonalIconButton(
-                onClick = { open = true },
-                modifier = Modifier.size(40.dp),
-                shapes = IconButtonDefaults.shapes()
-            ) {
-                Icon(
-                    Icons.Rounded.SwapVert,
-                    contentDescription = stringResource(R.string.lib_group_sort_cd, sortLabel),
-                    modifier = Modifier.size(20.dp)
+        LibrarySortButton(
+            options = LibraryGroupSort.entries,
+            selected = sort,
+            label = { it.label },
+            icon = { it.icon },
+            onSelect = onSortChange
+        )
+    }
+}
+
+/**
+ * The sort button the Library's tabs share: a tonal swap icon and a menu of
+ * the tab's orders, the current one ticked. One control so Artists, Albums
+ * and Playlists sort the same way.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun <T> LibrarySortButton(
+    options: List<T>,
+    selected: T,
+    label: (T) -> Int,
+    icon: (T) -> ImageVector,
+    onSelect: (T) -> Unit
+) {
+    Box {
+        var open by remember { mutableStateOf(false) }
+        val sortLabel = stringResource(label(selected))
+        FilledTonalIconButton(
+            onClick = { open = true },
+            modifier = Modifier.size(40.dp),
+            shapes = IconButtonDefaults.shapes()
+        ) {
+            Icon(
+                Icons.Rounded.SwapVert,
+                contentDescription = stringResource(R.string.lib_group_sort_cd, sortLabel),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { option ->
+                val isSelected = option == selected
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(label(option)),
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    onClick = {
+                        onSelect(option)
+                        open = false
+                    },
+                    leadingIcon = {
+                        Icon(
+                            icon(option),
+                            contentDescription = null,
+                            tint = if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingIcon = {
+                        if (isSelected) {
+                            Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                 )
             }
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                LibraryGroupSort.entries.forEach { option ->
-                    val selected = option == sort
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(option.label),
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        onClick = {
-                            onSortChange(option)
-                            open = false
-                        },
-                        leadingIcon = {
-                            Icon(
-                                option.icon,
-                                contentDescription = null,
-                                tint = if (selected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        trailingIcon = {
-                            if (selected) {
-                                Icon(Icons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    )
-                }
-            }
         }
+    }
+}
+
+/**
+ * Sort orders for the Playlists tab. Default is the Library's own order -
+ * device playlists, then saved ones, then the account's in YouTube's order -
+ * which says something none of the others can. Persisted by name, so the
+ * constants are frozen.
+ */
+enum class LibraryPlaylistSort(val label: Int, val icon: ImageVector) {
+    Default(R.string.lib_pl_sort_default, Icons.Rounded.Restore),
+    Name(R.string.lib_group_sort_name, Icons.Rounded.SortByAlpha),
+    MostSongs(R.string.lib_group_sort_songs, Icons.Rounded.LibraryMusic),
+    Creator(R.string.lib_pl_sort_creator, Icons.Rounded.Person),
+    Custom(R.string.lib_pl_sort_custom, Icons.Rounded.DragHandle);
+
+    /** @param order the listener's arrangement, read by [Custom] alone. */
+    fun apply(playlists: List<PlaylistDisplayItem>, order: List<String> = emptyList()): List<PlaylistDisplayItem> {
+        val byName = compareBy<PlaylistDisplayItem> { (it.name ?: "").lowercase() }
+        return when (this) {
+            Default -> playlists
+            // A playlist not arranged yet leads, so a new one is not lost at
+            // the end of a long list. The sort is stable, so those keep the
+            // Library's own order among themselves.
+            Custom -> {
+                val position = order.withIndex().associate { it.value to it.index }
+                playlists.sortedBy { position[it.id] ?: -1 }
+            }
+            Name -> playlists.sortedWith(byName)
+            // An unknown count (-1) sorts last rather than as an empty list.
+            MostSongs -> playlists.sortedWith(compareByDescending<PlaylistDisplayItem> { it.itemCount }.then(byName))
+            Creator -> playlists.sortedWith(
+                compareBy<PlaylistDisplayItem> { it.uploaderName.isBlank() }
+                    .thenBy { it.uploaderName.lowercase() }
+                    .then(byName)
+            )
+        }
+    }
+
+    companion object {
+        fun from(name: String?): LibraryPlaylistSort = entries.firstOrNull { it.name == name } ?: Default
     }
 }
 
@@ -815,7 +917,8 @@ fun LibraryMainScreen(
     onSongLongPress: ((Song) -> Unit)? = null,
     allSongsListState: LazyListState = rememberLazyListState()
 ) {
-    val userPlaylists by viewModel.userPlaylists.collectAsState()
+    val musicModePlaylists by viewModel.musicModePlaylists.collectAsState()
+    val playlistModes by viewModel.playlistModes.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
     val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
     val hiddenPlaylists by viewModel.hiddenPlaylists.collectAsState()
@@ -1045,7 +1148,7 @@ fun LibraryMainScreen(
                     }
                     LibraryTab.Playlists -> {
                         PlaylistsGrid(
-                            playlists = userPlaylists,
+                            playlists = musicModePlaylists,
                             localPlaylistIds = localPlaylistIds,
                             savedPlaylistIds = savedPlaylistIds,
                             likedSongs = likedSongs,
@@ -1073,11 +1176,17 @@ fun LibraryMainScreen(
                             hiddenPlaylists = hiddenPlaylists,
                             onHidePlaylist = { playlist -> viewModel.hidePlaylist(playlist) },
                             onUnhidePlaylist = { id -> viewModel.unhidePlaylist(id) },
+                            playlistModes = playlistModes,
+                            onPlaylistModeChange = viewModel::setPlaylistMode,
                             contentPadding = contentPadding,
                             isLoggedIn = isYouTubeConnected,
                             importAction = { PlaylistImportButton(viewModel) },
                             onCreatePlaylist = onCreatePlaylist,
-                            fromVideoMode = viewModel.videoPlaylistsForMusic.collectAsState().value
+                            fromVideoMode = viewModel.videoPlaylistsForMusic.collectAsState().value,
+                            sort = LibraryPlaylistSort.from(themePreferences.libraryPlaylistSort.collectAsState().value),
+                            onSortChange = { themePreferences.setLibraryPlaylistSort(it.name) },
+                            customOrder = themePreferences.libraryPlaylistOrder.collectAsState().value,
+                            onCustomOrderChange = themePreferences::setLibraryPlaylistOrder
                         )
                     }
                     LibraryTab.Artists -> {
@@ -1150,6 +1259,7 @@ fun AllSongsList(
     val yesterdayLabel = stringResource(R.string.lh_yesterday)
     val likedIds = remember(likedSongs) { likedSongs.map { it.id }.toSet() }
     val downloadedIds = remember(downloadedSongs) { downloadedSongs.map { it.id }.toSet() }
+    OfferSongsForSelection(songs)
 
     LazyColumn(
         state = listState,
@@ -1622,18 +1732,31 @@ fun PlaylistsGrid(
     hiddenPlaylists: List<com.ivor.ivormusic.data.HiddenPlaylist> = emptyList(),
     onHidePlaylist: (PlaylistDisplayItem) -> Unit = {},
     onUnhidePlaylist: (String) -> Unit = {},
+    /** Playlists kept to one mode, and the way to change that (#357). One call site, wired. */
+    playlistModes: Map<String, PlaylistMode>,
+    onPlaylistModeChange: (String, PlaylistMode?) -> Unit,
     /** Signed in, so the account's own playlists live on YouTube for real. */
     isLoggedIn: Boolean = false,
     importAction: @Composable () -> Unit,
     /** The empty state's own way out: it tells the user to make a playlist. */
     onCreatePlaylist: () -> Unit,
     /** Video mode's device playlists; see HomeViewModel.videoPlaylistsForMusic. */
-    fromVideoMode: List<PlaylistDisplayItem> = emptyList()
+    fromVideoMode: List<PlaylistDisplayItem> = emptyList(),
+    /** The tab's sort, persisted by the caller. No default: one call site, wired. */
+    sort: LibraryPlaylistSort,
+    onSortChange: (LibraryPlaylistSort) -> Unit,
+    /** Playlist ids in the listener's order, for [LibraryPlaylistSort.Custom]. */
+    customOrder: List<String>,
+    onCustomOrderChange: (List<String>) -> Unit
 ) {
     var showHiddenSheet by remember { mutableStateOf(false) }
+    var showArrangeSheet by remember { mutableStateOf(false) }
+    val sortedPlaylists = remember(playlists, sort, customOrder) { sort.apply(playlists, customOrder) }
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        // 150dp cells: two across any phone, as the grid always was, and more
+        // as the window widens. 200dp gave one cover the width of the screen.
+        columns = GridCells.Adaptive(150.dp),
         contentPadding = PaddingValues(
             top = 8.dp,
             bottom = contentPadding.calculateBottomPadding() + 16.dp,
@@ -1673,6 +1796,26 @@ fun PlaylistsGrid(
                         modifier = Modifier.weight(1f)
                     )
                     importAction()
+                    if (playlists.size > 1) {
+                        LibrarySortButton(
+                            options = LibraryPlaylistSort.entries,
+                            selected = sort,
+                            label = { it.label },
+                            icon = { it.icon },
+                            onSelect = { choice ->
+                                // Custom starts from what is on screen rather
+                                // than jumping somewhere unasked, and choosing
+                                // it again is the way back into the sheet.
+                                if (choice == LibraryPlaylistSort.Custom) {
+                                    if (customOrder.isEmpty()) {
+                                        onCustomOrderChange(sortedPlaylists.map { it.id })
+                                    }
+                                    showArrangeSheet = true
+                                }
+                                onSortChange(choice)
+                            }
+                        )
+                    }
                     if (hiddenPlaylists.isNotEmpty()) {
                         TextButton(onClick = { showHiddenSheet = true }) {
                             Icon(
@@ -1709,7 +1852,7 @@ fun PlaylistsGrid(
             }
         }
 
-        items(playlists) { playlist ->
+        items(sortedPlaylists) { playlist ->
             val isLocalPlaylist = localPlaylistIds.contains(playlist.id)
             // Kept, not owned: renaming or deleting one would be a write
             // against somebody else's playlist, so it gets "Remove from
@@ -1738,6 +1881,9 @@ fun PlaylistsGrid(
                 onDeleteConfirmed = { onDeletePlaylist(playlist) },
                 onRemoveSaved = { onRemoveSavedPlaylist(playlist) },
                 onHide = { onHidePlaylist(playlist) },
+                modeAction = PlaylistModeAction(playlistModes[playlist.id], PlaylistMode.MUSIC) { mode ->
+                    onPlaylistModeChange(playlist.id, mode)
+                },
                 selected = LocalLibraryOpenItem.current?.playlistId == playlist.id,
                 onClick = { onPlaylistClick(playlist) }
             )
@@ -1762,6 +1908,9 @@ fun PlaylistsGrid(
                     subtitle = playlist.displaySubtitle(),
                     thumbnailUrl = playlist.thumbnailUrl,
                     onHide = { onHidePlaylist(playlist) },
+                    modeAction = PlaylistModeAction(playlistModes[playlist.id], PlaylistMode.MUSIC) { mode ->
+                        onPlaylistModeChange(playlist.id, mode)
+                    },
                     selected = LocalLibraryOpenItem.current?.playlistId == playlist.id,
                     onClick = { onPlaylistClick(playlist) }
                 )
@@ -1775,6 +1924,143 @@ fun PlaylistsGrid(
             onUnhide = onUnhidePlaylist,
             onDismiss = { showHiddenSheet = false }
         )
+    }
+
+    if (showArrangeSheet) {
+        ArrangePlaylistsSheet(
+            playlists = sortedPlaylists,
+            onOrderChange = onCustomOrderChange,
+            onDismiss = { showArrangeSheet = false }
+        )
+    }
+}
+
+/**
+ * Puts the Playlists tab in the listener's own order. A list in a sheet rather
+ * than a drag on the grid: the shared queue reorder works on a list, and two
+ * columns of covers leave no handle to hold and no one direction to drag in.
+ * Each drop is saved at once, so there is nothing to confirm and the grid
+ * behind is already right when the sheet closes.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ArrangePlaylistsSheet(
+    playlists: List<PlaylistDisplayItem>,
+    onOrderChange: (List<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // The sheet's own copy: a drag moves it every frame, and only a drop saves.
+    val rows = remember { playlists.distinctBy { it.id }.toMutableStateList() }
+    val listState = rememberLazyListState()
+    val keys = rows.map { it.id }
+    val reorder = com.ivor.ivormusic.ui.components.rememberQueueReorderState(
+        listState = listState,
+        keys = keys,
+        onMove = { from, to -> rows.add(to, rows.removeAt(from)) },
+        onSettle = { onOrderChange(rows.map { it.id }) }
+    )
+
+    AdaptiveModalSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.lib_pl_arrange_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.lib_pl_arrange_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(rows, key = { it.id }) { playlist ->
+                    val dragging = reorder.isDragging(playlist.id)
+                    com.ivor.ivormusic.ui.components.QueueRowContainer(
+                        isDragging = dragging,
+                        dragOffset = reorder.offsetFor(playlist.id),
+                        removeEnabled = false,
+                        onRemove = {},
+                        modifier = if (dragging) Modifier else Modifier.animateItem()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val density = LocalDensity.current
+                                val thumbnail = remember(playlist.thumbnailUrl, density) {
+                                    com.ivor.ivormusic.data.googleImageAtSize(
+                                        playlist.thumbnailUrl,
+                                        with(density) { 44.dp.roundToPx() }
+                                    )
+                                }
+                                if (thumbnail != null) {
+                                    AsyncImage(
+                                        model = thumbnail,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = playlist.name ?: stringResource(R.string.untitled_song),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            com.ivor.ivormusic.ui.components.QueueDragHandle(
+                                state = reorder,
+                                rowKey = playlist.id,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1801,7 +2087,7 @@ private fun HiddenPlaylistsSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -2208,6 +2494,8 @@ fun ExpressivePlaylistCard(
      * non-null it is offered on every card, editable or not.
      */
     onHide: (() -> Unit)? = null,
+    /** Keep this playlist to one mode (#357); null where the card offers no such choice. */
+    modeAction: PlaylistModeAction? = null,
     onEditConfirmed: (String, String?) -> Unit = { _, _ -> },
     onDeleteConfirmed: () -> Unit = {},
     onRemoveSaved: () -> Unit = {},
@@ -2340,7 +2628,7 @@ fun ExpressivePlaylistCard(
                     maxLines = 1
                 )
             }
-            if (isEditable || isSaved || onHide != null) {
+            if (isEditable || isSaved || onHide != null || modeAction != null) {
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Rounded.MoreVert, contentDescription = "Playlist options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2363,6 +2651,9 @@ fun ExpressivePlaylistCard(
                                 }
                             )
                         }
+                        modeAction?.let { action ->
+                            PlaylistModeMenuItem(action, onDone = { showMenu = false })
+                        }
                         if (isSaved) {
                             // Removing the reference, not the playlist: no
                             // confirmation dialog, because nothing is destroyed
@@ -2377,7 +2668,7 @@ fun ExpressivePlaylistCard(
                                     Icon(Icons.Rounded.BookmarkRemove, contentDescription = null)
                                 }
                             )
-                        } else {
+                        } else if (isEditable) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.action_edit)) },
                                 onClick = {
@@ -2534,10 +2825,13 @@ fun SongListItem(
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier.size(48.dp)
                 ) {
-                    if (song.albumArtUri != null || song.thumbnailUrl != null)
-                        AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop)
-                    else
-                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Box {
+                        if (song.albumArtUri != null || song.thumbnailUrl != null)
+                            AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        else
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize())
+                    }
                 }
             },
             trailingContent = trailingContent ?: if (isLiked || isDownloaded || showDuration || trailingLabel != null) {
@@ -2579,7 +2873,7 @@ fun SongListItem(
                     }
                 }
             } else null,
-            modifier = Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick),
+            modifier = Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick, song = song),
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
     }
@@ -2591,14 +2885,29 @@ fun SongListItem(
  * Falls back to a plain `clickable` when there is no long-press action, because
  * `combinedClickable` with a null `onLongClick` still consumes the long press
  * and swallows it from anything underneath.
+ *
+ * Given its [song], the row also takes part in picking songs
+ * ([com.ivor.ivormusic.ui.components.SongSelection]): while songs are being
+ * picked, a tap or a hold ticks this one instead of playing it.
  */
 @Composable
 internal fun Modifier.songRowClick(
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)?
+    onLongClick: (() -> Unit)?,
+    song: Song? = null
 ): Modifier {
-    if (onLongClick == null) return this.clickable(onClick = onClick)
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
+    val selection = com.ivor.ivormusic.ui.components.LocalSongSelection.current
+    if (song != null && selection.isActive) {
+        val pick = {
+            haptics.performHapticFeedback(
+                if (selection.isSelected(song)) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+            )
+            selection.toggle(song)
+        }
+        return this.combinedClickable(onClick = pick, onLongClick = pick)
+    }
+    if (onLongClick == null) return this.clickable(onClick = onClick)
     return this.combinedClickable(
         onClick = onClick,
         onLongClick = {
@@ -2606,6 +2915,35 @@ internal fun Modifier.songRowClick(
             onLongClick()
         }
     )
+}
+
+/**
+ * Tells the song selection what this page lists, for Select all, and what
+ * Remove means here. Withdrawn when the page leaves, so the deck never offers
+ * a page's songs, or its removal, from somewhere else. A selection made here
+ * ends with the page as well: leaving it is the user moving on.
+ */
+@Composable
+internal fun OfferSongsForSelection(
+    songs: List<Song>,
+    remove: ((List<Song>) -> Unit)? = null
+) {
+    val selection = com.ivor.ivormusic.ui.components.LocalSongSelection.current
+    val currentRemove by rememberUpdatedState(remove)
+    val hasRemove = remove != null
+    DisposableEffect(selection, songs, hasRemove) {
+        selection.available = songs
+        selection.removeAction = if (hasRemove) { picked -> currentRemove?.invoke(picked) } else null
+        onDispose {
+            if (selection.available === songs) {
+                selection.available = emptyList()
+                selection.removeAction = null
+            }
+        }
+    }
+    DisposableEffect(selection) {
+        onDispose { selection.clear() }
+    }
 }
 
 /** Compact "when was this added" label for the Recently added sort. */
@@ -2721,6 +3059,8 @@ private fun TrackSectionHeader(
     countLabel: String,
     manageEnabled: Boolean,
     canEdit: Boolean,
+    /** The track sort control, or null where the list cannot be sorted. */
+    sortButton: (@Composable () -> Unit)?,
     onToggleEdit: () -> Unit
 ) {
     Row(
@@ -2743,6 +3083,7 @@ private fun TrackSectionHeader(
                 color = playlistOnGround().copy(alpha = 0.78f)
             )
         }
+        sortButton?.invoke()
         if (canEdit) {
             TextButton(
                 onClick = onToggleEdit,
@@ -2940,7 +3281,7 @@ private fun PlaylistTrackRow(
         // headline starved the trailing duration to zero width.
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = (if (manageEnabled) Modifier else Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick))
+            modifier = (if (manageEnabled) Modifier else Modifier.songRowClick(onClick = onClick, onLongClick = onLongClick, song = song))
                 .fillMaxWidth()
                 .heightIn(min = 72.dp)
                 .padding(start = 16.dp, end = if (manageEnabled) 4.dp else 16.dp, top = 8.dp, bottom = 8.dp)
@@ -2965,6 +3306,7 @@ private fun PlaylistTrackRow(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize())
                     // Playing: the bars over a scrim on the artwork, moving
                     // while it plays and resting while paused.
                     androidx.compose.animation.AnimatedVisibility(
@@ -3261,6 +3603,13 @@ fun PlaylistDetailScreen(
      */
     onEnqueueSong: ((Song, Boolean) -> Unit)? = null,
     /**
+     * Shown when the fetch comes back empty: what the Library already holds of
+     * this playlist or release, so an album opened offline still lists the
+     * songs that are here rather than a load failure. Empty for most callers,
+     * which is a safe default - it only ever stands in for nothing.
+     */
+    fallbackSongs: List<Song> = emptyList(),
+    /**
      * Open the "add from your playlists" flow for this playlist. Only offered
      * on local playlists, which are the ones whose track list this app owns.
      * Deliberately no default: a null default is the half-wired-feature trap,
@@ -3391,15 +3740,34 @@ fun PlaylistDetailScreen(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
     }
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("audio/x-mpegurl")
-    ) { uri ->
-        if (uri != null) scope.launch {
-            val ok = viewModel.exportLocalPlaylist(songRows.map { it.song }, uri)
+    val exportDone: (Boolean) -> Unit = { ok ->
+        scope.launch {
             snackbarHostState.showSnackbar(
                 shareContext.getString(if (ok) R.string.pl_export_done else R.string.pl_export_failed)
             )
         }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { uri ->
+        if (uri != null) scope.launch { exportDone(viewModel.exportPlaylist(songRows.map { it.song }, uri)) }
+    }
+    val exportCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) scope.launch { exportDone(viewModel.exportPlaylist(songRows.map { it.song }, uri, csv = true)) }
+    }
+    var showExportSheet by remember { mutableStateOf(false) }
+    if (showExportSheet) {
+        PlaylistExportSheet(
+            songCount = songRows.size,
+            onPick = { csv ->
+                showExportSheet = false
+                val base = (resolvedPlaylist.name ?: "playlist").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                if (csv) exportCsvLauncher.launch("$base.csv") else exportLauncher.launch("$base.m3u8")
+            },
+            onDismiss = { showExportSheet = false }
+        )
     }
 
     // Drag state. The dragged row is addressed by its lazy list key so the
@@ -3408,9 +3776,21 @@ fun PlaylistDetailScreen(
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var dragStartIndex by remember { mutableIntStateOf(-1) }
 
-    val filteredRows = remember(songRows, searchQuery) {
-        if (searchQuery.isBlank()) songRows
-        else songRows.filter { row ->
+    // The track sort: a view over songRows, never a write to the playlist,
+    // remembered per playlist. An album keeps its track order - sorting a
+    // record's tracks is not something people reach for - and Edit shows the
+    // playlist's own order, because that is the order a drag rearranges.
+    val canSortTracks = !isAlbum
+    var trackSort by remember(resolvedPlaylist.id) {
+        mutableStateOf(PlaylistTrackSortChoice.decode(swipePrefs.getPlaylistTrackSort(resolvedPlaylist.id)))
+    }
+    val shownSort = if (isReorderMode || !canSortTracks) PlaylistTrackSortChoice.Default else trackSort
+    val sortedRows = remember(songRows, shownSort) { songRows.sortedForPlaylist(shownSort) { it.song } }
+    val sortedSongs = remember(sortedRows) { sortedRows.map { it.song } }
+
+    val filteredRows = remember(sortedRows, searchQuery) {
+        if (searchQuery.isBlank()) sortedRows
+        else sortedRows.filter { row ->
             row.song.title.contains(searchQuery, ignoreCase = true) ||
                 row.song.artist.contains(searchQuery, ignoreCase = true)
         }
@@ -3444,8 +3824,11 @@ fun PlaylistDetailScreen(
     LaunchedEffect(resolvedPlaylist.id) {
         if (preloadedSongs == null) {
             isFetching.value = true
+            // Fetched as served, album or not: YouTube already lists an album
+            // in its own order, and re-sorting by its per-disc index (no disc
+            // number comes with it) would interleave the discs of a double album.
             songRows = playlistSongRows(
-                viewModel.fetchPlaylistSongs(resolvedPlaylist.id),
+                viewModel.fetchPlaylistSongs(resolvedPlaylist.id).ifEmpty { fallbackSongs },
                 trackKeyPrefix
             )
             isFetching.value = false
@@ -3683,6 +4066,37 @@ fun PlaylistDetailScreen(
         }
     }
 
+    // Picking songs on this page: Select all takes what the page shows (the
+    // search filter included), and a device playlist can drop the picked
+    // songs in one go, with the same undo a single removal gets.
+    OfferSongsForSelection(
+        songs = filteredSongs,
+        remove = if (isLocalPlaylist && !isReorderMode) {
+            { picked ->
+                val ids = picked.mapTo(HashSet()) { it.id }
+                val previous = songRows
+                songRows = songRows.filterNot { it.song.id in ids }
+                if (songRows.size != previous.size) {
+                    viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, songRows.map { it.song })
+                    reorderDirty = false
+                    scope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = shareContext.resources.getQuantityString(
+                                R.plurals.sel_removed, previous.size - songRows.size, previous.size - songRows.size
+                            ),
+                            actionLabel = shareContext.getString(R.string.undo),
+                            duration = SnackbarDuration.Short
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            songRows = previous
+                            viewModel.replaceLocalPlaylistSongs(resolvedPlaylist.id, previous.map { it.song })
+                        }
+                    }
+                }
+            }
+        } else null
+    )
+
     // A swipe direction names its action in settings. Remove only arms where
     // this page can actually remove, queue only where someone above handed a
     // queue over, options only where a sheet exists to open. A YouTube list
@@ -3852,15 +4266,13 @@ fun PlaylistDetailScreen(
                                                 }
                                             )
                                         }
-                                        if (isLocalPlaylist && songs.isNotEmpty()) {
+                                        if (songs.isNotEmpty()) {
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.pl_export)) },
                                                 leadingIcon = { Icon(Icons.Rounded.FileUpload, null) },
                                                 onClick = {
                                                     showOverflow = false
-                                                    val base = (resolvedPlaylist.name ?: "playlist")
-                                                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                                    exportLauncher.launch("$base.m3u8")
+                                                    showExportSheet = true
                                                 }
                                             )
                                         }
@@ -3883,6 +4295,27 @@ fun PlaylistDetailScreen(
                                                     pickCover()
                                                 }
                                             )
+                                            if (songs.any { it.highResThumbnailUrl != null || it.albumArtUri != null || it.thumbnailUrl != null }) {
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.lib_cover_from_songs)) },
+                                                    leadingIcon = { Icon(Icons.Rounded.GridView, null) },
+                                                    onClick = {
+                                                        showOverflow = false
+                                                        scope.launch {
+                                                            val ok = viewModel.coverLocalPlaylistFromSongs(
+                                                                resolvedPlaylist.id,
+                                                                songRows.map { it.song }
+                                                            )
+                                                            snackbarHostState.showSnackbar(
+                                                                shareContext.getString(
+                                                                    if (ok) R.string.lib_cover_from_songs_done
+                                                                    else R.string.lib_cover_from_songs_failed
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                )
+                                            }
                                             // Only offered once there is
                                             // something to undo: on a generated
                                             // cover it would do nothing visible.
@@ -3972,7 +4405,10 @@ fun PlaylistDetailScreen(
                                                 leadingIcon = { Icon(Icons.Rounded.Share, null) },
                                                 onClick = {
                                                     showOverflow = false
-                                                    val shareUrl = if (isAlbum) {
+                                                    // Only a browse id has a /browse/ page; a
+                                                    // release can also arrive as its OLAK5uy_
+                                                    // playlist, which opens as a playlist.
+                                                    val shareUrl = if (isAlbum && resolvedPlaylist.id.startsWith("MPRE")) {
                                                         "https://music.youtube.com/browse/${resolvedPlaylist.id}"
                                                     } else {
                                                         "https://music.youtube.com/playlist?list=${resolvedPlaylist.id}"
@@ -4136,49 +4572,57 @@ fun PlaylistDetailScreen(
                         heroArt = heroArt,
                         isAlbum = isAlbum,
                         onPickCover = if (isLocalPlaylist) pickCover else null
-                    ) else BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                        // Near-square on a phone, but never more than a
-                        // comfortable share of the window: the title, the
-                        // controls and the first track all have to fit under
-                        // it, in landscape as much as in portrait.
-                        val heroHeight = (maxWidth * 0.94f)
-                            .coerceAtMost(windowHeight * 0.44f)
-                            .coerceAtLeast(220.dp)
+                    ) else BoxWithConstraints(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // Below the transparent app bar rather than under
+                            // it: the back and overflow buttons sit on the
+                            // page's own ground, and the cover is whole.
+                            .statusBarsPadding()
+                            .padding(top = 64.dp)
+                    ) {
+                        // A square cover in the middle of the page, the way
+                        // music players set a playlist: big enough to know it
+                        // by, small enough that the title, the controls and
+                        // the first tracks are on screen with it. It was a
+                        // full-width banner ~0.94 of the width tall, which on a
+                        // phone filled the screen before a single track.
+                        val coverSize = (maxWidth * 0.62f)
+                            .coerceAtMost(windowHeight * 0.32f)
+                            .coerceIn(160.dp, 280.dp)
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(heroHeight)
-                                // The cover drifts under the scroll; clipped
-                                // here so it never draws over the list.
-                                .clipToBounds()
+                                .align(Alignment.Center)
+                                .size(coverSize)
+                                .graphicsLayer {
+                                    // Scroll-driven, not time-driven: the
+                                    // cover settles back as the list rises,
+                                    // so there is nothing here to reduce.
+                                    val collapse = headerCollapse.value
+                                    translationY = collapse * size.height * 0.18f
+                                    alpha = 1f - collapse * 0.5f
+                                    val scale = 1f - collapse * 0.08f
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
                         ) {
                             Box(
                                 modifier = Modifier
                                     .matchParentSize()
-                                    .graphicsLayer {
-                                        // Scroll-driven, not time-driven: the
-                                        // cover trails the list rather than
-                                        // animating on its own, so there is
-                                        // nothing here to reduce.
-                                        val collapse = headerCollapse.value
-                                        translationY = collapse * size.height * 0.24f
-                                        alpha = 1f - collapse * 0.55f
-                                    }
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .then(
-                                        // The cover is the affordance: a whole
-                                        // banner of target, exactly where
-                                        // someone looking to change the
-                                        // picture looks.
+                                        // The cover is the affordance for
+                                        // changing it, where people look.
                                         if (isLocalPlaylist) {
                                             Modifier.clickable(onClick = pickCover)
                                         } else Modifier
-                                    )
+                                    ),
+                                contentAlignment = Alignment.Center
                             ) {
                                 if (heroArt != null) {
                                     // Asked for at the size it is drawn and
-                                    // layered over the feed-size original, so
-                                    // the banner is sharp rather than a 120px
-                                    // playlist thumbnail stretched over it.
+                                    // layered over the feed-size original.
                                     VideoThumbnail(
                                         thumbnailUrl = heroArt,
                                         highResThumbnailUrl = googleImageAtSize(heroArt, HERO_COVER_PX)
@@ -4189,10 +4633,8 @@ fun PlaylistDetailScreen(
                                         placeholderColor = MaterialTheme.colorScheme.surfaceContainerHigh
                                     )
                                 } else {
-                                    // No cover anywhere: the theme's own
-                                    // containers with the collection's glyph
-                                    // cut into an Expressive shape, so the
-                                    // page still has a top.
+                                    // No cover anywhere: the collection's
+                                    // glyph on the theme's containers.
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -4206,84 +4648,25 @@ fun PlaylistDetailScreen(
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Surface(
-                                            shape = MaterialShapes.Cookie9Sided.toShape(),
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f),
-                                            modifier = Modifier.size(150.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = if (isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(64.dp),
-                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                                )
-                                            }
-                                        }
+                                        Icon(
+                                            imageVector = if (isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(coverSize * 0.3f),
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
                                     }
                                 }
                             }
 
-                            // Where the cover hands the page over: a plain
-                            // fade, in the page's exact ground color.
-                            //
-                            // This was a `DstIn` mask that erased the cover's
-                            // foot instead. [scar] On screen it composited to
-                            // *black* rather than to transparency and ended
-                            // the cover on a hard dark edge - the layer was
-                            // not isolating the way `CompositingStrategy`
-                            // promises. Painting the fade is only correct
-                            // because the ground is one flat color: there is
-                            // exactly one value to match, so a plain SrcOver
-                            // gradient lands on it precisely, with no blend
-                            // mode and no offscreen buffer to go wrong.
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            0f to ground.copy(alpha = 0f),
-                                            0.58f to ground.copy(alpha = 0f),
-                                            0.86f to ground.copy(alpha = 0.85f),
-                                            1f to ground
-                                        )
-                                    )
-                            )
-
-                            // Top fade: back, search and the overflow need
-                            // ground to sit on whatever the cover is. Faded to
-                            // the same color at zero alpha rather than to
-                            // Transparent, which is transparent *black* and
-                            // greys the band in a light theme.
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(132.dp)
-                                    .align(Alignment.TopCenter)
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                ground.copy(alpha = 0.55f),
-                                                ground.copy(alpha = 0f)
-                                            )
-                                        )
-                                    )
-                            )
-
                             // Badge on the cover's corner, so the artwork
-                            // reads as editable without a caption telling
-                            // people to tap it.
+                            // reads as editable without a caption.
                             if (isLocalPlaylist) {
                                 Surface(
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.primaryContainer,
-                                    // It sits on a layer that moves with every
-                                    // scroll frame, and a shadow under one of
-                                    // those shimmers instead of grounding it.
-                                    shadowElevation = 0.dp,
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(end = 20.dp, bottom = 12.dp)
+                                        .padding(10.dp)
                                         .clickable(onClick = pickCover)
                                 ) {
                                     Icon(
@@ -4291,8 +4674,8 @@ fun PlaylistDetailScreen(
                                         contentDescription = stringResource(R.string.lib_change_cover_art),
                                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                         modifier = Modifier
-                                            .padding(10.dp)
-                                            .size(20.dp)
+                                            .padding(9.dp)
+                                            .size(18.dp)
                                     )
                                 }
                             }
@@ -4356,7 +4739,8 @@ fun PlaylistDetailScreen(
                     // quieter row beneath it.
                     if (songs.isNotEmpty() && !isReorderMode && !isSearchActive) {
                         CollectionPlaybackActions(
-                            onPlay = { onPlayQueue(songs, songs.first()) },
+                            // Plays in the order on screen, sorted or not.
+                            onPlay = { onPlayQueue(sortedSongs, sortedSongs.first()) },
                             onShuffle = { onShuffleQueue(songs) },
                             modifier = Modifier
                                 .padding(horizontal = PLAYLIST_GUTTER)
@@ -4470,6 +4854,22 @@ fun PlaylistDetailScreen(
                         countLabel = if (songs.size == 1) "1 track" else "${songs.size} tracks",
                         manageEnabled = isReorderMode,
                         canEdit = canEditSongs,
+                        sortButton = if (canSortTracks && !isReorderMode && songs.size > 1) {
+                            {
+                                PlaylistTrackSortButton(
+                                    choice = trackSort,
+                                    offerRecentlyAdded = isLocalPlaylist || resolvedPlaylist.id == "LM",
+                                    onChoice = { choice ->
+                                        trackSort = choice
+                                        swipePrefs.setPlaylistTrackSort(resolvedPlaylist.id, choice.encode())
+                                        // The top of the new order is where
+                                        // the eye goes; stay with the header.
+                                        scope.launch { listState.animateScrollToItem(0) }
+                                    },
+                                    tint = playlistOnGround()
+                                )
+                            }
+                        } else null,
                         onToggleEdit = {
                             if (isReorderMode) {
                                 exitReorderMode()

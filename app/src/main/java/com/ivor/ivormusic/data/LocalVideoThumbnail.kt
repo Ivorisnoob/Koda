@@ -67,6 +67,8 @@ class LocalVideoThumbnailFetcher(
 
     private fun loadFromProvider(width: Int, height: Int): Bitmap? = try {
         context.contentResolver.loadThumbnail(data.uri, Size(width, height), null)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         // Missing thumbnail, revoked access, or a provider that does not
         // implement it. All three fall through to decoding a frame.
@@ -94,6 +96,8 @@ class LocalVideoThumbnailFetcher(
                 width,
                 height,
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.d("LocalVideoThumb", "Could not decode a frame of ${data.uri}: ${e.message}")
             null
@@ -102,6 +106,8 @@ class LocalVideoThumbnailFetcher(
             // and release() is what every API level accepts.
             try {
                 retriever.release()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
             }
         }

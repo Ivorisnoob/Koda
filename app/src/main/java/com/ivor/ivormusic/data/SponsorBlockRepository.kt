@@ -186,6 +186,8 @@ class SponsorBlockRepository {
         internal fun parseSegments(body: String, videoId: String): List<SponsorSegment> {
             val videos = try {
                 JSONArray(body)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Unparseable segment payload: ${e.message}")
                 return emptyList()

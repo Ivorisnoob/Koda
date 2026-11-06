@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.video
 
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,7 +58,7 @@ fun CollaboratorsSheet(
     onOpenChannel: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    AdaptiveModalSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.navigationBarsPadding()) {
             Column(
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)

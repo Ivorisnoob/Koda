@@ -35,7 +35,14 @@ import com.ivor.ivormusic.R
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun VideoPipController(viewModel: VideoPlayerViewModel) {
+fun VideoPipController(
+    viewModel: VideoPlayerViewModel,
+    /**
+     * True while the Shorts player is open. It publishes its own PiP params
+     * then (ShortsPipController), so this one must not overwrite them.
+     */
+    suspended: Boolean = false,
+) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val context = LocalContext.current
     val activity = context as? androidx.activity.ComponentActivity ?: return
@@ -117,8 +124,10 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
         isExpanded,
         videoAspectRatio,
         videoBounds,
-        transport
+        transport,
+        suspended
     ) {
+        if (suspended) return@LaunchedEffect
         val builder = PictureInPictureParams.Builder()
         val validBounds = videoBounds?.takeIf { !it.isEmpty }
         val autoEnterEligible = currentVideo != null && isExpanded
@@ -158,6 +167,8 @@ fun VideoPipController(viewModel: VideoPlayerViewModel) {
 
         try {
             activity.setPictureInPictureParams(builder.build())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "setPictureInPictureParams refused", e)
         }

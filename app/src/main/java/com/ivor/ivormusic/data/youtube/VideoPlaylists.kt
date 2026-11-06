@@ -48,6 +48,8 @@ internal class VideoPlaylists(
             lockups.mapNotNull { parsePlaylistLockup(it) }
                 .filter { it.playlistId != "LL" && it.playlistId != "WL" }
                 .distinctBy { it.playlistId }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getVideoPlaylists failed", e)
             emptyList()
@@ -86,6 +88,8 @@ internal class VideoPlaylists(
                 val root = JSONObject(json)
                 parseModernPlaylistHeader(root, listId)
                     ?: parseLegacyPlaylistHeader(root, listId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e(YOUTUBE_TAG, "getPlaylistHeader failed for $playlistId", e)
                 null
@@ -212,6 +216,8 @@ internal class VideoPlaylists(
                 }
             }
             VideoPlaylistLoadResult(videos, complete = true)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Video playlist browse failed for $playlistId", e)
             VideoPlaylistLoadResult(videos, complete = false)
@@ -255,6 +261,8 @@ internal class VideoPlaylists(
                     try {
                         page = extractor.getPage(page.nextPage)
                         videos += page.items.toVideoItems(context)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         KLog.w(
                             YOUTUBE_TAG,
@@ -265,6 +273,8 @@ internal class VideoPlaylists(
                     }
                 }
                 VideoPlaylistLoadResult(videos, complete = true)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e(YOUTUBE_TAG, "Anonymous playlist fetch failed for $listId", e)
                 VideoPlaylistLoadResult(emptyList(), complete = false)

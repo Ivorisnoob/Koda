@@ -86,7 +86,7 @@ fun SleepTimerSheet(
     /** Video pauses without a fade, so its duration copy says so. */
     durationDetail: String? = null
 ) {
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         containerColor = container,

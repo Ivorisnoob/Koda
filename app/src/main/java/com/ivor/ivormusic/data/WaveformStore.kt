@@ -50,8 +50,8 @@ object WaveformStore {
             return true
         }
     }
-    private val evicted = mutableSetOf<String>()
-    private val dirty = mutableSetOf<String>()
+    private val evicted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val dirty = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var lastFlushMs = 0L
 
     private val _version = MutableStateFlow(0)

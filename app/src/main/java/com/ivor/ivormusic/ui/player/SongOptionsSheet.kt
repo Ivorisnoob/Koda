@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.ui.player
 
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
@@ -99,6 +101,8 @@ fun SongOptionsSheet(
      * a browse id; device files have no stream album to open.
      */
     onOpenAlbum: (PlaylistDisplayItem) -> Unit = {},
+    /** Start picking songs with this one ticked. Null hides the row. */
+    onSelect: (() -> Unit)? = null,
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
 
@@ -114,7 +118,7 @@ fun SongOptionsSheet(
     val isDownloaded = remember(song.id) { viewModel.isDownloaded(song.id) }
     val artist = song.artist.takeIf { !isUnknownArtist(it) }
 
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -159,6 +163,23 @@ fun SongOptionsSheet(
                         onDismiss()
                     }
                 )
+            }
+
+            // The way into acting on several songs at once: this one ticked,
+            // and every song row a tap from joining it.
+            if (onSelect != null) {
+                OptionGroup {
+                    OptionRow(
+                        icon = Icons.Rounded.Checklist,
+                        title = stringResource(R.string.sel_select),
+                        subtitle = stringResource(R.string.sel_select_subtitle),
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onSelect()
+                            onDismiss()
+                        }
+                    )
+                }
             }
 
             // Library. What keeping this song looks like: a playlist, the liked

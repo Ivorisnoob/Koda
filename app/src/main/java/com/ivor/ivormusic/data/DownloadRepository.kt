@@ -81,7 +81,17 @@ data class DownloadRequest(
      */
     val audioQuality: String? = null,
     /** Whether to fetch and keep lyrics. Null defers to the stored default. */
-    val saveLyrics: Boolean? = null
+    val saveLyrics: Boolean? = null,
+    /**
+     * The soundtrack picked in the video download sheet, as a
+     * [YouTubeAudioTrack.id] ("de.3"). Null keeps the original, which is what
+     * every download did before a video could carry dubs. On a video request
+     * it replaces the audio half of the pair before the remux; on a music
+     * request (a video saved as audio only) it is the file that is saved. Kept
+     * as the id rather than a URL because every attempt re-resolves, and
+     * googlevideo URLs expire.
+     */
+    val audioTrackId: String? = null
 ) {
     val isVideo: Boolean get() = type == DownloadMediaType.VIDEO
 }
@@ -474,6 +484,8 @@ class DownloadRepository private constructor(private val context: Context) {
             // Persist the pruned list so externally deleted files do not get
             // re-checked on every launch, and so backfilled timestamps stick.
             if (prunedAny || backfilledAny || companionStateChanged) saveMetadata()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error loading downloads", e)
             _downloadedSongs.value = emptyList()
@@ -543,6 +555,8 @@ class DownloadRepository private constructor(private val context: Context) {
                 jsonArray.put(obj)
             }
             downloadsFile.writeText(jsonArray.toString())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error saving metadata", e)
         }
@@ -589,6 +603,8 @@ class DownloadRepository private constructor(private val context: Context) {
 
             _downloadedVideos.value = videos
             if (prunedAny) saveVideoMetadata()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error loading video downloads", e)
             _downloadedVideos.value = emptyList()
@@ -612,6 +628,8 @@ class DownloadRepository private constructor(private val context: Context) {
                 )
             }
             videosFile.writeText(jsonArray.toString())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Error saving video metadata", e)
         }
@@ -725,9 +743,40 @@ class DownloadRepository private constructor(private val context: Context) {
         video: VideoItem,
         qualityLabel: String? = null,
         captionKeys: Set<String>? = null,
+        audioTrackId: String? = null,
     ) {
-        enqueue(listOf(video.toRequest(qualityLabel).copy(captionKeys = captionKeys)))
+        enqueue(
+            listOf(
+                video.toRequest(qualityLabel)
+                    .copy(captionKeys = captionKeys, audioTrackId = audioTrackId)
+            )
+        )
     }
+
+    /**
+     * Queue only the sound of a video, saved the way a song download is so it
+     * lands in the music library and plays offline there. [audioTrackId] picks
+     * one of the video's soundtracks (a dub, an audio description); null keeps
+     * the original and goes through the ordinary music download path.
+     */
+    suspend fun downloadVideoAudio(video: VideoItem, audioTrackId: String? = null) {
+        // A live broadcast has no finished file to save, the same guard
+        // downloadVideos applies.
+        if (video.isLive) return
+        val song = Song.fromYouTube(
+            videoId = video.videoId,
+            title = video.title,
+            artist = video.channelName,
+            album = "",
+            // VideoItem.duration is seconds; Song.duration is millis.
+            duration = video.duration * 1000,
+            thumbnailUrl = video.thumbnailUrl
+        )
+        enqueue(listOf(song.toRequest().copy(audioTrackId = audioTrackId)))
+    }
+
+    /** Exact byte length of one media URL, or null when the server did not say. */
+    suspend fun estimateMediaBytes(url: String): Long? = remoteMediaSize(url)
 
     /**
      * Resolve the exact byte length of the audio stream that would be selected
@@ -957,7 +1006,9 @@ class DownloadRepository private constructor(private val context: Context) {
                     KLog.w(TAG, "googlevideo refused the media; re-minting visitorData before retry")
                     youtubeRepository.refreshVisitorDataAfterPlaybackFailure(refused.url)
                 }
-                if (request.isVideo) {
+                // A soundtrack is read from the video ladder's resolution, so
+                // an audio-only dub has to drop that resolution too.
+                if (request.isVideo || request.audioTrackId != null) {
                     youtubeRepository.invalidateVideoStreamResult(request.id)
                 }
                 kotlinx.coroutines.delay(RETRY_BACKOFF_MS * attempt)
@@ -988,9 +1039,10 @@ class DownloadRepository private constructor(private val context: Context) {
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
             try {
-                val streamUrl = youtubeRepository
-                    .getDownloadAudioStreamUrl(request.id, request.audioQuality)
-                    .getOrNull()
+                val streamUrl = requestedAudioTrack(request)?.url
+                    ?: youtubeRepository
+                        .getDownloadAudioStreamUrl(request.id, request.audioQuality)
+                        .getOrNull()
                     ?: throw java.io.IOException("No stream URL for ${request.id}")
                 val keepLyrics = request.saveLyrics
                     ?: ThemePreferences.saveLyricsWithDownloads(context)
@@ -1176,6 +1228,44 @@ class DownloadRepository private constructor(private val context: Context) {
         return file
     }
 
+    /**
+     * The soundtrack [request] asked for, re-resolved for this attempt, or null
+     * for the original. A track that has gone from the list, or that YouTube
+     * now serves only as WebM (which neither the MP4 muxer nor an `.m4a` can
+     * hold), falls back to the original rather than failing the download: a
+     * file in the original language beats no file.
+     */
+    private suspend fun requestedAudioTrack(
+        request: DownloadRequest,
+        streams: VideoStreamResult? = null,
+    ): YouTubeAudioTrack? {
+        val id = request.audioTrackId ?: return null
+        // A failed lookup is treated like a missing track: the caller then
+        // takes its ordinary path, so an audio-only dub still saves the
+        // original instead of failing outright. Cancellation still propagates.
+        val resolved = streams ?: try {
+            youtubeRepository.getVideoStreamResult(request.id)
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w(TAG, "Could not look up audio track $id for ${request.title}; keeping the original", e)
+            return null
+        }
+        val tracks = resolved.audioTracks
+        val track = tracks.firstOrNull { it.id == id }
+        return when {
+            track == null -> {
+                KLog.w(TAG, "Audio track $id is gone for ${request.title}; keeping the original")
+                null
+            }
+            !track.isMp4Audio -> {
+                KLog.w(TAG, "Audio track $id for ${request.title} is not AAC; keeping the original")
+                null
+            }
+            else -> track
+        }
+    }
+
     private fun copyToPending(source: File, target: Uri) {
         val output = storage.openOutput(target)
             ?: throw java.io.IOException("Could not open storage entry")
@@ -1201,7 +1291,8 @@ class DownloadRepository private constructor(private val context: Context) {
             updateProgress(request, 0.02f, DownloadStatus.DOWNLOADING)
 
             try {
-                val qualities = youtubeRepository.getVideoStreamQualities(request.id)
+                val streams = youtubeRepository.getVideoStreamResult(request.id)
+                val qualities = streams.qualities
                 if (qualities.isEmpty()) throw java.io.IOException("No streams for ${request.id}")
 
                 ensureActive()
@@ -1233,6 +1324,15 @@ class DownloadRepository private constructor(private val context: Context) {
                 val chosen = adaptive ?: progressive
                     ?: throw java.io.IOException("No downloadable stream for ${request.id}")
 
+                // The soundtrack picked in the sheet replaces the pair's audio
+                // half, the same swap the player makes. A progressive file has
+                // no half to replace, so it keeps the audio it was muxed with.
+                val dub = requestedAudioTrack(request, streams)
+                val audioUrl = chosen.audioUrl?.let { original -> dub?.url ?: original }
+                if (request.audioTrackId != null && chosen.audioUrl == null) {
+                    KLog.w(TAG, "Only a progressive stream for ${request.title}; keeping its own audio")
+                }
+
                 val fileName =
                     storage.buildFileName(request.title, request.subtitle, DownloadMediaType.VIDEO)
                 val target = storage.createPending(
@@ -1245,13 +1345,13 @@ class DownloadRepository private constructor(private val context: Context) {
 
                 var muxed = false
 
-                if (chosen.audioUrl != null) {
+                if (audioUrl != null) {
                     // Two transfers, then a remux. Progress is split so the bar
                     // reflects real work: video is the bulk, audio a slice, and
                     // the tail is the mux.
                     videoTemp = downloadStream(request, chosen.url, "video", 0.05f, 0.70f)
                     ensureActive()
-                    audioTemp = downloadStream(request, chosen.audioUrl, "audio", 0.70f, 0.88f)
+                    audioTemp = downloadStream(request, audioUrl, "audio", 0.70f, 0.88f)
                     ensureActive()
 
                     updateProgress(request, 0.9f, DownloadStatus.DOWNLOADING, finishing = true)

@@ -45,6 +45,8 @@ internal class WatchPage(
             WatchNextData(
                 engagement = try {
                     parseEngagementFromWatchNext(videoId, root)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     KLog.w(YOUTUBE_TAG, "engagement parse failed for $videoId", e)
                     null
@@ -53,12 +55,16 @@ internal class WatchPage(
                 relatedVideos = parseRelatedFromWatchNext(root),
                 chapters = try {
                     parseChaptersFromWatchNext(root)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     KLog.w(YOUTUBE_TAG, "chapters parse failed for $videoId", e)
                     emptyList()
                 },
                 liveChatContinuation = parseLiveChatContinuation(root)
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getWatchNextData failed", e)
             WatchNextData(null, null, emptyList())
@@ -73,6 +79,8 @@ internal class WatchPage(
         try {
             val root = fetchWatchNextRoot(videoId) ?: return@withContext null
             parseEngagementFromWatchNext(videoId, root)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "getVideoEngagement failed", e)
             null
@@ -99,6 +107,8 @@ internal class WatchPage(
                 // load. The collaborators are listed uploader first, so the
                 // first of them is the channel the byline leads with.
                 ?: engagement?.collaborators?.firstOrNull()?.channelId
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(YOUTUBE_TAG, "Channel lookup failed for $videoId", e)
             null

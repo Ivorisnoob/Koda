@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Segmented list, first row: the group's outer corners on top, the small
+    inner corner below. 20dp outside because the group sits 8dp inside the
+    widget's 28dp card, and 28 - 8 keeps the two curves concentric. Tinted at
+    the use site like the rest of the shape scale (widget_shape_large.xml).
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/white" />
+    <corners
+        android:topLeftRadius="20dp"
+        android:topRightRadius="20dp"
+        android:bottomLeftRadius="4dp"
+        android:bottomRightRadius="4dp" />
+</shape>

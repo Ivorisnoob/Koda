@@ -18,6 +18,7 @@ import androidx.work.WorkerParameters
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.BellLevel
 import com.ivor.ivormusic.data.LocalSubscriptionsRepository
+import com.ivor.ivormusic.data.RequestPriority
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.UploadCheckRepository
@@ -29,6 +30,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -59,7 +61,12 @@ class UploadCheckWorker(
     parameters: WorkerParameters,
 ) : CoroutineWorker(context, parameters) {
 
-    override suspend fun doWork(): Result {
+    // Background by definition: every request a round makes is the app's own
+    // work, so a hold that begins mid-round keeps the rest of it on the device.
+    override suspend fun doWork(): Result =
+        withContext(RequestPriority.Automatic) { checkUploads() }
+
+    private suspend fun checkUploads(): Result {
         val themePreferences = ThemePreferences(applicationContext)
         // Fresh read: workers run in a process where every ViewModel is long dead.
         if (!themePreferences.getUploadNotificationsEnabled()) {

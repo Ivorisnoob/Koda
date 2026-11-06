@@ -353,6 +353,19 @@ private fun ChannelRoot(
         )
     }
 
+    val postEdits by viewModel.postInteractions.edits.collectAsState()
+    val postsSignedIn by viewModel.isLoggedIn.collectAsState()
+    val postActions = com.ivor.ivormusic.video.PostCardActions(
+        signedIn = postsSignedIn,
+        edits = postEdits,
+        onToggleLike = { post ->
+            if (postsSignedIn) viewModel.postInteractions.toggleLike(post) else showCommentSignIn = true
+        },
+        onPollChoice = { post, index ->
+            if (postsSignedIn) viewModel.postInteractions.tapPollChoice(post, index) else showCommentSignIn = true
+        },
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -367,7 +380,7 @@ private fun ChannelRoot(
                 val isTabLoading = selectedTab in loadingTabs
 
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(CHANNEL_GRID_COLUMNS),
+                    columns = GridCells.Adaptive(180.dp),
                     state = gridState,
                     // One gutter for the whole page, so a video card, a
                     // playlist tile and a Short all line up on the same edge
@@ -515,7 +528,8 @@ private fun ChannelRoot(
                         onOpenChannel = onOpenChannel,
                         onSelectSort = { viewModel.selectSort(it, selectedTab) },
                         onOpenPhotos = { images, index -> photoViewer = images to index },
-                        onOpenComments = viewModel::openPostComments
+                        onOpenComments = viewModel::openPostComments,
+                        postActions = postActions
                     )
 
                     if (isLoadingMore) {

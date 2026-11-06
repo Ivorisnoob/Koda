@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.FormatAlignCenter
 import androidx.compose.material.icons.rounded.FormatAlignLeft
 import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,6 +62,7 @@ internal fun LyricsSettingsPage(
             val context = androidx.compose.ui.platform.LocalContext.current
             val prefs = remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
             val centered by prefs.lyricsCentered.collectAsState()
+            val romanized by prefs.lyricsRomanized.collectAsState()
             SettingsCard {
                 SettingsChoiceRow(
                     icon = if (centered) Icons.Rounded.FormatAlignCenter else Icons.Rounded.FormatAlignLeft,
@@ -72,6 +74,14 @@ internal fun LyricsSettingsPage(
                     ),
                     selectedIndex = if (centered) 1 else 0,
                     onSelect = { prefs.setLyricsCentered(it == 1) }
+                )
+                SettingsDivider()
+                SettingsToggleRow(
+                    icon = Icons.Rounded.Translate,
+                    title = stringResource(R.string.lyrics_romanized),
+                    subtitle = stringResource(R.string.lyrics_romanized_sub),
+                    enabled = romanized,
+                    onToggle = prefs::setLyricsRomanized
                 )
             }
             Spacer(Modifier.height(12.dp))

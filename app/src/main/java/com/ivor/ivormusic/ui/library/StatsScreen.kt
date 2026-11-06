@@ -62,6 +62,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.ui.components.SegmentedGroup
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import java.util.Calendar
@@ -79,12 +81,37 @@ import java.util.Calendar
 fun StatsScreen(
     onBack: () -> Unit,
     viewModel: HomeViewModel,
+    /** Play a queue from a song in it; a top song plays the top list from there. */
+    onPlayQueue: (List<Song>, Song?) -> Unit,
     contentPadding: PaddingValues
 ) {
     val searchHistory by viewModel.searchHistory.collectAsState()
     val likedSongs by viewModel.likedSongs.collectAsState()
     val globalStats by viewModel.globalStats.collectAsState()
     val dailyPlays by viewModel.dailyPlays.collectAsState()
+    val localSongs by viewModel.songs.collectAsState()
+
+    // The top songs as playable songs, in rank order. A device song that is no
+    // longer on the device has nothing to play, so it maps to null: its row
+    // stays (the count is still true) but does nothing, as on the History page.
+    val topSongs = remember(globalStats.topSongs, localSongs) {
+        val localById = localSongs.associateBy { it.id }
+        globalStats.topSongs.map { stats ->
+            if (stats.source == SongSource.LOCAL) {
+                localById[stats.songId]
+            } else {
+                Song.fromYouTube(
+                    videoId = stats.songId,
+                    title = stats.title,
+                    artist = stats.artist,
+                    album = stats.album,
+                    duration = stats.durationMs,
+                    thumbnailUrl = stats.thumbnailUrl
+                )
+            }
+        }
+    }
+    val playableTopSongs = remember(topSongs) { topSongs.filterNotNull() }
 
     // Refresh stats on entry
     LaunchedEffect(Unit) {
@@ -255,7 +282,10 @@ fun StatsScreen(
                 // inner corners said group while the gaps said otherwise.
                 item {
                     SegmentedGroup(globalStats.topSongs) { index, count, songStats ->
+                        val song = topSongs.getOrNull(index)
                         SegmentedListItem(
+                            onClick = { if (song != null) onPlayQueue(playableTopSongs, song) },
+                            enabled = song != null,
                             shapes = ListItemDefaults.segmentedShapes(index, count),
                             colors = com.ivor.ivormusic.ui.components.segmentedColorsOver(MaterialTheme.colorScheme.background),
                             leadingContent = {

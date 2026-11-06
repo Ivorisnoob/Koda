@@ -118,16 +118,22 @@ internal fun parseVideosFromYouTubeJson(
     return videos.distinctBy { it.videoId }.take(limit)
 }
 
-/** Verified September 2026: sorted pages retain a list-scoped search token. */
-internal fun parseVideoSearchPage(response: String): VideoFeedPage {
+/**
+ * Verified September 2026: sorted pages retain a list-scoped search token.
+ * [dropShorts] is "Fully block Shorts".
+ */
+internal fun parseVideoSearchPage(response: String, dropShorts: Boolean = false): VideoFeedPage {
     val root = JSONObject(response)
     check(!root.has("error")) { "Search returned an error body" }
     val renderers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "videoRenderer", renderers)
     findObjectsByKey(root, "lockupViewModel", renderers)
     val videos = renderers.mapNotNull { renderer ->
-        if (renderer.has("videoId")) parseVideoRenderer(renderer)
-        else parseLockupViewModel(renderer)
+        when {
+            !renderer.has("videoId") -> parseLockupViewModel(renderer)
+            dropShorts && isShortVideoRenderer(renderer) -> null
+            else -> parseVideoSearchRow(renderer)
+        }
     }.distinctBy { it.videoId }
     return VideoFeedPage(videos, videoListContinuationToken(root, search = true))
 }

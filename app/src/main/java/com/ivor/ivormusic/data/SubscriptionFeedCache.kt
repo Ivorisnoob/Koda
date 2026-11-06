@@ -5,18 +5,23 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** Last fetched subscriptions feed per profile, so a restart can skip the refetch. Cache dir, not backed up. */
+/**
+ * Last fetched subscriptions feed per profile and group, so a restart or a tap
+ * on a group already seen can skip the refetch. Cache dir, not backed up.
+ */
 class SubscriptionFeedCache(context: Context) {
 
     private val appContext = context.applicationContext
 
     data class Snapshot(val videos: List<VideoItem>, val fetchedAtMs: Long, val key: String)
 
-    private fun file(): File =
-        File(appContext.cacheDir, "subs_feed_${ProfileManager.activeProfileId(appContext)}.json")
+    private fun file(groupId: String?): File {
+        val group = groupId?.let { "_group_${it.hashCode().toUInt()}" }.orEmpty()
+        return File(appContext.cacheDir, "subs_feed_${ProfileManager.activeProfileId(appContext)}$group.json")
+    }
 
-    fun read(): Snapshot? = runCatching {
-        val f = file().takeIf { it.exists() } ?: return null
+    fun read(groupId: String? = null): Snapshot? = runCatching {
+        val f = file(groupId).takeIf { it.exists() } ?: return null
         val root = JSONObject(f.readText())
         val array = root.optJSONArray("videos") ?: return null
         val videos = (0 until array.length()).mapNotNull { i ->
@@ -32,6 +37,7 @@ class SubscriptionFeedCache(context: Context) {
                 viewCount = o.optString("viewCount"),
                 uploadedDate = o.optString("uploaded").takeIf { it.isNotBlank() },
                 isLive = o.optBoolean("isLive", false),
+                isShort = o.optBoolean("isShort", false),
                 publishedAtMs = o.optLong("publishedAt", 0L).takeIf { it > 0L }
             )
         }
@@ -39,7 +45,7 @@ class SubscriptionFeedCache(context: Context) {
     }.getOrNull()
 
     /** [key] identifies what the feed was built from (source + channels), so a changed set is never served stale. */
-    fun write(videos: List<VideoItem>, key: String) {
+    fun write(videos: List<VideoItem>, key: String, groupId: String? = null) {
         runCatching {
             val array = JSONArray()
             videos.forEach { v ->
@@ -54,10 +60,11 @@ class SubscriptionFeedCache(context: Context) {
                     put("viewCount", v.viewCount)
                     v.uploadedDate?.let { put("uploaded", it) }
                     put("isLive", v.isLive)
+                    if (v.isShort) put("isShort", true)
                     v.publishedAtMs?.let { put("publishedAt", it) }
                 })
             }
-            file().writeText(
+            file(groupId).writeText(
                 JSONObject().put("videos", array).put("fetchedAt", System.currentTimeMillis()).put("key", key).toString()
             )
         }

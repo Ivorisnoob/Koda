@@ -4,23 +4,30 @@
     every colour here is a literal by necessity - the one place in Koda where
     that is true of ordinary decoration rather than of data.
 
-    They are a pink-seeded M3 dark scheme rather than the neutral near-black the
-    previews used to carry, because a picker shows six of these in a row and a
-    grey card with a violet dot on it was the least appealing thing in a launcher
-    full of colour. Roles, so the whole family stays consistent:
+    They are a pink-seeded M3 dark scheme, drawn with the roles the widgets
+    themselves use, so a preview is a calm rendering of the widget rather than
+    an advertisement for it. Flat fills only: no gradients and no glow, on the
+    cover or anywhere else. Roles, so the whole family stays consistent:
 
-      surface        #FF1A1114   the card
-      surfaceHigh    #FF3A2C33   tonal controls
-      surfaceRow     #FF33262C   queue rows
+      card           #FF3A2A30   widgetBackground - Glance's secondaryContainer
+                                 moved ten tones darker, which is what the card
+                                 really is in dark
+      cardControl    #FF5B3F48   secondaryContainer: secondary controls on a
+                                 card (widget_preview_card_button)
+      onCardControl  #FFFFD9E2   their glyphs
+      panel          #FF191113   surface: Lineup's queue group
+      tonal          #FF3A2C33   surfaceVariant: controls standing on the
+                                 wallpaper (Bloom, Vinyl)
       primary        #FFFFB1C8   the hero
       onPrimary      #FF5E1133   glyph on the hero - dark, because the hero is
                                  a light tone and white on it fails contrast
-      onSurface      #FFF2DEE5   titles and glyphs on tonal controls
-      onSurfaceVar   #FFD6BFC8   subtitles
-      art            rose to violet, top to bottom
+      onSurface      #FFF0DEE3   titles
+      onSurfaceVar   #FFD5C2C7   subtitles
+      cover          widget_preview_cover: a flat landscape in teal and cream,
+                                 so it reads as album art and not as a swatch
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#FF1A1114" />
+    <solid android:color="#FF3A2A30" />
     <corners android:radius="28dp" />
 </shape>

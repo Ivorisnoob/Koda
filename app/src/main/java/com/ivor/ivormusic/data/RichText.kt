@@ -105,7 +105,7 @@ fun parseRichText(node: JSONObject?): RichText {
  * address needs a scheme, `www.` or a YouTube host, so prose like "v2.0" or
  * "e.g." never lights up.
  */
-fun linkifyPlainText(text: String): RichText {
+fun linkifyPlainText(text: String, bareDomains: Boolean = false): RichText {
     if (text.isBlank()) return RichText(text)
     val found = mutableListOf<RichLink>()
 
@@ -118,6 +118,13 @@ fun linkifyPlainText(text: String): RichText {
     PLAIN_URL.findAll(text).forEach { m ->
         add(m.range.first, m.range.last + 1) { url ->
             RichLinkTarget.Url(if (url.startsWith("http", ignoreCase = true)) url else "https://$url")
+        }
+    }
+    // Opt-in, for text people wrote for other people ("shop.example.com"): a
+    // short list of endings keeps "v2.0", "e.g." and "Node.js" as plain text.
+    if (bareDomains) {
+        PLAIN_BARE_DOMAIN.findAll(text).forEach { m ->
+            add(m.range.first, m.range.last + 1) { RichLinkTarget.Url("https://$it") }
         }
     }
     PLAIN_EMAIL.findAll(text).forEach { m ->
@@ -139,6 +146,10 @@ fun linkifyPlainText(text: String): RichText {
 
 private val PLAIN_URL = Regex(
     """(?<![\w@.])(?:https?://|www\.|(?:m\.|music\.)?youtube\.com/|youtu\.be/)[^\s<>"]+""",
+    RegexOption.IGNORE_CASE
+)
+private val PLAIN_BARE_DOMAIN = Regex(
+    """(?<![\w@./-])(?:[a-z0-9-]+\.)+(?:com|org|net|io|co|gg|tv|ly|app|dev|xyz|shop|store)(?![\w-])(?:/[^\s<>"]*)?""",
     RegexOption.IGNORE_CASE
 )
 private val PLAIN_EMAIL = Regex("""(?<![\w.])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}""")

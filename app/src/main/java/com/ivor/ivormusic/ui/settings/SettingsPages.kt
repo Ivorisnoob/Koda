@@ -1218,6 +1218,25 @@ internal fun PlaybackSettingsPage(
 
                     SettingsDivider()
 
+                    // Reads and writes its own snapshot, as the newer pages do,
+                    // rather than threading through SettingsScreen: the player
+                    // and the service follow the preference live.
+                    val pitchContext = androidx.compose.ui.platform.LocalContext.current
+                    val pitchPrefs = androidx.compose.runtime.remember(pitchContext) {
+                        com.ivor.ivormusic.data.ThemePreferences(pitchContext)
+                    }
+                    val pitchControl by pitchPrefs.pitchControlEnabled.collectAsState()
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.GraphicEq,
+                        title = stringResource(R.string.sp_pitch_control),
+                        subtitle = stringResource(R.string.sp_pitch_control_sub),
+                        enabled = pitchControl,
+                        onToggle = pitchPrefs::setPitchControlEnabled,
+                        explanation = stringResource(R.string.si_pitch_control)
+                    )
+
+                    SettingsDivider()
+
                     // Device-local, and not the same switch as "Save Watch
                     // History" on the Account page - that one governs the
                     // YouTube account's history. The subtitle spells out what

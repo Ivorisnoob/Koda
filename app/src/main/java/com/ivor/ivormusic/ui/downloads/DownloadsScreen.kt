@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -55,6 +56,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -208,6 +210,58 @@ fun DownloadsScreen(
             )
         }
     ) { paddingValues ->
+        val downloadsWindow = com.ivor.ivormusic.ui.theme.currentWindowLayout()
+        if (downloadsWindow.supportsTwoPanes) {
+            // Wide window: both download kinds at once, a column each, rather
+            // than a pager that shows half the library at a time on a screen
+            // with room for all of it. The tab strip above becomes redundant,
+            // so it is not drawn.
+            Row(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                DownloadsPane(
+                    title = DownloadsTab.MUSIC.label,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
+                    MusicTab(
+                        songs = downloadedSongs,
+                        progress = musicProgress,
+                        onPlayQueue = onPlayQueue,
+                        onDelete = onDeleteDownload,
+                        onCancel = onCancelDownload,
+                        onRetry = onRetryDownload,
+                        onPause = onPauseDownload,
+                        onResume = onResumeDownload
+                    )
+                }
+                VerticalDivider(
+                    modifier = Modifier.fillMaxHeight(),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                DownloadsPane(
+                    title = DownloadsTab.VIDEO.label,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
+                    VideoTab(
+                        videos = downloadedVideos,
+                        progress = videoProgress,
+                        onPlay = { video -> onPlayVideo(downloadedVideos, video) },
+                        onDelete = onDeleteVideo,
+                        onCancel = onCancelDownload,
+                        onRetry = onRetryDownload,
+                        onPause = onPauseDownload,
+                        onResume = onResumeDownload
+                    )
+                }
+            }
+            return@Scaffold
+        }
         Column(
             modifier = modifier
                 .fillMaxSize()
@@ -322,6 +376,28 @@ fun DownloadsScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * One column of the wide-window downloads layout: a small label over the tab's
+ * own scrolling content, so the two side-by-side panes read as two lists rather
+ * than an unlabelled split.
+ */
+@Composable
+private fun DownloadsPane(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)
+        )
+        Box(modifier = Modifier.fillMaxSize()) { content() }
     }
 }
 

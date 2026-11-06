@@ -221,11 +221,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Торкніться, щоб слухати</string>
     <string name="widget_pulse_label">Пульс</string>
-    <string name="widget_pulse_description">Обкладинка, трек і відтворення; додайте рядок для прогресу та перемикання</string>
-    <string name="widget_console_label">Консоль</string>
-    <string name="widget_console_description">Лише керування: перемішування та повтор</string>
-    <string name="widget_deck_label">Дека</string>
-    <string name="widget_deck_description">Високий програвач з обкладинкою, прогресом і всіма кнопками</string>
     <string name="widget_lineup_label">Лайнап</string>
     <string name="widget_lineup_description">Що грає і що далі; торкніть трек, щоб перейти</string>
     <string name="widget_bloom_label">Блум</string>
@@ -372,4 +367,10 @@
     <string name="subscribed">Ви підписані</string>
     <string name="subscribe">Підписатися</string>
     <string name="like">Подобається</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Сортувати канали</string>
+    <string name="subscription_sort_official">У стилі YouTube (нещодавня активність)</string>
+    <string name="subscription_sort_recent">Спочатку найновіші відео</string>
+    <string name="subscription_sort_name">Назва каналу (А–Я)</string>
+    <string name="subscription_sort_oldest">Спочатку найстаріші відео</string>
 </resources>

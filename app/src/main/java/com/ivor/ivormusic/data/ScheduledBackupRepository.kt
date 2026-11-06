@@ -105,6 +105,8 @@ class ScheduledBackupRepository(context: Context) {
             try {
                 val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 appContext.contentResolver.releasePersistableUriPermission(oldUri, flags)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Could not release previous persistable permission", e)
             }
@@ -142,6 +144,8 @@ class ScheduledBackupRepository(context: Context) {
             try {
                 val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 appContext.contentResolver.releasePersistableUriPermission(oldUri, flags)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Could not release persistable permission", e)
             }
@@ -257,10 +261,14 @@ class ScheduledBackupRepository(context: Context) {
                 BackupTransfer.write(snapshot, out)
             } ?: throw IOException("Could not open output stream for ${backupDoc.uri}")
             snapshot.manifest
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Scheduled backup write failed", e)
             try {
                 backupDoc.delete()
+            } catch (cleanupEx: kotlinx.coroutines.CancellationException) {
+                throw cleanupEx
             } catch (cleanupEx: Exception) {
                 KLog.w(TAG, "Failed to clean up incomplete backup file", cleanupEx)
             }
@@ -294,6 +302,8 @@ class ScheduledBackupRepository(context: Context) {
                     }
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Pruning old backups encountered an issue", e)
         }
@@ -333,6 +343,8 @@ class ScheduledBackupRepository(context: Context) {
     private fun rescheduleWorker() {
         try {
             com.ivor.ivormusic.work.ScheduledBackupWorker.sync(appContext)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Could not invoke ScheduledBackupWorker.sync", e)
         }
@@ -388,6 +400,8 @@ class ScheduledBackupRepository(context: Context) {
 
             val treeDocId = try {
                 DocumentsContract.getTreeDocumentId(treeUri)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 null
             }

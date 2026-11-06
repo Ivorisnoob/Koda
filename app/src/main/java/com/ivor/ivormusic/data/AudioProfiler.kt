@@ -888,6 +888,8 @@ object AudioProfiler {
                     read += n
                 }
                 if (read == 0) -1 else read
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 -1
             } finally {

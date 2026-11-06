@@ -38,6 +38,8 @@ internal class NewPipeGateway(
             if (!isInitialized) {
                 try {
                     NewPipe.init(NewPipeDownloaderImpl(http.newPipeClient, sessionManager))
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     // NewPipe may already have been initialized by another
                     // process entry point. Its singleton is still usable.
@@ -128,6 +130,8 @@ internal fun List<InfoItem>.toVideoItems(context: Context): List<VideoItem> =
                 isLive = item.streamType == StreamType.LIVE_STREAM || item.streamType == StreamType.AUDIO_LIVE_STREAM,
                 subscriberCount = null
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }

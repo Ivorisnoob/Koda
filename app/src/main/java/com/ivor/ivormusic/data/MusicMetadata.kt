@@ -176,6 +176,48 @@ internal object MusicMetadata {
             .mapNotNull { release(it, defaultType, artist) }.distinctBy { it.id }
 
     /**
+     * A row of an artist search. The audience is recognised by what it says,
+     * since the subtitle's runs are the same for a million-listener artist
+     * ("68.3M monthly audience") and a small channel ("22 subscribers").
+     * Verified November 2026.
+     */
+    fun artistRow(row: JSONObject): ArtistItem? {
+        val endpoint = endpoint(row)?.takeIf(::isArtist) ?: return null
+        val id = endpoint.optString("browseId").takeIf { it.startsWith("UC") } ?: return null
+        val name = text(columns(row).firstOrNull()).takeIf(String::isNotBlank) ?: return null
+        return ArtistItem(
+            id = id,
+            name = name,
+            thumbnailUrl = thumbnail(row),
+            subscriberCount = metadataRuns(row).map { it.optString("text").trim() }
+                .firstOrNull { it.contains("audience", true) || it.contains("subscriber", true) },
+        )
+    }
+
+    fun artistRows(root: JSONObject): List<ArtistItem> =
+        objects(root, "musicResponsiveListItemRenderer").mapNotNull(::artistRow).distinctBy { it.id }
+
+    /**
+     * A row of a playlist search. Its browse id is the playlist id behind `VL`,
+     * and it states views rather than a length, so the count stays unknown.
+     * Verified November 2026.
+     */
+    fun playlistRow(row: JSONObject): PlaylistDisplayItem? {
+        val endpoint = endpoint(row)?.takeIf { pageType(it) == "MUSIC_PAGE_TYPE_PLAYLIST" } ?: return null
+        val id = endpoint.optString("browseId").removePrefix("VL").takeIf(String::isNotBlank) ?: return null
+        val name = text(columns(row).firstOrNull()).takeIf(String::isNotBlank) ?: return null
+        return PlaylistDisplayItem(
+            name = name,
+            url = "https://music.youtube.com/playlist?list=$id",
+            uploaderName = artists(metadataRuns(row)),
+            thumbnailUrl = thumbnail(row),
+        )
+    }
+
+    fun playlistRows(root: JSONObject): List<PlaylistDisplayItem> =
+        objects(root, "musicResponsiveListItemRenderer").mapNotNull(::playlistRow).distinctBy { it.id }
+
+    /**
      * The identity block of an InnerTube artist browse
      * (`musicImmersiveHeaderRenderer`): name, biography, monthly audience and
      * the widest banner thumbnail. Null when the response carries no immersive

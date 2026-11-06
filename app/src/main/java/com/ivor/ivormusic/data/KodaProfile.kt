@@ -166,6 +166,8 @@ class KodaProfileStore(context: Context) {
                 card.copy(photoPath = target.absolutePath, photoVersion = System.currentTimeMillis())
             )
             true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Could not use that photo", e)
             false

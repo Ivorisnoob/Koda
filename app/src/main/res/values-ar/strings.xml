@@ -227,11 +227,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">انقر للاستماع</string>
     <string name="widget_pulse_label">نبض</string>
-    <string name="widget_pulse_description">الغلاف والمقطع والتشغيل؛ أضف صفًا للتقدم والتخطي</string>
-    <string name="widget_console_label">كونسول</string>
-    <string name="widget_console_description">عناصر التحكم فقط، مع العشوائي والتكرار</string>
-    <string name="widget_deck_label">ديك</string>
-    <string name="widget_deck_description">مشغّل طويل بالغلاف والتقدم وكل عناصر التحكم</string>
     <string name="widget_lineup_label">لاين أب</string>
     <string name="widget_lineup_description">ما يتم تشغيله وما سيليه؛ انقر مقطعًا للانتقال إليه</string>
     <string name="widget_bloom_label">بلوم</string>
@@ -378,4 +373,10 @@
     <string name="subscribed">مشترك</string>
     <string name="subscribe">اشترك</string>
     <string name="like">أعجبني</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">ترتيب القنوات</string>
+    <string name="subscription_sort_official">على نمط YouTube (النشاط الأخير)</string>
+    <string name="subscription_sort_recent">أحدث الفيديوهات أولاً</string>
+    <string name="subscription_sort_name">اسم القناة (أ–ي)</string>
+    <string name="subscription_sort_oldest">أقدم الفيديوهات أولاً</string>
 </resources>

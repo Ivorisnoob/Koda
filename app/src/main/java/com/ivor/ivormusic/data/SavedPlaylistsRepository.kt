@@ -233,6 +233,8 @@ class SavedPlaylistsRepository(context: Context) {
                     releaseYear = obj.optInt("releaseYear").takeIf { it in 1900..2099 }
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "Could not read saved playlists", e)
             emptyList()

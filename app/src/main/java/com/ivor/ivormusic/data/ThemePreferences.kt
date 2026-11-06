@@ -269,12 +269,20 @@ class ThemePreferences(context: Context) {
     private val _shortsCacheEnabled = MutableStateFlow(getShortsCacheEnabledPreference())
     val shortsCacheEnabled: StateFlow<Boolean> = _shortsCacheEnabled.asStateFlow()
 
+    // Off by default: a Short loops until it is swiped, the way it always has.
+    private val _shortsAutoAdvance = MutableStateFlow(prefs.getBoolean(KEY_SHORTS_AUTO_ADVANCE, false))
+    val shortsAutoAdvance: StateFlow<Boolean> = _shortsAutoAdvance.asStateFlow()
+
     private val _playbackPreloadEnabled = MutableStateFlow(getPlaybackPreloadEnabledPreference())
     val playbackPreloadEnabled: StateFlow<Boolean> = _playbackPreloadEnabled.asStateFlow()
     
     private val _maxCacheSizeMb = MutableStateFlow(getMaxCacheSizeMbPreference())
     val maxCacheSizeMb: StateFlow<Long> = _maxCacheSizeMb.asStateFlow()
     
+    // Pitch: a control offered in the player's menu only when this is on.
+    private val _pitchControlEnabled = MutableStateFlow(prefs.getBoolean(KEY_PITCH_CONTROL, false))
+    val pitchControlEnabled: StateFlow<Boolean> = _pitchControlEnabled.asStateFlow()
+
     // Queue Settings
     private val _autoLoadQueue = MutableStateFlow(getAutoLoadQueuePreference())
     val autoLoadQueue: StateFlow<Boolean> = _autoLoadQueue.asStateFlow()
@@ -344,6 +352,14 @@ class ThemePreferences(context: Context) {
     val libraryArtistSort: StateFlow<String?> = _libraryArtistSort.asStateFlow()
     private val _libraryAlbumSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_ALBUM_SORT, null))
     val libraryAlbumSort: StateFlow<String?> = _libraryAlbumSort.asStateFlow()
+    // The Playlists tab's, a LibraryPlaylistSort name.
+    private val _libraryPlaylistSort = MutableStateFlow(prefs.getString(KEY_LIBRARY_PLAYLIST_SORT, null))
+    val libraryPlaylistSort: StateFlow<String?> = _libraryPlaylistSort.asStateFlow()
+    // Playlist ids in the listener's own order, for the Custom sort. Ids that
+    // are not listed right now stay in it: another profile's account playlists
+    // come back to their places when that profile does.
+    private val _libraryPlaylistOrder = MutableStateFlow(readLibraryPlaylistOrder())
+    val libraryPlaylistOrder: StateFlow<List<String>> = _libraryPlaylistOrder.asStateFlow()
 
     // The Subscriptions feed's own controls. Persisted for the reason the
     // Library sort is: they were held in composition state, and the tab lives
@@ -371,6 +387,8 @@ class ThemePreferences(context: Context) {
     // them; centred is the choice. Stored as "centred" so the default is false.
     private val _lyricsCentered = MutableStateFlow(getLyricsCenteredPreference())
     val lyricsCentered: StateFlow<Boolean> = _lyricsCentered.asStateFlow()
+    private val _lyricsRomanized = MutableStateFlow(getLyricsRomanizedPreference())
+    val lyricsRomanized: StateFlow<Boolean> = _lyricsRomanized.asStateFlow()
 
     // Two ways the app suggests things you did not ask for. Stated as what is
     // shown rather than what is hidden, so the switch position and the sentence
@@ -494,9 +512,11 @@ class ThemePreferences(context: Context) {
             KEY_CACHE_ENABLED -> _cacheEnabled.value = getCacheEnabledPreference()
             KEY_VIDEO_CACHE_ENABLED -> _videoCacheEnabled.value = getVideoCacheEnabledPreference()
             KEY_SHORTS_CACHE_ENABLED -> _shortsCacheEnabled.value = getShortsCacheEnabledPreference()
+            KEY_SHORTS_AUTO_ADVANCE -> _shortsAutoAdvance.value = prefs.getBoolean(KEY_SHORTS_AUTO_ADVANCE, false)
             KEY_PLAYBACK_PRELOAD_ENABLED -> _playbackPreloadEnabled.value = getPlaybackPreloadEnabledPreference()
             KEY_MAX_CACHE_SIZE_MB -> _maxCacheSizeMb.value = getMaxCacheSizeMbPreference()
             KEY_AUTO_LOAD_QUEUE -> _autoLoadQueue.value = getAutoLoadQueuePreference()
+            KEY_PITCH_CONTROL -> _pitchControlEnabled.value = prefs.getBoolean(KEY_PITCH_CONTROL, false)
             KEY_CROSSFADE_ENABLED -> _crossfadeEnabled.value = getCrossfadeEnabledPreference()
             KEY_CROSSFADE_AUTO -> _crossfadeAuto.value = getCrossfadeAutoPreference()
             KEY_CROSSFADE_DURATION -> _crossfadeDurationMs.value = getCrossfadeDurationPreference()
@@ -520,6 +540,7 @@ class ThemePreferences(context: Context) {
             KEY_LIBRARY_TAB -> _libraryTab.value = getLibraryTabPreference()
             KEY_LIBRARY_ARTIST_SORT -> _libraryArtistSort.value = prefs.getString(KEY_LIBRARY_ARTIST_SORT, null)
             KEY_LIBRARY_ALBUM_SORT -> _libraryAlbumSort.value = prefs.getString(KEY_LIBRARY_ALBUM_SORT, null)
+            KEY_LIBRARY_PLAYLIST_SORT -> _libraryPlaylistSort.value = prefs.getString(KEY_LIBRARY_PLAYLIST_SORT, null)
             KEY_SUBSCRIPTION_FEED_PERIOD ->
                 _subscriptionFeedPeriod.value = getSubscriptionFeedPeriodPreference()
             KEY_SUBSCRIPTION_FEED_ORDER ->
@@ -528,6 +549,7 @@ class ThemePreferences(context: Context) {
             KEY_STANDBY_SUGGEST -> _standbySuggest.value = getStandbySuggestPreference()
             KEY_STANDBY_DIM -> _standbyDim.value = getStandbyDimPreference()
             KEY_LYRICS_CENTERED -> _lyricsCentered.value = getLyricsCenteredPreference()
+            KEY_LYRICS_ROMANIZED -> _lyricsRomanized.value = getLyricsRomanizedPreference()
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
@@ -990,6 +1012,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_CACHE_ENABLED = "cache_enabled"
         private const val KEY_VIDEO_CACHE_ENABLED = "video_cache_enabled"
         private const val KEY_SHORTS_CACHE_ENABLED = "shorts_cache_enabled"
+        private const val KEY_SHORTS_AUTO_ADVANCE = "shorts_auto_advance"
         private const val KEY_PLAYBACK_PRELOAD_ENABLED = "playback_preload_enabled"
 
         /**
@@ -1022,8 +1045,17 @@ class ThemePreferences(context: Context) {
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration"
         private const val KEY_PLAYBACK_SHUFFLE = "playback_shuffle"
         private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
-        private const val KEY_PLAYBACK_SHUFFLE_SEED = "playback_shuffle_seed"
         private const val KEY_PLAYBACK_SPEED = "playback_speed"
+        private const val KEY_PITCH_CONTROL = "pitch_control_enabled"
+        private const val KEY_PLAYBACK_PITCH = "playback_pitch_semitones"
+
+        /** An octave either way: past that a voice is a cartoon, not a key change. */
+        const val MIN_PITCH_SEMITONES = -12
+        const val MAX_PITCH_SEMITONES = 12
+
+        /** The pitch factor for a shift of [semitones], equal-tempered. */
+        fun pitchFactor(semitones: Int): Float =
+            Math.pow(2.0, semitones / 12.0).toFloat()
         private const val KEY_SLEEP_TIMER_ENDS_AT = "sleep_timer_ends_at"
         private const val KEY_SLEEP_TIMER_END_OF_TRACK = "sleep_timer_end_of_track"
 
@@ -1081,13 +1113,20 @@ class ThemePreferences(context: Context) {
         private const val KEY_LIBRARY_SORT_OPTION = "library_sort_option"
         private const val KEY_LIBRARY_TAB = "library_tab"
         private const val KEY_LIBRARY_ARTIST_SORT = "library_artist_sort"
+        private const val KEY_PLAYLIST_TRACK_SORT_PREFIX = "playlist_track_sort_"
+        private const val KEY_LIBRARY_PLAYLIST_SORT = "library_playlist_sort"
+        private const val KEY_LIBRARY_PLAYLIST_ORDER = "library_playlist_order"
         private const val KEY_LIBRARY_ALBUM_SORT = "library_album_sort"
         private const val KEY_SUBSCRIPTION_FEED_PERIOD = "subscription_feed_period"
         private const val KEY_SUBSCRIPTION_FEED_ORDER = "subscription_feed_order"
         private const val KEY_HIDE_WATCHED_IN_FEED = "hide_watched_in_feed"
         private const val KEY_STANDBY_SUGGEST = "standby_suggest_charging"
         private const val KEY_STANDBY_DIM = "standby_dim_idle"
+        private const val KEY_STANDBY_FACE = "standby_face"
+        private const val KEY_STANDBY_STACK_PREFIX = "standby_stack_"
+        private const val KEY_STANDBY_LOOK_PREFIX = "standby_look_"
         private const val KEY_LYRICS_CENTERED = "lyrics_centered"
+        private const val KEY_LYRICS_ROMANIZED = "lyrics_romanized"
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
         private const val KEY_INLINE_PREVIEWS = "inline_previews"
@@ -2410,6 +2449,11 @@ class ThemePreferences(context: Context) {
         _shortsCacheEnabled.value = enabled
     }
 
+    fun setShortsAutoAdvance(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHORTS_AUTO_ADVANCE, enabled).apply()
+        _shortsAutoAdvance.value = enabled
+    }
+
     private fun getPlaybackPreloadEnabledPreference(): Boolean = prefs.getBoolean(KEY_PLAYBACK_PRELOAD_ENABLED, true)
 
     fun setPlaybackPreloadEnabled(enabled: Boolean) {
@@ -2450,6 +2494,33 @@ class ThemePreferences(context: Context) {
     fun setAutoLoadQueue(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTO_LOAD_QUEUE, enabled).apply()
         _autoLoadQueue.value = enabled
+    }
+
+    // --- Pitch ---
+
+    /** Fresh read: whether the pitch control is offered, and so whether a stored pitch applies. */
+    fun isPitchControlEnabled(): Boolean = prefs.getBoolean(KEY_PITCH_CONTROL, false)
+
+    /**
+     * Turning the control off also puts the pitch back to normal: a shift the
+     * listener can no longer see or undo would sound like a broken song.
+     */
+    fun setPitchControlEnabled(enabled: Boolean) {
+        prefs.edit().apply {
+            putBoolean(KEY_PITCH_CONTROL, enabled)
+            if (!enabled) putInt(KEY_PLAYBACK_PITCH, 0)
+        }.apply()
+        _pitchControlEnabled.value = enabled
+    }
+
+    /** The stored pitch shift in semitones, whether or not the control is on. */
+    fun getPlaybackPitchSemitones(): Int =
+        prefs.getInt(KEY_PLAYBACK_PITCH, 0).coerceIn(MIN_PITCH_SEMITONES, MAX_PITCH_SEMITONES)
+
+    fun setPlaybackPitchSemitones(semitones: Int) {
+        prefs.edit()
+            .putInt(KEY_PLAYBACK_PITCH, semitones.coerceIn(MIN_PITCH_SEMITONES, MAX_PITCH_SEMITONES))
+            .apply()
     }
 
     // --- Crossfade Settings ---
@@ -2525,12 +2596,6 @@ class ThemePreferences(context: Context) {
                 speed.coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
             )
             .apply()
-    }
-
-    fun getPlaybackShuffleSeed(): Long = prefs.getLong(KEY_PLAYBACK_SHUFFLE_SEED, 0L)
-
-    fun setPlaybackShuffleSeed(seed: Long) {
-        prefs.edit().putLong(KEY_PLAYBACK_SHUFFLE_SEED, seed).apply()
     }
 
     fun getSleepTimerEndsAt(): Long = prefs.getLong(KEY_SLEEP_TIMER_ENDS_AT, 0L)
@@ -2731,6 +2796,46 @@ class ThemePreferences(context: Context) {
         _libraryAlbumSort.value = sortName
     }
 
+    fun setLibraryPlaylistSort(sortName: String) {
+        prefs.edit().putString(KEY_LIBRARY_PLAYLIST_SORT, sortName).apply()
+        _libraryPlaylistSort.value = sortName
+    }
+
+    private fun readLibraryPlaylistOrder(): List<String> {
+        val stored = prefs.getString(KEY_LIBRARY_PLAYLIST_ORDER, null) ?: return emptyList()
+        return try {
+            val ids = org.json.JSONArray(stored)
+            List(ids.length()) { ids.getString(it) }
+        } catch (e: org.json.JSONException) {
+            emptyList()
+        }
+    }
+
+    /** Puts [ids] first, in that order, and keeps every id not listed after them. */
+    fun setLibraryPlaylistOrder(ids: List<String>) {
+        val order = (ids + _libraryPlaylistOrder.value).distinct()
+        prefs.edit().putString(KEY_LIBRARY_PLAYLIST_ORDER, org.json.JSONArray(order).toString()).apply()
+        _libraryPlaylistOrder.value = order
+    }
+
+    /**
+     * How one playlist's tracks are shown, kept per playlist the way other
+     * players keep it: "Name:asc" or "Name:desc", a PlaylistTrackSort name and
+     * a direction, both frozen. Null for a playlist never sorted, which shows
+     * its own order. Read once when the page opens, so no flow; in this store
+     * so backups carry it with the other sorts.
+     */
+    fun getPlaylistTrackSort(playlistId: String): String? =
+        prefs.getString(KEY_PLAYLIST_TRACK_SORT_PREFIX + playlistId, null)
+
+    /** Null clears it, so a playlist put back in its own order leaves no key. */
+    fun setPlaylistTrackSort(playlistId: String, value: String?) {
+        prefs.edit().apply {
+            if (value == null) remove(KEY_PLAYLIST_TRACK_SORT_PREFIX + playlistId)
+            else putString(KEY_PLAYLIST_TRACK_SORT_PREFIX + playlistId, value)
+        }.apply()
+    }
+
     private fun getSubscriptionFeedPeriodPreference(): String =
         prefs.getString(KEY_SUBSCRIPTION_FEED_PERIOD, "") ?: ""
 
@@ -2776,12 +2881,44 @@ class ThemePreferences(context: Context) {
         _standbyDim.value = dim
     }
 
+    /**
+     * Standby's chosen face and what each widget stack was last left on, by
+     * stored id (`StandbyFace.id`, `StandbyWidget.id`: frozen). Read once
+     * when Standby opens and written as the listener swipes, so no flow.
+     */
+    fun getStandbyFace(): String? = prefs.getString(KEY_STANDBY_FACE, null)
+
+    fun setStandbyFace(id: String) {
+        prefs.edit().putString(KEY_STANDBY_FACE, id).apply()
+    }
+
+    /** One of Standby's look choices (clock style, colour, background), by frozen id. */
+    fun getStandbyLook(key: String): String? = prefs.getString("$KEY_STANDBY_LOOK_PREFIX$key", null)
+
+    fun setStandbyLook(key: String, id: String) {
+        prefs.edit().putString("$KEY_STANDBY_LOOK_PREFIX$key", id).apply()
+    }
+
+    fun getStandbyStackWidget(stack: Int): String? = prefs.getString("$KEY_STANDBY_STACK_PREFIX$stack", null)
+
+    fun setStandbyStackWidget(stack: Int, id: String) {
+        prefs.edit().putString("$KEY_STANDBY_STACK_PREFIX$stack", id).apply()
+    }
+
     private fun getLyricsCenteredPreference(): Boolean =
         prefs.getBoolean(KEY_LYRICS_CENTERED, false)
 
     fun setLyricsCentered(centered: Boolean) {
         prefs.edit().putBoolean(KEY_LYRICS_CENTERED, centered).apply()
         _lyricsCentered.value = centered
+    }
+
+    private fun getLyricsRomanizedPreference(): Boolean =
+        prefs.getBoolean(KEY_LYRICS_ROMANIZED, false)
+
+    fun setLyricsRomanized(romanized: Boolean) {
+        prefs.edit().putBoolean(KEY_LYRICS_ROMANIZED, romanized).apply()
+        _lyricsRomanized.value = romanized
     }
 
     private fun getShowRecentSearchesPreference(): Boolean =

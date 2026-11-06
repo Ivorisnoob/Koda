@@ -1,30 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Picker preview for the Orbit widget (1x1): round cover with the hero
-    centred on it. The hero sits on a dark scrim circle, like the widget.
+    Picker preview for the Orbit widget (1x1): the cover as a disc with the
+    hero tucked against its lower edge. No card and no scrim, like the widget.
+    The disc and the badge share one fixed square so a preview frame that is
+    not square cannot pull them apart.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ImageView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:contentDescription="@null"
-        android:scaleType="centerCrop"
-        android:src="@drawable/widget_preview_art_circle" />
-
     <FrameLayout
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="center"
-        android:background="@drawable/widget_preview_scrim">
+        android:layout_width="86dp"
+        android:layout_height="86dp"
+        android:layout_gravity="center">
 
         <ImageView
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:layout_gravity="center"
-            android:contentDescription="@string/widget_action_play"
-            android:src="@drawable/ic_media_play" />
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:src="@drawable/widget_preview_cover_circle" />
+
+        <FrameLayout
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="bottom|end"
+            android:background="@drawable/widget_preview_play">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/widget_action_play"
+                android:tint="#FF5E1133"
+                android:src="@drawable/ic_media_play" />
+        </FrameLayout>
     </FrameLayout>
 </FrameLayout>

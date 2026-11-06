@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.player
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
@@ -94,7 +95,7 @@ fun AddToPlaylistSheet(
         )
     }
 
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         contentWindowInsets = { WindowInsets(0) },

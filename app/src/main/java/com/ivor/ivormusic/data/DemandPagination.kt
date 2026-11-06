@@ -17,7 +17,7 @@ internal class DemandPagination<C : Any> {
     val state = mutableState.asStateFlow()
     private var next: C? = null
     private var active: Request<C>? = null
-    private val consumed = mutableSetOf<C>()
+    private val consumed = java.util.concurrent.ConcurrentHashMap.newKeySet<C>()
 
     fun reset() {
         active = null

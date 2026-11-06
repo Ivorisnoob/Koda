@@ -118,6 +118,8 @@ class LocalVideoRepository(private val context: Context) {
             // changing it from system settings. An empty library reads the same
             // as a device with no videos, which is the honest answer here.
             KLog.w("LocalVideoRepo", "Media access refused while listing videos", e)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e("LocalVideoRepo", "Failed to list device videos", e)
         }

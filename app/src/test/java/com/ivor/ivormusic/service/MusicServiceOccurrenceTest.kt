@@ -124,7 +124,7 @@ class MusicServiceOccurrenceTest {
         init {
             set("engine", engine)
             set("serviceScope", ownedScope)
-            set("activeResolutions", resolutions)
+            useResolutions(resolutions)
             set("isNormalizeVolumeEnabled", false)
             set("isAutoMixEnabled", false)
             set("audioProfileStore", mock(AudioProfileStore::class.java))
@@ -133,6 +133,22 @@ class MusicServiceOccurrenceTest {
             MusicService::class.java.getDeclaredField(name).apply { isAccessible = true }.set(service, value)
         }
         fun get(name: String): Any? = MusicService::class.java.getDeclaredField(name).apply { isAccessible = true }.get(service)
+        /** A property built on first use, which has a getter rather than a field. */
+        @Suppress("UNCHECKED_CAST")
+        fun <T> property(name: String): T =
+            MusicService::class.java.getDeclaredMethod("get" + name.replaceFirstChar { it.uppercase() })
+                .apply { isAccessible = true }.invoke(service) as T
+        /** Resolution answers come from [flight]; nothing reaches a repository unless a test sets one. */
+        fun useResolutions(flight: DeferredSingleFlight<String, MediaItem>) {
+            set("streamResolver", MusicStreamResolver(
+                resolveScope = ownedScope,
+                youtube = { get("youtubeRepository") as YouTubeRepository },
+                downloadedSongs = { emptyList() },
+                cacheEnabled = { false },
+                cachedSong = { null },
+                singleFlight = flight,
+            ))
+        }
         fun call(name: String, vararg args: Any) {
             MusicService::class.java.declaredMethods.single { it.name == name }.apply { isAccessible = true }.invoke(service, *args)
         }
@@ -191,7 +207,7 @@ class MusicServiceOccurrenceTest {
             f.outgoing.index = 2 // Outgoing end event during the former wait.
             pending.complete(item("a", "a1"))
             delay(50L)
-            assertTrue("the user request must have selected a track", f.outgoing.seeks.isNotEmpty())
+            assertEquals("Previous must select the row before, once", listOf(0 to 0L), f.outgoing.seeks)
         }
     }
 
@@ -346,16 +362,12 @@ class MusicServiceOccurrenceTest {
                 doAnswer { call -> strings[call.arguments[0] as String] }
                     .`when`(bundle).getString(anyString())
             }.use {
-                val callbackClass = MusicService::class.java.declaredClasses.single { it.simpleName == "LibrarySessionCallback" }
-                val callback = callbackClass.getDeclaredConstructor(MusicService::class.java)
-                    .apply { isAccessible = true }.newInstance(f.service)
-                val prepare = callbackClass.getDeclaredMethod("preparePlaybackItem", MediaItem::class.java)
-                    .apply { isAccessible = true }
+                val requested = f.property<RequestedMediaItems>("requestedItems")
                 val external = MediaItem.Builder().setMediaId("same")
                     .setMediaMetadata(MediaMetadata.Builder().setTitle("same").build()).build()
-                val first = prepare.invoke(callback, external) as MediaItem
-                val duplicate = prepare.invoke(callback, external) as MediaItem
-                val retapped = prepare.invoke(callback, external) as MediaItem
+                val first = requested.prepare(external)
+                val duplicate = requested.prepare(external)
+                val retapped = requested.prepare(external)
                 assertNotNull("external items need occurrence IDs too", first.queueItemId)
                 assertFalse(first.isSameQueueItemAs(duplicate))
                 assertFalse(first.isSameQueueItemAs(retapped))
@@ -422,27 +434,30 @@ class MusicServiceOccurrenceTest {
     @Test fun `403 recovery cannot reset a replacement queue after visitor refresh suspends`() = runBlocking {
         Fixture(this).use { f ->
             val failed = item("a", "a1")
-            `when`(failed.localConfiguration!!.uri.getQueryParameter("c")).thenReturn("IOS")
             f.outgoing.items += listOf(failed, item("b", "b1"))
             val repository = mock(YouTubeRepository::class.java)
             f.set("youtubeRepository", repository)
-            f.set("activeResolutions", mock(DeferredSingleFlight::class.java) { call ->
+            @Suppress("UNCHECKED_CAST")
+            f.useResolutions(mock(DeferredSingleFlight::class.java) { call ->
                 when (call.method.name) {
                     "contains" -> false
                     "getOrStart" -> CompletableDeferred(failed)
                     else -> null
                 }
-            })
+            } as DeferredSingleFlight<String, MediaItem>)
             val refreshing = CompletableDeferred<Continuation<Unit>>()
             doAnswer { call ->
                 @Suppress("UNCHECKED_CAST")
                 refreshing.complete(call.rawArguments.last() as Continuation<Unit>)
                 COROUTINE_SUSPENDED
-            }.`when`(repository).refreshVisitorDataAfterPlaybackFailure()
+            // Whatever URL the refusal carries: stubbing the no-argument call
+            // matched only a null one, and a miss left the await below hanging.
+            }.`when`(repository).refreshVisitorDataAfterPlaybackFailure(any())
             val cause = mock(HttpDataSource.InvalidResponseCodeException::class.java)
             HttpDataSource.InvalidResponseCodeException::class.java.getField("responseCode").apply { isAccessible = true }.setInt(cause, 403)
-            f.call("handlePlayerError", PlaybackException("403", cause, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
-            val continuation = refreshing.await()
+            f.property<PlaybackRecovery>("playbackRecovery")
+                .onError(PlaybackException("403", cause, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
+            val continuation = withTimeout(2_000L) { refreshing.await() }
             f.outgoing.items[0] = item("a", "a2")
             f.outgoing.items[1] = item("b", "b2")
             continuation.resume(Unit)
@@ -563,7 +578,7 @@ class MusicServiceOccurrenceTest {
         }
     }
 
-    @Test fun `old prefetch cannot suppress warming the same track in a replacement queue`() = runBlocking {
+    @Test fun `old prefetch cannot suppress the same track's prefetch in a replacement queue`() = runBlocking {
         Fixture(this).use { f ->
             f.outgoing.items += listOf(item("a", "a1"), item("b", "b1", true))
             val pending = f.pending("b")

@@ -29,8 +29,22 @@ class MusicServiceBrowserTest {
         val callback: MediaLibrarySession.Callback
         init {
             set("serviceScope", ownedScope)
-            set("browseSongs", songs)
-            set("localBrowseSongs", songs)
+            // Nothing these tests reach loads from a repository: every answer is in the caches.
+            val unused: () -> Nothing = { error("not reached in these tests") }
+            set("browseTree", MusicBrowseTree(
+                context = service,
+                mainScope = ownedScope,
+                ioScope = ownedScope,
+                youtube = unused,
+                downloadedSongs = unused,
+                likedSongs = unused,
+                statsRepository = unused,
+                songRepository = unused,
+                preferences = unused,
+                notifyChildrenChanged = { _, _ -> },
+                songCache = songs,
+                localSongCache = songs,
+            ))
             val type = MusicService::class.java.declaredClasses.single { it.simpleName == "LibrarySessionCallback" }
             callback = type.getDeclaredConstructor(MusicService::class.java).apply { isAccessible = true }
                 .newInstance(service) as MediaLibrarySession.Callback

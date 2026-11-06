@@ -215,11 +215,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Πατήστε για ακρόαση</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Εξώφυλλο, κομμάτι και αναπαραγωγή· προσθέστε σειρά για πρόοδο και παράλειψη</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Μόνο τα χειριστήρια, με τυχαία σειρά και επανάληψη</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Ψηλό player με εξώφυλλο, πρόοδο και όλα τα χειριστήρια</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Τι παίζει και τι ακολουθεί· πατήστε κομμάτι για μετάβαση</string>
     <string name="widget_bloom_label">Bloom</string>
@@ -366,4 +361,10 @@
     <string name="subscribed">Εγγεγραμμένος</string>
     <string name="subscribe">Εγγραφή</string>
     <string name="like">Μου αρέσει</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Ταξινόμηση καναλιών</string>
+    <string name="subscription_sort_official">Στυλ YouTube (πρόσφατη δραστηριότητα)</string>
+    <string name="subscription_sort_recent">Πρώτα οι πιο πρόσφατες αναρτήσεις</string>
+    <string name="subscription_sort_name">Όνομα καναλιού (Α–Ω)</string>
+    <string name="subscription_sort_oldest">Πρώτα οι παλαιότερες αναρτήσεις</string>
 </resources>

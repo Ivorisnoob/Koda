@@ -216,11 +216,6 @@
     <!-- Top-visible sweep Sep 2026 -->
     <string name="widget_tap_to_listen">Toucher pour écouter</string>
     <string name="widget_pulse_label">Pulse</string>
-    <string name="widget_pulse_description">Pochette, titre et lecture ; ajoutez une ligne pour la progression et le saut</string>
-    <string name="widget_console_label">Console</string>
-    <string name="widget_console_description">Juste les contrôles, avec lecture aléatoire et répétition</string>
-    <string name="widget_deck_label">Deck</string>
-    <string name="widget_deck_description">Un lecteur haut avec pochette, progression et tous les contrôles</string>
     <string name="widget_lineup_label">Lineup</string>
     <string name="widget_lineup_description">Ce qui joue et ce qui suit ; touchez un titre pour y aller</string>
     <string name="widget_bloom_label">Bloom</string>
@@ -367,4 +362,10 @@
     <string name="subscribed">Abonné</string>
     <string name="subscribe">S\'abonner</string>
     <string name="like">J\'aime</string>
+    <!-- Subscription channel rail sorting -->
+    <string name="subscription_channel_sort">Trier les chaînes</string>
+    <string name="subscription_sort_official">Style YouTube (activité récente)</string>
+    <string name="subscription_sort_recent">Vidéos les plus récentes d’abord</string>
+    <string name="subscription_sort_name">Nom de la chaîne (A–Z)</string>
+    <string name="subscription_sort_oldest">Vidéos les plus anciennes d’abord</string>
 </resources>

@@ -206,6 +206,10 @@ internal fun buildSettingsSearchIndex(
         "lyrics_alignment", stringResource(R.string.lyrics_alignment), stringResource(R.string.lyrics_settings_title), Icons.Rounded.MusicNote,
         listOf("lyrics", "align", "alignment", "left", "centre", "center", "centered", "justify", "layout")
     ) { onOpenPage(SettingsPage.LYRICS) }
+    entry(
+        "lyrics_romanized", stringResource(R.string.lyrics_romanized), stringResource(R.string.lyrics_settings_title), Icons.Rounded.MusicNote,
+        listOf("lyrics", "romanized", "romanised", "romaji", "pinyin", "phonetic", "transliterate", "japanese", "korean", "chinese", "hindi")
+    ) { onOpenPage(SettingsPage.LYRICS) }
 
     entry("lastfm", stringResource(R.string.lastfm_title), "Last.fm", Icons.Rounded.History,
         listOf("lastfm", "last.fm", "scrobble", "scrobbling", "sync", "api key", "login", "listening history")) {
@@ -471,6 +475,11 @@ internal fun buildSettingsSearchIndex(
         "autoqueue", stringResource(R.string.sp_auto_load_queue), stringResource(R.string.settings_playback_and_quality),
         Icons.AutoMirrored.Rounded.QueueMusic,
         listOf("queue", "autoplay", "radio", "recommended", "keep playing", "endless")
+    ) { onOpenPage(SettingsPage.PLAYBACK) }
+    entry(
+        "pitch_control", stringResource(R.string.sp_pitch_control), stringResource(R.string.settings_playback_and_quality),
+        Icons.Rounded.GraphicEq,
+        listOf("pitch", "key", "semitone", "transpose", "karaoke", "tune", "lower", "higher")
     ) { onOpenPage(SettingsPage.PLAYBACK) }
     entry(
         "music_history", stringResource(R.string.sp_save_listening_history), stringResource(R.string.settings_playback_and_quality),

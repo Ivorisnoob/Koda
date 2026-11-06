@@ -361,6 +361,8 @@ class NotInterestedRepository(context: Context) {
                     hiddenAt = obj.optLong("hiddenAt", 0L)
                 )
             }.distinctBy { it.videoId }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load hidden videos", e)
             emptyList()
@@ -398,6 +400,8 @@ class NotInterestedRepository(context: Context) {
                     blockedAt = obj.optLong("blockedAt", 0L)
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load blocked channels", e)
             emptyList()

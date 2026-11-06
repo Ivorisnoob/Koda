@@ -53,6 +53,8 @@ class DownloadService : Service() {
             val intent = Intent(context, DownloadService::class.java)
             try {
                 ContextCompat.startForegroundService(context, intent)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Could not start download service: ${e.message}")
             }
@@ -61,6 +63,8 @@ class DownloadService : Service() {
         fun stop(context: Context) {
             try {
                 context.stopService(Intent(context, DownloadService::class.java))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Could not stop download service: ${e.message}")
             }
@@ -74,7 +78,7 @@ class DownloadService : Service() {
 
     /** Artwork URLs already being fetched, so a fast progress stream does not
      *  kick off the same load dozens of times. */
-    private val artworkRequested = mutableSetOf<String>()
+    private val artworkRequested = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -221,6 +225,8 @@ class DownloadService : Service() {
                 }
             )
             true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.w(TAG, "startForeground refused: ${e.message}")
             false

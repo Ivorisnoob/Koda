@@ -148,7 +148,14 @@ fun VideoHomeContent(
      * Off by default here as well as in preferences: a caller that has not
      * thought about it gets the feed that does not move on its own.
      */
-    inlinePreviews: Boolean = false
+    inlinePreviews: Boolean = false,
+    /**
+     * How far the floating navigation bar has left, 0 to 1. The top bar follows
+     * it back as soon as the page scrolls up, rather than waiting for the top
+     * of the list. A host whose bar never hides answers 1, and the top bar
+     * stays with the list. Read in the draw phase only.
+     */
+    navigationHiddenFraction: () -> Float
 ) {
     // Null when the setting is off, and then the cards read a null local and
     // draw exactly what they drew before this existed.
@@ -180,6 +187,7 @@ fun VideoHomeContent(
     val showOfflineDownloads = isOffline && downloadedVideos.isNotEmpty()
     val isShortsLoading by viewModel.isShortsLoading.collectAsState()
     val listLayout = LocalVideoListLayout.current
+    val videoGridColumns = com.ivor.ivormusic.ui.video.rememberVideoGridColumns()
     val shortsFeedFailed by viewModel.shortsFeedFailed.collectAsState()
 
     // Notifications sheet state
@@ -188,6 +196,9 @@ fun VideoHomeContent(
     val notifications by viewModel.notifications.collectAsState()
     val isNotificationsLoading by viewModel.isNotificationsLoading.collectAsState()
     val hiddenNotificationCount by viewModel.hiddenNotificationCount.collectAsState()
+    val hasMoreNotifications by viewModel.hasMoreNotifications.collectAsState()
+    val isNotificationsLoadingMore by viewModel.isNotificationsLoadingMore.collectAsState()
+    val notificationsLoadMoreFailed by viewModel.notificationsLoadMoreFailed.collectAsState()
 
     // Options sheet (long-press on a video card)
     var saveTargetVideo by remember { mutableStateOf<VideoItem?>(null) }
@@ -207,6 +218,10 @@ fun VideoHomeContent(
             notifications = notifications,
             isLoading = isNotificationsLoading,
             hiddenCount = hiddenNotificationCount,
+            hasMore = hasMoreNotifications,
+            isLoadingMore = isNotificationsLoadingMore,
+            loadMoreFailed = notificationsLoadMoreFailed,
+            onLoadMore = viewModel::loadMoreNotifications,
             onHide = viewModel::hideNotification,
             onRestoreHidden = viewModel::restoreHiddenNotifications,
             onRefresh = { viewModel.loadNotifications(force = true) },
@@ -336,6 +351,27 @@ fun VideoHomeContent(
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalInlinePreview provides previewController
             ) {
+            val topBar: @Composable () -> Unit = {
+                VideoTopBarSection(
+                    onProfileClick = onProfileClick,
+                    onSettingsClick = onSettingsClick,
+                    onDownloadsClick = onDownloadsClick,
+                    onNotificationsClick = {
+                        if (isYouTubeConnected) {
+                            viewModel.loadNotifications(force = true)
+                            showNotificationsSheet = true
+                        } else {
+                            onProfileClick()
+                        }
+                    },
+                    viewModel = viewModel,
+                    videoMode = videoMode,
+                    onVideoModeToggle = onVideoModeToggle,
+                    showModeToggle = showModeToggle,
+                    modeToggleState = modeToggleState
+                )
+            }
+            Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -345,26 +381,7 @@ fun VideoHomeContent(
                 verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp)
             ) {
                 // Top Bar
-                item {
-                    VideoTopBarSection(
-                        onProfileClick = onProfileClick,
-                        onSettingsClick = onSettingsClick,
-                        onDownloadsClick = onDownloadsClick,
-                        onNotificationsClick = {
-                            if (isYouTubeConnected) {
-                                viewModel.loadNotifications(force = true)
-                                showNotificationsSheet = true
-                            } else {
-                                onProfileClick()
-                            }
-                        },
-                        viewModel = viewModel,
-                        videoMode = videoMode,
-                        onVideoModeToggle = onVideoModeToggle,
-                        showModeToggle = showModeToggle,
-                        modeToggleState = modeToggleState
-                    )
-                }
+                item { topBar() }
                 
                 // Section title - changes based on whether user is logged in
                 // or recommendations are disabled (in which case subscriptions are shown).
@@ -392,12 +409,27 @@ fun VideoHomeContent(
                 }
                 
                 if (showOfflineDownloads) {
-                    items(downloadedVideos, key = { "download_${it.id}" }) { downloaded ->
-                        VideoCard(
-                            video = downloaded.asOfflineVideoItem(),
-                            onClick = { onDownloadedVideoClick(downloaded) },
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
+                    // The same window-derived column count the online feed
+                    // uses, so offline downloads are not a single stretched
+                    // card per row on a tablet.
+                    val offlinePerRow = videoGridColumns.coerceAtLeast(1)
+                    items(
+                        downloadedVideos.chunked(offlinePerRow),
+                        key = { row -> "download_" + row.first().id }
+                    ) { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            row.forEach { downloaded ->
+                                VideoCard(
+                                    video = downloaded.asOfflineVideoItem(),
+                                    onClick = { onDownloadedVideoClick(downloaded) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            repeat(offlinePerRow - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 } else {
                     // Video cards, with the Shorts shelf slotted in after the
@@ -422,6 +454,7 @@ fun VideoHomeContent(
                         posts = if (shortsEnabled) emptyList() else feedPosts,
                         layout = listLayout,
                         keyPrefix = "lead_",
+                        columns = videoGridColumns,
                         post = feedPostCard
                     ) { video, cell ->
                         VideoCard(
@@ -450,6 +483,7 @@ fun VideoHomeContent(
                         posts = feedPosts,
                         layout = listLayout,
                         keyPrefix = "trail_",
+                        columns = videoGridColumns,
                         post = feedPostCard
                     ) { video, cell ->
                         VideoCard(
@@ -539,6 +573,28 @@ fun VideoHomeContent(
                 }
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
+            }
+
+            // The list's own top bar comes back only with the top of the list,
+            // so a copy rides with the navigation bar over it. It stays until
+            // the list is fully at the top, where the two lie exactly over each
+            // other and the swap cannot be seen.
+            val scrolledAway by remember(listState) {
+                androidx.compose.runtime.derivedStateOf {
+                    listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                }
+            }
+            if (scrolledAway) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { translationY = -size.height * navigationHiddenFraction() }
+                        .background(backgroundColor)
+                        .padding(top = contentPadding.calculateTopPadding())
+                ) {
+                    topBar()
+                }
+            }
             }
             }
         }
@@ -960,7 +1016,11 @@ fun VideoCard(
                 // on screen every frame.
                 val preview = LocalInlinePreview.current
                 val visibleFraction = remember(video.videoId) { mutableFloatStateOf(0f) }
-                val isPreviewing = preview?.previewingId == video.videoId
+                // Non-null only while this card is the one previewing. Keeping
+                // the claim in one nullable val means every gate below is a
+                // plain null check the compiler can smart-cast, instead of a
+                // boolean that leaves `preview` nullable inside the branch.
+                val activePreview = preview?.takeIf { it.previewingId == video.videoId }
 
                 // Thumbnail with duration overlay
                 Box(
@@ -996,13 +1056,13 @@ fun VideoCard(
                     // frame can only render into a surface. The player had
                     // nowhere to draw, onRenderedFirstFrame never fired, and
                     // the condition guarding the surface stayed false forever.
-                    if (isPreviewing && preview != null) {
+                    if (activePreview != null) {
                         val previewAlpha by animateFloatAsState(
-                            targetValue = if (preview.isRendering) 1f else 0f,
+                            targetValue = if (activePreview.isRendering) 1f else 0f,
                             label = "previewAlpha"
                         )
                         InlinePreviewSurface(
-                            controller = preview,
+                            controller = activePreview,
                             modifier = Modifier
                                 .matchParentSize()
                                 .graphicsLayer { alpha = previewAlpha }
@@ -1034,9 +1094,9 @@ fun VideoCard(
                     // How far the preview has got, on the card itself. Drawn
                     // only while previewing, so a card at rest is exactly the
                     // card it was before this feature existed.
-                    if (isPreviewing && preview != null && preview.isRendering) {
+                    if (activePreview != null && activePreview.isRendering) {
                         androidx.compose.material3.LinearProgressIndicator(
-                            progress = { preview.progress },
+                            progress = { activePreview.progress },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(3.dp)
@@ -1053,9 +1113,9 @@ fun VideoCard(
                     // silences it again. Fixed black scrim like the duration
                     // badge, so it reads in either theme. The button consumes
                     // the tap, so the card itself does not open.
-                    if (isPreviewing && preview != null && preview.isRendering) {
+                    if (activePreview != null && activePreview.isRendering) {
                         androidx.compose.material3.IconButton(
-                            onClick = { preview.setPreviewMuted(!preview.isMuted) },
+                            onClick = { activePreview.setPreviewMuted(!activePreview.isMuted) },
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .padding(8.dp)
@@ -1066,13 +1126,13 @@ fun VideoCard(
                             )
                         ) {
                             Icon(
-                                imageVector = if (preview.isMuted) {
+                                imageVector = if (activePreview.isMuted) {
                                     Icons.AutoMirrored.Rounded.VolumeOff
                                 } else {
                                     Icons.AutoMirrored.Rounded.VolumeUp
                                 },
                                 contentDescription = stringResource(
-                                    if (preview.isMuted) R.string.cd_volume_unmute
+                                    if (activePreview.isMuted) R.string.cd_volume_unmute
                                     else R.string.cd_volume_mute
                                 ),
                                 modifier = Modifier.size(20.dp)

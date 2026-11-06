@@ -78,6 +78,19 @@ class LocalSubscriptionsRepository(context: Context) {
     fun getAllSortedByName(): List<LocalSubscription> =
         subscriptionsState.value.sortedBy { it.name.lowercase() }
 
+    /** Moves one local subscription within the persisted list. */
+    fun moveSubscription(channelId: String, offset: Int) {
+        if (offset == 0) return
+        val current = subscriptionsState.value
+        val from = current.indexOfFirst { it.channelId == channelId }
+        val to = from + offset
+        if (from < 0 || to !in current.indices) return
+        val next = current.toMutableList()
+        val item = next.removeAt(from)
+        next.add(to, item)
+        saveSubscriptions(next)
+    }
+
     fun isSubscribed(channelId: String?): Boolean {
         if (channelId.isNullOrBlank()) return false
         return subscriptionsState.value.any { it.channelId == channelId }
@@ -260,6 +273,8 @@ class LocalSubscriptionsRepository(context: Context) {
                     subscribedAt = obj.optLong("subscribedAt", 0L)
                 )
             }.distinctBy { it.channelId }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load local subscriptions", e)
             emptyList()
@@ -295,6 +310,8 @@ class LocalSubscriptionsRepository(context: Context) {
                     }
                 )
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(TAG, "Failed to load subscription groups", e)
             emptyList()

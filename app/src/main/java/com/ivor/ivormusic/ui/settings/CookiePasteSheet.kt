@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.settings
+import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 
@@ -95,7 +96,7 @@ fun CookiePasteSheet(
     val hasInput = normalized.isNotBlank()
     val isValid = hasInput && missing.isEmpty()
 
-    ModalBottomSheet(
+    AdaptiveModalSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,

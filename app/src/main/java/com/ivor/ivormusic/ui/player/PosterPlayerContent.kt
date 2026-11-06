@@ -121,13 +121,13 @@ fun PosterPlayerSheetContent(
     val duration by viewModel.duration.collectAsState()
     val shuffleModeEnabled by viewModel.shuffleModeEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
-    val currentQueue by viewModel.playOrderQueue.collectAsState()
+    val currentQueue by viewModel.currentQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val isFavorite by viewModel.isCurrentSongLiked.collectAsState()
     val lyricsResult by viewModel.lyricsResult.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
 
-    var showQueue by remember { mutableStateOf(false) }
+    var showQueue by rememberPlayerQueueOpen()
     var showLyrics by remember { mutableStateOf(false) }
     var showOptions by rememberNowPlayingOptionsOpen()
 
@@ -183,8 +183,7 @@ fun PosterPlayerSheetContent(
                     currentQueueItemId = currentQueueItemId,
                     onQueueItemClick = { item -> viewModel.skipToQueueItem(item.id) },
                     onRemoveItem = { item -> viewModel.removeQueueItem(item.id) },
-                    onMoveSong = { from, to -> viewModel.movePlayOrderItem(from, to, persist = false) },
-                    onCommitOrder = { viewModel.commitQueueOrder() },
+                    onMoveSong = { from, to -> viewModel.moveQueueItem(from, to) },
                     onUndoRemove = { viewModel.undoQueueRemoval() },
                     onLoadMore = onLoadMore,
                     isLoadingMore = isLoadingMore,

@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Subscriptions
+import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -58,10 +60,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -72,6 +77,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -93,9 +100,11 @@ import com.ivor.ivormusic.ui.components.SearchEmptyState
 import com.ivor.ivormusic.ui.components.SearchField
 import com.ivor.ivormusic.ui.components.SkeletonList
 import com.ivor.ivormusic.ui.components.VideoCardSkeleton
+import com.ivor.ivormusic.data.SubscriptionPostsIssue
 import com.ivor.ivormusic.ui.home.HomeViewModel
 import com.ivor.ivormusic.util.MatchField
 import com.ivor.ivormusic.util.fuzzyScore
+import kotlinx.coroutines.launch
 
 private enum class SubscriptionFeedPeriod(val label: String, val ageMs: Long?) {
     ALL("Any time", null),
@@ -106,6 +115,32 @@ private enum class SubscriptionFeedPeriod(val label: String, val ageMs: Long?) {
 private enum class SubscriptionFeedOrder(val label: String) {
     NEWEST("Newest first"),
     OLDEST("Oldest first")
+}
+
+/**
+ * The feed in [order]. Each video's time is read once, against one clock
+ * reading: a comparator that re-parsed "2 days ago" against a fresh clock on
+ * every comparison gave equal phrases different times from one comparison to
+ * the next, and the order came out different on every pass. Equal times keep
+ * the order they arrived in (the source's own newest-first order), and Oldest
+ * is exactly Newest reversed, so a tie is not newest first inside an
+ * oldest-first list. Videos with no readable time stay at the bottom in both.
+ */
+private fun sortFeedByTime(
+    videos: List<VideoItem>,
+    order: SubscriptionFeedOrder,
+    now: Long
+): List<VideoItem> {
+    val (dated, undated) = videos
+        .mapIndexed { index, video ->
+            Triple(video, index, video.publishedAtMs ?: VideoItem.parseRelativeTime(video.uploadedDate, now))
+        }
+        .partition { it.third != null }
+    val newestFirst = dated
+        .sortedWith(compareByDescending<Triple<VideoItem, Int, Long?>> { it.third }.thenBy { it.second })
+        .map { it.first }
+    val ordered = if (order == SubscriptionFeedOrder.NEWEST) newestFirst else newestFirst.asReversed()
+    return ordered + undated.map { it.first }
 }
 
 /**
@@ -149,6 +184,7 @@ fun SubscriptionsContent(
     val feedError by viewModel.subscriptionFeedError.collectAsState()
     val feedUpdatedAt by viewModel.subscriptionFeedUpdatedAt.collectAsState()
     val listLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
+    val videoGridColumns = com.ivor.ivormusic.ui.video.rememberVideoGridColumns()
     val selectedChannelFeed by viewModel.selectedChannelFeed.collectAsState()
     val isSelectedChannelFeedLoading by viewModel.isSelectedChannelFeedLoading.collectAsState()
     val selectedChannelFeedError by viewModel.selectedChannelFeedError.collectAsState()
@@ -218,10 +254,8 @@ fun SubscriptionsContent(
             // The Video feed setting. Not while one creator is selected: that
             // view is everything from one channel, live included.
             .filter { video -> feedOptions.showLive || selectedChannel != null || !video.isLive }
-            .sortedWith(compareBy<VideoItem> {
-                it.publishedAtMs ?: VideoItem.parseRelativeTime(it.uploadedDate) ?: Long.MIN_VALUE
-            }.let { if (feedOrder == SubscriptionFeedOrder.NEWEST) it.reversed() else it })
             .toList()
+            .let { sortFeedByTime(it, feedOrder, now) }
     }
 
     // Endless feed: ask for the account feed's next page when the last
@@ -255,19 +289,63 @@ fun SubscriptionsContent(
         }
     }
 
-    // Community posts from followed channels, scattered between the uploads.
-    // Not while one creator is selected: that view is a filter on one
-    // channel, and another channel's post in it would be a wrong answer.
-    val feedPosts by viewModel.feedPosts.collectAsState()
+    // Community posts from followed channels live in their own Posts view
+    // rather than between the uploads: scattered in a shuffled order they had
+    // no sense of time, and a dedicated list can be newest first. With one
+    // creator selected the view is that creator's own Posts tab.
+    val showPostsTab by viewModel.subscriptionPostsTab.collectAsState()
+    val subscriptionPosts by viewModel.subscriptionPosts.collectAsState()
+    val isFeedPostsLoading by viewModel.isFeedPostsLoading.collectAsState()
+    val feedPostsExhausted by viewModel.feedPostsExhausted.collectAsState()
+    val feedPostsPaused by viewModel.feedPostsPaused.collectAsState()
+    val subscriptionPostsIssue by viewModel.subscriptionPostsIssue.collectAsState()
+    val selectedChannelPostsFailed by viewModel.selectedChannelPostsFailed.collectAsState()
+    val selectedChannelPosts by viewModel.selectedChannelPosts.collectAsState()
+    val isSelectedChannelPostsLoading by viewModel.isSelectedChannelPostsLoading.collectAsState()
     val postPhotoViewer = remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     FeedPostOverlays(viewModel, postPhotoViewer, onOpenChannel)
-    FeedPostDemand(
-        viewModel = viewModel,
-        listState = feedListState,
-        videoCount = visibleFeed.size,
-        postCount = feedPosts.size,
-        enabled = selectedChannelId == null && feedOptions.showPosts
-    )
+    val shownPosts = if (selectedChannelId != null) selectedChannelPosts else subscriptionPosts
+    val shownPostsLoading = if (selectedChannelId != null) {
+        isSelectedChannelPostsLoading
+    } else {
+        isFeedPostsLoading
+    }
+    // Set once this view has asked for its posts, so the first frame shows the
+    // skeleton rather than flashing the empty state before the request starts.
+    var postsAsked by remember(showPostsTab, selectedChannelId) { mutableStateOf(false) }
+    val nearListEnd by remember(feedListState) {
+        derivedStateOf {
+            val info = feedListState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            info.totalItemsCount == 0 || lastVisible >= info.totalItemsCount - SUBS_POSTS_LOOKAHEAD
+        }
+    }
+    LaunchedEffect(
+        showPostsTab,
+        selectedChannelId,
+        nearListEnd,
+        subscriptionPosts.size,
+        isFeedPostsLoading,
+        feedPostsExhausted,
+        feedPostsPaused,
+        subscriptionPostsIssue
+    ) {
+        if (!showPostsTab) return@LaunchedEffect
+        val channelId = selectedChannelId
+        if (channelId != null) {
+            viewModel.loadSelectedChannelPosts(channelId)
+        } else if (!isFeedPostsLoading && !feedPostsExhausted && !feedPostsPaused &&
+            (nearListEnd || subscriptionPosts.isEmpty())
+        ) {
+            // Asked a page at a time as the list nears its end. Posts from
+            // channels asked later slot in by date, so the list is newest
+            // first across every channel asked so far.
+            viewModel.ensureSubscriptionPosts(subscriptionPosts.size + SUBS_POSTS_PAGE)
+        }
+        postsAsked = true
+    }
+    val postsScope = rememberCoroutineScope()
+    val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
 
     LaunchedEffect(channels, selectedChannelId) {
         if (selectedChannelId != null && channels.none { it.channelId == selectedChannelId }) {
@@ -279,19 +357,35 @@ fun SubscriptionsContent(
         localSubscriptions.map { it.channelId }.toSet()
     }
 
-    // YouTube does not expose a stable ordering contract for the subscription
-    // list itself. The feed does expose the thing this rail is meant to answer:
-    // who uploaded most recently. Channels missing from the current feed stay
-    // available after those recent creators, alphabetically.
-    val recentlyUploadingChannels = remember(channels, feed) {
+    // Persist the rail preference independently of this tab's composition.
+    val railPreferences = remember(context) { context.getSharedPreferences("subscription_channel_rail", 0) }
+    var channelSort by remember(railPreferences) {
+        mutableStateOf(railPreferences.getString("sort_mode", "RECENT") ?: "RECENT")
+    }
+    val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
+    val pinnedChannelPositions = remember(context) {
+        androidx.compose.runtime.mutableStateMapOf<String, Int>().apply {
+            runCatching {
+                val json = org.json.JSONObject(railPreferences.getString("pinned_positions", "{}") ?: "{}")
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val position = json.optInt(key, 0)
+                    if (position > 0) put(key, position)
+                }
+            }
+        }
+    }
+    var channelToPosition by remember { mutableStateOf<SubscribedChannel?>(null) }
+    var channelPositionInput by rememberSaveable { mutableStateOf("1") }
+    var showChannelSortMenu by remember { mutableStateOf(false) }
+    val recentlyUploadingChannels = remember(channels, feed, channelSort, channelWatchCounts, pinnedChannelPositions.toMap()) {
         val newestUploadById = mutableMapOf<String, Long>()
         val newestUploadByName = mutableMapOf<String, Long>()
         val now = System.currentTimeMillis()
         feed.forEachIndexed { index, video ->
             val uploadedAt = video.publishedAtMs
                 ?: VideoItem.parseRelativeTime(video.uploadedDate, now)
-                // The merged feed is already newest-first. Preserve that
-                // server/feed order when an item omitted its date entirely.
                 ?: (now - index)
             video.channelId?.takeIf { it.isNotBlank() }?.let { id ->
                 newestUploadById[id] = maxOf(newestUploadById[id] ?: Long.MIN_VALUE, uploadedAt)
@@ -299,18 +393,58 @@ fun SubscriptionsContent(
             val normalizedName = video.channelName.trim().lowercase()
             if (normalizedName.isNotEmpty()) {
                 newestUploadByName[normalizedName] = maxOf(
-                    newestUploadByName[normalizedName] ?: Long.MIN_VALUE,
-                    uploadedAt
+                    newestUploadByName[normalizedName] ?: Long.MIN_VALUE, uploadedAt
                 )
             }
         }
-        channels.sortedWith(
-            compareByDescending<SubscribedChannel> { channel ->
-                newestUploadById[channel.channelId]
-                    ?: newestUploadByName[channel.name.trim().lowercase()]
-                    ?: Long.MIN_VALUE
-            }.thenBy { it.name.lowercase() }
-        )
+        val byRecent = compareByDescending<SubscribedChannel> { channel ->
+            newestUploadById[channel.channelId]
+                ?: newestUploadByName[channel.name.trim().lowercase()]
+                ?: Long.MIN_VALUE
+        }.thenBy { it.name.lowercase() }
+        val sortedAll = when (channelSort) {
+            "MOST_WATCHED" -> channels.sortedWith(
+                compareByDescending<SubscribedChannel> {
+                    channelWatchCounts[it.channelId] ?: channelWatchCounts["name:" + it.name.trim().lowercase()] ?: 0
+                }.thenBy { it.name.lowercase() }
+            )
+            "NAME" -> channels.sortedBy { it.name.lowercase() }
+            "OLDEST" -> channels.sortedWith(
+                compareBy<SubscribedChannel> { channel ->
+                    newestUploadById[channel.channelId]
+                        ?: newestUploadByName[channel.name.trim().lowercase()]
+                        ?: Long.MIN_VALUE
+                }.thenBy { it.name.lowercase() }
+            )
+            // Official keeps YouTube's source subscription order. Recent is
+            // explicitly ranked by the newest upload found in the loaded feed.
+            "OFFICIAL" -> channels
+            "RECENT" -> channels.sortedWith(byRecent)
+            else -> channels.sortedWith(byRecent)
+        }
+        // Fixed channels occupy absolute 1-based positions; the selected sort
+        // fills all remaining slots.
+        val ordered = MutableList<SubscribedChannel?>(channels.size) { null }
+        val channelById = channels.associateBy { it.channelId }
+        pinnedChannelPositions.entries
+            .mapNotNull { (id, position) -> channelById[id]?.let { it to position } }
+            .sortedWith(compareBy<Pair<SubscribedChannel, Int>> { it.second }.thenBy { it.first.name.lowercase() })
+            .forEach { (channel, requestedPosition) ->
+                if (ordered.isNotEmpty()) {
+                    val target = (requestedPosition - 1).coerceIn(0, ordered.lastIndex)
+                    var slot = target
+                    while (slot < ordered.size && ordered[slot] != null) slot++
+                    if (slot >= ordered.size) {
+                        slot = target
+                        while (slot >= 0 && ordered[slot] != null) slot--
+                    }
+                    if (slot >= 0) ordered[slot] = channel
+                }
+            }
+        val fixedIds = pinnedChannelPositions.keys
+        val remaining = sortedAll.filter { it.channelId !in fixedIds }.iterator()
+        ordered.indices.forEach { index -> if (ordered[index] == null && remaining.hasNext()) ordered[index] = remaining.next() }
+        ordered.filterNotNull()
     }
 
     // Confirmation before dropping a channel, because the gesture that opens
@@ -427,6 +561,49 @@ fun SubscriptionsContent(
         )
     }
 
+    channelToPosition?.let { channel ->
+        AlertDialog(
+            onDismissRequest = { channelToPosition = null },
+            title = { Text(stringResource(R.string.sm_pin_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.sm_pin_body, channel.name))
+                    OutlinedTextField(
+                        value = channelPositionInput,
+                        onValueChange = { value -> channelPositionInput = value.filter(Char::isDigit).take(3) },
+                        label = { Text(stringResource(R.string.sm_pin_position_label, channels.size.coerceAtLeast(1))) },
+                        singleLine = true
+                    )
+                    Text(stringResource(R.string.sm_pin_unpin_hint), style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val position = channelPositionInput.toIntOrNull()
+                    if (position != null && position in 1..channels.size.coerceAtLeast(1)) {
+                        pinnedChannelPositions[channel.channelId] = position
+                        val json = org.json.JSONObject()
+                        pinnedChannelPositions.forEach { (id, value) -> json.put(id, value) }
+                        railPreferences.edit().putString("pinned_positions", json.toString()).apply()
+                    }
+                    channelToPosition = null
+                }) { Text(stringResource(R.string.sm_pin_confirm)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        pinnedChannelPositions.remove(channel.channelId)
+                        val json = org.json.JSONObject()
+                        pinnedChannelPositions.forEach { (id, value) -> json.put(id, value) }
+                        railPreferences.edit().putString("pinned_positions", json.toString()).apply()
+                        channelToPosition = null
+                    }) { Text(stringResource(R.string.sm_unpin)) }
+                    TextButton(onClick = { channelToPosition = null }) { Text(stringResource(R.string.action_cancel)) }
+                }
+            }
+        )
+    }
+
     channelToUnfollow?.let { channel ->
         AlertDialog(
             onDismissRequest = { channelToUnfollow = null },
@@ -458,14 +635,23 @@ fun SubscriptionsContent(
             ExpressivePullToRefresh(
                 // As above: the pull spinner covers refreshes over existing
                 // videos, the skeleton covers the empty first load.
-                isRefreshing = if (selectedChannelId != null) {
+                isRefreshing = if (showPostsTab) {
+                    // A refresh empties the posts, so the skeleton covers it.
+                    false
+                } else if (selectedChannelId != null) {
                     isSelectedChannelFeedLoading && selectedChannelFeed.isNotEmpty()
                 } else {
                     isFeedLoading && feed.isNotEmpty()
                 },
                 onRefresh = {
                     val selected = channels.firstOrNull { it.channelId == selectedChannelId }
-                    if (selected != null) {
+                    if (showPostsTab) {
+                        if (selected != null) {
+                            viewModel.loadSelectedChannelPosts(selected.channelId, force = true)
+                        } else {
+                            viewModel.refreshFeedPosts()
+                        }
+                    } else if (selected != null) {
                         viewModel.loadSelectedChannelFeed(selected)
                     } else {
                         viewModel.refreshFeedPosts()
@@ -527,6 +713,59 @@ fun SubscriptionsContent(
                         }
                     }
 
+                    // Videos or Posts. Item 1, so a switch made deep in the
+                    // list can bring the switch itself to the top.
+                    item(key = "feed-kind") {
+                        SubscriptionsKindSwitch(
+                            showPosts = showPostsTab,
+                            onSelect = { posts ->
+                                if (posts != showPostsTab) {
+                                    haptics.subtle()
+                                    viewModel.setSubscriptionPostsTab(posts)
+                                    postsScope.launch {
+                                        if (feedListState.firstVisibleItemIndex > 1) {
+                                            feedListState.scrollToItem(1)
+                                        }
+                                    }
+                                }
+                            },
+                            trailing = {
+                                if (channels.isNotEmpty()) {
+                                Box {
+                                    IconButton(onClick = { showChannelSortMenu = true }) {
+                                        Icon(
+                                            Icons.AutoMirrored.Rounded.Sort,
+                                            contentDescription = stringResource(R.string.subscription_channel_sort)
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showChannelSortMenu,
+                                        onDismissRequest = { showChannelSortMenu = false }
+                                    ) {
+                                        listOf(
+                                            "OFFICIAL" to R.string.subscription_sort_official,
+                                            "MOST_WATCHED" to R.string.subscription_sort_most_watched,
+                                            "RECENT" to R.string.subscription_sort_recent,
+                                            "NAME" to R.string.subscription_sort_name,
+                                            "OLDEST" to R.string.subscription_sort_oldest
+                                        ).forEach { (key, label) ->
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(label)) },
+                                                onClick = {
+                                                    channelSort = key
+                                                    railPreferences.edit().putString("sort_mode", key).apply()
+                                                    if (key == "MOST_WATCHED") viewModel.loadChannelWatchCounts()
+                                                    showChannelSortMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                }
+                            }
+                        )
+                    }
+
                     // Group filter. Only shown once groups exist, so a user who
                     // has never made one never sees a row of chrome that does
                     // nothing.
@@ -563,7 +802,7 @@ fun SubscriptionsContent(
                     // "42 of 130 channels" during a device-local refresh. That
                     // refresh is one request per channel, so on a large list an
                     // indeterminate spinner reads as a hang.
-                    feedProgress?.let { (done, total) ->
+                    feedProgress?.takeIf { !showPostsTab }?.let { (done, total) ->
                         item(key = "feed-progress") {
                             Column(
                                 modifier = Modifier
@@ -638,15 +877,22 @@ fun SubscriptionsContent(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                if (selected) {
-                                                    selectedChannelId = null
-                                                    viewModel.clearSelectedChannelFeed()
-                                                } else {
-                                                    selectedChannelId = channel.channelId
-                                                    viewModel.loadSelectedChannelFeed(channel)
+                                            .combinedClickable(
+                                                onClick = {
+                                                    if (selected) {
+                                                        selectedChannelId = null
+                                                        viewModel.clearSelectedChannelFeed()
+                                                    } else {
+                                                        selectedChannelId = channel.channelId
+                                                        viewModel.loadSelectedChannelFeed(channel)
+                                                    }
+                                                },
+                                                onLongClick = {
+                                                    channelPositionInput = (pinnedChannelPositions[channel.channelId]
+                                                        ?: (recentlyUploadingChannels.indexOfFirst { it.channelId == channel.channelId } + 1).coerceAtLeast(1)).toString()
+                                                    channelToPosition = channel
                                                 }
-                                            }
+                                            )
                                             .padding(4.dp)
                                             .width(64.dp)
                                     ) {
@@ -673,7 +919,7 @@ fun SubscriptionsContent(
                             }
                         }
 
-                        item(key = "feed-controls") {
+                        if (!showPostsTab) item(key = "feed-controls") {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -739,7 +985,85 @@ fun SubscriptionsContent(
                         }
                     }
 
-                    if (isSelectedChannelFeedLoading && selectedChannelId != null) {
+                    if (showPostsTab) {
+                        val selectedName = channels.firstOrNull { it.channelId == selectedChannelId }?.name
+                        if (shownPosts.isEmpty() && (shownPostsLoading || !postsAsked)) {
+                            item(key = "posts-loading") {
+                                SkeletonList(
+                                    count = 3,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                ) { alpha -> VideoCardSkeleton(alpha = alpha) }
+                            }
+                        } else if (shownPosts.isEmpty()) {
+                            item(key = "posts-empty") {
+                                PostsEmptyState(
+                                    channelName = selectedName,
+                                    hasChannels = channels.isNotEmpty(),
+                                    issue = when {
+                                        selectedChannelId == null -> subscriptionPostsIssue
+                                        selectedChannelPostsFailed -> SubscriptionPostsIssue.FAILED
+                                        else -> SubscriptionPostsIssue.NONE
+                                    },
+                                    moreToCheck = selectedChannelId == null && !feedPostsExhausted,
+                                    onRetry = {
+                                        val channelId = selectedChannelId
+                                        when {
+                                            channelId != null ->
+                                                viewModel.loadSelectedChannelPosts(channelId, force = true)
+                                            feedPostsExhausted -> viewModel.refreshFeedPosts()
+                                            else -> viewModel.resumeSubscriptionPosts()
+                                        }
+                                    }
+                                )
+                            }
+                        } else {
+                            items(
+                                shownPosts,
+                                key = { "subs_post_" + it.postId },
+                                contentType = { "feed_post" }
+                            ) { post ->
+                                // Capped and centred: on a wide window a
+                                // full-width card would make every photo a
+                                // poster.
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.TopCenter
+                                ) {
+                                    Box(modifier = Modifier.widthIn(max = SUBS_POST_MAX_WIDTH)) {
+                                        FeedPostCard(post, viewModel, onVideoClick, onOpenChannel, postPhotoViewer)
+                                    }
+                                }
+                            }
+                            if (shownPostsLoading) {
+                                item(key = "posts-loading-more") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        androidx.compose.material3.LoadingIndicator(
+                                            modifier = Modifier.size(36.dp),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            } else if (selectedChannelId == null && feedPostsPaused && !feedPostsExhausted) {
+                                item(key = "posts-check-more") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        OutlinedButton(onClick = viewModel::resumeSubscriptionPosts) {
+                                            Text(stringResource(R.string.sc_posts_check_more))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if (isSelectedChannelFeedLoading && selectedChannelId != null) {
                         item(key = "selected-channel-loading") {
                             SkeletonList(
                                 count = 3,
@@ -802,17 +1126,10 @@ fun SubscriptionsContent(
                                 )
                             }
                         }
-                        videoListItemsWithPosts(
+                        videoListItems(
                             videos = visibleFeed,
-                            posts = if (selectedChannelId == null && feedOptions.showPosts) {
-                                feedPosts
-                            } else {
-                                emptyList()
-                            },
                             layout = listLayout,
-                            post = { post ->
-                                FeedPostCard(post, viewModel, onVideoClick, onOpenChannel, postPhotoViewer)
-                            }
+                            columns = videoGridColumns
                         ) { video, cell ->
                             VideoCard(
                                 video = video,
@@ -1049,6 +1366,122 @@ private fun SubscriptionsEmptyWall(
                 Icon(Icons.Rounded.Login, null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.log_in_youtube))
+            }
+        }
+    }
+}
+
+/** Posts asked for beyond those in hand each time the Posts view nears its end. */
+private const val SUBS_POSTS_PAGE = 10
+
+/** Rows from the end of the Posts view at which the next page is asked for. */
+private const val SUBS_POSTS_LOOKAHEAD = 4
+
+/** Widest a post card is drawn in the Posts view. */
+private val SUBS_POST_MAX_WIDTH = 640.dp
+
+/**
+ * Videos | Posts: the two things the Subscriptions feed shows, as a connected
+ * button group like the channel page's tab strip.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SubscriptionsKindSwitch(
+    showPosts: Boolean,
+    onSelect: (posts: Boolean) -> Unit,
+    trailing: @Composable () -> Unit
+) {
+    val options = listOf(
+        false to stringResource(R.string.sc_tab_videos),
+        true to stringResource(R.string.sc_tab_posts)
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+        ) {
+        options.forEachIndexed { index, (posts, label) ->
+            val selected = posts == showPosts
+            ToggleButton(
+                checked = selected,
+                onCheckedChange = { onSelect(posts) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(40.dp),
+                colors = com.ivor.ivormusic.ui.settings.settingsChoiceButtonColors(),
+                shapes = if (index == 0) {
+                    ButtonGroupDefaults.connectedLeadingButtonShapes()
+                } else {
+                    ButtonGroupDefaults.connectedTrailingButtonShapes()
+                }
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1
+                )
+            }
+        }
+        }
+        trailing()
+    }
+}
+
+/** The Posts view with nothing to show: nobody followed has posted, or one creator has not. */
+@Composable
+private fun PostsEmptyState(
+    channelName: String?,
+    hasChannels: Boolean,
+    issue: SubscriptionPostsIssue,
+    moreToCheck: Boolean,
+    onRetry: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp, vertical = 40.dp)
+    ) {
+        Icon(
+            Icons.AutoMirrored.Rounded.Article,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(40.dp)
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = when {
+                issue == SubscriptionPostsIssue.LOCAL_ONLY -> stringResource(R.string.sc_posts_local_only)
+                issue == SubscriptionPostsIssue.RATE_LIMITED -> stringResource(R.string.sc_posts_rate_limited)
+                issue == SubscriptionPostsIssue.FAILED -> stringResource(R.string.sc_posts_failed)
+                channelName != null -> stringResource(R.string.sc_posts_empty_channel, channelName)
+                !hasChannels -> stringResource(R.string.sc_not_following)
+                moreToCheck -> stringResource(R.string.sc_posts_none_yet)
+                else -> stringResource(R.string.sc_posts_empty)
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        if (hasChannels && issue != SubscriptionPostsIssue.LOCAL_ONLY) {
+            Spacer(Modifier.height(20.dp))
+            OutlinedButton(onClick = onRetry) {
+                Text(
+                    stringResource(
+                        if (moreToCheck && issue == SubscriptionPostsIssue.NONE) {
+                            R.string.sc_posts_check_more
+                        } else {
+                            R.string.action_try_again
+                        }
+                    )
+                )
             }
         }
     }

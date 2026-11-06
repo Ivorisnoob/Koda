@@ -54,6 +54,7 @@ internal class MusicApi(
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful || body.isBlank()) {
                     KLog.w(YOUTUBE_TAG, "Music $endpoint HTTP ${response.code}: ${body.take(200)}")
+                    YouTubeRateLimit.note(response.code, "music $endpoint", response.header("Retry-After"))
                     null
                 } else {
                     http.noteSessionState(body, session)
@@ -150,6 +151,8 @@ internal class MusicApi(
                 }
                 (response.body?.string() ?: "").also { http.noteSessionState(it, session) }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Music browse request failed", e)
             ""
@@ -201,6 +204,8 @@ internal class MusicApi(
                 if (body.isBlank() || JSONObject(body).has("error")) return ""
                 body.also { http.noteSessionState(it, session) }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "Music continuation request failed", e)
             ""
@@ -234,6 +239,8 @@ internal class MusicApi(
                     null
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             KLog.e(YOUTUBE_TAG, "music api $endpoint failed", e)
             null

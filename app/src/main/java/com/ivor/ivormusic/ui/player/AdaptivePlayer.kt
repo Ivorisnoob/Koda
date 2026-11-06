@@ -309,7 +309,7 @@ internal fun PlayerQueuePane(
     onLoadMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val queue by viewModel.playOrderQueue.collectAsState()
+    val queue by viewModel.currentQueue.collectAsState()
     val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val currentIndex = remember(queue, currentQueueItemId) {
@@ -321,8 +321,8 @@ internal fun PlayerQueuePane(
     val reorder = rememberQueueReorderState(
         listState = listState,
         keys = rowKeys,
-        onMove = { from, to -> viewModel.movePlayOrderItem(from, to, persist = false) },
-        onSettle = { viewModel.commitQueueOrder() }
+        onMove = { from, to -> viewModel.moveQueueItem(from, to) },
+        onSettle = {}
     )
     val removal = rememberQueueRemoval(onUndo = { viewModel.undoQueueRemoval() })
     var showSaveDialog by remember { mutableStateOf(false) }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Picker preview: stand-in album art, a flat landscape cut to the
+    exponent-4 superellipse the runtime squircle uses.
+    Flat fills from the family's preview palette
+    (drawable/widget_preview_card.xml), no gradients.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <group android:translateX="0" android:translateY="0" android:scaleX="1" android:scaleY="1">
+        <clip-path android:pathData="M48.00,24.00 L47.97,30.14 L47.90,32.67 L47.77,34.60 L47.59,36.21 L47.35,37.61 L47.07,38.85 L46.73,39.96 L46.33,40.97 L45.88,41.89 L45.38,42.73 L44.81,43.49 L44.18,44.18 L43.49,44.81 L42.73,45.38 L41.89,45.88 L40.97,46.33 L39.96,46.73 L38.85,47.07 L37.61,47.35 L36.21,47.59 L34.60,47.77 L32.67,47.90 L30.14,47.97 L24.00,48.00 L17.86,47.97 L15.33,47.90 L13.40,47.77 L11.79,47.59 L10.39,47.35 L9.15,47.07 L8.04,46.73 L7.03,46.33 L6.11,45.88 L5.27,45.38 L4.51,44.81 L3.82,44.18 L3.19,43.49 L2.62,42.73 L2.12,41.89 L1.67,40.97 L1.27,39.96 L0.93,38.85 L0.65,37.61 L0.41,36.21 L0.23,34.60 L0.10,32.67 L0.03,30.14 L0.00,24.00 L0.03,17.86 L0.10,15.33 L0.23,13.40 L0.41,11.79 L0.65,10.39 L0.93,9.15 L1.27,8.04 L1.67,7.03 L2.12,6.11 L2.62,5.27 L3.19,4.51 L3.82,3.82 L4.51,3.19 L5.27,2.62 L6.11,2.12 L7.03,1.67 L8.04,1.27 L9.15,0.93 L10.39,0.65 L11.79,0.41 L13.40,0.23 L15.33,0.10 L17.86,0.03 L24.00,0.00 L30.14,0.03 L32.67,0.10 L34.60,0.23 L36.21,0.41 L37.61,0.65 L38.85,0.93 L39.96,1.27 L40.97,1.67 L41.89,2.12 L42.73,2.62 L43.49,3.19 L44.18,3.82 L44.81,4.51 L45.38,5.27 L45.88,6.11 L46.33,7.03 L46.73,8.04 L47.07,9.15 L47.35,10.39 L47.59,11.79 L47.77,13.40 L47.90,15.33 L47.97,17.86 Z" />
+        <path android:fillColor="#FF35545C" android:pathData="M0,0 H48 V48 H0 Z" />
+        <path android:fillColor="#FFEFD2AE" android:pathData="M24,17 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 Z" />
+        <path android:fillColor="#FF2A454C" android:pathData="M0,33 C10,27 20,26 30,30 C38,33 44,31 48,28 V48 H0 Z" />
+        <path android:fillColor="#FF1C3237" android:pathData="M0,40 C12,35 26,35 48,41 V48 H0 Z" />
+    </group>
+</vector>

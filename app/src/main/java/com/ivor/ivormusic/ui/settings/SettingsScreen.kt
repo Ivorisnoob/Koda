@@ -531,8 +531,11 @@ fun SettingsScreen(
     }
 
     // Which category page is open, and what is typed in the hub's search box.
-    var page by remember { mutableStateOf(SettingsPage.HUB) }
-    var searchQuery by remember { mutableStateOf("") }
+    // Saveable because the palette, Subscriptions and a few others are routes of
+    // their own: going to one takes Settings out of composition, and plain
+    // remember came back from it on the hub rather than the page that opened it.
+    var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(SettingsPage.HUB) }
+    var searchQuery by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
 
     // Backup and restore is a page like the others, so on a wide window it
     // opens beside the hub instead of taking the whole screen. Its work runs

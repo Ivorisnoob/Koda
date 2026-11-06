@@ -163,6 +163,28 @@
 
                 <data android:mimeType="video/*" />
             </intent-filter>
+
+            <!--
+                The same pair for audio files, played in the music player
+                (Intent.externalAudioUri, ExternalAudioHandler).
+            -->
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="audio/*" />
+            </intent-filter>
         </activity>
 
         <!-- Launcher activity aliases for dynamic app icon switching -->
@@ -347,6 +369,21 @@
             android:grantUriPermissions="false" />
 
         <!--
+            Images Koda hands to another app (the lyrics share card), served
+            from cache/shared only and readable solely by the app a share
+            grants it to. Not exported: access is by per-share URI grant.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
+
+        <!--
             Quick Settings playback tile. A pure session client: it binds a
             MediaController to MusicService, so the tile's play/pause and its
             state are the same playback the app shows. The BIND_QUICK_SETTINGS
@@ -394,30 +431,6 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/pulse_widget_info" />
-        </receiver>
-
-        <receiver
-            android:name=".widget.ConsoleWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_console_label">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/console_widget_info" />
-        </receiver>
-
-        <receiver
-            android:name=".widget.DeckWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_deck_label">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/deck_widget_info" />
         </receiver>
 
         <receiver

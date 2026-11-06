@@ -70,6 +70,8 @@ object NotificationArtworkLoader {
 
                 cache[url] = bitmap
                 bitmap
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 null
             }

@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data.youtube
 
 import android.content.Context
+import com.ivor.ivormusic.data.RequestPolicy
 import com.ivor.ivormusic.data.SessionManager
 import com.ivor.ivormusic.data.SessionRefreshInterceptor
 import com.ivor.ivormusic.data.ThemePreferences
@@ -43,9 +44,16 @@ internal class YouTubeHttp(
             }
             chain.proceed(chain.request())
         }
+        // Keeps automatic work's requests on the device during a 429 hold or
+        // a bot-check verdict (RequestPriority). Ahead of the ledger, which
+        // lists them as held instead of counting them as sent.
+        .addInterceptor(RequestPolicy)
         // After the kill-switch, so a request local-only mode refused is not
         // counted as one YouTube saw.
         .addInterceptor(YouTubeRequestLedger)
+        // Points a brand channel's calls at that channel rather than the
+        // Google account's personal one. See BrandChannelInterceptor.
+        .addInterceptor(BrandChannelInterceptor)
         // Folds Google's rotated session cookies back into storage. Without it
         // the login snapshot goes stale on its own and every authenticated
         // endpoint quietly answers as signed out. A *network* interceptor
@@ -218,5 +226,6 @@ internal fun Request.Builder.authenticate(
         addHeader("Authorization", it)
         addHeader("X-Goog-AuthUser", "0")
     }
+    session.pageId?.let { addHeader("X-Goog-PageId", it) }
     return tag(YouTubeSession::class.java, session)
 }

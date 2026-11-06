@@ -47,6 +47,8 @@ class PlaylistRepository(private val context: Context) {
         val loaded = files?.mapNotNull { file ->
             try {
                 json.decodeFromString<UserPlaylist>(file.readText())
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w("PlaylistRepository", "Skipping unreadable playlist ${file.name}", e)
                 null
@@ -236,6 +238,8 @@ class PlaylistRepository(private val context: Context) {
                     }
                     android.graphics.BitmapFactory.decodeStream(input, null, options)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.w(TAG, "Could not read the chosen cover", e)
                 null
@@ -247,6 +251,8 @@ class PlaylistRepository(private val context: Context) {
                 target.outputStream().use { out ->
                     square.compress(Bitmap.CompressFormat.JPEG, 92, out)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 KLog.e(TAG, "Could not write the cover", e)
                 target.delete()
@@ -259,6 +265,53 @@ class PlaylistRepository(private val context: Context) {
                 decoded.recycle()
             }
 
+            val previous = playlist.coverUri
+            savePlaylist(playlist.copy(coverUri = "file://${target.absolutePath}"))
+            deleteCoverFile(previous)
+            true
+        }
+
+    /**
+     * Cover the playlist with its own artwork: one cover filling the square,
+     * or a two-by-two grid of the first four different ones. Stored under the
+     * `custom_` name like a picked image, so a rename keeps it and Reset cover
+     * goes back to the generated one. [tiles] are decoded by the caller, which
+     * holds the image loader; this only lays them out and writes the file.
+     *
+     * @return true when the cover was replaced.
+     */
+    suspend fun setCoverFromArtwork(playlistId: String, tiles: List<Bitmap>): Boolean =
+        withContext(Dispatchers.IO) {
+            val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext false
+            if (tiles.isEmpty()) return@withContext false
+            val size = COVER_SIZE
+            val cover = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(cover)
+            val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+            val grid = if (tiles.size >= 4) 2 else 1
+            val cell = size / grid
+            tiles.take(grid * grid).forEachIndexed { index, tile ->
+                val edge = minOf(tile.width, tile.height)
+                val source = android.graphics.Rect(
+                    (tile.width - edge) / 2, (tile.height - edge) / 2,
+                    (tile.width - edge) / 2 + edge, (tile.height - edge) / 2 + edge
+                )
+                val left = (index % grid) * cell
+                val top = (index / grid) * cell
+                canvas.drawBitmap(tile, source, android.graphics.Rect(left, top, left + cell, top + cell), paint)
+            }
+            val target = File(coversDir, "custom_${playlistId}_${System.currentTimeMillis()}.jpg")
+            try {
+                target.outputStream().use { out -> cover.compress(Bitmap.CompressFormat.JPEG, 92, out) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.e(TAG, "Could not write the cover", e)
+                target.delete()
+                return@withContext false
+            } finally {
+                cover.recycle()
+            }
             val previous = playlist.coverUri
             savePlaylist(playlist.copy(coverUri = "file://${target.absolutePath}"))
             deleteCoverFile(previous)
@@ -305,6 +358,8 @@ class PlaylistRepository(private val context: Context) {
             context.contentResolver.openInputStream(source)?.use { input ->
                 android.graphics.BitmapFactory.decodeStream(input, null, bounds)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             return 1
         }

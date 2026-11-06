@@ -48,6 +48,8 @@ internal class PlaylistEditing(
         val raw = postPlaylistApi(music, "playlist/create", body) ?: return@withContext null
         try {
             JSONObject(raw).optString("playlistId").takeIf { it.isNotBlank() }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -313,6 +315,8 @@ internal class PlaylistEditing(
         if (raw == null) return false
         return try {
             JSONObject(raw).optString("status") == "STATUS_SUCCEEDED"
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }

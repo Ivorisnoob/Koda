@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Picker preview: the same stand-in cover, cut round, for Orbit.
+    Flat fills from the family's preview palette
+    (drawable/widget_preview_card.xml), no gradients.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <group android:translateX="0" android:translateY="0" android:scaleX="1" android:scaleY="1">
+        <clip-path android:pathData="M0,24 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z" />
+        <path android:fillColor="#FF35545C" android:pathData="M0,0 H48 V48 H0 Z" />
+        <path android:fillColor="#FFEFD2AE" android:pathData="M24,17 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 Z" />
+        <path android:fillColor="#FF2A454C" android:pathData="M0,33 C10,27 20,26 30,30 C38,33 44,31 48,28 V48 H0 Z" />
+        <path android:fillColor="#FF1C3237" android:pathData="M0,40 C12,35 26,35 48,41 V48 H0 Z" />
+    </group>
+</vector>
