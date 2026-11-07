@@ -132,7 +132,22 @@ fun SubscriptionsManagerScreen(
     // is the whole job done by hand.
     var channelQuery by rememberSaveable { mutableStateOf("") }
     var sortMenuExpanded by remember { mutableStateOf(false) }
-    var sortModeName by rememberSaveable { mutableStateOf(ManagedSubscriptionSort.NAME.name) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val railPreferences = remember(context) { context.getSharedPreferences("subscription_channel_rail", 0) }
+    var sortModeName by rememberSaveable {
+        mutableStateOf(
+            when (railPreferences.getString("sort_mode", "RECENT")) {
+                "OFFICIAL" -> ManagedSubscriptionSort.MANUAL.name
+                "MOST_WATCHED" -> ManagedSubscriptionSort.MOST_WATCHED.name
+                "RECENT" -> ManagedSubscriptionSort.RECENT_UPLOAD.name
+                "OLDEST" -> ManagedSubscriptionSort.OLDEST_UPLOAD.name
+                "NAME" -> ManagedSubscriptionSort.NAME.name
+                "SUBSCRIPTION_DATE" -> ManagedSubscriptionSort.SUBSCRIPTION_DATE.name
+                "SUBSCRIBER_COUNT" -> ManagedSubscriptionSort.SUBSCRIBER_COUNT.name
+                else -> ManagedSubscriptionSort.RECENT_UPLOAD.name
+            }
+        )
+    }
     val sortMode = remember(sortModeName) {
         ManagedSubscriptionSort.entries.firstOrNull { it.name == sortModeName } ?: ManagedSubscriptionSort.NAME
     }
@@ -141,6 +156,8 @@ fun SubscriptionsManagerScreen(
     val accountCounts = remember(accountChannels) {
         accountChannels.associate { it.channelId to parseSubscriberCount(it.subscriberCountText) }
     }
+    val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
+    val channelWatchCountsProgress by viewModel.channelWatchCountsProgress.collectAsState()
     val latestUploadByChannel = remember(subscriptionFeed) {
         subscriptionFeed.asSequence().filter { !it.channelId.isNullOrBlank() }
             .groupBy { it.channelId!! }
@@ -151,7 +168,7 @@ fun SubscriptionsManagerScreen(
     val manualPosition = remember(subscriptions) {
         subscriptions.mapIndexed { index, item -> item.channelId to index }.toMap()
     }
-    val sortedSubscriptions = remember(subscriptions, sortMode, accountCounts, latestUploadByChannel, manualPosition) {
+    val sortedSubscriptions = remember(subscriptions, sortMode, accountCounts, latestUploadByChannel, manualPosition, channelWatchCounts) {
         when (sortMode) {
             ManagedSubscriptionSort.SUBSCRIPTION_DATE -> subscriptions.sortedByDescending { it.subscribedAt }
             ManagedSubscriptionSort.NAME -> subscriptions.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
@@ -161,6 +178,15 @@ fun SubscriptionsManagerScreen(
             )
             ManagedSubscriptionSort.SUBSCRIBER_COUNT -> subscriptions.sortedWith(
                 compareByDescending<com.ivor.ivormusic.data.LocalSubscription> { accountCounts[it.channelId] ?: Long.MIN_VALUE }
+                    .thenBy { it.name.lowercase() }
+            )
+            ManagedSubscriptionSort.MOST_WATCHED -> subscriptions.sortedWith(
+                compareByDescending<com.ivor.ivormusic.data.LocalSubscription> {
+                    channelWatchCounts[it.channelId] ?: channelWatchCounts["name:" + it.name.trim().lowercase()] ?: 0
+                }.thenBy { it.name.lowercase() }
+            )
+            ManagedSubscriptionSort.OLDEST_UPLOAD -> subscriptions.sortedWith(
+                compareBy<com.ivor.ivormusic.data.LocalSubscription> { latestUploadByChannel[it.channelId] ?: Long.MAX_VALUE }
                     .thenBy { it.name.lowercase() }
             )
             ManagedSubscriptionSort.MANUAL -> subscriptions.sortedBy { manualPosition[it.channelId] ?: Int.MAX_VALUE }
@@ -173,7 +199,7 @@ fun SubscriptionsManagerScreen(
     // SAF rather than a path: the file arrives as a content uri that cannot be
     // opened as a File, and asking for storage permission to read one export
     // would be a far worse trade.
-    val context = androidx.compose.ui.platform.LocalContext.current
+
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -199,7 +225,10 @@ fun SubscriptionsManagerScreen(
     // themselves; kick that off when the list is actually being looked at.
     LaunchedEffect(Unit) { viewModel.backfillLocalChannelProfiles() }
     LaunchedEffect(sortMode) {
-        if (sortMode == ManagedSubscriptionSort.RECENT_UPLOAD) viewModel.loadSubscriptionFeed()
+        if (sortMode == ManagedSubscriptionSort.RECENT_UPLOAD || sortMode == ManagedSubscriptionSort.OLDEST_UPLOAD) {
+            viewModel.loadSubscriptionFeed()
+        }
+        if (sortMode == ManagedSubscriptionSort.MOST_WATCHED) viewModel.loadChannelWatchCounts()
     }
 
     Scaffold(
@@ -372,11 +401,27 @@ fun SubscriptionsManagerScreen(
                                         ManagedSubscriptionSort.NAME to R.string.sm_sort_name,
                                         ManagedSubscriptionSort.RECENT_UPLOAD to R.string.sm_sort_recent_upload,
                                         ManagedSubscriptionSort.SUBSCRIBER_COUNT to R.string.sm_sort_subscriber_count,
-                                        ManagedSubscriptionSort.MANUAL to R.string.sm_sort_manual
+                                        ManagedSubscriptionSort.MANUAL to R.string.sm_sort_manual,
+                                        ManagedSubscriptionSort.MOST_WATCHED to R.string.subscription_sort_most_watched,
+                                        ManagedSubscriptionSort.OLDEST_UPLOAD to R.string.subscription_sort_oldest
                                     ).forEach { (mode, label) ->
                                         DropdownMenuItem(
                                             text = { Text(stringResource(label)) },
-                                            onClick = { sortModeName = mode.name; sortMenuExpanded = false },
+                                            onClick = {
+                                                sortModeName = mode.name
+                                                val railSortKey = when (mode) {
+                                                    ManagedSubscriptionSort.SUBSCRIPTION_DATE -> "SUBSCRIPTION_DATE"
+                                                    ManagedSubscriptionSort.NAME -> "NAME"
+                                                    ManagedSubscriptionSort.RECENT_UPLOAD -> "RECENT"
+                                                    ManagedSubscriptionSort.SUBSCRIBER_COUNT -> "SUBSCRIBER_COUNT"
+                                                    ManagedSubscriptionSort.MOST_WATCHED -> "MOST_WATCHED"
+                                                    ManagedSubscriptionSort.OLDEST_UPLOAD -> "OLDEST"
+                                                    ManagedSubscriptionSort.MANUAL -> "OFFICIAL"
+                                                }
+                                                railPreferences.edit().putString("sort_mode", railSortKey).apply()
+                                                if (mode == ManagedSubscriptionSort.MOST_WATCHED) viewModel.loadChannelWatchCounts()
+                                                sortMenuExpanded = false
+                                            },
                                             trailingIcon = { if (sortMode == mode) Text("✓", color = MaterialTheme.colorScheme.primary) }
                                         )
                                     }
@@ -384,6 +429,16 @@ fun SubscriptionsManagerScreen(
                             }
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.sm_sort_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (sortMode == ManagedSubscriptionSort.MOST_WATCHED && channelWatchCountsProgress != null) {
+                            val (pages, videos) = channelWatchCountsProgress!!
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "Loading watch history · $pages pages · $videos videos",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
                         if (subscriptions.size >= SEARCH_FIELD_MIN_ITEMS) {
                             Spacer(Modifier.height(8.dp))
@@ -698,16 +753,27 @@ private fun ManagerRow(
     }
 }
 
-private enum class ManagedSubscriptionSort { SUBSCRIPTION_DATE, NAME, RECENT_UPLOAD, SUBSCRIBER_COUNT, MANUAL }
+private enum class ManagedSubscriptionSort {
+    SUBSCRIPTION_DATE, NAME, RECENT_UPLOAD, SUBSCRIBER_COUNT, MOST_WATCHED, OLDEST_UPLOAD, MANUAL
+}
 
 private fun parseSubscriberCount(value: String?): Long? {
     if (value.isNullOrBlank()) return null
     val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*([KMB万億]?)""", RegexOption.IGNORE_CASE)
         .find(value) ?: return null
-    // A comma can be the decimal separator in localized values ("1,2 M").
-    // Keep it until after matching; deleting it would turn 1.2M into 12M.
-    val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return null
-    val multiplier = when (match.groupValues[2].uppercase()) {
+    val rawAmount = match.groupValues[1]
+    val suffix = match.groupValues[2]
+    // A comma before a magnitude suffix is a localized decimal separator
+    // ("1,2 M"). Without a suffix, three trailing digits indicate grouping
+    // ("1,234 subscribers"), not a fractional value.
+    val normalizedAmount = when {
+        ',' !in rawAmount -> rawAmount
+        suffix.isNotEmpty() -> rawAmount.replace(',', '.')
+        rawAmount.substringAfterLast(',').length == 3 -> rawAmount.replace(",", "")
+        else -> rawAmount.replace(',', '.')
+    }
+    val amount = normalizedAmount.toDoubleOrNull() ?: return null
+    val multiplier = when (suffix.uppercase()) {
         "K" -> 1_000.0
         "M" -> 1_000_000.0
         "B" -> 1_000_000_000.0
