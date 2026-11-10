@@ -706,6 +706,10 @@
     <string name="vp_play_from_start">Play from start</string>
     <string name="sp_show_recent_searches">Show recent searches</string>
     <string name="sp_show_recent_searches_sub">Your past queries under the search bar</string>
+    <string name="sp_search_section">Search</string>
+    <string name="sp_open_keyboard_on_search">Open the keyboard on search</string>
+    <string name="sp_open_keyboard_on_search_on">The keyboard comes up by itself when you start searching</string>
+    <string name="sp_open_keyboard_on_search_off">The keyboard waits until you tap the search field</string>
     <string name="sp_show_related_videos">Show related videos</string>
     <string name="sp_show_related_videos_sub">Suggestions under a video while it plays</string>
     <string name="sp_inline_previews">Preview videos on cards</string>
@@ -2078,6 +2082,7 @@
     <string name="si_shorts_hard_block">Goes further than turning Shorts off: the Shorts tab and Shorts shelves disappear from channel pages, and Shorts are left out of video search. Turn Shorts back on to undo it.</string>
     <string name="si_shorts">Show or hide Shorts across the app. Hidden Shorts are not just tucked away - they stop being fetched at all.</string>
     <string name="si_recent_searches">Shows your past searches when you tap the search field. Turning this off hides them without deleting them.</string>
+    <string name="si_open_keyboard_on_search">Search screens open with the keyboard already up, and it covers half the screen. Turn this off and the keyboard stays down until you tap the search field.</string>
     <string name="si_compact_video_home">Smaller video cards in the video Home feed, so more fit on one screen.</string>
     <string name="si_related_videos">The suggestions under a playing video. Turning them off removes the distraction; playlists and queues keep working.</string>
     <string name="si_inline_previews">A card you stop on starts playing where it sits, without sound and without opening it. One preview at a time, and never on mobile data or with Data Saver on. Off by default, because a feed that moves on its own spends battery and data you did not ask it to.</string>

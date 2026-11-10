@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Recommend
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BrightnessMedium
@@ -632,6 +633,15 @@ internal fun buildSettingsSearchIndex(
         "show_recent_searches", stringResource(R.string.sp_show_recent_searches), stringResource(R.string.settings_content_and_feeds),
         Icons.Rounded.Search,
         listOf("recent", "history", "suggestions", "search bar", "past queries", "hide")
+    ) { onOpenPage(SettingsPage.CONTENT) }
+    entry(
+        "open_keyboard_on_search", stringResource(R.string.sp_open_keyboard_on_search),
+        stringResource(R.string.settings_content_and_feeds),
+        Icons.Rounded.Keyboard,
+        listOf(
+            "keyboard", "ime", "type", "typing", "search bar", "pop up", "popup",
+            "auto focus", "focus", "search opens", "keyboard popping"
+        )
     ) { onOpenPage(SettingsPage.CONTENT) }
     entry(
         "video_list_layout", stringResource(R.string.sp_video_layout), stringResource(R.string.settings_content_and_feeds),
