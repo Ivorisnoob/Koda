@@ -79,6 +79,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -165,8 +168,14 @@ fun MorphPlayerSheetContent(
 
     // Controls are guests: summoned by a tap, they slip away while music
     // plays.
-    LaunchedEffect(controlsVisible, isPlaying) {
-        if (controlsVisible && isPlaying) {
+    // Any touch on the player counts as using the controls: each press
+    // restarts the wait, and nothing hides while a finger is down (a scrub,
+    // a held button). Before, the 4.5s ran from when the controls appeared,
+    // so they left in the middle of being used.
+    var touchCount by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var fingerDown by remember { mutableStateOf(false) }
+    LaunchedEffect(controlsVisible, isPlaying, touchCount, fingerDown) {
+        if (controlsVisible && isPlaying && !fingerDown) {
             delay(4500)
             controlsVisible = false
         }
@@ -176,6 +185,23 @@ fun MorphPlayerSheetContent(
         modifier = Modifier
             .fillMaxSize()
             .background(surfaceColor)
+            // Watches every press on its way down to the controls, consuming
+            // nothing, so buttons and the scrubber behave exactly as before.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    fingerDown = true
+                    touchCount++
+                    try {
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                        } while (event.changes.any { it.pressed })
+                    } finally {
+                        fingerDown = false
+                        touchCount++
+                    }
+                }
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null

@@ -3169,6 +3169,18 @@ private fun SeekFeedbackBadge(
     }
 }
 
+/** The halves [VideoInfoSection] can draw; see its `part`. */
+enum class VideoInfoPart {
+    /** The whole list, as the upright watch page shows it. */
+    ALL,
+
+    /** Title, actions, channel, description and the comments entry. */
+    DETAILS,
+
+    /** Only what to watch next. */
+    RELATED,
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun VideoInfoSection(
@@ -3224,7 +3236,13 @@ fun VideoInfoSection(
     isLive: Boolean = false,
     /** Concurrent viewers, refreshed while the stream is open. */
     liveViewerCount: String? = null,
-    onLiveChatClick: () -> Unit = {}
+    onLiveChatClick: () -> Unit = {},
+    /**
+     * Which half of the list to draw. A tablet's watch page puts the video's
+     * own details under the frame and what to watch next in a column beside
+     * it, and both are this list, so each asks for its half.
+     */
+    part: VideoInfoPart = VideoInfoPart.ALL
 ) {
     // Hoisted above the LazyColumn below: its content lambda is a DSL scope,
     // not a composition scope, so remember and dialogs cannot live inside it.
@@ -3256,6 +3274,7 @@ fun VideoInfoSection(
             ),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            if (part != VideoInfoPart.RELATED) {
             // Title & Stats Group
             item(key = "title") {
                 VideoTitleCard(
@@ -3534,8 +3553,9 @@ fun VideoInfoSection(
                 } // Surface
                 } // item
             } // if (!isLive && !isOffline)
+            } // if (part != VideoInfoPart.RELATED)
             // Related Videos Section
-            if (relatedVideos.isNotEmpty()) {
+            if (relatedVideos.isNotEmpty() && part != VideoInfoPart.DETAILS) {
                 item(key = "related_header") {
                     Text(
                         // "Up Next" is a promise about what plays when this ends,

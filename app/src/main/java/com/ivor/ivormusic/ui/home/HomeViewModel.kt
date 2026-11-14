@@ -3308,8 +3308,91 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadSongs(excludedFolders: Set<String> = emptySet(), manualScan: Boolean = false) {
+        lastDeviceScan = excludedFolders to manualScan
         viewModelScope.launch {
             _songs.value = localRepository.getSongs(excludedFolders, manualScan)
+        }
+    }
+
+    /**
+     * The folders and scan mode of the last device scan, so the Library's
+     * refresh rescans the same way. Null until a scan has run, which is also
+     * what a device library that is switched off looks like: then there is
+     * nothing on the device to rescan.
+     */
+    private var lastDeviceScan: Pair<Set<String>, Boolean>? = null
+
+    private val _isLibraryRefreshing = MutableStateFlow(false)
+
+    /** True only while a pull on the Library is being answered. */
+    val isLibraryRefreshing: StateFlow<Boolean> = _isLibraryRefreshing.asStateFlow()
+    private var libraryRefreshJob: Job? = null
+
+    /**
+     * Pull to refresh on the Library: its own data and nothing else.
+     *
+     * It used to share Home's [refresh], which fetched Home's recommendations
+     * first and walked everything in one chain under one catch, so a failure
+     * anywhere skipped liked songs, playlists and the device scan without a
+     * word. Its spinner followed [isLoading], which Home's own loads also set
+     * and cleared, so it vanished early or never showed; and it rescanned the
+     * device with no excluded folders. Now each part runs side by side and
+     * fails alone, and the spinner is this job's.
+     */
+    fun refreshLibrary() {
+        if (libraryRefreshJob?.isActive == true) return
+        libraryRefreshJob = viewModelScope.launch {
+            _isLibraryRefreshing.value = true
+            val startedAt = System.currentTimeMillis()
+            try {
+                kotlinx.coroutines.coroutineScope {
+                    val loggedIn = sessionManager.isLoggedIn()
+                    _isYouTubeConnected.value = loggedIn
+                    if (loggedIn) {
+                        launch {
+                            libraryPart("liked songs") {
+                                val liked = youtubeRepository.getLikedMusic()
+                                // An empty answer is a failed walk far more
+                                // often than an account with no likes; keep
+                                // what is on screen.
+                                if (liked.isNotEmpty()) _likedSongs.value = liked
+                            }
+                        }
+                        launch {
+                            libraryPart("account playlists") {
+                                val playlists = youtubeRepository.getUserPlaylists()
+                                if (playlists.isNotEmpty()) _youtubePlaylists.value = playlists
+                            }
+                        }
+                    }
+                    launch { libraryPart("device playlists") { playlistRepository.refreshPlaylists() } }
+                    lastDeviceScan?.let { (folders, manual) ->
+                        launch {
+                            libraryPart("device songs") {
+                                _songs.value = localRepository.getSongs(folders, manual)
+                            }
+                        }
+                    }
+                }
+                if (sessionManager.isLoggedIn()) accountLoadedAtMs = System.currentTimeMillis()
+            } finally {
+                // A refresh that answers at once still shows that it ran.
+                val shown = System.currentTimeMillis() - startedAt
+                if (shown < 600L) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    kotlinx.coroutines.delay(600L - shown)
+                }
+                _isLibraryRefreshing.value = false
+            }
+        }
+    }
+
+    private suspend fun libraryPart(name: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e("HomeViewModel", "Library refresh: $name failed", e)
         }
     }
     
@@ -3558,17 +3641,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val manuallyLiked = likedSongsRepository.likedSongs.value
             val likedIds = likedSongsRepository.getAllLikedSongIds()
             val likedLocalSongs = _songs.value.filter { it.id in likedIds }
-            val ytLiked = _likedSongs.value.ifEmpty {
-                if (sessionManager.isLoggedIn()) {
-                    try {
-                        youtubeRepository.getLikedMusic()
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                } else emptyList()
-            }
+            // The held list is reused only while it is fresh. It was reused
+            // whenever it was not empty, so a short load (#370) stayed short
+            // until the app was restarted.
+            val cachedLiked = _likedSongs.value
+            val ytLiked = if (sessionManager.isLoggedIn() &&
+                (cachedLiked.isEmpty() || !loadedRecently(accountLoadedAtMs))
+            ) {
+                val fresh = try {
+                    youtubeRepository.getLikedMusic()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                if (fresh.isNotEmpty()) _likedSongs.value = fresh
+                fresh.ifEmpty { cachedLiked }
+            } else cachedLiked
             return (manuallyLiked + ytLiked + likedLocalSongs).distinctBy { it.id }
         }
 

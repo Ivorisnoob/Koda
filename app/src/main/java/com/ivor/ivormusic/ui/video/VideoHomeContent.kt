@@ -435,15 +435,18 @@ fun VideoHomeContent(
                     // Video cards, with the Shorts shelf slotted in after the
                     // first two like the YouTube home feed.
                     val feedVideos = feedFilter.apply(videos)
+                    // Two on a phone; one whole row where more sit across,
+                    // so the shelf is not under a row with holes in it.
+                    val aboveShorts = maxOf(2, videoGridColumns)
                     val leadingVideos = if (!shortsEnabled) {
                         feedVideos
                     } else {
-                        feedVideos.take(2)
+                        feedVideos.take(aboveShorts)
                     }
                     val trailingVideos = if (!shortsEnabled) {
                         emptyList()
                     } else {
-                        feedVideos.drop(2)
+                        feedVideos.drop(aboveShorts)
                     }
 
                     // Posts go in whichever run is the feed proper: after
@@ -655,29 +658,29 @@ internal fun VideoTopBarSection(
         // rather than a chip beside it, so the bar keeps its shape whether
         // history is paused or not.
         Box(modifier = Modifier.align(Alignment.CenterStart)) {
+            // The active profile's own picture, drawn the way music mode's bar
+            // draws it: no circle clip and no disc behind it. A disc showed
+            // round a Koda avatar's outline, and on the Black and White
+            // palettes it was all that showed.
+            val profileLabel = stringResource(R.string.cd_profile)
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(CircleShape)
-                    .background(surfaceColor)
-                    .clickable(onClick = onProfileClick),
+                    .clickable(
+                        interactionSource = remember {
+                            androidx.compose.foundation.interaction.MutableInteractionSource()
+                        },
+                        indication = androidx.compose.material3.ripple(bounded = false, radius = 22.dp),
+                        onClick = onProfileClick
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                if (userAvatar != null) {
-                    AsyncImage(
-                        model = userAvatar,
-                        contentDescription = stringResource(R.string.cd_profile),
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = stringResource(R.string.cd_profile),
-                        tint = iconColor,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                com.ivor.ivormusic.ui.profile.ActiveProfileAvatar(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics { contentDescription = profileLabel },
+                    accountAvatarUrl = userAvatar
+                )
             }
             // The history-paused mark. Tonal fill so it reads as "a mode is on"
             // without taking over the bar; the badge itself carries the label,

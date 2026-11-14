@@ -74,14 +74,41 @@ internal class MusicPlaylists(
     }
 
     /**
-     * Get liked music with pagination support.
-     * YouTube Music API returns paginated results, so we need to fetch all pages.
+     * The account's liked songs: the Liked Music playlist (`VLLM`), read
+     * through the same walker as every other playlist.
+     *
+     * [verified November 2026, signed in] `VLLM` is what YouTube Music calls
+     * Liked songs: its header read "1,286 songs" and the walk returned 1,048
+     * rows over 11 pages of 100 (993 distinct; the rest are unavailable rows
+     * the page does not draw). This used to walk `FEmusic_liked_videos`
+     * instead, the Library's Songs shelf: a smaller, music-only subset (459
+     * on the same account) in pages of 25 then about 45, which a failed
+     * continuation cut short with nothing logged - the 71 of 292 in #370 is
+     * its first two pages. That shelf stays as the fallback for an account
+     * whose playlist walk fails, and the longer of the two wins.
      */
     suspend fun getLikedMusic(): List<Song> = withContext(Dispatchers.IO) {
         if (!sessionManager.isLoggedIn()) {
             return@withContext getPlaylistInternal("LM")
         }
-        
+
+        val playlist = getBrowsePlaylistSongs("LM")
+        val likedPlaylist = playlist.songs.distinctBy { it.id }
+        if (playlist.complete && likedPlaylist.isNotEmpty()) return@withContext likedPlaylist
+        KLog.w(
+            YOUTUBE_TAG,
+            "Liked Music walk incomplete at ${likedPlaylist.size} songs; trying the Library songs shelf"
+        )
+        val shelf = getLibrarySongsShelf()
+        if (likedPlaylist.size >= shelf.size && likedPlaylist.isNotEmpty()) return@withContext likedPlaylist
+        if (shelf.isNotEmpty()) return@withContext shelf
+
+        // Fallback to NewPipe method
+        getPlaylistInternal("LM")
+    }
+
+    /** The Library's Songs shelf, `FEmusic_liked_videos`, every page of it. */
+    private suspend fun getLibrarySongsShelf(): List<Song> {
         try {
             val allSongs = mutableListOf<Song>()
             var continuationToken: String? = null
@@ -95,8 +122,11 @@ internal class MusicPlaylists(
                     musicApi.fetchContinuation(continuationToken)
                 }
                 
-                if (json.isEmpty()) break
-                
+                if (json.isEmpty()) {
+                    KLog.w(YOUTUBE_TAG, "Library songs shelf stopped at page ${pageCount + 1}, ${allSongs.size} songs")
+                    break
+                }
+
                 val songs = parseSongsFromInternalJson(json)
                 allSongs.addAll(songs)
                 
@@ -108,17 +138,13 @@ internal class MusicPlaylists(
                 
             } while (continuationToken != null && pageCount < maxPages)
             
-            if (allSongs.isNotEmpty()) {
-                return@withContext allSongs.distinctBy { it.id }
-            }
+            return allSongs.distinctBy { it.id }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            KLog.e(YOUTUBE_TAG, "Error fetching liked music", e)
+            KLog.e(YOUTUBE_TAG, "Error fetching the Library songs shelf", e)
         }
-        
-        // Fallback to NewPipe method
-        getPlaylistInternal("LM")
+        return emptyList()
     }
 
     /**

@@ -804,9 +804,7 @@ fun HomeScreen(
     val windowLayout = com.ivor.ivormusic.ui.theme.currentWindowLayout()
     val useRail = windowLayout.usesNavigationRail
     val shellLayoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
-    val safeHorizontalInsets = WindowInsets.safeDrawing
-        .only(androidx.compose.foundation.layout.WindowInsetsSides.Horizontal)
-        .asPaddingValues()
+    val safeHorizontalInsets = com.ivor.ivormusic.ui.theme.safeHorizontalInsets().asPaddingValues()
     val safeStartInset = safeHorizontalInsets.calculateStartPadding(shellLayoutDirection)
     val safeEndInset = safeHorizontalInsets.calculateEndPadding(shellLayoutDirection)
     val contentStartInset = safeStartInset + when {

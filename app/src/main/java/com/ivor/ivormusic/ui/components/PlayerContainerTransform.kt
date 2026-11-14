@@ -94,10 +94,32 @@ internal fun playerContainerFrame(
     collapsedSideInset: Float,
     collapsedBottomInset: Float,
     collapsedCornerRadius: Float,
+    /**
+     * The collapsed rest as a card of this width in the window's bottom right
+     * corner, [collapsedSideInset] from the edge, rather than a bar across it.
+     * NaN, the default, is the bar. The video player's floating mini player on
+     * a wide window is the card.
+     */
+    collapsedWidth: Float = Float.NaN,
 ): PlayerContainerFrame {
     val p = progress.coerceIn(0f, 1f)
     val side = lerp(collapsedSideInset, 0f, p)
     val bottom = lerp(collapsedBottomInset, 0f, p)
+    if (!collapsedWidth.isNaN()) {
+        val cardWidth = lerp(collapsedWidth.coerceAtMost(windowWidth), windowWidth, p).coerceAtLeast(0f)
+        val cardHeight = lerp(collapsedHeight, windowHeight, p).coerceAtLeast(0f)
+        return PlayerContainerFrame(
+            // Pinned to the right edge at rest, so the left edge does all of
+            // the travelling as the card grows into the window.
+            left = (windowWidth - side - cardWidth).coerceAtLeast(0f),
+            top = windowHeight - bottom - cardHeight,
+            width = cardWidth,
+            height = cardHeight,
+            cornerRadius = lerp(collapsedCornerRadius, 0f, p)
+                .coerceAtMost(minOf(cardWidth, cardHeight) / 2f)
+                .coerceAtLeast(0f),
+        )
+    }
     val width = (windowWidth - 2f * side).coerceAtLeast(0f)
     val height = lerp(collapsedHeight, windowHeight, p).coerceAtLeast(0f)
     // Never past half the shorter side: a larger radius is illegal for the

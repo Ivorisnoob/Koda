@@ -3,9 +3,16 @@ package com.ivor.ivormusic.ui.theme
 import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.data.ThemePreferences
@@ -78,6 +85,33 @@ enum class WindowWidthClass { COMPACT, MEDIUM, EXPANDED }
 fun currentWindowLayout(): WindowLayout {
     val size = windowDpSize()
     return remember(size) { WindowLayout(size.width, size.height) }
+}
+
+/**
+ * True when Settings, Customization, Home and navigation, "Use the space
+ * beside the camera" is on. Provided once at the root, where the cutout is
+ * also taken out of the insets modifiers pad for; read it through
+ * [safeHorizontalInsets] rather than directly.
+ */
+val LocalDrawBesideCutout = staticCompositionLocalOf { false }
+
+/**
+ * What a page keeps clear of at its sides: a system bar there (three-button
+ * navigation on a phone held sideways) always, and the camera cutout unless
+ * the listener has said pages may run beside it.
+ *
+ * The root consumes the cutout for `windowInsetsPadding`, but a value read
+ * with `asPaddingValues()` never sees consumption, so anything that turns
+ * insets into numbers has to ask here.
+ */
+@Composable
+fun safeHorizontalInsets(): WindowInsets {
+    val safe = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+    return if (LocalDrawBesideCutout.current) {
+        safe.exclude(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+    } else {
+        safe
+    }
 }
 
 /**
