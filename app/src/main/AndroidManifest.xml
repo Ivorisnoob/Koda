@@ -327,6 +327,22 @@
         </service>
 
         <!--
+            Declares Koda a media app to the rest of the system. Widget makers
+            such as KWGT, and the platform's own "last media app" routing for a
+            headset play button, find players by this receiver; without it Koda
+            was not listed at all. Media3 hands a play press to MusicService
+            (the only MediaLibraryService, so the video service is never
+            picked), whose onPlaybackResumption rebuilds the last queue.
+        -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
+
+        <!--
             Puts video playback on the lock screen, in the shade's media area
             and on Bluetooth/headset transport buttons. The ExoPlayer itself
             stays owned by VideoPlayerViewModel; this service only wraps it in

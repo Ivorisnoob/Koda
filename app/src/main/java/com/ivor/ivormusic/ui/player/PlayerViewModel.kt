@@ -276,7 +276,18 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             } else {
                 youTubeRepository.removeFromYouTubePlaylist(playlistId, song.id, music = true)
             }
-            if (!ok) playlistMembership.forget(playlistId, song.id)
+            if (!ok) {
+                // The tick goes back to what the account says, and the user is
+                // told: before, it simply cleared, and a song that never got
+                // in looked as if it had been added and then lost (#362).
+                playlistMembership.forget(playlistId, song.id)
+                android.widget.Toast.makeText(
+                    context,
+                    if (contains) com.ivor.ivormusic.R.string.playlist_add_failed
+                    else com.ivor.ivormusic.R.string.playlist_remove_failed,
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 

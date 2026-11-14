@@ -229,6 +229,8 @@
     <string name="np_util_refresh">Refresh</string>
     <string name="np_refresh_stream">Refresh stream</string>
     <string name="np_refresh_failed">Couldn\'t get a fresh stream for this song</string>
+    <string name="playlist_add_failed">Couldn\'t add the song to that playlist. Try again.</string>
+    <string name="playlist_remove_failed">Couldn\'t take the song out of that playlist. Try again.</string>
     <string name="np_dest_artist">Artist</string>
     <string name="np_dest_album">Album</string>
     <string name="np_volume">Volume</string>
@@ -358,6 +360,10 @@
     <string name="sp_rotate_with_device">Rotate with device</string>
     <string name="sp_rotate_with_device_on">Turns to landscape when you do</string>
     <string name="sp_rotate_with_device_off">Stays upright</string>
+    <string name="sp_draw_beside_cutout">Use the space beside the camera</string>
+    <string name="sp_draw_beside_cutout_on">Pages run under the camera cutout in landscape</string>
+    <string name="sp_draw_beside_cutout_off">Pages stay clear of the camera cutout</string>
+    <string name="si_draw_beside_cutout">When your phone is on its side, the camera cutout sits at one edge of the screen. Koda normally keeps its pages and navigation clear of it. Turn this on to let them use the whole width; the cutout may then cover a little of what is at that edge.</string>
 
     <!-- SponsorBlock -->
     <string name="sb_title">SponsorBlock</string>

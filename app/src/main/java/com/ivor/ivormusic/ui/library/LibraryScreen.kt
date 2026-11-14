@@ -253,6 +253,43 @@ fun LibraryContent(
     // the release id, so it never reaches a playlist opened any other way.
     var selectedPlaylistFallback by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
 
+    // The pages under the open one, for a route opened from inside another
+    // (an album or a similar artist from an artist page). Back returns to the
+    // top of it before anything else, so artist -> album -> back lands on the
+    // artist rather than skipping to the root. Search has always worked this
+    // way; the Library did not (#372). Emptied whenever the root is reached or
+    // a page is opened from the root, a list or another tab.
+    val backHistory = remember { mutableStateListOf<LibraryBackEntry>() }
+    // True while a back is restoring a page from [backHistory], so the page
+    // slides in from the side a back comes from.
+    var poppingHistory by remember { mutableStateOf(false) }
+
+    // Save the open page before opening another from inside it.
+    fun pushHistory() {
+        backHistory.add(
+            LibraryBackEntry(
+                route = currentRoute,
+                playlist = selectedPlaylist,
+                artistName = selectedArtistName,
+                artistId = selectedArtistId,
+                albumName = selectedAlbumName,
+                albumSongs = selectedAlbumSongs,
+                playlistFallback = selectedPlaylistFallback
+            )
+        )
+        poppingHistory = false
+    }
+
+    // A page opened from the root, a list or another tab: nothing under it.
+    fun startFresh() {
+        backHistory.clear()
+        poppingHistory = false
+    }
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == LibraryRoute.Main) backHistory.clear()
+    }
+
     /**
      * Open an album from the Library's own songs.
      *
@@ -291,6 +328,7 @@ fun LibraryContent(
     // Handle initial deep link to artist
     LaunchedEffect(initialArtist) {
         if (initialArtist != null) {
+            startFresh()
             selectedArtistName = initialArtist
             selectedArtistId = null
             returnsToCaller = initialReturnToCaller
@@ -302,6 +340,7 @@ fun LibraryContent(
     // Handle initial deep link to a playlist
     LaunchedEffect(initialPlaylist) {
         if (initialPlaylist != null) {
+            startFresh()
             selectedPlaylist = initialPlaylist
             returnsToCaller = initialReturnToCaller
             currentRoute = LibraryRoute.Playlist
@@ -320,6 +359,7 @@ fun LibraryContent(
                 it.album.trim().equals(requested, ignoreCase = true)
             }.sortedInAlbumOrder()
             if (albumSongs.isNotEmpty()) {
+                startFresh()
                 returnsToCaller = initialReturnToCaller
                 openAlbum(initialAlbum, albumSongs)
                 onInitialAlbumConsumed()
@@ -335,6 +375,7 @@ fun LibraryContent(
     LaunchedEffect(pendingSpotifyImport) {
         pendingSpotifyImport?.let { link ->
             spotifyImportLink = link
+            startFresh()
             returnsToCaller = false
             currentRoute = LibraryRoute.SpotifyImport
             viewModel.consumeSpotifyImportRequest()
@@ -351,13 +392,27 @@ fun LibraryContent(
     // two-level routes: they are only ever reached from an open playlist, so
     // back returns there - and deliberately before the excursion check, which
     // must keep waiting for the back that leaves the playlist itself.
+    // A page opened from inside another returns to it first (backHistory).
     fun back() {
         if (currentRoute == LibraryRoute.ImportSongs || currentRoute == LibraryRoute.AddSongs) {
+            poppingHistory = false
             currentRoute = LibraryRoute.Playlist
+        } else if (backHistory.isNotEmpty()) {
+            val entry = backHistory.removeAt(backHistory.lastIndex)
+            selectedPlaylist = entry.playlist
+            selectedArtistName = entry.artistName
+            selectedArtistId = entry.artistId
+            selectedAlbumName = entry.albumName
+            selectedAlbumSongs = entry.albumSongs
+            selectedPlaylistFallback = entry.playlistFallback
+            poppingHistory = true
+            currentRoute = entry.route
         } else if (returnsToCaller) {
+            poppingHistory = false
             returnsToCaller = false
             onReturnToCaller()
         } else {
+            poppingHistory = false
             currentRoute = LibraryRoute.Main
         }
     }
@@ -374,10 +429,12 @@ fun LibraryContent(
                 onShuffleQueue = onShuffleQueue,
                 onDownloadsClick = onDownloadsClick,
                 onNavigateToPlaylist = { playlist ->
+                    startFresh()
                     selectedPlaylist = playlist
                     currentRoute = LibraryRoute.Playlist
                 },
                 onNavigateToArtist = { artist ->
+                    startFresh()
                     selectedArtistName = artist
                     selectedArtistId = null
                     returnsToCaller = false
@@ -387,16 +444,19 @@ fun LibraryContent(
                 // the page opens on that artist rather than on whoever a
                 // search for the name finds first.
                 onNavigateToFollowedArtist = { artist ->
+                    startFresh()
                     selectedArtistName = artist.name
                     selectedArtistId = artist.id.takeIf { it.startsWith("UC") }
                     returnsToCaller = false
                     currentRoute = LibraryRoute.Artist
                 },
-                onNavigateToAlbum = { album, songs -> openAlbum(album, songs) },
+                onNavigateToAlbum = { album, songs -> startFresh(); openAlbum(album, songs) },
                 onNavigateToStats = {
+                    startFresh()
                     currentRoute = LibraryRoute.Stats
                 },
                 onNavigateToHistory = {
+                    startFresh()
                     currentRoute = LibraryRoute.History
                 },
                 readyOfflineCount = readyOffline.songs.size,
@@ -404,9 +464,11 @@ fun LibraryContent(
                 readyOfflineUnnamed = readyOffline.unnamedCount,
                 readyOfflineHistoryDisabled = readyOffline.historyDisabled,
                 onReadyOfflineClick = {
+                    startFresh()
                     currentRoute = LibraryRoute.ReadyOffline
                 },
                 onCreatePlaylist = {
+                    startFresh()
                     currentRoute = LibraryRoute.CreatePlaylist
                 },
                 onSongLongPress = onSongLongPress,
@@ -436,8 +498,14 @@ fun LibraryContent(
                             ?.takeIf { it.first == playlist.id }?.second.orEmpty(),
                         onSongLongPress = onSongLongPress,
                         onEnqueueSong = onEnqueueSong,
-                        onAddSongsRequest = { currentRoute = LibraryRoute.ImportSongs },
-                        onSearchSongsRequest = { currentRoute = LibraryRoute.AddSongs }
+                        onAddSongsRequest = {
+                            poppingHistory = false
+                            currentRoute = LibraryRoute.ImportSongs
+                        },
+                        onSearchSongsRequest = {
+                            poppingHistory = false
+                            currentRoute = LibraryRoute.AddSongs
+                        }
                     )
                 }
             }
@@ -482,8 +550,9 @@ fun LibraryContent(
                         onPlayQueue = onPlayQueue,
                         onShuffleQueue = onShuffleQueue,
                         onSongClick = onSongClick,
-                        onAlbumClick = { album, songs -> openAlbum(album, songs) },
+                        onAlbumClick = { album, songs -> pushHistory(); openAlbum(album, songs) },
                         onOpenAlbum = { albumItem ->
+                            pushHistory()
                             selectedPlaylist = albumItem
                             currentRoute = LibraryRoute.Playlist
                         },
@@ -491,11 +560,13 @@ fun LibraryContent(
                         onSongLongPress = onSongLongPress,
                         onOpenChannel = onOpenChannel,
                         onOpenArtist = { name, id ->
+                            pushHistory()
                             selectedArtistName = name
                             selectedArtistId = id
                             currentRoute = LibraryRoute.Artist
                         },
                         onOpenPlaylist = { playlist ->
+                            pushHistory()
                             selectedPlaylist = playlist
                             currentRoute = LibraryRoute.Playlist
                         }
@@ -551,12 +622,14 @@ fun LibraryContent(
                     viewModel = viewModel,
                     onBack = { back() },
                     onImportFromSpotify = {
+                        startFresh()
                         spotifyImportLink = null
                         currentRoute = LibraryRoute.SpotifyImport
                     },
                     onCreated = { created ->
                         // Straight onto the new playlist; back from there goes
                         // to the root, the same as any playlist opened from it.
+                        startFresh()
                         selectedPlaylist = created
                         returnsToCaller = false
                         currentRoute = LibraryRoute.Playlist
@@ -579,6 +652,7 @@ fun LibraryContent(
                     viewModel = viewModel,
                     onBack = { back() },
                     onCreated = { created ->
+                        startFresh()
                         selectedPlaylist = created
                         returnsToCaller = false
                         currentRoute = LibraryRoute.Playlist
@@ -658,6 +732,7 @@ fun LibraryContent(
         // ImportSongs and AddSongs back onto the playlist, not the root the
         // peel shows, so they are not previewed either.
         previewable = currentRoute != LibraryRoute.Main && !returnsToCaller &&
+            backHistory.isEmpty() &&
             currentRoute != LibraryRoute.ImportSongs && currentRoute != LibraryRoute.AddSongs,
         background = mainScreen
     ) { committedByGesture ->
@@ -670,6 +745,12 @@ fun LibraryContent(
                 committedByGesture -> EnterTransition.None togetherWith ExitTransition.None
                 targetState == LibraryRoute.Main ->
                     fadeIn(animationSpec = effectsSpec) togetherWith
+                        (slideOutHorizontally(animationSpec = spatialSpec) { it } +
+                            fadeOut(animationSpec = effectsSpec))
+                // Back onto a page from the history: the reverse of opening.
+                poppingHistory ->
+                    (slideInHorizontally(animationSpec = spatialSpec) { -it / 3 } +
+                        fadeIn(animationSpec = effectsSpec)) togetherWith
                         (slideOutHorizontally(animationSpec = spatialSpec) { it } +
                             fadeOut(animationSpec = effectsSpec))
                 else ->
@@ -689,6 +770,17 @@ fun LibraryContent(
     }
     }
 }
+
+/** One page under the open one in the Library's back history. */
+private data class LibraryBackEntry(
+    val route: LibraryRoute,
+    val playlist: PlaylistDisplayItem?,
+    val artistName: String?,
+    val artistId: String?,
+    val albumName: String?,
+    val albumSongs: List<Song>,
+    val playlistFallback: Pair<String, List<Song>>?
+)
 
 enum class LibraryRoute {
     Main, Playlist, Album, Artist, Stats, History, ReadyOffline,
@@ -927,6 +1019,7 @@ fun LibraryMainScreen(
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
     val playCounts by viewModel.playCounts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLibraryRefreshing by viewModel.isLibraryRefreshing.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
 
     // Sort order sticks across launches, so it lives in prefs rather than in
@@ -1090,8 +1183,10 @@ fun LibraryMainScreen(
             // other way round: on first load the pull spinner span over a
             // completely blank tab. It now means only "refreshing what is
             // already here", and the empty first load gets skeletons below.
-            isRefreshing = isLoading && librarySongs.isNotEmpty(),
-            onRefresh = { viewModel.refresh() }
+            // Its own flag (not Home's isLoading, which other loads move),
+            // and shown whether or not the Library has anything in it yet.
+            isRefreshing = isLibraryRefreshing,
+            onRefresh = { viewModel.refreshLibrary() }
         ) {
             // No pager here, by decision: the Home shell owns the horizontal
             // flick (switching main tabs), and a pager inside it both ate
