@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.MoneyOff
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
@@ -401,6 +402,16 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "rotate", "rotation", "landscape", "portrait", "orientation",
             "sideways", "turn", "auto rotate", "lock"
+        )
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "draw_beside_cutout",
+        stringResource(R.string.sp_draw_beside_cutout),
+        stringResource(R.string.settings_appearance),
+        Icons.Rounded.Fullscreen,
+        listOf(
+            "notch", "cutout", "camera", "punch hole", "safe area", "full screen",
+            "fullscreen", "edge", "landscape", "overlap", "island"
         )
     ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
 

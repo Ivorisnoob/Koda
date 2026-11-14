@@ -370,6 +370,9 @@ private fun ChannelRoot(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            // On its side the page ran under the camera cutout and a
+            // three-button navigation bar; upright these are zero.
+            .windowInsetsPadding(com.ivor.ivormusic.ui.theme.safeHorizontalInsets())
     ) {
         when {
             isLoadingPage -> ChannelLoading()
@@ -380,7 +383,7 @@ private fun ChannelRoot(
                 val isTabLoading = selectedTab in loadingTabs
 
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(180.dp),
+                    columns = GridCells.Fixed(CHANNEL_GRID_COLUMNS * rememberChannelGridUnits()),
                     state = gridState,
                     // One gutter for the whole page, so a video card, a
                     // playlist tile and a Short all line up on the same edge
@@ -478,6 +481,7 @@ private fun ChannelRoot(
                                 viewModel.selectTab(ChannelTabKind.ABOUT)
                             },
                             scrollOffsetPx = headerOffsetPx,
+                            actionsBeside = rememberChannelGridUnits() > 1,
                             actions = {
                                 ChannelHeaderActions(
                                     isSubscribed = isSubscribed,
@@ -918,5 +922,21 @@ private fun shareChannel(context: android.content.Context, url: String) {
 /**
  * Six, so one row divides cleanly into one video, two playlists or three
  * Shorts without any tab needing a scroller of its own.
+ *
+ * A wide window repeats that six side by side ([rememberChannelGridUnits])
+ * rather than changing it, so every span keeps meaning what it meant on a
+ * phone. [scar November 2026] The grid was briefly `GridCells.Adaptive(180.dp)`,
+ * which hands back a column count the spans were never written for: two on a
+ * phone, where a Short's span of two is the whole row, and seven on a phone
+ * turned on its side, where a video still took all seven.
  */
 internal const val CHANNEL_GRID_COLUMNS = 6
+
+/**
+ * How many videos sit across the channel grid: one per ~360dp of window, the
+ * width a card needs for its two-line title, and never more than four. One on
+ * a phone held upright, which is the page as it was designed.
+ */
+@Composable
+internal fun rememberChannelGridUnits(): Int =
+    com.ivor.ivormusic.ui.theme.currentWindowLayout().columns(minCell = 360.dp, max = 4)

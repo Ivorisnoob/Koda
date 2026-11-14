@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -89,6 +90,13 @@ fun CreatorHeader(
      * and the header simply sits still.
      */
     scrollOffsetPx: Float = 0f,
+    /**
+     * Put [actions] at the end of the name's row instead of on a row of their
+     * own under the description. For a wide window, where a full-width
+     * Subscribe button is a bar across the screen and the header otherwise
+     * fills a phone held sideways before any content shows.
+     */
+    actionsBeside: Boolean = false,
     actions: @Composable () -> Unit = {}
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -153,6 +161,9 @@ fun CreatorHeader(
                     )
                 }
             }
+            if (actionsBeside) {
+                Box(modifier = Modifier.width(380.dp)) { actions() }
+            }
         }
 
         if (!description.isNullOrBlank()) {
@@ -178,8 +189,12 @@ fun CreatorHeader(
             )
         }
 
-        Spacer(Modifier.height(14.dp))
-        Box(modifier = Modifier.padding(horizontal = CHANNEL_GUTTER)) { actions() }
+        if (actionsBeside) {
+            Spacer(Modifier.height(8.dp))
+        } else {
+            Spacer(Modifier.height(14.dp))
+            Box(modifier = Modifier.padding(horizontal = CHANNEL_GUTTER)) { actions() }
+        }
     }
 }
 
@@ -199,6 +214,9 @@ private fun CreatorBanner(
     avatarUrl: String?,
     scrollOffsetPx: Float
 ) {
+    // Not shortened for a phone on its side, tempting as it is: the avatar
+    // lifts into the banner, and under about 130dp it meets the back button
+    // and the status bar drawn over the banner's top.
     val height = if (bannerUrl != null) 156.dp else 128.dp
     Box(
         modifier = Modifier

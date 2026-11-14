@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.VerticalAlignBottom
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ThumbDown
@@ -383,12 +384,13 @@ internal fun HomeNavigationSettingsPage(
         }
 
         item {
-            // Phones only. A large screen always follows the device
-            // (AppOrientation), so the switch would do nothing there.
             val context = androidx.compose.ui.platform.LocalContext.current
-            if (!com.ivor.ivormusic.ui.theme.AppOrientation.isLargeScreen(context)) {
-                SettingsSection(title = stringResource(R.string.sp_display_section)) {
-                    SettingsCard {
+            val drawBesideCutout = navPrefs.drawBesideCutout.collectAsState().value
+            SettingsSection(title = stringResource(R.string.sp_display_section)) {
+                SettingsCard {
+                    // Phones only. A large screen always follows the device
+                    // (AppOrientation), so the switch would do nothing there.
+                    if (!com.ivor.ivormusic.ui.theme.AppOrientation.isLargeScreen(context)) {
                         SettingsToggleRow(
                             icon = Icons.Rounded.ScreenRotation,
                             title = stringResource(R.string.sp_rotate_with_device),
@@ -401,6 +403,17 @@ internal fun HomeNavigationSettingsPage(
                             explanation = stringResource(R.string.si_rotate_with_device)
                         )
                     }
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Fullscreen,
+                        title = stringResource(R.string.sp_draw_beside_cutout),
+                        subtitle = stringResource(
+                            if (drawBesideCutout) R.string.sp_draw_beside_cutout_on
+                            else R.string.sp_draw_beside_cutout_off
+                        ),
+                        enabled = drawBesideCutout,
+                        onToggle = navPrefs::setDrawBesideCutout,
+                        explanation = stringResource(R.string.si_draw_beside_cutout)
+                    )
                 }
             }
         }

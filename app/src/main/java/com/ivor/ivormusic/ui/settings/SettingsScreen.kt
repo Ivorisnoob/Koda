@@ -580,6 +580,9 @@ fun SettingsScreen(
     val peel = remember { Animatable(0f) }
     var isPeeling by remember { mutableStateOf(false) }
     var peelCommitted by remember { mutableStateOf(false) }
+    // Whether the gesture in hand began on a page opened from another page,
+    // so it is that page's parent it uncovers rather than the hub.
+    var peelNested by remember { mutableStateOf(false) }
     // +1 when the finger came from the left edge, so the page leaves the way
     // the hand is already moving. Physical, so it needs no RTL adjustment.
     var peelSign by remember { mutableFloatStateOf(1f) }
@@ -606,6 +609,7 @@ fun SettingsScreen(
         try {
             events.collect { event ->
                 if (!hasPage) return@collect
+                if (!dragged) peelNested = page.parent != SettingsPage.HUB
                 dragged = true
                 isPeeling = true
                 peelSign = if (event.swipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
@@ -1238,6 +1242,10 @@ fun SettingsScreen(
                             scaleY = scale
                             translationX =
                                 -peelSign * containerWidth * 0.08f * (1f - dragFraction)
+                            // Two layers down while a nested page peels: the
+                            // page above shrinks a little as it comes forward,
+                            // and the hub would show round its edges.
+                            alpha = if (peelNested) 0f else 1f
                         }
                     } else {
                         Modifier
@@ -1251,32 +1259,42 @@ fun SettingsScreen(
 
         }
 
-        // The open page, riding on top of the hub.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(
-                    if (isPeeling) {
-                        Modifier.graphicsLayer {
-                            val scale = lerp(1f, 0.90f, dragFraction)
-                            scaleX = scale
-                            scaleY = scale
-                            translationX = peelSign * containerWidth *
-                                (0.10f * dragFraction + 0.95f * leavingFraction)
-                            alpha = 1f - leavingFraction
-                            // Lifts off the hub as a card rather than a slab.
-                            // Driven by a value the system clamps to 0..1, so
-                            // it cannot undershoot into a negative corner.
-                            shape = RoundedCornerShape(lerp(0f, 28f, dragFraction).dp)
-                            clip = true
-                        }
-                    } else {
-                        Modifier
-                    }
-                )
-        ) {
+        // The layer a back gesture is carrying away.
+        val leavingLayer = Modifier.graphicsLayer {
+            val scale = lerp(1f, 0.90f, dragFraction)
+            scaleX = scale
+            scaleY = scale
+            translationX = peelSign * containerWidth *
+                (0.10f * dragFraction + 0.95f * leavingFraction)
+            alpha = 1f - leavingFraction
+            // Lifts off what is under it as a card rather than a slab.
+            // Driven by a value the system clamps to 0..1, so it cannot
+            // undershoot into a negative corner.
+            shape = RoundedCornerShape(lerp(0f, 28f, dragFraction).dp)
+            clip = true
+        }
+        // The page under it, coming forward the way the hub does.
+        val revealedLayer = Modifier.graphicsLayer {
+            val scale = lerp(0.94f, 1f, dragFraction)
+            scaleX = scale
+            scaleY = scale
+            translationX = -peelSign * containerWidth * 0.08f * (1f - dragFraction)
+        }
+
+        // Pages stack the way back unwinds them [scar November 2026]: the hub,
+        // then a page opened from it, then a page opened from that one (what
+        // Customization and Content lead to). A page with a parent used to
+        // share one layer with it, and three things went wrong at once. Back
+        // from it replayed the "going deeper" slide, because the only question
+        // asked was whether the target was the hub. A back gesture peeled it
+        // away to show the hub, then put Customization there when the finger
+        // lifted. And Customization was composed afresh on every return, at
+        // the top of its list instead of on the row just adjusted. Kept
+        // composed underneath, the parent is what the gesture reveals, it
+        // never moves, and its scroll position is simply still there.
+        val pageLayer: @Composable (SettingsPage, String) -> Unit = { shown, label ->
             AnimatedContent(
-                targetState = page,
+                targetState = shown,
                 transitionSpec = {
                     val slide = spring<IntOffset>(
                         dampingRatio = Spring.DampingRatioNoBouncy,
@@ -1308,10 +1326,40 @@ fun SettingsScreen(
                     // in, and a clipped snap on the way out.
                     content using SizeTransform(clip = false) { _, _ -> snap() }
                 },
-                label = "settingsPage"
+                label = label
             ) { currentPage ->
                 pageContent(currentPage)
             }
+        }
+
+        // A page opened from the hub: on top of it, and under any page it
+        // opened in turn. Which part a gesture gives it is decided by where
+        // the gesture began (peelNested), not by the page now showing - the
+        // page changes when the finger lifts, a frame before the peel is put
+        // away, and a layer that switched parts in that frame would draw its
+        // new page with the departed one's transparency.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    when {
+                        !isPeeling -> Modifier
+                        peelNested -> revealedLayer
+                        else -> leavingLayer
+                    }
+                )
+                .coveredBy(nestedPage)
+        ) {
+            pageLayer(if (nestedPage) page.parent else page, "settingsPage")
+        }
+
+        // A page opened from another page, riding on top of that one.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (isPeeling && peelNested) leavingLayer else Modifier)
+        ) {
+            pageLayer(if (nestedPage) page else SettingsPage.HUB, "settingsNestedPage")
         }
     }
     }

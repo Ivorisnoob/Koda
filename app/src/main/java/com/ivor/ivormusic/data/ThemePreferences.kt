@@ -244,6 +244,19 @@ class ThemePreferences(context: Context) {
     private val _rotateWithDevice = MutableStateFlow(getRotateWithDevicePreference())
     val rotateWithDevice: StateFlow<Boolean> = _rotateWithDevice.asStateFlow()
 
+    /**
+     * Whether pages may draw beside the camera cutout when the window is on
+     * its side. Off keeps them clear of it; see MainActivity, where turning it
+     * on takes the cutout out of the insets every page pads for.
+     */
+    private val _drawBesideCutout = MutableStateFlow(prefs.getBoolean(KEY_DRAW_BESIDE_CUTOUT, false))
+    val drawBesideCutout: StateFlow<Boolean> = _drawBesideCutout.asStateFlow()
+
+    fun setDrawBesideCutout(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DRAW_BESIDE_CUTOUT, enabled).apply()
+        _drawBesideCutout.value = enabled
+    }
+
     private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
     val subscriptionSource: StateFlow<String> = _subscriptionSource.asStateFlow()
 
@@ -504,6 +517,8 @@ class ThemePreferences(context: Context) {
             KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
                 _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
             KEY_ROTATE_WITH_DEVICE -> _rotateWithDevice.value = getRotateWithDevicePreference()
+            KEY_DRAW_BESIDE_CUTOUT ->
+                _drawBesideCutout.value = prefs.getBoolean(KEY_DRAW_BESIDE_CUTOUT, false)
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
@@ -952,6 +967,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
             "non_expressive_navigation_bar"
         private const val KEY_ROTATE_WITH_DEVICE = "rotate_with_device"
+        private const val KEY_DRAW_BESIDE_CUTOUT = "draw_beside_cutout"
 
         /**
          * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].

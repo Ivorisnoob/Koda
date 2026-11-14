@@ -41,6 +41,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -143,7 +148,15 @@ class MainActivity : ComponentActivity() {
     private var appTimeTicker: kotlinx.coroutines.Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
+        // No exit-animation listener, on purpose [scar]. Setting one asks the
+        // system to hand the splash view over to the app, and on Android 12
+        // and 13 that hand-over (ActivityThread.syncTransferSplashscreenView-
+        // Transaction) dereferences the starting window's surface without
+        // checking it: when the window is already gone - a slow start on a
+        // low-memory phone - the app dies on its first frame with a
+        // NullPointerException nothing in Koda can catch. Left alone, the
+        // system removes the splash itself and that code never runs.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         // A fresh launch from the launcher opens in the mode the user chose in
@@ -160,9 +173,6 @@ class MainActivity : ComponentActivity() {
         takeSharedLink(intent)
         // Off the main thread: publishing is a binder call into the launcher.
         Thread { com.ivor.ivormusic.util.ModeShortcuts.publish(applicationContext) }.start()
-
-        // Remove splash instantly when ready — the AVD entrance animation is the show
-        splashScreen.setOnExitAnimationListener { it.remove() }
 
         // Large screens follow the device; phones stay portrait unless
         // Settings, Appearance, "Rotate with device" is on (AppOrientation).
@@ -329,11 +339,31 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                // Off, every page keeps clear of the camera cutout at its sides.
+                // On, the cutout is consumed here, above all of them, so the
+                // padding they already apply for it comes to nothing and the
+                // rail, the pages and the players run beside it. Sides only:
+                // upright the cutout is under the status bar, which pages
+                // must stay clear of whatever this says.
+                val drawBesideCutout by themeViewModel.drawBesideCutout.collectAsState()
                 androidx.compose.runtime.CompositionLocalProvider(
                     com.ivor.ivormusic.ui.video.LocalVideoListLayout provides videoListLayout,
-                    androidx.compose.ui.platform.LocalUriHandler provides inAppUriHandler
+                    androidx.compose.ui.platform.LocalUriHandler provides inAppUriHandler,
+                    com.ivor.ivormusic.ui.theme.LocalDrawBesideCutout provides drawBesideCutout
                 ) {
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (drawBesideCutout) {
+                                Modifier.consumeWindowInsets(
+                                    WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
+                                )
+                            } else {
+                                Modifier
+                            }
+                        )
+                ) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
                         pendingExternalVideo = pendingExternalVideo,
