@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material3.AlertDialog
@@ -115,6 +116,30 @@ private enum class SubscriptionFeedPeriod(val label: String, val ageMs: Long?) {
 private enum class SubscriptionFeedOrder(val label: String) {
     NEWEST("Newest first"),
     OLDEST("Oldest first")
+}
+
+private fun parseRailSubscriberCount(value: String?): Long? {
+    if (value.isNullOrBlank()) return null
+    val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*([KMB万億]?)""", RegexOption.IGNORE_CASE)
+        .find(value) ?: return null
+    val raw = match.groupValues[1]
+    val suffix = match.groupValues[2]
+    val normalized = when {
+        ',' !in raw -> raw
+        suffix.isNotEmpty() -> raw.replace(',', '.')
+        raw.substringAfterLast(',').length == 3 -> raw.replace(",", "")
+        else -> raw.replace(',', '.')
+    }
+    val amount = normalized.toDoubleOrNull() ?: return null
+    val multiplier = when (suffix.uppercase()) {
+        "K" -> 1_000.0
+        "M" -> 1_000_000.0
+        "B" -> 1_000_000_000.0
+        "万" -> 10_000.0
+        "億" -> 100_000_000.0
+        else -> 1.0
+    }
+    return (amount * multiplier).toLong()
 }
 
 /**
@@ -189,6 +214,7 @@ fun SubscriptionsContent(
     val isSelectedChannelFeedLoading by viewModel.isSelectedChannelFeedLoading.collectAsState()
     val selectedChannelFeedError by viewModel.selectedChannelFeedError.collectAsState()
     val channels by viewModel.subscribedChannels.collectAsState()
+    val accountChannels by viewModel.accountSubscribedChannels.collectAsState()
     val bellWrites by viewModel.bellWrites.collectAsState()
     val isChannelsLoading by viewModel.isSubscriptionsLoading.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
@@ -360,9 +386,24 @@ fun SubscriptionsContent(
     // Persist the rail preference independently of this tab's composition.
     val railPreferences = remember(context) { context.getSharedPreferences("subscription_channel_rail", 0) }
     var channelSort by remember(railPreferences) {
+        // OFFICIAL is retained as a stored key for compatibility, but now uses
+        // the original FEchannels/local order instead of a name-sorted list.
         mutableStateOf(railPreferences.getString("sort_mode", "RECENT") ?: "RECENT")
     }
+
+    // Keep the rail in sync when its primary sort control is changed on the
+    // subscription manager screen without requiring the tab to be recreated.
+    androidx.compose.runtime.DisposableEffect(railPreferences) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == "sort_mode") {
+                channelSort = prefs?.getString("sort_mode", "RECENT") ?: "RECENT"
+            }
+        }
+        railPreferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { railPreferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     val channelWatchCounts by viewModel.channelWatchCounts.collectAsState()
+    val channelWatchCountsProgress by viewModel.channelWatchCountsProgress.collectAsState()
     val pinnedChannelPositions = remember(context) {
         androidx.compose.runtime.mutableStateMapOf<String, Int>().apply {
             runCatching {
@@ -378,8 +419,10 @@ fun SubscriptionsContent(
     }
     var channelToPosition by remember { mutableStateOf<SubscribedChannel?>(null) }
     var channelPositionInput by rememberSaveable { mutableStateOf("1") }
-    var showChannelSortMenu by remember { mutableStateOf(false) }
-    val recentlyUploadingChannels = remember(channels, feed, channelSort, channelWatchCounts, pinnedChannelPositions.toMap()) {
+    val recentlyUploadingChannels = remember(
+        channels, feed, channelSort, channelWatchCounts, pinnedChannelPositions.toMap(),
+        localSubscriptions, accountChannels
+    ) {
         val newestUploadById = mutableMapOf<String, Long>()
         val newestUploadByName = mutableMapOf<String, Long>()
         val now = System.currentTimeMillis()
@@ -402,11 +445,25 @@ fun SubscriptionsContent(
                 ?: newestUploadByName[channel.name.trim().lowercase()]
                 ?: Long.MIN_VALUE
         }.thenBy { it.name.lowercase() }
+        val localSubscriptionDates = localSubscriptions.associate { item ->
+            item.channelId to item.subscribedAt
+        }
+        val subscriberCounts = accountChannels.associate { accountChannel ->
+            accountChannel.channelId to parseRailSubscriberCount(accountChannel.subscriberCountText)
+        }
         val sortedAll = when (channelSort) {
             "MOST_WATCHED" -> channels.sortedWith(
                 compareByDescending<SubscribedChannel> {
                     channelWatchCounts[it.channelId] ?: channelWatchCounts["name:" + it.name.trim().lowercase()] ?: 0
                 }.thenBy { it.name.lowercase() }
+            )
+            "SUBSCRIBER_COUNT" -> channels.sortedWith(
+                compareByDescending<SubscribedChannel> { subscriberCounts[it.channelId] ?: Long.MIN_VALUE }
+                    .thenBy { it.name.lowercase() }
+            )
+            "SUBSCRIPTION_DATE" -> channels.sortedWith(
+                compareByDescending<SubscribedChannel> { localSubscriptionDates[it.channelId] ?: Long.MIN_VALUE }
+                    .thenBy { it.name.lowercase() }
             )
             "NAME" -> channels.sortedBy { it.name.lowercase() }
             "OLDEST" -> channels.sortedWith(
@@ -416,8 +473,7 @@ fun SubscriptionsContent(
                         ?: Long.MIN_VALUE
                 }.thenBy { it.name.lowercase() }
             )
-            // Official keeps YouTube's source subscription order. Recent is
-            // explicitly ranked by the newest upload found in the loaded feed.
+            // OFFICIAL/MANUAL retain source order, including the user's local manual order.
             "OFFICIAL" -> channels
             "RECENT" -> channels.sortedWith(byRecent)
             else -> channels.sortedWith(byRecent)
@@ -508,6 +564,12 @@ fun SubscriptionsContent(
     // ViewModel also warms this before the tab is composed; this non-forced
     // call simply covers account connection without duplicating an in-flight
     // local refresh.
+    LaunchedEffect(isYouTubeConnected, channelSort) {
+        if (isYouTubeConnected && channelSort == "MOST_WATCHED") {
+            viewModel.loadChannelWatchCounts()
+        }
+    }
+
     LaunchedEffect(isYouTubeConnected, localSubscriptions.size) {
         viewModel.loadSubscriptionFeed()
         viewModel.loadSubscriptions()
@@ -729,40 +791,7 @@ fun SubscriptionsContent(
                                     }
                                 }
                             },
-                            trailing = {
-                                if (channels.isNotEmpty()) {
-                                Box {
-                                    IconButton(onClick = { showChannelSortMenu = true }) {
-                                        Icon(
-                                            Icons.AutoMirrored.Rounded.Sort,
-                                            contentDescription = stringResource(R.string.subscription_channel_sort)
-                                        )
-                                    }
-                                    DropdownMenu(
-                                        expanded = showChannelSortMenu,
-                                        onDismissRequest = { showChannelSortMenu = false }
-                                    ) {
-                                        listOf(
-                                            "OFFICIAL" to R.string.subscription_sort_official,
-                                            "MOST_WATCHED" to R.string.subscription_sort_most_watched,
-                                            "RECENT" to R.string.subscription_sort_recent,
-                                            "NAME" to R.string.subscription_sort_name,
-                                            "OLDEST" to R.string.subscription_sort_oldest
-                                        ).forEach { (key, label) ->
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(label)) },
-                                                onClick = {
-                                                    channelSort = key
-                                                    railPreferences.edit().putString("sort_mode", key).apply()
-                                                    if (key == "MOST_WATCHED") viewModel.loadChannelWatchCounts()
-                                                    showChannelSortMenu = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                                }
-                            }
+                            trailing = {}
                         )
                     }
 
@@ -819,6 +848,26 @@ fun SubscriptionsContent(
                                     progress = { if (total > 0) done.toFloat() / total else 0f },
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                            }
+                        }
+                    }
+
+                    channelWatchCountsProgress?.let { (pages, videos) ->
+                        if (channelSort == "MOST_WATCHED") {
+                            item(key = "channel-watch-progress") {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp)
+                                ) {
+                                    Text(
+                                        text = "Loading watch history · $pages pages · $videos videos",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                }
                             }
                         }
                     }
@@ -896,13 +945,40 @@ fun SubscriptionsContent(
                                             .padding(4.dp)
                                             .width(64.dp)
                                     ) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            border = if (selected) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
-                                            color = MaterialTheme.colorScheme.surface,
-                                            modifier = Modifier.size(56.dp)
-                                        ) {
-                                            ChannelAvatar(channel = channel, size = 56.dp)
+                                        Box {
+                                            Surface(
+                                                shape = CircleShape,
+                                                border = if (selected) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+                                                color = MaterialTheme.colorScheme.surface,
+                                                modifier = Modifier.size(56.dp)
+                                            ) {
+                                                ChannelAvatar(channel = channel, size = 56.dp)
+                                            }
+                                            pinnedChannelPositions[channel.channelId]?.let { position ->
+                                                Surface(
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    shadowElevation = 3.dp,
+                                                    modifier = Modifier.align(Alignment.TopEnd)
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Rounded.PushPin,
+                                                            contentDescription = "Pinned at position $position",
+                                                            modifier = Modifier.size(12.dp)
+                                                        )
+                                                        Text(
+                                                            text = position.toString(),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                         Spacer(Modifier.height(4.dp))
                                         Text(
