@@ -104,8 +104,8 @@ private const val SETTLE_HAPTIC_MIN_TRAVEL = 0.05f
  * Put the app into system Picture-in-Picture now.
  *
  * Needed as an explicit call because [PictureInPictureParams.Builder.setAutoEnterEnabled]
- * only exists from API 31, and minSdk here is 30 - without this, PiP was simply
- * unreachable on Android 11. It also backs the player's PiP button, which is
+ * only exists from API 31, and minSdk here is 26 - without this, PiP was simply
+ * unreachable on Android 8-11. It also backs the player's PiP button, which is
  * the only discoverable way in on any version.
  *
  * Returns false when the system refuses (PiP disabled for the app, or the

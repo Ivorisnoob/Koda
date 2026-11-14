@@ -246,10 +246,12 @@ private fun NetworkBadge(network: NetworkKind, size: Dp) {
  * wireless settings page where an OEM strips the panel.
  */
 private fun openInternetPanel(context: Context) {
-    val panel = Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     try {
-        context.startActivity(panel)
+        // The panel is API 29; older phones go straight to the fallback.
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) throw ActivityNotFoundException()
+        context.startActivity(
+            Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     } catch (_: ActivityNotFoundException) {
         runCatching {
             context.startActivity(

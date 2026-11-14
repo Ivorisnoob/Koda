@@ -11,22 +11,24 @@
         transparent everywhere else. AOSP only ever scrims the navigation bar;
         the status-bar scrim is OEM-added, hence enforceStatusBarContrast too.
     -->
-    <style name="Theme.IvorMusic" parent="android:Theme.Material.Light.NoActionBar">
+    <!--
+        The window attributes that arrived after minSdk (26) live on the
+        Platform.* parents, one copy per API folder (values-v28, -v29, -v30),
+        so each Android version is only handed attributes it understands.
+        Here, for 26-27, they are empty.
+    -->
+    <style name="Platform.Theme.IvorMusic" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.IvorMusic" parent="Platform.Theme.IvorMusic">
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:enforceStatusBarContrast">false</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
-        <!-- Draw into the camera cutout on every edge from the moment the
-             window exists. MainActivity also sets this at runtime, but
-             like the bar colours above, some OEM skins only honour what
-             the window was created with, which left landscape boxed in
-             beside the notch. Screens keep their controls clear of it. -->
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
     </style>
 
+    <style name="Platform.App.Starting" parent="Theme.SplashScreen" />
+
     <!-- Splash Screen Theme (Android 12+) -->
-    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+    <style name="Theme.App.Starting" parent="Platform.App.Starting">
         <!-- Set the splash screen background color (Deep Purple) -->
         <item name="windowSplashScreenBackground">#000000</item>
         <!-- Use the animated vector drawable we created -->
@@ -35,8 +37,5 @@
         <item name="windowSplashScreenAnimationDuration">800</item>
         <!-- Post-splash theme (the actual app theme) -->
         <item name="postSplashScreenTheme">@style/Theme.IvorMusic</item>
-        <!-- The activity window is created under this theme, so the
-             cutout mode has to be declared here too. -->
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
     </style>
 </resources>

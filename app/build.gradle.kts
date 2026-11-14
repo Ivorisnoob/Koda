@@ -25,11 +25,11 @@ android {
 
     defaultConfig {
         applicationId = "com.ivor.ivormusic"
-        // Android 11. Anything below 33 only works because core library
+        // Android 8.0. Anything below 33 only works because core library
         // desugaring is enabled below - NewPipe Extractor calls Java 10/11
         // methods (URLEncoder.encode(String, Charset) and friends) that the
         // platform did not gain until API 33.
-        minSdk = 30
+        minSdk = 26
         targetSdk = 36
         versionCode = 31
         versionName = "5.3"
