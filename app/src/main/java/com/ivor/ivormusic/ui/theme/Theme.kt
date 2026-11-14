@@ -204,16 +204,7 @@ fun IvorMusicTheme(
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = Color.Transparent.toArgb()
-            // Dark navigation-bar buttons are API 27. On 8.0 a light theme
-            // over a transparent bar would leave white buttons on a light
-            // page, so the bar keeps a translucent scrim there instead (what
-            // enableEdgeToEdge itself does on 26).
-            window.navigationBarColor =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 || darkTheme) {
-                    Color.Transparent.toArgb()
-                } else {
-                    colorScheme.scrim.copy(alpha = 0.5f).toArgb()
-                }
+            window.navigationBarColor = Color.Transparent.toArgb()
             // enableEdgeToEdge leaves contrast enforcement on for the
             // navigation bar, which paints a translucent system scrim behind
             // it on three-button navigation - a visible band under the

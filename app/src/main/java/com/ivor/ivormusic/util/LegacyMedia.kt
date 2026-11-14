@@ -23,7 +23,9 @@ fun MediaFormat.intOrDefault(name: String, default: Int): Int =
  *
  * `getScaledFrameAtTime` is API 27. Below it the full frame is decoded and
  * scaled down here, which costs more memory for the moment it is held but
- * draws the same picture.
+ * draws the same picture. A 4K frame is about 33 MB, so running out of memory
+ * on an old phone answers null (no thumbnail) rather than reaching the call
+ * sites, whose `catch (Exception)` does not cover an `OutOfMemoryError`.
  */
 fun MediaMetadataRetriever.scaledFrameAtTimeCompat(
     timeUs: Long,
@@ -34,16 +36,23 @@ fun MediaMetadataRetriever.scaledFrameAtTimeCompat(
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
         return getScaledFrameAtTime(timeUs, option, width, height)
     }
-    val frame = getFrameAtTime(timeUs, option) ?: return null
+    val frame = try {
+        getFrameAtTime(timeUs, option)
+    } catch (_: OutOfMemoryError) {
+        null
+    } ?: return null
     if (width <= 0 || height <= 0 || frame.width <= 0 || frame.height <= 0) return frame
     val scale = minOf(width.toFloat() / frame.width, height.toFloat() / frame.height)
     if (scale >= 1f) return frame
-    val scaled = Bitmap.createScaledBitmap(
-        frame,
-        (frame.width * scale).toInt().coerceAtLeast(1),
-        (frame.height * scale).toInt().coerceAtLeast(1),
-        true,
-    )
-    if (scaled !== frame) frame.recycle()
-    return scaled
+    return try {
+        Bitmap.createScaledBitmap(
+            frame,
+            (frame.width * scale).toInt().coerceAtLeast(1),
+            (frame.height * scale).toInt().coerceAtLeast(1),
+            true,
+        ).also { scaled -> if (scaled !== frame) frame.recycle() }
+    } catch (_: OutOfMemoryError) {
+        frame.recycle()
+        null
+    }
 }
