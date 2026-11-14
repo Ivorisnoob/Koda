@@ -93,6 +93,7 @@ import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -1583,6 +1584,8 @@ internal fun ContentSettingsPage(
     onShowShortsButtons: () -> Unit,
     showRecentSearches: Boolean,
     onShowRecentSearchesToggle: (Boolean) -> Unit,
+    openKeyboardOnSearch: Boolean,
+    onOpenKeyboardOnSearchToggle: (Boolean) -> Unit,
     showRelatedVideos: Boolean,
     onShowRelatedVideosToggle: (Boolean) -> Unit,
     inlinePreviews: Boolean,
@@ -1645,6 +1648,43 @@ internal fun ContentSettingsPage(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        item {
+            // Both switches here are about the search bar itself, so they
+            // live together rather than one of them being filed under what
+            // the app recommends. Outside the local-only block on purpose:
+            // the search screen is there in local-only mode too, keyboard
+            // and all.
+            SettingsSection(title = stringResource(R.string.sp_search_section)) {
+                SettingsCard {
+                    // The keyboard takes half the screen the moment it
+                    // arrives, which is why whether it arrives is a choice.
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Keyboard,
+                        title = stringResource(R.string.sp_open_keyboard_on_search),
+                        subtitle = if (openKeyboardOnSearch) {
+                            stringResource(R.string.sp_open_keyboard_on_search_on)
+                        } else {
+                            stringResource(R.string.sp_open_keyboard_on_search_off)
+                        },
+                        enabled = openKeyboardOnSearch,
+                        onToggle = onOpenKeyboardOnSearchToggle,
+                        explanation = stringResource(R.string.si_open_keyboard_on_search)
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Search,
+                        title = stringResource(R.string.sp_show_recent_searches),
+                        subtitle = stringResource(R.string.sp_show_recent_searches_sub),
+                        enabled = showRecentSearches,
+                        onToggle = onShowRecentSearchesToggle,
+                        explanation = stringResource(R.string.si_recent_searches)
+                    )
                 }
             }
         }
@@ -1773,25 +1813,14 @@ internal fun ContentSettingsPage(
 
                         SettingsDivider()
 
-                        // Both are worded as what is shown, so the switch
-                        // position and the sentence agree. They sit above the
-                        // blocklist row because they are the blunt version of
-                        // the same wish: less of what was not asked for.
-                        SettingsToggleRow(
-                            icon = Icons.Rounded.Search,
-                            title = stringResource(R.string.sp_show_recent_searches),
-                            subtitle = stringResource(R.string.sp_show_recent_searches_sub),
-                            enabled = showRecentSearches,
-                            onToggle = onShowRecentSearchesToggle,
-                            explanation = stringResource(R.string.si_recent_searches)
-                        )
-
-                        SettingsDivider()
-
                         VideoListLayoutChooser()
 
                         SettingsDivider()
 
+                        // Worded as what is shown, so the switch position and
+                        // the sentence agree. It sits above the blocklist row
+                        // because it is the blunt version of the same wish:
+                        // less of what was not asked for.
                         SettingsToggleRow(
                             icon = Icons.Rounded.Recommend,
                             title = stringResource(R.string.sp_show_related_videos),

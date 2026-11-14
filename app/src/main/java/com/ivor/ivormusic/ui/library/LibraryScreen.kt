@@ -3819,6 +3819,8 @@ fun PlaylistDetailScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
+    // Whether the field takes the keyboard with it when the search opens.
+    val openKeyboardOnSearch by swipePrefs.openKeyboardOnSearch.collectAsState()
 
     // Cover art. Only a playlist the user made has artwork of its own to
     // replace - a YouTube playlist's cover belongs to whoever published it.
@@ -3952,8 +3954,11 @@ fun PlaylistDetailScreen(
         }
     }
 
-    LaunchedEffect(isSearchActive) {
+    LaunchedEffect(isSearchActive, openKeyboardOnSearch) {
         if (isSearchActive) {
+            // The keyboard arrives with the focus, so the switch that says it
+            // should not governs the focus too. Off: the field waits for a tap.
+            if (!openKeyboardOnSearch) return@LaunchedEffect
             withFrameNanos { }
             runCatching { searchFocus.requestFocus() }
         } else {

@@ -190,6 +190,7 @@ fun ListeningHistoryScreen(
     // honest while it is open.
     val themePreferences = remember(context) { ThemePreferences(context) }
     val saveHistory by themePreferences.saveMusicHistory.collectAsState()
+    val openKeyboardOnSearch by themePreferences.openKeyboardOnSearch.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.loadPlayHistory()
@@ -334,7 +335,8 @@ fun ListeningHistoryScreen(
                     query = query,
                     onQueryChange = { query = it },
                     onClear = { query = "" },
-                    onSubmit = { focusManager.clearFocus() }
+                    onSubmit = { focusManager.clearFocus() },
+                    openKeyboardOnSearch = openKeyboardOnSearch
                 )
             }
 
@@ -1012,11 +1014,16 @@ private fun HistorySearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     onClear: () -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: () -> Unit,
+    openKeyboardOnSearch: Boolean
 ) {
     val focusRequester = remember { FocusRequester() }
-    // Opened by a deliberate tap, so the keyboard should already be there.
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    // Opened by a deliberate tap, so the keyboard should already be there -
+    // unless the person turned that off in Settings, in which case the field
+    // waits for a tap and the keyboard comes with it.
+    LaunchedEffect(openKeyboardOnSearch) {
+        if (openKeyboardOnSearch) focusRequester.requestFocus()
+    }
 
     OutlinedTextField(
         value = query,
