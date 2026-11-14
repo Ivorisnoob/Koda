@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data
 
 import android.content.Context
+import com.ivor.ivormusic.util.scaledFrameAtTimeCompat
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.media.MediaMetadataRetriever
@@ -66,7 +67,12 @@ class LocalVideoThumbnailFetcher(
     }
 
     private fun loadFromProvider(width: Int, height: Int): Bitmap? = try {
-        context.contentResolver.loadThumbnail(data.uri, Size(width, height), null)
+        // ContentResolver.loadThumbnail is API 29; older phones decode a frame.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            context.contentResolver.loadThumbnail(data.uri, Size(width, height), null)
+        } else {
+            null
+        }
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -85,12 +91,12 @@ class LocalVideoThumbnailFetcher(
             // a broken thumbnail. OPTION_CLOSEST_SYNC keeps it to one keyframe
             // decode. Falls back to the first frame for videos shorter than
             // that, where the request returns null.
-            retriever.getScaledFrameAtTime(
+            retriever.scaledFrameAtTimeCompat(
                 1_000_000L,
                 MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
                 width,
                 height,
-            ) ?: retriever.getScaledFrameAtTime(
+            ) ?: retriever.scaledFrameAtTimeCompat(
                 0L,
                 MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
                 width,

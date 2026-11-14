@@ -1,31 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Keep in step with values/themes.xml: transparent bars must be theme-
-         declared or OEM skins (HyperOS/MIUI) draw their own opaque scrim. -->
-    <style name="Theme.IvorMusic" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:enforceStatusBarContrast">false</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
-        <!-- Draw into the camera cutout on every edge from the moment the
-             window exists. MainActivity also sets this at runtime, but
-             like the bar colours above, some OEM skins only honour what
-             the window was created with, which left landscape boxed in
-             beside the notch. Screens keep their controls clear of it. -->
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
-    </style>
+    <!-- Theme.IvorMusic comes from values/themes.xml, with its contrast
+         and cutout attributes from values-v30 (Platform.Theme.IvorMusic). -->
 
     <!-- Splash Screen Theme (Android 12+) — uses Material You dynamic color -->
-    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+    <style name="Theme.App.Starting" parent="Platform.App.Starting">
         <!-- Dynamic wallpaper-derived dark background (neutral shade 900) -->
         <item name="windowSplashScreenBackground">@android:color/system_neutral1_900</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/avd_splash</item>
         <item name="windowSplashScreenAnimationDuration">800</item>
         <item name="postSplashScreenTheme">@style/Theme.IvorMusic</item>
-        <!-- The activity window is created under this theme, so the
-             cutout mode has to be declared here too. -->
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
     </style>
 </resources>

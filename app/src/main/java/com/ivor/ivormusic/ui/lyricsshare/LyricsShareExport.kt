@@ -81,9 +81,14 @@ internal object LyricsShareExport {
 
     /**
      * Saves the card to Pictures/Koda. No storage permission: from Android 10
-     * an app may add its own images to MediaStore, and minSdk is 30.
+     * an app may add its own images to MediaStore. Android 8 and 9 have no
+     * RELATIVE_PATH and would need WRITE_EXTERNAL_STORAGE for Pictures, so
+     * there the card goes to Koda's own Pictures folder on shared storage
+     * (no permission from API 19) and is handed to the media scanner so
+     * gallery apps list it.
      */
     suspend fun save(context: Context, bitmap: ImageBitmap, song: Song): Boolean = withContext(Dispatchers.IO) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return@withContext saveLegacy(context, bitmap, song)
         val resolver = context.contentResolver
         var uri: Uri? = null
         try {
@@ -104,6 +109,26 @@ internal object LyricsShareExport {
             KLog.e(TAG, "Could not save the card", e)
             // A half-written entry would show in the gallery as a broken image.
             uri?.let { runCatching { resolver.delete(it, null, null) } }
+            false
+        }
+    }
+
+    private fun saveLegacy(context: Context, bitmap: ImageBitmap, song: Song): Boolean {
+        val directory = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return false
+        val file = File(directory, fileName(song))
+        return try {
+            directory.mkdirs()
+            write(bitmap, file.outputStream())
+            android.media.MediaScannerConnection.scanFile(
+                context,
+                arrayOf(file.absolutePath),
+                arrayOf("image/png"),
+                null
+            )
+            true
+        } catch (e: Exception) {
+            KLog.e(TAG, "Could not save the card", e)
+            file.delete()
             false
         }
     }

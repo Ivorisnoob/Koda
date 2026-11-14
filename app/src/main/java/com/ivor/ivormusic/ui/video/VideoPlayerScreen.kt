@@ -1,4 +1,5 @@
 package com.ivor.ivormusic.ui.video
+import com.ivor.ivormusic.util.scaledFrameAtTimeCompat
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.ui.components.ConnectionAdviceCard
@@ -1866,7 +1867,7 @@ private suspend fun extractLocalVideoFrame(
             encodedHeight = encodedHeight,
             rotationDegrees = rotation,
         )
-        retriever.getScaledFrameAtTime(
+        retriever.scaledFrameAtTimeCompat(
             positionMs * 1_000L,
             MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
             targetWidth,
@@ -1877,7 +1878,8 @@ private suspend fun extractLocalVideoFrame(
     } catch (_: Exception) {
         null
     } finally {
-        retriever.close()
+        // release(), not close(): close() is API 29.
+        runCatching { retriever.release() }
     }
 }
 

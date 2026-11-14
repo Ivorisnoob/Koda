@@ -23,6 +23,9 @@ object LyricsRomanizer {
      */
     fun romanize(lines: List<String>): List<String?> {
         if (lines.none(::needsRomanizing)) return lines.map { null }
+        // android.icu.text.Transliterator is API 29: older phones keep the
+        // lyrics as they are, the same as a device without these rules.
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return lines.map { null }
         val japanese = lines.any(::hasKana)
         val transliterator = try {
             Transliterator.getInstance(if (japanese) EXCEPT_HAN else ALL_SCRIPTS)

@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.data
 
 import com.ivor.ivormusic.util.KLog
+import com.ivor.ivormusic.util.intOrDefault
 
 import android.media.MediaCodec
 import android.media.AudioFormat
@@ -275,8 +276,8 @@ object AudioProfiler {
             ?: return DecodedAudio.EMPTY
 
         val envelope = ArrayList<Float>(512)
-        var sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE, 44_100)
-        var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT, 2).coerceAtLeast(1)
+        var sampleRate = format.intOrDefault(MediaFormat.KEY_SAMPLE_RATE, 44_100)
+        var channels = format.intOrDefault(MediaFormat.KEY_CHANNEL_COUNT, 2).coerceAtLeast(1)
         var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
         val mono = FloatCollector((sampleRate * (windowUs / 1_000_000L)).toInt())
         var firstAcceptedPresentationUs = Long.MIN_VALUE
@@ -367,8 +368,8 @@ object AudioProfiler {
                     }
                 } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     val output = codec.outputFormat
-                    sampleRate = output.getInteger(MediaFormat.KEY_SAMPLE_RATE, sampleRate)
-                    channels = output.getInteger(MediaFormat.KEY_CHANNEL_COUNT, channels)
+                    sampleRate = output.intOrDefault(MediaFormat.KEY_SAMPLE_RATE, sampleRate)
+                    channels = output.intOrDefault(MediaFormat.KEY_CHANNEL_COUNT, channels)
                         .coerceAtLeast(1)
                     pcmEncoding = if (output.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
                         output.getInteger(MediaFormat.KEY_PCM_ENCODING)

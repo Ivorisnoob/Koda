@@ -148,7 +148,7 @@ class WaveformEnvelope internal constructor(internal val levels: ByteArray) {
     /**
      * [java.util.Base64] rather than `android.util.Base64` on purpose: the android.jar the
      * JVM tests run against is stubbed, so the platform one would encode every envelope to
-     * nothing in a test that still passed. Real on API 26 and up; minSdk here is 30.
+     * nothing in a test that still passed. Real on API 26 and up, which is minSdk.
      */
     fun encodeToString(): String =
         Base64.getEncoder().encodeToString(synchronized(levels) { levels.copyOf() })
