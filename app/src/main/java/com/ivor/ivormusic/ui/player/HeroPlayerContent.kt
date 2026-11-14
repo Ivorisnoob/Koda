@@ -340,6 +340,7 @@ fun HeroPlayerSheetContent(
                                                 artistName?.let(onArtistClick)
                                             }
                                     )
+                                    PlayerAudioQualityBadge(modifier = Modifier.padding(top = 6.dp))
                                 }
                                 Spacer(Modifier.width(12.dp))
                                 // Like, in the reference's round slot on the art.

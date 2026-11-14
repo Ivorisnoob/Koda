@@ -748,6 +748,7 @@ internal fun LandscapeNowPlaying(
                                     .padding(vertical = 2.dp)
                             )
                         }
+                        PlayerAudioQualityBadge(modifier = Modifier.padding(top = 6.dp))
                     }
 
                     Spacer(Modifier.height(if (roomy) 16.dp else 8.dp))

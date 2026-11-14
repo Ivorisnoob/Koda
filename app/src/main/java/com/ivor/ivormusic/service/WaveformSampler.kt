@@ -127,6 +127,9 @@ internal class WaveformSampler(
     private fun request(item: MediaItem, durationMs: Long?) {
         val uri = item.localConfiguration?.uri ?: return
         if (uri.toString().startsWith(MusicStreamResolver.PLACEHOLDER_PREFIX) || uri.scheme == "error") return
+        // The whole-song pass reads through the music cache under the song id
+        // (see LosslessStreamUri); a lossless stream keeps the live waveform only.
+        if (com.ivor.ivormusic.data.lossless.LosslessStreamUri.isLossless(uri)) return
         WaveformAnalyzer.request(
             context = context,
             songId = item.mediaId,

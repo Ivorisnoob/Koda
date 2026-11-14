@@ -812,6 +812,15 @@ internal fun buildSettingsSearchIndex(
 
     // Advanced
     entry(
+        "lossless", stringResource(R.string.lossless_title), "Advanced", Icons.Rounded.GraphicEq,
+        listOf(
+            "lossless", "flac", "hi-res", "hires", "hi res", "cd quality", "24-bit", "24 bit",
+            "audiophile", "bit perfect", "server", "lossless server", "lossless download",
+            "lossless streaming", "high quality", "best quality", "audio quality",
+            "kept songs", "lossless cache", "offline lossless", "verify quality", "spectrum"
+        )
+    ) { onOpenPage(SettingsPage.LOSSLESS) }
+    entry(
         "compat_scan", stringResource(R.string.sp_high_compat_scanning), "Advanced", Icons.Rounded.Security,
         listOf(
             "mediastore", "hyperos", "miui", "xiaomi", "redmi", "poco",

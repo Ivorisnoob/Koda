@@ -485,6 +485,7 @@ private fun ClassicNowPlaying(
                             .clip(RoundedCornerShape(8.dp))
                             .clickable(enabled = artist != null) { artist?.let(onArtistClick) }
                     )
+                    PlayerAudioQualityBadge(modifier = Modifier.padding(top = 6.dp))
                 }
                 val song = currentSong
                 if (song != null) {

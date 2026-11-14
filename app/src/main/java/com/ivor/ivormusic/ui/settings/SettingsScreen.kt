@@ -287,7 +287,8 @@ internal enum class SettingsPage {
     VIDEO_PLAYER,
     VIDEO_FEED,
     VIDEO_SHADERS,
-    STANDBY;
+    STANDBY,
+    LOSSLESS;
 
     /**
      * Where back goes from this page. Most pages are opened from the hub;
@@ -299,6 +300,7 @@ internal enum class SettingsPage {
             APPEARANCE, APP_ICON, DISPLAY_SIZE, PLAYER, MINI_PLAYER,
             HOME_NAVIGATION, GESTURES, VIDEO_PLAYER, VIDEO_FEED, VIDEO_SHADERS, STANDBY -> CUSTOMIZATION
             VIDEO_HOME -> CONTENT
+            LOSSLESS -> ADVANCED
             else -> HUB
         }
 
@@ -1103,7 +1105,12 @@ fun SettingsScreen(
                 onReportBug = onNavigateToReportBug,
                 onOpenTimeLimit = onNavigateToTimeLimit,
                 onOpenAutoHelp = { showAutoHelpDialog = true },
+                onOpenLossless = { page = SettingsPage.LOSSLESS },
                 onBack = { page = SettingsPage.HUB }
+            )
+
+            SettingsPage.LOSSLESS -> LosslessSettingsPage(
+                onBack = { page = SettingsPage.LOSSLESS.parent }
             )
 
             SettingsPage.BACKUP -> {

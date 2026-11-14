@@ -2827,11 +2827,34 @@ internal fun AdvancedSettingsPage(
     onReportBug: () -> Unit,
     onOpenTimeLimit: () -> Unit,
     onOpenAutoHelp: () -> Unit,
+    onOpenLossless: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    // The row says what the lossless page holds, as every way in does. Read
+    // off the main thread: the store is encrypted.
+    val lossless by androidx.compose.runtime.produceState<com.ivor.ivormusic.data.lossless.LosslessConfig?>(null) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { com.ivor.ivormusic.data.lossless.LosslessSettings.read(context) }.getOrNull()
+        }
+    }
 
     SettingsDetailScaffold(title = stringResource(R.string.settings_advanced), onBack = onBack) {
+        item {
+            SettingsSection(title = stringResource(R.string.lossless_section_audio)) {
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Rounded.GraphicEq,
+                        title = stringResource(R.string.lossless_title),
+                        subtitle = losslessSummary(lossless),
+                        onClick = onOpenLossless,
+                        showChevron = true,
+                        explanation = stringResource(R.string.lossless_explanation)
+                    )
+                }
+            }
+        }
+
         // The old screen showed this section to everyone. It only means
         // anything on the OEMs that break background playback and MediaStore,
         // so lead with why it is here.

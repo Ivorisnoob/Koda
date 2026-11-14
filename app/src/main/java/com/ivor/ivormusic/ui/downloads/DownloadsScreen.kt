@@ -415,6 +415,7 @@ private fun MusicTab(
     val context = LocalContext.current
     val repository = remember(context) { DownloadRepository.getInstance(context) }
     val playlists by repository.playlistStore.playlists.collectAsState()
+    val losslessDownloads by repository.losslessDownloads.collectAsState()
     var expandedPlaylist by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Resolved once per change rather than inside the lazy scope: offlineSongs
@@ -483,7 +484,8 @@ private fun MusicTab(
                                     fallbackIcon = Icons.Rounded.MusicNote,
                                     shape = expandedTrackShape(index, available.size),
                                     onPlay = { onPlayQueue(available, song) },
-                                    onDelete = { onDelete(song.id) }
+                                    onDelete = { onDelete(song.id) },
+                                    lossless = losslessDownloads[song.id]
                                 )
                             }
                         }
@@ -522,7 +524,8 @@ private fun MusicTab(
                     fallbackIcon = Icons.Rounded.MusicNote,
                     shape = segmentedShape(index, songs.size),
                     onPlay = { onPlayQueue(songs, song) },
-                    onDelete = { onDelete(song.id) }
+                    onDelete = { onDelete(song.id) },
+                    lossless = losslessDownloads[song.id]
                 )
                 if (index < songs.lastIndex) Spacer(Modifier.height(ListItemDefaults.SegmentedGap))
             }
@@ -712,7 +715,9 @@ private fun DownloadedRow(
     shape: Shape,
     onPlay: () -> Unit,
     onDelete: () -> Unit,
-    wideArtwork: Boolean = false
+    wideArtwork: Boolean = false,
+    /** Set for a song saved from the lossless server: it wears the pill. */
+    lossless: com.ivor.ivormusic.data.lossless.LosslessDownloadInfo? = null,
 ) {
     Surface(
         modifier = Modifier
@@ -767,14 +772,31 @@ private fun DownloadedRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                if (subtitle.isNotBlank() || lossless != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = if (lossless != null) 2.dp else 0.dp)
+                    ) {
+                        if (lossless != null) {
+                            com.ivor.ivormusic.ui.components.LosslessPill(
+                                hiRes = lossless.isHiRes,
+                                compact = true
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            // The pill names the kind; the line after it the
+                            // exact format, then who it is by.
+                            text = listOfNotNull(
+                                lossless?.detail,
+                                subtitle.takeIf { it.isNotBlank() }
+                            ).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 

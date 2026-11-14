@@ -913,6 +913,15 @@ class ThemePreferences(context: Context) {
         const val DOWNLOAD_MUSIC_QUALITY_SAVER = "saver"
 
         /**
+         * Music download quality: FLAC from the listener's lossless server
+         * (`data/lossless/`). Carried on a request and written to the failed
+         * downloads file, so frozen; never stored here as the default - that
+         * lives with the server's settings, so forgetting the server cannot
+         * leave every download asking for a server that is gone.
+         */
+        const val DOWNLOAD_MUSIC_QUALITY_LOSSLESS = "lossless"
+
+        /**
          * The quality a music download uses when nobody picked one for it: a
          * playlist row, a retry, a download started without the sheet.
          *
