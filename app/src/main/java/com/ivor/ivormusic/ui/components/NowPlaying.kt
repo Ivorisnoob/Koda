@@ -33,13 +33,13 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.theme.onMediaScrim
 
 /**
  * What the players hold right now, for every list that marks the current row.
@@ -143,7 +143,7 @@ fun NowPlayingMark(
         val description = stringResource(
             if (match.playing) R.string.cd_song_now_playing else R.string.cd_song_paused
         )
-        val barColor = if (onArtwork) barsOnScrimColor() else MaterialTheme.colorScheme.primary
+        val barColor = if (onArtwork) MaterialTheme.colorScheme.onMediaScrim else MaterialTheme.colorScheme.primary
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -206,21 +206,6 @@ fun NowPlayingInlineBars(
         color = color,
         modifier = modifier.semantics { contentDescription = description },
     )
-}
-
-/**
- * A colour that stays light on the scrim in every scheme. Scrim is black in
- * light, dark, AMOLED and album colours; `onSurface` is the light role in a
- * dark scheme and `inverseOnSurface` is the light role in a light one.
- */
-@Composable
-private fun barsOnScrimColor(): Color {
-    val scheme = MaterialTheme.colorScheme
-    return if (scheme.onSurface.luminance() >= scheme.inverseOnSurface.luminance()) {
-        scheme.onSurface
-    } else {
-        scheme.inverseOnSurface
-    }
 }
 
 @Composable

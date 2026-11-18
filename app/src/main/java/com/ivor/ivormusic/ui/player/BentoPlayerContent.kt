@@ -303,7 +303,8 @@ fun BentoPlayerSheetContent(
                                     onSeekTo = { viewModel.seekTo(it) },
                                     primaryColor = MaterialTheme.colorScheme.primary,
                                     onSurfaceColor = onTile,
-                                    onSurfaceVariantColor = onTileVariant
+                                    onSurfaceVariantColor = onTileVariant,
+                                    backgroundColor = tileColor
                                 )
                             } else {
                                 val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }

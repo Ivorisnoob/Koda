@@ -373,7 +373,8 @@ private fun EditorialNowPlayingView(
                         onSeekTo = onSeekTo,
                         primaryColor = accent,
                         onSurfaceColor = accent,
-                        onSurfaceVariantColor = accent.copy(alpha = 0.6f)
+                        onSurfaceVariantColor = accent.copy(alpha = 0.6f),
+                        backgroundColor = field
                     )
                 } else {
                     Box(

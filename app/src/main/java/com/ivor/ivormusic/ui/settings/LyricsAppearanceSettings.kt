@@ -103,13 +103,15 @@ internal fun LyricsAppearancePage(onBack: () -> Unit) {
                     AppearanceToggle(Icons.Rounded.TextFields, R.string.lyrics_look_caps, look.uppercase) {
                         update(look.copy(uppercase = it))
                     }
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.Translate,
-                        title = stringResource(R.string.lyrics_romanized),
-                        subtitle = stringResource(R.string.lyrics_romanized_sub),
-                        enabled = romanized,
-                        onToggle = prefs::setLyricsRomanized
-                    )
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.Translate,
+                            title = stringResource(R.string.lyrics_romanized),
+                            subtitle = stringResource(R.string.lyrics_romanized_sub),
+                            enabled = romanized,
+                            onToggle = prefs::setLyricsRomanized
+                        )
+                    }
                 }
             }
         }
@@ -216,7 +218,8 @@ private fun LyricsAppearancePreview() {
                 isPlaying = false,
                 onSeekTo = {},
                 onSurfaceColor = colors.onSurface,
-                interactive = false
+                interactive = false,
+                backgroundColor = colors.surfaceContainerHigh
             )
             FilledTonalIconButton(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(48.dp),

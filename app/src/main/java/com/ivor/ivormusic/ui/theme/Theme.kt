@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -113,6 +114,10 @@ internal fun ColorScheme.toAmoled(): ColorScheme = copy(
     surfaceContainerHigh = Color(0xFF181818),
     surfaceContainerHighest = Color(0xFF202020)
 )
+
+/** Light foreground for controls over the scheme's image and video scrim. */
+internal val ColorScheme.onMediaScrim: Color
+    get() = if (onSurface.luminance() >= inverseOnSurface.luminance()) onSurface else inverseOnSurface
 
 // Expressive shapes with more rounded corners
 private val ExpressiveShapes = Shapes(

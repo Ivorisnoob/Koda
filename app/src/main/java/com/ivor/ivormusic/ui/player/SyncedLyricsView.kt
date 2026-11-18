@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -161,7 +162,8 @@ fun SyncedLyricsView(
      * no scrolling by hand, so a swipe or a hold over the lyrics reaches the
      * screen behind them. The lyrics still follow the song.
      */
-    interactive: Boolean = true
+    interactive: Boolean = true,
+    backgroundColor: Color = MaterialTheme.colorScheme.background
 ) {
     val lyricsMotionEnabled = rememberLyricsMotionEnabled()
     // Read here rather than passed in, so every player style and Standby
@@ -216,6 +218,7 @@ fun SyncedLyricsView(
                         onSeekTo = onSeekTo,
                         primaryColor = primaryColor,
                         onSurfaceColor = onSurfaceColor,
+                        backgroundColor = backgroundColor,
                         motionEnabled = lyricsMotionEnabled,
                         isPlaying = isPlaying,
                         centered = centered,
@@ -239,6 +242,7 @@ private fun LyricsContent(
     onSeekTo: (Long) -> Unit,
     primaryColor: Color,
     onSurfaceColor: Color,
+    backgroundColor: Color,
     motionEnabled: Boolean,
     isPlaying: Boolean,
     centered: Boolean,
@@ -258,6 +262,19 @@ private fun LyricsContent(
     // centring would throw away who is singing.
     val duet = look.duetSides && remember(lines) { lines.any { it.voice == LyricVoice.DUET } }
     val isSynced = syncType != LyricsSyncType.PLAIN
+    val minimumInkAlpha = remember(onSurfaceColor, backgroundColor) {
+        minimumLyricAlpha(onSurfaceColor, backgroundColor, 4.5f)
+    }
+    val sungColor = remember(look.highlight, primaryColor, onSurfaceColor, backgroundColor) {
+        if (look.highlight == LyricsHighlight.ACCENT && lyricContrast(primaryColor, backgroundColor) >= 4.5f) {
+            primaryColor
+        } else {
+            onSurfaceColor
+        }
+    }
+    val minimumDotAlpha = remember(sungColor, backgroundColor) {
+        minimumLyricAlpha(sungColor, backgroundColor, 3f)
+    }
 
     // Read here for the reason the alignment is. Off the main thread, and made
     // again only for a new song: building ICU's rules takes a moment.
@@ -354,8 +371,7 @@ private fun LyricsContent(
         val lineSpacing = look.spacing.dp.dp * if (maxHeight < 420.dp) 0.7f else 1f
         val typeScale = ((maxWidth - horizontalPadding * 2) / 312.dp).coerceIn(0.75f, 1f)
         val textStyle = lyricLineStyle(look, MaterialTheme.typography.headlineSmall, fitsDisplayFont, typeScale)
-        val sungColor = if (look.highlight == LyricsHighlight.ACCENT) primaryColor else onSurfaceColor
-        val glow = look.glow && sungColor.luminance() > 0.5f
+        val glow = look.glow && backgroundColor.luminance() < 0.25f && sungColor.luminance() > 0.5f
         // Each side of a duet stops short of the other, so a long line that
         // wraps still reads as belonging to its side.
         val duetInset = if (duet) maxWidth * DUET_INSET_FRACTION else 0.dp
@@ -423,6 +439,8 @@ private fun LyricsContent(
                     },
                     primaryColor = sungColor,
                     onSurfaceColor = onSurfaceColor,
+                    minimumInkAlpha = minimumInkAlpha,
+                    minimumDotAlpha = minimumDotAlpha,
                     motionEnabled = motionEnabled,
                     currentPositionMs = currentPositionMs,
                     dotsMoving = isPlaying && motionEnabled,
@@ -438,6 +456,7 @@ private fun LyricsContent(
             InterludeDots(
                 progress = intro.progress,
                 color = sungColor,
+                minimumAlpha = minimumDotAlpha,
                 pulseTimeMs = currentPositionMs.takeIf { isPlaying && motionEnabled },
                 modifier = Modifier
                     .align(if (centered && !duet) Alignment.TopCenter else Alignment.TopStart)
@@ -446,6 +465,28 @@ private fun LyricsContent(
             )
         }
     }
+}
+
+private fun lyricContrast(ink: Color, background: Color): Float {
+    val foregroundLuminance = ink.compositeOver(background).luminance()
+    val backgroundLuminance = background.luminance()
+    return (maxOf(foregroundLuminance, backgroundLuminance) + 0.05f) /
+        (minOf(foregroundLuminance, backgroundLuminance) + 0.05f)
+}
+
+/** Find the lowest readable opacity on the surface this style actually uses. */
+private fun minimumLyricAlpha(ink: Color, background: Color, contrast: Float): Float {
+    var below = 0f
+    var above = 1f
+    repeat(8) {
+        val alpha = (below + above) / 2f
+        if (lyricContrast(ink.copy(alpha = alpha), background) >= contrast) {
+            above = alpha
+        } else {
+            below = alpha
+        }
+    }
+    return above
 }
 
 private data class LyricInterlude(val afterIndex: Int, val progress: Float)
@@ -474,6 +515,7 @@ private val instrumentalMarkers = setOf("", "♪", "♫", "…", "...", "(instru
 private fun InterludeDots(
     progress: Float,
     color: Color,
+    minimumAlpha: Float,
     pulseTimeMs: Long?,
     modifier: Modifier = Modifier
 ) {
@@ -482,9 +524,10 @@ private fun InterludeDots(
             val fill = (progress * 3f - index).coerceIn(0f, 1f)
             val phase = pulseTimeMs?.let { (it % 1_400L) / 1_400f * 2f * Math.PI - index * 0.6 }
             val pulse = phase?.let { (0.5 + 0.5 * kotlin.math.sin(it)).toFloat() } ?: 0f
+            val emphasis = fill + 0.16f * pulse * (1f - fill)
             drawCircle(
-                color = color.copy(alpha = 0.32f + 0.68f * fill + 0.16f * pulse * (1f - fill)),
-                radius = 3.dp.toPx(),
+                color = color.copy(alpha = minimumAlpha + (1f - minimumAlpha) * emphasis),
+                radius = (2.5f + 0.5f * emphasis).dp.toPx(),
                 center = Offset((5 + 12 * index).dp.toPx(), center.y)
             )
         }
@@ -620,6 +663,8 @@ private fun LyricLine(
     onLongPress: (() -> Unit)? = null,
     primaryColor: Color,
     onSurfaceColor: Color,
+    minimumInkAlpha: Float,
+    minimumDotAlpha: Float,
     motionEnabled: Boolean,
     currentPositionMs: Long = 0L,
     dotsMoving: Boolean,
@@ -632,12 +677,9 @@ private fun LyricLine(
     duetInset: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val emphasized = !isSynced || isCurrent
+    val restingStrength = if (distance <= 1) look.dim.near else look.dim.far
     val lineAlpha by animateFloatAsState(
-        targetValue = when {
-            emphasized -> 1f
-            distance <= 1 -> look.dim.near
-            else -> look.dim.far
-        },
+        targetValue = if (emphasized) 1f else minimumInkAlpha + (1f - minimumInkAlpha) * restingStrength,
         animationSpec = if (motionEnabled) spring(stiffness = Spring.StiffnessLow) else snap(),
         label = "LyricAlpha"
     )
@@ -650,7 +692,7 @@ private fun LyricLine(
         if (look.uppercase) line.text.uppercase() else line.text
     }
     val blur = if (look.blur && !emphasized && android.os.Build.VERSION.SDK_INT >= 31) {
-        ((distance - 1) * 0.6f).coerceIn(0f, 1.8f).dp
+        ((distance - 1) * 0.5f).coerceIn(0f, 1.5f).dp
     } else 0.dp
     val blurPx = with(LocalDensity.current) { blur.toPx() }
     val blurEffect = remember(blurPx) {
@@ -744,7 +786,7 @@ private fun LyricLine(
                                 lineText = displayText,
                                 currentPositionMs = currentPositionMs,
                                 primaryColor = primaryColor,
-                                unsungColor = onSurfaceColor.copy(alpha = 0.5f),
+                                unsungColor = onSurfaceColor.copy(alpha = minimumInkAlpha),
                                 motionEnabled = motionEnabled && look.wordMotion,
                                 glowEnabled = glowEnabled,
                                 textStyle = textStyle,
@@ -786,7 +828,7 @@ private fun LyricLine(
                     Text(
                         text = romanized,
                         style = MaterialTheme.typography.titleMedium,
-                        color = onSurfaceColor.copy(alpha = 0.7f),
+                        color = onSurfaceColor,
                         textAlign = side.textAlign,
                         modifier = Modifier.padding(top = 4.dp)
                     )
@@ -796,6 +838,7 @@ private fun LyricLine(
                 InterludeDots(
                     progress = it,
                     color = primaryColor,
+                    minimumAlpha = minimumDotAlpha,
                     pulseTimeMs = currentPositionMs.takeIf { dotsMoving },
                     modifier = Modifier.padding(top = 8.dp)
                 )
