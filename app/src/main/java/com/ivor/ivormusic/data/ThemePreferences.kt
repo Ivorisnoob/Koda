@@ -402,6 +402,9 @@ class ThemePreferences(context: Context) {
     val lyricsCentered: StateFlow<Boolean> = _lyricsCentered.asStateFlow()
     private val _lyricsRomanized = MutableStateFlow(getLyricsRomanizedPreference())
     val lyricsRomanized: StateFlow<Boolean> = _lyricsRomanized.asStateFlow()
+    private val _lyricsLook = MutableStateFlow(readLyricsLook())
+    /** How synced lyrics look and move; see [LyricsCustomization]. */
+    val lyricsLook: StateFlow<LyricsCustomization> = _lyricsLook.asStateFlow()
 
     // Two ways the app suggests things you did not ask for. Stated as what is
     // shown rather than what is hidden, so the switch position and the sentence
@@ -565,6 +568,7 @@ class ThemePreferences(context: Context) {
             KEY_STANDBY_DIM -> _standbyDim.value = getStandbyDimPreference()
             KEY_LYRICS_CENTERED -> _lyricsCentered.value = getLyricsCenteredPreference()
             KEY_LYRICS_ROMANIZED -> _lyricsRomanized.value = getLyricsRomanizedPreference()
+            in LYRICS_LOOK_KEYS -> _lyricsLook.value = readLyricsLook()
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
@@ -1152,6 +1156,29 @@ class ThemePreferences(context: Context) {
         private const val KEY_STANDBY_LOOK_PREFIX = "standby_look_"
         private const val KEY_LYRICS_CENTERED = "lyrics_centered"
         private const val KEY_LYRICS_ROMANIZED = "lyrics_romanized"
+        // The lyrics look (LyricsCustomization); stored values are the enums' ids.
+        private const val KEY_LYRICS_LOOK_FONT = "lyrics_look_font"
+        private const val KEY_LYRICS_LOOK_WEIGHT = "lyrics_look_weight"
+        private const val KEY_LYRICS_LOOK_SIZE = "lyrics_look_size"
+        private const val KEY_LYRICS_LOOK_SPACING = "lyrics_look_spacing"
+        private const val KEY_LYRICS_LOOK_HIGHLIGHT = "lyrics_look_highlight"
+        private const val KEY_LYRICS_LOOK_DIM = "lyrics_look_dim"
+        private const val KEY_LYRICS_LOOK_BLUR = "lyrics_look_blur"
+        private const val KEY_LYRICS_LOOK_WORD_MOTION = "lyrics_look_word_motion"
+        private const val KEY_LYRICS_LOOK_GLOW = "lyrics_look_glow"
+        private const val KEY_LYRICS_LOOK_SCROLL = "lyrics_look_scroll"
+        private const val KEY_LYRICS_LOOK_REST = "lyrics_look_rest"
+        private const val KEY_LYRICS_LOOK_DOTS = "lyrics_look_interlude_dots"
+        private const val KEY_LYRICS_LOOK_DEPTH = "lyrics_look_depth_scale"
+        private const val KEY_LYRICS_LOOK_UPPERCASE = "lyrics_look_uppercase"
+        private const val KEY_LYRICS_LOOK_DUET = "lyrics_look_duet_sides"
+        private val LYRICS_LOOK_KEYS = setOf(
+            KEY_LYRICS_LOOK_FONT, KEY_LYRICS_LOOK_WEIGHT, KEY_LYRICS_LOOK_SIZE,
+            KEY_LYRICS_LOOK_SPACING, KEY_LYRICS_LOOK_HIGHLIGHT, KEY_LYRICS_LOOK_DIM,
+            KEY_LYRICS_LOOK_BLUR, KEY_LYRICS_LOOK_WORD_MOTION, KEY_LYRICS_LOOK_GLOW,
+            KEY_LYRICS_LOOK_SCROLL, KEY_LYRICS_LOOK_REST, KEY_LYRICS_LOOK_DOTS,
+            KEY_LYRICS_LOOK_DEPTH, KEY_LYRICS_LOOK_UPPERCASE, KEY_LYRICS_LOOK_DUET,
+        )
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
         private const val KEY_INLINE_PREVIEWS = "inline_previews"
@@ -2944,6 +2971,48 @@ class ThemePreferences(context: Context) {
     fun setLyricsRomanized(romanized: Boolean) {
         prefs.edit().putBoolean(KEY_LYRICS_ROMANIZED, romanized).apply()
         _lyricsRomanized.value = romanized
+    }
+
+    private fun readLyricsLook(): LyricsCustomization {
+        val defaults = LyricsCustomization.Default
+        return LyricsCustomization(
+            font = LyricsFont.fromId(prefs.getString(KEY_LYRICS_LOOK_FONT, null)),
+            weight = LyricsWeight.fromId(prefs.getString(KEY_LYRICS_LOOK_WEIGHT, null)),
+            size = LyricsTextSize.fromId(prefs.getString(KEY_LYRICS_LOOK_SIZE, null)),
+            spacing = LyricsLineSpacing.fromId(prefs.getString(KEY_LYRICS_LOOK_SPACING, null)),
+            highlight = LyricsHighlight.fromId(prefs.getString(KEY_LYRICS_LOOK_HIGHLIGHT, null)),
+            dim = LyricsDim.fromId(prefs.getString(KEY_LYRICS_LOOK_DIM, null)),
+            blur = prefs.getBoolean(KEY_LYRICS_LOOK_BLUR, defaults.blur),
+            wordMotion = prefs.getBoolean(KEY_LYRICS_LOOK_WORD_MOTION, defaults.wordMotion),
+            glow = prefs.getBoolean(KEY_LYRICS_LOOK_GLOW, defaults.glow),
+            scroll = LyricsScroll.fromId(prefs.getString(KEY_LYRICS_LOOK_SCROLL, null)),
+            rest = LyricsRestPosition.fromId(prefs.getString(KEY_LYRICS_LOOK_REST, null)),
+            interludeDots = prefs.getBoolean(KEY_LYRICS_LOOK_DOTS, defaults.interludeDots),
+            depthScale = prefs.getBoolean(KEY_LYRICS_LOOK_DEPTH, defaults.depthScale),
+            uppercase = prefs.getBoolean(KEY_LYRICS_LOOK_UPPERCASE, defaults.uppercase),
+            duetSides = prefs.getBoolean(KEY_LYRICS_LOOK_DUET, defaults.duetSides),
+        )
+    }
+
+    fun setLyricsLook(look: LyricsCustomization) {
+        prefs.edit()
+            .putString(KEY_LYRICS_LOOK_FONT, look.font.id)
+            .putString(KEY_LYRICS_LOOK_WEIGHT, look.weight.id)
+            .putString(KEY_LYRICS_LOOK_SIZE, look.size.id)
+            .putString(KEY_LYRICS_LOOK_SPACING, look.spacing.id)
+            .putString(KEY_LYRICS_LOOK_HIGHLIGHT, look.highlight.id)
+            .putString(KEY_LYRICS_LOOK_DIM, look.dim.id)
+            .putBoolean(KEY_LYRICS_LOOK_BLUR, look.blur)
+            .putBoolean(KEY_LYRICS_LOOK_WORD_MOTION, look.wordMotion)
+            .putBoolean(KEY_LYRICS_LOOK_GLOW, look.glow)
+            .putString(KEY_LYRICS_LOOK_SCROLL, look.scroll.id)
+            .putString(KEY_LYRICS_LOOK_REST, look.rest.id)
+            .putBoolean(KEY_LYRICS_LOOK_DOTS, look.interludeDots)
+            .putBoolean(KEY_LYRICS_LOOK_DEPTH, look.depthScale)
+            .putBoolean(KEY_LYRICS_LOOK_UPPERCASE, look.uppercase)
+            .putBoolean(KEY_LYRICS_LOOK_DUET, look.duetSides)
+            .apply()
+        _lyricsLook.value = look
     }
 
     private fun getShowRecentSearchesPreference(): Boolean =

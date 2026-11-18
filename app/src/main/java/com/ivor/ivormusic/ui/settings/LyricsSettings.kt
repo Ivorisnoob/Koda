@@ -8,10 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DragHandle
-import androidx.compose.material.icons.rounded.FormatAlignCenter
-import androidx.compose.material.icons.rounded.FormatAlignLeft
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.RestartAlt
-import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,6 +33,7 @@ import com.ivor.ivormusic.util.rememberKodaHaptics
 internal fun LyricsSettingsPage(
     configuration: LyricsConfiguration,
     onChange: (LyricsConfiguration) -> Unit,
+    onOpenAppearance: () -> Unit,
     onBack: () -> Unit
 ) {
     val haptics = rememberKodaHaptics()
@@ -57,31 +56,13 @@ internal fun LyricsSettingsPage(
         itemSpacing = 4.dp
     ) {
         item {
-            // How lyrics look, ahead of where they come from: the one choice
-            // here that changes something on screen.
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val prefs = remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
-            val centered by prefs.lyricsCentered.collectAsState()
-            val romanized by prefs.lyricsRomanized.collectAsState()
             SettingsCard {
-                SettingsChoiceRow(
-                    icon = if (centered) Icons.Rounded.FormatAlignCenter else Icons.Rounded.FormatAlignLeft,
-                    title = stringResource(R.string.lyrics_alignment),
-                    subtitle = stringResource(R.string.lyrics_alignment_sub),
-                    labels = listOf(
-                        stringResource(R.string.lyrics_alignment_left),
-                        stringResource(R.string.lyrics_alignment_centre)
-                    ),
-                    selectedIndex = if (centered) 1 else 0,
-                    onSelect = { prefs.setLyricsCentered(it == 1) }
-                )
-                SettingsDivider()
-                SettingsToggleRow(
-                    icon = Icons.Rounded.Translate,
-                    title = stringResource(R.string.lyrics_romanized),
-                    subtitle = stringResource(R.string.lyrics_romanized_sub),
-                    enabled = romanized,
-                    onToggle = prefs::setLyricsRomanized
+                SettingsRow(
+                    icon = Icons.Rounded.MusicNote,
+                    title = stringResource(R.string.lyrics_look_title),
+                    subtitle = lyricsAppearanceSummary(),
+                    onClick = onOpenAppearance,
+                    showChevron = true
                 )
             }
             Spacer(Modifier.height(12.dp))

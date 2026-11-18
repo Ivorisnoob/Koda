@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.SmartDisplay
@@ -129,6 +130,13 @@ internal fun CustomizationSettingsPage(
                         onClick = { onOpenPage(SettingsPage.MINI_PLAYER) },
                         iconShape = MaterialShapes.Pill.toShape(),
                         explanation = stringResource(R.string.cz_info_mini_player)
+                    )
+                    SettingsHubRow(
+                        icon = Icons.Rounded.MusicNote,
+                        title = stringResource(R.string.lyrics_look_title),
+                        value = lyricsAppearanceSummary(),
+                        onClick = { onOpenPage(SettingsPage.LYRICS_APPEARANCE) },
+                        iconShape = MaterialShapes.Pill.toShape()
                     )
                     SettingsHubRow(
                         icon = Icons.Rounded.Bedtime,

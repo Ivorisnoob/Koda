@@ -12,11 +12,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -29,10 +31,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -49,40 +54,32 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Constraints
 import com.ivor.ivormusic.data.LrcContentSpan
 import com.ivor.ivormusic.data.LrcLine
 import com.ivor.ivormusic.data.LyricVoice
+import com.ivor.ivormusic.data.LyricsCustomization
+import com.ivor.ivormusic.data.LyricsFont
+import com.ivor.ivormusic.data.LyricsHighlight
 import com.ivor.ivormusic.data.LyricsResult
+import com.ivor.ivormusic.data.LyricsScroll
 import com.ivor.ivormusic.data.LyricsSyncType
+import com.ivor.ivormusic.ui.theme.InterFamily
+import com.ivor.ivormusic.ui.theme.LoraFamily
 import com.ivor.ivormusic.ui.theme.MontserratFamily
+import com.ivor.ivormusic.ui.theme.NunitoFamily
 import com.ivor.ivormusic.util.lyricsFitDisplayFont
 import kotlinx.coroutines.isActive
 
-/**
- * Set a lyric in the chosen family, or leave the style exactly as it was.
- *
- * Written as "leave it alone" rather than `copy(fontFamily = null)` on purpose:
- * null in a [TextStyle] is the platform default, not "inherit", so a literal
- * copy would quietly take every non-Latin song off the theme's font too.
- */
-private fun TextStyle.withLyricsFont(family: FontFamily?): TextStyle =
-    if (family == null) this else copy(fontFamily = family)
-
-/**
- * The one style every lyric line is set in, sung or not, word-timed or not.
- *
- * Emphasis is colour, alpha and glow only. Giving the current line a larger
- * size or heavier weight re-wraps it the moment it becomes current, so a line
- * that fit on one row jumped to two with nothing to animate between; and
- * enlarging it after layout instead draws outside its bounds (the clipping
- * scar in docs/playback-music.md).
- */
 /**
  * What a long press on a lyric line does, given the line's index in the
  * lyrics: open the share screen with that line picked. Provided once by
@@ -91,9 +88,30 @@ private fun TextStyle.withLyricsFont(family: FontFamily?): TextStyle =
  */
 internal val LocalLyricLongPress = staticCompositionLocalOf<((Int) -> Unit)?> { null }
 
-@Composable
-private fun lyricLineStyle(): TextStyle =
-    MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold)
+internal fun lyricLineStyle(
+    look: LyricsCustomization,
+    base: TextStyle,
+    fitsDisplayFont: Boolean = true,
+    scale: Float = 1f
+): TextStyle {
+    val family = if (!fitsDisplayFont) FontFamily.SansSerif else when (look.font) {
+        LyricsFont.INTER -> InterFamily
+        LyricsFont.MONTSERRAT -> MontserratFamily
+        LyricsFont.SYSTEM -> FontFamily.SansSerif
+        LyricsFont.ROUNDED -> NunitoFamily
+        LyricsFont.SERIF -> LoraFamily
+    }
+    val size = look.size.sp * scale
+    return base.copy(
+        fontFamily = family,
+        fontWeight = FontWeight(look.weight.value),
+        fontSize = size.sp,
+        lineHeight = (size * 1.2f).sp,
+        letterSpacing = if (fitsDisplayFont && look.font == LyricsFont.INTER) (-0.02f).em else 0.em,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+    )
+}
 
 /**
  * Synced Lyrics View - Material 3 Expressive
@@ -131,7 +149,7 @@ fun SyncedLyricsView(
      * centre left half the panel empty above the first line, and put more of
      * what has been sung on screen than of what is coming.
      */
-    anchorFraction: Float = LYRIC_ANCHOR,
+    anchorFraction: Float? = null,
     /**
      * Move to the next line as a cascade, each line below the sung one
      * following a beat after the one above. False is the plain scroll, kept
@@ -145,22 +163,22 @@ fun SyncedLyricsView(
      */
     interactive: Boolean = true
 ) {
-    val hasWordTiming = lyricsResult is LyricsResult.Success &&
-        lyricsResult.syncType == LyricsSyncType.WORD
     val lyricsMotionEnabled = rememberLyricsMotionEnabled()
     // Read here rather than passed in, so every player style and Standby
     // follow the one setting without each having to be wired to it.
     val context = LocalContext.current
-    val centered by remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
-        .lyricsCentered.collectAsState()
+    val prefs = remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
+    val centered by prefs.lyricsCentered.collectAsState()
+    val look by prefs.lyricsLook.collectAsState()
+    val interpolate = lyricsResult is LyricsResult.Success &&
+        (lyricsResult.syncType == LyricsSyncType.WORD ||
+            (lyricsResult.syncType == LyricsSyncType.LINE && look.interludeDots && lyricsMotionEnabled))
     var renderedPositionMs by remember { mutableLongStateOf(currentPositionMs) }
 
-    // The player publishes coarse progress updates. Interpolate only while a
-    // word-timed lyric is visible so the sung color advances one grapheme at a
-    // time without increasing app-wide playback update frequency.
-    LaunchedEffect(currentPositionMs, isPlaying, hasWordTiming) {
+    // Fill timed words and instrumental dots smoothly between progress samples.
+    LaunchedEffect(currentPositionMs, isPlaying, interpolate) {
         renderedPositionMs = currentPositionMs
-        if (!isPlaying || !hasWordTiming) return@LaunchedEffect
+        if (!isPlaying || !interpolate) return@LaunchedEffect
 
         val anchorPositionMs = currentPositionMs
         val anchorFrameNanos = withFrameNanos { it }
@@ -199,9 +217,11 @@ fun SyncedLyricsView(
                         primaryColor = primaryColor,
                         onSurfaceColor = onSurfaceColor,
                         motionEnabled = lyricsMotionEnabled,
+                        isPlaying = isPlaying,
                         centered = centered,
                         horizontalGutter = horizontalGutter,
-                        anchorFraction = anchorFraction,
+                        anchorFraction = anchorFraction ?: look.rest.fraction,
+                        look = look,
                         cascadeScroll = cascadeScroll,
                         interactive = interactive
                     )
@@ -220,20 +240,23 @@ private fun LyricsContent(
     primaryColor: Color,
     onSurfaceColor: Color,
     motionEnabled: Boolean,
+    isPlaying: Boolean,
     centered: Boolean,
     horizontalGutter: androidx.compose.ui.unit.Dp?,
     anchorFraction: Float,
+    look: LyricsCustomization,
     cascadeScroll: Boolean,
     interactive: Boolean
 ) {
     val listState = rememberLazyListState()
+    val scrubbing by listState.interactionSource.collectIsDraggedAsState()
     val onLineLongPress = LocalLyricLongPress.current.takeIf { interactive }
     val longPressHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val cascade = remember { LyricCascade() }
-    val cascading = cascadeScroll && motionEnabled
+    val cascading = cascadeScroll && motionEnabled && look.scroll == LyricsScroll.CASCADE
     // A duet is drawn as a conversation, whatever the alignment setting:
     // centring would throw away who is singing.
-    val duet = remember(lines) { lines.any { it.voice == LyricVoice.DUET } }
+    val duet = look.duetSides && remember(lines) { lines.any { it.voice == LyricVoice.DUET } }
     val isSynced = syncType != LyricsSyncType.PLAIN
 
     // Read here for the reason the alignment is. Off the main thread, and made
@@ -251,13 +274,7 @@ private fun LyricsContent(
         }
     }
 
-    // Montserrat for the lyric itself, where it can draw the song's script -
-    // see lyricsFitDisplayFont for why that is a question and why it is asked
-    // once per song. Null means "leave the theme's font alone", which is what
-    // the non-Latin case wants; it is never a silent box of tofu.
-    val lyricsFont: FontFamily? = remember(lines) {
-        if (lyricsFitDisplayFont(lines.map { it.text })) MontserratFamily else null
-    }
+    val fitsDisplayFont = remember(lines) { lyricsFitDisplayFont(lines.map { it.text }) }
 
     // Calculate current line index based on playback position. -1 while the
     // intro plays, so the first line isn't falsely highlighted before its
@@ -268,10 +285,16 @@ private fun LyricsContent(
         }
     }
 
+    val interlude = if (isSynced && look.interludeDots) {
+        lyricInterlude(lines, currentLineIndex, currentPositionMs)
+    } else {
+        null
+    }
+
     // Auto-scroll the sung line to the anchor, using the item's measured
     // height. A fixed scroll offset is wrong as soon as a line wraps or font
     // scale grows.
-    LaunchedEffect(currentLineIndex, lines) {
+    LaunchedEffect(currentLineIndex, lines, anchorFraction, look.size, look.spacing, look.scroll, cascading) {
         if (isSynced && currentLineIndex >= 0 && lines.isNotEmpty()) {
             try {
                 if (listState.layoutInfo.visibleItemsInfo.none { it.index == currentLineIndex }) {
@@ -301,6 +324,8 @@ private fun LyricsContent(
                         val moved = listState.scrollBy(delta)
                         // The end of the list can stop the jump short.
                         if (moved != delta) cascade.correctLast(moved)
+                    } else if (!motionEnabled || look.scroll == LyricsScroll.INSTANT) {
+                        listState.scrollBy(delta)
                     } else {
                         listState.animateScrollBy(delta)
                     }
@@ -326,7 +351,11 @@ private fun LyricsContent(
         // view always had.
         val topPadding = (maxHeight * anchorFraction - 36.dp).coerceAtLeast(12.dp)
         val bottomPadding = (maxHeight * (1f - anchorFraction) - 36.dp).coerceAtLeast(12.dp)
-        val lineSpacing = if (maxHeight < 420.dp) 20.dp else 28.dp
+        val lineSpacing = look.spacing.dp.dp * if (maxHeight < 420.dp) 0.7f else 1f
+        val typeScale = ((maxWidth - horizontalPadding * 2) / 312.dp).coerceIn(0.75f, 1f)
+        val textStyle = lyricLineStyle(look, MaterialTheme.typography.headlineSmall, fitsDisplayFont, typeScale)
+        val sungColor = if (look.highlight == LyricsHighlight.ACCENT) primaryColor else onSurfaceColor
+        val glow = look.glow && sungColor.luminance() > 0.5f
         // Each side of a duet stops short of the other, so a long line that
         // wraps still reads as belonging to its side.
         val duetInset = if (duet) maxWidth * DUET_INSET_FRACTION else 0.dp
@@ -371,13 +400,16 @@ private fun LyricsContent(
             horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start
         ) {
             itemsIndexed(lines, key = { index, line -> "${index}_${line.timeMs}" }) { index, line ->
+                val gap = interlude?.takeIf { it.afterIndex == index }
                 LyricLine(
                     modifier = Modifier.graphicsLayer {
                         translationY = cascade.offsetFor(index, cascade.frameNanos)
                     },
                     line = line,
                     romanized = romanizedLines.getOrNull(index),
-                    isCurrent = index == currentLineIndex,
+                    isCurrent = index == currentLineIndex && gap == null,
+                    distance = if (scrubbing) 1 else kotlin.math.abs(index - currentLineIndex),
+                    interludeProgress = gap?.progress,
                     isSynced = isSynced,
                     tappable = interactive,
                     onTap = { onSeekTo(line.timeMs) },
@@ -389,21 +421,75 @@ private fun LyricsContent(
                             open(index)
                         }
                     },
-                    primaryColor = primaryColor,
+                    primaryColor = sungColor,
                     onSurfaceColor = onSurfaceColor,
                     motionEnabled = motionEnabled,
                     currentPositionMs = currentPositionMs,
-                    lyricsFont = lyricsFont,
+                    dotsMoving = isPlaying && motionEnabled,
+                    look = look,
+                    glowEnabled = glow,
+                    textStyle = textStyle,
                     side = lineSide(line, duet, centered),
                     duetInset = duetInset
                 )
             }
         }
+        interlude?.takeIf { it.afterIndex == -1 }?.let { intro ->
+            InterludeDots(
+                progress = intro.progress,
+                color = sungColor,
+                pulseTimeMs = currentPositionMs.takeIf { isPlaying && motionEnabled },
+                modifier = Modifier
+                    .align(if (centered && !duet) Alignment.TopCenter else Alignment.TopStart)
+                    .padding(start = if (centered && !duet) 0.dp else horizontalPadding)
+                    .offset(y = (topPadding - 28.dp).coerceAtLeast(0.dp))
+            )
+        }
     }
 }
 
-/** Where the sung line rests by default; see [SyncedLyricsView]'s anchorFraction. */
-private const val LYRIC_ANCHOR = 0.32f
+private data class LyricInterlude(val afterIndex: Int, val progress: Float)
+
+private fun lyricInterlude(lines: List<LrcLine>, current: Int, positionMs: Long): LyricInterlude? {
+    val next = lines.getOrNull(current + 1)?.timeMs ?: return null
+    val end = if (current < 0) 0L else {
+        val line = lines[current]
+        if (line.text.trim().lowercase() in instrumentalMarkers) line.timeMs
+        else {
+            val lastSpan = line.contentSpans.maxByOrNull { it.timeMs } ?: return null
+            if (lastSpan.durationMs <= 0L) return null
+            line.contentSpans.maxOf { it.timeMs + it.durationMs.coerceAtLeast(0L) }
+        }
+    }
+    val duration = next - end
+    // Without a known end time, a held note can look like an instrumental.
+    val settleMs = if (current < 0) 0L else 300L
+    if (duration < 4_000L || positionMs < end + settleMs) return null
+    return LyricInterlude(current, ((positionMs - end).toFloat() / duration).coerceIn(0f, 1f))
+}
+
+private val instrumentalMarkers = setOf("", "♪", "♫", "…", "...", "(instrumental)", "[instrumental]")
+
+@Composable
+private fun InterludeDots(
+    progress: Float,
+    color: Color,
+    pulseTimeMs: Long?,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier.size(width = 34.dp, height = 16.dp)) {
+        repeat(3) { index ->
+            val fill = (progress * 3f - index).coerceIn(0f, 1f)
+            val phase = pulseTimeMs?.let { (it % 1_400L) / 1_400f * 2f * Math.PI - index * 0.6 }
+            val pulse = phase?.let { (0.5 + 0.5 * kotlin.math.sin(it)).toFloat() } ?: 0f
+            drawCircle(
+                color = color.copy(alpha = 0.32f + 0.68f * fill + 0.16f * pulse * (1f - fill)),
+                radius = 3.dp.toPx(),
+                center = Offset((5 + 12 * index).dp.toPx(), center.y)
+            )
+        }
+    }
+}
 
 /** How long a word-timed line takes to settle from its sung colours into a resting line. */
 private const val WORD_LINE_DISSOLVE_MS = 320
@@ -525,6 +611,8 @@ private fun LyricLine(
     romanized: String? = null,
     isCurrent: Boolean,
     isSynced: Boolean,
+    distance: Int,
+    interludeProgress: Float?,
     /** False on a display-only surface: the line takes no touch at all. */
     tappable: Boolean = true,
     onTap: () -> Unit,
@@ -534,19 +622,46 @@ private fun LyricLine(
     onSurfaceColor: Color,
     motionEnabled: Boolean,
     currentPositionMs: Long = 0L,
-    /** Null leaves the theme's own font in place; see [lyricsFitDisplayFont]. */
-    lyricsFont: FontFamily? = null,
+    dotsMoving: Boolean,
+    look: LyricsCustomization,
+    glowEnabled: Boolean,
+    textStyle: TextStyle,
     /** Which edge the line is set from; see [lineSide]. */
     side: LyricSide = LyricSide.START,
     /** Room kept free on the side away from this line's singer, in a duet. */
     duetInset: androidx.compose.ui.unit.Dp = 0.dp
 ) {
-    // Animate alpha for past/future lines
-    val alpha by animateFloatAsState(
-        targetValue = if (!isSynced || isCurrent) 1f else 0.35f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
+    val emphasized = !isSynced || isCurrent
+    val lineAlpha by animateFloatAsState(
+        targetValue = when {
+            emphasized -> 1f
+            distance <= 1 -> look.dim.near
+            else -> look.dim.far
+        },
+        animationSpec = if (motionEnabled) spring(stiffness = Spring.StiffnessLow) else snap(),
         label = "LyricAlpha"
     )
+    val scale by animateFloatAsState(
+        targetValue = if (look.depthScale && !emphasized) 0.96f else 1f,
+        animationSpec = if (motionEnabled) spring(stiffness = Spring.StiffnessLow) else snap(),
+        label = "LyricScale"
+    )
+    val displayText = remember(line.text, look.uppercase) {
+        if (look.uppercase) line.text.uppercase() else line.text
+    }
+    val blur = if (look.blur && !emphasized && android.os.Build.VERSION.SDK_INT >= 31) {
+        ((distance - 1) * 0.6f).coerceIn(0f, 1.8f).dp
+    } else 0.dp
+    val blurPx = with(LocalDensity.current) { blur.toPx() }
+    val blurEffect = remember(blurPx) {
+        if (blurPx > 0f) BlurEffect(blurPx, blurPx, TileMode.Decal) else null
+    }
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    val pivot = when (side) {
+        LyricSide.START -> if (rtl) 1f else 0f
+        LyricSide.CENTER -> 0.5f
+        LyricSide.END -> if (rtl) 0f else 1f
+    }
 
     // Current and inactive lines share one style so a line wraps identically
     // either way; only colour and glow change, and both fade. A size or
@@ -563,12 +678,12 @@ private fun LyricLine(
     val highlighted = isSynced && isCurrent && !wordTimed
     val lineColor by animateColorAsState(
         targetValue = if (highlighted) primaryColor else onSurfaceColor,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        animationSpec = if (motionEnabled) spring(stiffness = Spring.StiffnessLow) else snap(),
         label = "LyricColor"
     )
     val glow by animateFloatAsState(
-        targetValue = if (highlighted) 1f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        targetValue = if (highlighted && glowEnabled) 1f else 0f,
+        animationSpec = if (motionEnabled) spring(stiffness = Spring.StiffnessLow) else snap(),
         label = "LyricGlow"
     )
 
@@ -592,7 +707,6 @@ private fun LyricLine(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .alpha(alpha)
             .then(tapModifier)
             .padding(vertical = 8.dp)
             .padding(
@@ -601,72 +715,91 @@ private fun LyricLine(
             ),
         contentAlignment = side.boxAlignment
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = side.columnAlignment
-        ) {
-        if (wordTimed) {
-            // The two views wrap a line identically (see KaraokeWordFlow), so
-            // a crossfade between them reads as the colour settling, not as
-            // one line replaced by another.
-            androidx.compose.animation.Crossfade(
-                targetState = isCurrent,
-                animationSpec = tween(WORD_LINE_DISSOLVE_MS, easing = FastOutSlowInEasing),
-                modifier = Modifier.fillMaxWidth(),
-                label = "WordLineDissolve"
-            ) { singing ->
-                if (singing) {
-                    KaraokeWordFlow(
-                        spans = line.contentSpans,
-                        lineText = line.text,
-                        currentPositionMs = currentPositionMs,
-                        primaryColor = primaryColor,
-                        unsungColor = onSurfaceColor.copy(alpha = 0.5f),
-                        motionEnabled = motionEnabled,
-                        lyricsFont = lyricsFont,
-                        side = side,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+        Column(horizontalAlignment = side.columnAlignment) {
+            Column(
+                modifier = Modifier.fillMaxWidth().graphicsLayer {
+                    alpha = lineAlpha.coerceIn(0f, 1f)
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(pivot, 0.5f)
+                    renderEffect = blurEffect
+                },
+                horizontalAlignment = side.columnAlignment
+            ) {
+                if (wordTimed) {
+                    // The two views wrap a line identically (see KaraokeWordFlow), so
+                    // a crossfade between them reads as the colour settling, not as
+                    // one line replaced by another.
+                    androidx.compose.animation.Crossfade(
+                        targetState = isCurrent,
+                        animationSpec = if (motionEnabled) {
+                            tween(WORD_LINE_DISSOLVE_MS, easing = FastOutSlowInEasing)
+                        } else snap(),
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "WordLineDissolve"
+                    ) { singing ->
+                        if (singing) {
+                            KaraokeWordFlow(
+                                spans = line.contentSpans,
+                                lineText = displayText,
+                                currentPositionMs = currentPositionMs,
+                                primaryColor = primaryColor,
+                                unsungColor = onSurfaceColor.copy(alpha = 0.5f),
+                                motionEnabled = motionEnabled && look.wordMotion,
+                                glowEnabled = glowEnabled,
+                                textStyle = textStyle,
+                                side = side,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Text(
+                                text = displayText,
+                                style = textStyle,
+                                color = onSurfaceColor,
+                                textAlign = side.textAlign,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                 } else {
+                    // Line-synced lyrics highlight the whole line - no invented
+                    // per-word fill.
                     Text(
-                        text = line.text,
-                        style = lyricLineStyle().withLyricsFont(lyricsFont),
-                        color = onSurfaceColor,
+                        text = displayText,
+                        style = textStyle.copy(
+                            shadow = if (glow > 0.01f) {
+                                Shadow(
+                                    color = primaryColor.copy(alpha = 0.5f * glow),
+                                    blurRadius = 24f * glow
+                                )
+                            } else {
+                                null
+                            }
+                        ),
+                        color = lineColor,
+                        textAlign = side.textAlign
+                    )
+                }
+                // Stays still under the line: the singing is followed in the line
+                // itself, and word timings describe that script, not this one.
+                if (romanized != null) {
+                    Text(
+                        text = romanized,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = onSurfaceColor.copy(alpha = 0.7f),
                         textAlign = side.textAlign,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }
-        } else {
-            // Line-synced lyrics highlight the whole line - no invented
-            // per-word fill.
-            Text(
-                text = line.text,
-                style = lyricLineStyle().copy(
-                    shadow = if (glow > 0.01f) {
-                        Shadow(
-                            color = primaryColor.copy(alpha = 0.5f * glow),
-                            blurRadius = 24f * glow
-                        )
-                    } else {
-                        null
-                    }
-                ).withLyricsFont(lyricsFont),
-                color = lineColor,
-                textAlign = side.textAlign
-            )
-        }
-        // Stays still under the line: the singing is followed in the line
-        // itself, and word timings describe that script, not this one.
-        if (romanized != null) {
-            Text(
-                text = romanized,
-                style = MaterialTheme.typography.titleMedium,
-                color = onSurfaceColor.copy(alpha = 0.7f),
-                textAlign = side.textAlign,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
+            interludeProgress?.let {
+                InterludeDots(
+                    progress = it,
+                    color = primaryColor,
+                    pulseTimeMs = currentPositionMs.takeIf { dotsMoving },
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
         }
     }
 }
@@ -730,7 +863,8 @@ private fun KaraokeWordFlow(
     primaryColor: Color,
     unsungColor: Color,
     motionEnabled: Boolean,
-    lyricsFont: FontFamily? = null,
+    glowEnabled: Boolean,
+    textStyle: TextStyle,
     side: LyricSide = LyricSide.START,
     modifier: Modifier = Modifier
 ) {
@@ -742,14 +876,13 @@ private fun KaraokeWordFlow(
     if (tokens.isEmpty()) {
         Text(
             text = lineText,
-            style = lyricLineStyle().withLyricsFont(lyricsFont),
+            style = textStyle,
             color = primaryColor,
             textAlign = side.textAlign
         )
         return
     }
 
-    val textStyle = lyricLineStyle().withLyricsFont(lyricsFont)
     val density = LocalDensity.current
     // The font's real space advance, so this line wraps where the same line
     // set as plain text does. Measured as the difference between "a a" and
@@ -784,6 +917,7 @@ private fun KaraokeWordFlow(
                 primaryColor = primaryColor,
                 unsungColor = unsungColor,
                 motionEnabled = motionEnabled,
+                glowEnabled = glowEnabled,
                 textStyle = textStyle,
                 maxWidthPx = maxWordWidthPx
             )
@@ -798,7 +932,8 @@ private fun KaraokeWord(
     primaryColor: Color,
     unsungColor: Color,
     motionEnabled: Boolean,
-    textStyle: androidx.compose.ui.text.TextStyle,
+    glowEnabled: Boolean,
+    textStyle: TextStyle,
     maxWidthPx: Int
 ) {
     val density = LocalDensity.current
@@ -871,7 +1006,7 @@ private fun KaraokeWord(
         }
         val wordScale = 1f + SUSTAIN_SCALE * sustain
         val wordPivot = Offset(size.width / 2f, size.height - topInsetPx)
-        val glowShadow = if (sustain > 0.01f) {
+        val glowShadow = if (glowEnabled && sustain > 0.01f) {
             Shadow(
                 color = primaryColor.copy(alpha = 0.35f * sustain),
                 blurRadius = 16f * sustain

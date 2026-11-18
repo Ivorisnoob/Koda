@@ -276,6 +276,7 @@ internal enum class SettingsPage {
     ADVANCED,
     DISPLAY_SIZE,
     LYRICS,
+    LYRICS_APPEARANCE,
     LASTFM,
     SPONSORBLOCK,
     APP_ICON,
@@ -297,7 +298,7 @@ internal enum class SettingsPage {
     val parent: SettingsPage
         get() = when (this) {
             APPEARANCE, APP_ICON, DISPLAY_SIZE, PLAYER, MINI_PLAYER,
-            HOME_NAVIGATION, GESTURES, VIDEO_PLAYER, VIDEO_FEED, VIDEO_SHADERS, STANDBY -> CUSTOMIZATION
+            HOME_NAVIGATION, GESTURES, VIDEO_PLAYER, VIDEO_FEED, VIDEO_SHADERS, STANDBY, LYRICS_APPEARANCE -> CUSTOMIZATION
             VIDEO_HOME -> CONTENT
             else -> HUB
         }
@@ -866,7 +867,12 @@ fun SettingsScreen(
         )
 
         SettingsPage.LASTFM -> LastFmSettingsPage(onBack = { page = SettingsPage.HUB })
+        SettingsPage.LYRICS_APPEARANCE -> LyricsAppearancePage(
+            onBack = { page = SettingsPage.LYRICS_APPEARANCE.parent }
+        )
+
         SettingsPage.LYRICS -> LyricsSettingsPage(
+            onOpenAppearance = { page = SettingsPage.LYRICS_APPEARANCE },
             configuration = lyricsConfiguration,
             onChange = onLyricsConfigurationChange,
             onBack = { page = SettingsPage.HUB }
