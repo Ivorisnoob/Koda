@@ -18,8 +18,12 @@ import com.ivor.ivormusic.util.KLog
  * taken by the video path, which plays audio-only files as well. Here the
  * declared type must say audio, so a link or a video never lands in music.
  */
+private val OGG_CONTAINER_TYPES = setOf("application/ogg", "application/x-ogg")
+
 fun Intent.externalAudioUri(): Uri? {
-    if (type?.startsWith("audio/") != true) return null
+    // Ogg files are often labelled application/ogg rather than audio/ogg by
+    // file managers; the manifest offers Koda for both.
+    if (type?.startsWith("audio/") != true && type !in OGG_CONTAINER_TYPES) return null
     val uri = when (action) {
         Intent.ACTION_VIEW -> data
         Intent.ACTION_SEND -> @Suppress("DEPRECATION") getParcelableExtra(Intent.EXTRA_STREAM)

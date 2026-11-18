@@ -705,6 +705,15 @@ class ThemePreferences(context: Context) {
         private const val KEY_LIVE_PLAYBACK_UPDATES = "live_playback_updates"
 
         /**
+         * Fresh read for the media button receiver: whether a last-played song
+         * is stored, which playback resumption falls back to when no queue was
+         * saved.
+         */
+        fun hasLastPlayedSong(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_LAST_SONG_ID, null) != null
+
+        /**
          * Fresh read for the playback service and its notification provider,
          * which run off a plain Context. Unlike downloads this defaults to
          * OFF: a Live Update for playback is a persistent status bar chip for

@@ -91,6 +91,12 @@ class PlaybackSessionRepository internal constructor(private val directory: File
     private val sessionFile get() = File(directory, FILE_NAME)
     private val positionFile get() = File(directory, POSITION_FILE_NAME)
 
+    /**
+     * Whether a queue was saved, without reading it: one file stat, cheap
+     * enough for a broadcast receiver on the main thread.
+     */
+    fun hasSavedQueue(): Boolean = sessionFile.exists()
+
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
