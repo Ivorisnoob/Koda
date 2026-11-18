@@ -327,6 +327,12 @@ class MainActivity : ComponentActivity() {
                 // a playlist page there tints its accents as it did before.
                 artworkWholeApp = albumThemeWholeApp && !videoMode
             ) {
+                // One holder for every song and video row. MusicApp writes it
+                // in place; the instance never changes, so a new song does not
+                // invalidate lists that only derive a boolean per row.
+                val nowPlayingState = androidx.compose.runtime.remember {
+                    com.ivor.ivormusic.ui.components.NowPlayingState()
+                }
                 val videoListLayout by themeViewModel.videoListLayout.collectAsState()
                 // Every link Koda draws goes through LocalUriHandler, so this
                 // is the one place a YouTube URL is kept in the app rather than
@@ -357,7 +363,8 @@ class MainActivity : ComponentActivity() {
                 androidx.compose.runtime.CompositionLocalProvider(
                     com.ivor.ivormusic.ui.video.LocalVideoListLayout provides videoListLayout,
                     androidx.compose.ui.platform.LocalUriHandler provides inAppUriHandler,
-                    com.ivor.ivormusic.ui.theme.LocalDrawBesideCutout provides drawBesideCutout
+                    com.ivor.ivormusic.ui.theme.LocalDrawBesideCutout provides drawBesideCutout,
+                    com.ivor.ivormusic.ui.components.LocalNowPlaying provides nowPlayingState
                 ) {
                 Box(
                     modifier = Modifier
@@ -1213,7 +1220,17 @@ fun MusicApp(
     val overlayVideo by videoPlayerViewModel.currentVideo.collectAsState()
     val isVideoOverlayExpanded by videoPlayerViewModel.isExpanded.collectAsState()
     val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
-    val musicPillVisible = playerViewModel.currentSong.collectAsState().value != null
+    val playingSong by playerViewModel.currentSong.collectAsState()
+    val musicPillVisible = playingSong != null
+    val nowPlayingState = com.ivor.ivormusic.ui.components.LocalNowPlaying.current
+    androidx.compose.runtime.SideEffect {
+        nowPlayingState.update(
+            mediaId = playingSong?.id,
+            playing = isMusicPlaying,
+            videoId = overlayVideo?.videoId,
+            videoPlaying = isVideoPlaying,
+        )
+    }
 
     // The floating nav bar and the music pill both live inside HomeScreen, so
     // they exist on the "home" route and nowhere else. The video overlay is

@@ -111,7 +111,8 @@ internal fun LazyListScope.musicBrowseItems(
                             )
                             is MusicShelfItem.Track -> ShelfItem(
                                 item.key, item.song.title, item.song.artist,
-                                item.song.thumbnailUrl, item.song.highResThumbnailUrl
+                                item.song.thumbnailUrl, item.song.highResThumbnailUrl,
+                                mediaId = item.song.id,
                             )
                             else -> null
                         }

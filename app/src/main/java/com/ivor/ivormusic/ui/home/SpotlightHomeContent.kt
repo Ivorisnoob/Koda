@@ -348,6 +348,7 @@ fun SpotlightHomeContent(
                                 it.artist,
                                 it.albumArtUri?.toString() ?: it.thumbnailUrl,
                                 it.albumArtUri?.toString() ?: it.highResThumbnailUrl,
+                                mediaId = it.id,
                             )
                         },
                         onClick = { id ->
@@ -398,6 +399,7 @@ fun SpotlightHomeContent(
                                 it.artist,
                                 it.albumArtUri?.toString() ?: it.thumbnailUrl,
                                 it.albumArtUri?.toString() ?: it.highResThumbnailUrl,
+                                mediaId = it.id,
                             )
                         },
                         onClick = { id -> songs.find { it.id == id }?.let(onSongClick) },
@@ -720,12 +722,22 @@ private fun SpotlightShortcutTile(
                         shortcut.song.albumArtUri?.toString() ?: shortcut.song.highResThumbnailUrl,
                     )
                 }
+                if (shortcut is Shortcut.Track) {
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(
+                        shortcut.song.id,
+                        Modifier.fillMaxSize(),
+                    )
+                }
             }
+            val trackId = (shortcut as? Shortcut.Track)?.song?.id
             Text(
                 text = if (shortcut is Shortcut.Liked) stringResource(R.string.shortcut_liked_songs) else shortcut.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    trackId,
+                    MaterialTheme.colorScheme.onSurface
+                ),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 10.dp),
@@ -853,13 +865,17 @@ private fun SpotlightQuickPickRow(
             // already enough: asking for 1080 here would fetch a megabyte to
             // fill a thumbnail and evict the covers that do need it.
             ShortcutImage(song.albumArtUri?.toString() ?: song.thumbnailUrl)
+            com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.fillMaxSize())
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = song.title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    song.id,
+                    MaterialTheme.colorScheme.onSurface
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -892,6 +908,8 @@ internal data class ShelfItem(
      * large avatar: a miss then costs sharpness, not an empty card.
      */
     val artworkHighRes: String? = null,
+    /** Set for a song card. Playlists and albums leave it empty. */
+    val mediaId: String? = null,
 )
 
 /**
@@ -921,6 +939,11 @@ internal fun SpotlightShelf(items: List<ShelfItem>, onClick: (String) -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) {
                     ShortcutImage(item.artwork, item.artworkHighRes)
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(
+                        item.mediaId,
+                        Modifier.fillMaxSize(),
+                        barSize = 36.dp,
+                    )
                 }
                 Column(
                     modifier = Modifier.padding(
@@ -934,7 +957,10 @@ internal fun SpotlightShelf(items: List<ShelfItem>, onClick: (String) -> Unit) {
                         text = item.title,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                            item.mediaId,
+                            MaterialTheme.colorScheme.onSurface
+                        ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

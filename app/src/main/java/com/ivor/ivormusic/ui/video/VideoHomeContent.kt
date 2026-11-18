@@ -985,6 +985,12 @@ fun VideoCard(
                         .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 ) {
                     VideoThumbnail(video = video, modifier = Modifier.fillMaxSize())
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(
+                        video.videoId,
+                        Modifier.fillMaxSize(),
+                        barSize = 28.dp,
+                        video = true,
+                    )
                     VideoThumbnailBadge(
                         video = video,
                         modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
@@ -994,7 +1000,11 @@ fun VideoCard(
                     Text(
                         text = video.title,
                         style = MaterialTheme.typography.titleSmall,
-                        color = textColor,
+                        color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                            video.videoId,
+                            textColor,
+                            video = true,
+                        ),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1045,6 +1055,12 @@ fun VideoCard(
                     VideoThumbnail(
                         video = video,
                         modifier = Modifier.fillMaxSize()
+                    )
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(
+                        video.videoId,
+                        Modifier.fillMaxSize(),
+                        barSize = 36.dp,
+                        video = true,
                     )
 
                     // Drawn over the thumbnail rather than in place of it, and
@@ -1199,7 +1215,11 @@ fun VideoCard(
                             text = video.title,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
-                            color = textColor,
+                            color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                                video.videoId,
+                                textColor,
+                                video = true,
+                            ),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )

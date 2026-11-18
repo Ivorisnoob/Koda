@@ -1770,18 +1770,21 @@ private fun RecentSongCard(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.size(112.dp)
         ) {
-            val art = song.albumArtUri ?: song.highResThumbnailUrl ?: song.thumbnailUrl
-            if (art != null) {
-                AsyncImage(model = art, contentDescription = song.title, contentScale = ContentScale.Crop)
-            } else {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            Box(Modifier.fillMaxSize()) {
+                val art = song.albumArtUri ?: song.highResThumbnailUrl ?: song.thumbnailUrl
+                if (art != null) {
+                    AsyncImage(model = art, contentDescription = song.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.fillMaxSize(), barSize = 28.dp)
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -1791,7 +1794,10 @@ private fun RecentSongCard(
         Text(
             song.title,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                song.id,
+                MaterialTheme.colorScheme.onBackground
+            ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 4.dp)
@@ -2912,7 +2918,18 @@ fun SongListItem(
         shadowElevation = shadowElevation
     ) {
         ListItem(
-            headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
+            headlineContent = {
+                Text(
+                    song.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                    color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                        song.id,
+                        androidx.compose.material3.LocalContentColor.current
+                    )
+                )
+            },
             supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingContent = {
                 Surface(
@@ -2925,6 +2942,7 @@ fun SongListItem(
                             AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                         else
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.matchParentSize())
                         com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize())
                     }
                 }
@@ -3276,9 +3294,6 @@ internal fun TrackSkeletonList(rows: Int = 6) {
 @Composable
 private fun PlaylistTrackRow(
     song: Song,
-    /** The music player is on this song: the row stands out (see below). */
-    isCurrent: Boolean = false,
-    isPlaying: Boolean = false,
     manageEnabled: Boolean,
     reorderEnabled: Boolean,
     isDragging: Boolean,
@@ -3310,7 +3325,9 @@ private fun PlaylistTrackRow(
     // fill vanished into it. `primary` is the cover's colour at the opposite
     // tone - bright on the dark ground, deep on the light one - which is the
     // contrast that survives every cover.
-    val highlighted = isCurrent && !isDragging
+    // Derived per row, so a song change recomposes this row and the one that
+    // was playing, not the track list around them.
+    val highlighted = com.ivor.ivormusic.ui.components.isNowPlayingSong(song.id) && !isDragging
     val containerColor by animateColorAsState(
         targetValue = when {
             isDragging -> MaterialTheme.colorScheme.secondaryContainer
@@ -3401,29 +3418,8 @@ private fun PlaylistTrackRow(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.matchParentSize())
                     com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize())
-                    // Playing: the bars over a scrim on the artwork, moving
-                    // while it plays and resting while paused.
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = highlighted,
-                        enter = androidx.compose.animation.fadeIn() +
-                            androidx.compose.animation.scaleIn(initialScale = 0.6f),
-                        exit = androidx.compose.animation.fadeOut() +
-                            androidx.compose.animation.scaleOut(targetScale = 0.6f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            com.ivor.ivormusic.ui.components.PlayingBars(
-                                playing = isPlaying,
-                                color = MaterialTheme.colorScheme.inverseOnSurface,
-                                size = 20.dp
-                            )
-                        }
-                    }
                 }
             }
             Column(
@@ -3772,9 +3768,6 @@ fun PlaylistDetailScreen(
     val canEditSongs = isLocalPlaylist || canEditYouTubeSongs
 
     val trackKeyPrefix = "playlist_${resolvedPlaylist.id}"
-    // Which row is playing. By song id: the page cannot tell which occurrence
-    // the queue is on, so a song listed twice marks both.
-    val nowPlaying = com.ivor.ivormusic.ui.components.LocalNowPlaying.current
     var songRows by remember(resolvedPlaylist.id) {
         val initialSongs = preloadedSongs
             ?.let { if (isAlbum) it.sortedInAlbumOrder() else it }
@@ -5153,8 +5146,6 @@ fun PlaylistDetailScreen(
                     ) {
                         PlaylistTrackRow(
                             song = song,
-                            isCurrent = nowPlaying.songId == song.id,
-                            isPlaying = nowPlaying.isPlaying,
                             manageEnabled = manageEnabled,
                             reorderEnabled = reorderEnabled,
                             isDragging = isDragging,

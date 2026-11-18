@@ -969,9 +969,7 @@ fun HomeScreen(
     androidx.compose.runtime.CompositionLocalProvider(
         com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset,
         com.ivor.ivormusic.ui.components.LocalBottomOverlayMotion provides bottomOverlayMotion,
-        com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher provides { showAccountSheet = true },
-        com.ivor.ivormusic.ui.components.LocalNowPlaying provides
-            com.ivor.ivormusic.ui.components.NowPlayingState(currentSong?.id, isPlaying)
+        com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher provides { showAccountSheet = true }
     ) {
     // Experiment: flick between the main tabs with a swipe, same contract as
     // the channel page - a fast horizontal flick moves to the next/previous
@@ -3031,6 +3029,11 @@ fun OrganicSongLayout(
                         tint = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    songs[0].id,
+                    Modifier.fillMaxSize(),
+                    barSize = 48.dp,
+                )
             }
         }
         
@@ -3094,6 +3097,11 @@ fun OrganicSongLayout(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    songs[1].id,
+                    Modifier.fillMaxSize(),
+                    barSize = 28.dp,
+                )
             }
         }
         
@@ -3157,6 +3165,11 @@ fun OrganicSongLayout(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    songs[2].id,
+                    Modifier.fillMaxSize(),
+                    barSize = 28.dp,
+                )
             }
         }
     }
@@ -3239,6 +3252,11 @@ fun SongStripCard(
                 )
             }
         }
+        com.ivor.ivormusic.ui.components.NowPlayingMark(
+            song.id,
+            Modifier.fillMaxSize(),
+            barSize = 28.dp,
+        )
     }
 }
 
@@ -3777,6 +3795,11 @@ fun JumpBackInSection(
                                 )
                             }
                         }
+                        com.ivor.ivormusic.ui.components.NowPlayingMark(
+                            song.id,
+                            Modifier.fillMaxSize(),
+                            barSize = 36.dp,
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(CAPTION_GAP))
@@ -3789,7 +3812,7 @@ fun JumpBackInSection(
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = textColor,
+                        color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(song.id, textColor),
                         modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
                     )
                     Text(

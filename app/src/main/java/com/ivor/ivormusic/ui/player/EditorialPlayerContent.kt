@@ -48,7 +48,6 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DragHandle
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
@@ -981,9 +980,8 @@ internal fun EditorialQueueView(
                             ) {
                                 Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
                                     if (isCurrent) {
-                                        Icon(
-                                            Icons.Rounded.GraphicEq, "Playing",
-                                            modifier = Modifier.size(18.dp)
+                                        com.ivor.ivormusic.ui.components.NowPlayingInlineBars(
+                                            Modifier.size(18.dp)
                                         )
                                     } else {
                                         Text(
@@ -997,10 +995,16 @@ internal fun EditorialQueueView(
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
+                                    val titleResting = LocalContentColor.current
                                     Text(
                                         text = song.title,
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isCurrent) {
+                                            titleResting
+                                        } else {
+                                            com.ivor.ivormusic.ui.components.nowPlayingTitleColor(song.id, titleResting)
+                                        },
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )

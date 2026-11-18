@@ -1837,7 +1837,7 @@ private fun SearchSongCard(
             headlineContent = {
                 Text(
                     text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
-                    color = textColor,
+                    color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(song.id, textColor),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -1860,7 +1860,6 @@ private fun SearchSongCard(
                         .clip(RoundedCornerShape(14.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize().zIndex(1f))
                     if (song.albumArtUri != null || song.thumbnailUrl != null) {
                         AsyncImage(
                             model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
@@ -1889,6 +1888,8 @@ private fun SearchSongCard(
                             }
                         }
                     }
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.matchParentSize())
+                    com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize().zIndex(1f))
                 }
             },
             trailingContent = {
@@ -2033,15 +2034,20 @@ private fun SearchTopResultCard(
             .songRowClick(onClick = onPlay, onLongClick = onLongClick, song = song)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            AsyncImage(
-                model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
+            Box(
                 modifier = Modifier
                     .size(112.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            )
+            ) {
+                AsyncImage(
+                    model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.fillMaxSize(), barSize = 32.dp)
+            }
             Spacer(Modifier.weight(1f))
             Text(
                 text = stringResource(R.string.search_top_result),
@@ -2052,7 +2058,10 @@ private fun SearchTopResultCard(
                 text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    song.id,
+                    MaterialTheme.colorScheme.onSurface
+                ),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -3228,6 +3237,12 @@ private fun CompactVideoRow(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    video.videoId,
+                    Modifier.fillMaxSize(),
+                    barSize = 28.dp,
+                    video = true,
+                )
                 VideoThumbnailBadge(
                     video = video,
                     modifier = Modifier
@@ -3245,7 +3260,11 @@ private fun CompactVideoRow(
                     text = video.title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = textColor,
+                    color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                        video.videoId,
+                        textColor,
+                        video = true,
+                    ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )

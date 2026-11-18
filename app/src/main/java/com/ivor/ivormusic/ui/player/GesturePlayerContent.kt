@@ -1416,11 +1416,9 @@ private fun GestureQueueView(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (isCurrent) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.GraphicEq,
-                                            contentDescription = "Playing",
-                                            tint = primaryColor,
-                                            modifier = Modifier.size(20.dp)
+                                        com.ivor.ivormusic.ui.components.NowPlayingInlineBars(
+                                            modifier = Modifier.size(20.dp),
+                                            color = primaryColor,
                                         )
                                     } else {
                                         Text(
@@ -1472,7 +1470,11 @@ private fun GestureQueueView(
                                         text = song.title,
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isCurrent) primaryColor else onSurfaceColor,
+                                        color = if (isCurrent) {
+                                            primaryColor
+                                        } else {
+                                            com.ivor.ivormusic.ui.components.nowPlayingTitleColor(song.id, onSurfaceColor)
+                                        },
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )

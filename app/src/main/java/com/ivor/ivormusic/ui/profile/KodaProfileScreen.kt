@@ -400,6 +400,10 @@ fun KodaProfileScreen(
                                                     modifier = Modifier.fillMaxSize()
                                                 )
                                             }
+                                            com.ivor.ivormusic.ui.components.NowPlayingMark(
+                                                song.songId,
+                                                Modifier.fillMaxSize(),
+                                            )
                                         }
                                         Spacer(Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
@@ -407,6 +411,10 @@ fun KodaProfileScreen(
                                                 text = song.title,
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 fontWeight = FontWeight.SemiBold,
+                                                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                                                    song.songId,
+                                                    androidx.compose.material3.LocalContentColor.current,
+                                                ),
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )

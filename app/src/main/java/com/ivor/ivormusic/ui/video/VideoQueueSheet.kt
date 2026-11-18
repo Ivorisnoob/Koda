@@ -28,7 +28,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -264,11 +263,10 @@ private fun QueueRow(
             contentAlignment = Alignment.Center
         ) {
             if (isCurrent) {
-                Icon(
-                    Icons.Rounded.Equalizer,
-                    contentDescription = stringResource(R.string.cd_now_playing),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
+                com.ivor.ivormusic.ui.components.NowPlayingInlineBars(
+                    modifier = Modifier.size(18.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    video = true,
                 )
             } else {
                 Text(
@@ -307,8 +305,7 @@ private fun QueueRow(
                 text = video.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                color = if (isCurrent) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface,
+                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )

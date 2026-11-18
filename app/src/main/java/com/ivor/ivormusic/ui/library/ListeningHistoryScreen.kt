@@ -938,6 +938,10 @@ private fun HistoryRunRow(
                 Text(
                     run.entry.title,
                     fontWeight = FontWeight.SemiBold,
+                    color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                        run.entry.songId,
+                        androidx.compose.material3.LocalContentColor.current,
+                    ),
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
@@ -1003,6 +1007,10 @@ private fun HistoryArtwork(run: HistoryRun) {
                 )
             }
         }
+        com.ivor.ivormusic.ui.components.NowPlayingMark(
+            run.entry.songId,
+            Modifier.fillMaxSize(),
+        )
     }
 }
 

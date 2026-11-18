@@ -999,6 +999,8 @@
     <string name="cl_added_to_queue">Added %1$s to the queue</string>
     <string name="ps_queue_empty">Queue is empty</string>
     <string name="cd_now_playing">Now Playing</string>
+    <string name="cd_song_now_playing">Now playing</string>
+    <string name="cd_song_paused">Paused</string>
     <string name="ps_queue">QUEUE</string>
     <string name="cd_playing">Playing</string>
     <string name="cd_remove_from_queue">Remove from queue</string>

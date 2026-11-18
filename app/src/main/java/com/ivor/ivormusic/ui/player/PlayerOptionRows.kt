@@ -368,6 +368,7 @@ internal fun SongOptionsHeader(song: Song) {
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize()
             )
+            com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.fillMaxSize())
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -375,7 +376,10 @@ internal fun SongOptionsHeader(song: Song) {
                 text = song.title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    song.id,
+                    MaterialTheme.colorScheme.onSurface,
+                ),
                 // Two lines: a long track name truncated to one is the same
                 // ellipsis for every song in an album, which tells the user
                 // nothing about which one they pressed.

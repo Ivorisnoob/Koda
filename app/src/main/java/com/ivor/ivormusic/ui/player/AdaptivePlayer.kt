@@ -47,7 +47,6 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.ButtonGroupDefaults
@@ -483,22 +482,11 @@ private fun QueuePaneRow(
                         .size(48.dp)
                         .clip(RoundedCornerShape(12.dp))
                 )
-                if (isCurrent) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.GraphicEq,
-                            contentDescription = stringResource(R.string.cd_playing),
-                            tint = MaterialTheme.colorScheme.inverseOnSurface,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    song.id,
+                    Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)),
+                    currentOccurrence = isCurrent
+                )
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {

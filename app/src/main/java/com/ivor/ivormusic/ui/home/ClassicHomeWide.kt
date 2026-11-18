@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -225,20 +226,28 @@ private fun MixSongRow(
             .padding(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        SongArtwork(
-            song = song,
-            contentDescription = null,
+        Box(
             modifier = Modifier
                 .size(52.dp)
                 .clip(RoundedCornerShape(12.dp))
-        )
+        ) {
+            SongArtwork(
+                song = song,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+            com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.fillMaxSize())
+        }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    song.id,
+                    MaterialTheme.colorScheme.onBackground
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
