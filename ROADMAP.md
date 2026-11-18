@@ -4,6 +4,24 @@ The long view: where Koda stands, what is still planned, and the constraints any
 
 **Keep this short and current.** When a planned item lands, it leaves Planned work and gets **one line** under [Shipped](#shipped) in the same change; anything worth carrying to the next problem goes into the area's `docs/` file, not here. A fixed defect leaves [Known defects](#known-defects) the same way. Counts and file names drift; re-derive them.
 
+## Temporary sprint handoff
+
+**For this sprint only. Delete this section when the sprint ends.** Continue from `beta`.
+
+### Completed on this branch
+
+- Android 8 support lowered the floor to API 26 (`863cd0a`). The album ordering fix already on `beta` preserves YouTube's order for multi-disc albums (`68c6c4f`). Audio “Open with” now recognizes more Ogg files, lists Koda as a music app, and guards the headset Play action when there is nothing to resume (`d9a85a9`).
+- **Settings → Customization → Lyrics appearance** has a playable preview and controls for type, alignment, focus, and motion. The shared renderer has instrumental dots and contrast adjustments for light and dark surfaces (`820a735`, `1239c40`). LRCLIB can match tracks across differing album names when title, artist, and duration agree. The probe recovered synced lyrics for five German tracks (`fdce3d7`).
+- Now-playing markers follow the song across Home, Search, Library, and other lists. Queue markers follow the current entry when a song appears twice (`bcfeef1`).
+- **Settings → Customization → Video player → Player controls** adds transport choices, skip distance, time remaining, and shortcut visibility. The skip distance also applies to double-tap, picture-in-picture, and the media notification (`e2a750c`).
+- Discord's Social SDK 1.11 notes showed no Android Rich Presence change that requires a Koda update.
+
+### Pick up next
+
+- Finish the floating top bar for music and video Home. It should hide on downward scroll and return on the first upward scroll, with profile and Settings reachable over artwork in light and dark modes. Check both Home layouts, large display size, and the video shell when the Home tab is hidden.
+- Run the device pass. `compileDebugKotlin` passed locally. Check Android 8 startup and local audio, double-disc album order, lyrics at large font sizes in light and dark themes, and video controls in portrait, landscape, and picture-in-picture. In the five-button layout, check reachability on narrow screens. Confirm the notification follows changes to the skip distance.
+- Give the picture-in-picture settings step-neutral labels in every locale. The Japanese strings for the existing option still say “10 seconds” when a different skip distance is selected.
+
 ---
 
 ## Where Koda is today
