@@ -278,6 +278,8 @@ fun SearchScreen(
         com.ivor.ivormusic.data.ThemePreferences(searchScreenContext)
     }
     val showRecentSearches by searchThemePreferences.showRecentSearches.collectAsState()
+    // Whether the field takes the keyboard with it when this screen opens.
+    val openKeyboardOnSearch by searchThemePreferences.openKeyboardOnSearch.collectAsState()
     var isSearchFocused by remember { mutableStateOf(false) }
 
     // Playlists and albums already kept, so a result the user saved earlier
@@ -604,7 +606,11 @@ fun SearchScreen(
                     surfaceColor = surfaceColor,
                     textColor = textColor,
                     secondaryTextColor = secondaryTextColor,
-                    requestInitialFocus = requestInitialFocus && !initialFocusConsumed,
+                    // The keyboard arrives with the field, so the switch that says it
+                    // should not governs the focus too. Off: the screen opens
+                    // on what it browses and the field waits for a tap.
+                    requestInitialFocus = requestInitialFocus && !initialFocusConsumed &&
+                        openKeyboardOnSearch,
                     onInitialFocusConsumed = { initialFocusConsumed = true }
                 )
             }

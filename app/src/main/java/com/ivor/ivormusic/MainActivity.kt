@@ -224,6 +224,7 @@ class MainActivity : ComponentActivity() {
             val livePlaybackUpdates by themeViewModel.livePlaybackUpdates.collectAsState()
             val timedCommentsEnabled by themeViewModel.timedCommentsEnabled.collectAsState()
             val showRecentSearches by themeViewModel.showRecentSearches.collectAsState()
+            val openKeyboardOnSearch by themeViewModel.openKeyboardOnSearch.collectAsState()
             val showRelatedVideos by themeViewModel.showRelatedVideos.collectAsState()
             val inlinePreviews by themeViewModel.inlinePreviews.collectAsState()
             val compactVideoHome by themeViewModel.compactVideoHome.collectAsState()
@@ -470,6 +471,8 @@ class MainActivity : ComponentActivity() {
                         onTimedCommentsToggle = { themeViewModel.setTimedCommentsEnabled(it) },
                         showRecentSearches = showRecentSearches,
                         onShowRecentSearchesToggle = { themeViewModel.setShowRecentSearches(it) },
+                        openKeyboardOnSearch = openKeyboardOnSearch,
+                        onOpenKeyboardOnSearchToggle = { themeViewModel.setOpenKeyboardOnSearch(it) },
                         showRelatedVideos = showRelatedVideos,
                         onShowRelatedVideosToggle = { themeViewModel.setShowRelatedVideos(it) },
                         inlinePreviews = inlinePreviews,
@@ -855,6 +858,8 @@ fun MusicApp(
     onTimedCommentsToggle: (Boolean) -> Unit,
     showRecentSearches: Boolean,
     onShowRecentSearchesToggle: (Boolean) -> Unit,
+    openKeyboardOnSearch: Boolean,
+    onOpenKeyboardOnSearchToggle: (Boolean) -> Unit,
     showRelatedVideos: Boolean,
     onShowRelatedVideosToggle: (Boolean) -> Unit,
     inlinePreviews: Boolean,
@@ -1553,6 +1558,8 @@ fun MusicApp(
                     onTimedCommentsToggle = onTimedCommentsToggle,
                     showRecentSearches = showRecentSearches,
                     onShowRecentSearchesToggle = onShowRecentSearchesToggle,
+                    openKeyboardOnSearch = openKeyboardOnSearch,
+                    onOpenKeyboardOnSearchToggle = onOpenKeyboardOnSearchToggle,
                     showRelatedVideos = showRelatedVideos,
                     onShowRelatedVideosToggle = onShowRelatedVideosToggle,
                     inlinePreviews = inlinePreviews,

@@ -90,6 +90,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val maxCacheSizeMb: StateFlow<Long> = themePreferences.maxCacheSizeMb
 
     val showRecentSearches: StateFlow<Boolean> = themePreferences.showRecentSearches
+    val openKeyboardOnSearch: StateFlow<Boolean> = themePreferences.openKeyboardOnSearch
     val showRelatedVideos: StateFlow<Boolean> = themePreferences.showRelatedVideos
     val inlinePreviews: StateFlow<Boolean> = themePreferences.inlinePreviews
     val compactVideoHome: StateFlow<Boolean> = themePreferences.compactVideoHome
@@ -351,6 +352,8 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setShowRecentSearches(show: Boolean) = themePreferences.setShowRecentSearches(show)
+
+    fun setOpenKeyboardOnSearch(open: Boolean) = themePreferences.setOpenKeyboardOnSearch(open)
 
     fun setShowRelatedVideos(show: Boolean) = themePreferences.setShowRelatedVideos(show)
     fun setInlinePreviews(enabled: Boolean) = themePreferences.setInlinePreviews(enabled)

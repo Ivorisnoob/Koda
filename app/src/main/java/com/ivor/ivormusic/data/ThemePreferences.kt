@@ -413,6 +413,12 @@ class ThemePreferences(context: Context) {
     private val _showRecentSearches = MutableStateFlow(getShowRecentSearchesPreference())
     val showRecentSearches: StateFlow<Boolean> = _showRecentSearches.asStateFlow()
 
+    // Whether a search surface brings the keyboard with it. Off leaves the
+    // screen - and the results it browses - visible until the field is tapped,
+    // which is what somebody typing with one hand wants.
+    private val _openKeyboardOnSearch = MutableStateFlow(getOpenKeyboardOnSearchPreference())
+    val openKeyboardOnSearch: StateFlow<Boolean> = _openKeyboardOnSearch.asStateFlow()
+
     private val _showRelatedVideos = MutableStateFlow(getShowRelatedVideosPreference())
     val showRelatedVideos: StateFlow<Boolean> = _showRelatedVideos.asStateFlow()
 
@@ -573,6 +579,7 @@ class ThemePreferences(context: Context) {
             KEY_LYRICS_ROMANIZED -> _lyricsRomanized.value = getLyricsRomanizedPreference()
             in LYRICS_LOOK_KEYS -> _lyricsLook.value = readLyricsLook()
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
+            KEY_OPEN_KEYBOARD_ON_SEARCH -> _openKeyboardOnSearch.value = getOpenKeyboardOnSearchPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
             KEY_COMPACT_VIDEO_HOME -> _compactVideoHome.value = getCompactVideoHomePreference()
@@ -1207,6 +1214,7 @@ class ThemePreferences(context: Context) {
             KEY_LYRICS_LOOK_DEPTH, KEY_LYRICS_LOOK_UPPERCASE, KEY_LYRICS_LOOK_DUET,
         )
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
+        private const val KEY_OPEN_KEYBOARD_ON_SEARCH = "open_keyboard_on_search"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
         private const val KEY_INLINE_PREVIEWS = "inline_previews"
         private const val KEY_COMPACT_VIDEO_HOME = "compact_video_home"
@@ -3065,6 +3073,14 @@ class ThemePreferences(context: Context) {
     fun setShowRecentSearches(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_RECENT_SEARCHES, show).apply()
         _showRecentSearches.value = show
+    }
+
+    private fun getOpenKeyboardOnSearchPreference(): Boolean =
+        prefs.getBoolean(KEY_OPEN_KEYBOARD_ON_SEARCH, true)
+
+    fun setOpenKeyboardOnSearch(open: Boolean) {
+        prefs.edit().putBoolean(KEY_OPEN_KEYBOARD_ON_SEARCH, open).apply()
+        _openKeyboardOnSearch.value = open
     }
 
     // Falls back to the old Home-only compact switch so existing choices carry over.

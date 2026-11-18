@@ -289,6 +289,7 @@ The rules most often needed in each area. Each is a summary; open the doc before
 
 ### Settings -> `docs/settings.md`
 - A new setting threads through five files (`ThemePreferences`, `ThemeViewModel`, `MainActivity`, `SettingsScreen`, `SettingsPages`) **plus `buildSettingsSearchIndex`**. Backups need nothing.
+- The search bar's own switches live in one Search section on the Content page; `open_keyboard_on_search` decides whether a search surface takes the keyboard with it.
 - New strings go only in `values/strings.xml` (locales are partial by design).
 - Look and behaviour sit behind one hub row, **Customization**, sorted by surface; a new surface gets a row there, not on the hub. Its newer pages (mini player, video player, video shaders, Home opening and bar) read and write their own `ThemePreferences` snapshot (`MiniPlayerCustomization`, `HomeNavigationCustomization`, `VideoGestureCustomization`, `VideoFeedCustomization`, `VideoShaderCustomization`) instead of threading through `SettingsScreen`. `SettingsPage.parent` is where back goes.
 - Settings is a hub plus `SettingsPage` enum pages, not routes (Backup included; it locks the hub while it works). Hub rows show the live value; dialogs live in `SettingsScreen`.
