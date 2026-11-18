@@ -410,6 +410,40 @@ fun VideoPlayerContent(
     // clamped differently from the buttons would be a bug waiting to happen.
     fun seekBy(deltaMs: Long) = viewModel.seekBy(deltaMs)
 
+    // The player's own ThemePreferences follows writes from the settings page,
+    // so a change reaches a video that is already open.
+    val videoControls by remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }.videoGestures.collectAsState()
+    val skipStepMs = videoControls.skipSeconds
+        .takeIf { it in com.ivor.ivormusic.data.VideoGestureCustomization.SKIP_SECONDS }
+        ?.times(1000L)
+        ?: VideoPlayerViewModel.SEEK_STEP_MS
+    val queueOnlyTransport = videoControls.centreButtons ==
+        com.ivor.ivormusic.data.VideoCentreButtons.SKIP && queue != null
+    val canGoPrevious = if (queueOnlyTransport) {
+        queue?.hasPrevious == true
+    } else {
+        queue?.hasPrevious == true || (!isLive &&
+            currentPosition > com.ivor.ivormusic.data.VideoGestureCustomization.PREVIOUS_RESTART_WINDOW_MS)
+    }
+    val canGoNext = if (queueOnlyTransport) {
+        queue?.hasNext == true
+    } else {
+        queue?.hasNext == true || (!isLive && relatedVideos.isNotEmpty())
+    }
+    val onPreviousVideo = {
+        if (queueOnlyTransport) viewModel.playPreviousInQueue() else viewModel.playPreviousOrRestart()
+    }
+    val onNextVideo = {
+        if (queueOnlyTransport) viewModel.playNextInQueue() else viewModel.playNextOrRelated()
+    }
+    val speedShortcutLabel = playbackSpeedButtonLabel(playbackSpeed)
+    val openPip = {
+        val host = activity as? androidx.activity.ComponentActivity
+        if (host != null) enterPipMode(host, viewModel)
+    }
+
     /**
      * Whether pinch-to-zoom may fill the screen for this video in this window.
      *
@@ -752,8 +786,8 @@ fun VideoPlayerContent(
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                 onScrubbingChanged = { isSeekScrubbing = it },
-                onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
-                onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
+                onSeekBackward = { seekBy(-skipStepMs) },
+                onSeekForward = { seekBy(skipStepMs) },
                 onBack = {
                     isFullscreen = false
                     fullscreenIsPortrait = false
@@ -773,11 +807,24 @@ fun VideoPlayerContent(
                 captionTextSize = captionTextSize,
                 captionTextColor = captionTextColor,
                 captionBackground = captionBackground,
-                showQueueControls = queue != null,
-                hasPreviousInQueue = queue?.hasPrevious == true,
-                hasNextInQueue = queue?.hasNext == true,
-                onPreviousInQueue = { viewModel.playPreviousInQueue() },
-                onNextInQueue = { viewModel.playNextInQueue() },
+                showQueueControls = queueOnlyTransport,
+                hasPreviousInQueue = canGoPrevious,
+                hasNextInQueue = canGoNext,
+                onPreviousInQueue = onPreviousVideo,
+                onNextInQueue = onNextVideo,
+                centreButtons = videoControls.centreButtons,
+                showSkipInSkipMode = true,
+                skipSeconds = videoControls.skipSeconds,
+                showRemainingTime = videoControls.timeDisplay ==
+                    com.ivor.ivormusic.data.VideoTimeDisplay.ELAPSED_REMAINING,
+                showCaptionsButton = videoControls.showCaptions,
+                showFullscreenButton = videoControls.showFullscreen,
+                showLockButton = videoControls.showScreenLock,
+                showPipButton = videoControls.showPipButton && pipSupported,
+                showSpeedButton = videoControls.showSpeedShortcut,
+                speedLabel = speedShortcutLabel,
+                onPipClick = openPip,
+                onSpeedClick = { openPlaybackSettings(SettingsPicker.SPEED) },
                 isLive = isLive,
                 liveTargetOffsetMs = liveTargetOffsetMs,
                 onSeekToLive = { exoPlayer.seekToDefaultPosition() },
@@ -977,8 +1024,8 @@ fun VideoPlayerContent(
                     onPlayPause = { viewModel.togglePlayPause() },
                     onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                     onScrubbingChanged = { isSeekScrubbing = it },
-                    onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
-                    onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
+                    onSeekBackward = { seekBy(-skipStepMs) },
+                    onSeekForward = { seekBy(skipStepMs) },
                     liveTargetOffsetMs = liveTargetOffsetMs,
                     onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                     onBack = onBackClick,
@@ -990,7 +1037,20 @@ fun VideoPlayerContent(
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },
                     onRetry = { viewModel.recovery.retry() },
                     onMinimizeDragDelta = onMinimizeDragDelta,
-                    onMinimizeDragRelease = onMinimizeDragRelease
+                    onMinimizeDragRelease = onMinimizeDragRelease,
+                    centreButtons = videoControls.centreButtons,
+                    skipSeconds = videoControls.skipSeconds,
+                    hasPrevious = canGoPrevious,
+                    hasNext = canGoNext,
+                    onPrevious = onPreviousVideo,
+                    onNext = onNextVideo,
+                    showCaptionsButton = videoControls.showCaptions,
+                    showDetailsButton = videoControls.showFullscreen,
+                    showPipButton = videoControls.showPipButton && pipSupported,
+                    showSpeedButton = videoControls.showSpeedShortcut,
+                    speedLabel = speedShortcutLabel,
+                    onPipClick = openPip,
+                    onSpeedClick = { openPlaybackSettings(SettingsPicker.SPEED) },
                 )
 
                 // The full panel, for sending and for reading back - the ticker
@@ -1155,8 +1215,8 @@ fun VideoPlayerContent(
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                         onScrubbingChanged = { isSeekScrubbing = it },
-                        onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
-                        onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
+                        onSeekBackward = { seekBy(-skipStepMs) },
+                        onSeekForward = { seekBy(skipStepMs) },
                         onBack = onBackClick,
                         onFullscreenToggle = {
                             // Fullscreen from the button or the swipe-up takes
@@ -1175,11 +1235,23 @@ fun VideoPlayerContent(
                         captionTextSize = captionTextSize,
                         captionTextColor = captionTextColor,
                         captionBackground = captionBackground,
-                        showQueueControls = queue != null,
-                        hasPreviousInQueue = queue?.hasPrevious == true,
-                        hasNextInQueue = queue?.hasNext == true,
-                        onPreviousInQueue = { viewModel.playPreviousInQueue() },
-                        onNextInQueue = { viewModel.playNextInQueue() },
+                        showQueueControls = queueOnlyTransport,
+                        hasPreviousInQueue = canGoPrevious,
+                        hasNextInQueue = canGoNext,
+                        onPreviousInQueue = onPreviousVideo,
+                        onNextInQueue = onNextVideo,
+                        centreButtons = videoControls.centreButtons,
+                        showSkipInSkipMode = false,
+                        skipSeconds = videoControls.skipSeconds,
+                        showRemainingTime = videoControls.timeDisplay ==
+                            com.ivor.ivormusic.data.VideoTimeDisplay.ELAPSED_REMAINING,
+                        showCaptionsButton = videoControls.showCaptions,
+                        showFullscreenButton = videoControls.showFullscreen,
+                        showPipButton = videoControls.showPipButton && pipSupported,
+                        showSpeedButton = videoControls.showSpeedShortcut,
+                        speedLabel = speedShortcutLabel,
+                        onPipClick = openPip,
+                        onSpeedClick = { openPlaybackSettings(SettingsPicker.SPEED) },
                         isLive = isLive,
                         liveTargetOffsetMs = liveTargetOffsetMs,
                         onSeekToLive = { exoPlayer.seekToDefaultPosition() },

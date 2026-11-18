@@ -347,8 +347,8 @@ class VideoPlaybackService : MediaSessionService() {
     }
 
     /**
-     * Back 10 / forward 10 in the media notification, matching the double-tap
-     * seek on the player and the PiP controls.
+     * Skip back and forward in the media notification, matching the double-tap
+     * seek on the player and the PiP controls. The distance is the skip setting.
      *
      * These have to be custom session commands rather than
      * [Player.COMMAND_SEEK_BACK] buttons: Media3's notification provider only
@@ -356,18 +356,26 @@ class VideoPlaybackService : MediaSessionService() {
      * and next, when the queue has them, take the built-in slots beside play;
      * these two fill the extra slots after them.
      */
-    private fun seekLayout(): ImmutableList<CommandButton> = ImmutableList.of(
-        CommandButton.Builder()
-            .setDisplayName("Back 10 seconds")
-            .setIconResId(R.drawable.ic_media_replay_10)
-            .setSessionCommand(SessionCommand(ACTION_REWIND, Bundle.EMPTY))
-            .build(),
-        CommandButton.Builder()
-            .setDisplayName("Forward 10 seconds")
-            .setIconResId(R.drawable.ic_media_forward_10)
-            .setSessionCommand(SessionCommand(ACTION_FORWARD, Bundle.EMPTY))
-            .build()
-    )
+    private fun seekLayout(): ImmutableList<CommandButton> {
+        val seconds = (com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(this) / 1000L)
+            .toInt()
+        return ImmutableList.of(
+            CommandButton.Builder()
+                .setDisplayName(getString(R.string.vp_seek_back, seconds))
+                .setIconResId(videoSeekIconRes(seconds, forward = false))
+                .setSessionCommand(SessionCommand(ACTION_REWIND, Bundle.EMPTY))
+                .build(),
+            CommandButton.Builder()
+                .setDisplayName(getString(R.string.vp_seek_forward, seconds))
+                .setIconResId(videoSeekIconRes(seconds, forward = true))
+                .setSessionCommand(SessionCommand(ACTION_FORWARD, Bundle.EMPTY))
+                .build()
+        )
+    }
+
+    private fun updateSeekButtons() {
+        session?.setCustomLayout(seekLayout())
+    }
 
     private inner class VideoSessionCallback : MediaSession.Callback {
 
@@ -445,6 +453,11 @@ class VideoPlaybackService : MediaSessionService() {
             instance?.queuePlayer?.publishQueueCommands()
         }
 
+        /** The skip amount changed under a session that is already showing its buttons. */
+        fun refreshSeekButtons() {
+            instance?.updateSeekButtons()
+        }
+
         /**
          * Publish [player] to the system. Safe to call repeatedly - once the
          * service is up this is just a no-op start command.
@@ -487,4 +500,12 @@ class VideoPlaybackService : MediaSessionService() {
             }
         }
     }
+}
+
+/** Notification and PiP artwork for one skip distance. 10 keeps the original vectors. */
+internal fun videoSeekIconRes(seconds: Int, forward: Boolean): Int = when (seconds) {
+    5 -> if (forward) R.drawable.ic_media_forward_5 else R.drawable.ic_media_replay_5
+    15 -> if (forward) R.drawable.ic_media_forward_15 else R.drawable.ic_media_replay_15
+    30 -> if (forward) R.drawable.ic_media_forward_30 else R.drawable.ic_media_replay_30
+    else -> if (forward) R.drawable.ic_media_forward_10 else R.drawable.ic_media_replay_10
 }

@@ -169,7 +169,10 @@ fun enterPipMode(
                     activity = activity,
                     packageName = activity.packageName,
                     isPlaying = viewModel.isPlaying.value,
-                    transport = viewModel.currentPipTransport()
+                    transport = viewModel.currentPipTransport(),
+                    skipSeconds = (
+                        com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(activity) / 1000L
+                    ).toInt()
                 )
             )
             .apply { bounds?.let(::setSourceRectHint) }

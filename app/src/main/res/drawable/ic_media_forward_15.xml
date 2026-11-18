@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Forward 15 seconds". Ring mirrored about x=12; the digits are not. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,5V1l5,5l-5,5V7c-3.31,0 -6,2.69 -6,6c0,3.31 2.69,6 6,6c3.31,0 6,-2.69 6,-6h2c0,4.42 -3.58,8 -8,8c-4.42,0 -8,-3.58 -8,-8c0,-4.42 3.58,-8 8,-8z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.1,10.1h-0.55l-1.2,0.6v0.9l0.85,-0.4v4.1h0.9z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.3,10.1h3.7v1h-2.6v0.85h2.3v2.75h-3.4v-1h2.4v-0.85h-2.4z" />
+</vector>

@@ -335,6 +335,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     private val _positionMs = MutableStateFlow(0L)
     val positionMs: StateFlow<Long> = _positionMs
 
+    /**
+     * True once the playhead is past the previous-button restart window.
+     * Flips only at that boundary, so Picture-in-Picture does not republish
+     * its actions on every progress tick.
+     */
+    private val _previousRestartsVideo = MutableStateFlow(false)
+    val previousRestartsVideo: StateFlow<Boolean> = _previousRestartsVideo
+
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs
 
@@ -763,6 +771,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 com.ivor.ivormusic.service.VideoPlaybackService.publishQueueCommands()
             }
         }
+        // The skip distance is a setting. The notification's seek buttons use
+        // the player's increment, so a change has to land on the player that
+        // is already built, not only on the next one.
+        viewModelScope.launch {
+            themePreferences.videoGestures
+                .map { it.skipSeconds }
+                .distinctUntilChanged()
+                .collect { seconds ->
+                    val step = seconds
+                        .takeIf { it in com.ivor.ivormusic.data.VideoGestureCustomization.SKIP_SECONDS }
+                        ?.times(1000L)
+                        ?: SEEK_STEP_MS
+                    applySeekIncrement(step)
+                }
+        }
     }
 
     // Video rendering is suspended while the app is not visible - see onEnterBackground()
@@ -948,6 +971,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     init {
         observeProfileSwitches()
+        // Live status is declared above this init. Next on the notification
+        // withdraws when a broadcast has nowhere to go, so it has to republish
+        // when the stream turns out to be live.
+        viewModelScope.launch {
+            _isLive.collect {
+                com.ivor.ivormusic.service.VideoPlaybackService.publishQueueCommands()
+            }
+        }
 
         viewModelScope.launch {
             themePreferences.preferHdr.drop(1).distinctUntilChanged().collect { enabled ->
@@ -1035,12 +1066,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
-            // 10s each way, matching the player's own double-tap seek. These
-            // are what the media notification's and PiP window's skip buttons
-            // move by, so they must agree with the in-app gesture rather than
-            // with Media3's 5s/15s defaults.
-            .setSeekBackIncrementMs(SEEK_STEP_MS)
-            .setSeekForwardIncrementMs(SEEK_STEP_MS)
+            // The skip setting, matching the on-screen buttons and double-tap.
+            // These are what the media notification's seek buttons move by, so
+            // they must agree with the in-app gesture rather than with
+            // Media3's 5s/15s defaults.
+            .setSeekBackIncrementMs(com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(context))
+            .setSeekForwardIncrementMs(com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(context))
             .build().apply {
             playWhenReady = true
             // Repeat is persisted, so a fresh player must adopt the stored
@@ -1468,6 +1499,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         val position = player.currentPosition.coerceAtLeast(0L)
                         _durationMs.value = duration
                         _positionMs.value = position
+                        notePlayhead(position)
                         _progress.value = (position.toFloat() / duration).coerceIn(0f, 1f)
                         _bufferedProgress.value =
                             (player.bufferedPosition.toFloat() / duration).coerceIn(0f, 1f)
@@ -1501,6 +1533,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** Zeroes the progress state, so a new video does not inherit the old position. */
     private fun resetProgress() {
         _positionMs.value = 0L
+        notePlayhead(0L)
         _durationMs.value = 0L
         _progress.value = 0f
         _bufferedProgress.value = 0f
@@ -2469,16 +2502,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /**
      * Next for a surface with a single Next button and no room to explain it -
-     * the PiP window: the playlist's next video, or else the related video
-     * autoplay would pick (the filtered list, so nothing marked not interested).
+     * the PiP window and the player's previous/next buttons: the playlist's
+     * next video, or else the related video autoplay would pick (the filtered
+     * list, so nothing marked not interested). A live stream has no up-next.
      * PiP never autoplays into a related video on its own; a tap is a request.
      */
     fun playNextOrRelated(expand: Boolean = true) {
         val active = _queue.value
-        if (active != null) {
-            if (active.hasNext) playQueueIndex(active.index + 1, expand)
+        if (active?.hasNext == true) {
+            playQueueIndex(active.index + 1, expand)
             return
         }
+        if (_isLive.value) return
         relatedVideos.value.firstOrNull()?.let { playVideo(it, expand = expand) }
     }
 
@@ -2486,6 +2521,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun playPreviousInQueue(expand: Boolean = true) {
         val active = _queue.value ?: return
         if (active.hasPrevious) playQueueIndex(active.index - 1, expand)
+    }
+
+    /**
+     * Previous on the player's own buttons. Further than a few seconds into
+     * the video, the press restarts it. A second press, already at the start,
+     * goes to the previous playlist item when there is one.
+     *
+     * Restarts with [seekTo], not [playFromBeginning]: that one also forgets
+     * the resume point, which is the resume notice's action, not this button's.
+     */
+    fun playPreviousOrRestart() {
+        val position = deferredRestorePositionMs ?: _exoPlayer?.currentPosition ?: _positionMs.value
+        if (!_isLive.value &&
+            position > com.ivor.ivormusic.data.VideoGestureCustomization.PREVIOUS_RESTART_WINDOW_MS
+        ) {
+            seekTo(0L)
+            return
+        }
+        playPreviousInQueue(expand = _isExpanded.value)
     }
 
     /**
@@ -2498,7 +2552,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private val sessionQueueControls = object : com.ivor.ivormusic.service.VideoPlaybackService.QueueControls {
         override val canSkipNext: Boolean
-            get() = _queue.value?.hasNext ?: relatedVideos.value.isNotEmpty()
+            get() = _queue.value?.hasNext == true ||
+                (!_isLive.value && relatedVideos.value.isNotEmpty())
         override val canSkipPrevious: Boolean
             get() = _queue.value?.hasPrevious == true
         override fun skipNext() = playNextOrRelated(expand = _isExpanded.value)
@@ -2685,6 +2740,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val duration = (video.duration.coerceAtLeast(0L) * 1_000L)
         deferredRestorePositionMs = position
         _positionMs.value = position
+        notePlayhead(position)
         _durationMs.value = duration
         _progress.value = if (duration > 0L) {
             (position.toFloat() / duration).coerceIn(0f, 1f)
@@ -3382,6 +3438,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             val position = (restoredPosition + deltaMs).coerceIn(0L, duration)
             deferredRestorePositionMs = position
             _positionMs.value = position
+            notePlayhead(position)
             _progress.value = if (duration != Long.MAX_VALUE) {
                 (position.toFloat() / duration).coerceIn(0f, 1f)
             } else {
@@ -3463,6 +3520,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             val position = positionMs.coerceIn(0L, duration)
             deferredRestorePositionMs = position
             _positionMs.value = position
+            notePlayhead(position)
             _progress.value = if (duration != Long.MAX_VALUE) {
                 (position.toFloat() / duration).coerceIn(0f, 1f)
             } else {
@@ -3470,7 +3528,24 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
             return
         }
-        _exoPlayer?.let { seekPlayerTo(it, positionMs.coerceAtLeast(0L), precise) }
+        val position = positionMs.coerceAtLeast(0L)
+        notePlayhead(position)
+        _exoPlayer?.let { seekPlayerTo(it, position, precise) }
+    }
+
+    /** Land the player's skip increment, and the notification icons, on [stepMs]. */
+    private fun applySeekIncrement(stepMs: Long) {
+        val player = _exoPlayer ?: return
+        player.setSeekBackIncrementMs(stepMs)
+        player.setSeekForwardIncrementMs(stepMs)
+        com.ivor.ivormusic.service.VideoPlaybackService.refreshSeekButtons()
+    }
+
+    /** Remember whether Previous would restart, and only when that answer changes. */
+    private fun notePlayhead(positionMs: Long) {
+        val restarts = positionMs >
+            com.ivor.ivormusic.data.VideoGestureCustomization.PREVIOUS_RESTART_WINDOW_MS
+        if (_previousRestartsVideo.value != restarts) _previousRestartsVideo.value = restarts
     }
 
     /** The viewer has read the resume notice and wants it gone. */

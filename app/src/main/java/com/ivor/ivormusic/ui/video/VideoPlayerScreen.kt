@@ -1,10 +1,12 @@
 package com.ivor.ivormusic.ui.video
 import com.ivor.ivormusic.util.scaledFrameAtTimeCompat
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.ui.components.ConnectionAdviceCard
 import com.ivor.ivormusic.data.ConnectionAdvice
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.ui.theme.onMediaScrim
 import com.ivor.ivormusic.ui.components.VideoThumbnailBadge
 import com.ivor.ivormusic.ui.player.drawScrubReturnMarker
 
@@ -79,12 +81,14 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -105,6 +109,8 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Forward30
+import androidx.compose.material.icons.rounded.Forward5
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Lock
@@ -113,7 +119,10 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.Replay10
+import androidx.compose.material.icons.rounded.Replay30
+import androidx.compose.material.icons.rounded.Replay5
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SkipNext
@@ -406,6 +415,25 @@ fun FullscreenPlayerContent(
     hasNextInQueue: Boolean = false,
     onPreviousInQueue: () -> Unit = {},
     onNextInQueue: () -> Unit = {},
+    /**
+     * What flanks play and pause. [showQueueControls] is the shipped Skip
+     * behaviour: a running playlist replaces the skip buttons. Other modes
+     * draw previous and next even when there is no playlist.
+     */
+    centreButtons: com.ivor.ivormusic.data.VideoCentreButtons =
+        com.ivor.ivormusic.data.VideoCentreButtons.SKIP,
+    /** Skip mode on fullscreen still shows the skip buttons when nothing is queued. */
+    showSkipInSkipMode: Boolean = true,
+    skipSeconds: Int = 10,
+    showRemainingTime: Boolean = false,
+    showCaptionsButton: Boolean = true,
+    showFullscreenButton: Boolean = true,
+    showLockButton: Boolean = true,
+    showPipButton: Boolean = false,
+    showSpeedButton: Boolean = false,
+    speedLabel: String = "",
+    onPipClick: () -> Unit = {},
+    onSpeedClick: () -> Unit = {},
     isLive: Boolean = false,
     /**
      * Distance behind the newest media the player deliberately holds - the
@@ -463,51 +491,65 @@ fun FullscreenPlayerContent(
     // on a line of their own. Only immediate viewing controls live over the
     // moving frame; everything secondary is in Playback settings.
     val topBarActions: @Composable RowScope.() -> Unit = {
-        FilledTonalIconButton(
-            onClick = onCaptionsClick,
-            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                contentColor = if (captionsActive) MaterialTheme.colorScheme.onPrimary else Color.White
-            ),
-            shapes = stableShapes
-        ) {
-            Icon(
-                if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
-                contentDescription = stringResource(R.string.vp_captions)
-            )
+        if (showCaptionsButton) {
+            FilledTonalIconButton(
+                onClick = onCaptionsClick,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                    contentColor = if (captionsActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onMediaScrim
+                ),
+                shapes = stableShapes
+            ) {
+                Icon(
+                    if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
+                    contentDescription = stringResource(R.string.vp_captions)
+                )
+            }
         }
 
-        FilledTonalIconButton(
-            onClick = { onScreenLockChange(true) },
-            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = Color.Black.copy(0.5f),
-                contentColor = Color.White
-            ),
-            shapes = stableShapes
-        ) {
-            Icon(Icons.Rounded.Lock, stringResource(R.string.vp_lock_screen))
+        if (showSpeedButton) {
+            PlayerSpeedButton(label = speedLabel, onClick = onSpeedClick, shapes = stableShapes)
+        }
+
+        if (showLockButton) {
+            FilledTonalIconButton(
+                onClick = { onScreenLockChange(true) },
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                    contentColor = MaterialTheme.colorScheme.onMediaScrim
+                ),
+                shapes = stableShapes
+            ) {
+                Icon(Icons.Rounded.Lock, stringResource(R.string.vp_lock_screen))
+            }
         }
 
         FilledIconButton(
             onClick = onSettings,
             colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = Color.Black.copy(0.5f),
-                contentColor = Color.White
+                containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                contentColor = MaterialTheme.colorScheme.onMediaScrim
             ),
             shapes = stableShapes
         ) {
             Icon(Icons.Rounded.Settings, "Playback settings")
         }
 
-        FilledIconButton(
-            onClick = onFullscreenToggle,
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = Color.Black.copy(0.5f),
-                contentColor = Color.White
-            ),
-            shapes = stableShapes
-        ) {
-            Icon(Icons.Rounded.FullscreenExit, "Exit Fullscreen")
+        if (showPipButton) {
+            PlayerPipButton(onClick = onPipClick, shapes = stableShapes)
+        }
+
+        if (showFullscreenButton) {
+            FilledIconButton(
+                onClick = onFullscreenToggle,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                    contentColor = MaterialTheme.colorScheme.onMediaScrim
+                ),
+                shapes = stableShapes
+            ) {
+                Icon(Icons.Rounded.FullscreenExit, "Exit Fullscreen")
+            }
         }
     }
 
@@ -749,8 +791,8 @@ fun FullscreenPlayerContent(
                             FilledIconButton(
                                 onClick = onBack,
                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = Color.Black.copy(alpha = 0.46f),
-                                    contentColor = Color.White
+                                    containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                                    contentColor = MaterialTheme.colorScheme.onMediaScrim
                                 ),
                                 shapes = stableShapes
                             ) {
@@ -759,7 +801,7 @@ fun FullscreenPlayerContent(
                             Text(
                                 text = videoTitle,
                                 style = MaterialTheme.typography.titleMedium,
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onMediaScrim,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
@@ -777,47 +819,27 @@ fun FullscreenPlayerContent(
                 // Familiar transport stays at the visual centre of the video.
                 // Expressiveness belongs to the primary control's motion, not
                 // to a large permanent container covering the frame.
-                Row(
+                PlayerCentreTransport(
+                    centre = centreButtons,
+                    showSkipInSkipMode = showSkipInSkipMode,
+                    queueActive = showQueueControls,
+                    hasPrevious = hasPreviousInQueue,
+                    hasNext = hasNextInQueue,
+                    skipSeconds = skipSeconds,
+                    onPrevious = onPreviousInQueue,
+                    onNext = onNextInQueue,
+                    onSeekBackward = onSeekBackward,
+                    onSeekForward = onSeekForward,
+                    endButtonSize = 54.dp,
+                    spacing = if (centreButtons == com.ivor.ivormusic.data.VideoCentreButtons.BOTH) 12.dp else 28.dp,
                     modifier = Modifier.align(Alignment.Center),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(28.dp)
                 ) {
-                    if (showQueueControls) {
-                        QueueSkipButton(
-                            icon = Icons.Rounded.SkipPrevious,
-                            contentDescription = stringResource(R.string.cd_previous),
-                            enabled = hasPreviousInQueue,
-                            onClick = onPreviousInQueue,
-                            size = 54.dp
-                        )
-                    } else {
-                        PlayerIconButton(
-                            icon = Icons.Rounded.Replay10,
-                            contentDescription = stringResource(R.string.vp_rewind),
-                            onClick = onSeekBackward
-                        )
-                    }
                     ExpressivePlayPauseButton(
                         isPlaying = isPlaying,
                         isBuffering = isBuffering,
                         onClick = onPlayPause,
                         size = 74.dp,
                     )
-                    if (showQueueControls) {
-                        QueueSkipButton(
-                            icon = Icons.Rounded.SkipNext,
-                            contentDescription = stringResource(R.string.cd_next),
-                            enabled = hasNextInQueue,
-                            onClick = onNextInQueue,
-                            size = 54.dp
-                        )
-                    } else {
-                        PlayerIconButton(
-                            icon = Icons.Rounded.Forward10,
-                            contentDescription = stringResource(R.string.vp_forward),
-                            onClick = onSeekForward
-                        )
-                    }
                 }
 
                 // Low-weight utilities and a full-width timeline hug the edge.
@@ -866,7 +888,9 @@ fun FullscreenPlayerContent(
                         // the thumb already is, and where the seek bar this
                         // shares a gutter with already sits.
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(
                                 space = 8.dp,
@@ -887,12 +911,10 @@ fun FullscreenPlayerContent(
                         ) {
                             if (!isLive) {
                                 Text(
-                                    text = if (duration > 0L) {
-                                        "${formatDuration(currentPosition)} / ${formatDuration(duration)}"
-                                    } else {
-                                        formatDuration(currentPosition)
-                                    },
-                                    color = Color.White,
+                                    text = videoElapsedReadout(
+                                        currentPosition, duration, showRemainingTime, combined = true
+                                    ),
+                                    color = MaterialTheme.colorScheme.onMediaScrim,
                                     style = MaterialTheme.typography.labelLarge
                                 )
                             }
@@ -950,7 +972,11 @@ fun FullscreenPlayerContent(
                             // window, not a place in a video, so the elapsed
                             // readout means nothing to the viewer.
                             if (!isLive) {
-                                Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    formatDuration(currentPosition),
+                                    color = MaterialTheme.colorScheme.onMediaScrim,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
                             }
 
                             PlayerSeekBar(
@@ -976,7 +1002,11 @@ fun FullscreenPlayerContent(
                                     onClick = onSeekToLive
                                 )
                             } else {
-                                Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    videoEndReadout(currentPosition, duration, showRemainingTime),
+                                    color = MaterialTheme.colorScheme.onMediaScrim,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
                             }
                         }
                     }
@@ -1138,6 +1168,19 @@ fun PortraitPlayerContent(
     hasNextInQueue: Boolean = false,
     onPreviousInQueue: () -> Unit = {},
     onNextInQueue: () -> Unit = {},
+    centreButtons: com.ivor.ivormusic.data.VideoCentreButtons =
+        com.ivor.ivormusic.data.VideoCentreButtons.SKIP,
+    /** Portrait's shipped Skip mode shows no skip buttons unless a playlist is running. */
+    showSkipInSkipMode: Boolean = false,
+    skipSeconds: Int = 10,
+    showRemainingTime: Boolean = false,
+    showCaptionsButton: Boolean = true,
+    showFullscreenButton: Boolean = true,
+    showPipButton: Boolean = false,
+    showSpeedButton: Boolean = false,
+    speedLabel: String = "",
+    onPipClick: () -> Unit = {},
+    onSpeedClick: () -> Unit = {},
     minimizeDragEnabled: Boolean = false,
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
@@ -1260,74 +1303,88 @@ fun PortraitPlayerContent(
                     FilledIconButton(
                         onClick = onBack,
                          colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = Color.Black.copy(0.5f),
-                            contentColor = Color.White
+                            containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                            contentColor = MaterialTheme.colorScheme.onMediaScrim
                         ),
                         shapes = stableShapes
                     ) {
                          Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
                     }
                     
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalIconButton(
-                            onClick = onCaptionsClick,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else Color.Black.copy(0.5f),
-                                contentColor = if (captionsActive) MaterialTheme.colorScheme.onPrimary else Color.White
-                            ),
-                            shapes = stableShapes
-                        ) {
-                            Icon(
-                                if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
-                                contentDescription = stringResource(R.string.vp_captions)
-                            )
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (showCaptionsButton) {
+                            FilledTonalIconButton(
+                                onClick = onCaptionsClick,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = if (captionsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                                    contentColor = if (captionsActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onMediaScrim
+                                ),
+                                shapes = stableShapes
+                            ) {
+                                Icon(
+                                    if (captionsActive) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
+                                    contentDescription = stringResource(R.string.vp_captions)
+                                )
+                            }
+                        }
+                        if (showSpeedButton) {
+                            PlayerSpeedButton(label = speedLabel, onClick = onSpeedClick, shapes = stableShapes)
                         }
                         FilledIconButton(
                             onClick = onSettings,
                             colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color.Black.copy(0.5f),
-                                contentColor = Color.White
+                                containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                                contentColor = MaterialTheme.colorScheme.onMediaScrim
                             ),
                             shapes = stableShapes
                         ) {
                             Icon(Icons.Rounded.Settings, "Playback settings")
                         }
-                        FilledIconButton(
-                            onClick = onFullscreenToggle,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color.Black.copy(0.5f),
-                                contentColor = Color.White
-                            ),
-                            shapes = stableShapes
-                        ) {
-                            Icon(Icons.Rounded.Fullscreen, "Fullscreen")
+                        if (showPipButton) {
+                            PlayerPipButton(onClick = onPipClick, shapes = stableShapes)
+                        }
+                        if (showFullscreenButton) {
+                            FilledIconButton(
+                                onClick = onFullscreenToggle,
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+                                    contentColor = MaterialTheme.colorScheme.onMediaScrim
+                                ),
+                                shapes = stableShapes
+                            ) {
+                                Icon(Icons.Rounded.Fullscreen, "Fullscreen")
+                            }
                         }
                     }
                 }
                 
                 // Center
-                Row(
+                PlayerCentreTransport(
+                    centre = centreButtons,
+                    showSkipInSkipMode = showSkipInSkipMode,
+                    queueActive = showQueueControls,
+                    hasPrevious = hasPreviousInQueue,
+                    hasNext = hasNextInQueue,
+                    skipSeconds = skipSeconds,
+                    onPrevious = onPreviousInQueue,
+                    onNext = onNextInQueue,
+                    onSeekBackward = onSeekBackward,
+                    onSeekForward = onSeekForward,
+                    endButtonSize = 48.dp,
+                    spacing = if (centreButtons == com.ivor.ivormusic.data.VideoCentreButtons.BOTH) 12.dp else 24.dp,
                     modifier = Modifier.align(Alignment.Center),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
-                    if (showQueueControls) {
-                        QueueSkipButton(
-                            icon = Icons.Rounded.SkipPrevious,
-                            contentDescription = stringResource(R.string.cd_previous),
-                            enabled = hasPreviousInQueue,
-                            onClick = onPreviousInQueue
-                        )
-                    }
-                    ExpressivePlayPauseButton(isPlaying = isPlaying, isBuffering = isBuffering, onClick = onPlayPause)
-                    if (showQueueControls) {
-                        QueueSkipButton(
-                            icon = Icons.Rounded.SkipNext,
-                            contentDescription = stringResource(R.string.cd_next),
-                            enabled = hasNextInQueue,
-                            onClick = onNextInQueue
-                        )
-                    }
+                    ExpressivePlayPauseButton(
+                        isPlaying = isPlaying,
+                        isBuffering = isBuffering,
+                        onClick = onPlayPause
+                    )
                 }
                 
                 // Bottom
@@ -1352,7 +1409,11 @@ fun PortraitPlayerContent(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         if (!isLive) {
-                            Text(formatDuration(currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                formatDuration(currentPosition),
+                                color = MaterialTheme.colorScheme.onMediaScrim,
+                                style = MaterialTheme.typography.labelMedium
+                            )
                         }
 
                         PlayerSeekBar(
@@ -1378,7 +1439,11 @@ fun PortraitPlayerContent(
                                 onClick = onSeekToLive
                             )
                         } else {
-                            Text(formatDuration(duration), color = Color.White, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                videoEndReadout(currentPosition, duration, showRemainingTime),
+                                color = MaterialTheme.colorScheme.onMediaScrim,
+                                style = MaterialTheme.typography.labelMedium
+                            )
                         }
                     }
                 }
@@ -1982,9 +2047,6 @@ internal fun PlayerView.disableBuiltInSubtitles() {
  */
 internal val FULLSCREEN_COMPACT_BOTTOM_BAR = 192.dp
 
-/** Seconds jumped per double-tap on either edge of the video surface. */
-private const val DOUBLE_TAP_SEEK_SECONDS = 10
-
 /**
  * How long a press has to be held before playback boosts to 2x.
  *
@@ -2247,6 +2309,8 @@ internal fun PlayerGestureSurface(
     val speedBoostStart by rememberUpdatedState(onSpeedBoostStart)
     val speedBoostChange by rememberUpdatedState(onSpeedBoostChange)
     val speedBoostEnd by rememberUpdatedState(onSpeedBoostEnd)
+    val seekBackward by rememberUpdatedState(onSeekBackward)
+    val seekForward by rememberUpdatedState(onSeekForward)
     // Read inside pointerInput blocks keyed on Unit, so they see the boost
     // start/end without restarting the detectors mid-gesture.
     val boostingRef by rememberUpdatedState(isBoosting)
@@ -2372,11 +2436,14 @@ internal fun PlayerGestureSurface(
                         },
                         onDoubleTap = { offset ->
                             if (touchLockedNow) return@detectTapGestures
+                            val step = enabledGestures.skipSeconds
+                                .takeIf { it in com.ivor.ivormusic.data.VideoGestureCustomization.SKIP_SECONDS }
+                                ?: 10
                             val tappedSide = if (offset.x < size.width / 2f) -1 else 1
-                            seconds = if (tappedSide == side) seconds + DOUBLE_TAP_SEEK_SECONDS else DOUBLE_TAP_SEEK_SECONDS
+                            seconds = if (tappedSide == side) seconds + step else step
                             side = tappedSide
                             pulse++
-                            if (tappedSide < 0) onSeekBackward() else onSeekForward()
+                            if (tappedSide < 0) seekBackward() else seekForward()
                         }
                     )
                 }
@@ -2709,12 +2776,14 @@ internal fun PlayerGestureSurface(
             SeekFeedbackBadge(
                 visible = side < 0,
                 seconds = seconds,
+                stepSeconds = enabledGestures.skipSeconds,
                 forward = false,
                 modifier = Modifier.align(Alignment.CenterStart)
             )
             SeekFeedbackBadge(
                 visible = side > 0,
                 seconds = seconds,
+                stepSeconds = enabledGestures.skipSeconds,
                 forward = true,
                 modifier = Modifier.align(Alignment.CenterEnd)
             )
@@ -3135,6 +3204,7 @@ private fun ZoomModePill(
 private fun SeekFeedbackBadge(
     visible: Boolean,
     seconds: Int,
+    stepSeconds: Int,
     forward: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -3155,14 +3225,14 @@ private fun SeekFeedbackBadge(
                     .background(Color.Black.copy(alpha = 0.3f))
                     .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
-                Icon(
-                    if (forward) Icons.Rounded.Forward10 else Icons.Rounded.Replay10,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(40.dp)
+                SkipStepIcon(
+                    seconds = stepSeconds,
+                    forward = forward,
+                    modifier = Modifier.size(40.dp),
+                    announce = false,
                 )
                 Text(
-                    text = "$seconds seconds",
+                    text = stringResource(R.string.vp_seek_seconds, seconds),
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge
                 )
@@ -3650,6 +3720,197 @@ fun VideoInfoSection(
 }
 
 /**
+ * Play and pause, with whatever the centre-button setting asks to put beside it.
+ *
+ * Skip with no playlist keeps the old split: fullscreen shows the skip buttons,
+ * the watch page and a vertical live stream show play and pause alone. A
+ * playlist in that mode still replaces the skips with previous and next.
+ * Previous/next, and both, draw on every layout. A button with nowhere to go
+ * stays put and dims, so the row does not shuffle under a finger.
+ */
+@Composable
+internal fun PlayerCentreTransport(
+    centre: com.ivor.ivormusic.data.VideoCentreButtons,
+    showSkipInSkipMode: Boolean,
+    queueActive: Boolean,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
+    skipSeconds: Int,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onSeekBackward: () -> Unit,
+    onSeekForward: () -> Unit,
+    endButtonSize: Dp,
+    spacing: Dp,
+    modifier: Modifier = Modifier,
+    playPause: @Composable () -> Unit,
+) {
+    val showEnds = centre != com.ivor.ivormusic.data.VideoCentreButtons.SKIP || queueActive
+    val showSkip = centre == com.ivor.ivormusic.data.VideoCentreButtons.BOTH ||
+        (centre == com.ivor.ivormusic.data.VideoCentreButtons.SKIP && showSkipInSkipMode && !queueActive)
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        // Make room for all five controls before making the row scroll.
+        val compact = showEnds && showSkip && maxWidth < 344.dp
+        val sideSize = if (compact) 48.dp else endButtonSize
+        val gap = if (compact) 4.dp else spacing
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
+        ) {
+            if (showEnds) {
+                QueueSkipButton(
+                    icon = Icons.Rounded.SkipPrevious,
+                    contentDescription = stringResource(R.string.cd_previous),
+                    enabled = hasPrevious,
+                    onClick = onPrevious,
+                    size = sideSize,
+                )
+            }
+            if (showSkip) {
+                SkipStepButton(
+                    seconds = skipSeconds,
+                    forward = false,
+                    onClick = onSeekBackward,
+                    size = if (showEnds) sideSize else null,
+                )
+            }
+            playPause()
+            if (showSkip) {
+                SkipStepButton(
+                    seconds = skipSeconds,
+                    forward = true,
+                    onClick = onSeekForward,
+                    size = if (showEnds) sideSize else null,
+                )
+            }
+            if (showEnds) {
+                QueueSkipButton(
+                    icon = Icons.Rounded.SkipNext,
+                    contentDescription = stringResource(R.string.cd_next),
+                    enabled = hasNext,
+                    onClick = onNext,
+                    size = sideSize,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SkipStepButton(
+    seconds: Int,
+    forward: Boolean,
+    onClick: () -> Unit,
+    size: Dp?,
+) {
+    FilledIconButton(
+        onClick = onClick,
+        modifier = if (size != null) Modifier.size(size) else Modifier,
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+            contentColor = MaterialTheme.colorScheme.onMediaScrim
+        )
+    ) {
+        SkipStepIcon(seconds = seconds, forward = forward)
+    }
+}
+
+@Composable
+internal fun SkipStepIcon(
+    seconds: Int,
+    forward: Boolean,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onMediaScrim,
+    /** False for the double-tap badge, which already writes the number beside the icon. */
+    announce: Boolean = true,
+) {
+    val vector = when (seconds) {
+        5 -> if (forward) Icons.Rounded.Forward5 else Icons.Rounded.Replay5
+        30 -> if (forward) Icons.Rounded.Forward30 else Icons.Rounded.Replay30
+        10 -> if (forward) Icons.Rounded.Forward10 else Icons.Rounded.Replay10
+        else -> null
+    }
+    val description = if (!announce) {
+        null
+    } else when {
+        seconds == 10 && forward -> stringResource(R.string.vp_forward)
+        seconds == 10 -> stringResource(R.string.vp_rewind)
+        forward -> stringResource(R.string.vp_seek_forward, seconds)
+        else -> stringResource(R.string.vp_seek_back, seconds)
+    }
+    if (vector != null) {
+        Icon(vector, contentDescription = description, modifier = modifier, tint = tint)
+    } else {
+        Icon(
+            painter = painterResource(
+                if (forward) R.drawable.ic_media_forward_15 else R.drawable.ic_media_replay_15
+            ),
+            contentDescription = description,
+            modifier = modifier,
+            tint = tint,
+        )
+    }
+}
+
+@Composable
+private fun PlayerSpeedButton(
+    label: String,
+    onClick: () -> Unit,
+    shapes: androidx.compose.material3.IconButtonShapes,
+) {
+    val description = stringResource(
+        R.string.vp_playback_speed,
+        stringResource(R.string.vp_speed_short, label)
+    )
+    FilledIconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .semantics { contentDescription = description },
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+            contentColor = MaterialTheme.colorScheme.onMediaScrim
+        ),
+        shapes = shapes,
+    ) {
+        Text(
+            text = stringResource(R.string.vp_speed_short, label),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+@Composable
+private fun PlayerPipButton(
+    onClick: () -> Unit,
+    shapes: androidx.compose.material3.IconButtonShapes,
+) {
+    FilledIconButton(
+        onClick = onClick,
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
+            contentColor = MaterialTheme.colorScheme.onMediaScrim
+        ),
+        shapes = shapes,
+    ) {
+        Icon(Icons.Rounded.PictureInPictureAlt, stringResource(R.string.vp_pip))
+    }
+}
+
+/** The rate painted on the speed shortcut, without a trailing zero. */
+internal fun playbackSpeedButtonLabel(speed: Float): String =
+    if (speed == speed.toInt().toFloat()) {
+        speed.toInt().toString()
+    } else {
+        String.format(Locale.US, "%.2f", speed).trimEnd('0').trimEnd('.')
+    }
+
+/**
  * Previous / next within the playlist, flanking play/pause.
  *
  * Only composed while a queue is running: on a one-off video both buttons would
@@ -3673,15 +3934,15 @@ private fun QueueSkipButton(
         modifier = Modifier.size(size),
         colors = IconButtonDefaults.filledTonalIconButtonColors(
             containerColor = if (onTonalSurface) MaterialTheme.colorScheme.secondaryContainer
-                else Color.Black.copy(0.5f),
+                else MaterialTheme.colorScheme.scrim.copy(alpha = 0.64f),
             contentColor = if (onTonalSurface) MaterialTheme.colorScheme.onSecondaryContainer
-                else Color.White,
+                else MaterialTheme.colorScheme.onMediaScrim,
             disabledContainerColor = if (onTonalSurface) {
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-            } else Color.Black.copy(0.3f),
+            } else MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f),
             disabledContentColor = if (onTonalSurface) {
                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-            } else Color.White.copy(0.35f)
+            } else MaterialTheme.colorScheme.onMediaScrim.copy(0.35f)
         ),
         // Same "square flash" guard the rest of the control chrome uses.
         shapes = IconButtonDefaults.shapes()
@@ -4156,6 +4417,23 @@ fun ErrorOverlay(
             }
         }
     }
+}
+
+/** Elapsed, or "elapsed / total" (or remaining) when [combined] is set. */
+private fun videoElapsedReadout(
+    positionMs: Long,
+    durationMs: Long,
+    remaining: Boolean,
+    combined: Boolean,
+): String {
+    if (!combined || durationMs <= 0L) return formatDuration(positionMs)
+    return "${formatDuration(positionMs)} / ${videoEndReadout(positionMs, durationMs, remaining)}"
+}
+
+/** The figure on the far side of the seek bar: the length, or the time left. */
+private fun videoEndReadout(positionMs: Long, durationMs: Long, remaining: Boolean): String {
+    if (!remaining) return formatDuration(durationMs)
+    return "−${formatDuration((durationMs - positionMs).coerceAtLeast(0L))}"
 }
 
 private fun formatDuration(millis: Long): String {

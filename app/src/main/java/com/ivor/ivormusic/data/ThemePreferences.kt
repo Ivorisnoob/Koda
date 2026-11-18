@@ -466,7 +466,10 @@ class ThemePreferences(context: Context) {
             KEY_MINI_PLAYER_COLOR, KEY_MINI_PLAYER_SECOND_LINE, KEY_MINI_PLAYER_LONG_PRESS ->
                 _miniPlayerCustomization.value = readMiniPlayerCustomization()
             KEY_VIDEO_HOLD_SPEED, KEY_VIDEO_BRIGHTNESS_SWIPE, KEY_VIDEO_VOLUME_SWIPE,
-            KEY_VIDEO_HOLD_SPEED_RATE, KEY_VIDEO_CONTROLS_HIDE_SECONDS ->
+            KEY_VIDEO_HOLD_SPEED_RATE, KEY_VIDEO_CONTROLS_HIDE_SECONDS,
+            KEY_VIDEO_CENTRE_BUTTONS, KEY_VIDEO_SKIP_SECONDS, KEY_VIDEO_TIME_DISPLAY,
+            KEY_VIDEO_SHOW_CAPTIONS, KEY_VIDEO_SHOW_FULLSCREEN, KEY_VIDEO_SHOW_SCREEN_LOCK,
+            KEY_VIDEO_SHOW_PIP_BUTTON, KEY_VIDEO_SHOW_SPEED_SHORTCUT ->
                 _videoGestures.value = readVideoGestures()
             KEY_VIDEO_SHADERS_ENABLED, KEY_VIDEO_SHADER_PRESET, KEY_VIDEO_SHADERS_SHARPNESS,
             KEY_VIDEO_SHADERS_CONTRAST, KEY_VIDEO_SHADERS_BRIGHTNESS,
@@ -648,6 +651,17 @@ class ThemePreferences(context: Context) {
         private const val KEY_NAV_BAR_HIDES_ON_SCROLL = "nav_bar_hides_on_scroll"
         private const val KEY_VIDEO_HOLD_SPEED_RATE = "video_gesture_hold_speed_rate"
         private const val KEY_VIDEO_CONTROLS_HIDE_SECONDS = "video_controls_hide_seconds"
+        /** Frozen stored id. One of [VideoCentreButtons.id]. */
+        private const val KEY_VIDEO_CENTRE_BUTTONS = "video_centre_buttons"
+        /** Frozen stored int. One of [VideoGestureCustomization.SKIP_SECONDS]. */
+        private const val KEY_VIDEO_SKIP_SECONDS = "video_skip_seconds"
+        /** Frozen stored id. One of [VideoTimeDisplay.id]. */
+        private const val KEY_VIDEO_TIME_DISPLAY = "video_time_display"
+        private const val KEY_VIDEO_SHOW_CAPTIONS = "video_show_captions"
+        private const val KEY_VIDEO_SHOW_FULLSCREEN = "video_show_fullscreen"
+        private const val KEY_VIDEO_SHOW_SCREEN_LOCK = "video_show_screen_lock"
+        private const val KEY_VIDEO_SHOW_PIP_BUTTON = "video_show_pip_button"
+        private const val KEY_VIDEO_SHOW_SPEED_SHORTCUT = "video_show_speed_shortcut"
         private const val KEY_VIDEO_FEED_POSTS = "video_feed_posts"
         private const val KEY_VIDEO_FEED_LIVE = "video_feed_live"
         private const val KEY_VIDEO_FEED_HIDE_WATCHED_HOME = "video_feed_hide_watched_home"
@@ -663,6 +677,18 @@ class ThemePreferences(context: Context) {
                 .getInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, 4)
             return seconds.takeIf { it in VideoGestureCustomization.CONTROLS_HIDE_SECONDS }
                 ?.times(1000L) ?: 4000L
+        }
+
+        /**
+         * How far a skip moves, as a fresh read. The player, the double-tap
+         * gesture, the notification and the PiP window all ask at the moment
+         * they skip, so a change applies without rebuilding the player.
+         */
+        fun videoSeekStepMs(context: Context): Long {
+            val seconds = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_VIDEO_SKIP_SECONDS, 10)
+            return seconds.takeIf { it in VideoGestureCustomization.SKIP_SECONDS }
+                ?.times(1000L) ?: 10_000L
         }
 
         private const val KEY_MINI_PLAYER_BUTTONS = "mini_player_buttons"
@@ -1113,8 +1139,9 @@ class ThemePreferences(context: Context) {
 
         /**
          * PiP side buttons. Stored values are frozen: "videos" is previous and
-         * next in a playlist, back 10s and next otherwise (the behaviour
-         * before the setting existed); "seek" is back and forward 10s always.
+         * next when there is somewhere to go, and a skip otherwise (the
+         * behaviour before the setting existed); "seek" is skip back and
+         * forward always. The skip distance is [videoSeekStepMs].
          */
         const val PIP_BUTTONS_VIDEOS = "videos"
         const val PIP_BUTTONS_SEEK = "seek"
@@ -1568,6 +1595,15 @@ class ThemePreferences(context: Context) {
             .takeIf { it in VideoGestureCustomization.HOLD_SPEEDS } ?: 2f,
         controlsHideSeconds = prefs.getInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, 4)
             .takeIf { it in VideoGestureCustomization.CONTROLS_HIDE_SECONDS } ?: 4,
+        centreButtons = VideoCentreButtons.fromId(prefs.getString(KEY_VIDEO_CENTRE_BUTTONS, null)),
+        skipSeconds = prefs.getInt(KEY_VIDEO_SKIP_SECONDS, 10)
+            .takeIf { it in VideoGestureCustomization.SKIP_SECONDS } ?: 10,
+        timeDisplay = VideoTimeDisplay.fromId(prefs.getString(KEY_VIDEO_TIME_DISPLAY, null)),
+        showCaptions = prefs.getBoolean(KEY_VIDEO_SHOW_CAPTIONS, true),
+        showFullscreen = prefs.getBoolean(KEY_VIDEO_SHOW_FULLSCREEN, true),
+        showScreenLock = prefs.getBoolean(KEY_VIDEO_SHOW_SCREEN_LOCK, true),
+        showPipButton = prefs.getBoolean(KEY_VIDEO_SHOW_PIP_BUTTON, false),
+        showSpeedShortcut = prefs.getBoolean(KEY_VIDEO_SHOW_SPEED_SHORTCUT, false),
     )
 
     fun setVideoGestures(customization: VideoGestureCustomization) {
@@ -1577,6 +1613,14 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_VIDEO_VOLUME_SWIPE, customization.volumeSwipe)
             .putFloat(KEY_VIDEO_HOLD_SPEED_RATE, customization.holdSpeed)
             .putInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, customization.controlsHideSeconds)
+            .putString(KEY_VIDEO_CENTRE_BUTTONS, customization.centreButtons.id)
+            .putInt(KEY_VIDEO_SKIP_SECONDS, customization.skipSeconds)
+            .putString(KEY_VIDEO_TIME_DISPLAY, customization.timeDisplay.id)
+            .putBoolean(KEY_VIDEO_SHOW_CAPTIONS, customization.showCaptions)
+            .putBoolean(KEY_VIDEO_SHOW_FULLSCREEN, customization.showFullscreen)
+            .putBoolean(KEY_VIDEO_SHOW_SCREEN_LOCK, customization.showScreenLock)
+            .putBoolean(KEY_VIDEO_SHOW_PIP_BUTTON, customization.showPipButton)
+            .putBoolean(KEY_VIDEO_SHOW_SPEED_SHORTCUT, customization.showSpeedShortcut)
             .apply()
         _videoGestures.value = customization
     }

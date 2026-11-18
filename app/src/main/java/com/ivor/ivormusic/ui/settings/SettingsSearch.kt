@@ -256,6 +256,34 @@ internal fun buildSettingsSearchIndex(
         listOf("controls", "auto hide", "hide delay", "timeout", "buttons disappear", "overlay")
     ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
     entry(
+        "video_centre_buttons", stringResource(R.string.cz_video_centre), stringResource(R.string.cz_video_player), Icons.Rounded.SkipNext,
+        listOf(
+            "skip", "previous", "next", "next video", "previous video", "centre", "center",
+            "transport", "10 seconds", "rewind", "forward"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_skip_amount", stringResource(R.string.cz_video_skip_amount), stringResource(R.string.cz_video_player), Icons.Rounded.PlayCircle,
+        listOf("skip", "seek", "double tap", "5 seconds", "10 seconds", "15 seconds", "30 seconds", "rewind", "forward")
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_time_display", stringResource(R.string.cz_video_time_display), stringResource(R.string.cz_video_player), Icons.Rounded.Schedule,
+        listOf("time", "elapsed", "remaining", "duration", "time left", "total", "timestamp")
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_chrome_buttons", stringResource(R.string.cz_video_show_captions), stringResource(R.string.cz_video_player), Icons.Rounded.PlayCircle,
+        listOf(
+            "captions", "subtitles", "cc", "fullscreen", "lock", "screen lock",
+            "picture in picture", "pip", "speed", "playback speed", "hide button"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_pip_actions", stringResource(R.string.sp_pip_buttons), stringResource(R.string.cz_video_player), Icons.Rounded.PictureInPictureAlt,
+        listOf(
+            "pip", "picture in picture", "floating", "mini window", "next", "previous", "skip", "seek"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
         "standby", stringResource(R.string.standby_title), stringResource(R.string.settings_customization), Icons.Rounded.Bedtime,
         listOf(
             "standby", "stand by", "bedside", "nightstand", "clock", "desk", "dock", "charging",
