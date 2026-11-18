@@ -39,10 +39,14 @@ class SongRepository(private val context: Context) {
             MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DATA, // File path for folder filtering
             MediaStore.Audio.Media.DATE_ADDED, // Seconds since epoch, for "Recently added"
-            MediaStore.Audio.Media.TRACK,
-            MediaStore.Audio.Media.CD_TRACK_NUMBER,
-            MediaStore.Audio.Media.DISC_NUMBER
-        )
+            MediaStore.Audio.Media.TRACK
+        ) + if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // API 30 columns: asking for them earlier fails the whole query,
+            // so older phones order albums by TRACK alone.
+            arrayOf(MediaStore.Audio.Media.CD_TRACK_NUMBER, MediaStore.Audio.Media.DISC_NUMBER)
+        } else {
+            emptyArray()
+        }
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
@@ -63,8 +67,8 @@ class SongRepository(private val context: Context) {
             val dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
             val trackColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
-            val cdTrackColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.CD_TRACK_NUMBER)
-            val discColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISC_NUMBER)
+            val cdTrackColumn = cursor.getColumnIndex(MediaStore.Audio.Media.CD_TRACK_NUMBER)
+            val discColumn = cursor.getColumnIndex(MediaStore.Audio.Media.DISC_NUMBER)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
@@ -86,8 +90,8 @@ class SongRepository(private val context: Context) {
                 val dateAdded = cursor.getLong(dateAddedColumn).takeIf { it > 0 }?.times(1000L)
                 val position = albumPosition(
                     encodedTrack = cursor.getInt(trackColumn).takeIf { !cursor.isNull(trackColumn) },
-                    cdTrackNumber = cursor.getString(cdTrackColumn),
-                    discNumber = cursor.getString(discColumn)
+                    cdTrackNumber = if (cdTrackColumn >= 0) cursor.getString(cdTrackColumn) else null,
+                    discNumber = if (discColumn >= 0) cursor.getString(discColumn) else null
                 )
 
                 // Check if this song's folder is excluded

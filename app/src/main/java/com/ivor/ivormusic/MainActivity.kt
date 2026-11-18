@@ -187,9 +187,17 @@ class MainActivity : ComponentActivity() {
         // letterbox the rest of the app for the remainder of the session.
         // Controls still handle status/navigation bars independently; only
         // the notch-specific exclusion is deliberately ignored.
-        window.attributes = window.attributes.also {
-            it.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        // The field is API 28 and ALWAYS is API 30; 28-29 get SHORT_EDGES,
+        // which covers the notch in portrait and landscape alike.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.also {
+                it.layoutInDisplayCutoutMode =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    } else {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+            }
         }
 
         setContent {

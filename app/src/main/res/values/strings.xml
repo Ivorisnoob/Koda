@@ -745,6 +745,7 @@
     <string name="sp_private_downloads">Private downloads</string>
     <string name="sp_private_downloads_on">New audio and video stay inside Koda and are removed on uninstall</string>
     <string name="sp_private_downloads_off">New audio and video appear in Downloads/Koda</string>
+    <string name="sp_private_downloads_always">On this Android version, downloads always stay inside Koda</string>
     <string name="sp_private_downloads_note">Album art stays hidden from Gallery in either mode. Existing downloads stay where they are.</string>
     <string name="sp_cache">Cache</string>
     <string name="sp_cache_videos">Cache videos</string>

@@ -2228,17 +2228,23 @@ internal fun StorageSettingsPage(
         item {
             SettingsSection(title = stringResource(R.string.sp_downloads)) {
                 SettingsCard {
+                    // Android 8 and 9 cannot publish to Downloads/Koda without a
+                    // storage permission (DownloadStorage), so downloads there
+                    // are always private and the row says so.
+                    val sharedDownloads =
+                        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
                     SettingsToggleRow(
                         icon = Icons.Rounded.Security,
                         title = stringResource(R.string.sp_private_downloads),
-                        subtitle = if (privateDownloadsEnabled) {
-                            stringResource(R.string.sp_private_downloads_on)
-                        } else {
-                            stringResource(R.string.sp_private_downloads_off)
+                        subtitle = when {
+                            !sharedDownloads -> stringResource(R.string.sp_private_downloads_always)
+                            privateDownloadsEnabled -> stringResource(R.string.sp_private_downloads_on)
+                            else -> stringResource(R.string.sp_private_downloads_off)
                         },
-                        enabled = privateDownloadsEnabled,
+                        enabled = privateDownloadsEnabled || !sharedDownloads,
                         onToggle = onPrivateDownloadsEnabledToggle,
-                        explanation = stringResource(R.string.si_private_downloads)
+                        explanation = stringResource(R.string.si_private_downloads),
+                        available = sharedDownloads
                     )
                     // The defaults the music download sheet opens on, and what
                     // a download started without it uses. Read and written
@@ -3035,7 +3041,14 @@ private fun FrameInterpolationRateChoice(
 ) {
     val context = LocalContext.current
     val screenHz = remember(context) {
-        val display = runCatching { context.display }.getOrNull()
+        val display = runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                context.display
+            } else {
+                @Suppress("DEPRECATION")
+                (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
+            }
+        }.getOrNull()
         val mode = display?.mode
         display?.supportedModes
             ?.filter { mode == null || (it.physicalWidth == mode.physicalWidth && it.physicalHeight == mode.physicalHeight) }
