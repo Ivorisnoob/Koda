@@ -15,6 +15,9 @@ import com.ivor.ivormusic.util.KLog
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /** Where [VideoLoader]'s results land. Every call but the two reads is on the main thread. */
@@ -61,9 +64,20 @@ class VideoLoader(
     private var sponsorBlockJob: Job? = null
     private var generation = 0L
 
+    private val _streamsSettled = MutableStateFlow<String?>(null)
+
+    /**
+     * The video whose stream phase last finished, resolved or failed; null
+     * while one is in flight. The `/player` response that phase fetches
+     * carries the caption tracklist, which the repository keeps, so captions
+     * wait for this rather than asking for the same response a second time.
+     */
+    val streamsSettled: StateFlow<String?> = _streamsSettled.asStateFlow()
+
     /** A new video is opening: whatever was loading no longer counts. */
     fun begin() {
         generation++
+        _streamsSettled.value = null
         streamJob?.cancel()
         watchNextJob?.cancel()
     }
@@ -125,6 +139,8 @@ class VideoLoader(
                     KLog.e(TAG, "Initial stream load failed for ${video.videoId}", e)
                     host.onStreamsFailed(e)
                 }
+            } finally {
+                if (isCurrent()) _streamsSettled.value = video.videoId
             }
         }
     }

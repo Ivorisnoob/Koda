@@ -64,6 +64,7 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.videoPlaybackCacheKey
 import com.ivor.ivormusic.video.core.timedCommentsOf
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -3202,6 +3203,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         downloadedCaptions.tracks(video.videoId)
                     }
                 } else emptyList()
+                // Opening a video with captions on asks for them alongside the
+                // stream, and the stream's own /player response carries the
+                // tracklist. Asked first, the cache was empty and a second
+                // /player went out for the same list (seen in YTRequests,
+                // September 2026). Bounded, because a deferred session never
+                // loads its streams; the request then goes out as before.
+                if (saved.isEmpty() && !_isLocalPlayback.value) {
+                    kotlinx.coroutines.withTimeoutOrNull(CAPTIONS_STREAM_WAIT_MS) {
+                        videoLoader.streamsSettled.first { it == video.videoId }
+                    }
+                }
                 // A download made before captions were kept has none saved;
                 // with a connection the live list still works for it.
                 val tracks = saved.ifEmpty { youtubeRepository.getCaptionTracks(video.videoId) }
@@ -3803,6 +3815,13 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * disk write nobody asked for.
          */
         private const val SESSION_SAVE_INTERVAL_MS = 15_000L
+
+        /**
+         * How long an automatic caption load waits for the stream phase
+         * before asking for the tracklist itself. Opening a video normally
+         * settles well inside it.
+         */
+        private const val CAPTIONS_STREAM_WAIT_MS = 10_000L
     }
 
     override fun onCleared() {
