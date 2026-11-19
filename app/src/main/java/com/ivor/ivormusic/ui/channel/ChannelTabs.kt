@@ -83,6 +83,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -1444,6 +1445,10 @@ internal fun ChannelSearchPane(
     onClose: () -> Unit,
     contentPadding: PaddingValues
 ) {
+    // Kept across searches in one visit: someone sorting by newest wants the
+    // next query sorted the same way.
+    var sort by rememberSaveable { mutableStateOf(ChannelSearchSort.RELEVANCE) }
+    val sorted = remember(results, sort) { sortChannelSearch(results, sort) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1537,7 +1542,25 @@ internal fun ChannelSearchPane(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(results, key = { it.videoId }) { video ->
+                // The channel page's own sort menu, over YouTube's results
+                // ordered on the device (ChannelSearchSort).
+                item(key = "sort") {
+                    val labels = mapOf(
+                        ChannelSearchSort.RELEVANCE to stringResource(R.string.cs_sort_relevance),
+                        ChannelSearchSort.NEWEST to stringResource(R.string.sc_newest_first),
+                        ChannelSearchSort.OLDEST to stringResource(R.string.sc_oldest_first),
+                        ChannelSearchSort.MOST_VIEWED to stringResource(R.string.cs_sort_most_viewed),
+                    )
+                    ChannelSortRow(
+                        options = ChannelSearchSort.entries.map { option ->
+                            ChannelSortOption(label = labels.getValue(option), selected = option == sort)
+                        },
+                        onSelect = { picked ->
+                            sort = labels.entries.first { it.value == picked.label }.key
+                        }
+                    )
+                }
+                items(sorted, key = { it.videoId }) { video ->
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },

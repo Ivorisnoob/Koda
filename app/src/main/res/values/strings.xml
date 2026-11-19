@@ -977,6 +977,8 @@
     <string name="sc_today">Today</string>
     <string name="sc_this_week">This week</string>
     <string name="sc_newest_first">Newest first</string>
+    <string name="cs_sort_relevance">Best match</string>
+    <string name="cs_sort_most_viewed">Most viewed</string>
     <string name="sc_oldest_first">Oldest first</string>
     <string name="sc_on_device">%1$d on this device</string>
     <string name="sc_channels_on_device">%1$d channels - %2$d on this device</string>
