@@ -12,15 +12,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -126,14 +118,6 @@ fun nowPlayingTitleColor(mediaId: String?, resting: Color, video: Boolean = fals
  * Laid over artwork, it sits on [androidx.compose.material3.ColorScheme.scrim]
  * so the bars stay readable on any cover. The bars themselves animate in the
  * draw phase: a frame does not recompose the row.
- *
- * **A video thumbnail gets a corner badge instead.** A whole-frame scrim with
- * bars in the middle works on a square cover, where the art is decoration.
- * Over a 16:9 frame the bars landed on the thumbnail's own text and read as a
- * loading glitch rather than a state, and the dimming hid the picture the
- * card is for. So with [video] the mark is a pill in the top corner, the
- * duration badge's opposite, saying "Now playing" or "Paused" where the frame
- * is wide enough. [barSize] is not used there; the pill has one size.
  */
 @Composable
 fun NowPlayingMark(
@@ -156,10 +140,6 @@ fun NowPlayingMark(
         exit = fadeOut() + scaleOut(targetScale = 0.6f),
         modifier = modifier,
     ) {
-        if (video) {
-            NowPlayingVideoBadge(playing = match.playing)
-            return@AnimatedVisibility
-        }
         val description = stringResource(
             if (match.playing) R.string.cd_song_now_playing else R.string.cd_song_paused
         )
@@ -185,55 +165,6 @@ fun NowPlayingMark(
         }
     }
 }
-
-/**
- * The video form of [NowPlayingMark]: a scrim pill in the top-start corner,
- * matching [ThumbnailBadge] (same scrim, same white label, since it sits on a
- * photograph rather than the theme). The label drops on a frame narrower than
- * [VIDEO_BADGE_LABEL_MIN_WIDTH] - a compact row's thumbnail - leaving the bars.
- */
-@Composable
-private fun NowPlayingVideoBadge(playing: Boolean) {
-    val label = stringResource(
-        if (playing) R.string.cd_song_now_playing else R.string.cd_song_paused
-    )
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val showLabel = maxWidth >= VIDEO_BADGE_LABEL_MIN_WIDTH
-        val inset = if (showLabel) 8.dp else 4.dp
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(inset)
-                .semantics { contentDescription = label },
-            shape = RoundedCornerShape(6.dp),
-            color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.8f),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                PlayingBars(
-                    playing = playing,
-                    color = MaterialTheme.colorScheme.onMediaScrim,
-                    modifier = Modifier.size(12.dp),
-                )
-                if (showLabel) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onMediaScrim,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Below this a video frame shows the badge's bars without its label. */
-private val VIDEO_BADGE_LABEL_MIN_WIDTH = 180.dp
 
 /**
  * Three bars that move while [playing] and rest low while paused.
