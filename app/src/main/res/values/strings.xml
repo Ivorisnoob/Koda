@@ -2611,4 +2611,5 @@
     <string name="lyrics_look_high">High</string>
     <string name="lyrics_look_third">Upper third</string>
     <string name="lyrics_look_center">Center</string>
+    <string name="artist_chooser_title">Choose an artist</string>
 </resources>

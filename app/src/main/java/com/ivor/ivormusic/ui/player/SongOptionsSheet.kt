@@ -284,18 +284,24 @@ fun SongOptionsSheet(
             if ((onArtistClick != null && artist != null) || goToStreamingAlbum != null) {
                 OptionGroup {
                     if (onArtistClick != null && artist != null) {
-                        OptionRow(
-                            icon = Icons.Rounded.AccountCircle,
-                            title = stringResource(R.string.song_options_go_to_artist, artist),
-                            trailing = OptionRowTrailing.CHEVRON,
-                            onClick = {
-                                // Terminal: the sheet is over a screen the artist
-                                // page is about to replace, and leaving it open
-                                // would put it on top of the destination.
-                                onDismiss()
-                                onArtistClick(artist)
+                        // One row per artist of a collaboration, each opening
+                        // its own page.
+                        com.ivor.ivormusic.ui.artist.artistMenuNames(artist, song.artistCredits)
+                            .forEachIndexed { index, name ->
+                                if (index > 0) OptionRowDivider()
+                                OptionRow(
+                                    icon = Icons.Rounded.AccountCircle,
+                                    title = stringResource(R.string.song_options_go_to_artist, name),
+                                    trailing = OptionRowTrailing.CHEVRON,
+                                    onClick = {
+                                        // Terminal: the sheet is over a screen the artist
+                                        // page is about to replace, and leaving it open
+                                        // would put it on top of the destination.
+                                        onDismiss()
+                                        onArtistClick(name)
+                                    }
+                                )
                             }
-                        )
                     }
                     if (onArtistClick != null && artist != null && goToStreamingAlbum != null) {
                         OptionRowDivider()
