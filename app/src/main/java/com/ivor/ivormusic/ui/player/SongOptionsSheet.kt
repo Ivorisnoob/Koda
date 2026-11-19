@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -103,6 +104,8 @@ fun SongOptionsSheet(
     onOpenAlbum: (PlaylistDisplayItem) -> Unit = {},
     /** Start picking songs with this one ticked. Null hides the row. */
     onSelect: (() -> Unit)? = null,
+    /** After a song leaves the music cache, so lists built from it (Ready offline) refresh. */
+    onRemovedFromCache: () -> Unit = {},
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
 
@@ -116,6 +119,15 @@ fun SongOptionsSheet(
     val likedIds by viewModel.likedSongIds.collectAsState()
     val isLiked = song.id in likedIds
     val isDownloaded = remember(song.id) { viewModel.isDownloaded(song.id) }
+    // What the music cache holds of a streamed song, for "Remove from cache".
+    // Not for a download (its file is elsewhere) or the song playing (its
+    // reader holds the cached spans).
+    val currentSong by viewModel.currentSong.collectAsState()
+    var cachedBytes by remember(song.id) { mutableStateOf(0L) }
+    LaunchedEffect(song.id) {
+        if (song.source == SongSource.YOUTUBE) cachedBytes = viewModel.cachedSongBytes(song.id)
+    }
+    val canRemoveFromCache = cachedBytes > 0 && !isDownloaded && currentSong?.id != song.id
     val artist = song.artist.takeIf { !isUnknownArtist(it) }
 
     AdaptiveModalSheet(
@@ -229,6 +241,22 @@ fun SongOptionsSheet(
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                             viewModel.toggleDownload(song)
+                            onDismiss()
+                        }
+                    )
+                }
+                if (canRemoveFromCache) {
+                    OptionRowDivider()
+                    OptionRow(
+                        icon = Icons.Rounded.DeleteSweep,
+                        title = stringResource(R.string.song_options_remove_cache),
+                        subtitle = stringResource(
+                            R.string.song_options_remove_cache_sub,
+                            com.ivor.ivormusic.data.CacheManager.formatSize(cachedBytes)
+                        ),
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            viewModel.removeFromMusicCache(song.id, onRemovedFromCache)
                             onDismiss()
                         }
                     )

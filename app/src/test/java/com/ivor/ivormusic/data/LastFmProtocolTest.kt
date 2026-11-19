@@ -67,5 +67,15 @@ class LastFmProtocolTest {
         LastFmProtocol.scrobbleCode(json)
     }
 
+    @Test
+    fun `album title comes from the track's album`() {
+        assertEquals("Discovery", LastFmProtocol.albumTitle(JSONObject(
+            """{"track":{"name":"One More Time","album":{"artist":"Daft Punk","title":" Discovery ","url":"u"}}}"""
+        )))
+        assertNull(LastFmProtocol.albumTitle(JSONObject("""{"track":{"name":"Demo"}}""")))
+        assertNull(LastFmProtocol.albumTitle(JSONObject("""{"track":{"album":{"title":""}}}""")))
+        assertNull(LastFmProtocol.albumTitle(JSONObject("""{"error":6,"message":"Track not found"}""")))
+    }
+
     private fun ack(code: Int) = JSONObject("""{"scrobbles":{"@attr":{"accepted":"${if (code == 0) 1 else 0}","ignored":"${if (code == 0) 0 else 1}"},"scrobble":{"ignoredMessage":{"code":"$code","#text":""}}}}""")
 }

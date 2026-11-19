@@ -32,6 +32,8 @@ data class LastFmState(
     val pendingAuth: Boolean = false,
     val busy: Boolean = false,
     val queued: Int = 0,
+    /** Look up the album on Last.fm for a scrobble that has none. */
+    val fillMissingAlbum: Boolean = true,
     val playCount: String = "",
     val profile: LastFmProfile = LastFmProfile(),
     val recent: List<LastFmTrack> = emptyList(),
@@ -79,6 +81,7 @@ class LastFmRepository private constructor(private val context: Context) {
         user = value("user"), connected = value("session").isNotEmpty(),
         hasCredentials = value("key").isNotEmpty() || value("session").isNotEmpty(),
         pendingAuth = value("token").isNotEmpty(), queued = queue().length(),
+        fillMissingAlbum = prefs.getBoolean(KEY_FILL_ALBUM, true),
         playCount = value("playcount"), refreshedAt = prefs.getLong("refreshed", 0),
         profile = runCatching { LastFmProtocol.profile(JSONObject(value("profile"))) }.getOrDefault(LastFmProfile()),
         recent = runCatching { LastFmProtocol.recent(JSONObject(value("recent"))) }.getOrDefault(emptyList()))
@@ -98,6 +101,11 @@ class LastFmRepository private constructor(private val context: Context) {
         setEnabled(false)
         prefs.edit().clear().apply()
         mutable.value = snapshot()
+    }
+
+    fun setFillMissingAlbum(fill: Boolean) {
+        prefs.edit().putBoolean(KEY_FILL_ALBUM, fill).apply()
+        mutable.value = state.value.copy(fillMissingAlbum = fill)
     }
 
     fun reportBrowserFailure() { mutable.value = state.value.copy(error = context.getString(R.string.lastfm_error_browser)) }
@@ -185,7 +193,7 @@ class LastFmRepository private constructor(private val context: Context) {
         // Persist after each acknowledgement; retries retain the original start timestamp.
         while (queue().length() > 0 && canScrobble()) {
             val entry = queue().getJSONObject(0)
-            val params = entry.keys().asSequence().associateWith { entry.getString(it) }
+            val params = entry.keys().asSequence().associateWith { entry.getString(it) }.withAlbumFilledIn()
             val ignored = LastFmProtocol.scrobbleCode(request("track.scrobble", params, authenticated = true))
             if (ignored == 5) {
                 retryAfter = System.currentTimeMillis() + 300_000
@@ -198,6 +206,38 @@ class LastFmRepository private constructor(private val context: Context) {
             mutable.value = state.value.copy(queued = current.length(), error =
                 if (ignored != 0) context.getString(R.string.lastfm_error_ignored, ignored) else state.value.error)
         }
+    }
+
+    // Albums Last.fm named for (artist, track), or "" for a track it had none
+    // for. Process lifetime only: a queue retried after a failure asks once.
+    private val albumLookups = mutableMapOf<Pair<String, String>, String>()
+
+    /**
+     * A YouTube song often carries no album - a music video, an upload, a
+     * single served without one - and its scrobble then lands on Last.fm with
+     * a blank album (#363). With [LastFmState.fillMissingAlbum] on, the album
+     * is asked of Last.fm's own catalogue (`track.getInfo`, autocorrected)
+     * just before the scrobble is sent. Best effort: a track Last.fm does not
+     * know, or a failed lookup, scrobbles exactly as it would have.
+     */
+    private suspend fun Map<String, String>.withAlbumFilledIn(): Map<String, String> {
+        if (!state.value.fillMissingAlbum || !this["album"].isNullOrBlank()) return this
+        val artist = this["artist"].orEmpty()
+        val track = this["track"].orEmpty()
+        if (artist.isBlank() || track.isBlank()) return this
+        val key = artist.lowercase() to track.lowercase()
+        val album = albumLookups[key] ?: try {
+            LastFmProtocol.albumTitle(
+                request("track.getInfo", mapOf("artist" to artist, "track" to track, "autocorrect" to "1"))
+            ).orEmpty()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Not found (error 6) or a network hiccup: scrobble without it.
+            KLog.w(TAG, "Album lookup failed for a scrobble", e)
+            ""
+        }.also { albumLookups[key] = it }
+        return if (album.isBlank()) this else this + ("album" to album)
     }
 
     private fun trackParams(artist: String, track: String, album: String, duration: Long) = buildMap {
@@ -287,6 +327,7 @@ class LastFmRepository private constructor(private val context: Context) {
     companion object {
         private const val TAG = "LastFmRepository"
         private const val PRIVATE_PREFS = "lastfm_private"
+        private const val KEY_FILL_ALBUM = "fill_missing_album"
 
         // Plain, non-sensitive mirror of the enabled flag, so the music service
         // can tell whether Last.fm might be on without a keystore round trip.

@@ -600,6 +600,34 @@ object CacheManager {
     }
 
     /**
+     * Bytes of [songId]'s audio held in the music cache, whole or partial;
+     * 0 when none. Off the main thread: it walks the key's spans.
+     */
+    fun cachedSongBytes(songId: String): Long {
+        if (isNonMusicPlaybackCacheKey(songId)) return 0L
+        val cache = simpleCache ?: return 0L
+        return runCatching { cache.getCachedBytes(songId, 0, Long.MAX_VALUE) }
+            .getOrDefault(0L).coerceAtLeast(0L)
+    }
+
+    /**
+     * Drop one song from the music cache (#367), the way [clearCache] drops
+     * everything. Keys are song ids (see [fullyCachedEntries]); a video key
+     * is refused, since those are not the caller's to remove. Never call it
+     * for the song playing: its reader holds spans this deletes.
+     */
+    @Synchronized
+    fun removeSong(songId: String) {
+        if (isNonMusicPlaybackCacheKey(songId)) return
+        try {
+            simpleCache?.removeResource(songId)
+            updateCacheSize()
+        } catch (e: Exception) {
+            KLog.e(TAG, "Error removing a song from the cache", e)
+        }
+    }
+
+    /**
      * Check if a specific content key is cached (partially or fully).
      */
     fun isCached(contentKey: String): Boolean {
