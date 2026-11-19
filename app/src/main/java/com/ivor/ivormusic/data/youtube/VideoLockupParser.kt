@@ -301,7 +301,8 @@ internal fun parseLockupViewModel(lockupViewModel: JSONObject?): VideoItem? {
             collaborators = collaborators,
             watchedProgress = parseVideoWatchProgress(lockupViewModel),
             watchProgressUpdatedAtMs = System.currentTimeMillis(),
-            isShort = isShortsLockup(lockupViewModel)
+            isShort = isShortsLockup(lockupViewModel),
+            access = if (lockupIsMembersOnly(lockupViewModel)) com.ivor.ivormusic.data.VideoAccess.MEMBERS_ONLY else null,
         )
     } catch (e: Exception) {
         return null
@@ -415,3 +416,14 @@ private fun parseUndoToken(feedbackEndpoint: JSONObject): String? =
         ?.optJSONObject("undoFeedbackEndpoint")
         ?.optString("undoToken")
         ?.takeIf { it.isNotBlank() }
+
+/**
+ * A lockup marked as a members-only upload: a `badgeViewModel` styled
+ * `BADGE_MEMBERS_ONLY` among its metadata rows (verified November 2026, an
+ * anonymous channel Videos tab).
+ */
+internal fun lockupIsMembersOnly(lockupViewModel: JSONObject): Boolean {
+    val badges = mutableListOf<JSONObject>()
+    findObjectsByKey(lockupViewModel.optJSONObject("metadata"), "badgeViewModel", badges)
+    return badges.any { it.optString("badgeStyle") == "BADGE_MEMBERS_ONLY" }
+}

@@ -125,11 +125,13 @@ internal class VideoFeedFilter(
     private val watchedIds: Set<String>,
     /** Whether video Home shows its Explore row; see [com.ivor.ivormusic.data.VideoFeedCustomization.showExplore]. */
     val showExplore: Boolean = true,
+    private val hideRestricted: Boolean = false,
 ) {
     fun apply(videos: List<VideoItem>): List<VideoItem> {
-        if (showLive && !hideWatched) return videos
+        if (showLive && !hideWatched && !hideRestricted) return videos
         return videos.filter { video ->
-            (showLive || !video.isLive) && (!hideWatched || video.videoId !in watchedIds)
+            (showLive || !video.isLive) && (!hideWatched || video.videoId !in watchedIds) &&
+                (!hideRestricted || video.access == null)
         }
     }
 }
@@ -150,6 +152,7 @@ internal fun rememberHomeFeedFilter(): VideoFeedFilter {
             showLive = options.showLive,
             hideWatched = options.hideWatchedOnHome,
             showExplore = options.showExplore,
+            hideRestricted = options.hideRestricted,
             // Only built when it will be read: the history can be long.
             watchedIds = if (options.hideWatchedOnHome) {
                 history.mapTo(HashSet()) { it.videoId }
@@ -281,4 +284,20 @@ fun FeedPostOverlays(
             }
         )
     }
+}
+
+/**
+ * [videos] without paid and members-only ones when "Hide paid and members-only
+ * videos" is on: for the lists that do not take the Home feed's other filters
+ * (search, channel pages, Subscriptions). Read from the stored setting, so a
+ * switch on the settings page applies to a list already on screen.
+ */
+@Composable
+internal fun rememberRestrictedFilter(): (List<VideoItem>) -> List<VideoItem> {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val options by remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }.videoFeed.collectAsState()
+    val hide = options.hideRestricted
+    return remember(hide) { { videos -> if (hide) videos.filter { it.access == null } else videos } }
 }

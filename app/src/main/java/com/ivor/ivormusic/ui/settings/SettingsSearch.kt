@@ -335,6 +335,10 @@ internal fun buildSettingsSearchIndex(
         listOf("explore", "trending", "hype", "topics", "gaming", "news", "sports", "music videos", "categories")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
     entry(
+        "video_feed_restricted", stringResource(R.string.cz_feed_hide_restricted), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("paid", "members only", "membership", "rent", "buy", "movies", "hide paid", "premium")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
         "video_feed_live", stringResource(R.string.cz_feed_live), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
         listOf("live", "live streams", "hide live", "streaming now")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
@@ -345,6 +349,14 @@ internal fun buildSettingsSearchIndex(
     entry(
         "search_keyboard", stringResource(R.string.cz_search_keyboard), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
         listOf("keyboard", "search keyboard", "auto focus", "autofocus", "keyboard pops up", "search opens")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "home_sections", stringResource(R.string.cz_section_home_sections), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("speed dial", "home sections", "hide artists", "hide mixes", "jump back in", "recent albums", "shortcuts", "remove from home")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "library_tabs", stringResource(R.string.cz_section_library_tabs), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("library tabs", "hide artists", "hide albums", "only playlists", "library sections")
     ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
     entry(
         "top_bar_greeting", stringResource(R.string.cz_top_bar_greeting), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,

@@ -491,10 +491,11 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_SHADERS_SATURATION, KEY_VIDEO_SHADERS_CUSTOM_CODE ->
                 _videoShaders.value = readVideoShaders()
             KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME,
-            KEY_VIDEO_FEED_EXPLORE ->
+            KEY_VIDEO_FEED_EXPLORE, KEY_VIDEO_FEED_HIDE_RESTRICTED ->
                 _videoFeed.value = readVideoFeed()
             KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL,
-            KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS, KEY_SEARCH_OPENS_KEYBOARD ->
+            KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS, KEY_SEARCH_OPENS_KEYBOARD,
+            KEY_HOME_HIDDEN_SECTIONS, KEY_LIBRARY_HIDDEN_TABS ->
                 _homeNavigation.value = readHomeNavigation()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
@@ -682,9 +683,12 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_FEED_LIVE = "video_feed_live"
         private const val KEY_VIDEO_FEED_HIDE_WATCHED_HOME = "video_feed_hide_watched_home"
         private const val KEY_VIDEO_FEED_EXPLORE = "video_feed_explore"
+        private const val KEY_VIDEO_FEED_HIDE_RESTRICTED = "video_feed_hide_restricted"
         private const val KEY_HOME_GREETING = "home_top_bar_greeting"
         private const val KEY_HOME_ALWAYS_DOWNLOADS = "home_top_bar_always_downloads"
         private const val KEY_SEARCH_OPENS_KEYBOARD = "search_opens_keyboard"
+        private const val KEY_HOME_HIDDEN_SECTIONS = "home_hidden_sections"
+        private const val KEY_LIBRARY_HIDDEN_TABS = "library_hidden_tabs"
         private const val KEY_COVER_DOUBLE_TAP_SEEK = "cover_double_tap_seek"
 
         /**
@@ -1683,6 +1687,7 @@ class ThemePreferences(context: Context) {
         showLive = prefs.getBoolean(KEY_VIDEO_FEED_LIVE, true),
         hideWatchedOnHome = prefs.getBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, false),
         showExplore = prefs.getBoolean(KEY_VIDEO_FEED_EXPLORE, true),
+        hideRestricted = prefs.getBoolean(KEY_VIDEO_FEED_HIDE_RESTRICTED, false),
     )
 
     fun setVideoFeed(customization: VideoFeedCustomization) {
@@ -1691,6 +1696,7 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_VIDEO_FEED_LIVE, customization.showLive)
             .putBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, customization.hideWatchedOnHome)
             .putBoolean(KEY_VIDEO_FEED_EXPLORE, customization.showExplore)
+            .putBoolean(KEY_VIDEO_FEED_HIDE_RESTRICTED, customization.hideRestricted)
             .apply()
         _videoFeed.value = customization
     }
@@ -1707,6 +1713,9 @@ class ThemePreferences(context: Context) {
         showGreeting = prefs.getBoolean(KEY_HOME_GREETING, true),
         alwaysShowDownloads = prefs.getBoolean(KEY_HOME_ALWAYS_DOWNLOADS, false),
         searchOpensKeyboard = prefs.getBoolean(KEY_SEARCH_OPENS_KEYBOARD, true),
+        hiddenHomeSections = HomeSection.fromIds(prefs.getString(KEY_HOME_HIDDEN_SECTIONS, null)),
+        hiddenLibraryTabs = prefs.getString(KEY_LIBRARY_HIDDEN_TABS, null).orEmpty()
+            .split(',').filterTo(LinkedHashSet()) { it.isNotBlank() },
     )
 
     fun setHomeNavigation(customization: HomeNavigationCustomization) {
@@ -1718,6 +1727,8 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_HOME_GREETING, customization.showGreeting)
             .putBoolean(KEY_HOME_ALWAYS_DOWNLOADS, customization.alwaysShowDownloads)
             .putBoolean(KEY_SEARCH_OPENS_KEYBOARD, customization.searchOpensKeyboard)
+            .putString(KEY_HOME_HIDDEN_SECTIONS, customization.hiddenHomeSections.joinToString(",") { it.id })
+            .putString(KEY_LIBRARY_HIDDEN_TABS, customization.hiddenLibraryTabs.joinToString(","))
             .apply()
         _homeNavigation.value = customization
     }

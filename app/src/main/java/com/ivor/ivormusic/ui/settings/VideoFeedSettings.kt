@@ -7,6 +7,7 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Sensors
@@ -84,6 +85,13 @@ internal fun VideoFeedSettingsPage(onBack: () -> Unit) {
                         available = !shortsBlocked
                     )
                     SettingsToggleRow(
+                        icon = Icons.Rounded.Lock,
+                        title = stringResource(R.string.cz_feed_hide_restricted),
+                        subtitle = stringResource(R.string.cz_feed_hide_restricted_sub),
+                        enabled = feed.hideRestricted,
+                        onToggle = { prefs.setVideoFeed(feed.copy(hideRestricted = it)) }
+                    )
+                    SettingsToggleRow(
                         icon = Icons.Rounded.Sensors,
                         title = stringResource(R.string.cz_feed_live),
                         subtitle = stringResource(R.string.cz_feed_live_sub),
@@ -140,6 +148,7 @@ internal fun videoFeedSummary(): String {
     val hidden = listOf(
         !feed.showPosts,
         !feed.showExplore,
+        feed.hideRestricted,
         !shortsShelf,
         !feed.showLive,
         feed.hideWatchedOnHome,

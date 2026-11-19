@@ -2631,5 +2631,19 @@
     <string name="explore_fashion">Fashion and beauty</string>
     <string name="explore_failed">Couldn\'t load this topic</string>
     <string name="explore_retry">Try again</string>
+    <string name="badge_members_only">Members only</string>
+    <string name="badge_paid">Paid</string>
+    <string name="cz_feed_hide_restricted">Hide paid and members-only videos</string>
+    <string name="cz_feed_hide_restricted_sub">Leave out films for sale and channel-membership videos everywhere videos are listed</string>
+    <string name="home_section_speed_dial">Speed dial</string>
+    <string name="cz_section_home_sections">Music Home sections</string>
+    <string name="cz_home_section_artists">Artists</string>
+    <string name="cz_home_section_sub">Show this section on music Home</string>
+    <string name="cz_section_library_tabs">Library tabs</string>
+    <string name="cz_library_tab_sub">Show this tab in your Library</string>
+    <string name="library_tab_all">All</string>
+    <string name="library_tab_playlists">Playlists</string>
+    <string name="library_tab_artists">Artists</string>
+    <string name="library_tab_albums">Albums</string>
     <string name="artist_chooser_title">Choose an artist</string>
 </resources>

@@ -752,6 +752,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _recentlyPlayed = MutableStateFlow<List<Song>>(emptyList())
     val recentlyPlayed: StateFlow<List<Song>> = _recentlyPlayed.asStateFlow()
 
+    /** Music Home's speed dial: the most played songs, see [speedDialFrom]. */
+    private val _speedDial = MutableStateFlow<List<Song>>(emptyList())
+    val speedDial: StateFlow<List<Song>> = _speedDial.asStateFlow()
+
     // Plays per song id, for the Library's "Most played" sort. Derived from the
     // same history read as the recents rail rather than a second file load.
     private val _playCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -886,6 +890,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 loadArtistPhotos(artists)
             }
             val localSongs = _songs.value
+            _speedDial.value = speedDialFrom(history, System.currentTimeMillis()).mapNotNull { entry ->
+                if (entry.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
+                    localSongs.find { it.id == entry.songId }
+                } else {
+                    Song.fromYouTube(
+                        videoId = entry.songId,
+                        title = entry.title,
+                        artist = entry.artist,
+                        album = entry.album,
+                        duration = entry.duration,
+                        thumbnailUrl = entry.thumbnailUrl
+                    ).copy(albumId = entry.albumId)
+                }
+            }
             val seen = mutableSetOf<String>()
             val recents = mutableListOf<Song>()
             for (entry in history) {
