@@ -373,18 +373,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         (localItems + savedItems + ytPlaylists).filterNot { it.id in hiddenIds }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /**
-     * [userPlaylists] less the ones kept to video mode: what music Home and the
-     * Library grid draw. A separate list on purpose, because [userPlaylists] also
-     * answers "is this in my library", feeds import and the add-to-playlist
-     * paths, and a playlist kept to video mode is still the user's own.
-     */
-    val musicModePlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
-        userPlaylists,
-        playlistModeStore.modes
-    ) { playlists, modes ->
-        playlists.filter { modes.showsIn(it.id, com.ivor.ivormusic.data.PlaylistMode.MUSIC) }
-    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+    // musicModePlaylists is declared below isOnline, which it reads: a
+    // property initialiser that touches one declared after it sees null.
 
     // --- Spotlight's YouTube Music tabs (home, explore, charts, new, a mood) ---
 
@@ -824,6 +814,32 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
         true
     )
+
+    /**
+     * [userPlaylists] less the ones kept to video mode: what music Home and the
+     * Library grid draw. A separate list on purpose, because [userPlaylists] also
+     * answers "is this in my library", feeds import and the add-to-playlist
+     * paths, and a playlist kept to video mode is still the user's own.
+     *
+     * Offline, or in Local Only, downloaded playlists lead it, including ones
+     * the account fetch could not bring back ([playlistsForOffline]). Local
+     * Only is a fresh read each time the list is rebuilt (invariant 7).
+     */
+    val musicModePlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
+        combine(userPlaylists, playlistModeStore.modes, hiddenPlaylistsRepository.hiddenPlaylists, ::Triple),
+        isOnline,
+        downloadRepository.playlistStore.playlists,
+        downloadRepository.downloadedSongs,
+    ) { (playlists, modes, hidden), online, downloaded, downloads ->
+        com.ivor.ivormusic.data.playlistsForOffline(
+            playlists = playlists,
+            online = online && !themePreferences.isLocalOnlyModeEnabled(),
+            downloaded = downloaded,
+            downloads = downloads,
+            hiddenIds = hidden.mapTo(hashSetOf()) { it.playlistId },
+            downloadedLabel = getApplication<Application>().getString(R.string.offline_playlist_owner),
+        ).filter { modes.showsIn(it.id, com.ivor.ivormusic.data.PlaylistMode.MUSIC) }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Classic Home's top artists rail, and the photos found for them so far.
     // Photos arrive separately and late, so the rail draws immediately with a

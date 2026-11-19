@@ -1243,6 +1243,20 @@ fun HomeScreen(
                                         // same tab system - only the composition of this one
                                         // tab differs, which is the move the video toggle
                                         // already established.
+                                        // Offline, both Homes lead with what will
+                                        // play: downloads, then fully cached songs.
+                                        val homeOnline by viewModel.isOnline.collectAsState()
+                                        val homeReadyOffline by viewModel.readyOffline.collectAsState()
+                                        val homeDownloads by viewModel.downloadedSongs.collectAsState()
+                                        // The cache changes as a side effect of
+                                        // listening, so it is re-read each time the
+                                        // connection goes, not held from earlier.
+                                        LaunchedEffect(homeOnline) {
+                                            if (!homeOnline) viewModel.refreshReadyOffline()
+                                        }
+                                        val homeOfflineSongs = remember(homeDownloads, homeReadyOffline) {
+                                            (homeDownloads + homeReadyOffline.songs).distinctBy { it.id }
+                                        }
                                         if (spotlightHome) {
                                             val spotlightPlaylists by viewModel.musicModePlaylists.collectAsState()
                                             val spotlightLiked by viewModel.likedSongs.collectAsState()
@@ -1305,7 +1319,9 @@ fun HomeScreen(
                                                 modeToggleState = modeToggleState,
                                                 listState = musicHomeScrollState,
                                                 filter = spotlightFilter,
-                                                onFilterChange = { spotlightFilter = it }
+                                                onFilterChange = { spotlightFilter = it },
+                                                isOffline = !homeOnline,
+                                                offlineSongs = homeOfflineSongs,
                                             )
                                         } else {
                                             // Music Mode: Show original content. The first load
@@ -1318,19 +1334,7 @@ fun HomeScreen(
                                             val classicLiked by viewModel.likedSongs.collectAsState()
                                             val classicTopArtists by viewModel.topArtists.collectAsState()
                                             val classicArtistPhotos by viewModel.artistPhotos.collectAsState()
-                                            val classicOnline by viewModel.isOnline.collectAsState()
                                             val classicSpeedDial by viewModel.speedDial.collectAsState()
-                                            val classicReadyOffline by viewModel.readyOffline.collectAsState()
-                                            val classicDownloads by viewModel.downloadedSongs.collectAsState()
-                                            // The cache changes as a side effect of
-                                            // listening, so it is re-read each time the
-                                            // connection goes, not held from earlier.
-                                            LaunchedEffect(classicOnline) {
-                                                if (!classicOnline) viewModel.refreshReadyOffline()
-                                            }
-                                            val classicOfflineSongs = remember(classicDownloads, classicReadyOffline) {
-                                                (classicDownloads + classicReadyOffline.songs).distinctBy { it.id }
-                                            }
                                             YourMixContent(
                                                 likedCount = classicLiked.size,
                                                 // Straight onto the likes, as the Library's
@@ -1345,10 +1349,10 @@ fun HomeScreen(
                                                 topArtists = classicTopArtists,
                                                 artistPhotos = classicArtistPhotos,
                                                 onArtistClick = { artist -> viewModel.requestArtistPage(artist.name) },
-                                                isOffline = !classicOnline,
-                                                offlineSongs = classicOfflineSongs,
+                                                isOffline = !homeOnline,
+                                                offlineSongs = homeOfflineSongs,
                                                 onOfflineSongClick = { song ->
-                                                    playerViewModel.playQueue(classicOfflineSongs, song)
+                                                    playerViewModel.playQueue(homeOfflineSongs, song)
                                                     showPlayerSheet = true
                                                 },
                                                 recentAlbums = classicRecentAlbums,

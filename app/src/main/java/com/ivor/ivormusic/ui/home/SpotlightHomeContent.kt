@@ -139,6 +139,14 @@ fun SpotlightHomeContent(
      * Home's shortcut grid; Recent albums and Mixes are Classic's alone.
      */
     hiddenSections: Set<com.ivor.ivormusic.data.HomeSection> = emptySet(),
+    /**
+     * Offline, [offlineSongs] (downloads, then fully cached songs) lead the
+     * page, as they do on Classic: the quick picks and YouTube's tabs are
+     * mostly songs that need a connection. No defaults, so the one call site
+     * cannot leave the shelf unwired.
+     */
+    isOffline: Boolean,
+    offlineSongs: List<Song>,
 ) {
     val isRefreshing by viewModel.isLoading.collectAsState()
 
@@ -243,6 +251,28 @@ fun SpotlightHomeContent(
                                 is Shortcut.Track -> onRecentClick(shortcut.song)
                             }
                         },
+                    )
+                }
+            }
+
+            // What will play without a connection, first and only while
+            // offline. Under All alone: a filter is a choice of what to look
+            // at, and this answers a different question.
+            if (filter == SpotlightFilter.All && isOffline && offlineSongs.isNotEmpty()) {
+                val readyOffline = offlineSongs.take(QUICK_PICK_PAGES * QUICK_PICK_ROWS)
+                item(key = "offline-header") {
+                    SpotlightSectionHeader(
+                        title = stringResource(R.string.ready_offline),
+                        subtitle = stringResource(R.string.home_offline_subtitle),
+                        actionLabel = stringResource(R.string.action_play_all),
+                        onAction = { onPlaySongs(offlineSongs, offlineSongs.firstOrNull()) },
+                    )
+                }
+                item(key = "offline-songs") {
+                    SpotlightQuickPicks(
+                        songs = readyOffline,
+                        onSongClick = { onPlaySongs(offlineSongs, it) },
+                        onSongLongPress = onSongLongPress,
                     )
                 }
             }

@@ -1012,6 +1012,14 @@ fun LibraryMainScreen(
     allSongsListState: LazyListState = rememberLazyListState()
 ) {
     val musicModePlaylists by viewModel.musicModePlaylists.collectAsState()
+    // Offline, downloaded playlists join the grid even when they are not in
+    // the library (playlistsForOffline). Those are neither the user's own nor
+    // saved, so the grid must not offer to rename or delete them.
+    val libraryPlaylists by viewModel.userPlaylists.collectAsState()
+    val downloadedOnlyPlaylistIds = remember(musicModePlaylists, libraryPlaylists) {
+        val inLibrary = libraryPlaylists.mapTo(hashSetOf()) { it.id }
+        musicModePlaylists.mapNotNullTo(hashSetOf()) { it.id.takeIf { id -> id !in inLibrary } }
+    }
     val playlistModes by viewModel.playlistModes.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
     val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
@@ -1258,6 +1266,7 @@ fun LibraryMainScreen(
                             playlists = musicModePlaylists,
                             localPlaylistIds = localPlaylistIds,
                             savedPlaylistIds = savedPlaylistIds,
+                            downloadedOnlyIds = downloadedOnlyPlaylistIds,
                             likedSongs = likedSongs,
                             onPlaylistClick = onNavigateToPlaylist,
                             onRemoveSavedPlaylist = { playlist ->
@@ -1829,6 +1838,12 @@ private fun RecentSongCard(
 fun PlaylistsGrid(
     playlists: List<PlaylistDisplayItem>,
     localPlaylistIds: Set<String>,
+    /**
+     * Listed only because they are downloaded and the phone is offline: no
+     * Edit, Delete or Remove, since they are neither owned nor saved. No
+     * default, so a new call site has to answer it.
+     */
+    downloadedOnlyIds: Set<String>,
     likedSongs: List<Song>,
     onPlaylistClick: (PlaylistDisplayItem) -> Unit,
     onEditPlaylist: (playlist: PlaylistDisplayItem, newName: String, newDescription: String?) -> Unit,
@@ -1974,6 +1989,7 @@ fun PlaylistsGrid(
             // YouTube playlists are editable through InnerTube; the synthesized
             // Supermix ("RTM") and Your Likes ("LM") entries are not real playlists
             val isYouTubeEditable = !isLocalPlaylist && !isSavedPlaylist &&
+                playlist.id !in downloadedOnlyIds &&
                 playlist.id != "RTM" && playlist.id != "LM"
             ExpressivePlaylistCard(
                 name = playlist.name ?: stringResource(R.string.untitled_song),
