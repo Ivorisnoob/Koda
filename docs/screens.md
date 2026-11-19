@@ -46,6 +46,12 @@ Second - and this is what survived the obvious fix - **`selectedTab` is `remembe
 
 **Video Home has an Explore row.** [judgement November 2026] Chips under the top bar: For you (the feed), then each `ExploreTopic` (Hype, Music, Gaming, News, Sports, Live, Learning, Fashion and beauty) ([#358](https://github.com/Ivorisnoob/Koda/issues/358)). A topic replaces the feed in the same list - no Shorts shelf, posts or endless paging - and is fetched only when its chip is tapped, then held for ten minutes (`HomeViewModel.selectExploreTopic`); pull to refresh refetches it. The Home feed filter (live, watched) applies to it; the blocklist does not, as with search. The row is on by default, hidden offline, with the offline downloads list, and by "Explore topics" under Video feed (`VideoFeedCustomization.showExplore`).
 
+**A video not everyone can play says so.** `VideoThumbnailBadge`, the one badge every thumbnail uses, puts "Members only" or "Paid" beside the length when `VideoItem.access` is set. "Hide paid and members-only videos" (`VideoFeedCustomization.hideRestricted`, off by default) removes them where lists are drawn: `VideoFeedFilter` (Home, Explore), Subscriptions' visible feed, and `rememberRestrictedFilter` for search and channel tabs. A filter, never a change to the fetch. A paid film still opens the player when tapped.
+
+**Music Home's sections can be switched off, and so can Library tabs.** [judgement November 2026] `HomeNavigationCustomization.hiddenHomeSections` (`HomeSection`: Speed dial, Recent albums, Artists, Mixes, Jump back in; ids frozen) and `hiddenLibraryTabs` (`LibraryTab` names) ([#373](https://github.com/Ivorisnoob/Koda/issues/373)). Your playlists always stays; the last Library tab cannot be switched off, and one tab left drops the tab strip. On Spotlight, Speed dial governs the shortcut grid and Recent albums and Mixes have no counterpart.
+
+**Classic Home's speed dial is the device's own.** `speedDialFrom` (`ui/home/SpeedDial.kt`) ranks the profile's listening history: the most played songs of the last 30 days, ties to the most recent, older favourites filling the rest, nine at most, drawn from three. YouTube Music's speed dial is account data and was not probed; this works signed out and with device files. A tap plays the dial as the queue.
+
 ## Device videos
 
 The video Library's "On this device" entry (`ui/video/DeviceVideosPage.kt`, `data/LocalVideoRepository.kt`) reads MediaStore, groups by bucket into folder cards, and plays the files through the ordinary video player.
