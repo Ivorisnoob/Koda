@@ -2865,6 +2865,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             _playbackError.value = e
             _isLoading.value = false
         }
+        if (isDownloadedVideoId(video.videoId)) {
+            viewModelScope.launch {
+                val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    downloadedCaptions.chapters(video.videoId)
+                }
+                if (saved.isNotEmpty() && _currentVideo.value?.videoId == video.videoId &&
+                    _chapters.value.isEmpty()
+                ) {
+                    _chapters.value = saved
+                }
+            }
+        }
         recordLocalWatch(video)
     }
 
@@ -2926,7 +2938,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (watchNext.relatedVideos.isNotEmpty()) {
             _relatedVideos.value = watchNext.relatedVideos
         }
-        _chapters.value = watchNext.chapters
+        // A download played offline may already show its saved chapters; an
+        // answer without any does not take them away.
+        if (watchNext.chapters.isNotEmpty() || !_isLocalPlayback.value) {
+            _chapters.value = watchNext.chapters
+        }
         // Opening the chat panel now costs one poll instead of a second
         // watch-next round trip plus its parse.
         liveSession.setChatContinuation(watchNext.liveChatContinuation)

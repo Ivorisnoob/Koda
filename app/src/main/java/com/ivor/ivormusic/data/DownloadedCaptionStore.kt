@@ -99,6 +99,40 @@ internal class DownloadedCaptionStore(context: Context) {
         }
     }
 
+    /**
+     * The video's chapters, kept in the same folder so a download played
+     * offline still has them (#381). Read back by [chapters]; deleted with
+     * the captions by [delete].
+     */
+    fun saveChapters(videoId: String, chapters: List<VideoChapter>) {
+        if (chapters.isEmpty()) return
+        try {
+            val dir = folder(videoId).apply { mkdirs() }
+            val array = JSONArray()
+            chapters.forEach { array.put(JSONObject().put(KEY_TITLE, it.title).put(KEY_START, it.startMs)) }
+            File(dir, CHAPTERS).writeText(array.toString())
+        } catch (e: Exception) {
+            KLog.w(TAG, "Could not save chapters for $videoId: ${e.message}")
+        }
+    }
+
+    /** The chapters saved for [videoId], or none. */
+    fun chapters(videoId: String): List<VideoChapter> {
+        val file = File(folder(videoId), CHAPTERS)
+        if (!file.isFile) return emptyList()
+        return try {
+            val array = JSONArray(file.readText())
+            (0 until array.length()).mapNotNull { index ->
+                val entry = array.optJSONObject(index) ?: return@mapNotNull null
+                val title = entry.optString(KEY_TITLE).takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                VideoChapter(title = title, startMs = entry.optLong(KEY_START, -1L).takeIf { it >= 0 } ?: return@mapNotNull null)
+            }.sortedBy { it.startMs }
+        } catch (e: Exception) {
+            KLog.w(TAG, "Could not read saved chapters for $videoId: ${e.message}")
+            emptyList()
+        }
+    }
+
     /** Drop everything saved for [videoId], with the download it belonged to. */
     fun delete(videoId: String) {
         runCatching { folder(videoId).deleteRecursively() }
@@ -115,6 +149,9 @@ internal class DownloadedCaptionStore(context: Context) {
         private const val TAG = "DownloadedCaptions"
         private const val DIRECTORY = "video_captions"
         private const val INDEX = "index.json"
+        private const val CHAPTERS = "chapters.json"
+        private const val KEY_TITLE = "title"
+        private const val KEY_START = "startMs"
         private const val FILE_SCHEME = "file:"
         private const val KEY_LANGUAGE = "language"
         private const val KEY_NAME = "name"
