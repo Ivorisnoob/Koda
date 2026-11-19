@@ -284,11 +284,9 @@ fun BentoPlayerSheetContent(
                             .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
                             .clip(RoundedCornerShape(artCorner.dp))
                             .background(tileColor)
-                            .pointerInput(Unit) {
-                                detectTapGestures(onTap = {
-                                    playerHaptics.playPause(!viewModel.isPlaying.value)
-                                    viewModel.togglePlayPause()
-                                })
+                            .coverTaps(LocalCoverSeek.current) {
+                                playerHaptics.playPause(!viewModel.isPlaying.value)
+                                viewModel.togglePlayPause()
                             }
                             // Off while lyrics are up: that view scrolls and seeks.
                             .swipeToSkip(swipeToSkip, enabled = !showLyrics)

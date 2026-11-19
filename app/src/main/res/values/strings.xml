@@ -2611,4 +2611,25 @@
     <string name="lyrics_look_high">High</string>
     <string name="lyrics_look_third">Upper third</string>
     <string name="lyrics_look_center">Center</string>
+    <string name="sp_music_player_gestures">Music player</string>
+    <string name="sp_cover_double_tap_seek">Double-tap the cover to seek</string>
+    <string name="sp_cover_double_tap_seek_sub">Left side goes back 10 seconds, right side forward</string>
+    <string name="vpc_load_subtitle_file">Load subtitle file</string>
+    <string name="vpc_load_subtitle_file_sub">An .srt or .vtt file from your phone</string>
+    <string name="vpc_subtitle_file_unreadable">No subtitles could be read from that file</string>
+    <string name="cz_feed_section_explore">Explore</string>
+    <string name="cz_feed_explore">Explore topics</string>
+    <string name="cz_feed_explore_sub">A row of topics on Home: Hype, Music, Gaming, News and more</string>
+    <string name="explore_for_you">For you</string>
+    <string name="explore_hype">Hype</string>
+    <string name="explore_music">Music</string>
+    <string name="explore_gaming">Gaming</string>
+    <string name="explore_news">News</string>
+    <string name="explore_sports">Sports</string>
+    <string name="explore_live">Live</string>
+    <string name="explore_learning">Learning</string>
+    <string name="explore_fashion">Fashion and beauty</string>
+    <string name="explore_failed">Couldn\'t load this topic</string>
+    <string name="explore_retry">Try again</string>
+    <string name="artist_chooser_title">Choose an artist</string>
 </resources>

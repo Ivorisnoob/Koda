@@ -671,9 +671,7 @@ private fun MorphHero(
                 }
                 .clip(heroShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { currentOnPlayPause() })
-                }
+                .coverTaps(LocalCoverSeek.current) { currentOnPlayPause() }
                 .swipeToSkip(swipeToSkip)
                 // Last in the chain: consumes the post-long-press hold
                 // stream before the tap and skip-drag detectors see it.

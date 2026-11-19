@@ -49,6 +49,11 @@ data class Song(
     // A plain YouTube upload played as a song (music search's Videos tab).
     // Its "artist" is a channel name, so it is never scrobbled to Last.fm.
     val isUpload: Boolean = false,
+    // Each linked artist on a streamed song, in credit order. [artist] is
+    // their names joined for display; this keeps who each one is, so a tap
+    // on "Calvin Harris, Dua Lipa" can open either page rather than a search
+    // for the joined name. Empty for device files and older saved rows.
+    val artistCredits: List<ArtistCredit> = emptyList(),
 ) {
     val highResThumbnailUrl: String?
         get() = thumbnailUrl?.let { url ->
@@ -127,6 +132,10 @@ data class Song(
         )
     }
 }
+
+/** One linked artist on a song: the name as credited and its channel id. */
+@Serializable
+data class ArtistCredit(val name: String, val id: String)
 
 /**
  * Canonical sentinels for a missing local tag, stored on [Song] at the scan

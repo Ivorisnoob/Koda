@@ -460,6 +460,25 @@ internal fun GesturesSettingsPage(
             }
         }
 
+        // The music player's cover. Read and written here rather than
+        // threaded through SettingsScreen, like the newer pages.
+        item {
+            val context = LocalContext.current
+            val prefs = remember(context) { ThemePreferences(context) }
+            val coverSeek by prefs.coverDoubleTapSeek.collectAsState()
+            SettingsSection(title = stringResource(R.string.sp_music_player_gestures)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.SwapHoriz,
+                        title = stringResource(R.string.sp_cover_double_tap_seek),
+                        subtitle = stringResource(R.string.sp_cover_double_tap_seek_sub),
+                        enabled = coverSeek,
+                        onToggle = prefs::setCoverDoubleTapSeek,
+                    )
+                }
+            }
+        }
+
         // Swipe actions apply to every playlist song list - local, YouTube
         // and saved.
         item {

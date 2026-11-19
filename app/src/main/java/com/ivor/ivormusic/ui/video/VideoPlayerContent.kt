@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
@@ -162,6 +163,19 @@ fun VideoPlayerContent(
     val chapters by viewModel.chapters.collectAsState()
     val seekPreview by viewModel.seekPreview.collectAsState()
     val captionTracks by viewModel.captionTracks.collectAsState()
+    val subtitleContext = androidx.compose.ui.platform.LocalContext.current
+    val subtitleUnreadable = stringResource(R.string.vpc_subtitle_file_unreadable)
+    val subtitlePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.loadSubtitleFile(uri) { ok ->
+                if (!ok) {
+                    android.widget.Toast.makeText(subtitleContext, subtitleUnreadable, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
     val selectedCaption by viewModel.selectedCaption.collectAsState()
     // Tracks the media file itself carries, populated only for device videos.
     val audioTracks by viewModel.audioTracks.collectAsState()
@@ -1654,6 +1668,9 @@ fun VideoPlayerContent(
             ),
             onCaptionSelected = viewModel::setCaptionTrack,
             onEmbeddedCaptionSelected = viewModel::setEmbeddedTextTrack,
+            onLoadSubtitleFile = if (isLocalPlayback) {
+                { subtitlePicker.launch(arrayOf("*/*")) }
+            } else null,
             onCaptionTextSizeChanged = viewModel::setCaptionTextSize,
             onCaptionTextColorChanged = viewModel::setCaptionTextColor,
             onCaptionBackgroundChanged = viewModel::setCaptionBackground
@@ -1835,6 +1852,8 @@ private fun PlayerSettingsSections(
     captions: CaptionsDeckState,
     onCaptionSelected: (CaptionTrack?) -> Unit,
     onEmbeddedCaptionSelected: (PlayerTrackOption?) -> Unit,
+    /** Opens the file picker for a subtitle file; null where there is no file to pair one with. */
+    onLoadSubtitleFile: (() -> Unit)?,
     onCaptionTextSizeChanged: (Float) -> Unit,
     onCaptionTextColorChanged: (CaptionTextColor) -> Unit,
     onCaptionBackgroundChanged: (CaptionBackground) -> Unit
@@ -2142,6 +2161,7 @@ private fun PlayerSettingsSections(
                                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                 onEmbeddedCaptionSelected(track)
                             },
+                            onLoadSubtitleFile = onLoadSubtitleFile,
                             onTextSizeChanged = onCaptionTextSizeChanged,
                             onTextColorChanged = onCaptionTextColorChanged,
                             onBackgroundChanged = onCaptionBackgroundChanged
@@ -2816,17 +2836,24 @@ private fun CaptionsDeck(
     optionColors: ToggleButtonColors,
     onSelect: (CaptionTrack?) -> Unit,
     onEmbeddedSelect: (PlayerTrackOption?) -> Unit,
+    onLoadSubtitleFile: (() -> Unit)?,
     onTextSizeChanged: (Float) -> Unit,
     onTextColorChanged: (CaptionTextColor) -> Unit,
     onBackgroundChanged: (CaptionBackground) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         when {
+            // A file's own tracks, then any subtitle files picked for it.
             state.embeddedTracks.isNotEmpty() -> CaptionLanguageRows(
-                offChecked = state.embeddedTracks.none { it.isSelected },
-                onOff = { onEmbeddedSelect(null) },
+                offChecked = state.embeddedTracks.none { it.isSelected } && state.selected == null,
+                onOff = {
+                    onEmbeddedSelect(null)
+                    onSelect(null)
+                },
                 rows = state.embeddedTracks.map { track ->
                     Triple(track.label, track.isSelected) { onEmbeddedSelect(track) }
+                } + state.tracks.map { track ->
+                    Triple(captionLabel(track), state.selected == track) { onSelect(track) }
                 }
             )
             // A local file's subtitle tracks are known the moment it is read, so
@@ -2850,6 +2877,17 @@ private fun CaptionsDeck(
                     Triple(captionLabel(track), state.selected == track) { onSelect(track) }
                 }
             )
+        }
+
+        if (onLoadSubtitleFile != null) {
+            Column(modifier = Modifier.clip(RoundedCornerShape(16.dp))) {
+                com.ivor.ivormusic.ui.player.OptionRow(
+                    icon = Icons.Rounded.UploadFile,
+                    title = stringResource(R.string.vpc_load_subtitle_file),
+                    subtitle = stringResource(R.string.vpc_load_subtitle_file_sub),
+                    onClick = onLoadSubtitleFile,
+                )
+            }
         }
 
         CaptionTextSizeSlider(

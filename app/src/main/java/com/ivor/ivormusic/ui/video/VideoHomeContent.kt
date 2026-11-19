@@ -294,18 +294,32 @@ fun VideoHomeContent(
         FeedPostCard(post, viewModel, openVideo, onOpenChannel, postPhotoViewer)
     }
 
+    // The Explore topic showing in place of the feed; null for the feed. Off
+    // in settings or offline, the row and any picked topic step aside.
+    val exploreState by viewModel.explore.collectAsState()
+    val showExploreRow = feedFilter.showExplore && !showOfflineDownloads && !isOffline
+    val exploreFeed = exploreState.takeIf { showExploreRow }
+
     ExpressivePullToRefresh(
         // Only let the pull-to-refresh spinner represent a refresh over existing
         // content. The empty-feed case shows its own centered indicator below, and
         // driving both off the same flag renders two spinners at once.
-        isRefreshing = isLoading && (videos.isNotEmpty() || showOfflineDownloads),
+        isRefreshing = if (exploreFeed != null) {
+            exploreFeed.isLoading && exploreFeed.videos.isNotEmpty()
+        } else {
+            isLoading && (videos.isNotEmpty() || showOfflineDownloads)
+        },
         onRefresh = {
-            viewModel.refreshFeedPosts()
-            onRefresh()
+            if (exploreFeed != null) {
+                viewModel.selectExploreTopic(exploreFeed.topic, force = true)
+            } else {
+                viewModel.refreshFeedPosts()
+                onRefresh()
+            }
         },
         modifier = Modifier.fillMaxSize()
     ) {
-        if (isLoading && videos.isEmpty() && !showOfflineDownloads) {
+        if (exploreFeed == null && isLoading && videos.isEmpty() && !showOfflineDownloads) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -322,6 +336,7 @@ fun VideoHomeContent(
             // Read through updated state: the effect below is keyed on the list
             // alone and outlives a change of this setting.
             val currentRecommendationsEnabled by rememberUpdatedState(recommendationsEnabled)
+            val currentExploring by rememberUpdatedState(exploreFeed != null)
 
             // Endless feed: ask for the next page whenever the last visible
             // item is within 5 of the end. The ViewModel guards against
@@ -331,7 +346,8 @@ fun VideoHomeContent(
                     val info = listState.layoutInfo
                     (info.visibleItemsInfo.lastOrNull()?.index ?: -1) to info.totalItemsCount
                 }.collect { (lastVisible, totalCount) ->
-                    if (totalCount > 0 && lastVisible >= totalCount - 5) {
+                    // A topic is one page; the feed underneath does not grow meanwhile.
+                    if (!currentExploring && totalCount > 0 && lastVisible >= totalCount - 5) {
                         if (currentRecommendationsEnabled) {
                             viewModel.loadMoreTrendingVideos()
                         } else {
@@ -384,10 +400,19 @@ fun VideoHomeContent(
             ) {
                 // Room for the floating top bar.
                 item(key = "topbar_space") { Spacer(Modifier.height(barHeight)) }
-                
+
+                if (showExploreRow) item(key = "explore_row") {
+                    ExploreTopicRow(
+                        selected = exploreFeed?.topic,
+                        onSelect = { topic -> viewModel.selectExploreTopic(topic) },
+                    )
+                }
+
                 // Section title - changes based on whether user is logged in
                 // or recommendations are disabled (in which case subscriptions are shown).
-                if (showOfflineDownloads || recommendationsEnabled || videos.isNotEmpty()) item {
+                if (exploreFeed == null &&
+                    (showOfflineDownloads || recommendationsEnabled || videos.isNotEmpty())
+                ) item {
                     AnimatedVisibility(
                         visible = isVisible,
                         enter = fadeIn() + slideInVertically(
@@ -431,6 +456,33 @@ fun VideoHomeContent(
                                 )
                             }
                             repeat(offlinePerRow - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                } else if (exploreFeed != null) {
+                    val topicVideos = feedFilter.apply(exploreFeed.videos)
+                    if (topicVideos.isEmpty()) {
+                        item(key = "explore_status") {
+                            ExploreTopicStatus(
+                                isLoading = exploreFeed.isLoading,
+                                onRetry = { viewModel.selectExploreTopic(exploreFeed.topic, force = true) },
+                            )
+                        }
+                    } else {
+                        videoListItemsWithPosts(
+                            videos = topicVideos,
+                            posts = emptyList(),
+                            layout = listLayout,
+                            keyPrefix = "explore_${exploreFeed.topic.name}_",
+                            columns = videoGridColumns,
+                            post = feedPostCard
+                        ) { video, cell ->
+                            VideoCard(
+                                video = video,
+                                onClick = { openVideo(video) },
+                                onLongClick = { onVideoLongPress(video) },
+                                onOpenChannel = onOpenChannel,
+                                modifier = cell
+                            )
                         }
                     }
                 } else {
@@ -502,7 +554,7 @@ fun VideoHomeContent(
                 }
                 
                 // Empty state
-                if (videos.isEmpty() &&
+                if (exploreFeed == null && videos.isEmpty() &&
                     !isLoading && !showOfflineDownloads && shorts.isEmpty()
                 ) {
                     val hasSubscriptions = isYouTubeConnected || subscribedChannels.isNotEmpty() || localSubscriptions.isNotEmpty()

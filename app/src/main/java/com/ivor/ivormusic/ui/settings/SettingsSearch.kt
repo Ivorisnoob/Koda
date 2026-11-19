@@ -331,6 +331,10 @@ internal fun buildSettingsSearchIndex(
         listOf("shorts shelf", "shorts row", "hide shorts", "shorts on home")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
     entry(
+        "video_feed_explore", stringResource(R.string.cz_feed_explore), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("explore", "trending", "hype", "topics", "gaming", "news", "sports", "music videos", "categories")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
         "video_feed_live", stringResource(R.string.cz_feed_live), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
         listOf("live", "live streams", "hide live", "streaming now")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
@@ -846,6 +850,10 @@ internal fun buildSettingsSearchIndex(
     entry(
         "playlist_swipe", stringResource(R.string.sp_playlist_swipe), "Local library", Icons.Rounded.SwapHoriz,
         listOf("swipe", "gesture", "dismiss", "remove song", "quick action", "playlist row", "swipe right", "swipe left", "play", "queue", "add to queue", "options")
+    ) { onOpenPage(SettingsPage.GESTURES) }
+    entry(
+        "cover_double_tap_seek", stringResource(R.string.sp_cover_double_tap_seek), "Gestures", Icons.Rounded.SwapHoriz,
+        listOf("seek", "skip ahead", "rewind", "fast forward", "10 seconds", "double tap", "cover", "artwork", "jump")
     ) { onOpenPage(SettingsPage.GESTURES) }
 
     // Advanced

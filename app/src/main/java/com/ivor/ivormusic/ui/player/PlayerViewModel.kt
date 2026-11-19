@@ -1432,6 +1432,18 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _progress.value = position
     }
 
+    /**
+     * Jumps [deltaMs] from where playback is now, held inside the song: back
+     * stops at its start, forward stops a second short of its end rather than
+     * skipping to the next one.
+     */
+    fun seekBy(deltaMs: Long) {
+        val player = controller ?: return
+        val duration = player.duration.takeIf { it > 0 } ?: _duration.value
+        val upper = if (duration > 0) (duration - 1_000L).coerceAtLeast(0L) else Long.MAX_VALUE
+        seekTo((player.currentPosition + deltaMs).coerceIn(0L, upper))
+    }
+
     // --- Sleep timer ---
     //
     // Owned by MusicService, not by this ViewModel. The timer used to be a

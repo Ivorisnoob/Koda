@@ -332,3 +332,47 @@ internal fun parseShortsLockup(lockup: JSONObject): ShortsItem? {
 /** reelWatchEndpoint: videoId, portrait thumbnail and sequence seed. */
 private fun parseReelWatchEndpoint(reel: JSONObject): ShortsItem? =
     parseShortsEndpoint(reel)
+
+/**
+ * Every video on an Explore page ([com.ivor.ivormusic.data.ExploreTopic]), in
+ * the order the page lists them, each once.
+ *
+ * The pages mix four card shapes, so this walks the whole response rather
+ * than a known path. A `videoCardRenderer` (Gaming) names its channel under
+ * `bylineText`, which [parseVideoRenderer] does not read, so it is lent as
+ * `shortBylineText`; a lockup that is not a video (a playlist, a channel)
+ * parses to nothing. Shorts shelves (`reelItemRenderer`) are left out.
+ */
+internal fun parseExploreVideos(root: JSONObject): List<VideoItem> {
+    val videos = LinkedHashMap<String, VideoItem>()
+    fun visit(node: Any?) {
+        when (node) {
+            is JSONObject -> {
+                val iterator = node.keys()
+                while (iterator.hasNext()) {
+                    val key = iterator.next()
+                    val value = node.opt(key)
+                    val parsed = when (key) {
+                        "videoRenderer", "gridVideoRenderer" -> parseVideoRenderer(value as? JSONObject)
+                        "videoCardRenderer" -> (value as? JSONObject)?.let { card ->
+                            if (!card.has("shortBylineText")) {
+                                card.optJSONObject("bylineText")?.let { card.put("shortBylineText", it) }
+                            }
+                            parseVideoRenderer(card)
+                        }
+                        "lockupViewModel" -> parseLockupViewModel(value as? JSONObject)
+                        else -> null
+                    }
+                    if (parsed != null) {
+                        videos.putIfAbsent(parsed.videoId, parsed)
+                    } else if (key != "reelItemRenderer" && key != "shortsLockupViewModel") {
+                        visit(value)
+                    }
+                }
+            }
+            is JSONArray -> for (i in 0 until node.length()) visit(node.opt(i))
+        }
+    }
+    visit(root)
+    return videos.values.toList()
+}

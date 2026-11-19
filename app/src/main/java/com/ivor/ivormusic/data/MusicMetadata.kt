@@ -81,6 +81,22 @@ internal object MusicMetadata {
         .filter { isArtist(endpoint(it)) }.map { it.optString("text").trim() }
         .filter(String::isNotBlank).distinct().joinToString(", ")
 
+    /**
+     * Each linked artist with its channel id, in credit order. A collaboration
+     * is one run per artist, each with its own `UC` browse id, the separators
+     * (" & ", ", ") plain runs between them. Verified November 2026 on search
+     * and `/next` ("One Kiss": Calvin Harris & Dua Lipa).
+     */
+    private fun artistCredits(runs: List<JSONObject>): List<ArtistCredit> = runs
+        .filter { isArtist(endpoint(it)) }
+        .mapNotNull { run ->
+            val name = run.optString("text").trim().takeIf(String::isNotBlank) ?: return@mapNotNull null
+            val id = endpoint(run)?.optString("browseId")?.takeIf { it.startsWith("UC") }
+                ?: return@mapNotNull null
+            ArtistCredit(name, id)
+        }
+        .distinctBy { it.id }
+
     private fun year(runs: List<JSONObject>): Int? = runs.asSequence()
         .filter { endpoint(it) == null }
         .map { it.optString("text").trim() }
@@ -152,6 +168,7 @@ internal object MusicMetadata {
             source = SongSource.YOUTUBE,
             albumId = endpoint(albumRun)?.optString("browseId")?.takeIf(String::isNotBlank),
             releaseYear = year(metadata),
+            artistCredits = artistCredits(metadata),
         )
     }
 

@@ -2330,8 +2330,75 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * default in the container, so subtitles the user just switched off would
      * come straight back.
      */
+    /**
+     * Subtitle files picked for the video playing now, by their address, read
+     * once when picked (#381). Cleared with the video.
+     */
+    private val externalCaptionCues = mutableMapOf<String, List<com.ivor.ivormusic.data.VttCue>>()
+
+    /**
+     * Reads a subtitle file the listener picked (SubRip `.srt` or WebVTT; the
+     * reader takes both) and shows it over the video playing now. It joins the
+     * captions list as one more track, so it can be switched off and back on.
+     * [onResult] hears whether anything readable was in it.
+     */
+    fun loadSubtitleFile(uri: android.net.Uri, onResult: (Boolean) -> Unit = {}) {
+        val videoId = _currentVideo.value?.videoId ?: return
+        viewModelScope.launch {
+            val loaded = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val name = context.contentResolver.query(
+                        uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+                    )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                    // Subtitle files are small; a large one is not a subtitle file.
+                    val text = context.contentResolver.openInputStream(uri)?.use { input ->
+                        val bytes = input.readNBytesCompat(MAX_SUBTITLE_FILE_BYTES + 1)
+                        if (bytes.size > MAX_SUBTITLE_FILE_BYTES) null else bytes.toString(Charsets.UTF_8)
+                    }
+                    val cues = text?.removePrefix("\uFEFF")?.let(com.ivor.ivormusic.data.WebVttParser::parse).orEmpty()
+                    (name ?: uri.lastPathSegment ?: "Subtitles") to cues
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    KLog.w("VideoPlayerVM", "Could not read subtitle file: ${e.message}")
+                    null
+                }
+            }
+            val (name, cues) = loaded ?: (null to emptyList())
+            if (cues.isEmpty() || _currentVideo.value?.videoId != videoId) {
+                onResult(false)
+                return@launch
+            }
+            val track = CaptionTrack(
+                languageCode = EXTERNAL_CAPTION_LANGUAGE,
+                name = name.orEmpty().substringBeforeLast('.').ifBlank { name.orEmpty() },
+                baseUrl = uri.toString(),
+            )
+            externalCaptionCues[track.baseUrl] = cues
+            _captionTracks.value = _captionTracks.value.filterNot { it.baseUrl == track.baseUrl } + track
+            _selectedCaption.value = null
+            setCaptionTrack(track)
+            onResult(true)
+        }
+    }
+
+    private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8 * 1024)
+        while (out.size() < limit) {
+            val read = read(buffer, 0, minOf(buffer.size, limit - out.size()))
+            if (read < 0) break
+            out.write(buffer, 0, read)
+        }
+        return out.toByteArray()
+    }
+
     fun setEmbeddedTextTrack(option: PlayerTrackOption?) {
         val player = _exoPlayer ?: return
+        if (option != null && _selectedCaption.value?.let { it.baseUrl in externalCaptionCues } == true) {
+            _selectedCaption.value = null
+            _captionCues.value = emptyList()
+        }
         themePreferences.setCaptionsEnabled(option != null)
         if (option == null) {
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -2682,6 +2749,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _chapters.value = emptyList() // Clear previous chapters
         _seekPreview.value = null // Never show a frame from the previous video
         _captionTracks.value = emptyList() // Clear previous caption tracks
+        externalCaptionCues.clear()
         // The previous file's audio and subtitle menus address a Tracks
         // snapshot that is about to be replaced; leaving them up would let a
         // tap apply an override against groups that no longer exist.
@@ -2797,6 +2865,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             _playbackError.value = e
             _isLoading.value = false
         }
+        if (isDownloadedVideoId(video.videoId)) {
+            viewModelScope.launch {
+                val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    downloadedCaptions.chapters(video.videoId)
+                }
+                if (saved.isNotEmpty() && _currentVideo.value?.videoId == video.videoId &&
+                    _chapters.value.isEmpty()
+                ) {
+                    _chapters.value = saved
+                }
+            }
+        }
         recordLocalWatch(video)
     }
 
@@ -2858,7 +2938,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (watchNext.relatedVideos.isNotEmpty()) {
             _relatedVideos.value = watchNext.relatedVideos
         }
-        _chapters.value = watchNext.chapters
+        // A download played offline may already show its saved chapters; an
+        // answer without any does not take them away.
+        if (watchNext.chapters.isNotEmpty() || !_isLocalPlayback.value) {
+            _chapters.value = watchNext.chapters
+        }
         // Opening the chat panel now costs one poll instead of a second
         // watch-next round trip plus its parse.
         liveSession.setChatContinuation(watchNext.liveChatContinuation)
@@ -3219,7 +3303,9 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 val tracks = saved.ifEmpty { youtubeRepository.getCaptionTracks(video.videoId) }
                 // Ignore stale results if the user switched videos meanwhile
                 if (_currentVideo.value?.videoId == video.videoId) {
-                    _captionTracks.value = tracks
+                    // A file picked while the list was loading stays on it.
+                    _captionTracks.value = tracks +
+                        _captionTracks.value.filter { it.baseUrl in externalCaptionCues }
                     if (themePreferences.isCaptionsEnabled() && _selectedCaption.value == null) {
                         restoreSavedCaptionTrack(tracks)
                     }
@@ -3274,12 +3360,23 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun setCaptionTrack(track: CaptionTrack?) {
         if (_selectedCaption.value == track) return
         _selectedCaption.value = track
-        themePreferences.setCaptionsEnabled(track != null)
-        themePreferences.setCaptionLanguageCode(track?.languageCode)
+        // A file picked for one video is not a language to look for on the
+        // next, so it leaves the remembered choice as it was.
+        val external = track?.let { externalCaptionCues[it.baseUrl] }
+        if (external == null) {
+            themePreferences.setCaptionsEnabled(track != null)
+            themePreferences.setCaptionLanguageCode(track?.languageCode)
+        }
 
         captionCuesJob?.cancel()
         if (track == null) {
             _captionCues.value = emptyList()
+            return
+        }
+        if (external != null) {
+            // Only one subtitle source draws at a time.
+            if (_embeddedTextTracks.value.any { it.isSelected }) setEmbeddedTextTrack(null)
+            _captionCues.value = external
             return
         }
         captionCuesJob = viewModelScope.launch {
@@ -3822,6 +3919,10 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * settles well inside it.
          */
         private const val CAPTIONS_STREAM_WAIT_MS = 10_000L
+        /** Larger than any subtitle file; guards against picking a video by mistake. */
+        private const val MAX_SUBTITLE_FILE_BYTES = 4 * 1024 * 1024
+        /** The language of a picked file: not a language at all. */
+        const val EXTERNAL_CAPTION_LANGUAGE = "und"
     }
 
     override fun onCleared() {

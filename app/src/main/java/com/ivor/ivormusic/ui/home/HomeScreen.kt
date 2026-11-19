@@ -602,6 +602,13 @@ fun HomeScreen(
     
     // Artist screen state (for navigation from player)
     var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
+    // Its channel id when the song named one, so a collaborator opens their
+    // own page rather than a search for the name (see resolveArtistTap).
+    var viewedArtistIdFromPlayer by remember { mutableStateOf<String?>(null) }
+    // A collaboration's artists, waiting for the listener to pick one.
+    var artistChoice by remember {
+        mutableStateOf<List<com.ivor.ivormusic.data.ArtistCredit>?>(null)
+    }
     // Where a Library sub-screen handed over from another tab goes back to:
     // that tab, with the player left exactly as it was. Without it back
     // strands the user in a Library they never navigated through; the older
@@ -630,6 +637,7 @@ fun HomeScreen(
             // belongs to the Subscriptions feed while the video toggle is on.
             // Asking for it is therefore asking to be in music mode.
             noteLibraryReturn()
+            viewedArtistIdFromPlayer = null
             viewedArtistFromPlayer = artist
             goToTab(2)
             viewModel.consumeArtistPageRequest()
@@ -1534,7 +1542,11 @@ fun HomeScreen(
                                 viewModel = viewModel,
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
-                                onInitialArtistConsumed = { viewedArtistFromPlayer = null },
+                                initialArtistId = viewedArtistIdFromPlayer,
+                                onInitialArtistConsumed = {
+                                    viewedArtistFromPlayer = null
+                                    viewedArtistIdFromPlayer = null
+                                },
                                 initialReturnToCaller = libraryReturnTab != null,
                                 onReturnToCaller = {
                                     // The tab slide reads as going back; the
@@ -2011,10 +2023,20 @@ fun HomeScreen(
                 // and expanding it from there is an ordinary thing to do - and
                 // in that mode tab 2 is the Subscriptions feed, so this has to
                 // switch modes and then land, in that order. See goToTab.
-                noteLibraryReturn()
-                showPlayerSheet = false
-                viewedArtistFromPlayer = artistName
-                goToTab(2) // Music Library tab
+                when (val tap = com.ivor.ivormusic.ui.artist.resolveArtistTap(
+                    artistName, currentSong?.artistCredits.orEmpty()
+                )) {
+                    is com.ivor.ivormusic.ui.artist.ArtistTap.Open -> {
+                        noteLibraryReturn()
+                        showPlayerSheet = false
+                        viewedArtistIdFromPlayer = tap.id
+                        viewedArtistFromPlayer = tap.name
+                        goToTab(2) // Music Library tab
+                    }
+                    // The player stays open under the question; the choice
+                    // then leaves it the same way a direct tap does.
+                    is com.ivor.ivormusic.ui.artist.ArtistTap.Choose -> artistChoice = tap.credits
+                }
             },
             onAlbumClick = { albumName ->
                 noteLibraryReturn()
@@ -2125,9 +2147,15 @@ fun HomeScreen(
             // Nothing else passed this, which left the sheet's own artist row
             // unreachable from every surface in the app.
             onArtistClick = { artist ->
-                noteLibraryReturn()
-                viewedArtistFromPlayer = artist
-                goToTab(2)
+                when (val tap = com.ivor.ivormusic.ui.artist.resolveArtistTap(artist, song.artistCredits)) {
+                    is com.ivor.ivormusic.ui.artist.ArtistTap.Open -> {
+                        noteLibraryReturn()
+                        viewedArtistIdFromPlayer = tap.id
+                        viewedArtistFromPlayer = tap.name
+                        goToTab(2)
+                    }
+                    is com.ivor.ivormusic.ui.artist.ArtistTap.Choose -> artistChoice = tap.credits
+                }
             },
             onOpenAlbum = { albumItem ->
                 noteLibraryReturn()
@@ -2145,6 +2173,21 @@ fun HomeScreen(
                 { viewModel.blockArtist(song) }
             } else null,
             onSelect = { songSelection.start(song) }
+        )
+    }
+
+    artistChoice?.let { credits ->
+        com.ivor.ivormusic.ui.artist.ArtistChooserSheet(
+            credits = credits,
+            onChoose = { credit ->
+                artistChoice = null
+                noteLibraryReturn()
+                showPlayerSheet = false
+                viewedArtistIdFromPlayer = credit.id
+                viewedArtistFromPlayer = credit.name
+                goToTab(2)
+            },
+            onDismiss = { artistChoice = null },
         )
     }
 

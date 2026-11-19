@@ -381,13 +381,18 @@ jobs:
         ENTRY_COUNT=0
         printf 'Changes since the last APK\n' > "$CHANGELOG_FILE"
 
+        # One flat list of what testers will notice: every commit's bullets in
+        # order, with no commit subjects or hashes between them. Blank lines
+        # inside a commit's section are dropped so the list stays one block.
         for commit in "${NEW_COMMITS[@]}"; do
           CHANGELOG=$(extract_changelog "$commit")
           if [ -z "${CHANGELOG//[[:space:]]/}" ]; then
             continue
           fi
-          SUBJECT=$(git show -s --format=%s "$commit")
-          printf '\n%s (%s)\n%s\n' "$SUBJECT" "${commit:0:7}" "$CHANGELOG" >> "$CHANGELOG_FILE"
+          if [ "$ENTRY_COUNT" -eq 0 ]; then
+            printf '\n' >> "$CHANGELOG_FILE"
+          fi
+          grep -v '^[[:space:]]*$' <<< "$CHANGELOG" >> "$CHANGELOG_FILE"
           ENTRY_COUNT=$((ENTRY_COUNT + 1))
         done
 

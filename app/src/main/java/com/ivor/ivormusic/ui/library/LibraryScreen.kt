@@ -173,6 +173,8 @@ fun LibraryContent(
     isLocalLibrary: Boolean = true,
     onDownloadsClick: () -> Unit = {},
     initialArtist: String? = null,
+    /** [initialArtist]'s channel id, when the song that named it carried one. */
+    initialArtistId: String? = null,
     onInitialArtistConsumed: () -> Unit = {},
     /**
      * Whether the next hand-off ([initialArtist], [initialPlaylist] or
@@ -330,7 +332,7 @@ fun LibraryContent(
         if (initialArtist != null) {
             startFresh()
             selectedArtistName = initialArtist
-            selectedArtistId = null
+            selectedArtistId = initialArtistId
             returnsToCaller = initialReturnToCaller
             currentRoute = LibraryRoute.Artist
             onInitialArtistConsumed()
