@@ -22,6 +22,17 @@ data class DismissalTokens(
 )
 
 /**
+ * What keeps a video from playing for everyone. Not stored; reorder freely.
+ *
+ * [MEMBERS_ONLY]: a channel-membership upload. Marked by a `badgeViewModel`
+ * with `badgeStyle: BADGE_MEMBERS_ONLY` in a lockup's metadata rows, verified
+ * November 2026 on an anonymous channel Videos tab; it never appeared in
+ * anonymous search. [PAID]: a film YouTube sells or rents, which search sends
+ * as a `movieRenderer` with a "Buy or rent" offer button (same probe).
+ */
+enum class VideoAccess { MEMBERS_ONLY, PAID }
+
+/**
  * Represents a YouTube video item for Video Mode.
  * This is distinct from Song as it contains video-specific metadata.
  */
@@ -77,7 +88,12 @@ data class VideoItem(
      * channel's Atom feed, or a lockup whose tap opens the Shorts player. Lets
      * feeds that mix Shorts in with videos honour "Fully block Shorts".
      */
-    val isShort: Boolean = false
+    val isShort: Boolean = false,
+    /**
+     * Whether anyone can watch it: null for an ordinary video, or what stands
+     * in the way. Read from the card's own badge or shape, never guessed (#379).
+     */
+    val access: VideoAccess? = null,
 ) {
     /**
      * Destination understood by the channel screen.

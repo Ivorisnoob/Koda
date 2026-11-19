@@ -128,13 +128,15 @@ internal fun parseVideoSearchPage(response: String, dropShorts: Boolean = false)
     val renderers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "videoRenderer", renderers)
     findObjectsByKey(root, "lockupViewModel", renderers)
-    val videos = renderers.mapNotNull { renderer ->
+    val movies = mutableListOf<JSONObject>()
+    findObjectsByKey(root, "movieRenderer", movies)
+    val videos = (renderers.mapNotNull { renderer ->
         when {
             !renderer.has("videoId") -> parseLockupViewModel(renderer)
             dropShorts && isShortVideoRenderer(renderer) -> null
             else -> parseVideoSearchRow(renderer)
         }
-    }.distinctBy { it.videoId }
+    } + movies.mapNotNull(::parseMovieRenderer)).distinctBy { it.videoId }
     return VideoFeedPage(videos, videoListContinuationToken(root, search = true))
 }
 
@@ -375,4 +377,20 @@ internal fun parseExploreVideos(root: JSONObject): List<VideoItem> {
     }
     visit(root)
     return videos.values.toList()
+}
+
+/**
+ * A film in search (`movieRenderer`, verified November 2026: title, length,
+ * "YouTube Movies & TV" byline, and `offerButtons` reading "Buy or rent").
+ * Search used to skip these entirely; they now come through marked paid so
+ * they can be badged or hidden (#379). A film whose offer says it is free
+ * stays unmarked.
+ */
+internal fun parseMovieRenderer(renderer: JSONObject): VideoItem? {
+    val video = parseVideoRenderer(renderer) ?: return null
+    val offers = mutableListOf<JSONObject>()
+    findObjectsByKey(renderer.optJSONArray("offerButtons") ?: return video, "buttonRenderer", offers)
+    val offerText = offers.joinToString(" ") { getRunText(it.optJSONObject("text")).orEmpty() }
+    val free = offerText.contains("free", ignoreCase = true)
+    return if (offers.isEmpty() || free) video else video.copy(access = com.ivor.ivormusic.data.VideoAccess.PAID)
 }

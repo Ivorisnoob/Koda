@@ -379,7 +379,9 @@ private fun ChannelRoot(
             loadFailed || header == null -> ChannelUnavailable(onBack = onBack)
             else -> {
                 val currentHeader = header!!
-                val page = pages[selectedTab]
+                // "Hide paid and members-only videos" applies to channel tabs too.
+                val restrictedFilter = com.ivor.ivormusic.ui.video.rememberRestrictedFilter()
+                val page = pages[selectedTab]?.let { it.copy(videos = restrictedFilter(it.videos)) }
                 val isTabLoading = selectedTab in loadingTabs
 
                 LazyVerticalGrid(

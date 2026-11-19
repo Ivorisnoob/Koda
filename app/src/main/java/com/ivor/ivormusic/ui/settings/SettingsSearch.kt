@@ -335,6 +335,10 @@ internal fun buildSettingsSearchIndex(
         listOf("explore", "trending", "hype", "topics", "gaming", "news", "sports", "music videos", "categories")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
     entry(
+        "video_feed_restricted", stringResource(R.string.cz_feed_hide_restricted), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("paid", "members only", "membership", "rent", "buy", "movies", "hide paid", "premium")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
         "video_feed_live", stringResource(R.string.cz_feed_live), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
         listOf("live", "live streams", "hide live", "streaming now")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }

@@ -2631,5 +2631,9 @@
     <string name="explore_fashion">Fashion and beauty</string>
     <string name="explore_failed">Couldn\'t load this topic</string>
     <string name="explore_retry">Try again</string>
+    <string name="badge_members_only">Members only</string>
+    <string name="badge_paid">Paid</string>
+    <string name="cz_feed_hide_restricted">Hide paid and members-only videos</string>
+    <string name="cz_feed_hide_restricted_sub">Leave out films for sale and channel-membership videos everywhere videos are listed</string>
     <string name="artist_chooser_title">Choose an artist</string>
 </resources>

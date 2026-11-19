@@ -236,7 +236,8 @@ fun SubscriptionsContent(
         feedOrder,
         hideWatched,
         watchedIds,
-        feedOptions.showLive
+        feedOptions.showLive,
+        feedOptions.hideRestricted
     ) {
         val selectedChannel = channels.firstOrNull { it.channelId == selectedChannelId }
         val sourceFeed = if (selectedChannel == null) feed else selectedChannelFeed
@@ -254,6 +255,7 @@ fun SubscriptionsContent(
             // The Video feed setting. Not while one creator is selected: that
             // view is everything from one channel, live included.
             .filter { video -> feedOptions.showLive || selectedChannel != null || !video.isLive }
+            .filter { video -> !feedOptions.hideRestricted || video.access == null }
             .toList()
             .let { sortFeedByTime(it, feedOrder, now) }
     }

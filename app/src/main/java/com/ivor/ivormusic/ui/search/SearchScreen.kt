@@ -248,6 +248,7 @@ fun SearchScreen(
     // Music mode's Videos tab: ordinary YouTube uploads (remixes, covers, fan
     // edits) that YouTube Music does not list, played as songs.
     var videoSongResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+    val restrictedFilter = com.ivor.ivormusic.ui.video.rememberRestrictedFilter()
     var videoResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     val searchListLayout = com.ivor.ivormusic.ui.video.LocalVideoListLayout.current
     val searchGridColumns = com.ivor.ivormusic.ui.video.rememberVideoGridColumns()
@@ -1058,7 +1059,7 @@ fun SearchScreen(
                         // Display video results; long-press opens the save sheet
                         run {
                             videoListItems(
-                                videoResults,
+                                restrictedFilter(videoResults),
                                 searchListLayout,
                                 columns = searchGridColumns
                             ) { video, cell ->
