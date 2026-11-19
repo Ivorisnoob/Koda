@@ -1140,6 +1140,28 @@ internal fun PlayerSettingsPage(
             }
         }
 
+        // Editorial only, so it is offered only while Editorial is the style.
+        // Read and written here rather than threaded through SettingsScreen,
+        // like the newer pages.
+        if (playerStyle == PlayerStyle.EDITORIAL) {
+            item {
+                val context = LocalContext.current
+                val prefs = remember(context) { ThemePreferences(context) }
+                val oneRow by prefs.editorialOneRow.collectAsState()
+                SettingsSection(title = stringResource(R.string.sp_style)) {
+                    SettingsCard {
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.SkipNext,
+                            title = stringResource(R.string.sp_editorial_one_row),
+                            subtitle = stringResource(R.string.sp_editorial_one_row_sub),
+                            enabled = oneRow,
+                            onToggle = prefs::setEditorialOneRow,
+                        )
+                    }
+                }
+            }
+        }
+
         item {
             VisualizerSettingsSection()
         }

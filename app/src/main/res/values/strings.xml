@@ -2646,4 +2646,7 @@
     <string name="library_tab_artists">Artists</string>
     <string name="library_tab_albums">Albums</string>
     <string name="artist_chooser_title">Choose an artist</string>
+    <string name="offline_playlist_owner">Downloaded</string>
+    <string name="sp_editorial_one_row">Previous, Play and Next on one row</string>
+    <string name="sp_editorial_one_row_sub">Editorial player. When off, Previous sits beside the progress line unless the screen is wide</string>
 </resources>

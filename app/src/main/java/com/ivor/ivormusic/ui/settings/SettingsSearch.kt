@@ -864,6 +864,10 @@ internal fun buildSettingsSearchIndex(
         listOf("swipe", "gesture", "dismiss", "remove song", "quick action", "playlist row", "swipe right", "swipe left", "play", "queue", "add to queue", "options")
     ) { onOpenPage(SettingsPage.GESTURES) }
     entry(
+        "editorial_one_row", stringResource(R.string.sp_editorial_one_row), "Player", Icons.Rounded.SkipNext,
+        listOf("editorial", "previous", "next", "play", "buttons", "one row", "single line", "controls", "layout")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
         "cover_double_tap_seek", stringResource(R.string.sp_cover_double_tap_seek), "Gestures", Icons.Rounded.SwapHoriz,
         listOf("seek", "skip ahead", "rewind", "fast forward", "10 seconds", "double tap", "cover", "artwork", "jump")
     ) { onOpenPage(SettingsPage.GESTURES) }
