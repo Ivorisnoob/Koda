@@ -571,6 +571,8 @@
         <item quantity="other">%1$d things hidden</item>
     </plurals>
     <string name="cz_section_top_bar">Home top bar</string>
+    <string name="cz_search_keyboard">Open the keyboard on Search</string>
+    <string name="cz_search_keyboard_sub">Start typing as soon as the Search tab opens</string>
     <string name="cz_top_bar_greeting">Greeting</string>
     <string name="cz_top_bar_greeting_sub">A short hello beside your profile picture</string>
     <string name="cz_top_bar_downloads">Always show downloads</string>

@@ -1486,7 +1486,8 @@ fun HomeScreen(
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
                         localOnly = localOnly,
-                        requestInitialFocus = !hasExpandedVideoPlayer && !showPlayerSheet,
+                        requestInitialFocus = homeNavigation.searchOpensKeyboard &&
+                            !hasExpandedVideoPlayer && !showPlayerSheet,
                         listState = if (videoMode) videoSearchScrollState else musicSearchScrollState
                     )
                     2 -> {

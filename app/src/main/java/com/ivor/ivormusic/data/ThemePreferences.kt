@@ -478,7 +478,7 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME ->
                 _videoFeed.value = readVideoFeed()
             KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL,
-            KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS ->
+            KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS, KEY_SEARCH_OPENS_KEYBOARD ->
                 _homeNavigation.value = readHomeNavigation()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
@@ -667,6 +667,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_FEED_HIDE_WATCHED_HOME = "video_feed_hide_watched_home"
         private const val KEY_HOME_GREETING = "home_top_bar_greeting"
         private const val KEY_HOME_ALWAYS_DOWNLOADS = "home_top_bar_always_downloads"
+        private const val KEY_SEARCH_OPENS_KEYBOARD = "search_opens_keyboard"
 
         /**
          * How long the video controls stay up, as a fresh read: the player
@@ -1685,6 +1686,7 @@ class ThemePreferences(context: Context) {
         barHidesOnScroll = prefs.getBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, true),
         showGreeting = prefs.getBoolean(KEY_HOME_GREETING, true),
         alwaysShowDownloads = prefs.getBoolean(KEY_HOME_ALWAYS_DOWNLOADS, false),
+        searchOpensKeyboard = prefs.getBoolean(KEY_SEARCH_OPENS_KEYBOARD, true),
     )
 
     fun setHomeNavigation(customization: HomeNavigationCustomization) {
@@ -1695,6 +1697,7 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, customization.barHidesOnScroll)
             .putBoolean(KEY_HOME_GREETING, customization.showGreeting)
             .putBoolean(KEY_HOME_ALWAYS_DOWNLOADS, customization.alwaysShowDownloads)
+            .putBoolean(KEY_SEARCH_OPENS_KEYBOARD, customization.searchOpensKeyboard)
             .apply()
         _homeNavigation.value = customization
     }

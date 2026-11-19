@@ -57,4 +57,10 @@ data class HomeNavigationCustomization(
      * while something is downloading.
      */
     val alwaysShowDownloads: Boolean = false,
+    /**
+     * Focus the search field and raise the keyboard when the Search tab
+     * opens. Off, the tab opens on its suggestions and history, and a tap on
+     * the field brings the keyboard.
+     */
+    val searchOpensKeyboard: Boolean = true,
 )

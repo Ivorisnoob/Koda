@@ -64,6 +64,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.WavingHand
 import androidx.compose.material.icons.rounded.Lyrics
@@ -266,6 +267,15 @@ internal fun HomeNavigationSettingsPage(
                         ),
                         selectedIndex = modes.indexOf(navigation.startMode),
                         onSelect = { navPrefs.setHomeNavigation(navigation.copy(startMode = modes[it])) }
+                    )
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Keyboard,
+                        title = stringResource(R.string.cz_search_keyboard),
+                        subtitle = stringResource(R.string.cz_search_keyboard_sub),
+                        enabled = navigation.searchOpensKeyboard,
+                        onToggle = {
+                            navPrefs.setHomeNavigation(navigation.copy(searchOpensKeyboard = it))
+                        }
                     )
                 }
             }
