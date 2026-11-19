@@ -199,6 +199,7 @@ fun PosterPlayerSheetContent(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .coverSeekOnly(LocalCoverSeek.current.takeIf { !showLyrics })
                         // Off while lyrics are up: that view scrolls and seeks.
                         .swipeToSkip(swipeToSkip, enabled = !showLyrics)
                         // Last in the chain: consumes the post-long-press

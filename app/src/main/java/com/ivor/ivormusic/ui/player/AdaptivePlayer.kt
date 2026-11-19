@@ -632,6 +632,7 @@ internal fun LandscapeNowPlaying(
                                     contentDescription = song.title,
                                     modifier = Modifier
                                         .fillMaxSize()
+                                        .coverSeekOnly(LocalCoverSeek.current)
                                         .swipeToSkip(swipeToSkip)
                                 )
                             }

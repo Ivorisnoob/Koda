@@ -918,9 +918,7 @@ private fun SwipeableAlbumCarousel(
                             .then(
                                 if (isCentered) {
                                     Modifier
-                                        .pointerInput(Unit) {
-                                            detectTapGestures(onTap = { onPlayPauseToggle() })
-                                        }
+                                        .coverTaps(LocalCoverSeek.current) { onPlayPauseToggle() }
                                         .styleWheelHold(styleWheel)
                                 } else Modifier
                             ),
@@ -1035,9 +1033,7 @@ private fun SingleAlbumArt(
         Surface(
             modifier = Modifier
                 .size(albumSize)
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onPlayPauseToggle() })
-                }
+                .coverTaps(LocalCoverSeek.current) { onPlayPauseToggle() }
                 .styleWheelHold(styleWheel),
             shape = RoundedCornerShape(cornerRadius),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,

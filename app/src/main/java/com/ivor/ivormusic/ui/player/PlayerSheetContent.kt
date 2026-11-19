@@ -394,6 +394,7 @@ private fun ClassicNowPlaying(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .coverSeekOnly(LocalCoverSeek.current)
                 .swipeToSkip(swipeToSkip),
             contentAlignment = Alignment.Center
         ) {

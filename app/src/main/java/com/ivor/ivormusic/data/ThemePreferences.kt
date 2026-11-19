@@ -122,6 +122,19 @@ class ThemePreferences(context: Context) {
     private val _miniPlayerCustomization = MutableStateFlow(readMiniPlayerCustomization())
     val miniPlayerCustomization: StateFlow<MiniPlayerCustomization> =
         _miniPlayerCustomization.asStateFlow()
+
+    /**
+     * A double tap on the left or right of the music player's cover jumps back
+     * or forward ten seconds (#381). On by default; off gives a single tap on
+     * the cover its answer at once, without waiting to see if a second follows.
+     */
+    private val _coverDoubleTapSeek = MutableStateFlow(prefs.getBoolean(KEY_COVER_DOUBLE_TAP_SEEK, true))
+    val coverDoubleTapSeek: StateFlow<Boolean> = _coverDoubleTapSeek.asStateFlow()
+
+    fun setCoverDoubleTapSeek(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_COVER_DOUBLE_TAP_SEEK, enabled).apply()
+        _coverDoubleTapSeek.value = enabled
+    }
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -461,6 +474,8 @@ class ThemePreferences(context: Context) {
             KEY_ARTWORK_COLORS_WHOLE_APP ->
                 _artworkColorsWholeApp.value = getArtworkColorsWholeAppPreference()
             KEY_MINI_PLAYER_PROGRESS -> _miniPlayerProgress.value = getMiniPlayerProgressPreference()
+            KEY_COVER_DOUBLE_TAP_SEEK ->
+                _coverDoubleTapSeek.value = prefs.getBoolean(KEY_COVER_DOUBLE_TAP_SEEK, true)
             KEY_MINI_PLAYER_BUTTONS, KEY_MINI_PLAYER_COVER_TAP, KEY_MINI_PLAYER_COVER_MOTION,
             KEY_MINI_PLAYER_SWIPE_SKIP, KEY_MINI_PLAYER_SWIPE_DISMISS, KEY_MINI_PLAYER_SHRINK,
             KEY_MINI_PLAYER_COLOR, KEY_MINI_PLAYER_SECOND_LINE, KEY_MINI_PLAYER_LONG_PRESS ->
@@ -668,6 +683,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_HOME_GREETING = "home_top_bar_greeting"
         private const val KEY_HOME_ALWAYS_DOWNLOADS = "home_top_bar_always_downloads"
         private const val KEY_SEARCH_OPENS_KEYBOARD = "search_opens_keyboard"
+        private const val KEY_COVER_DOUBLE_TAP_SEEK = "cover_double_tap_seek"
 
         /**
          * How long the video controls stay up, as a fresh read: the player

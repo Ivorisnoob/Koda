@@ -779,9 +779,7 @@ private fun EditorialDieCutArt(
                 }
                 .clip(dieCutShape)
                 .background(accent)
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onTap() })
-                }
+                .coverTaps(LocalCoverSeek.current) { onTap() }
                 .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {

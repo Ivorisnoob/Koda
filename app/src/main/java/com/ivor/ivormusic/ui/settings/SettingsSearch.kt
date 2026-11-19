@@ -847,6 +847,10 @@ internal fun buildSettingsSearchIndex(
         "playlist_swipe", stringResource(R.string.sp_playlist_swipe), "Local library", Icons.Rounded.SwapHoriz,
         listOf("swipe", "gesture", "dismiss", "remove song", "quick action", "playlist row", "swipe right", "swipe left", "play", "queue", "add to queue", "options")
     ) { onOpenPage(SettingsPage.GESTURES) }
+    entry(
+        "cover_double_tap_seek", stringResource(R.string.sp_cover_double_tap_seek), "Gestures", Icons.Rounded.SwapHoriz,
+        listOf("seek", "skip ahead", "rewind", "fast forward", "10 seconds", "double tap", "cover", "artwork", "jump")
+    ) { onOpenPage(SettingsPage.GESTURES) }
 
     // Advanced
     entry(
