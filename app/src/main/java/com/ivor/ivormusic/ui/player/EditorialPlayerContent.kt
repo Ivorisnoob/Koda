@@ -444,20 +444,24 @@ private fun EditorialNowPlayingView(
         Spacer(modifier = Modifier.height(16.dp))
 
         // ========== CONTROL CLUSTER (asymmetric bento) ==========
-        Column(
+        val oneRowContext = LocalContext.current
+        val oneRowSetting by remember(oneRowContext) {
+            com.ivor.ivormusic.data.ThemePreferences(oneRowContext)
+        }.editorialOneRow.collectAsState()
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
-            // Row 1: previous, the word pill, next - in reading order on one
-            // line. Previous used to sit under the pill beside the progress
-            // line, which read as a button that had wrapped (#380).
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            // Two layouts. The original puts the word pill and Next on the top row
+            // and Previous beside the progress line - the asymmetry is the design.
+            // Some people read that as a button that wrapped (#380), so a setting
+            // puts all three on one row; it is also the layout wherever the
+            // cluster is wide enough for three buttons not to squeeze the pill (a
+            // small display size, a large phone held upright), where the lone
+            // Previous would otherwise float far from the rest.
+            val oneRow = oneRowSetting || maxWidth >= EDITORIAL_ONE_ROW_MIN_WIDTH
+            val previousButton: @Composable () -> Unit = {
                 EditorialCircleButton(
                     onClick = onPrevious,
                     accent = accent,
@@ -470,227 +474,242 @@ private fun EditorialNowPlayingView(
                         modifier = Modifier.size(34.dp)
                     )
                 }
-                // The word IS the icon.
-                Surface(
-                    onClick = onPlayPause,
+            }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Row 1: the word pill and Next, with Previous ahead of them in
+                // the one-row layout.
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    shape = RoundedCornerShape(50),
-                    color = accent,
-                    contentColor = field
+                        .fillMaxWidth()
+                        .height(80.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (isBuffering && playWhenReady && !isPlaying) {
-                            LoadingIndicator(
-                                modifier = Modifier.size(36.dp),
-                                color = field,
-                                polygons = listOf(
-                                    MaterialShapes.SoftBurst,
-                                    MaterialShapes.Cookie9Sided,
-                                    MaterialShapes.Pill,
-                                    MaterialShapes.Sunny
+                    if (oneRow) previousButton()
+                    // The word IS the icon.
+                    Surface(
+                        onClick = onPlayPause,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        shape = RoundedCornerShape(50),
+                        color = accent,
+                        contentColor = field
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (isBuffering && playWhenReady && !isPlaying) {
+                                LoadingIndicator(
+                                    modifier = Modifier.size(36.dp),
+                                    color = field,
+                                    polygons = listOf(
+                                        MaterialShapes.SoftBurst,
+                                        MaterialShapes.Cookie9Sided,
+                                        MaterialShapes.Pill,
+                                        MaterialShapes.Sunny
+                                    )
                                 )
-                            )
-                        } else {
-                            AnimatedContent(
-                                targetState = isPlaying,
-                                label = "EditorialPlayWord"
-                            ) { playing ->
-                                // With a circle on each side the pill is
-                                // narrow on a small screen, a large display
-                                // size or a long translation, so the word
-                                // shrinks to fit rather than wrapping.
-                                val wordStyle = MaterialTheme.typography.headlineSmall.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    letterSpacing = 3.sp
-                                )
-                                Text(
-                                    text = stringResource(
-                                        if (playing) R.string.cd_pause else R.string.cd_play
-                                    ).uppercase(),
-                                    style = wordStyle,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    autoSize = TextAutoSize.StepBased(
-                                        minFontSize = 12.sp,
-                                        maxFontSize = wordStyle.fontSize,
-                                        stepSize = 1.sp
-                                    ),
-                                    modifier = Modifier.padding(horizontal = 12.dp)
-                                )
+                            } else {
+                                AnimatedContent(
+                                    targetState = isPlaying,
+                                    label = "EditorialPlayWord"
+                                ) { playing ->
+                                    // The pill can be narrow on a small screen, a
+                                    // large display size, in the one-row layout or
+                                    // with a long translation, so the word shrinks
+                                    // to fit rather than wrapping.
+                                    val wordStyle = MaterialTheme.typography.headlineSmall.copy(
+                                        fontWeight = FontWeight.Medium,
+                                        letterSpacing = 3.sp
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            if (playing) R.string.cd_pause else R.string.cd_play
+                                        ).uppercase(),
+                                        style = wordStyle,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        autoSize = TextAutoSize.StepBased(
+                                            minFontSize = 12.sp,
+                                            maxFontSize = wordStyle.fontSize,
+                                            stepSize = 1.sp
+                                        ),
+                                        modifier = Modifier.padding(horizontal = 12.dp)
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                EditorialCircleButton(
-                    onClick = onNext,
-                    accent = accent,
-                    field = field,
-                    size = 80.dp
-                ) {
-                    Icon(
-                        Icons.Default.SkipNext,
-                        stringResource(R.string.widget_action_next),
-                        modifier = Modifier.size(34.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Row 2: the progress line with its times, the full width.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    // Scrub locally, seek once on release (streamed tracks
-                    // rebuffer if seeked per drag frame).
-                    var scrubPosition by remember { mutableStateOf<Float?>(null) }
-                    val displayedProgress = scrubPosition?.toLong() ?: progress
-                    val scrubReturnPoint = LocalScrubReturnPoint.current
-                    // Advanced from the clock each frame rather than sprung
-                    // toward a once-a-second sample - see rememberSmoothProgress.
-                    val smoothProgress = rememberSmoothProgress(
-                        positionMs = progress,
-                        durationMs = duration,
-                        isPlaying = isPlaying,
-                        scrubPositionMs = scrubPosition
-                    )
-                    val lineStroke = Stroke(
-                        width = with(LocalDensity.current) { 4.dp.toPx() },
-                        cap = StrokeCap.Round
-                    )
-
-                    Box(contentAlignment = Alignment.Center) {
-                        // Wavy played portion, flat remainder - the wave
-                        // settles flat when paused.
-                        ExpressiveScrubber(
-                            progress = { smoothProgress.value },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(scrubberTrackHeight(14.dp)),
-                            color = accent,
-                            trackColor = accent.copy(alpha = 0.35f),
-                            stroke = lineStroke,
-                            trackStroke = lineStroke,
-                            amplitude = { if (isPlaying) 1f else 0f }
-                        )
-                        Slider(
-                            interactionSource = LocalPlayerScrubInteraction.current,
-                            value = scrubPosition ?: progress.toFloat(),
-                            // Through the return point: the drag leaves a marker where it
-                            // started and snaps back onto it, and letting go on the marker
-                            // is "never mind" rather than a seek. See ScrubReturnPoint.
-                            onValueChange = {
-                                scrubPosition = scrubReturnPoint.follow(
-                                    value = it,
-                                    rangeEnd = duration.toFloat().coerceAtLeast(1f)
-                                ) { smoothProgress.value }
-                            },
-                            onValueChangeFinished = {
-                                val cancelled = scrubReturnPoint.release()
-                                if (!cancelled) scrubPosition?.let { onSeekTo(it.toLong()) }
-                                scrubPosition = null
-                            },
-                            valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.Transparent,
-                                activeTrackColor = Color.Transparent,
-                                inactiveTrackColor = Color.Transparent
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    EditorialCircleButton(
+                        onClick = onNext,
+                        accent = accent,
+                        field = field,
+                        size = 80.dp
                     ) {
-                        Text(
-                            text = formatEditorialTime(displayedProgress),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = accent.copy(alpha = 0.8f)
-                        )
-                        Text(
-                            text = formatEditorialTime(duration),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = accent.copy(alpha = 0.8f)
+                        Icon(
+                            Icons.Default.SkipNext,
+                            stringResource(R.string.widget_action_next),
+                            modifier = Modifier.size(34.dp)
                         )
                     }
                 }
-            }
 
-            PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // ========== CHIPS ROW ==========
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
-            ) {
-                EditorialChip(
-                    checked = isFavorite,
-                    onClick = { onFavoriteToggle(!isFavorite) },
-                    accent = accent,
-                    field = field
+                // Row 2: the progress line with its times - beside Previous in the
+                // original layout, the full width in the one-row layout.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    LikeBurstIcon(isFavorite = isFavorite, iconSize = 20.dp)
+                    if (!oneRow) previousButton()
+                    Column(modifier = Modifier.weight(1f)) {
+                        // Scrub locally, seek once on release (streamed tracks
+                        // rebuffer if seeked per drag frame).
+                        var scrubPosition by remember { mutableStateOf<Float?>(null) }
+                        val displayedProgress = scrubPosition?.toLong() ?: progress
+                        val scrubReturnPoint = LocalScrubReturnPoint.current
+                        // Advanced from the clock each frame rather than sprung
+                        // toward a once-a-second sample - see rememberSmoothProgress.
+                        val smoothProgress = rememberSmoothProgress(
+                            positionMs = progress,
+                            durationMs = duration,
+                            isPlaying = isPlaying,
+                            scrubPositionMs = scrubPosition
+                        )
+                        val lineStroke = Stroke(
+                            width = with(LocalDensity.current) { 4.dp.toPx() },
+                            cap = StrokeCap.Round
+                        )
+
+                        Box(contentAlignment = Alignment.Center) {
+                            // Wavy played portion, flat remainder - the wave
+                            // settles flat when paused.
+                            ExpressiveScrubber(
+                                progress = { smoothProgress.value },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(scrubberTrackHeight(14.dp)),
+                                color = accent,
+                                trackColor = accent.copy(alpha = 0.35f),
+                                stroke = lineStroke,
+                                trackStroke = lineStroke,
+                                amplitude = { if (isPlaying) 1f else 0f }
+                            )
+                            Slider(
+                                interactionSource = LocalPlayerScrubInteraction.current,
+                                value = scrubPosition ?: progress.toFloat(),
+                                // Through the return point: the drag leaves a marker where it
+                                // started and snaps back onto it, and letting go on the marker
+                                // is "never mind" rather than a seek. See ScrubReturnPoint.
+                                onValueChange = {
+                                    scrubPosition = scrubReturnPoint.follow(
+                                        value = it,
+                                        rangeEnd = duration.toFloat().coerceAtLeast(1f)
+                                    ) { smoothProgress.value }
+                                },
+                                onValueChangeFinished = {
+                                    val cancelled = scrubReturnPoint.release()
+                                    if (!cancelled) scrubPosition?.let { onSeekTo(it.toLong()) }
+                                    scrubPosition = null
+                                },
+                                valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.Transparent,
+                                    activeTrackColor = Color.Transparent,
+                                    inactiveTrackColor = Color.Transparent
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = formatEditorialTime(displayedProgress),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = accent.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = formatEditorialTime(duration),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = accent.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
                 }
-                EditorialChip(
-                    checked = isDownloaded || isDownloading,
-                    onClick = { if (!isDownloading && !isLocalOriginal) onDownloadToggle() },
-                    accent = accent,
-                    field = field
+
+                PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // ========== CHIPS ROW ==========
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
                 ) {
-                    when {
-                        isLocalOriginal -> Icon(
-                            Icons.Rounded.Smartphone, "Local File",
-                            modifier = Modifier.size(20.dp)
-                        )
-                        isDownloading -> CircularWavyProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = field
-                        )
-                        else -> Icon(
-                            if (isDownloaded) Icons.Rounded.CheckCircle else Icons.Rounded.Download,
-                            if (isDownloaded) "Downloaded" else "Download",
+                    EditorialChip(
+                        checked = isFavorite,
+                        onClick = { onFavoriteToggle(!isFavorite) },
+                        accent = accent,
+                        field = field
+                    ) {
+                        LikeBurstIcon(isFavorite = isFavorite, iconSize = 20.dp)
+                    }
+                    EditorialChip(
+                        checked = isDownloaded || isDownloading,
+                        onClick = { if (!isDownloading && !isLocalOriginal) onDownloadToggle() },
+                        accent = accent,
+                        field = field
+                    ) {
+                        when {
+                            isLocalOriginal -> Icon(
+                                Icons.Rounded.Smartphone, "Local File",
+                                modifier = Modifier.size(20.dp)
+                            )
+                            isDownloading -> CircularWavyProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = field
+                            )
+                            else -> Icon(
+                                if (isDownloaded) Icons.Rounded.CheckCircle else Icons.Rounded.Download,
+                                if (isDownloaded) "Downloaded" else "Download",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    EditorialChip(
+                        checked = shuffleModeEnabled,
+                        onClick = onToggleShuffle,
+                        accent = accent,
+                        field = field
+                    ) {
+                        Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(20.dp))
+                    }
+                    EditorialChip(
+                        checked = repeatMode != Player.REPEAT_MODE_OFF,
+                        onClick = onToggleRepeat,
+                        accent = accent,
+                        field = field
+                    ) {
+                        Icon(
+                            if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
+                            else Icons.Default.Repeat,
+                            "Repeat",
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                }
-                EditorialChip(
-                    checked = shuffleModeEnabled,
-                    onClick = onToggleShuffle,
-                    accent = accent,
-                    field = field
-                ) {
-                    Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(20.dp))
-                }
-                EditorialChip(
-                    checked = repeatMode != Player.REPEAT_MODE_OFF,
-                    onClick = onToggleRepeat,
-                    accent = accent,
-                    field = field
-                ) {
-                    Icon(
-                        if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
-                        else Icons.Default.Repeat,
-                        "Repeat",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                EditorialChip(
-                    checked = showLyrics,
-                    onClick = onToggleLyrics,
-                    accent = accent,
-                    field = field
-                ) {
-                    Icon(Icons.Rounded.Lyrics, "Lyrics", modifier = Modifier.size(20.dp))
+                    EditorialChip(
+                        checked = showLyrics,
+                        onClick = onToggleLyrics,
+                        accent = accent,
+                        field = field
+                    ) {
+                        Icon(Icons.Rounded.Lyrics, "Lyrics", modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }
@@ -702,6 +721,13 @@ private fun EditorialNowPlayingView(
         )
     }
 }
+
+/**
+ * At this width the control cluster has room for Previous, the word pill and
+ * Next on one row without squeezing the pill: about a 440dp-wide window, which
+ * a normal phone at its default display size is not.
+ */
+private val EDITORIAL_ONE_ROW_MIN_WIDTH = 400.dp
 
 /**
  * The die-cut artwork: album art clipped by a per-track MaterialShapes

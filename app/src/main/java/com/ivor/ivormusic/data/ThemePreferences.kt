@@ -135,6 +135,20 @@ class ThemePreferences(context: Context) {
         prefs.edit().putBoolean(KEY_COVER_DOUBLE_TAP_SEEK, enabled).apply()
         _coverDoubleTapSeek.value = enabled
     }
+
+    /**
+     * The Editorial player keeps Previous, Play and Next on one row however
+     * much room it has. Off (the default), it uses its original two-row
+     * layout, with Previous beside the progress line, and moves to one row
+     * only where the screen is wide enough for that to look right.
+     */
+    private val _editorialOneRow = MutableStateFlow(prefs.getBoolean(KEY_EDITORIAL_ONE_ROW, false))
+    val editorialOneRow: StateFlow<Boolean> = _editorialOneRow.asStateFlow()
+
+    fun setEditorialOneRow(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_EDITORIAL_ONE_ROW, enabled).apply()
+        _editorialOneRow.value = enabled
+    }
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -476,6 +490,8 @@ class ThemePreferences(context: Context) {
             KEY_MINI_PLAYER_PROGRESS -> _miniPlayerProgress.value = getMiniPlayerProgressPreference()
             KEY_COVER_DOUBLE_TAP_SEEK ->
                 _coverDoubleTapSeek.value = prefs.getBoolean(KEY_COVER_DOUBLE_TAP_SEEK, true)
+            KEY_EDITORIAL_ONE_ROW ->
+                _editorialOneRow.value = prefs.getBoolean(KEY_EDITORIAL_ONE_ROW, false)
             KEY_MINI_PLAYER_BUTTONS, KEY_MINI_PLAYER_COVER_TAP, KEY_MINI_PLAYER_COVER_MOTION,
             KEY_MINI_PLAYER_SWIPE_SKIP, KEY_MINI_PLAYER_SWIPE_DISMISS, KEY_MINI_PLAYER_SHRINK,
             KEY_MINI_PLAYER_COLOR, KEY_MINI_PLAYER_SECOND_LINE, KEY_MINI_PLAYER_LONG_PRESS ->
@@ -690,6 +706,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_HOME_HIDDEN_SECTIONS = "home_hidden_sections"
         private const val KEY_LIBRARY_HIDDEN_TABS = "library_hidden_tabs"
         private const val KEY_COVER_DOUBLE_TAP_SEEK = "cover_double_tap_seek"
+        private const val KEY_EDITORIAL_ONE_ROW = "editorial_one_row"
 
         /**
          * How long the video controls stay up, as a fresh read: the player
