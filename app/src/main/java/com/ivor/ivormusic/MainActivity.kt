@@ -1221,7 +1221,14 @@ fun MusicApp(
     val isVideoOverlayExpanded by videoPlayerViewModel.isExpanded.collectAsState()
     val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
     val playingSong by playerViewModel.currentSong.collectAsState()
-    val musicPillVisible = playingSong != null
+    val musicPlayWhenReady by playerViewModel.playWhenReady.collectAsState()
+    // The same rule HomeScreen draws by, or the video bar would stack over an
+    // empty slot where a parked pill used to be.
+    val musicPillVisible = playingSong != null && !com.ivor.ivormusic.ui.player.isMusicMiniParked(
+        videoMode = videoMode,
+        hasVideoMiniPlayer = hasVideoMiniPlayer,
+        musicPlayWhenReady = musicPlayWhenReady,
+    )
     val nowPlayingState = com.ivor.ivormusic.ui.components.LocalNowPlaying.current
     androidx.compose.runtime.SideEffect {
         nowPlayingState.update(

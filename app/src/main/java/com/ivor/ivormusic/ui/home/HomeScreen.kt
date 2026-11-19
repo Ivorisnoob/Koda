@@ -803,7 +803,13 @@ fun HomeScreen(
     // pill (top edge at 180dp) and/or the video mini player (top edge at
     // 188dp, stacked to 284dp when the music pill is also alive). Animated so
     // FABs glide instead of jumping when a mini player appears.
-    val musicPillVisible = currentSong != null
+    // In video mode the video bar alone is shown; see isMusicMiniParked.
+    val musicMiniParked = com.ivor.ivormusic.ui.player.isMusicMiniParked(
+        videoMode = videoMode,
+        hasVideoMiniPlayer = hasVideoMiniPlayer,
+        musicPlayWhenReady = playWhenReady,
+    )
+    val musicPillVisible = currentSong != null && !musicMiniParked
     // From 600dp across, navigation moves to a rail on the start edge and the
     // page starts where the rail ends. The horizontal safe-drawing inset is
     // taken here too: a phone on its side has its cutout and (with three-button
@@ -1997,75 +2003,85 @@ fun HomeScreen(
             }
         }
 
-        // Expandable Player (Mini <-> Full Screen)
-        ExpandablePlayer(
-            isExpanded = showPlayerSheet,
-            onExpandChange = { showPlayerSheet = it },
-            currentSong = currentSong,
-            isPlaying = isPlaying,
-            isBuffering = isBuffering,
-            playWhenReady = playWhenReady,
-            progress = progressFraction,
-            duration = playerViewModel.duration.collectAsState().value,
-            onPlayPauseClick = { playerViewModel.togglePlayPause() },
-            onNextClick = { playerViewModel.skipToNext() },
-            viewModel = playerViewModel,
-            ambientBackground = ambientBackground,
-            artworkColors = playerArtworkColors,
-            playerStyle = playerStyle,
-            onPlayerStyleChange = onPlayerStyleChange,
-            collapsedBottomSpacing = miniPlayerCollapsedSpacing,
-            collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
-            // Read in the lambda, so the bubble animating does not recompose
-            // this screen.
-            collapsedBubbleFraction = { miniBubbleFraction.value.coerceIn(0f, 1f) },
-            collapsedStartInset = contentStartInset,
-            collapsedEndInset = contentEndInset,
-            collapsedMaxWidth = if (useRail) MINI_PLAYER_MAX_WIDE_WIDTH else androidx.compose.ui.unit.Dp.Unspecified,
-            onWatchAsVideo = onWatchAsVideo,
-            onArtistClick = { artistName ->
-                // Collapse the player and open the artist inside the music
-                // Library tab. The origin tab is remembered so back returns to
-                // it rather than stranding the user in the Library, and
-                // noteLibraryReturn() runs before goToTab because it reads
-                // videoMode to decide whether back has a tab to go to.
-                //
-                // goToTab rather than an assignment is load-bearing: the music
-                // player outlives a switch to video mode - its mini bar stays,
-                // and expanding it from there is an ordinary thing to do - and
-                // in that mode tab 2 is the Subscriptions feed, so this has to
-                // switch modes and then land, in that order. See goToTab.
-                when (val tap = com.ivor.ivormusic.ui.artist.resolveArtistTap(
-                    artistName, currentSong?.artistCredits.orEmpty()
-                )) {
-                    is com.ivor.ivormusic.ui.artist.ArtistTap.Open -> {
-                        noteLibraryReturn()
-                        showPlayerSheet = false
-                        viewedArtistIdFromPlayer = tap.id
-                        viewedArtistFromPlayer = tap.name
-                        goToTab(2) // Music Library tab
+        // Expandable Player (Mini <-> Full Screen). Parked rather than drawn
+        // while the video bar has Home to itself, unless it is open: a
+        // handover can ask for it expanded, and that always wins.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !musicMiniParked || showPlayerSheet,
+            enter = androidx.compose.animation.fadeIn() +
+                androidx.compose.animation.scaleIn(initialScale = 0.85f),
+            exit = androidx.compose.animation.fadeOut() +
+                androidx.compose.animation.scaleOut(targetScale = 0.85f),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            ExpandablePlayer(
+                isExpanded = showPlayerSheet,
+                onExpandChange = { showPlayerSheet = it },
+                currentSong = currentSong,
+                isPlaying = isPlaying,
+                isBuffering = isBuffering,
+                playWhenReady = playWhenReady,
+                progress = progressFraction,
+                duration = playerViewModel.duration.collectAsState().value,
+                onPlayPauseClick = { playerViewModel.togglePlayPause() },
+                onNextClick = { playerViewModel.skipToNext() },
+                viewModel = playerViewModel,
+                ambientBackground = ambientBackground,
+                artworkColors = playerArtworkColors,
+                playerStyle = playerStyle,
+                onPlayerStyleChange = onPlayerStyleChange,
+                collapsedBottomSpacing = miniPlayerCollapsedSpacing,
+                collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
+                // Read in the lambda, so the bubble animating does not recompose
+                // this screen.
+                collapsedBubbleFraction = { miniBubbleFraction.value.coerceIn(0f, 1f) },
+                collapsedStartInset = contentStartInset,
+                collapsedEndInset = contentEndInset,
+                collapsedMaxWidth = if (useRail) MINI_PLAYER_MAX_WIDE_WIDTH else androidx.compose.ui.unit.Dp.Unspecified,
+                onWatchAsVideo = onWatchAsVideo,
+                onArtistClick = { artistName ->
+                    // Collapse the player and open the artist inside the music
+                    // Library tab. The origin tab is remembered so back returns to
+                    // it rather than stranding the user in the Library, and
+                    // noteLibraryReturn() runs before goToTab because it reads
+                    // videoMode to decide whether back has a tab to go to.
+                    //
+                    // goToTab rather than an assignment is load-bearing: the music
+                    // player outlives a switch to video mode - its mini bar stays,
+                    // and expanding it from there is an ordinary thing to do - and
+                    // in that mode tab 2 is the Subscriptions feed, so this has to
+                    // switch modes and then land, in that order. See goToTab.
+                    when (val tap = com.ivor.ivormusic.ui.artist.resolveArtistTap(
+                        artistName, currentSong?.artistCredits.orEmpty()
+                    )) {
+                        is com.ivor.ivormusic.ui.artist.ArtistTap.Open -> {
+                            noteLibraryReturn()
+                            showPlayerSheet = false
+                            viewedArtistIdFromPlayer = tap.id
+                            viewedArtistFromPlayer = tap.name
+                            goToTab(2) // Music Library tab
+                        }
+                        // The player stays open under the question; the choice
+                        // then leaves it the same way a direct tap does.
+                        is com.ivor.ivormusic.ui.artist.ArtistTap.Choose -> artistChoice = tap.credits
                     }
-                    // The player stays open under the question; the choice
-                    // then leaves it the same way a direct tap does.
-                    is com.ivor.ivormusic.ui.artist.ArtistTap.Choose -> artistChoice = tap.credits
-                }
-            },
-            onAlbumClick = { albumName ->
-                noteLibraryReturn()
-                showPlayerSheet = false
-                viewedAlbumFromPlayer = albumName
-                goToTab(2)
-            },
-            onOpenAlbum = { albumItem ->
-                // A stream's album opens the playlist detail the same way a
-                // Spotlight shelf does: hand it over and switch tab.
-                noteLibraryReturn()
-                showPlayerSheet = false
-                viewedPlaylistFromHome = albumItem
-                goToTab(2)
-            },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
+                },
+                onAlbumClick = { albumName ->
+                    noteLibraryReturn()
+                    showPlayerSheet = false
+                    viewedAlbumFromPlayer = albumName
+                    goToTab(2)
+                },
+                onOpenAlbum = { albumItem ->
+                    // A stream's album opens the playlist detail the same way a
+                    // Spotlight shelf does: hand it over and switch tab.
+                    noteLibraryReturn()
+                    showPlayerSheet = false
+                    viewedPlaylistFromHome = albumItem
+                    goToTab(2)
+                },
+            )
+        }
         
         // Update available indicator. Anchored bottom-start above the floating
         // overlays (shared bottomOverlayInset) rather than the top bar, where it
