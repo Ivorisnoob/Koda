@@ -26,7 +26,6 @@ Merged into `beta` and listed under [Shipped](#shipped), November 2026; awaiting
 - Device checks for the second round: the top bar on both music Homes and video Home, in light and dark, at a large display size, in landscape and on a tablet-width window, plus the video shell when the Home tab is hidden. Also the Editorial row on a narrow phone with a long Play/Pause translation, and adding a song from the player and then from a Library menu to the same device playlist.
 - Fifth-round device checks: a members-only video on a channel page and a film in search, badged and then hidden; the speed dial after a few plays, each Home section switched off on both Homes, and the Library down to Playlists alone. A paid film still opens the player; stopping that tap is not done.
 - Fourth-round device checks: the artist chooser from the player and both menus on a two-artist song, then a song played before this build (no credits); the cover double tap in each style (single tap still plays and pauses, Sticker still likes) and with the switch off; an `.srt` in another encoding; Explore chips on a phone, a tablet and signed in.
-- Hyping a video (#358) and chapters inside a device file's container (#381) are not done: the first needs a signed-in probe, the second a container reader.
 - Third-round device checks: the side panel on a landscape phone and a tablet (open, back, tap outside, an option that closes it), channel search sorting, and Remove from cache followed by Ready offline.
 
 ---
