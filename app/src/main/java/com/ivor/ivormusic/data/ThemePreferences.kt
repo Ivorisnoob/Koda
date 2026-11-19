@@ -490,7 +490,8 @@ class ThemePreferences(context: Context) {
             KEY_VIDEO_SHADERS_CONTRAST, KEY_VIDEO_SHADERS_BRIGHTNESS,
             KEY_VIDEO_SHADERS_SATURATION, KEY_VIDEO_SHADERS_CUSTOM_CODE ->
                 _videoShaders.value = readVideoShaders()
-            KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME ->
+            KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME,
+            KEY_VIDEO_FEED_EXPLORE ->
                 _videoFeed.value = readVideoFeed()
             KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL,
             KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS, KEY_SEARCH_OPENS_KEYBOARD ->
@@ -680,6 +681,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_VIDEO_FEED_POSTS = "video_feed_posts"
         private const val KEY_VIDEO_FEED_LIVE = "video_feed_live"
         private const val KEY_VIDEO_FEED_HIDE_WATCHED_HOME = "video_feed_hide_watched_home"
+        private const val KEY_VIDEO_FEED_EXPLORE = "video_feed_explore"
         private const val KEY_HOME_GREETING = "home_top_bar_greeting"
         private const val KEY_HOME_ALWAYS_DOWNLOADS = "home_top_bar_always_downloads"
         private const val KEY_SEARCH_OPENS_KEYBOARD = "search_opens_keyboard"
@@ -1680,6 +1682,7 @@ class ThemePreferences(context: Context) {
         showPosts = prefs.getBoolean(KEY_VIDEO_FEED_POSTS, true),
         showLive = prefs.getBoolean(KEY_VIDEO_FEED_LIVE, true),
         hideWatchedOnHome = prefs.getBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, false),
+        showExplore = prefs.getBoolean(KEY_VIDEO_FEED_EXPLORE, true),
     )
 
     fun setVideoFeed(customization: VideoFeedCustomization) {
@@ -1687,6 +1690,7 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_VIDEO_FEED_POSTS, customization.showPosts)
             .putBoolean(KEY_VIDEO_FEED_LIVE, customization.showLive)
             .putBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, customization.hideWatchedOnHome)
+            .putBoolean(KEY_VIDEO_FEED_EXPLORE, customization.showExplore)
             .apply()
         _videoFeed.value = customization
     }

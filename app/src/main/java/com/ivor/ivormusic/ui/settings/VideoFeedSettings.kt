@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
@@ -47,6 +48,20 @@ internal fun VideoFeedSettingsPage(onBack: () -> Unit) {
         title = stringResource(R.string.cz_video_feed),
         onBack = onBack
     ) {
+        item {
+            SettingsSection(title = stringResource(R.string.cz_feed_section_explore)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Explore,
+                        title = stringResource(R.string.cz_feed_explore),
+                        subtitle = stringResource(R.string.cz_feed_explore_sub),
+                        enabled = feed.showExplore,
+                        onToggle = { prefs.setVideoFeed(feed.copy(showExplore = it)) }
+                    )
+                }
+            }
+        }
+
         item {
             SettingsSection(title = stringResource(R.string.cz_feed_section_mixed_in)) {
                 SettingsCard {
@@ -124,6 +139,7 @@ internal fun videoFeedSummary(): String {
     val hideWatchedSubs by prefs.hideWatchedInFeed.collectAsState()
     val hidden = listOf(
         !feed.showPosts,
+        !feed.showExplore,
         !shortsShelf,
         !feed.showLive,
         feed.hideWatchedOnHome,

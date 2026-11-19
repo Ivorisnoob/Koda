@@ -123,6 +123,8 @@ internal class VideoFeedFilter(
     private val showLive: Boolean,
     private val hideWatched: Boolean,
     private val watchedIds: Set<String>,
+    /** Whether video Home shows its Explore row; see [com.ivor.ivormusic.data.VideoFeedCustomization.showExplore]. */
+    val showExplore: Boolean = true,
 ) {
     fun apply(videos: List<VideoItem>): List<VideoItem> {
         if (showLive && !hideWatched) return videos
@@ -147,6 +149,7 @@ internal fun rememberHomeFeedFilter(): VideoFeedFilter {
             showPosts = options.showPosts,
             showLive = options.showLive,
             hideWatched = options.hideWatchedOnHome,
+            showExplore = options.showExplore,
             // Only built when it will be read: the history can be long.
             watchedIds = if (options.hideWatchedOnHome) {
                 history.mapTo(HashSet()) { it.videoId }

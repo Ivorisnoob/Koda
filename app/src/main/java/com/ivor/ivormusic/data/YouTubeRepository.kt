@@ -331,6 +331,8 @@ class YouTubeRepository(private val context: Context) {
 
     suspend fun getSubscriptionsFeedPage(): VideoFeedPage = videoFeeds.getSubscriptionsFeedPage()
 
+    suspend fun getExploreVideos(topic: ExploreTopic): List<VideoItem> = videoFeeds.getExploreVideos(topic)
+
     internal suspend fun getWatchHistoryPage(
         continuation: String? = null,
         session: YouTubeSession? = sessionManager.captureSession()

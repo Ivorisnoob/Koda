@@ -3950,6 +3950,50 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         loadTrendingVideos()
     }
 
+    /**
+     * The Explore topic video Home is showing in place of its feed, with its
+     * videos; null for the feed itself (#358). A topic is fetched only when
+     * picked, and kept for [EXPLORE_TTL_MS] so going back and forth between
+     * chips costs nothing.
+     */
+    data class ExploreFeed(
+        val topic: com.ivor.ivormusic.data.ExploreTopic,
+        val videos: List<VideoItem> = emptyList(),
+        val isLoading: Boolean = false,
+        val failed: Boolean = false,
+    )
+
+    private val _explore = MutableStateFlow<ExploreFeed?>(null)
+    val explore: StateFlow<ExploreFeed?> = _explore.asStateFlow()
+    private val exploreCache = HashMap<com.ivor.ivormusic.data.ExploreTopic, Pair<Long, List<VideoItem>>>()
+    private var exploreJob: kotlinx.coroutines.Job? = null
+
+    /** Show [topic], or the feed again for null. [force] skips the cache (a pull to refresh). */
+    fun selectExploreTopic(topic: com.ivor.ivormusic.data.ExploreTopic?, force: Boolean = false) {
+        exploreJob?.cancel()
+        if (topic == null) {
+            _explore.value = null
+            return
+        }
+        val now = android.os.SystemClock.elapsedRealtime()
+        val cached = exploreCache[topic]?.takeIf { !force && now - it.first < EXPLORE_TTL_MS }
+        if (cached != null) {
+            _explore.value = ExploreFeed(topic, cached.second)
+            return
+        }
+        _explore.value = ExploreFeed(
+            topic,
+            videos = _explore.value?.takeIf { it.topic == topic }?.videos.orEmpty(),
+            isLoading = true,
+        )
+        exploreJob = viewModelScope.launch {
+            val videos = youtubeRepository.getExploreVideos(topic)
+            if (_explore.value?.topic != topic) return@launch
+            if (videos.isNotEmpty()) exploreCache[topic] = android.os.SystemClock.elapsedRealtime() to videos
+            _explore.value = ExploreFeed(topic, videos, isLoading = false, failed = videos.isEmpty())
+        }
+    }
+
     fun loadTrendingVideos() {
         val generation = ++videoHomeLoadGeneration
         videoHomeLoadJob?.cancel()
@@ -5094,6 +5138,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
          * request is not cancelled when this expires - it is detached - so a
          * page that arrives late is still there for the next pull.
          */
+        /** How long an Explore topic is shown again without refetching. */
+        private const val EXPLORE_TTL_MS = 10 * 60 * 1000L
         const val VIDEO_FEED_DEADLINE_MS = 8_000L
 
         /**

@@ -20,4 +20,9 @@ data class VideoFeedCustomization(
     val showLive: Boolean = true,
     /** Leave out of Home anything already in this profile's watch history. */
     val hideWatchedOnHome: Boolean = false,
+    /**
+     * The Explore row of topics (Hype, Music, Gaming...) at the top of video
+     * Home. A topic is only fetched when tapped, so on costs nothing until used.
+     */
+    val showExplore: Boolean = true,
 )

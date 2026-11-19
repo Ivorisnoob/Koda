@@ -2617,5 +2617,19 @@
     <string name="vpc_load_subtitle_file">Load subtitle file</string>
     <string name="vpc_load_subtitle_file_sub">An .srt or .vtt file from your phone</string>
     <string name="vpc_subtitle_file_unreadable">No subtitles could be read from that file</string>
+    <string name="cz_feed_section_explore">Explore</string>
+    <string name="cz_feed_explore">Explore topics</string>
+    <string name="cz_feed_explore_sub">A row of topics on Home: Hype, Music, Gaming, News and more</string>
+    <string name="explore_for_you">For you</string>
+    <string name="explore_hype">Hype</string>
+    <string name="explore_music">Music</string>
+    <string name="explore_gaming">Gaming</string>
+    <string name="explore_news">News</string>
+    <string name="explore_sports">Sports</string>
+    <string name="explore_live">Live</string>
+    <string name="explore_learning">Learning</string>
+    <string name="explore_fashion">Fashion and beauty</string>
+    <string name="explore_failed">Couldn\'t load this topic</string>
+    <string name="explore_retry">Try again</string>
     <string name="artist_chooser_title">Choose an artist</string>
 </resources>
