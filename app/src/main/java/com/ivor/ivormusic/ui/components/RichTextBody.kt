@@ -35,12 +35,19 @@ import com.ivor.ivormusic.data.RichText
 fun rememberLinkedText(
     rich: RichText,
     onTimestampClick: ((seconds: Long) -> Unit)? = null,
-    onBrowseClick: ((browseId: String) -> Unit)? = null
+    onBrowseClick: ((browseId: String) -> Unit)? = null,
+    /**
+     * The video [onTimestampClick] seeks. A timestamp naming a different video
+     * (a description pointing at part two, a comment quoting another upload)
+     * opens that video instead of seeking this one to the other's moment.
+     * Null when unknown, which keeps every timestamp a seek.
+     */
+    timestampVideoId: String? = null
 ): AnnotatedString {
     val uriHandler = LocalUriHandler.current
     val linkColor = MaterialTheme.colorScheme.primary
 
-    return remember(rich, linkColor, onTimestampClick, onBrowseClick, uriHandler) {
+    return remember(rich, linkColor, onTimestampClick, onBrowseClick, timestampVideoId, uriHandler) {
         if (rich.links.isEmpty()) return@remember AnnotatedString(rich.text)
 
         val styles = TextLinkStyles(
@@ -54,8 +61,16 @@ fun rememberLinkedText(
                     is RichLinkTarget.Url -> {
                         { openUri(uriHandler, target.url) }
                     }
-                    is RichLinkTarget.Timestamp ->
-                        onTimestampClick?.let { seek -> { seek(target.seconds) } }
+                    is RichLinkTarget.Timestamp -> {
+                        val elsewhere = target.videoId
+                            ?.takeIf { timestampVideoId != null && it != timestampVideoId }
+                        if (elsewhere != null) {
+                            // Through the in-app router, so it opens in Koda.
+                            { openUri(uriHandler, "https://www.youtube.com/watch?v=$elsewhere") }
+                        } else {
+                            onTimestampClick?.let { seek -> { seek(target.seconds) } }
+                        }
+                    }
                     is RichLinkTarget.Browse ->
                         onBrowseClick?.let { browse -> { browse(target.browseId) } }
                             ?: target.browseId.takeIf { it.startsWith("UC") }?.let { id ->

@@ -1169,10 +1169,6 @@ fun HomeScreen(
                                 )
                             } else if (videoModeContent) {
                                 VideoHomeContent(
-                                    navigationHiddenFraction = {
-                                        if (nonExpressiveNavigationBar || useRail || !barHidesOnScroll) 1f
-                                        else floatingToolbarState.hiddenFraction()
-                                    },
                                     compact = compactVideoHome,
                                     inlinePreviews = inlinePreviews,
                                     // Recommendations off: a shuffle across the
@@ -1490,7 +1486,8 @@ fun HomeScreen(
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
                         localOnly = localOnly,
-                        requestInitialFocus = !hasExpandedVideoPlayer && !showPlayerSheet,
+                        requestInitialFocus = homeNavigation.searchOpensKeyboard &&
+                            !hasExpandedVideoPlayer && !showPlayerSheet,
                         listState = if (videoMode) videoSearchScrollState else musicSearchScrollState
                     )
                     2 -> {
@@ -2316,28 +2313,34 @@ fun YourMixContent(
         // What is left of the window under the top bar, for the collage to
         // shrink into on a short (landscape) window.
         val collageRoom = maxHeight - contentPadding.calculateTopPadding() - 140.dp
+        val listPadding = PaddingValues(
+            start = pageSidePadding,
+            end = pageSidePadding,
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding()
+        )
+        // The top bar floats over the page and slides away while it scrolls
+        // down; the list keeps a spacer where the bar used to be.
+        val scrolledPastTop by remember(listState) {
+            androidx.compose.runtime.derivedStateOf { listState.canScrollBackward }
+        }
+        com.ivor.ivormusic.ui.components.FloatingTopBarHost(
+            scrolledPastTop = scrolledPastTop,
+            contentPadding = listPadding,
+            modifier = Modifier.fillMaxSize(),
+            bar = {
+                TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, videoMode = videoMode, onVideoModeToggle = onVideoModeToggle, showModeToggle = showModeToggle, modeToggleState = modeToggleState)
+            }
+        ) { barHeight ->
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundColor),
-            contentPadding = PaddingValues(
-                start = pageSidePadding,
-                end = pageSidePadding,
-                top = contentPadding.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding()
-            )
+            contentPadding = listPadding
         ) {
-            item { 
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) { visible = true }
-                Box(Modifier.graphicsLayer {
-                    alpha = if (visible) 1f else 0f
-                    translationY = if (visible) 0f else -20f
-                }.animateContentSize()) {
-                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, videoMode = videoMode, onVideoModeToggle = onVideoModeToggle, showModeToggle = showModeToggle, modeToggleState = modeToggleState)
-                }
-            }
+            // Room for the floating top bar (FloatingTopBarHost).
+            item(key = "topbar_space") { Spacer(modifier = Modifier.height(barHeight)) }
             
             item { 
                 var visible by remember { mutableStateOf(false) }
@@ -2508,6 +2511,7 @@ fun YourMixContent(
                 }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
+        }
         }
         }
     }

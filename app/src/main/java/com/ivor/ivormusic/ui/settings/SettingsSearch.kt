@@ -337,6 +337,10 @@ internal fun buildSettingsSearchIndex(
         listOf("watched", "hide watched", "already seen", "seen videos", "unwatched only")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
     entry(
+        "search_keyboard", stringResource(R.string.cz_search_keyboard), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("keyboard", "search keyboard", "auto focus", "autofocus", "keyboard pops up", "search opens")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
         "top_bar_greeting", stringResource(R.string.cz_top_bar_greeting), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
         listOf("greeting", "good morning", "hello", "top bar", "header", "home bar")
     ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }

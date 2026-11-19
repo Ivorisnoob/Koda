@@ -919,6 +919,7 @@ fun VideoPlayerContent(
                         onDeleteComment = commentThread::delete,
                         onDismiss = { showCommentsSheet = false },
                         onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
+                        videoId = currentVideo.videoId,
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(400.dp)
@@ -1354,6 +1355,7 @@ fun VideoPlayerContent(
                             onDeleteComment = commentThread::delete,
                             onDismiss = { showCommentsSheet = false },
                             modifier = Modifier.fillMaxSize(),
+                            videoId = currentVideo.videoId,
                             onSeekTo = { seconds ->
                                 viewModel.seekTo(seconds * 1000L, precise = true)
                                 // Jumping to the moment a comment is about is
