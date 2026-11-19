@@ -188,14 +188,15 @@ fun SpotlightHomeContent(
         },
         modifier = Modifier.fillMaxSize(),
     ) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+        // The top bar floats over the page; see FloatingTopBarHost.
+        val scrolledPastTop by remember(listState) {
+            androidx.compose.runtime.derivedStateOf { listState.canScrollBackward }
+        }
+        com.ivor.ivormusic.ui.components.FloatingTopBarHost(
+            scrolledPastTop = scrolledPastTop,
             contentPadding = contentPadding,
-        ) {
-            item(key = "topbar") {
+            modifier = Modifier.fillMaxSize(),
+            bar = {
                 TopBarSection(
                     onProfileClick = onProfileClick,
                     onSettingsClick = onSettingsClick,
@@ -208,6 +209,15 @@ fun SpotlightHomeContent(
                     modeToggleState = modeToggleState,
                 )
             }
+        ) { barHeight ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+            contentPadding = contentPadding,
+        ) {
+            item(key = "topbar") { Spacer(Modifier.height(barHeight)) }
 
             item(key = "chips") {
                 SpotlightFilterChips(selected = filter, onSelect = onFilterChange)
@@ -435,6 +445,7 @@ fun SpotlightHomeContent(
             }
 
             item(key = "tail") { Spacer(Modifier.height(24.dp)) }
+        }
         }
     }
 }
