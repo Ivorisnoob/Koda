@@ -1247,6 +1247,7 @@ fun HomeScreen(
                                             val spotlightPlaylists by viewModel.musicModePlaylists.collectAsState()
                                             val spotlightLiked by viewModel.likedSongs.collectAsState()
                                             SpotlightHomeContent(
+                                                hiddenSections = homeNavigation.hiddenHomeSections,
                                                 songs = songs,
                                                 recentlyPlayed = recentlyPlayed,
                                                 likedSongs = spotlightLiked,
@@ -1318,6 +1319,7 @@ fun HomeScreen(
                                             val classicTopArtists by viewModel.topArtists.collectAsState()
                                             val classicArtistPhotos by viewModel.artistPhotos.collectAsState()
                                             val classicOnline by viewModel.isOnline.collectAsState()
+                                            val classicSpeedDial by viewModel.speedDial.collectAsState()
                                             val classicReadyOffline by viewModel.readyOffline.collectAsState()
                                             val classicDownloads by viewModel.downloadedSongs.collectAsState()
                                             // The cache changes as a side effect of
@@ -1394,6 +1396,12 @@ fun HomeScreen(
                                                     playerViewModel.playQueue(recentlyPlayed, song)
                                                     showPlayerSheet = true
                                                 },
+                                                speedDial = classicSpeedDial,
+                                                onSpeedDialClick = { song ->
+                                                    playerViewModel.playQueue(classicSpeedDial, song)
+                                                    showPlayerSheet = true
+                                                },
+                                                hiddenSections = homeNavigation.hiddenHomeSections,
                                                 onShowAllInLibrary = { selectedTab = 2 },
                                                 onSpinClick = {
                                                     spinSource = SpinSource.Mix
@@ -2275,6 +2283,11 @@ fun YourMixContent(
     /** Local play history for the "Jump back in" rail. Empty for a new user. */
     recentlyPlayed: List<Song> = emptyList(),
     onRecentClick: (Song) -> Unit = {},
+    /** The most played songs, for the speed dial; see [speedDialFrom]. */
+    speedDial: List<Song> = emptyList(),
+    onSpeedDialClick: (Song) -> Unit = {},
+    /** Sections switched off under Home and navigation. */
+    hiddenSections: Set<com.ivor.ivormusic.data.HomeSection> = emptySet(),
     /** Albums behind the play history, newest first. */
     recentAlbums: List<RecentAlbum>,
     /** Required: a shelf card left unwired is a dead card. */
@@ -2456,7 +2469,21 @@ fun YourMixContent(
                 }
             }
             
-            item {
+            // What is played most, one tap away (#373).
+            if (com.ivor.ivormusic.data.HomeSection.SPEED_DIAL !in hiddenSections &&
+                !isInitialLoading && speedDial.size >= SPEED_DIAL_MIN
+            ) item(key = "speed-dial") {
+                Column {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    SpeedDialSection(
+                        songs = speedDial,
+                        onSongClick = onSpeedDialClick,
+                        onSongLongPress = onSongLongPress,
+                    )
+                }
+            }
+
+            if (com.ivor.ivormusic.data.HomeSection.RECENT_ALBUMS !in hiddenSections) item {
                 var visible by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); visible = true }
                 Column(Modifier.graphicsLayer {
@@ -2501,7 +2528,7 @@ fun YourMixContent(
                 }
             }
 
-            item {
+            if (com.ivor.ivormusic.data.HomeSection.ARTISTS !in hiddenSections) item {
                 if (!isInitialLoading) {
                     TopArtistsSection(
                         artists = topArtists,
@@ -2515,7 +2542,7 @@ fun YourMixContent(
             // (they churn on their own and would crowd out what was chosen)
             // and given their own rail rather than dropped, since they are
             // still some of the best things to put on.
-            item {
+            if (com.ivor.ivormusic.data.HomeSection.MIXES !in hiddenSections) item {
                 if (!isInitialLoading) {
                     PlaylistsShelfSection(
                         title = stringResource(R.string.home_section_mixes),
@@ -2526,7 +2553,7 @@ fun YourMixContent(
                 }
             }
 
-            item {
+            if (com.ivor.ivormusic.data.HomeSection.JUMP_BACK_IN !in hiddenSections) item {
                 // No entrance animation on this last section: the staggered
                 // fade/slide above only starts its timer when the item scrolls
                 // into composition, so this row sat at alpha 0 until scrolled

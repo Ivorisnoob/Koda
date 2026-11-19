@@ -134,6 +134,11 @@ fun SpotlightHomeContent(
      */
     filter: SpotlightFilter,
     onFilterChange: (SpotlightFilter) -> Unit,
+    /**
+     * Sections switched off under Home and navigation. Speed dial is this
+     * Home's shortcut grid; Recent albums and Mixes are Classic's alone.
+     */
+    hiddenSections: Set<com.ivor.ivormusic.data.HomeSection> = emptySet(),
 ) {
     val isRefreshing by viewModel.isLoading.collectAsState()
 
@@ -225,7 +230,9 @@ fun SpotlightHomeContent(
 
             // The shortcut grid only makes sense unfiltered - a two-column grid
             // of "your most reached-for things" is not a thing you scope.
-            if (filter == SpotlightFilter.All && shortcuts.isNotEmpty()) {
+            if (filter == SpotlightFilter.All && shortcuts.isNotEmpty() &&
+                com.ivor.ivormusic.data.HomeSection.SPEED_DIAL !in hiddenSections
+            ) {
                 item(key = "shortcuts") {
                     SpotlightShortcutGrid(
                         shortcuts = shortcuts,
@@ -304,7 +311,9 @@ fun SpotlightHomeContent(
                     }
                 }
 
-                if (discoveryCollections.artists.isNotEmpty()) {
+                if (discoveryCollections.artists.isNotEmpty() &&
+                    com.ivor.ivormusic.data.HomeSection.ARTISTS !in hiddenSections
+                ) {
                     item(key = "discovery-artists-header") {
                         SpotlightSectionHeader(
                             title = stringResource(R.string.spotlight_artists_for_you),
@@ -344,7 +353,8 @@ fun SpotlightHomeContent(
             if (filter != SpotlightFilter.Playlists &&
                 filter != SpotlightFilter.Recommended &&
                 filter.browseKey() == null &&
-                recentlyPlayed.isNotEmpty()
+                recentlyPlayed.isNotEmpty() &&
+                com.ivor.ivormusic.data.HomeSection.JUMP_BACK_IN !in hiddenSections
             ) {
                 item(key = "recent-header") {
                     SpotlightSectionHeader(title = stringResource(R.string.home_section_jump_back_in))

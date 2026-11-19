@@ -796,11 +796,11 @@ enum class LibraryRoute {
     SpotifyImport
 }
 
-enum class LibraryTab(val label: String) {
-    All("All"),
-    Playlists("Playlists"),
-    Artists("Artists"),
-    Albums("Albums")
+enum class LibraryTab(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    All("All", com.ivor.ivormusic.R.string.library_tab_all),
+    Playlists("Playlists", com.ivor.ivormusic.R.string.library_tab_playlists),
+    Artists("Artists", com.ivor.ivormusic.R.string.library_tab_artists),
+    Albums("Albums", com.ivor.ivormusic.R.string.library_tab_albums)
 }
 
 /**
@@ -1038,8 +1038,15 @@ fun LibraryMainScreen(
     // playlist and back landed on All again. Someone who lives in Albums had
     // to re-select it all day.
     val storedTabName by themePreferences.libraryTab.collectAsState()
-    val selectedTab = remember(storedTabName) {
-        LibraryTab.entries.firstOrNull { it.name == storedTabName } ?: LibraryTab.All
+    // Tabs switched off under Home and navigation (#373). Never none: a
+    // stored set naming every tab is read as naming none.
+    val libraryNavigation by themePreferences.homeNavigation.collectAsState()
+    val visibleTabs = remember(libraryNavigation.hiddenLibraryTabs) {
+        LibraryTab.entries.filter { it.name !in libraryNavigation.hiddenLibraryTabs }
+            .ifEmpty { LibraryTab.entries }
+    }
+    val selectedTab = remember(storedTabName, visibleTabs) {
+        visibleTabs.firstOrNull { it.name == storedTabName } ?: visibleTabs.first()
     }
     val tabHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val storedSortName by themePreferences.librarySortOption.collectAsState()
@@ -1139,6 +1146,8 @@ fun LibraryMainScreen(
                 }
             }
 
+            // One tab left needs no strip to choose it.
+            if (visibleTabs.size > 1) {
             Spacer(Modifier.height(28.dp))
 
             // M3 Expressive connected button group — replaces the segmented
@@ -1147,7 +1156,7 @@ fun LibraryMainScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
             ) {
-                LibraryTab.entries.forEachIndexed { index, tab ->
+                visibleTabs.forEachIndexed { index, tab ->
                     val selected = selectedTab == tab
                     ToggleButton(
                         checked = selected,
@@ -1162,19 +1171,20 @@ fun LibraryMainScreen(
                             .height(48.dp),
                         shapes = when (index) {
                             0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            LibraryTab.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                            visibleTabs.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                             else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                         },
                         contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
                         Text(
-                            text = tab.label,
+                            text = stringResource(tab.labelRes),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                             maxLines = 1
                         )
                     }
                 }
+            }
             }
         }
 

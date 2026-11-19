@@ -71,6 +71,10 @@ import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
@@ -277,6 +281,67 @@ internal fun HomeNavigationSettingsPage(
                             navPrefs.setHomeNavigation(navigation.copy(searchOpensKeyboard = it))
                         }
                     )
+                }
+            }
+        }
+
+        // What music Home and the Library show (#373). Your playlists, and
+        // the last Library tab left on, cannot be switched off.
+        item {
+            SettingsSection(title = stringResource(R.string.cz_section_home_sections)) {
+                SettingsCard {
+                    com.ivor.ivormusic.data.HomeSection.entries.forEach { section ->
+                        val (icon, title) = when (section) {
+                            com.ivor.ivormusic.data.HomeSection.SPEED_DIAL ->
+                                Icons.Rounded.Apps to stringResource(R.string.home_section_speed_dial)
+                            com.ivor.ivormusic.data.HomeSection.RECENT_ALBUMS ->
+                                Icons.Rounded.Album to stringResource(R.string.home_section_recent_albums)
+                            com.ivor.ivormusic.data.HomeSection.ARTISTS ->
+                                Icons.Rounded.Person to stringResource(R.string.cz_home_section_artists)
+                            com.ivor.ivormusic.data.HomeSection.MIXES ->
+                                Icons.AutoMirrored.Rounded.QueueMusic to stringResource(R.string.home_section_mixes)
+                            com.ivor.ivormusic.data.HomeSection.JUMP_BACK_IN ->
+                                Icons.Rounded.History to stringResource(R.string.home_section_jump_back_in)
+                        }
+                        SettingsToggleRow(
+                            icon = icon,
+                            title = title,
+                            subtitle = stringResource(R.string.cz_home_section_sub),
+                            enabled = navigation.shows(section),
+                            onToggle = { show ->
+                                val hidden = navigation.hiddenHomeSections.toMutableSet()
+                                if (show) hidden.remove(section) else hidden.add(section)
+                                navPrefs.setHomeNavigation(navigation.copy(hiddenHomeSections = hidden))
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.cz_section_library_tabs)) {
+                SettingsCard {
+                    val tabs = com.ivor.ivormusic.ui.library.LibraryTab.entries
+                    val shown = tabs.count { it.name !in navigation.hiddenLibraryTabs }
+                    tabs.forEach { tab ->
+                        val visible = tab.name !in navigation.hiddenLibraryTabs
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.LibraryMusic,
+                            title = stringResource(tab.labelRes),
+                            subtitle = stringResource(R.string.cz_library_tab_sub),
+                            enabled = visible,
+                            // The last tab showing stays on.
+                            available = !(visible && shown == 1),
+                            onToggle = { show ->
+                                val hidden = navigation.hiddenLibraryTabs.toMutableSet()
+                                if (show) hidden.remove(tab.name) else hidden.add(tab.name)
+                                if (hidden.size < tabs.size) {
+                                    navPrefs.setHomeNavigation(navigation.copy(hiddenLibraryTabs = hidden))
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
