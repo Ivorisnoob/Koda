@@ -216,6 +216,8 @@ internal fun buildSettingsSearchIndex(
         listOf("lyrics", "romanized", "romanised", "romaji", "pinyin", "phonetic", "transliterate", "japanese", "korean", "chinese", "hindi")
     ) { onOpenPage(SettingsPage.LYRICS_APPEARANCE) }
 
+    entry("lastfm_fill_album", stringResource(R.string.lastfm_fill_album), "Last.fm", Icons.Rounded.History,
+        listOf("album", "missing album", "scrobble album", "fill in", "metadata")) { onOpenPage(SettingsPage.LASTFM) }
     entry("lastfm", stringResource(R.string.lastfm_title), "Last.fm", Icons.Rounded.History,
         listOf("lastfm", "last.fm", "scrobble", "scrobbling", "sync", "api key", "login", "listening history")) {
         onOpenPage(SettingsPage.LASTFM)

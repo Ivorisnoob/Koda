@@ -2207,6 +2207,8 @@
     <string name="lastfm_not_connected">Not connected</string>
     <string name="lastfm_intro">Keep your music listening history on Last.fm and see your recent plays here. Connecting is optional.</string>
     <string name="lastfm_enable">Use Last.fm</string>
+    <string name="lastfm_fill_album">Fill in missing album</string>
+    <string name="lastfm_fill_album_sub">When a song has no album, look it up on Last.fm so the scrobble is complete</string>
     <string name="lastfm_switch_detail">Sync music plays while enabled. Turning off stops requests and clears unsent plays.</string>
     <string name="lastfm_off_hero">Your music, your choice</string>
     <string name="lastfm_off_detail">Off by default. Koda works fully without a Last.fm account. Incognito and Local Only also pause Last.fm.</string>
