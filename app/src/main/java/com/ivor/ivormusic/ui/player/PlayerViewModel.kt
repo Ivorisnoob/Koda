@@ -1706,6 +1706,24 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     fun isDownloaded(songId: String): Boolean {
         return downloadRepository.isDownloaded(songId)
     }
+
+    /** Bytes of [songId] in the music cache; see [CacheManager.cachedSongBytes]. */
+    suspend fun cachedSongBytes(songId: String): Long =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.ivor.ivormusic.data.CacheManager.cachedSongBytes(songId)
+        }
+
+    /** Drop [songId] from the music cache, then [onRemoved] on the main thread. */
+    fun removeFromMusicCache(songId: String, onRemoved: () -> Unit) {
+        // Refused for the song playing: its reader holds the spans this deletes.
+        if (_currentSong.value?.id == songId) return
+        viewModelScope.launch {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.ivor.ivormusic.data.CacheManager.removeSong(songId)
+            }
+            onRemoved()
+        }
+    }
     
     fun isDownloading(songId: String): Boolean {
         return downloadingIds.value.contains(songId)

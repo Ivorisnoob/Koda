@@ -2118,6 +2118,7 @@ fun HomeScreen(
             song = song,
             viewModel = playerViewModel,
             onDismiss = { songOptionsTarget = null },
+            onRemovedFromCache = { viewModel.refreshReadyOffline() },
             // The same hand-off the player already uses for an artist: the
             // artist page lives inside the Library tab rather than on a route,
             // so it is opened by handing the name over and switching tab.

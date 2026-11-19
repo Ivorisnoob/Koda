@@ -2206,6 +2206,8 @@
     <string name="lastfm_off">Off</string>
     <string name="lastfm_not_connected">Not connected</string>
     <string name="lastfm_intro">Keep your music listening history on Last.fm and see your recent plays here. Connecting is optional.</string>
+    <string name="song_options_remove_cache">Remove from cache</string>
+    <string name="song_options_remove_cache_sub">Frees %1$s. It streams again next time</string>
     <string name="lastfm_enable">Use Last.fm</string>
     <string name="lastfm_fill_album">Fill in missing album</string>
     <string name="lastfm_fill_album_sub">When a song has no album, look it up on Last.fm so the scrobble is complete</string>
