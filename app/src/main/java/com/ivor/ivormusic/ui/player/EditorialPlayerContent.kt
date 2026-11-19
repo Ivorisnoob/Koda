@@ -1,6 +1,7 @@
 package com.ivor.ivormusic.ui.player
 
 import com.ivor.ivormusic.ui.components.DismissibleSnackbarHost
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.R
 import androidx.compose.animation.AnimatedContent
@@ -448,13 +449,27 @@ private fun EditorialNowPlayingView(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
-            // Row 1: word pill + next circle
+            // Row 1: previous, the word pill, next - in reading order on one
+            // line. Previous used to sit under the pill beside the progress
+            // line, which read as a button that had wrapped (#380).
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(80.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                EditorialCircleButton(
+                    onClick = onPrevious,
+                    accent = accent,
+                    field = field,
+                    size = 80.dp
+                ) {
+                    Icon(
+                        Icons.Default.SkipPrevious,
+                        stringResource(R.string.widget_action_previous),
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
                 // The word IS the icon.
                 Surface(
                     onClick = onPlayPause,
@@ -482,12 +497,27 @@ private fun EditorialNowPlayingView(
                                 targetState = isPlaying,
                                 label = "EditorialPlayWord"
                             ) { playing ->
+                                // With a circle on each side the pill is
+                                // narrow on a small screen, a large display
+                                // size or a long translation, so the word
+                                // shrinks to fit rather than wrapping.
+                                val wordStyle = MaterialTheme.typography.headlineSmall.copy(
+                                    fontWeight = FontWeight.Medium,
+                                    letterSpacing = 3.sp
+                                )
                                 Text(
-                                    text = if (playing) "PAUSE" else "PLAY",
-                                    style = MaterialTheme.typography.headlineSmall.copy(
-                                        fontWeight = FontWeight.Medium,
-                                        letterSpacing = 3.sp
-                                    )
+                                    text = stringResource(
+                                        if (playing) R.string.cd_pause else R.string.cd_play
+                                    ).uppercase(),
+                                    style = wordStyle,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    autoSize = TextAutoSize.StepBased(
+                                        minFontSize = 12.sp,
+                                        maxFontSize = wordStyle.fontSize,
+                                        stepSize = 1.sp
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 12.dp)
                                 )
                             }
                         }
@@ -499,27 +529,21 @@ private fun EditorialNowPlayingView(
                     field = field,
                     size = 80.dp
                 ) {
-                    Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(34.dp))
+                    Icon(
+                        Icons.Default.SkipNext,
+                        stringResource(R.string.widget_action_next),
+                        modifier = Modifier.size(34.dp)
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Row 2: previous circle + progress line with times
+            // Row 2: the progress line with its times, the full width.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                EditorialCircleButton(
-                    onClick = onPrevious,
-                    accent = accent,
-                    field = field,
-                    size = 80.dp
-                ) {
-                    Icon(Icons.Default.SkipPrevious, "Previous", modifier = Modifier.size(34.dp))
-                }
-
                 Column(modifier = Modifier.weight(1f)) {
                     // Scrub locally, seek once on release (streamed tracks
                     // rebuffer if seeked per drag frame).
