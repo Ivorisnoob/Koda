@@ -16,11 +16,23 @@ The long view: where Koda stands, what is still planned, and the constraints any
 - **Settings → Customization → Video player → Player controls** adds transport choices, skip distance, time remaining, and shortcut visibility. The skip distance also applies to double-tap, picture-in-picture, and the media notification (`e2a750c`).
 - Discord's Social SDK 1.11 notes showed no Android Rich Presence change that requires a Koda update.
 
+### Completed on `fix/beta-sprint` (compiled and unit-tested, not yet on a device)
+
+- **Floating Home top bar** (`ui/components/FloatingTopBar.kt`). Classic, Spotlight and video Home share `FloatingTopBarHost`. The bar floats over the list, which keeps a spacer item where the bar used to be. It hides after 24dp of real downward scroll (`consumed` in `onPostScroll`, so a page too short to move or a pull-to-refresh leaves it alone) and returns on any upward scroll or at the top. Over content it stands on the page's `background`, status bar included. It takes the list's own padding, so Classic's capped tablet page and landscape cutout insets hold. Video Home's old copy, which followed the navigation bar, is gone, and so is `VideoHomeContent`'s `navigationHiddenFraction` parameter. It hides even when the navigation bar is set to stay put.
+- **Device playlists are process-wide** (`PlaylistRepository`). `PlayerViewModel` and `HomeViewModel` each held their own copy, so an add from the player's sheet never reached the Library, and the Library's next write erased it (#362). Writes now run one at a time under a `Mutex`. This is a sixteenth entry for CLAUDE.md invariant 6 under the rule's own test; add it to the list once tested.
+- Editorial player: Previous, Play and Next on one row with the progress line full width (#380); translated Play/Pause that shrinks to fit; covers instead of numbers in its queue (#373).
+- A timestamp link naming another video opens that video rather than seeking the current one (`rememberLinkedText(timestampVideoId)`, threaded through the description, comments and Shorts sheet). The in-app router does not read `t=`, so it opens from the start or the resume point.
+- Captions no longer cost a second `/player`: `VideoLoader.streamsSettled` publishes the video whose stream phase finished, and an automatic caption load waits on it (10 s cap) before asking `ANDROID_VR`. This is the first Known defect below; move it to Shipped once `YTRequests` confirms it on a phone.
+- "Open the keyboard on Search" under Customization, Home and navigation (`HomeNavigationCustomization.searchOpensKeyboard`, default on) (#373).
+- The Japanese picture-in-picture settings strings no longer promise ten seconds. The action labels themselves already followed the skip distance (`vp_seek_back`/`vp_seek_forward`).
+
 ### Pick up next
 
-- Finish the floating top bar for music and video Home. It should hide on downward scroll and return on the first upward scroll, with profile and Settings reachable over artwork in light and dark modes. Check both Home layouts, large display size, and the video shell when the Home tab is hidden.
-- Run the device pass. `compileDebugKotlin` passed locally. Check Android 8 startup and local audio, double-disc album order, lyrics at large font sizes in light and dark themes, and video controls in portrait, landscape, and picture-in-picture. In the five-button layout, check reachability on narrow screens. Confirm the notification follows changes to the skip distance.
-- Give the picture-in-picture settings step-neutral labels in every locale. The Japanese strings for the existing option still say “10 seconds” when a different skip distance is selected.
+- Run the device pass. Check Android 8 startup and local audio, double-disc album order, lyrics at large font sizes in light and dark themes, and video controls in portrait, landscape, and picture-in-picture. In the five-button layout, check reachability on narrow screens. Confirm the notification follows changes to the skip distance.
+- Device checks for the branch above: the top bar on both music Homes and video Home, in light and dark, at a large display size, in landscape and on a tablet-width window, plus the video shell when the Home tab is hidden. Also the Editorial row on a narrow phone with a long Play/Pause translation, and adding a song from the player and then from a Library menu to the same device playlist.
+- Two artists on one song open a combined page (#373). `Song` carries one joined `artist` string (`MusicMetadata.artists` joins runs with ", "), and names like "Tyler, The Creator" make splitting it unsafe. The fix is to carry each run's name and browse id on `Song` and offer a chooser.
+- Video plays fail with `MediaCodecVideoRenderer` on some devices (#368). Renderer errors re-prepare the same format; there is no fallback to another codec, and `VideoStreamResolver` collapses codec alternatives per label. A log from the reporter would show which codec.
+- Songs and videos do not start after loading (#366, P0): no log yet, so ask for the in-app bug report.
 
 ---
 
@@ -51,7 +63,6 @@ Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor a
 ## Known defects
 
 - **With captions on, each video still makes one extra `/player`.** `ensureCaptionsLoaded` runs in parallel with stream resolution, so `getCaptionTracks` finds the caption cache empty and asks `ANDROID_VR` (plus a `timedtext`) for tracks the visionOS response is about to deliver. Seen in `YTRequests`, September 2026. Fix by loading tracks after the stream phase or awaiting the in-flight resolution.
-- **Classic, Morph and Gesture draw a flat background for device songs.** `ChromaticMistBackground` answers a null model with a flat rectangle, and every caller passes `highResThumbnailUrl`, which is null for local files (their art is a content URI).
 - **Video watch history does not reach YouTube for some users ([#287](https://github.com/Ivorisnoob/Koda/issues/287)).** Not reproduced: Koda's exact ping sequence reached FEhistory at 10 s when probed (September 2026), so the failure is device-side; the `Video history:` log lines from `3b38e44` in a current-beta bug report will say which way.
 - **`MusicServiceBrowserTest` "root fits car tabs" failed on the JVM, and was removed until fixed (September 2026).** `AutoArtwork.uriFor` chains `Uri.Builder`, which `isReturnDefaultValues` stubs to null. Present since `8d2d942`, unnoticed because CI does not run unit tests. Restore it with the Uri chain mocked (or the artwork URI built behind a seam), so the Auto root's four-tab layout is checked again.
 - **A timestamp link to a different video seeks the one playing.** `RichLinkTarget.Timestamp` carries a `videoId`, but every `onTimestampClick` seeks the current player without comparing it.
