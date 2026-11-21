@@ -851,24 +851,40 @@ private fun CalendarCard(s: RecapStoryScope) {
         }
 
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            val pitch = min(maxWidth.value / columns, 34f)
+            // The date, the window, the marks and the grid are one group,
+            // centred in the room whatever the period: a year's grid is a thin
+            // strip and a month's a tall block, and anchoring either to an edge
+            // left a hole in the middle. The stitches grow to fill a month's
+            // few columns rather than sitting small in one corner.
+            val labelHeight = 30.dp
+            val marksHeight = 22.dp
+            val gap = 14.dp
+            val pitch = minOf(maxWidth.value / columns, 46f, maxHeight.value * 0.42f / 7f)
             val gridWidth = (pitch * columns).dp
             val gridHeight = (pitch * 7).dp
-            val windowSide = min(maxWidth.value * 0.3f, (maxHeight - gridHeight).value * 0.6f).coerceAtLeast(40f).dp
-            val gridTop = maxHeight - gridHeight - 8.dp
+            val gridLeft = (maxWidth - gridWidth) / 2
+            val windowSide = min(
+                maxWidth.value * 0.42f,
+                (maxHeight - gridHeight - labelHeight - marksHeight - gap * 2).value * 0.85f,
+            ).coerceAtLeast(40f).dp
+            val groupHeight = labelHeight + windowSide + gap + marksHeight + gridHeight
+            val top = ((maxHeight - groupHeight) / 2).coerceAtLeast(0.dp)
+            val windowTop = top + labelHeight
+            val marksTop = windowTop + windowSide + gap
+            val gridTop = marksTop + marksHeight
             val density = LocalDensity.current
-            val colX = { day: Int -> ((day / 7) + 0.5f) * pitch }
+            val colX = { day: Int -> gridLeft.value + ((day / 7) + 0.5f) * pitch }
             // The day above the finger, and the window over it.
             val windowX = colX(shownDay.coerceAtLeast(0)).dp.coerceIn(windowSide / 2, maxWidth - windowSide / 2)
-            val windowTop = gridTop - windowSide - 44.dp
             Text(
                 dayText(context, days[shownDay.coerceAtLeast(0)].date, weekday = true, abbreviated = true),
                 style = RecapType.body,
                 modifier = Modifier
-                    .offset(x = (windowX - 80.dp).coerceAtLeast(0.dp), y = windowTop - 30.dp)
-                    .width(160.dp)
+                    .offset(x = (windowX - 90.dp).coerceIn(0.dp, (maxWidth - 180.dp).coerceAtLeast(0.dp)), y = top)
+                    .width(180.dp)
                     .graphicsLayer { alpha = springAt(s.clock() - 2.6f, 0.3f) },
                 textAlign = TextAlign.Center,
+                maxLines = 1,
             )
             Box(
                 Modifier
@@ -893,17 +909,22 @@ private fun CalendarCard(s: RecapStoryScope) {
                     when (kind) {
                         RecapKind.YEAR -> d.date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())
                         RecapKind.ALL_TIME -> d.date.year.toString()
-                        else -> dayText(context, d.date, abbreviated = true)
+                        // A month's weeks by the day they start, as a calendar
+                        // does: a whole date per column ran into the next one.
+                        RecapKind.MONTH -> d.date.dayOfMonth.toString()
+                        RecapKind.WEEK -> dayText(context, d.date, abbreviated = true)
                     },
                     style = RecapType.small.copy(fontSize = 11.sp),
                     color = quiet,
                     maxLines = 1,
-                    modifier = Modifier.offset(x = ((d.index / 7) * pitch).dp, y = gridTop - 18.dp).rise(s.clock, 0.8f),
+                    modifier = Modifier
+                        .offset(x = gridLeft + ((d.index / 7) * pitch).dp, y = marksTop + 2.dp)
+                        .rise(s.clock, 0.8f),
                 )
             }
             Canvas(
                 Modifier
-                    .offset(y = gridTop)
+                    .offset(x = gridLeft, y = gridTop)
                     .size(gridWidth, gridHeight)
                     .pointerInput(columns) {
                         detectDragGestures(
