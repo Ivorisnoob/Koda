@@ -32,7 +32,7 @@ Merged into `beta` and listed under [Shipped](#shipped), November 2026; awaiting
 
 ## Where Koda is today
 
-Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor at Android 11 (API 30). All Compose, all inside one `MaterialExpressiveTheme`.
+Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor at Android 8.0 (API 26). All Compose, all inside one `MaterialExpressiveTheme`.
 
 - **Two modes, one app.** A toggle reshapes Home, Search and Library between a music player and a video client, sharing the tab system, overlays and theme.
 - **Two playback pipelines.** Music through `MusicService` (Media3 `MediaLibraryService`, crossfade/AutoMix, Android Auto); video through its own `ExoPlayer` with DASH/HLS, PiP, chapters, captions, SponsorBlock and live. Both fetch through bounded ranged requests.
@@ -49,7 +49,7 @@ Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor a
 - **No official API keys, ever.** Parsers are probe-first, dated, and fail into an empty result rather than a crash.
 - **Signed out is first-class.** Roughly half the users never sign in; an account-only feature needs a device-local answer or says plainly that it is account-only.
 - **Material 3 Expressive is structural.** An alternate design language is a rewrite; specific radius/animation complaints are ordinary work.
-- **minSdk 30 and desugaring are load-bearing.** Anything above API 30 needs an `SDK_INT` guard and a working fallback.
+- **minSdk 26 and desugaring are load-bearing.** Anything above API 26 needs an `SDK_INT` guard and a working fallback.
 - **Frugal on network per user action.** New features parse from responses already fetched before earning a request of their own.
 
 ---
@@ -134,6 +134,7 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 
 ### November 2026
 
+- Recap: any week, month, year or all time told as a story on the device - top song, the overtake, regulars, who came round when, the hours, a song that came back, the calendar, the long sitting, a newcomer, the odd hour - ending on a pressing drawn from the plays, shared as three designs in Story, Feed or Square; opened from Stats and the profile (`data/recap/`, `ui/recap/`, `docs/recap.md`). Under it, the listening history keeps every play (the 5,000 cap is gone), records how long each was heard, and is written by the service, so plays with the app closed count; video history keeps 1,000.
 - Downloaded playlists are listed first in the Library and on both Homes when offline (they were missing from the Playlists tab without a connection), and Spotlight Home leads with Ready offline songs as Classic does.
 - Editorial's original two-row transport is back by default, with a setting (and wide screens) for Previous, Play and Next on one row; in video mode the video mini player has Home to itself, and the paused music mini player comes back in music mode.
 - Members-only and paid videos are badged, with a switch to hide them (#379); music Home has a speed dial of the most played songs, and its sections and the Library's tabs can each be switched off (#373).
