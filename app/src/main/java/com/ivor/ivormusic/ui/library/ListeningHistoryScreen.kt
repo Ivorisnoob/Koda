@@ -568,7 +568,8 @@ private fun buildHistoryDays(
                 epochDay = epochDay,
                 runs = runs,
                 plays = entries.size,
-                listenedMs = entries.sumOf { it.duration }
+                // Measured time where it was measured, the song's length before.
+                listenedMs = entries.sumOf { it.heardMs }
             )
         }
 }

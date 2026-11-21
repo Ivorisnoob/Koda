@@ -322,7 +322,8 @@ class BackupRepository(context: Context) {
                     scoped(VideoHistoryRepository.KEY_RESUME_POSITIONS, profile.id),
                     null
                 ),
-                playHistory = readText(StatsRepository.historyFileFor(appContext, profile.id)),
+                // As the array every build reads, not the on-device line format.
+                playHistory = StatsRepository.exportForBackup(StatsRepository.historyFileFor(appContext, profile.id)),
                 likedSongIds = liked.getStringSet(
                     LikedSongsRepository.idsKeyFor(appContext, profile.id),
                     null
