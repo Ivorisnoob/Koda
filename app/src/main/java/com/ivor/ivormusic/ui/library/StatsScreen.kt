@@ -146,6 +146,11 @@ fun StatsScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // ===== The way into Recap: the same numbers, told as a story =====
+            item {
+                com.ivor.ivormusic.ui.recap.RecapEntryCard()
+            }
+
             // ===== HERO: total listening time =====
             item {
                 Surface(

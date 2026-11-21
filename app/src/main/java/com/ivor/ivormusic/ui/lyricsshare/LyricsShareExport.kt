@@ -38,9 +38,12 @@ internal object LyricsShareExport {
         return if (source.config == Bitmap.Config.HARDWARE) source.copy(Bitmap.Config.ARGB_8888, false) else source
     }
 
-    private fun fileName(song: Song): String {
-        val base = "${song.artist} ${song.title}".replace(Regex("[^\\p{L}\\p{N}]+"), "-").trim('-').take(60)
-        return "Koda-lyrics-${base.ifEmpty { "card" }}-${System.currentTimeMillis()}.png"
+    private fun fileName(song: Song): String = fileName("lyrics", "${song.artist} ${song.title}")
+
+    /** "Koda-<kind>-<what>-<time>.png", with only letters and digits from [what]. */
+    private fun fileName(kind: String, what: String): String {
+        val base = what.replace(Regex("[^\\p{L}\\p{N}]+"), "-").trim('-').take(60)
+        return "Koda-$kind-${base.ifEmpty { "card" }}-${System.currentTimeMillis()}.png"
     }
 
     private fun write(bitmap: ImageBitmap, out: OutputStream) {
@@ -48,14 +51,24 @@ internal object LyricsShareExport {
     }
 
     /** Opens the system share sheet with the card. False when the image could not be written. */
-    suspend fun share(context: Context, bitmap: ImageBitmap, song: Song): Boolean {
+    suspend fun share(context: Context, bitmap: ImageBitmap, song: Song): Boolean =
+        shareImage(context, bitmap, fileName(song), context.getString(R.string.lyrics_share_title))
+
+    /**
+     * Any card Koda makes, to the system share sheet: Recap's images go
+     * through here too. False when the image could not be written.
+     */
+    suspend fun shareImage(context: Context, bitmap: ImageBitmap, kind: String, what: String, chooserTitle: String): Boolean =
+        shareImage(context, bitmap, fileName(kind, what), chooserTitle)
+
+    private suspend fun shareImage(context: Context, bitmap: ImageBitmap, name: String, chooserTitle: String): Boolean {
         val uri = withContext(Dispatchers.IO) {
             try {
                 val dir = File(context.cacheDir, SHARE_DIR).apply { mkdirs() }
                 // Only the newest card is kept: each share is a fresh file, so a
                 // receiving app never reads a stale image under a reused name.
                 dir.listFiles()?.forEach { it.delete() }
-                val file = File(dir, fileName(song))
+                val file = File(dir, name)
                 write(bitmap, file.outputStream())
                 FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -73,7 +86,7 @@ internal object LyricsShareExport {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(
-            Intent.createChooser(send, context.getString(R.string.lyrics_share_title))
+            Intent.createChooser(send, chooserTitle)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         )
         return true
@@ -87,13 +100,20 @@ internal object LyricsShareExport {
      * (no permission from API 19) and is handed to the media scanner so
      * gallery apps list it.
      */
-    suspend fun save(context: Context, bitmap: ImageBitmap, song: Song): Boolean = withContext(Dispatchers.IO) {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return@withContext saveLegacy(context, bitmap, song)
+    suspend fun save(context: Context, bitmap: ImageBitmap, song: Song): Boolean =
+        saveImage(context, bitmap, fileName(song))
+
+    /** Any card Koda makes, to Pictures/Koda; see [save]. */
+    suspend fun saveImage(context: Context, bitmap: ImageBitmap, kind: String, what: String): Boolean =
+        saveImage(context, bitmap, fileName(kind, what))
+
+    private suspend fun saveImage(context: Context, bitmap: ImageBitmap, name: String): Boolean = withContext(Dispatchers.IO) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return@withContext saveLegacy(context, bitmap, name)
         val resolver = context.contentResolver
         var uri: Uri? = null
         try {
             val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, fileName(song))
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                 put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Koda")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -113,9 +133,9 @@ internal object LyricsShareExport {
         }
     }
 
-    private fun saveLegacy(context: Context, bitmap: ImageBitmap, song: Song): Boolean {
+    private fun saveLegacy(context: Context, bitmap: ImageBitmap, name: String): Boolean {
         val directory = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return false
-        val file = File(directory, fileName(song))
+        val file = File(directory, name)
         return try {
             directory.mkdirs()
             write(bitmap, file.outputStream())

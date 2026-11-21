@@ -290,6 +290,10 @@ fun KodaProfileScreen(
                 }
             }
 
+            item(key = "recap") {
+                com.ivor.ivormusic.ui.recap.RecapEntryCard(Modifier.padding(horizontal = 16.dp))
+            }
+
             val topArtists = listening.stats.topArtists.filterNot { isUnknownArtist(it.name) }.take(8)
             if (topArtists.isNotEmpty()) {
                 item(key = "artists") {

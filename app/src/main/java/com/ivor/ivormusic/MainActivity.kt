@@ -964,6 +964,13 @@ fun MusicApp(
         PlayerViewModel(context.applicationContext)
     }
     val homeViewModel: HomeViewModel = viewModel()
+    // Recap's shelf is a route and its story an overlay above everything;
+    // both read this one view model. Any screen opens the shelf through
+    // LocalRecapLauncher, provided around the NavHost below.
+    val recapViewModel: com.ivor.ivormusic.ui.recap.RecapViewModel = viewModel()
+    val openRecap: () -> Unit = remember(navController) {
+        { navController.navigate("recap") { launchSingleTop = true } }
+    }
 
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
@@ -1381,6 +1388,9 @@ fun MusicApp(
         return
     }
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.ivor.ivormusic.ui.recap.LocalRecapLauncher provides openRecap
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1852,6 +1862,18 @@ fun MusicApp(
                 )
             }
             composable(
+                route = "recap",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.recap.RecapShelfScreen(
+                    viewModel = recapViewModel,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(
                 route = "taste",
                 enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
                 exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
@@ -1956,6 +1978,12 @@ fun MusicApp(
         // Opened from the player's menu or a lyric line in any player style,
         // and drawn the same whichever one it came from.
         com.ivor.ivormusic.ui.lyricsshare.LyricsShareOverlay(viewModel = playerViewModel)
+        // A recap's story owns the window while it is open, as Standby does.
+        com.ivor.ivormusic.ui.recap.RecapStoryOverlay(
+            viewModel = recapViewModel,
+            localSongs = homeViewModel.songs.collectAsState().value,
+            onPlay = { songs, song -> playerViewModel.playQueue(songs, song) }
+        )
 
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the
@@ -2039,6 +2067,7 @@ fun MusicApp(
                 budgetMinutes = budgetMinutes
             )
         }
+    }
     }
 }
 

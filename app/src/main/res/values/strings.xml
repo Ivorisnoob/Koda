@@ -2649,4 +2649,168 @@
     <string name="offline_playlist_owner">Downloaded</string>
     <string name="sp_editorial_one_row">Previous, Play and Next on one row</string>
     <string name="sp_editorial_one_row_sub">Editorial player. When off, Previous sits beside the progress line unless the screen is wide</string>
+
+    <!-- Recap: the shelf, the story and its share images. -->
+    <string name="recap_title">Recap</string>
+    <string name="recap_close">Close</string>
+    <string name="recap_entry_title">Recap</string>
+    <string name="recap_entry_body">Your listening, told as a story. Any week, month or year.</string>
+    <string name="recap_kind_week">Week</string>
+    <string name="recap_kind_month">Month</string>
+    <string name="recap_kind_year">Year</string>
+    <string name="recap_kind_all">All time</string>
+    <string name="recap_open">Open</string>
+    <string name="recap_test_pressing">Test pressing</string>
+    <string name="recap_pressing">Pressing</string>
+    <string name="recap_shelf_earlier">Earlier</string>
+    <string name="recap_shelf_empty_title">Your recap fills in as you listen</string>
+    <string name="recap_shelf_empty_body">Every song you play is counted on this phone and nowhere else. Come back after a few days of listening.</string>
+    <string name="recap_shelf_history_off">Listening history is off in Settings, so new plays are not being kept.</string>
+    <string name="recap_shelf_private">Made on this phone from your own listening. Nothing leaves it unless you share it.</string>
+    <plurals name="recap_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="recap_on_days">
+        <item quantity="one">on %d day</item>
+        <item quantity="other">on %d days</item>
+    </plurals>
+    <plurals name="recap_plays">
+        <item quantity="one">%1$s play</item>
+        <item quantity="other">%1$s plays</item>
+    </plurals>
+    <plurals name="recap_plays_count">
+        <item quantity="one">%d play</item>
+        <item quantity="other">%d plays</item>
+    </plurals>
+    <plurals name="recap_songs">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <plurals name="recap_artists">
+        <item quantity="one">%d artist</item>
+        <item quantity="other">%d artists</item>
+    </plurals>
+    <plurals name="recap_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="recap_nights">
+        <item quantity="one">%d night</item>
+        <item quantity="other">%d nights</item>
+    </plurals>
+    <string name="recap_duration_hm">%1$d h %2$d min</string>
+    <string name="recap_duration_m">%1$d min</string>
+    <string name="recap_midnight">midnight</string>
+    <string name="recap_noon">noon</string>
+    <string name="recap_door_so_far">so far.</string>
+    <plurals name="recap_door_days">
+        <item quantity="one">You came in on %d day.</item>
+        <item quantity="other">You came in on %d days.</item>
+    </plurals>
+    <string name="recap_heard_line">%1$s · %2$s listened</string>
+    <string name="recap_heard_line_about">%1$s · about %2$s listened</string>
+    <string name="recap_song_line1">You came back to this</string>
+    <string name="recap_song_on">on %1$s.</string>
+    <string name="recap_play">Play</string>
+    <string name="recap_play_artist">Play their songs</string>
+    <string name="recap_play_top">Play your top songs</string>
+    <string name="recap_proof_open">The plays behind this</string>
+    <plurals name="recap_proof_title">
+        <item quantity="one">%1$d play of %2$s</item>
+        <item quantity="other">%1$d plays of %2$s</item>
+    </plurals>
+    <string name="recap_proof_sub">Newest first, straight from this phone.</string>
+    <string name="recap_proof_of">%1$s of %2$s</string>
+    <string name="recap_proof_unmeasured">before time was measured</string>
+    <string name="recap_race_on">On %1$s,</string>
+    <string name="recap_race_passed">%1$s passed %2$s.</string>
+    <string name="recap_race_kept">It never gave the lead back.</string>
+    <string name="recap_artist_half">Half of everything you played.</string>
+    <string name="recap_artist_third">A third of everything you played.</string>
+    <string name="recap_artist_quarter">A quarter of everything you played.</string>
+    <string name="recap_artist_fifth">A fifth of everything you played.</string>
+    <string name="recap_artist_percent">%1$d%% of everything you played.</string>
+    <string name="recap_regulars_title">Your regulars.</string>
+    <string name="recap_regulars_sub">%1$s, %2$s of your %3$s plays.</string>
+    <string name="recap_regulars_by">%1$s, by %2$s.</string>
+    <string name="recap_regulars_tied">%1$s and %2$s, tied.</string>
+    <string name="recap_regulars_week_one">%1$s never missed a week.</string>
+    <string name="recap_regulars_week_all">All of them, every single week.</string>
+    <plurals name="recap_regulars_week_some">
+        <item quantity="one">%d of them never missed a week.</item>
+        <item quantity="other">%d of them never missed a week.</item>
+    </plurals>
+    <string name="recap_ridge_morning">Mornings were %1$s.</string>
+    <string name="recap_ridge_afternoon">Afternoons were %1$s.</string>
+    <string name="recap_ridge_evening">Evenings were %1$s.</string>
+    <string name="recap_ridge_night">Nights were %1$s.</string>
+    <string name="recap_ridge_same">So were %1$s.</string>
+    <string name="recap_ridge_sub">When each of them came round, midnight to midnight.</string>
+    <string name="recap_hours_line1">Most of this lived</string>
+    <string name="recap_hours_line2">between %1$s and %2$s.</string>
+    <string name="recap_hours_mostly">Mostly %1$s.</string>
+    <string name="recap_back_title">You left %1$s.</string>
+    <plurals name="recap_back_week">
+        <item quantity="one">Then played it %d time in a week.</item>
+        <item quantity="other">Then played it %d times in a week.</item>
+    </plurals>
+    <string name="recap_calendar_was">%1$s was %2$s.</string>
+    <string name="recap_calendar_went_out">Then the light went out.</string>
+    <string name="recap_calendar_first_week">the first week</string>
+    <string name="recap_calendar_last_week">the last week</string>
+    <string name="recap_calendar_plain">One stitch a day.</string>
+    <string name="recap_calendar_hint">One stitch a day, in the colour of what you played most. Drag along it.</string>
+    <string name="recap_sitting_when">%1$s, %2$s.</string>
+    <plurals name="recap_sitting_line">
+        <item quantity="one">%1$d song. %2$s. You didn\'t leave.</item>
+        <item quantity="other">%1$d songs. %2$s. You didn\'t leave.</item>
+    </plurals>
+    <string name="recap_new_first">First played %1$s.</string>
+    <plurals name="recap_new_days">
+        <item quantity="one">Then on %d day.</item>
+        <item quantity="other">Then on %d days.</item>
+    </plurals>
+    <string name="recap_odd_at">Once, at %1$s,</string>
+    <string name="recap_odd_this">this.</string>
+    <string name="recap_key_rings">Every ring is a day, the first at the centre.</string>
+    <string name="recap_key_time">Around it, the time of day; midnight at the top.</string>
+    <string name="recap_key_colour">Colour is the cover.</string>
+    <string name="recap_key_length">Length is how long you listened.</string>
+    <string name="recap_note_in">in %1$s</string>
+    <string name="recap_note_on">on %1$s</string>
+    <string name="recap_note_by">by %1$s</string>
+    <string name="recap_note">%1$s the light was mostly %2$s. %3$s it was %4$s, and you kept %5$s in the room on %6$s.</string>
+    <string name="recap_note_same">%1$s the light was %2$s, and it stayed that way. You kept %3$s in the room on %4$s.</string>
+    <string name="recap_note_colours">%1$s the light was mostly %2$s. %3$s it was %4$s.</string>
+    <string name="recap_note_colour_same">%1$s the light was %2$s, and it stayed that way.</string>
+    <string name="recap_colour_black">nearly black</string>
+    <string name="recap_colour_smoke">smoke grey</string>
+    <string name="recap_colour_paper">paper white</string>
+    <string name="recap_colour_sky">sky blue</string>
+    <string name="recap_colour_deep_blue">deep blue</string>
+    <string name="recap_colour_sea">sea green</string>
+    <string name="recap_colour_meadow">meadow green</string>
+    <string name="recap_colour_lamp">lamp yellow</string>
+    <string name="recap_colour_terracotta">terracotta</string>
+    <string name="recap_colour_peach">peach</string>
+    <string name="recap_colour_cherry">cherry red</string>
+    <string name="recap_colour_lilac">lilac</string>
+    <string name="recap_share">Share</string>
+    <string name="recap_share_title">Share your recap</string>
+    <string name="recap_share_chooser">Share recap</string>
+    <string name="recap_share_design_pressing">Pressing</string>
+    <string name="recap_share_design_songs">Top songs</string>
+    <string name="recap_share_design_artists">Top artists</string>
+    <string name="recap_share_head_pressing">The pressing</string>
+    <string name="recap_share_head_songs">Top songs</string>
+    <string name="recap_share_head_artists">Top artists</string>
+    <string name="recap_share_story">Story</string>
+    <string name="recap_share_feed">Feed</string>
+    <string name="recap_share_square">Square</string>
+    <string name="recap_share_numbers">Show numbers</string>
+    <string name="recap_share_save">Save</string>
+    <string name="recap_share_saved">Saved</string>
+    <string name="recap_share_failed">Couldn\'t make the image. Try again.</string>
+    <string name="recap_share_footer">KODA RECAP</string>
 </resources>
