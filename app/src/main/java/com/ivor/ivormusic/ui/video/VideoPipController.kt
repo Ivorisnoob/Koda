@@ -66,12 +66,16 @@ fun VideoPipController(
         com.ivor.ivormusic.data.ThemePreferences(context)
     }
     val pipButtons by themePreferences.pipButtons.collectAsState()
+    val videoControls by themePreferences.videoGestures.collectAsState()
+    val previousRestarts by viewModel.previousRestartsVideo.collectAsState()
     val transport = pipTransport(
         queue = queue,
         hasRelated = relatedVideos.isNotEmpty(),
         isLive = isLive,
-        seekOnly = pipButtons == com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_SEEK
+        seekOnly = pipButtons == com.ivor.ivormusic.data.ThemePreferences.PIP_BUTTONS_SEEK,
+        previousRestarts = previousRestarts,
     )
+    val seekSeconds = videoControls.skipSeconds
 
     val packageName = context.packageName
 
@@ -85,11 +89,19 @@ fun VideoPipController(
                     "$packageName.$ACTION_PLAY" -> viewModel.playFromExternal()
                     "$packageName.$ACTION_PAUSE" -> viewModel.pause()
                     "$packageName.$ACTION_REWIND" ->
-                        viewModel.seekBy(-VideoPlayerViewModel.SEEK_STEP_MS)
+                        viewModel.seekBy(
+                            -com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(
+                                viewModel.getApplication()
+                            )
+                        )
                     "$packageName.$ACTION_FORWARD" ->
-                        viewModel.seekBy(VideoPlayerViewModel.SEEK_STEP_MS)
+                        viewModel.seekBy(
+                            com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(
+                                viewModel.getApplication()
+                            )
+                        )
                     "$packageName.$ACTION_NEXT" -> viewModel.playNextOrRelated()
-                    "$packageName.$ACTION_PREVIOUS" -> viewModel.playPreviousInQueue()
+                    "$packageName.$ACTION_PREVIOUS" -> viewModel.playPreviousOrRestart()
                 }
             }
         }
@@ -125,6 +137,7 @@ fun VideoPipController(
         videoAspectRatio,
         videoBounds,
         transport,
+        seekSeconds,
         suspended
     ) {
         if (suspended) return@LaunchedEffect
@@ -142,7 +155,9 @@ fun VideoPipController(
             builder.setActions(emptyList<RemoteAction>())
         } else {
             builder.setAspectRatio(pipAspectRatio(videoAspectRatio))
-            builder.setActions(pipActions(activity, packageName, isPlaying, transport))
+            builder.setActions(
+                pipActions(activity, packageName, isPlaying, transport, seekSeconds)
+            )
 
             // Animate the PiP window out of the video rather than out of the
             // whole activity window. Without a source rect the system scales
@@ -177,29 +192,38 @@ fun VideoPipController(
 
 /** Which three-button row the PiP window shows around play/pause. */
 internal sealed interface PipTransport {
-    /** In a playlist: previous and next video, disabled at either end. */
+    /** In a playlist: previous and next video, disabled when there is nowhere to go. */
     data class Playlist(val hasPrevious: Boolean, val hasNext: Boolean) : PipTransport
-    /** A lone video with something related lined up: back 10s, and next. */
+    /** A lone video with something related lined up: skip back, and next. */
     data object Related : PipTransport
-    /** Nothing to move to: back and forward 10s. */
+    /** Nothing to move to: skip back and forward. */
     data object Seek : PipTransport
 }
 
 /**
  * One rule for both the published params and an explicit PiP entry.
  *
- * [seekOnly] is the "Skip 10s" choice in Settings (feedback, September 2026):
+ * [seekOnly] is the "Skip" choice in Settings (feedback, September 2026):
  * some viewers use the window to rewatch and skip within one video and never
  * to move on, and for them a Next button is one mis-tap from losing the video.
+ *
+ * [previousRestarts] is the playhead being far enough in that Previous
+ * restarts this video instead of leaving it. It is a boolean that flips at
+ * that boundary, not the position itself, so the window is not republished
+ * on every tick.
  */
 internal fun pipTransport(
     queue: com.ivor.ivormusic.data.VideoQueue?,
     hasRelated: Boolean,
     isLive: Boolean,
     seekOnly: Boolean,
+    previousRestarts: Boolean = false,
 ): PipTransport = when {
     seekOnly -> PipTransport.Seek
-    queue != null -> PipTransport.Playlist(hasPrevious = queue.hasPrevious, hasNext = queue.hasNext)
+    queue != null -> PipTransport.Playlist(
+        hasPrevious = queue.hasPrevious || (!isLive && previousRestarts),
+        hasNext = queue.hasNext || (!isLive && hasRelated),
+    )
     hasRelated && !isLive -> PipTransport.Related
     else -> PipTransport.Seek
 }
@@ -214,7 +238,8 @@ internal fun VideoPlayerViewModel.currentPipTransport(): PipTransport =
         queue = queue.value,
         hasRelated = relatedVideos.value.isNotEmpty(),
         isLive = isLive.value,
-        seekOnly = com.ivor.ivormusic.data.ThemePreferences.pipButtonsSeekOnly(getApplication())
+        seekOnly = com.ivor.ivormusic.data.ThemePreferences.pipButtonsSeekOnly(getApplication()),
+        previousRestarts = previousRestartsVideo.value,
     )
 
 /**
@@ -244,7 +269,8 @@ internal fun pipActions(
     activity: androidx.activity.ComponentActivity,
     packageName: String,
     isPlaying: Boolean,
-    transport: PipTransport = PipTransport.Seek
+    transport: PipTransport = PipTransport.Seek,
+    skipSeconds: Int = 10,
 ): List<RemoteAction> {
     val playPause = if (isPlaying) {
         remoteAction(
@@ -258,9 +284,20 @@ internal fun pipActions(
         )
     }
 
+    val rewindLabel = if (skipSeconds == 10) {
+        activity.getString(R.string.pip_back_10)
+    } else {
+        activity.getString(R.string.vp_seek_back, skipSeconds)
+    }
+    val forwardLabel = if (skipSeconds == 10) {
+        activity.getString(R.string.pip_forward_10)
+    } else {
+        activity.getString(R.string.vp_seek_forward, skipSeconds)
+    }
     val rewind = remoteAction(
         activity, packageName, ACTION_REWIND,
-        R.drawable.ic_media_replay_10, activity.getString(R.string.pip_back_10)
+        com.ivor.ivormusic.service.videoSeekIconRes(skipSeconds, forward = false),
+        rewindLabel
     )
     val next = { enabled: Boolean ->
         remoteAction(
@@ -283,7 +320,8 @@ internal fun pipActions(
             playPause,
             remoteAction(
                 activity, packageName, ACTION_FORWARD,
-                R.drawable.ic_media_forward_10, activity.getString(R.string.pip_forward_10)
+                com.ivor.ivormusic.service.videoSeekIconRes(skipSeconds, forward = true),
+                forwardLabel
             )
         )
     }

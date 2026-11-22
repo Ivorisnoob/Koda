@@ -41,6 +41,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -143,7 +148,15 @@ class MainActivity : ComponentActivity() {
     private var appTimeTicker: kotlinx.coroutines.Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
+        // No exit-animation listener, on purpose [scar]. Setting one asks the
+        // system to hand the splash view over to the app, and on Android 12
+        // and 13 that hand-over (ActivityThread.syncTransferSplashscreenView-
+        // Transaction) dereferences the starting window's surface without
+        // checking it: when the window is already gone - a slow start on a
+        // low-memory phone - the app dies on its first frame with a
+        // NullPointerException nothing in Koda can catch. Left alone, the
+        // system removes the splash itself and that code never runs.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         // A fresh launch from the launcher opens in the mode the user chose in
@@ -161,9 +174,6 @@ class MainActivity : ComponentActivity() {
         // Off the main thread: publishing is a binder call into the launcher.
         Thread { com.ivor.ivormusic.util.ModeShortcuts.publish(applicationContext) }.start()
 
-        // Remove splash instantly when ready — the AVD entrance animation is the show
-        splashScreen.setOnExitAnimationListener { it.remove() }
-
         // Large screens follow the device; phones stay portrait unless
         // Settings, Appearance, "Rotate with device" is on (AppOrientation).
         // The video watch page still holds portrait while it is open and
@@ -177,9 +187,17 @@ class MainActivity : ComponentActivity() {
         // letterbox the rest of the app for the remainder of the session.
         // Controls still handle status/navigation bars independently; only
         // the notch-specific exclusion is deliberately ignored.
-        window.attributes = window.attributes.also {
-            it.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        // The field is API 28 and ALWAYS is API 30; 28-29 get SHORT_EDGES,
+        // which covers the notch in portrait and landscape alike.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.also {
+                it.layoutInDisplayCutoutMode =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    } else {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+            }
         }
 
         setContent {
@@ -309,6 +327,12 @@ class MainActivity : ComponentActivity() {
                 // a playlist page there tints its accents as it did before.
                 artworkWholeApp = albumThemeWholeApp && !videoMode
             ) {
+                // One holder for every song and video row. MusicApp writes it
+                // in place; the instance never changes, so a new song does not
+                // invalidate lists that only derive a boolean per row.
+                val nowPlayingState = androidx.compose.runtime.remember {
+                    com.ivor.ivormusic.ui.components.NowPlayingState()
+                }
                 val videoListLayout by themeViewModel.videoListLayout.collectAsState()
                 // Every link Koda draws goes through LocalUriHandler, so this
                 // is the one place a YouTube URL is kept in the app rather than
@@ -329,11 +353,32 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                // Off, every page keeps clear of the camera cutout at its sides.
+                // On, the cutout is consumed here, above all of them, so the
+                // padding they already apply for it comes to nothing and the
+                // rail, the pages and the players run beside it. Sides only:
+                // upright the cutout is under the status bar, which pages
+                // must stay clear of whatever this says.
+                val drawBesideCutout by themeViewModel.drawBesideCutout.collectAsState()
                 androidx.compose.runtime.CompositionLocalProvider(
                     com.ivor.ivormusic.ui.video.LocalVideoListLayout provides videoListLayout,
-                    androidx.compose.ui.platform.LocalUriHandler provides inAppUriHandler
+                    androidx.compose.ui.platform.LocalUriHandler provides inAppUriHandler,
+                    com.ivor.ivormusic.ui.theme.LocalDrawBesideCutout provides drawBesideCutout,
+                    com.ivor.ivormusic.ui.components.LocalNowPlaying provides nowPlayingState
                 ) {
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (drawBesideCutout) {
+                                Modifier.consumeWindowInsets(
+                                    WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
+                                )
+                            } else {
+                                Modifier
+                            }
+                        )
+                ) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
                         pendingExternalVideo = pendingExternalVideo,
@@ -919,6 +964,13 @@ fun MusicApp(
         PlayerViewModel(context.applicationContext)
     }
     val homeViewModel: HomeViewModel = viewModel()
+    // Recap's shelf is a route and its story an overlay above everything;
+    // both read this one view model. Any screen opens the shelf through
+    // LocalRecapLauncher, provided around the NavHost below.
+    val recapViewModel: com.ivor.ivormusic.ui.recap.RecapViewModel = viewModel()
+    val openRecap: () -> Unit = remember(navController) {
+        { navController.navigate("recap") { launchSingleTop = true } }
+    }
 
     val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
     val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
@@ -1175,7 +1227,24 @@ fun MusicApp(
     val overlayVideo by videoPlayerViewModel.currentVideo.collectAsState()
     val isVideoOverlayExpanded by videoPlayerViewModel.isExpanded.collectAsState()
     val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
-    val musicPillVisible = playerViewModel.currentSong.collectAsState().value != null
+    val playingSong by playerViewModel.currentSong.collectAsState()
+    val musicPlayWhenReady by playerViewModel.playWhenReady.collectAsState()
+    // The same rule HomeScreen draws by, or the video bar would stack over an
+    // empty slot where a parked pill used to be.
+    val musicPillVisible = playingSong != null && !com.ivor.ivormusic.ui.player.isMusicMiniParked(
+        videoMode = videoMode,
+        hasVideoMiniPlayer = hasVideoMiniPlayer,
+        musicPlayWhenReady = musicPlayWhenReady,
+    )
+    val nowPlayingState = com.ivor.ivormusic.ui.components.LocalNowPlaying.current
+    androidx.compose.runtime.SideEffect {
+        nowPlayingState.update(
+            mediaId = playingSong?.id,
+            playing = isMusicPlaying,
+            videoId = overlayVideo?.videoId,
+            videoPlaying = isVideoPlaying,
+        )
+    }
 
     // The floating nav bar and the music pill both live inside HomeScreen, so
     // they exist on the "home" route and nowhere else. The video overlay is
@@ -1319,6 +1388,9 @@ fun MusicApp(
         return
     }
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.ivor.ivormusic.ui.recap.LocalRecapLauncher provides openRecap
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1790,6 +1862,18 @@ fun MusicApp(
                 )
             }
             composable(
+                route = "recap",
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
+            ) {
+                com.ivor.ivormusic.ui.recap.RecapShelfScreen(
+                    viewModel = recapViewModel,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(
                 route = "taste",
                 enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
                 exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
@@ -1894,6 +1978,12 @@ fun MusicApp(
         // Opened from the player's menu or a lyric line in any player style,
         // and drawn the same whichever one it came from.
         com.ivor.ivormusic.ui.lyricsshare.LyricsShareOverlay(viewModel = playerViewModel)
+        // A recap's story owns the window while it is open, as Standby does.
+        com.ivor.ivormusic.ui.recap.RecapStoryOverlay(
+            viewModel = recapViewModel,
+            localSongs = homeViewModel.songs.collectAsState().value,
+            onPlay = { songs, song -> playerViewModel.playQueue(songs, song) }
+        )
 
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the
@@ -1977,6 +2067,7 @@ fun MusicApp(
                 budgetMinutes = budgetMinutes
             )
         }
+    }
     }
 }
 

@@ -4,11 +4,35 @@ The long view: where Koda stands, what is still planned, and the constraints any
 
 **Keep this short and current.** When a planned item lands, it leaves Planned work and gets **one line** under [Shipped](#shipped) in the same change; anything worth carrying to the next problem goes into the area's `docs/` file, not here. A fixed defect leaves [Known defects](#known-defects) the same way. Counts and file names drift; re-derive them.
 
+## Temporary sprint handoff
+
+**For this sprint only. Delete this section when the sprint ends.** Continue from `beta`.
+
+### Completed on this branch
+
+- Android 8 support lowered the floor to API 26 (`863cd0a`). The album ordering fix already on `beta` preserves YouTube's order for multi-disc albums (`68c6c4f`). Audio “Open with” now recognizes more Ogg files, lists Koda as a music app, and guards the headset Play action when there is nothing to resume (`d9a85a9`).
+- **Settings → Customization → Lyrics appearance** has a playable preview and controls for type, alignment, focus, and motion. The shared renderer has instrumental dots and contrast adjustments for light and dark surfaces (`820a735`, `1239c40`). LRCLIB can match tracks across differing album names when title, artist, and duration agree. The probe recovered synced lyrics for five German tracks (`fdce3d7`).
+- Now-playing markers follow the song across Home, Search, Library, and other lists. Queue markers follow the current entry when a song appears twice (`bcfeef1`).
+- **Settings → Customization → Video player → Player controls** adds transport choices, skip distance, time remaining, and shortcut visibility. The skip distance also applies to double-tap, picture-in-picture, and the media notification (`e2a750c`).
+- Discord's Social SDK 1.11 notes showed no Android Rich Presence change that requires a Koda update.
+
+### Completed in the second round
+
+Merged into `beta` and listed under [Shipped](#shipped), November 2026; awaiting device validation. The device checks they need are the second item below.
+
+### Pick up next
+
+- Run the device pass. Check Android 8 startup and local audio, double-disc album order, lyrics at large font sizes in light and dark themes, and video controls in portrait, landscape, and picture-in-picture. In the five-button layout, check reachability on narrow screens. Confirm the notification follows changes to the skip distance.
+- Device checks for the second round: the top bar on both music Homes and video Home, in light and dark, at a large display size, in landscape and on a tablet-width window, plus the video shell when the Home tab is hidden. Also the Editorial row on a narrow phone with a long Play/Pause translation, and adding a song from the player and then from a Library menu to the same device playlist.
+- Fifth-round device checks: a members-only video on a channel page and a film in search, badged and then hidden; the speed dial after a few plays, each Home section switched off on both Homes, and the Library down to Playlists alone. A paid film still opens the player; stopping that tap is not done.
+- Fourth-round device checks: the artist chooser from the player and both menus on a two-artist song, then a song played before this build (no credits); the cover double tap in each style (single tap still plays and pauses, Sticker still likes) and with the switch off; an `.srt` in another encoding; Explore chips on a phone, a tablet and signed in.
+- Third-round device checks: the side panel on a landscape phone and a tablet (open, back, tap outside, an option that closes it), channel search sorting, and Remove from cache followed by Ready offline.
+
 ---
 
 ## Where Koda is today
 
-Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor at Android 11 (API 30). All Compose, all inside one `MaterialExpressiveTheme`.
+Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor at Android 8.0 (API 26). All Compose, all inside one `MaterialExpressiveTheme`.
 
 - **Two modes, one app.** A toggle reshapes Home, Search and Library between a music player and a video client, sharing the tab system, overlays and theme.
 - **Two playback pipelines.** Music through `MusicService` (Media3 `MediaLibraryService`, crossfade/AutoMix, Android Auto); video through its own `ExoPlayer` with DASH/HLS, PiP, chapters, captions, SponsorBlock and live. Both fetch through bounded ranged requests.
@@ -25,18 +49,15 @@ Version **5.0** (`versionCode` 28), targeting Android 16 (API 36) with a floor a
 - **No official API keys, ever.** Parsers are probe-first, dated, and fail into an empty result rather than a crash.
 - **Signed out is first-class.** Roughly half the users never sign in; an account-only feature needs a device-local answer or says plainly that it is account-only.
 - **Material 3 Expressive is structural.** An alternate design language is a rewrite; specific radius/animation complaints are ordinary work.
-- **minSdk 30 and desugaring are load-bearing.** Anything above API 30 needs an `SDK_INT` guard and a working fallback.
+- **minSdk 26 and desugaring are load-bearing.** Anything above API 26 needs an `SDK_INT` guard and a working fallback.
 - **Frugal on network per user action.** New features parse from responses already fetched before earning a request of their own.
 
 ---
 
 ## Known defects
 
-- **With captions on, each video still makes one extra `/player`.** `ensureCaptionsLoaded` runs in parallel with stream resolution, so `getCaptionTracks` finds the caption cache empty and asks `ANDROID_VR` (plus a `timedtext`) for tracks the visionOS response is about to deliver. Seen in `YTRequests`, September 2026. Fix by loading tracks after the stream phase or awaiting the in-flight resolution.
-- **Classic, Morph and Gesture draw a flat background for device songs.** `ChromaticMistBackground` answers a null model with a flat rectangle, and every caller passes `highResThumbnailUrl`, which is null for local files (their art is a content URI).
 - **Video watch history does not reach YouTube for some users ([#287](https://github.com/Ivorisnoob/Koda/issues/287)).** Not reproduced: Koda's exact ping sequence reached FEhistory at 10 s when probed (September 2026), so the failure is device-side; the `Video history:` log lines from `3b38e44` in a current-beta bug report will say which way.
 - **`MusicServiceBrowserTest` "root fits car tabs" failed on the JVM, and was removed until fixed (September 2026).** `AutoArtwork.uriFor` chains `Uri.Builder`, which `isReturnDefaultValues` stubs to null. Present since `8d2d942`, unnoticed because CI does not run unit tests. Restore it with the Uri chain mocked (or the artwork URI built behind a seam), so the Auto root's four-tab layout is checked again.
-- **A timestamp link to a different video seeks the one playing.** `RichLinkTarget.Timestamp` carries a `videoId`, but every `onTimestampClick` seeks the current player without comparing it.
 - **A comment notification does nothing when tapped.** A reply to or like on the user's own comment carries a `navigationEndpoint` Koda does not read, and its shape is unprobed: neither probe account has had one in its inbox (September and October 2026). It should open the video with its comments.
 - **Smooth motion loses its cadence after a burst of dropped frames.** Seen in a Mali-G615 bug report (September 2026): at 23.98 into 120 fps, 24 of every 120 outputs were the decoded frame untouched until a burst of drops, then about 5, for the rest of the video; a second burst restarted the clock at 122 fps on a 120 Hz screen, which discards about 2 frames a second without counting them as drops. Diagnosis from the code, not yet reproduced: a gap over 60 ms restarts `OutputClock` with a step taken from the `sourceIntervalUs` average that has just absorbed that gap, so the step no longer divides the frame interval, and nothing re-snaps once the average recovers (restart needs 3%, snapping needs 1.5%). Snapping may also pick a step faster than the target. Fix candidates: keep gaps out of the average, re-snap once the rate is steady, never snap above the target.
 
@@ -109,10 +130,19 @@ Decided against in September and November 2026; each issue's closing comment has
 
 One line each; the reasoning is in `docs/`, and the full write-ups are in this file's git history.
 
-**Awaiting device validation** (built and unit-tested, not yet confirmed on screens): the late-September links/comments/PiP/scrub batch below (posting and liking on a post in particular were never probed); one-request playback and the connection advice card; the September batch below; playlist membership ticks; upload to YouTube Music; music Videos tab; Watch/Listen handovers; swipe-up options; Shorts scrubbing; 8x speed; shuffle order; inline previews; bot-check traffic cuts; video playlist page; Android Auto fixes; Shorts prefetch; watch-history sessions; options control panel and volume; smooth progress; Spin; Hero; artist page; album links; mini-player container transform; live edge fixes; waveform; visualizer; motion artwork; AutoMix listening; the music download quality sheet; hold speed and the controls delay; reading a notification inbox of more than one page; the YouTube data layer split; replacing and pre-checking a refused visitor token, tracing a refusal to its token and checking video's tokens too; Normalise volume's loudness on visionOS; Standby on a real phone (the charging offer has only been tried with an emulated charger and sensor); the website's notification inbox read as the sheet scrolls, Quick picks from Home's second page and the mix ceiling (probed live and compiled, not yet seen on a screen); the wide-window pass (no screen in it has been on a tablet or in landscape), the queue edits (unit-tested, not yet through a real shuffled drag), and the video player split's live, recovery and loading parts (unit-tested, video confirmed on a device); playlists kept to one mode and Statistics playing its top songs (compiled, merged before a device test); the captions tab and the avatar outline (compiled, not yet seen on a screen); lyrics share cards on a real phone (tried on the emulator only, including Share and Save); Standby's faces, widgets and picker on a real phone (emulator only); the Pitch control by ear on a device.
+**Awaiting device validation** (built and unit-tested, not yet confirmed on screens): the late-September links/comments/PiP/scrub batch below (posting and liking on a post in particular were never probed); one-request playback and the connection advice card; the September batch below; playlist membership ticks; upload to YouTube Music; music Videos tab; Watch/Listen handovers; swipe-up options; Shorts scrubbing; 8x speed; shuffle order; inline previews; bot-check traffic cuts; video playlist page; Android Auto fixes; Shorts prefetch; watch-history sessions; options control panel and volume; smooth progress; Spin; Hero; artist page; album links; mini-player container transform; live edge fixes; waveform; visualizer; motion artwork; AutoMix listening; the music download quality sheet; hold speed and the controls delay; reading a notification inbox of more than one page; the YouTube data layer split; replacing and pre-checking a refused visitor token, tracing a refusal to its token and checking video's tokens too; Normalise volume's loudness on visionOS; Standby on a real phone (the charging offer has only been tried with an emulated charger and sensor); the website's notification inbox read as the sheet scrolls, Quick picks from Home's second page and the mix ceiling (probed live and compiled, not yet seen on a screen); the wide-window pass (no screen in it has been on a tablet or in landscape), the queue edits (unit-tested, not yet through a real shuffled drag), and the video player split's live, recovery and loading parts (unit-tested, video confirmed on a device); playlists kept to one mode and Statistics playing its top songs (compiled, merged before a device test); the captions tab and the avatar outline (compiled, not yet seen on a screen); lyrics share cards on a real phone (tried on the emulator only, including Share and Save); Standby's faces, widgets and picker on a real phone (emulator only); the Pitch control by ear on a device; the second sprint round (floating top bars, the shared device playlist store, Editorial's transport row and queue covers, timestamp links, the captions wait); the third round (the floating side panel, channel search sort, Last.fm album fill-in, removing one song from the cache); Editorial's two transport layouts and the 400dp switch-over at small display sizes; the music mini player parking in video mode (switching modes with both players alive, music started from video mode, a handover); offline playlists from a cold start with no connection (Classic, Spotlight and the Playlists tab) and in Local Only.
 
 ### November 2026
 
+- Recap: any week, month, year or all time told as a story on the device - top song, the overtake, regulars, who came round when, the hours, a song that came back, the calendar, the long sitting, a newcomer, the odd hour - ending on a pressing drawn from the plays, shared as three designs in Story, Feed or Square; opened from Stats and the profile (`data/recap/`, `ui/recap/`, `docs/recap.md`). Under it, the listening history keeps every play (the 5,000 cap is gone), records how long each was heard, and is written by the service, so plays with the app closed count; video history keeps 1,000.
+- Downloaded playlists are listed first in the Library and on both Homes when offline (they were missing from the Playlists tab without a connection), and Spotlight Home leads with Ready offline songs as Classic does.
+- Editorial's original two-row transport is back by default, with a setting (and wide screens) for Previous, Play and Next on one row; in video mode the video mini player has Home to itself, and the paused music mini player comes back in music mode.
+- Members-only and paid videos are badged, with a switch to hide them (#379); music Home has a speed dial of the most played songs, and its sections and the Library's tabs can each be switched off (#373).
+- Explore on video Home: a row of topics (Hype, Music, Gaming, News, Sports, Live, Learning, Fashion and beauty) fetched on tap, with a switch under Video feed (#358); a song by several artists asks which artist to open, and its menus list each (#373); a double tap on the music player's cover seeks ten seconds; a device video can load an `.srt` or `.vtt` subtitle file; downloads keep their chapters offline (#381); the Telegram beta post is one flat list of changes.
+- Sheets on wide windows open as a floating, rounded side panel that slides in, without the empty strip a far-edge cutout left down one side; search inside a channel sorts by newest, oldest or most viewed; Last.fm fills in a scrobble's missing album; one song can be removed from the music cache.
+- The Home top bars float over Classic, Spotlight and video Home, hiding while the page scrolls down and back on the first scroll up (`FloatingTopBarHost`); "Open the keyboard on Search" under Home and navigation.
+- Device playlists are one process-wide store, so a song added from the player shows in the Library and is no longer erased by its next edit (#362); Editorial's Previous, Play and Next share one row (#380); the shared queue view shows covers instead of numbers (#373).
+- A timestamp to another video opens it; captions wait for the stream's `/player` rather than fetching their own; the Japanese picture-in-picture settings no longer say ten seconds.
 - A playlist can be kept to music or video mode from its menu in either Library (#357, `PlaylistModeStore`, a filter over the drawn lists only); Statistics plays the top songs from the tapped row, as History does.
 - Lyrics share cards: pick up to six lines from the player's menu or a long press on a lyric, then share, save or copy them as a card in four styles and six colours from the cover (`ui/lyricsshare/`).
 - Standby has four faces swiped sideways (Now playing, Widgets, Lyrics, Clock), smart-stack widgets (song, clocks, lyrics, up next, calendar), a long-press zoomed-out picker with clock styles, Mono colour and a Black background, and display-only lyrics; an optional Pitch control (off by default) adds a semitone slider under Speed.
@@ -268,7 +298,7 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 - Account-free subscriptions with imports; "Don't recommend" blocklist.
 - Multiple accounts and device-only profiles.
 - Spotlight alternative Home.
-- Searchable settings hub.
+- Searchable settings hub; a picked result scrolls its page to the setting and pulses it (November 2026).
 - Restored root tab per mode; saved tab scroll.
 - Listening stats and music listening history.
 - Editable queues in both modes; video playlists as queues; local video playlists.

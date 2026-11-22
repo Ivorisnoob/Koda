@@ -729,9 +729,15 @@ fun ExpandablePlayer(
                         val lyricLongPress = remember(viewModel) {
                             { index: Int -> viewModel.openLyricsShare(index) }
                         }
+                        val coverSeekContext = LocalContext.current
+                        val coverSeekEnabled by remember(coverSeekContext) {
+                            com.ivor.ivormusic.data.ThemePreferences(coverSeekContext)
+                        }.coverDoubleTapSeek.collectAsState()
+                        val coverSeek = rememberCoverSeek { viewModel.seekBy(it) }
                         CompositionLocalProvider(
                             LocalPlayerStyleWheelController provides styleWheel,
-                            LocalLyricLongPress provides lyricLongPress
+                            LocalLyricLongPress provides lyricLongPress,
+                            LocalCoverSeek provides coverSeek.takeIf { coverSeekEnabled }
                         ) {
                         if (playerFrame.kind == PlayerFrameKind.LANDSCAPE) {
                             // Every style shares this one layout on its side,

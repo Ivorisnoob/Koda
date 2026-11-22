@@ -146,6 +146,11 @@ fun StatsScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // ===== The way into Recap: the same numbers, told as a story =====
+            item {
+                com.ivor.ivormusic.ui.recap.RecapEntryCard()
+            }
+
             // ===== HERO: total listening time =====
             item {
                 Surface(
@@ -297,20 +302,26 @@ fun StatsScreen(
                                         modifier = Modifier.size(44.dp),
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh
                                     ) {
-                                        if (songStats.thumbnailUrl != null) {
-                                            AsyncImage(
-                                                model = songStats.thumbnailUrl,
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Box(contentAlignment = Alignment.Center) {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            if (songStats.thumbnailUrl != null) {
+                                                AsyncImage(
+                                                    model = songStats.thumbnailUrl,
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
                                                 Icon(
                                                     Icons.Rounded.MusicNote, null,
                                                     modifier = Modifier.padding(10.dp),
                                                     tint = secondaryText
                                                 )
                                             }
+                                            com.ivor.ivormusic.ui.components.NowPlayingMark(
+                                                songStats.songId,
+                                                Modifier.fillMaxSize(),
+                                                barSize = 18.dp,
+                                            )
                                         }
                                     }
                                 }
@@ -330,6 +341,10 @@ fun StatsScreen(
                             Text(
                                 songStats.title,
                                 fontWeight = FontWeight.SemiBold,
+                                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                                    songStats.songId,
+                                    androidx.compose.material3.LocalContentColor.current,
+                                ),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )

@@ -41,7 +41,10 @@ enum class DownloadMediaType(
  *    be reconciled against MediaStore rather than trusted,
  *  - files survive uninstall,
  *  - no storage permission is needed for entries this app created (API 29+),
- *    which is why this never touches MANAGE_EXTERNAL_STORAGE.
+ *    which is why this never touches MANAGE_EXTERNAL_STORAGE,
+ *  - below API 29 there is no Downloads collection and no RELATIVE_PATH, and
+ *    writing to shared storage would need WRITE_EXTERNAL_STORAGE, so Android 8
+ *    and 9 always keep downloads in the private folder ([sharedStorageAvailable]).
  *
  * Writes go out as IS_PENDING and are only published on success, so a partial
  * transfer never appears in the Files app as a playable file.
@@ -72,7 +75,12 @@ class DownloadStorage(private val context: Context) {
     private val privateRoot = File(context.noBackupFilesDir, "downloads")
 
     private val collection: Uri
+        @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.Q)
         get() = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+
+    /** Whether downloads can be published to Downloads/Koda at all (API 29+). */
+    val sharedStorageAvailable: Boolean
+        get() = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
 
     /**
      * Turn a title/artist into something safe and readable on disk. These names
@@ -107,7 +115,7 @@ class DownloadStorage(private val context: Context) {
         type: DownloadMediaType,
         privateStorage: Boolean = false
     ): Uri? {
-        return if (privateStorage) {
+        return if (privateStorage || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
             createPrivatePending(displayName, type)
         } else {
             createMediaStorePending(displayName, type.mimeType, type.relativePath)
@@ -123,7 +131,7 @@ class DownloadStorage(private val context: Context) {
         mimeType: String,
         privateStorage: Boolean = false
     ): Uri? {
-        return if (privateStorage) {
+        return if (privateStorage || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
             createPrivatePending(displayName, DownloadMediaType.MUSIC)
         } else {
             createMediaStorePending(displayName, mimeType, DownloadMediaType.MUSIC.relativePath)
@@ -138,6 +146,7 @@ class DownloadStorage(private val context: Context) {
     fun createPrivateMusicArtwork(id: String): Uri? =
         createPrivatePending("artwork_${safePrivateId(id)}.jpg", DownloadMediaType.MUSIC)
 
+    @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.Q)
     private fun createMediaStorePending(
         displayName: String,
         mimeType: String,
@@ -347,7 +356,7 @@ class DownloadStorage(private val context: Context) {
      */
     fun listExisting(type: DownloadMediaType): Map<Uri, String> {
         val result = mutableMapOf<Uri, String>()
-        try {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) try {
             resolver.query(
                 collection,
                 arrayOf(

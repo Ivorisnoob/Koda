@@ -1,6 +1,8 @@
 package com.ivor.ivormusic.ui.video
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
@@ -61,20 +63,26 @@ fun LazyListScope.videoListItemsWithPosts(
     // Deduplicated before it is cut into runs: each run is keyed on its own,
     // and a video repeated across two of them would be a duplicate key.
     val unique = videos.distinctBy { it.videoId }
+    // A run is whole rows: three or four across, a run of four or six would
+    // leave a row half empty above every post.
+    val perRow = columns.coerceAtLeast(1)
+    fun wholeRows(count: Int) = (count + perRow - 1) / perRow * perRow
     var start = 0
     var postIndex = 0
-    var run = FEED_POST_FIRST_AFTER
+    var run = wholeRows(FEED_POST_FIRST_AFTER)
     while (start < unique.size) {
         val end = minOf(unique.size, start + run)
         videoListItems(unique.subList(start, end), layout, keyPrefix, columns, card)
         if (end - start == run && postIndex < posts.size) {
             val feedPost = posts[postIndex++]
             item(key = keyPrefix + "post_" + feedPost.postId, contentType = "feed_post") {
-                post(feedPost)
+                // A post is something to read, so on a wide window it keeps a
+                // reading width rather than stretching under the whole grid.
+                Box(modifier = Modifier.widthIn(max = 720.dp)) { post(feedPost) }
             }
         }
         start = end
-        run = FEED_VIDEOS_PER_POST
+        run = wholeRows(FEED_VIDEOS_PER_POST)
     }
 }
 
@@ -115,11 +123,15 @@ internal class VideoFeedFilter(
     private val showLive: Boolean,
     private val hideWatched: Boolean,
     private val watchedIds: Set<String>,
+    /** Whether video Home shows its Explore row; see [com.ivor.ivormusic.data.VideoFeedCustomization.showExplore]. */
+    val showExplore: Boolean = true,
+    private val hideRestricted: Boolean = false,
 ) {
     fun apply(videos: List<VideoItem>): List<VideoItem> {
-        if (showLive && !hideWatched) return videos
+        if (showLive && !hideWatched && !hideRestricted) return videos
         return videos.filter { video ->
-            (showLive || !video.isLive) && (!hideWatched || video.videoId !in watchedIds)
+            (showLive || !video.isLive) && (!hideWatched || video.videoId !in watchedIds) &&
+                (!hideRestricted || video.access == null)
         }
     }
 }
@@ -139,6 +151,8 @@ internal fun rememberHomeFeedFilter(): VideoFeedFilter {
             showPosts = options.showPosts,
             showLive = options.showLive,
             hideWatched = options.hideWatchedOnHome,
+            showExplore = options.showExplore,
+            hideRestricted = options.hideRestricted,
             // Only built when it will be read: the history can be long.
             watchedIds = if (options.hideWatchedOnHome) {
                 history.mapTo(HashSet()) { it.videoId }
@@ -270,4 +284,20 @@ fun FeedPostOverlays(
             }
         )
     }
+}
+
+/**
+ * [videos] without paid and members-only ones when "Hide paid and members-only
+ * videos" is on: for the lists that do not take the Home feed's other filters
+ * (search, channel pages, Subscriptions). Read from the stored setting, so a
+ * switch on the settings page applies to a list already on screen.
+ */
+@Composable
+internal fun rememberRestrictedFilter(): (List<VideoItem>) -> List<VideoItem> {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val options by remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }.videoFeed.collectAsState()
+    val hide = options.hideRestricted
+    return remember(hide) { { videos -> if (hide) videos.filter { it.access == null } else videos } }
 }

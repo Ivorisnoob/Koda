@@ -311,12 +311,17 @@ private class LrcLibLyricsProvider(
             }
         }
 
+        val album = request.album.takeIf(String::isNotBlank)
+        // LRCLIB treats album_name as a filter. Upload-specific album names returned no
+        // results for catalog tracks (verified November 2026). With enough metadata to
+        // verify another edition, keep the album as a ranking signal instead.
+        val searchAcrossAlbums = album != null && request.artist.isNotBlank() && request.durationSeconds > 0
         val search = http.get(
             "https://lrclib.net/api/search",
             mapOf(
                 "track_name" to request.title,
                 "artist_name" to request.artist,
-                "album_name" to request.album.takeIf(String::isNotBlank)
+                "album_name" to album.takeUnless { searchAcrossAlbums }
             )
         )
         if (!search.isSuccessful) return null
@@ -325,9 +330,14 @@ private class LrcLibLyricsProvider(
             lrcLibScore(item, request)
         }
         for (item in ranked) {
+            val candidateMs = (item.optDouble("duration", 0.0) * 1_000.0).toLong()
             if (request.durationMs > 0L) {
-                val candidateMs = (item.optDouble("duration", 0.0) * 1_000.0).toLong()
                 if (candidateMs > 0L && abs(candidateMs - request.durationMs) > 10_000L) continue
+            }
+            if (searchAcrossAlbums && !item.optString("albumName").equals(album, ignoreCase = true)) {
+                val sameTrack = item.optString("trackName").trim().equals(request.title.trim(), ignoreCase = true)
+                val sameArtist = item.optString("artistName").trim().equals(request.artist.trim(), ignoreCase = true)
+                if (!sameTrack || !sameArtist || candidateMs <= 0L) continue
             }
             parseLrcLibItem(item)?.let { return it }
         }

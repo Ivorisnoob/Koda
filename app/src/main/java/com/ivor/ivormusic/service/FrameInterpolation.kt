@@ -666,7 +666,13 @@ class FrameInterpolationGovernor(context: Context) {
         control.targetFps = target
         control.speed = speed
 
-        val thermal = powerManager?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
+        // Thermal status is API 29; older phones only have the power-save
+        // and keep-up gates.
+        val thermal = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            powerManager?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
+        } else {
+            PowerManager.THERMAL_STATUS_NONE
+        }
         val powerSave = powerManager?.isPowerSaveMode == true
         val open = FrameInterpolationPolicy.isGateOpen(
             enabledByUser = true,

@@ -94,6 +94,8 @@ fun CommentsPanel(
      * Null (the Shorts sheet) renders timestamps as ordinary text.
      */
     onSeekTo: ((seconds: Long) -> Unit)? = null,
+    /** The video [onSeekTo] seeks; see `rememberLinkedText`'s timestampVideoId. */
+    videoId: String? = null,
     /** Open a commenter's channel (their avatar or name). Null leaves them inert. */
     onOpenAuthor: ((channelId: String) -> Unit)? = null,
     /**
@@ -212,6 +214,7 @@ fun CommentsPanel(
                                             { commentPendingDelete = comment }
                                         } else null,
                                         onSeekTo = onSeekTo,
+                                        videoId = videoId,
                                         onOpenAuthor = onOpenAuthor
                                     )
 
@@ -265,6 +268,7 @@ fun CommentsPanel(
                                                             { commentPendingDelete = reply }
                                                         } else null,
                                                         onSeekTo = onSeekTo,
+                                                        videoId = videoId,
                                                         onOpenAuthor = onOpenAuthor
                                                     )
                                                     // Replying to a reply posts into the
@@ -539,6 +543,7 @@ private fun CommentRow(
     onDeleteClick: (() -> Unit)? = null,
     /** Seek the player, in seconds. Null leaves timestamps as plain text. */
     onSeekTo: ((seconds: Long) -> Unit)? = null,
+    videoId: String? = null,
     onOpenAuthor: ((channelId: String) -> Unit)? = null
 ) {
     // Avatar and name open the commenter's channel, as on YouTube (#298).
@@ -637,7 +642,8 @@ private fun CommentRow(
             Text(
                 text = com.ivor.ivormusic.ui.components.rememberLinkedText(
                     rich = com.ivor.ivormusic.data.RichText(comment.text, comment.links),
-                    onTimestampClick = onSeekTo
+                    onTimestampClick = onSeekTo,
+                    timestampVideoId = videoId
                 ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface

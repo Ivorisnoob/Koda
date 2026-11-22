@@ -67,7 +67,7 @@ import com.ivor.ivormusic.R
  * in widget content: nothing is drawn over the cover, so nothing needs a scrim.
  *
  * Container radii come from tinted shape drawables because
- * `GlanceModifier.cornerRadius` is a no-op below API 31 and minSdk here is 30;
+ * `GlanceModifier.cornerRadius` is a no-op below API 31 and minSdk here is 26;
  * where a ripple has to be clipped, both are applied.
  */
 

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
@@ -162,6 +163,19 @@ fun VideoPlayerContent(
     val chapters by viewModel.chapters.collectAsState()
     val seekPreview by viewModel.seekPreview.collectAsState()
     val captionTracks by viewModel.captionTracks.collectAsState()
+    val subtitleContext = androidx.compose.ui.platform.LocalContext.current
+    val subtitleUnreadable = stringResource(R.string.vpc_subtitle_file_unreadable)
+    val subtitlePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.loadSubtitleFile(uri) { ok ->
+                if (!ok) {
+                    android.widget.Toast.makeText(subtitleContext, subtitleUnreadable, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
     val selectedCaption by viewModel.selectedCaption.collectAsState()
     // Tracks the media file itself carries, populated only for device videos.
     val audioTracks by viewModel.audioTracks.collectAsState()
@@ -409,6 +423,40 @@ fun VideoPlayerContent(
     // notification skip through the same ViewModel call, and a gesture that
     // clamped differently from the buttons would be a bug waiting to happen.
     fun seekBy(deltaMs: Long) = viewModel.seekBy(deltaMs)
+
+    // The player's own ThemePreferences follows writes from the settings page,
+    // so a change reaches a video that is already open.
+    val videoControls by remember(context) {
+        com.ivor.ivormusic.data.ThemePreferences(context)
+    }.videoGestures.collectAsState()
+    val skipStepMs = videoControls.skipSeconds
+        .takeIf { it in com.ivor.ivormusic.data.VideoGestureCustomization.SKIP_SECONDS }
+        ?.times(1000L)
+        ?: VideoPlayerViewModel.SEEK_STEP_MS
+    val queueOnlyTransport = videoControls.centreButtons ==
+        com.ivor.ivormusic.data.VideoCentreButtons.SKIP && queue != null
+    val canGoPrevious = if (queueOnlyTransport) {
+        queue?.hasPrevious == true
+    } else {
+        queue?.hasPrevious == true || (!isLive &&
+            currentPosition > com.ivor.ivormusic.data.VideoGestureCustomization.PREVIOUS_RESTART_WINDOW_MS)
+    }
+    val canGoNext = if (queueOnlyTransport) {
+        queue?.hasNext == true
+    } else {
+        queue?.hasNext == true || (!isLive && relatedVideos.isNotEmpty())
+    }
+    val onPreviousVideo = {
+        if (queueOnlyTransport) viewModel.playPreviousInQueue() else viewModel.playPreviousOrRestart()
+    }
+    val onNextVideo = {
+        if (queueOnlyTransport) viewModel.playNextInQueue() else viewModel.playNextOrRelated()
+    }
+    val speedShortcutLabel = playbackSpeedButtonLabel(playbackSpeed)
+    val openPip = {
+        val host = activity as? androidx.activity.ComponentActivity
+        if (host != null) enterPipMode(host, viewModel)
+    }
 
     /**
      * Whether pinch-to-zoom may fill the screen for this video in this window.
@@ -752,8 +800,8 @@ fun VideoPlayerContent(
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                 onScrubbingChanged = { isSeekScrubbing = it },
-                onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
-                onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
+                onSeekBackward = { seekBy(-skipStepMs) },
+                onSeekForward = { seekBy(skipStepMs) },
                 onBack = {
                     isFullscreen = false
                     fullscreenIsPortrait = false
@@ -773,11 +821,24 @@ fun VideoPlayerContent(
                 captionTextSize = captionTextSize,
                 captionTextColor = captionTextColor,
                 captionBackground = captionBackground,
-                showQueueControls = queue != null,
-                hasPreviousInQueue = queue?.hasPrevious == true,
-                hasNextInQueue = queue?.hasNext == true,
-                onPreviousInQueue = { viewModel.playPreviousInQueue() },
-                onNextInQueue = { viewModel.playNextInQueue() },
+                showQueueControls = queueOnlyTransport,
+                hasPreviousInQueue = canGoPrevious,
+                hasNextInQueue = canGoNext,
+                onPreviousInQueue = onPreviousVideo,
+                onNextInQueue = onNextVideo,
+                centreButtons = videoControls.centreButtons,
+                showSkipInSkipMode = true,
+                skipSeconds = videoControls.skipSeconds,
+                showRemainingTime = videoControls.timeDisplay ==
+                    com.ivor.ivormusic.data.VideoTimeDisplay.ELAPSED_REMAINING,
+                showCaptionsButton = videoControls.showCaptions,
+                showFullscreenButton = videoControls.showFullscreen,
+                showLockButton = videoControls.showScreenLock,
+                showPipButton = videoControls.showPipButton && pipSupported,
+                showSpeedButton = videoControls.showSpeedShortcut,
+                speedLabel = speedShortcutLabel,
+                onPipClick = openPip,
+                onSpeedClick = { openPlaybackSettings(SettingsPicker.SPEED) },
                 isLive = isLive,
                 liveTargetOffsetMs = liveTargetOffsetMs,
                 onSeekToLive = { exoPlayer.seekToDefaultPosition() },
@@ -872,6 +933,7 @@ fun VideoPlayerContent(
                         onDeleteComment = commentThread::delete,
                         onDismiss = { showCommentsSheet = false },
                         onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
+                        videoId = currentVideo.videoId,
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(400.dp)
@@ -977,8 +1039,8 @@ fun VideoPlayerContent(
                     onPlayPause = { viewModel.togglePlayPause() },
                     onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                     onScrubbingChanged = { isSeekScrubbing = it },
-                    onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
-                    onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
+                    onSeekBackward = { seekBy(-skipStepMs) },
+                    onSeekForward = { seekBy(skipStepMs) },
                     liveTargetOffsetMs = liveTargetOffsetMs,
                     onSeekToLive = { exoPlayer.seekToDefaultPosition() },
                     onBack = onBackClick,
@@ -990,7 +1052,20 @@ fun VideoPlayerContent(
                     onLikeClick = { requireLogin { viewModel.toggleLike() } },
                     onRetry = { viewModel.recovery.retry() },
                     onMinimizeDragDelta = onMinimizeDragDelta,
-                    onMinimizeDragRelease = onMinimizeDragRelease
+                    onMinimizeDragRelease = onMinimizeDragRelease,
+                    centreButtons = videoControls.centreButtons,
+                    skipSeconds = videoControls.skipSeconds,
+                    hasPrevious = canGoPrevious,
+                    hasNext = canGoNext,
+                    onPrevious = onPreviousVideo,
+                    onNext = onNextVideo,
+                    showCaptionsButton = videoControls.showCaptions,
+                    showDetailsButton = videoControls.showFullscreen,
+                    showPipButton = videoControls.showPipButton && pipSupported,
+                    showSpeedButton = videoControls.showSpeedShortcut,
+                    speedLabel = speedShortcutLabel,
+                    onPipClick = openPip,
+                    onSpeedClick = { openPlaybackSettings(SettingsPicker.SPEED) },
                 )
 
                 // The full panel, for sending and for reading back - the ticker
@@ -1024,23 +1099,94 @@ fun VideoPlayerContent(
                 }
             }
         } else {
-            // Portrait Layout
-             Column(
+            // On a window with room both ways (a tablet, not a phone on its
+            // side) the video's own details go under the frame and only what
+            // to watch next keeps the side column. With related videos
+            // switched off there is nothing for that column to hold, so the
+            // whole list stays in it.
+            val watchWindow = com.ivor.ivormusic.ui.theme.currentWindowLayout()
+            val splitInfo = watchWindow.supportsTwoPanes && !watchWindow.isShort && showRelatedVideos
+            // The info list, whole or one half of it. One definition, because
+            // the tablet arrangement draws it twice and two copies of this
+            // call would drift.
+            val infoSection: @Composable (Modifier, VideoInfoPart) -> Unit = { sectionModifier, part ->
+                VideoInfoSection(
+                    video = currentVideo,
+                    // Emptied rather than flagged: the section is already
+                    // conditional on having something to show, so the switch
+                    // reuses that path instead of adding a second way for it
+                    // to be absent.
+                    relatedVideos = if (showRelatedVideos) relatedVideos else emptyList(),
+                    onVideoSelect = { viewModel.playVideo(it) },
+                    modifier = sectionModifier
+                        .nestedScroll(pullToMinimize)
+                        .background(MaterialTheme.colorScheme.surface),
+                    engagement = engagement,
+                    isSubscribed = isSubscribedToChannel,
+                    onLikeClick = { requireLogin { viewModel.toggleLike() } },
+                    onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
+                    dislikeCount = dislikeCount,
+                    onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
+                    onBellChosen = { channelId, level ->
+                        viewModel.setChannelBell(channelId, level, currentVideo.channelName)
+                    },
+                    bellWrites = bellWrites,
+                    onCommentsClick = {
+                        viewModel.ensureCommentsLoaded()
+                        showCommentsSheet = true
+                    },
+                    onSaveClick = {
+                        // No sign-in wall: device playlists are always a
+                        // valid target, so only the account's half waits on a
+                        // session.
+                        if (isLoggedIn) viewModel.loadVideoPlaylists()
+                        saveTargetVideo = currentVideo
+                    },
+                    onDownloadClick = { downloadTargetVideo = currentVideo },
+                    onChannelClick = {
+                        val channelId = engagement?.channelId ?: currentVideo.channelId
+                        if (channelId != null) onOpenChannel(channelId)
+                    },
+                    onOpenChannelId = onOpenChannel,
+                    onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
+                    isOffline = isLocalPlayback,
+                    onRelatedLongPress = { related ->
+                        if (isLoggedIn) viewModel.loadVideoPlaylists()
+                        saveTargetVideo = related
+                    },
+                    queue = queue,
+                    onOpenQueue = { showQueueSheet = true },
+                    isLive = isLive,
+                    liveViewerCount = liveViewerCount,
+                    onLiveChatClick = { showLiveChat = true },
+                    showListenAsMusic = showListenAsMusic,
+                    onListenAsMusic = onListenAsMusic,
+                    part = part
+                )
+            }
+            // The watch page: the video over its info on a phone held
+            // upright, the two side by side on a wide window (WatchPageFrame).
+            WatchPageFrame(
+                details = if (splitInfo) {
+                    { detailsModifier -> infoSection(detailsModifier, VideoInfoPart.DETAILS) }
+                } else {
+                    null
+                },
                 modifier = Modifier
                     .fillMaxSize()
-                    // Top only. The video stays below the status bar, on black,
-                    // the way YouTube's portrait watch page does - taking it up
-                    // there would crop a 16:9 frame and put the clock over the
-                    // picture. The bottom inset is not applied here because it
-                    // would clip the info list at the navigation bar;
-                    // VideoInfoSection carries it as scrolling padding instead,
-                    // so related videos pass under the bar.
-                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
-            ) {
+                    // The status bar is the frame's to keep clear of, since
+                    // the two arrangements differ on it. The bottom inset is
+                    // not applied at all because it would clip the info list
+                    // at the navigation bar; VideoInfoSection carries it as
+                    // scrolling padding instead, so related videos pass under
+                    // the bar.
+                    // Zero upright; on its side, the cutout and a three-button
+                    // navigation bar are at the page's ends.
+                    .windowInsetsPadding(com.ivor.ivormusic.ui.theme.safeHorizontalInsets()),
+                video = { videoModifier ->
                 // Video Area
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
+                    modifier = videoModifier
                         // Follows the video rather than assuming 16:9 - see
                         // videoBoxAspect above for why, and why only upward.
                         .aspectRatio(videoBoxAspect.coerceAtLeast(0.1f))
@@ -1084,8 +1230,8 @@ fun VideoPlayerContent(
                         onPlayPause = { viewModel.togglePlayPause() },
                         onSeek = { newProgress -> viewModel.seekTo((newProgress * duration).toLong()) },
                         onScrubbingChanged = { isSeekScrubbing = it },
-                        onSeekBackward = { seekBy(-VideoPlayerViewModel.SEEK_STEP_MS) },
-                        onSeekForward = { seekBy(VideoPlayerViewModel.SEEK_STEP_MS) },
+                        onSeekBackward = { seekBy(-skipStepMs) },
+                        onSeekForward = { seekBy(skipStepMs) },
                         onBack = onBackClick,
                         onFullscreenToggle = {
                             // Fullscreen from the button or the swipe-up takes
@@ -1104,11 +1250,23 @@ fun VideoPlayerContent(
                         captionTextSize = captionTextSize,
                         captionTextColor = captionTextColor,
                         captionBackground = captionBackground,
-                        showQueueControls = queue != null,
-                        hasPreviousInQueue = queue?.hasPrevious == true,
-                        hasNextInQueue = queue?.hasNext == true,
-                        onPreviousInQueue = { viewModel.playPreviousInQueue() },
-                        onNextInQueue = { viewModel.playNextInQueue() },
+                        showQueueControls = queueOnlyTransport,
+                        hasPreviousInQueue = canGoPrevious,
+                        hasNextInQueue = canGoNext,
+                        onPreviousInQueue = onPreviousVideo,
+                        onNextInQueue = onNextVideo,
+                        centreButtons = videoControls.centreButtons,
+                        showSkipInSkipMode = false,
+                        skipSeconds = videoControls.skipSeconds,
+                        showRemainingTime = videoControls.timeDisplay ==
+                            com.ivor.ivormusic.data.VideoTimeDisplay.ELAPSED_REMAINING,
+                        showCaptionsButton = videoControls.showCaptions,
+                        showFullscreenButton = videoControls.showFullscreen,
+                        showPipButton = videoControls.showPipButton && pipSupported,
+                        showSpeedButton = videoControls.showSpeedShortcut,
+                        speedLabel = speedShortcutLabel,
+                        onPipClick = openPip,
+                        onSpeedClick = { openPlaybackSettings(SettingsPicker.SPEED) },
                         isLive = isLive,
                         liveTargetOffsetMs = liveTargetOffsetMs,
                         onSeekToLive = { exoPlayer.seekToDefaultPosition() },
@@ -1170,66 +1328,14 @@ fun VideoPlayerContent(
                             .padding(end = 12.dp, bottom = sponsorBottomPadding)
                     )
                 }
-                
+                },
+                info = { infoModifier ->
                 // Info Area. The comments panel slides up over it, keeping the
                 // video playing and interactive above while the list scrolls.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
-                    VideoInfoSection(
-                        video = currentVideo,
-                        // Emptied rather than flagged: the section is
-                        // already conditional on having something to show, so
-                        // the switch reuses that path instead of adding a
-                        // second way for it to be absent.
-                        relatedVideos = if (showRelatedVideos) relatedVideos else emptyList(),
-                        onVideoSelect = { viewModel.playVideo(it) },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .nestedScroll(pullToMinimize)
-                            .background(MaterialTheme.colorScheme.surface),
-                        engagement = engagement,
-                        isSubscribed = isSubscribedToChannel,
-                        onLikeClick = { requireLogin { viewModel.toggleLike() } },
-                        onDislikeClick = { requireLogin { viewModel.toggleDislike() } },
-                        dislikeCount = dislikeCount,
-                        onSubscribeClick = { requireSubscribeLogin { viewModel.toggleSubscribe() } },
-                        onBellChosen = { channelId, level ->
-                            viewModel.setChannelBell(channelId, level, currentVideo.channelName)
-                        },
-                        bellWrites = bellWrites,
-                        onCommentsClick = {
-                            viewModel.ensureCommentsLoaded()
-                            showCommentsSheet = true
-                        },
-                        onSaveClick = {
-                            // No sign-in wall: device playlists are always a
-                            // valid target, so only the account's half waits
-                            // on a session.
-                            if (isLoggedIn) viewModel.loadVideoPlaylists()
-                            saveTargetVideo = currentVideo
-                        },
-                        onDownloadClick = { downloadTargetVideo = currentVideo },
-                        onChannelClick = {
-                            val channelId = engagement?.channelId ?: currentVideo.channelId
-                            if (channelId != null) onOpenChannel(channelId)
-                        },
-                        onOpenChannelId = onOpenChannel,
-                        onSeekTo = { seconds -> viewModel.seekTo(seconds * 1000L, precise = true) },
-                        isOffline = isLocalPlayback,
-                        onRelatedLongPress = { related ->
-                            if (isLoggedIn) viewModel.loadVideoPlaylists()
-                            saveTargetVideo = related
-                        },
-                        queue = queue,
-                        onOpenQueue = { showQueueSheet = true },
-                        isLive = isLive,
-                        liveViewerCount = liveViewerCount,
-                        onLiveChatClick = { showLiveChat = true },
-                        showListenAsMusic = showListenAsMusic,
-                        onListenAsMusic = onListenAsMusic
+                Box(modifier = infoModifier) {
+                    infoSection(
+                        Modifier.fillMaxSize(),
+                        if (splitInfo) VideoInfoPart.RELATED else VideoInfoPart.ALL
                     )
 
                     // Qualified: inside this Box the outer Column's scoped
@@ -1263,6 +1369,7 @@ fun VideoPlayerContent(
                             onDeleteComment = commentThread::delete,
                             onDismiss = { showCommentsSheet = false },
                             modifier = Modifier.fillMaxSize(),
+                            videoId = currentVideo.videoId,
                             onSeekTo = { seconds ->
                                 viewModel.seekTo(seconds * 1000L, precise = true)
                                 // Jumping to the moment a comment is about is
@@ -1301,7 +1408,8 @@ fun VideoPlayerContent(
                         )
                     }
                 }
-            }
+                }
+            )
         }
     }
 
@@ -1560,6 +1668,9 @@ fun VideoPlayerContent(
             ),
             onCaptionSelected = viewModel::setCaptionTrack,
             onEmbeddedCaptionSelected = viewModel::setEmbeddedTextTrack,
+            onLoadSubtitleFile = if (isLocalPlayback) {
+                { subtitlePicker.launch(arrayOf("*/*")) }
+            } else null,
             onCaptionTextSizeChanged = viewModel::setCaptionTextSize,
             onCaptionTextColorChanged = viewModel::setCaptionTextColor,
             onCaptionBackgroundChanged = viewModel::setCaptionBackground
@@ -1741,6 +1852,8 @@ private fun PlayerSettingsSections(
     captions: CaptionsDeckState,
     onCaptionSelected: (CaptionTrack?) -> Unit,
     onEmbeddedCaptionSelected: (PlayerTrackOption?) -> Unit,
+    /** Opens the file picker for a subtitle file; null where there is no file to pair one with. */
+    onLoadSubtitleFile: (() -> Unit)?,
     onCaptionTextSizeChanged: (Float) -> Unit,
     onCaptionTextColorChanged: (CaptionTextColor) -> Unit,
     onCaptionBackgroundChanged: (CaptionBackground) -> Unit
@@ -2048,6 +2161,7 @@ private fun PlayerSettingsSections(
                                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                 onEmbeddedCaptionSelected(track)
                             },
+                            onLoadSubtitleFile = onLoadSubtitleFile,
                             onTextSizeChanged = onCaptionTextSizeChanged,
                             onTextColorChanged = onCaptionTextColorChanged,
                             onBackgroundChanged = onCaptionBackgroundChanged
@@ -2487,6 +2601,97 @@ private fun smoothMotionStatusText(status: FrameInterpolationStatus): String? = 
  * window prevents that. Best-effort: if the sheet implementation is not
  * dialog-backed this quietly does nothing.
  */
+/**
+ * Where the watch page puts its two halves.
+ *
+ * Upright it is the page it always was: the video across the top, at its own
+ * shape, and the info list in whatever height is left. On a window wide enough
+ * for two panes that arrangement has no answer [scar November 2026]: a 16:9
+ * frame as wide as a tablet, or a phone on its side, is taller than the
+ * window, so the video ran off the bottom and the info list was given no
+ * height at all - the page simply did not work unless fullscreen was tapped.
+ * There the video takes the start side, fitted inside the height it has, and
+ * the info list becomes a column down the end side.
+ *
+ * [video] and [info] each receive the modifier that sizes them. The video
+ * applies its own aspect ratio after it; given only loose bounds, as it is in
+ * the wide arrangement, that fits both ways rather than by width alone.
+ */
+@Composable
+private fun WatchPageFrame(
+    modifier: Modifier = Modifier,
+    /**
+     * The video's own details, drawn under the frame on the start side when
+     * there is height for them (a tablet). Null leaves the start side to the
+     * video alone, with everything in [info].
+     */
+    details: (@Composable (Modifier) -> Unit)? = null,
+    video: @Composable (Modifier) -> Unit,
+    info: @Composable (Modifier) -> Unit,
+) {
+    val window = com.ivor.ivormusic.ui.theme.currentWindowLayout()
+    if (window.supportsTwoPanes) {
+        // About a third of the window, bounded so the list stays readable on
+        // a phone on its side and does not take the picture's room on a
+        // tablet.
+        val infoWidth = (window.width * 0.36f).coerceIn(320.dp, 460.dp)
+        Row(modifier = modifier) {
+            if (details != null) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
+                    // Loose bounds, so the frame fits its shape inside them:
+                    // an upright video would otherwise take the column's full
+                    // width and several times the window's height.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = window.height * 0.64f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        video(Modifier)
+                    }
+                    details(Modifier.fillMaxWidth().weight(1f))
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    video(Modifier)
+                }
+            }
+            // Both halves run to the top edge. Held for the status bar as
+            // the upright page is, the whole window lost a band of black
+            // across its top, on a screen with little height to begin with.
+            // The list's own surface goes up under the bar and only its
+            // content stays clear of it.
+            info(
+                Modifier
+                    .width(infoWidth)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
+            )
+        }
+    } else {
+        // The video stays below the status bar, on black, the way YouTube's
+        // portrait watch page does - taking it up there would crop a 16:9
+        // frame and put the clock over the picture.
+        Column(
+            modifier = modifier
+                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top))
+        ) {
+            video(Modifier.fillMaxWidth())
+            info(Modifier.fillMaxWidth().weight(1f))
+        }
+    }
+}
+
 @Composable
 internal fun KeepSystemBarsHidden(enabled: Boolean) {
     if (!enabled) return
@@ -2631,17 +2836,24 @@ private fun CaptionsDeck(
     optionColors: ToggleButtonColors,
     onSelect: (CaptionTrack?) -> Unit,
     onEmbeddedSelect: (PlayerTrackOption?) -> Unit,
+    onLoadSubtitleFile: (() -> Unit)?,
     onTextSizeChanged: (Float) -> Unit,
     onTextColorChanged: (CaptionTextColor) -> Unit,
     onBackgroundChanged: (CaptionBackground) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         when {
+            // A file's own tracks, then any subtitle files picked for it.
             state.embeddedTracks.isNotEmpty() -> CaptionLanguageRows(
-                offChecked = state.embeddedTracks.none { it.isSelected },
-                onOff = { onEmbeddedSelect(null) },
+                offChecked = state.embeddedTracks.none { it.isSelected } && state.selected == null,
+                onOff = {
+                    onEmbeddedSelect(null)
+                    onSelect(null)
+                },
                 rows = state.embeddedTracks.map { track ->
                     Triple(track.label, track.isSelected) { onEmbeddedSelect(track) }
+                } + state.tracks.map { track ->
+                    Triple(captionLabel(track), state.selected == track) { onSelect(track) }
                 }
             )
             // A local file's subtitle tracks are known the moment it is read, so
@@ -2665,6 +2877,17 @@ private fun CaptionsDeck(
                     Triple(captionLabel(track), state.selected == track) { onSelect(track) }
                 }
             )
+        }
+
+        if (onLoadSubtitleFile != null) {
+            Column(modifier = Modifier.clip(RoundedCornerShape(16.dp))) {
+                com.ivor.ivormusic.ui.player.OptionRow(
+                    icon = Icons.Rounded.UploadFile,
+                    title = stringResource(R.string.vpc_load_subtitle_file),
+                    subtitle = stringResource(R.string.vpc_load_subtitle_file_sub),
+                    onClick = onLoadSubtitleFile,
+                )
+            }
         }
 
         CaptionTextSizeSlider(

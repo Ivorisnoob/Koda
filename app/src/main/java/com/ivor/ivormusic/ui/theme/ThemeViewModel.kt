@@ -73,6 +73,7 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     val nonExpressiveNavigationBar: StateFlow<Boolean> =
         themePreferences.nonExpressiveNavigationBar
     val rotateWithDevice: StateFlow<Boolean> = themePreferences.rotateWithDevice
+    val drawBesideCutout: StateFlow<Boolean> = themePreferences.drawBesideCutout
     val subscriptionSource: StateFlow<String> = themePreferences.subscriptionSource
     val subscribeTarget: StateFlow<String> = themePreferences.subscribeTarget
     val fastSubscriptionFeed: StateFlow<Boolean> = themePreferences.fastSubscriptionFeed

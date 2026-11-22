@@ -156,9 +156,11 @@ class PlaybackTileService : TileService() {
                 tile.state = if (playing) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
                 tile.label = ctrl.mediaMetadata.title?.toString().takeUnless { it.isNullOrBlank() }
                     ?: getString(R.string.app_name)
-                ctrl.mediaMetadata.artist?.toString()
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { tile.subtitle = it }
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    ctrl.mediaMetadata.artist?.toString()
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { tile.subtitle = it }
+                }
                 tile.icon = Icon.createWithResource(
                     this,
                     if (playing) R.drawable.ic_media_pause else R.drawable.ic_media_play

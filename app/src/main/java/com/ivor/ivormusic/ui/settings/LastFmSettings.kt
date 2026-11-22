@@ -206,6 +206,11 @@ internal fun LastFmSettingsPage(onBack: () -> Unit, model: LastFmViewModel = vie
                         SettingsToggleRow(icon = Icons.Rounded.Sync, title = stringResource(R.string.lastfm_enable),
                             subtitle = stringResource(R.string.lastfm_toggle_short), enabled = state.enabled,
                             onToggle = repository::setEnabled)
+                        if (state.enabled) {
+                            SettingsToggleRow(icon = Icons.Rounded.Album, title = stringResource(R.string.lastfm_fill_album),
+                                subtitle = stringResource(R.string.lastfm_fill_album_sub), enabled = state.fillMissingAlbum,
+                                onToggle = repository::setFillMissingAlbum)
+                        }
                     }
                 }
                 if (paused) item {

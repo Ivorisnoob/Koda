@@ -22,6 +22,17 @@ data class DismissalTokens(
 )
 
 /**
+ * What keeps a video from playing for everyone. Not stored; reorder freely.
+ *
+ * [MEMBERS_ONLY]: a channel-membership upload. Marked by a `badgeViewModel`
+ * with `badgeStyle: BADGE_MEMBERS_ONLY` in a lockup's metadata rows, verified
+ * November 2026 on an anonymous channel Videos tab; it never appeared in
+ * anonymous search. [PAID]: a film YouTube sells or rents, which search sends
+ * as a `movieRenderer` with a "Buy or rent" offer button (same probe).
+ */
+enum class VideoAccess { MEMBERS_ONLY, PAID }
+
+/**
  * Represents a YouTube video item for Video Mode.
  * This is distinct from Song as it contains video-specific metadata.
  */
@@ -77,7 +88,12 @@ data class VideoItem(
      * channel's Atom feed, or a lockup whose tap opens the Shorts player. Lets
      * feeds that mix Shorts in with videos honour "Fully block Shorts".
      */
-    val isShort: Boolean = false
+    val isShort: Boolean = false,
+    /**
+     * Whether anyone can watch it: null for an ordinary video, or what stands
+     * in the way. Read from the card's own badge or shape, never guessed (#379).
+     */
+    val access: VideoAccess? = null,
 ) {
     /**
      * Destination understood by the channel screen.
@@ -689,16 +705,23 @@ fun List<VideoQuality>.defaultForPreference(preferred: String, maxHeight: Int = 
 /**
  * Long edge of the screen in px: the tallest picture this device can show.
  *
- * `maximumWindowMetrics` is always available (minSdk 30) and, unlike the
- * current window bounds, does not shrink in split-screen or portrait - a cap
+ * `maximumWindowMetrics` (API 30; the display's real size below it) is,
+ * unlike the current window bounds, unaffected by split-screen or portrait - a cap
  * has to describe the panel, not the moment. Compared against rendition
  * labels, which name the short edge by YouTube convention: a 720x1280 phone
  * caps at 1280, so 1080p still plays and 1440p/4K never start.
  */
 fun android.content.Context.deviceVideoHeightCap(): Int = runCatching {
     val manager = getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
-    val bounds = manager.maximumWindowMetrics.bounds
-    maxOf(bounds.width(), bounds.height())
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        val bounds = manager.maximumWindowMetrics.bounds
+        maxOf(bounds.width(), bounds.height())
+    } else {
+        val size = android.graphics.Point()
+        @Suppress("DEPRECATION")
+        manager.defaultDisplay.getRealSize(size)
+        maxOf(size.x, size.y)
+    }
 }.getOrDefault(0).takeIf { it > 0 } ?: 1080
 
 /**

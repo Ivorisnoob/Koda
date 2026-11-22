@@ -53,6 +53,28 @@ val MontserratFamily = FontFamily(
     Font(googleFont = MontserratFont, fontProvider = provider, weight = FontWeight.Light),
 )
 
+// Lyric faces (Customization -> Lyrics). Downloaded through the same Google
+// Fonts provider as the rest, so they cost nothing in the APK; where the
+// provider is missing the platform font stands in, as it does for Montserrat.
+// Each declares the weights the page offers, 500 to 800.
+private fun lyricFamily(name: String, weights: List<FontWeight>): FontFamily {
+    val font = GoogleFont(name)
+    return FontFamily(weights.map { Font(googleFont = font, fontProvider = provider, weight = it) })
+}
+
+private val LyricWeights = listOf(
+    FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold
+)
+
+/** Inter: the open grotesque nearest Apple's SF Pro, the lyrics' default face. */
+val InterFamily = lyricFamily("Inter", LyricWeights)
+
+/** Nunito: a rounded face for the lyrics. */
+val NunitoFamily = lyricFamily("Nunito", LyricWeights)
+
+/** Lora: a book serif for the lyrics; it stops at Bold, which stands in for ExtraBold. */
+val LoraFamily = lyricFamily("Lora", listOf(FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold))
+
 // Medium width (110f) - for section headers
 val RobotoFlexMediumWidth = FontFamily(
     Font(

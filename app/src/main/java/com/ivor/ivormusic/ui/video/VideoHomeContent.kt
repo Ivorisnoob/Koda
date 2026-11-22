@@ -149,13 +149,6 @@ fun VideoHomeContent(
      * thought about it gets the feed that does not move on its own.
      */
     inlinePreviews: Boolean = false,
-    /**
-     * How far the floating navigation bar has left, 0 to 1. The top bar follows
-     * it back as soon as the page scrolls up, rather than waiting for the top
-     * of the list. A host whose bar never hides answers 1, and the top bar
-     * stays with the list. Read in the draw phase only.
-     */
-    navigationHiddenFraction: () -> Float
 ) {
     // Null when the setting is off, and then the cards read a null local and
     // draw exactly what they drew before this existed.
@@ -301,18 +294,32 @@ fun VideoHomeContent(
         FeedPostCard(post, viewModel, openVideo, onOpenChannel, postPhotoViewer)
     }
 
+    // The Explore topic showing in place of the feed; null for the feed. Off
+    // in settings or offline, the row and any picked topic step aside.
+    val exploreState by viewModel.explore.collectAsState()
+    val showExploreRow = feedFilter.showExplore && !showOfflineDownloads && !isOffline
+    val exploreFeed = exploreState.takeIf { showExploreRow }
+
     ExpressivePullToRefresh(
         // Only let the pull-to-refresh spinner represent a refresh over existing
         // content. The empty-feed case shows its own centered indicator below, and
         // driving both off the same flag renders two spinners at once.
-        isRefreshing = isLoading && (videos.isNotEmpty() || showOfflineDownloads),
+        isRefreshing = if (exploreFeed != null) {
+            exploreFeed.isLoading && exploreFeed.videos.isNotEmpty()
+        } else {
+            isLoading && (videos.isNotEmpty() || showOfflineDownloads)
+        },
         onRefresh = {
-            viewModel.refreshFeedPosts()
-            onRefresh()
+            if (exploreFeed != null) {
+                viewModel.selectExploreTopic(exploreFeed.topic, force = true)
+            } else {
+                viewModel.refreshFeedPosts()
+                onRefresh()
+            }
         },
         modifier = Modifier.fillMaxSize()
     ) {
-        if (isLoading && videos.isEmpty() && !showOfflineDownloads) {
+        if (exploreFeed == null && isLoading && videos.isEmpty() && !showOfflineDownloads) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -329,6 +336,7 @@ fun VideoHomeContent(
             // Read through updated state: the effect below is keyed on the list
             // alone and outlives a change of this setting.
             val currentRecommendationsEnabled by rememberUpdatedState(recommendationsEnabled)
+            val currentExploring by rememberUpdatedState(exploreFeed != null)
 
             // Endless feed: ask for the next page whenever the last visible
             // item is within 5 of the end. The ViewModel guards against
@@ -338,7 +346,8 @@ fun VideoHomeContent(
                     val info = listState.layoutInfo
                     (info.visibleItemsInfo.lastOrNull()?.index ?: -1) to info.totalItemsCount
                 }.collect { (lastVisible, totalCount) ->
-                    if (totalCount > 0 && lastVisible >= totalCount - 5) {
+                    // A topic is one page; the feed underneath does not grow meanwhile.
+                    if (!currentExploring && totalCount > 0 && lastVisible >= totalCount - 5) {
                         if (currentRecommendationsEnabled) {
                             viewModel.loadMoreTrendingVideos()
                         } else {
@@ -371,7 +380,16 @@ fun VideoHomeContent(
                     modeToggleState = modeToggleState
                 )
             }
-            Box(modifier = Modifier.fillMaxSize()) {
+            // The top bar floats over the feed; see FloatingTopBarHost.
+            val scrolledPastTop by remember(listState) {
+                androidx.compose.runtime.derivedStateOf { listState.canScrollBackward }
+            }
+            com.ivor.ivormusic.ui.components.FloatingTopBarHost(
+                scrolledPastTop = scrolledPastTop,
+                contentPadding = contentPadding,
+                modifier = Modifier.fillMaxSize(),
+                bar = topBar
+            ) { barHeight ->
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -380,12 +398,21 @@ fun VideoHomeContent(
                 contentPadding = contentPadding,
                 verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp)
             ) {
-                // Top Bar
-                item { topBar() }
-                
+                // Room for the floating top bar.
+                item(key = "topbar_space") { Spacer(Modifier.height(barHeight)) }
+
+                if (showExploreRow) item(key = "explore_row") {
+                    ExploreTopicRow(
+                        selected = exploreFeed?.topic,
+                        onSelect = { topic -> viewModel.selectExploreTopic(topic) },
+                    )
+                }
+
                 // Section title - changes based on whether user is logged in
                 // or recommendations are disabled (in which case subscriptions are shown).
-                if (showOfflineDownloads || recommendationsEnabled || videos.isNotEmpty()) item {
+                if (exploreFeed == null &&
+                    (showOfflineDownloads || recommendationsEnabled || videos.isNotEmpty())
+                ) item {
                     AnimatedVisibility(
                         visible = isVisible,
                         enter = fadeIn() + slideInVertically(
@@ -431,19 +458,49 @@ fun VideoHomeContent(
                             repeat(offlinePerRow - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
+                } else if (exploreFeed != null) {
+                    val topicVideos = feedFilter.apply(exploreFeed.videos)
+                    if (topicVideos.isEmpty()) {
+                        item(key = "explore_status") {
+                            ExploreTopicStatus(
+                                isLoading = exploreFeed.isLoading,
+                                onRetry = { viewModel.selectExploreTopic(exploreFeed.topic, force = true) },
+                            )
+                        }
+                    } else {
+                        videoListItemsWithPosts(
+                            videos = topicVideos,
+                            posts = emptyList(),
+                            layout = listLayout,
+                            keyPrefix = "explore_${exploreFeed.topic.name}_",
+                            columns = videoGridColumns,
+                            post = feedPostCard
+                        ) { video, cell ->
+                            VideoCard(
+                                video = video,
+                                onClick = { openVideo(video) },
+                                onLongClick = { onVideoLongPress(video) },
+                                onOpenChannel = onOpenChannel,
+                                modifier = cell
+                            )
+                        }
+                    }
                 } else {
                     // Video cards, with the Shorts shelf slotted in after the
                     // first two like the YouTube home feed.
                     val feedVideos = feedFilter.apply(videos)
+                    // Two on a phone; one whole row where more sit across,
+                    // so the shelf is not under a row with holes in it.
+                    val aboveShorts = maxOf(2, videoGridColumns)
                     val leadingVideos = if (!shortsEnabled) {
                         feedVideos
                     } else {
-                        feedVideos.take(2)
+                        feedVideos.take(aboveShorts)
                     }
                     val trailingVideos = if (!shortsEnabled) {
                         emptyList()
                     } else {
-                        feedVideos.drop(2)
+                        feedVideos.drop(aboveShorts)
                     }
 
                     // Posts go in whichever run is the feed proper: after
@@ -497,7 +554,7 @@ fun VideoHomeContent(
                 }
                 
                 // Empty state
-                if (videos.isEmpty() &&
+                if (exploreFeed == null && videos.isEmpty() &&
                     !isLoading && !showOfflineDownloads && shorts.isEmpty()
                 ) {
                     val hasSubscriptions = isYouTubeConnected || subscribedChannels.isNotEmpty() || localSubscriptions.isNotEmpty()
@@ -574,27 +631,6 @@ fun VideoHomeContent(
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
-
-            // The list's own top bar comes back only with the top of the list,
-            // so a copy rides with the navigation bar over it. It stays until
-            // the list is fully at the top, where the two lie exactly over each
-            // other and the swap cannot be seen.
-            val scrolledAway by remember(listState) {
-                androidx.compose.runtime.derivedStateOf {
-                    listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-                }
-            }
-            if (scrolledAway) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationY = -size.height * navigationHiddenFraction() }
-                        .background(backgroundColor)
-                        .padding(top = contentPadding.calculateTopPadding())
-                ) {
-                    topBar()
-                }
-            }
             }
             }
         }
@@ -655,29 +691,29 @@ internal fun VideoTopBarSection(
         // rather than a chip beside it, so the bar keeps its shape whether
         // history is paused or not.
         Box(modifier = Modifier.align(Alignment.CenterStart)) {
+            // The active profile's own picture, drawn the way music mode's bar
+            // draws it: no circle clip and no disc behind it. A disc showed
+            // round a Koda avatar's outline, and on the Black and White
+            // palettes it was all that showed.
+            val profileLabel = stringResource(R.string.cd_profile)
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(CircleShape)
-                    .background(surfaceColor)
-                    .clickable(onClick = onProfileClick),
+                    .clickable(
+                        interactionSource = remember {
+                            androidx.compose.foundation.interaction.MutableInteractionSource()
+                        },
+                        indication = androidx.compose.material3.ripple(bounded = false, radius = 22.dp),
+                        onClick = onProfileClick
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                if (userAvatar != null) {
-                    AsyncImage(
-                        model = userAvatar,
-                        contentDescription = stringResource(R.string.cd_profile),
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = stringResource(R.string.cd_profile),
-                        tint = iconColor,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                com.ivor.ivormusic.ui.profile.ActiveProfileAvatar(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics { contentDescription = profileLabel },
+                    accountAvatarUrl = userAvatar
+                )
             }
             // The history-paused mark. Tonal fill so it reads as "a mode is on"
             // without taking over the bar; the badge itself carries the label,
@@ -982,6 +1018,12 @@ fun VideoCard(
                         .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 ) {
                     VideoThumbnail(video = video, modifier = Modifier.fillMaxSize())
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(
+                        video.videoId,
+                        Modifier.fillMaxSize(),
+                        barSize = 28.dp,
+                        video = true,
+                    )
                     VideoThumbnailBadge(
                         video = video,
                         modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
@@ -991,7 +1033,11 @@ fun VideoCard(
                     Text(
                         text = video.title,
                         style = MaterialTheme.typography.titleSmall,
-                        color = textColor,
+                        color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                            video.videoId,
+                            textColor,
+                            video = true,
+                        ),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1042,6 +1088,12 @@ fun VideoCard(
                     VideoThumbnail(
                         video = video,
                         modifier = Modifier.fillMaxSize()
+                    )
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(
+                        video.videoId,
+                        Modifier.fillMaxSize(),
+                        barSize = 36.dp,
+                        video = true,
                     )
 
                     // Drawn over the thumbnail rather than in place of it, and
@@ -1196,7 +1248,11 @@ fun VideoCard(
                             text = video.title,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
-                            color = textColor,
+                            color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                                video.videoId,
+                                textColor,
+                                video = true,
+                            ),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )

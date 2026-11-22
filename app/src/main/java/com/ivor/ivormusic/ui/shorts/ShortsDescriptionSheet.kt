@@ -92,7 +92,8 @@ fun ShortsDescriptionSheet(
     }
     val linkedDescription = rememberLinkedText(
         rich = RichText(description, video.descriptionLinks),
-        onTimestampClick = { seconds -> onSeekTo(seconds * 1000L) }
+        onTimestampClick = { seconds -> onSeekTo(seconds * 1000L) },
+        timestampVideoId = video.videoId
     )
 
     AdaptiveModalSheet(

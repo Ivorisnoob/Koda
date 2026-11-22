@@ -602,6 +602,13 @@ fun HomeScreen(
     
     // Artist screen state (for navigation from player)
     var viewedArtistFromPlayer by remember { mutableStateOf<String?>(null) }
+    // Its channel id when the song named one, so a collaborator opens their
+    // own page rather than a search for the name (see resolveArtistTap).
+    var viewedArtistIdFromPlayer by remember { mutableStateOf<String?>(null) }
+    // A collaboration's artists, waiting for the listener to pick one.
+    var artistChoice by remember {
+        mutableStateOf<List<com.ivor.ivormusic.data.ArtistCredit>?>(null)
+    }
     // Where a Library sub-screen handed over from another tab goes back to:
     // that tab, with the player left exactly as it was. Without it back
     // strands the user in a Library they never navigated through; the older
@@ -630,6 +637,7 @@ fun HomeScreen(
             // belongs to the Subscriptions feed while the video toggle is on.
             // Asking for it is therefore asking to be in music mode.
             noteLibraryReturn()
+            viewedArtistIdFromPlayer = null
             viewedArtistFromPlayer = artist
             goToTab(2)
             viewModel.consumeArtistPageRequest()
@@ -795,7 +803,13 @@ fun HomeScreen(
     // pill (top edge at 180dp) and/or the video mini player (top edge at
     // 188dp, stacked to 284dp when the music pill is also alive). Animated so
     // FABs glide instead of jumping when a mini player appears.
-    val musicPillVisible = currentSong != null
+    // In video mode the video bar alone is shown; see isMusicMiniParked.
+    val musicMiniParked = com.ivor.ivormusic.ui.player.isMusicMiniParked(
+        videoMode = videoMode,
+        hasVideoMiniPlayer = hasVideoMiniPlayer,
+        musicPlayWhenReady = playWhenReady,
+    )
+    val musicPillVisible = currentSong != null && !musicMiniParked
     // From 600dp across, navigation moves to a rail on the start edge and the
     // page starts where the rail ends. The horizontal safe-drawing inset is
     // taken here too: a phone on its side has its cutout and (with three-button
@@ -804,9 +818,7 @@ fun HomeScreen(
     val windowLayout = com.ivor.ivormusic.ui.theme.currentWindowLayout()
     val useRail = windowLayout.usesNavigationRail
     val shellLayoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
-    val safeHorizontalInsets = WindowInsets.safeDrawing
-        .only(androidx.compose.foundation.layout.WindowInsetsSides.Horizontal)
-        .asPaddingValues()
+    val safeHorizontalInsets = com.ivor.ivormusic.ui.theme.safeHorizontalInsets().asPaddingValues()
     val safeStartInset = safeHorizontalInsets.calculateStartPadding(shellLayoutDirection)
     val safeEndInset = safeHorizontalInsets.calculateEndPadding(shellLayoutDirection)
     val contentStartInset = safeStartInset + when {
@@ -971,9 +983,7 @@ fun HomeScreen(
     androidx.compose.runtime.CompositionLocalProvider(
         com.ivor.ivormusic.ui.components.LocalBottomOverlayInset provides bottomOverlayInset,
         com.ivor.ivormusic.ui.components.LocalBottomOverlayMotion provides bottomOverlayMotion,
-        com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher provides { showAccountSheet = true },
-        com.ivor.ivormusic.ui.components.LocalNowPlaying provides
-            com.ivor.ivormusic.ui.components.NowPlayingState(currentSong?.id, isPlaying)
+        com.ivor.ivormusic.ui.profile.LocalOpenAccountSwitcher provides { showAccountSheet = true }
     ) {
     // Experiment: flick between the main tabs with a swipe, same contract as
     // the channel page - a fast horizontal flick moves to the next/previous
@@ -1173,10 +1183,6 @@ fun HomeScreen(
                                 )
                             } else if (videoModeContent) {
                                 VideoHomeContent(
-                                    navigationHiddenFraction = {
-                                        if (nonExpressiveNavigationBar || useRail || !barHidesOnScroll) 1f
-                                        else floatingToolbarState.hiddenFraction()
-                                    },
                                     compact = compactVideoHome,
                                     inlinePreviews = inlinePreviews,
                                     // Recommendations off: a shuffle across the
@@ -1243,10 +1249,25 @@ fun HomeScreen(
                                         // same tab system - only the composition of this one
                                         // tab differs, which is the move the video toggle
                                         // already established.
+                                        // Offline, both Homes lead with what will
+                                        // play: downloads, then fully cached songs.
+                                        val homeOnline by viewModel.isOnline.collectAsState()
+                                        val homeReadyOffline by viewModel.readyOffline.collectAsState()
+                                        val homeDownloads by viewModel.downloadedSongs.collectAsState()
+                                        // The cache changes as a side effect of
+                                        // listening, so it is re-read each time the
+                                        // connection goes, not held from earlier.
+                                        LaunchedEffect(homeOnline) {
+                                            if (!homeOnline) viewModel.refreshReadyOffline()
+                                        }
+                                        val homeOfflineSongs = remember(homeDownloads, homeReadyOffline) {
+                                            (homeDownloads + homeReadyOffline.songs).distinctBy { it.id }
+                                        }
                                         if (spotlightHome) {
                                             val spotlightPlaylists by viewModel.musicModePlaylists.collectAsState()
                                             val spotlightLiked by viewModel.likedSongs.collectAsState()
                                             SpotlightHomeContent(
+                                                hiddenSections = homeNavigation.hiddenHomeSections,
                                                 songs = songs,
                                                 recentlyPlayed = recentlyPlayed,
                                                 likedSongs = spotlightLiked,
@@ -1304,7 +1325,9 @@ fun HomeScreen(
                                                 modeToggleState = modeToggleState,
                                                 listState = musicHomeScrollState,
                                                 filter = spotlightFilter,
-                                                onFilterChange = { spotlightFilter = it }
+                                                onFilterChange = { spotlightFilter = it },
+                                                isOffline = !homeOnline,
+                                                offlineSongs = homeOfflineSongs,
                                             )
                                         } else {
                                             // Music Mode: Show original content. The first load
@@ -1317,18 +1340,7 @@ fun HomeScreen(
                                             val classicLiked by viewModel.likedSongs.collectAsState()
                                             val classicTopArtists by viewModel.topArtists.collectAsState()
                                             val classicArtistPhotos by viewModel.artistPhotos.collectAsState()
-                                            val classicOnline by viewModel.isOnline.collectAsState()
-                                            val classicReadyOffline by viewModel.readyOffline.collectAsState()
-                                            val classicDownloads by viewModel.downloadedSongs.collectAsState()
-                                            // The cache changes as a side effect of
-                                            // listening, so it is re-read each time the
-                                            // connection goes, not held from earlier.
-                                            LaunchedEffect(classicOnline) {
-                                                if (!classicOnline) viewModel.refreshReadyOffline()
-                                            }
-                                            val classicOfflineSongs = remember(classicDownloads, classicReadyOffline) {
-                                                (classicDownloads + classicReadyOffline.songs).distinctBy { it.id }
-                                            }
+                                            val classicSpeedDial by viewModel.speedDial.collectAsState()
                                             YourMixContent(
                                                 likedCount = classicLiked.size,
                                                 // Straight onto the likes, as the Library's
@@ -1343,10 +1355,10 @@ fun HomeScreen(
                                                 topArtists = classicTopArtists,
                                                 artistPhotos = classicArtistPhotos,
                                                 onArtistClick = { artist -> viewModel.requestArtistPage(artist.name) },
-                                                isOffline = !classicOnline,
-                                                offlineSongs = classicOfflineSongs,
+                                                isOffline = !homeOnline,
+                                                offlineSongs = homeOfflineSongs,
                                                 onOfflineSongClick = { song ->
-                                                    playerViewModel.playQueue(classicOfflineSongs, song)
+                                                    playerViewModel.playQueue(homeOfflineSongs, song)
                                                     showPlayerSheet = true
                                                 },
                                                 recentAlbums = classicRecentAlbums,
@@ -1394,6 +1406,12 @@ fun HomeScreen(
                                                     playerViewModel.playQueue(recentlyPlayed, song)
                                                     showPlayerSheet = true
                                                 },
+                                                speedDial = classicSpeedDial,
+                                                onSpeedDialClick = { song ->
+                                                    playerViewModel.playQueue(classicSpeedDial, song)
+                                                    showPlayerSheet = true
+                                                },
+                                                hiddenSections = homeNavigation.hiddenHomeSections,
                                                 onShowAllInLibrary = { selectedTab = 2 },
                                                 onSpinClick = {
                                                     spinSource = SpinSource.Mix
@@ -1494,7 +1512,8 @@ fun HomeScreen(
                         isDarkMode = isDarkMode,
                         videoMode = videoMode,
                         localOnly = localOnly,
-                        requestInitialFocus = !hasExpandedVideoPlayer && !showPlayerSheet,
+                        requestInitialFocus = homeNavigation.searchOpensKeyboard &&
+                            !hasExpandedVideoPlayer && !showPlayerSheet,
                         listState = if (videoMode) videoSearchScrollState else musicSearchScrollState
                     )
                     2 -> {
@@ -1541,7 +1560,11 @@ fun HomeScreen(
                                 viewModel = viewModel,
                                 isDarkMode = isDarkMode,
                                 initialArtist = viewedArtistFromPlayer,
-                                onInitialArtistConsumed = { viewedArtistFromPlayer = null },
+                                initialArtistId = viewedArtistIdFromPlayer,
+                                onInitialArtistConsumed = {
+                                    viewedArtistFromPlayer = null
+                                    viewedArtistIdFromPlayer = null
+                                },
                                 initialReturnToCaller = libraryReturnTab != null,
                                 onReturnToCaller = {
                                     // The tab slide reads as going back; the
@@ -1980,65 +2003,85 @@ fun HomeScreen(
             }
         }
 
-        // Expandable Player (Mini <-> Full Screen)
-        ExpandablePlayer(
-            isExpanded = showPlayerSheet,
-            onExpandChange = { showPlayerSheet = it },
-            currentSong = currentSong,
-            isPlaying = isPlaying,
-            isBuffering = isBuffering,
-            playWhenReady = playWhenReady,
-            progress = progressFraction,
-            duration = playerViewModel.duration.collectAsState().value,
-            onPlayPauseClick = { playerViewModel.togglePlayPause() },
-            onNextClick = { playerViewModel.skipToNext() },
-            viewModel = playerViewModel,
-            ambientBackground = ambientBackground,
-            artworkColors = playerArtworkColors,
-            playerStyle = playerStyle,
-            onPlayerStyleChange = onPlayerStyleChange,
-            collapsedBottomSpacing = miniPlayerCollapsedSpacing,
-            collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
-            // Read in the lambda, so the bubble animating does not recompose
-            // this screen.
-            collapsedBubbleFraction = { miniBubbleFraction.value.coerceIn(0f, 1f) },
-            collapsedStartInset = contentStartInset,
-            collapsedEndInset = contentEndInset,
-            collapsedMaxWidth = if (useRail) MINI_PLAYER_MAX_WIDE_WIDTH else androidx.compose.ui.unit.Dp.Unspecified,
-            onWatchAsVideo = onWatchAsVideo,
-            onArtistClick = { artistName ->
-                // Collapse the player and open the artist inside the music
-                // Library tab. The origin tab is remembered so back returns to
-                // it rather than stranding the user in the Library, and
-                // noteLibraryReturn() runs before goToTab because it reads
-                // videoMode to decide whether back has a tab to go to.
-                //
-                // goToTab rather than an assignment is load-bearing: the music
-                // player outlives a switch to video mode - its mini bar stays,
-                // and expanding it from there is an ordinary thing to do - and
-                // in that mode tab 2 is the Subscriptions feed, so this has to
-                // switch modes and then land, in that order. See goToTab.
-                noteLibraryReturn()
-                showPlayerSheet = false
-                viewedArtistFromPlayer = artistName
-                goToTab(2) // Music Library tab
-            },
-            onAlbumClick = { albumName ->
-                noteLibraryReturn()
-                showPlayerSheet = false
-                viewedAlbumFromPlayer = albumName
-                goToTab(2)
-            },
-            onOpenAlbum = { albumItem ->
-                // A stream's album opens the playlist detail the same way a
-                // Spotlight shelf does: hand it over and switch tab.
-                noteLibraryReturn()
-                showPlayerSheet = false
-                viewedPlaylistFromHome = albumItem
-                goToTab(2)
-            },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
+        // Expandable Player (Mini <-> Full Screen). Parked rather than drawn
+        // while the video bar has Home to itself, unless it is open: a
+        // handover can ask for it expanded, and that always wins.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !musicMiniParked || showPlayerSheet,
+            enter = androidx.compose.animation.fadeIn() +
+                androidx.compose.animation.scaleIn(initialScale = 0.85f),
+            exit = androidx.compose.animation.fadeOut() +
+                androidx.compose.animation.scaleOut(targetScale = 0.85f),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            ExpandablePlayer(
+                isExpanded = showPlayerSheet,
+                onExpandChange = { showPlayerSheet = it },
+                currentSong = currentSong,
+                isPlaying = isPlaying,
+                isBuffering = isBuffering,
+                playWhenReady = playWhenReady,
+                progress = progressFraction,
+                duration = playerViewModel.duration.collectAsState().value,
+                onPlayPauseClick = { playerViewModel.togglePlayPause() },
+                onNextClick = { playerViewModel.skipToNext() },
+                viewModel = playerViewModel,
+                ambientBackground = ambientBackground,
+                artworkColors = playerArtworkColors,
+                playerStyle = playerStyle,
+                onPlayerStyleChange = onPlayerStyleChange,
+                collapsedBottomSpacing = miniPlayerCollapsedSpacing,
+                collapsedFollowOffsetPx = miniPlayerFollowOffsetPx,
+                // Read in the lambda, so the bubble animating does not recompose
+                // this screen.
+                collapsedBubbleFraction = { miniBubbleFraction.value.coerceIn(0f, 1f) },
+                collapsedStartInset = contentStartInset,
+                collapsedEndInset = contentEndInset,
+                collapsedMaxWidth = if (useRail) MINI_PLAYER_MAX_WIDE_WIDTH else androidx.compose.ui.unit.Dp.Unspecified,
+                onWatchAsVideo = onWatchAsVideo,
+                onArtistClick = { artistName ->
+                    // Collapse the player and open the artist inside the music
+                    // Library tab. The origin tab is remembered so back returns to
+                    // it rather than stranding the user in the Library, and
+                    // noteLibraryReturn() runs before goToTab because it reads
+                    // videoMode to decide whether back has a tab to go to.
+                    //
+                    // goToTab rather than an assignment is load-bearing: the music
+                    // player outlives a switch to video mode - its mini bar stays,
+                    // and expanding it from there is an ordinary thing to do - and
+                    // in that mode tab 2 is the Subscriptions feed, so this has to
+                    // switch modes and then land, in that order. See goToTab.
+                    when (val tap = com.ivor.ivormusic.ui.artist.resolveArtistTap(
+                        artistName, currentSong?.artistCredits.orEmpty()
+                    )) {
+                        is com.ivor.ivormusic.ui.artist.ArtistTap.Open -> {
+                            noteLibraryReturn()
+                            showPlayerSheet = false
+                            viewedArtistIdFromPlayer = tap.id
+                            viewedArtistFromPlayer = tap.name
+                            goToTab(2) // Music Library tab
+                        }
+                        // The player stays open under the question; the choice
+                        // then leaves it the same way a direct tap does.
+                        is com.ivor.ivormusic.ui.artist.ArtistTap.Choose -> artistChoice = tap.credits
+                    }
+                },
+                onAlbumClick = { albumName ->
+                    noteLibraryReturn()
+                    showPlayerSheet = false
+                    viewedAlbumFromPlayer = albumName
+                    goToTab(2)
+                },
+                onOpenAlbum = { albumItem ->
+                    // A stream's album opens the playlist detail the same way a
+                    // Spotlight shelf does: hand it over and switch tab.
+                    noteLibraryReturn()
+                    showPlayerSheet = false
+                    viewedPlaylistFromHome = albumItem
+                    goToTab(2)
+                },
+            )
+        }
         
         // Update available indicator. Anchored bottom-start above the floating
         // overlays (shared bottomOverlayInset) rather than the top bar, where it
@@ -2125,15 +2168,22 @@ fun HomeScreen(
             song = song,
             viewModel = playerViewModel,
             onDismiss = { songOptionsTarget = null },
+            onRemovedFromCache = { viewModel.refreshReadyOffline() },
             // The same hand-off the player already uses for an artist: the
             // artist page lives inside the Library tab rather than on a route,
             // so it is opened by handing the name over and switching tab.
             // Nothing else passed this, which left the sheet's own artist row
             // unreachable from every surface in the app.
             onArtistClick = { artist ->
-                noteLibraryReturn()
-                viewedArtistFromPlayer = artist
-                goToTab(2)
+                when (val tap = com.ivor.ivormusic.ui.artist.resolveArtistTap(artist, song.artistCredits)) {
+                    is com.ivor.ivormusic.ui.artist.ArtistTap.Open -> {
+                        noteLibraryReturn()
+                        viewedArtistIdFromPlayer = tap.id
+                        viewedArtistFromPlayer = tap.name
+                        goToTab(2)
+                    }
+                    is com.ivor.ivormusic.ui.artist.ArtistTap.Choose -> artistChoice = tap.credits
+                }
             },
             onOpenAlbum = { albumItem ->
                 noteLibraryReturn()
@@ -2151,6 +2201,21 @@ fun HomeScreen(
                 { viewModel.blockArtist(song) }
             } else null,
             onSelect = { songSelection.start(song) }
+        )
+    }
+
+    artistChoice?.let { credits ->
+        com.ivor.ivormusic.ui.artist.ArtistChooserSheet(
+            credits = credits,
+            onChoose = { credit ->
+                artistChoice = null
+                noteLibraryReturn()
+                showPlayerSheet = false
+                viewedArtistIdFromPlayer = credit.id
+                viewedArtistFromPlayer = credit.name
+                goToTab(2)
+            },
+            onDismiss = { artistChoice = null },
         )
     }
 
@@ -2238,6 +2303,11 @@ fun YourMixContent(
     /** Local play history for the "Jump back in" rail. Empty for a new user. */
     recentlyPlayed: List<Song> = emptyList(),
     onRecentClick: (Song) -> Unit = {},
+    /** The most played songs, for the speed dial; see [speedDialFrom]. */
+    speedDial: List<Song> = emptyList(),
+    onSpeedDialClick: (Song) -> Unit = {},
+    /** Sections switched off under Home and navigation. */
+    hiddenSections: Set<com.ivor.ivormusic.data.HomeSection> = emptySet(),
     /** Albums behind the play history, newest first. */
     recentAlbums: List<RecentAlbum>,
     /** Required: a shelf card left unwired is a dead card. */
@@ -2320,28 +2390,34 @@ fun YourMixContent(
         // What is left of the window under the top bar, for the collage to
         // shrink into on a short (landscape) window.
         val collageRoom = maxHeight - contentPadding.calculateTopPadding() - 140.dp
+        val listPadding = PaddingValues(
+            start = pageSidePadding,
+            end = pageSidePadding,
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding()
+        )
+        // The top bar floats over the page and slides away while it scrolls
+        // down; the list keeps a spacer where the bar used to be.
+        val scrolledPastTop by remember(listState) {
+            androidx.compose.runtime.derivedStateOf { listState.canScrollBackward }
+        }
+        com.ivor.ivormusic.ui.components.FloatingTopBarHost(
+            scrolledPastTop = scrolledPastTop,
+            contentPadding = listPadding,
+            modifier = Modifier.fillMaxSize(),
+            bar = {
+                TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, videoMode = videoMode, onVideoModeToggle = onVideoModeToggle, showModeToggle = showModeToggle, modeToggleState = modeToggleState)
+            }
+        ) { barHeight ->
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundColor),
-            contentPadding = PaddingValues(
-                start = pageSidePadding,
-                end = pageSidePadding,
-                top = contentPadding.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding()
-            )
+            contentPadding = listPadding
         ) {
-            item { 
-                var visible by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) { visible = true }
-                Box(Modifier.graphicsLayer {
-                    alpha = if (visible) 1f else 0f
-                    translationY = if (visible) 0f else -20f
-                }.animateContentSize()) {
-                    TopBarSection(onProfileClick = onProfileClick, onSettingsClick = onSettingsClick, onDownloadsClick = onDownloadsClick, isDarkMode = isDarkMode, viewModel = viewModel, videoMode = videoMode, onVideoModeToggle = onVideoModeToggle, showModeToggle = showModeToggle, modeToggleState = modeToggleState)
-                }
-            }
+            // Room for the floating top bar (FloatingTopBarHost).
+            item(key = "topbar_space") { Spacer(modifier = Modifier.height(barHeight)) }
             
             item { 
                 var visible by remember { mutableStateOf(false) }
@@ -2413,7 +2489,21 @@ fun YourMixContent(
                 }
             }
             
-            item {
+            // What is played most, one tap away (#373).
+            if (com.ivor.ivormusic.data.HomeSection.SPEED_DIAL !in hiddenSections &&
+                !isInitialLoading && speedDial.size >= SPEED_DIAL_MIN
+            ) item(key = "speed-dial") {
+                Column {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    SpeedDialSection(
+                        songs = speedDial,
+                        onSongClick = onSpeedDialClick,
+                        onSongLongPress = onSongLongPress,
+                    )
+                }
+            }
+
+            if (com.ivor.ivormusic.data.HomeSection.RECENT_ALBUMS !in hiddenSections) item {
                 var visible by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) { kotlinx.coroutines.delay(300); visible = true }
                 Column(Modifier.graphicsLayer {
@@ -2458,7 +2548,7 @@ fun YourMixContent(
                 }
             }
 
-            item {
+            if (com.ivor.ivormusic.data.HomeSection.ARTISTS !in hiddenSections) item {
                 if (!isInitialLoading) {
                     TopArtistsSection(
                         artists = topArtists,
@@ -2472,7 +2562,7 @@ fun YourMixContent(
             // (they churn on their own and would crowd out what was chosen)
             // and given their own rail rather than dropped, since they are
             // still some of the best things to put on.
-            item {
+            if (com.ivor.ivormusic.data.HomeSection.MIXES !in hiddenSections) item {
                 if (!isInitialLoading) {
                     PlaylistsShelfSection(
                         title = stringResource(R.string.home_section_mixes),
@@ -2483,7 +2573,7 @@ fun YourMixContent(
                 }
             }
 
-            item {
+            if (com.ivor.ivormusic.data.HomeSection.JUMP_BACK_IN !in hiddenSections) item {
                 // No entrance animation on this last section: the staggered
                 // fade/slide above only starts its timer when the item scrolls
                 // into composition, so this row sat at alpha 0 until scrolled
@@ -2512,6 +2602,7 @@ fun YourMixContent(
                 }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
+        }
         }
         }
     }
@@ -3033,6 +3124,11 @@ fun OrganicSongLayout(
                         tint = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    songs[0].id,
+                    Modifier.fillMaxSize(),
+                    barSize = 48.dp,
+                )
             }
         }
         
@@ -3096,6 +3192,11 @@ fun OrganicSongLayout(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    songs[1].id,
+                    Modifier.fillMaxSize(),
+                    barSize = 28.dp,
+                )
             }
         }
         
@@ -3159,6 +3260,11 @@ fun OrganicSongLayout(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    songs[2].id,
+                    Modifier.fillMaxSize(),
+                    barSize = 28.dp,
+                )
             }
         }
     }
@@ -3241,6 +3347,11 @@ fun SongStripCard(
                 )
             }
         }
+        com.ivor.ivormusic.ui.components.NowPlayingMark(
+            song.id,
+            Modifier.fillMaxSize(),
+            barSize = 28.dp,
+        )
     }
 }
 
@@ -3779,6 +3890,11 @@ fun JumpBackInSection(
                                 )
                             }
                         }
+                        com.ivor.ivormusic.ui.components.NowPlayingMark(
+                            song.id,
+                            Modifier.fillMaxSize(),
+                            barSize = 36.dp,
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(CAPTION_GAP))
@@ -3791,7 +3907,7 @@ fun JumpBackInSection(
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = textColor,
+                        color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(song.id, textColor),
                         modifier = Modifier.padding(horizontal = CAPTION_SIDE_INSET)
                     )
                     Text(

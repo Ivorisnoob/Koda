@@ -83,6 +83,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -215,7 +216,9 @@ internal fun LazyGridScope.channelTabContent(
         }
     }
 
-    spanItems(page.videos, key = { "video_${it.videoId}" }) { video ->
+    // One unit of the grid each, which is the whole row on a phone and one of
+    // several across on a wider window.
+    spanItems(page.videos, span = CHANNEL_GRID_COLUMNS, key = { "video_${it.videoId}" }) { video ->
         VideoCard(
             video = video,
             onClick = { onPlayVideo(video) },
@@ -240,7 +243,7 @@ internal fun LazyGridScope.channelTabContent(
         ChannelPlaylistCard(playlist = playlist, onClick = { onOpenPlaylist(playlist) })
     }
 
-    spanItems(page.posts, key = { "post_${it.postId}" }) { post ->
+    spanItems(page.posts, span = CHANNEL_GRID_COLUMNS, key = { "post_${it.postId}" }) { post ->
         ChannelPostCard(
             post = post,
             actions = postActions,
@@ -368,6 +371,89 @@ private fun FeaturedVideoCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    // Wide enough for the frame and its words to sit side by side, which is
+    // the grid on anything but an upright phone. Stacked there, the frame is
+    // as wide as the window and taller than it: the pinned video pushed the
+    // whole channel off a landscape screen.
+    val beside = rememberChannelGridUnits() > 1
+    val metadata = listOfNotNull(
+        video.viewCount.takeIf { it.isNotBlank() },
+        video.uploadedDate?.takeIf { it.isNotBlank() }
+    ).joinToString(" • ")
+    val frame: @Composable (Modifier) -> Unit = { frameModifier ->
+        Box(modifier = frameModifier.aspectRatio(16f / 9f)) {
+            VideoThumbnail(video = video, modifier = Modifier.fillMaxSize())
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f))
+                        )
+                    )
+            )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.primary
+            ) {
+                Text(
+                    text = "Featured",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+            Icon(
+                imageVector = Icons.Rounded.PlayArrow,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(52.dp)
+            )
+        }
+    }
+    if (beside) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                frame(Modifier.width(320.dp).clip(RoundedCornerShape(20.dp)))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = video.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (metadata.isNotBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = metadata,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        return
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -1359,6 +1445,10 @@ internal fun ChannelSearchPane(
     onClose: () -> Unit,
     contentPadding: PaddingValues
 ) {
+    // Kept across searches in one visit: someone sorting by newest wants the
+    // next query sorted the same way.
+    var sort by rememberSaveable { mutableStateOf(ChannelSearchSort.RELEVANCE) }
+    val sorted = remember(results, sort) { sortChannelSearch(results, sort) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1452,7 +1542,25 @@ internal fun ChannelSearchPane(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(results, key = { it.videoId }) { video ->
+                // The channel page's own sort menu, over YouTube's results
+                // ordered on the device (ChannelSearchSort).
+                item(key = "sort") {
+                    val labels = mapOf(
+                        ChannelSearchSort.RELEVANCE to stringResource(R.string.cs_sort_relevance),
+                        ChannelSearchSort.NEWEST to stringResource(R.string.sc_newest_first),
+                        ChannelSearchSort.OLDEST to stringResource(R.string.sc_oldest_first),
+                        ChannelSearchSort.MOST_VIEWED to stringResource(R.string.cs_sort_most_viewed),
+                    )
+                    ChannelSortRow(
+                        options = ChannelSearchSort.entries.map { option ->
+                            ChannelSortOption(label = labels.getValue(option), selected = option == sort)
+                        },
+                        onSelect = { picked ->
+                            sort = labels.entries.first { it.value == picked.label }.key
+                        }
+                    )
+                }
+                items(sorted, key = { it.videoId }) { video ->
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) },

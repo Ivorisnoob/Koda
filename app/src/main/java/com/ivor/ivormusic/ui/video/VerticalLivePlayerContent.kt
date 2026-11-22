@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.Button
@@ -70,6 +71,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -182,6 +185,20 @@ fun VerticalLivePlayerContent(
     onRetry: (() -> Unit)? = null,
     onMinimizeDragDelta: (Float) -> Unit = {},
     onMinimizeDragRelease: (Float) -> Unit = {},
+    centreButtons: com.ivor.ivormusic.data.VideoCentreButtons =
+        com.ivor.ivormusic.data.VideoCentreButtons.SKIP,
+    skipSeconds: Int = 10,
+    hasPrevious: Boolean = false,
+    hasNext: Boolean = false,
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
+    showCaptionsButton: Boolean = true,
+    showDetailsButton: Boolean = true,
+    showPipButton: Boolean = false,
+    showSpeedButton: Boolean = false,
+    speedLabel: String = "",
+    onPipClick: () -> Unit = {},
+    onSpeedClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val stableShapes = IconButtonDefaults.shapes()
@@ -361,6 +378,49 @@ fun VerticalLivePlayerContent(
                     modifier = Modifier.weight(1f)
                 )
 
+                if (showSpeedButton) {
+                    val speedDescription = stringResource(
+                        R.string.vp_playback_speed,
+                        stringResource(R.string.vp_speed_short, speedLabel)
+                    )
+                    IconButton(
+                        onClick = onSpeedClick,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .semantics { contentDescription = speedDescription },
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                .copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        shapes = stableShapes,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.vp_speed_short, speedLabel),
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                }
+                if (showPipButton) {
+                    IconButton(
+                        onClick = onPipClick,
+                        modifier = Modifier.size(48.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                .copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        shapes = stableShapes,
+                    ) {
+                        Icon(
+                            Icons.Rounded.PictureInPictureAlt,
+                            contentDescription = stringResource(R.string.vp_pip),
+                        )
+                    }
+                }
+
                 // Three loose circles read as a browser toolbar. One container
                 // holding all three reads as a control cluster, costs one scrim
                 // instead of three, and keeps the row from spanning the frame.
@@ -376,29 +436,33 @@ fun VerticalLivePlayerContent(
                         // Shape carries the state as well as color: a filled
                         // circle that only changes hue is the least legible
                         // toggle available on top of moving video.
-                        ChromeToggleButton(
-                            icon = if (captionsActive) {
-                                Icons.Rounded.ClosedCaption
-                            } else {
-                                Icons.Rounded.ClosedCaptionOff
-                            },
-                            contentDescription = stringResource(R.string.vp_captions),
-                            active = captionsActive,
-                            onClick = onCaptionsClick,
-                        )
+                        if (showCaptionsButton) {
+                            ChromeToggleButton(
+                                icon = if (captionsActive) {
+                                    Icons.Rounded.ClosedCaption
+                                } else {
+                                    Icons.Rounded.ClosedCaptionOff
+                                },
+                                contentDescription = stringResource(R.string.vp_captions),
+                                active = captionsActive,
+                                onClick = onCaptionsClick,
+                            )
+                        }
                         ChromeGroupButton(
                             icon = Icons.Rounded.Settings,
                             contentDescription = stringResource(R.string.sp_video_quality),
                             onClick = onSettings,
                         )
-                        ChromeGroupButton(
-                            // The way back to the watch page: comments, related,
-                            // the description. The counterpart button on that
-                            // page returns here.
-                            icon = Icons.Rounded.CloseFullscreen,
-                            contentDescription = stringResource(R.string.vl_show_details),
-                            onClick = onExitToPage,
-                        )
+                        if (showDetailsButton) {
+                            ChromeGroupButton(
+                                // The way back to the watch page: comments, related,
+                                // the description. The counterpart button on that
+                                // page returns here.
+                                icon = Icons.Rounded.CloseFullscreen,
+                                contentDescription = stringResource(R.string.vl_show_details),
+                                onClick = onExitToPage,
+                            )
+                        }
                     }
                 }
             }
@@ -426,11 +490,30 @@ fun VerticalLivePlayerContent(
                 exit = scaleOut(targetScale = 0.8f) + fadeOut(),
                 modifier = Modifier.align(Alignment.Center)
             ) {
-                ExpressivePlayPauseButton(
-                    isPlaying = isPlaying,
-                    isBuffering = isBuffering,
-                    onClick = onPlayPause
-                )
+                PlayerCentreTransport(
+                    centre = centreButtons,
+                    showSkipInSkipMode = false,
+                    queueActive = false,
+                    hasPrevious = hasPrevious,
+                    hasNext = hasNext,
+                    skipSeconds = skipSeconds,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
+                    onSeekBackward = onSeekBackward,
+                    onSeekForward = onSeekForward,
+                    endButtonSize = 48.dp,
+                    spacing = if (centreButtons == com.ivor.ivormusic.data.VideoCentreButtons.BOTH) {
+                        12.dp
+                    } else {
+                        24.dp
+                    },
+                ) {
+                    ExpressivePlayPauseButton(
+                        isPlaying = isPlaying,
+                        isBuffering = isBuffering,
+                        onClick = onPlayPause
+                    )
+                }
             }
 
             Column(

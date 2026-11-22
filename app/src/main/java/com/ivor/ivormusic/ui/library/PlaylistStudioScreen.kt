@@ -798,13 +798,18 @@ fun StudioSongRow(
             .padding(horizontal = 8.dp, vertical = 6.dp)
             .graphicsLayer { alpha = if (enabled) 1f else 0.5f }
     ) {
-        SongArtwork(
-            song = song,
-            contentDescription = null,
+        Box(
             modifier = Modifier
                 .size(48.dp)
                 .clip(RoundedCornerShape(12.dp))
-        )
+        ) {
+            SongArtwork(
+                song = song,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+            com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.fillMaxSize())
+        }
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -814,6 +819,10 @@ fun StudioSongRow(
                 text = song.title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    song.id,
+                    androidx.compose.material3.LocalContentColor.current,
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

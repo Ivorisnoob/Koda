@@ -21,11 +21,22 @@ internal fun Player.occurrenceKeys(): List<String> {
 
 /**
  * Lay the timeline out as [target], an order of [occurrenceKeys], without
- * touching the playing row: everything around it is taken out and put back in
- * the new order. Four calls whatever the queue's length, where a move per row
- * would send a timeline per row to every connected controller.
+ * touching the playing row: everything around it is put back in the new order
+ * and the old rows taken out. Four calls whatever the queue's length, where a
+ * move per row would send a timeline per row to every connected controller.
  *
  * Rows not named in [target] are kept, after it, in the order they had.
+ *
+ * **The new rows go in before the old ones come out, and that order is the
+ * point** [scar November 2026]. This runs inside a listener callback, so
+ * ExoPlayer holds each step's timeline event until the callback returns, and
+ * the media session then pairs every one of those timelines with the player's
+ * position as it is *now*, after the last step, and throws if that index is
+ * not a row of the timeline (`PlayerInfo.Builder.build`). Emptying the queue
+ * around the playing row first left a one-row timeline in that batch, so any
+ * arrangement that ends with the playing row somewhere other than first -
+ * turning shuffle off a few songs in - took the process down. Built this way
+ * no step is ever shorter than the playing row's final position.
  */
 internal fun Player.arrangeAs(target: List<String>) {
     val keys = occurrenceKeys()
@@ -43,8 +54,13 @@ internal fun Player.arrangeAs(target: List<String>) {
     val before = ordered.subList(0, at).map(rowsByKey::getValue)
     val after = ordered.subList(at + 1, ordered.size).map(rowsByKey::getValue)
 
-    if (current + 1 < keys.size) removeMediaItems(current + 1, keys.size)
-    if (current > 0) removeMediaItems(0, current)
-    if (after.isNotEmpty()) addMediaItems(1, after)
+    // before + [old rows before] + playing + [old rows after]
     if (before.isNotEmpty()) addMediaItems(0, before)
+    val lead = before.size
+    // before + playing + [old rows after]
+    if (current > 0) removeMediaItems(lead, lead + current)
+    // before + playing
+    if (current + 1 < keys.size) removeMediaItems(lead + 1, lead + keys.size - current)
+    // before + playing + after
+    if (after.isNotEmpty()) addMediaItems(lead + 1, after)
 }

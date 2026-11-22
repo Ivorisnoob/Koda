@@ -57,4 +57,36 @@ data class HomeNavigationCustomization(
      * while something is downloading.
      */
     val alwaysShowDownloads: Boolean = false,
-)
+    /**
+     * Focus the search field and raise the keyboard when the Search tab
+     * opens. Off, the tab opens on its suggestions and history, and a tap on
+     * the field brings the keyboard.
+     */
+    val searchOpensKeyboard: Boolean = true,
+    /** Music Home sections switched off (#373). Your playlists always stays. */
+    val hiddenHomeSections: Set<HomeSection> = emptySet(),
+    /**
+     * Library tabs switched off, by [com.ivor.ivormusic.ui.library.LibraryTab]
+     * name. At least one always stays, and a single one leaves no tab strip.
+     */
+    val hiddenLibraryTabs: Set<String> = emptySet(),
+) {
+    fun shows(section: HomeSection): Boolean = section !in hiddenHomeSections
+}
+
+/**
+ * The music Home sections someone can switch off. The [id]s are stored
+ * and frozen.
+ */
+enum class HomeSection(val id: String) {
+    SPEED_DIAL("speed_dial"),
+    RECENT_ALBUMS("recent_albums"),
+    ARTISTS("artists"),
+    MIXES("mixes"),
+    JUMP_BACK_IN("jump_back_in");
+
+    companion object {
+        fun fromIds(raw: String?): Set<HomeSection> = raw.orEmpty().split(',')
+            .mapNotNullTo(LinkedHashSet()) { id -> entries.firstOrNull { it.id == id } }
+    }
+}

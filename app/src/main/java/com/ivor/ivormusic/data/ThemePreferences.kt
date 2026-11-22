@@ -122,6 +122,33 @@ class ThemePreferences(context: Context) {
     private val _miniPlayerCustomization = MutableStateFlow(readMiniPlayerCustomization())
     val miniPlayerCustomization: StateFlow<MiniPlayerCustomization> =
         _miniPlayerCustomization.asStateFlow()
+
+    /**
+     * A double tap on the left or right of the music player's cover jumps back
+     * or forward ten seconds (#381). On by default; off gives a single tap on
+     * the cover its answer at once, without waiting to see if a second follows.
+     */
+    private val _coverDoubleTapSeek = MutableStateFlow(prefs.getBoolean(KEY_COVER_DOUBLE_TAP_SEEK, true))
+    val coverDoubleTapSeek: StateFlow<Boolean> = _coverDoubleTapSeek.asStateFlow()
+
+    fun setCoverDoubleTapSeek(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_COVER_DOUBLE_TAP_SEEK, enabled).apply()
+        _coverDoubleTapSeek.value = enabled
+    }
+
+    /**
+     * The Editorial player keeps Previous, Play and Next on one row however
+     * much room it has. Off (the default), it uses its original two-row
+     * layout, with Previous beside the progress line, and moves to one row
+     * only where the screen is wide enough for that to look right.
+     */
+    private val _editorialOneRow = MutableStateFlow(prefs.getBoolean(KEY_EDITORIAL_ONE_ROW, false))
+    val editorialOneRow: StateFlow<Boolean> = _editorialOneRow.asStateFlow()
+
+    fun setEditorialOneRow(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_EDITORIAL_ONE_ROW, enabled).apply()
+        _editorialOneRow.value = enabled
+    }
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -243,6 +270,19 @@ class ThemePreferences(context: Context) {
 
     private val _rotateWithDevice = MutableStateFlow(getRotateWithDevicePreference())
     val rotateWithDevice: StateFlow<Boolean> = _rotateWithDevice.asStateFlow()
+
+    /**
+     * Whether pages may draw beside the camera cutout when the window is on
+     * its side. Off keeps them clear of it; see MainActivity, where turning it
+     * on takes the cutout out of the insets every page pads for.
+     */
+    private val _drawBesideCutout = MutableStateFlow(prefs.getBoolean(KEY_DRAW_BESIDE_CUTOUT, false))
+    val drawBesideCutout: StateFlow<Boolean> = _drawBesideCutout.asStateFlow()
+
+    fun setDrawBesideCutout(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DRAW_BESIDE_CUTOUT, enabled).apply()
+        _drawBesideCutout.value = enabled
+    }
 
     private val _subscriptionSource = MutableStateFlow(getSubscriptionSourcePreference())
     val subscriptionSource: StateFlow<String> = _subscriptionSource.asStateFlow()
@@ -389,6 +429,9 @@ class ThemePreferences(context: Context) {
     val lyricsCentered: StateFlow<Boolean> = _lyricsCentered.asStateFlow()
     private val _lyricsRomanized = MutableStateFlow(getLyricsRomanizedPreference())
     val lyricsRomanized: StateFlow<Boolean> = _lyricsRomanized.asStateFlow()
+    private val _lyricsLook = MutableStateFlow(readLyricsLook())
+    /** How synced lyrics look and move; see [LyricsCustomization]. */
+    val lyricsLook: StateFlow<LyricsCustomization> = _lyricsLook.asStateFlow()
 
     // Two ways the app suggests things you did not ask for. Stated as what is
     // shown rather than what is hidden, so the switch position and the sentence
@@ -445,21 +488,30 @@ class ThemePreferences(context: Context) {
             KEY_ARTWORK_COLORS_WHOLE_APP ->
                 _artworkColorsWholeApp.value = getArtworkColorsWholeAppPreference()
             KEY_MINI_PLAYER_PROGRESS -> _miniPlayerProgress.value = getMiniPlayerProgressPreference()
+            KEY_COVER_DOUBLE_TAP_SEEK ->
+                _coverDoubleTapSeek.value = prefs.getBoolean(KEY_COVER_DOUBLE_TAP_SEEK, true)
+            KEY_EDITORIAL_ONE_ROW ->
+                _editorialOneRow.value = prefs.getBoolean(KEY_EDITORIAL_ONE_ROW, false)
             KEY_MINI_PLAYER_BUTTONS, KEY_MINI_PLAYER_COVER_TAP, KEY_MINI_PLAYER_COVER_MOTION,
             KEY_MINI_PLAYER_SWIPE_SKIP, KEY_MINI_PLAYER_SWIPE_DISMISS, KEY_MINI_PLAYER_SHRINK,
             KEY_MINI_PLAYER_COLOR, KEY_MINI_PLAYER_SECOND_LINE, KEY_MINI_PLAYER_LONG_PRESS ->
                 _miniPlayerCustomization.value = readMiniPlayerCustomization()
             KEY_VIDEO_HOLD_SPEED, KEY_VIDEO_BRIGHTNESS_SWIPE, KEY_VIDEO_VOLUME_SWIPE,
-            KEY_VIDEO_HOLD_SPEED_RATE, KEY_VIDEO_CONTROLS_HIDE_SECONDS ->
+            KEY_VIDEO_HOLD_SPEED_RATE, KEY_VIDEO_CONTROLS_HIDE_SECONDS,
+            KEY_VIDEO_CENTRE_BUTTONS, KEY_VIDEO_SKIP_SECONDS, KEY_VIDEO_TIME_DISPLAY,
+            KEY_VIDEO_SHOW_CAPTIONS, KEY_VIDEO_SHOW_FULLSCREEN, KEY_VIDEO_SHOW_SCREEN_LOCK,
+            KEY_VIDEO_SHOW_PIP_BUTTON, KEY_VIDEO_SHOW_SPEED_SHORTCUT ->
                 _videoGestures.value = readVideoGestures()
             KEY_VIDEO_SHADERS_ENABLED, KEY_VIDEO_SHADER_PRESET, KEY_VIDEO_SHADERS_SHARPNESS,
             KEY_VIDEO_SHADERS_CONTRAST, KEY_VIDEO_SHADERS_BRIGHTNESS,
             KEY_VIDEO_SHADERS_SATURATION, KEY_VIDEO_SHADERS_CUSTOM_CODE ->
                 _videoShaders.value = readVideoShaders()
-            KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME ->
+            KEY_VIDEO_FEED_POSTS, KEY_VIDEO_FEED_LIVE, KEY_VIDEO_FEED_HIDE_WATCHED_HOME,
+            KEY_VIDEO_FEED_EXPLORE, KEY_VIDEO_FEED_HIDE_RESTRICTED ->
                 _videoFeed.value = readVideoFeed()
             KEY_START_TAB, KEY_START_MODE, KEY_NAV_TAB_LABELS, KEY_NAV_BAR_HIDES_ON_SCROLL,
-            KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS ->
+            KEY_HOME_GREETING, KEY_HOME_ALWAYS_DOWNLOADS, KEY_SEARCH_OPENS_KEYBOARD,
+            KEY_HOME_HIDDEN_SECTIONS, KEY_LIBRARY_HIDDEN_TABS ->
                 _homeNavigation.value = readHomeNavigation()
             KEY_VIDEO_MODE -> _videoMode.value = getVideoModePreference()
             KEY_HOME_MODE_TOGGLE_ENABLED -> _homeModeToggleEnabled.value = getHomeModeToggleEnabledPreference()
@@ -504,6 +556,8 @@ class ThemePreferences(context: Context) {
             KEY_NON_EXPRESSIVE_NAVIGATION_BAR ->
                 _nonExpressiveNavigationBar.value = getNonExpressiveNavigationBarPreference()
             KEY_ROTATE_WITH_DEVICE -> _rotateWithDevice.value = getRotateWithDevicePreference()
+            KEY_DRAW_BESIDE_CUTOUT ->
+                _drawBesideCutout.value = prefs.getBoolean(KEY_DRAW_BESIDE_CUTOUT, false)
             KEY_SUBSCRIPTION_SOURCE -> _subscriptionSource.value = getSubscriptionSourcePreference()
             KEY_SUBSCRIBE_TARGET -> _subscribeTarget.value = getSubscribeTargetPreference()
             KEY_FAST_SUBSCRIPTION_FEED -> _fastSubscriptionFeed.value = getFastSubscriptionFeedPreference()
@@ -550,6 +604,7 @@ class ThemePreferences(context: Context) {
             KEY_STANDBY_DIM -> _standbyDim.value = getStandbyDimPreference()
             KEY_LYRICS_CENTERED -> _lyricsCentered.value = getLyricsCenteredPreference()
             KEY_LYRICS_ROMANIZED -> _lyricsRomanized.value = getLyricsRomanizedPreference()
+            in LYRICS_LOOK_KEYS -> _lyricsLook.value = readLyricsLook()
             KEY_SHOW_RECENT_SEARCHES -> _showRecentSearches.value = getShowRecentSearchesPreference()
             KEY_SHOW_RELATED_VIDEOS -> _showRelatedVideos.value = getShowRelatedVideosPreference()
             KEY_INLINE_PREVIEWS -> _inlinePreviews.value = getInlinePreviewsPreference()
@@ -629,11 +684,29 @@ class ThemePreferences(context: Context) {
         private const val KEY_NAV_BAR_HIDES_ON_SCROLL = "nav_bar_hides_on_scroll"
         private const val KEY_VIDEO_HOLD_SPEED_RATE = "video_gesture_hold_speed_rate"
         private const val KEY_VIDEO_CONTROLS_HIDE_SECONDS = "video_controls_hide_seconds"
+        /** Frozen stored id. One of [VideoCentreButtons.id]. */
+        private const val KEY_VIDEO_CENTRE_BUTTONS = "video_centre_buttons"
+        /** Frozen stored int. One of [VideoGestureCustomization.SKIP_SECONDS]. */
+        private const val KEY_VIDEO_SKIP_SECONDS = "video_skip_seconds"
+        /** Frozen stored id. One of [VideoTimeDisplay.id]. */
+        private const val KEY_VIDEO_TIME_DISPLAY = "video_time_display"
+        private const val KEY_VIDEO_SHOW_CAPTIONS = "video_show_captions"
+        private const val KEY_VIDEO_SHOW_FULLSCREEN = "video_show_fullscreen"
+        private const val KEY_VIDEO_SHOW_SCREEN_LOCK = "video_show_screen_lock"
+        private const val KEY_VIDEO_SHOW_PIP_BUTTON = "video_show_pip_button"
+        private const val KEY_VIDEO_SHOW_SPEED_SHORTCUT = "video_show_speed_shortcut"
         private const val KEY_VIDEO_FEED_POSTS = "video_feed_posts"
         private const val KEY_VIDEO_FEED_LIVE = "video_feed_live"
         private const val KEY_VIDEO_FEED_HIDE_WATCHED_HOME = "video_feed_hide_watched_home"
+        private const val KEY_VIDEO_FEED_EXPLORE = "video_feed_explore"
+        private const val KEY_VIDEO_FEED_HIDE_RESTRICTED = "video_feed_hide_restricted"
         private const val KEY_HOME_GREETING = "home_top_bar_greeting"
         private const val KEY_HOME_ALWAYS_DOWNLOADS = "home_top_bar_always_downloads"
+        private const val KEY_SEARCH_OPENS_KEYBOARD = "search_opens_keyboard"
+        private const val KEY_HOME_HIDDEN_SECTIONS = "home_hidden_sections"
+        private const val KEY_LIBRARY_HIDDEN_TABS = "library_hidden_tabs"
+        private const val KEY_COVER_DOUBLE_TAP_SEEK = "cover_double_tap_seek"
+        private const val KEY_EDITORIAL_ONE_ROW = "editorial_one_row"
 
         /**
          * How long the video controls stay up, as a fresh read: the player
@@ -644,6 +717,18 @@ class ThemePreferences(context: Context) {
                 .getInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, 4)
             return seconds.takeIf { it in VideoGestureCustomization.CONTROLS_HIDE_SECONDS }
                 ?.times(1000L) ?: 4000L
+        }
+
+        /**
+         * How far a skip moves, as a fresh read. The player, the double-tap
+         * gesture, the notification and the PiP window all ask at the moment
+         * they skip, so a change applies without rebuilding the player.
+         */
+        fun videoSeekStepMs(context: Context): Long {
+            val seconds = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_VIDEO_SKIP_SECONDS, 10)
+            return seconds.takeIf { it in VideoGestureCustomization.SKIP_SECONDS }
+                ?.times(1000L) ?: 10_000L
         }
 
         private const val KEY_MINI_PLAYER_BUTTONS = "mini_player_buttons"
@@ -688,6 +773,15 @@ class ThemePreferences(context: Context) {
                     .getBoolean(KEY_LIVE_DOWNLOAD_UPDATES, true)
 
         private const val KEY_LIVE_PLAYBACK_UPDATES = "live_playback_updates"
+
+        /**
+         * Fresh read for the media button receiver: whether a last-played song
+         * is stored, which playback resumption falls back to when no queue was
+         * saved.
+         */
+        fun hasLastPlayedSong(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_LAST_SONG_ID, null) != null
 
         /**
          * Fresh read for the playback service and its notification provider,
@@ -952,6 +1046,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_NON_EXPRESSIVE_NAVIGATION_BAR =
             "non_expressive_navigation_bar"
         private const val KEY_ROTATE_WITH_DEVICE = "rotate_with_device"
+        private const val KEY_DRAW_BESIDE_CUTOUT = "draw_beside_cutout"
 
         /**
          * Default quality for video downloads, one of [VIDEO_QUALITY_OPTIONS].
@@ -1084,8 +1179,9 @@ class ThemePreferences(context: Context) {
 
         /**
          * PiP side buttons. Stored values are frozen: "videos" is previous and
-         * next in a playlist, back 10s and next otherwise (the behaviour
-         * before the setting existed); "seek" is back and forward 10s always.
+         * next when there is somewhere to go, and a skip otherwise (the
+         * behaviour before the setting existed); "seek" is skip back and
+         * forward always. The skip distance is [videoSeekStepMs].
          */
         const val PIP_BUTTONS_VIDEOS = "videos"
         const val PIP_BUTTONS_SEEK = "seek"
@@ -1127,6 +1223,29 @@ class ThemePreferences(context: Context) {
         private const val KEY_STANDBY_LOOK_PREFIX = "standby_look_"
         private const val KEY_LYRICS_CENTERED = "lyrics_centered"
         private const val KEY_LYRICS_ROMANIZED = "lyrics_romanized"
+        // The lyrics look (LyricsCustomization); stored values are the enums' ids.
+        private const val KEY_LYRICS_LOOK_FONT = "lyrics_look_font"
+        private const val KEY_LYRICS_LOOK_WEIGHT = "lyrics_look_weight"
+        private const val KEY_LYRICS_LOOK_SIZE = "lyrics_look_size"
+        private const val KEY_LYRICS_LOOK_SPACING = "lyrics_look_spacing"
+        private const val KEY_LYRICS_LOOK_HIGHLIGHT = "lyrics_look_highlight"
+        private const val KEY_LYRICS_LOOK_DIM = "lyrics_look_dim"
+        private const val KEY_LYRICS_LOOK_BLUR = "lyrics_look_blur"
+        private const val KEY_LYRICS_LOOK_WORD_MOTION = "lyrics_look_word_motion"
+        private const val KEY_LYRICS_LOOK_GLOW = "lyrics_look_glow"
+        private const val KEY_LYRICS_LOOK_SCROLL = "lyrics_look_scroll"
+        private const val KEY_LYRICS_LOOK_REST = "lyrics_look_rest"
+        private const val KEY_LYRICS_LOOK_DOTS = "lyrics_look_interlude_dots"
+        private const val KEY_LYRICS_LOOK_DEPTH = "lyrics_look_depth_scale"
+        private const val KEY_LYRICS_LOOK_UPPERCASE = "lyrics_look_uppercase"
+        private const val KEY_LYRICS_LOOK_DUET = "lyrics_look_duet_sides"
+        private val LYRICS_LOOK_KEYS = setOf(
+            KEY_LYRICS_LOOK_FONT, KEY_LYRICS_LOOK_WEIGHT, KEY_LYRICS_LOOK_SIZE,
+            KEY_LYRICS_LOOK_SPACING, KEY_LYRICS_LOOK_HIGHLIGHT, KEY_LYRICS_LOOK_DIM,
+            KEY_LYRICS_LOOK_BLUR, KEY_LYRICS_LOOK_WORD_MOTION, KEY_LYRICS_LOOK_GLOW,
+            KEY_LYRICS_LOOK_SCROLL, KEY_LYRICS_LOOK_REST, KEY_LYRICS_LOOK_DOTS,
+            KEY_LYRICS_LOOK_DEPTH, KEY_LYRICS_LOOK_UPPERCASE, KEY_LYRICS_LOOK_DUET,
+        )
         private const val KEY_SHOW_RECENT_SEARCHES = "show_recent_searches"
         private const val KEY_SHOW_RELATED_VIDEOS = "show_related_videos"
         private const val KEY_INLINE_PREVIEWS = "inline_previews"
@@ -1516,6 +1635,15 @@ class ThemePreferences(context: Context) {
             .takeIf { it in VideoGestureCustomization.HOLD_SPEEDS } ?: 2f,
         controlsHideSeconds = prefs.getInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, 4)
             .takeIf { it in VideoGestureCustomization.CONTROLS_HIDE_SECONDS } ?: 4,
+        centreButtons = VideoCentreButtons.fromId(prefs.getString(KEY_VIDEO_CENTRE_BUTTONS, null)),
+        skipSeconds = prefs.getInt(KEY_VIDEO_SKIP_SECONDS, 10)
+            .takeIf { it in VideoGestureCustomization.SKIP_SECONDS } ?: 10,
+        timeDisplay = VideoTimeDisplay.fromId(prefs.getString(KEY_VIDEO_TIME_DISPLAY, null)),
+        showCaptions = prefs.getBoolean(KEY_VIDEO_SHOW_CAPTIONS, true),
+        showFullscreen = prefs.getBoolean(KEY_VIDEO_SHOW_FULLSCREEN, true),
+        showScreenLock = prefs.getBoolean(KEY_VIDEO_SHOW_SCREEN_LOCK, true),
+        showPipButton = prefs.getBoolean(KEY_VIDEO_SHOW_PIP_BUTTON, false),
+        showSpeedShortcut = prefs.getBoolean(KEY_VIDEO_SHOW_SPEED_SHORTCUT, false),
     )
 
     fun setVideoGestures(customization: VideoGestureCustomization) {
@@ -1525,6 +1653,14 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_VIDEO_VOLUME_SWIPE, customization.volumeSwipe)
             .putFloat(KEY_VIDEO_HOLD_SPEED_RATE, customization.holdSpeed)
             .putInt(KEY_VIDEO_CONTROLS_HIDE_SECONDS, customization.controlsHideSeconds)
+            .putString(KEY_VIDEO_CENTRE_BUTTONS, customization.centreButtons.id)
+            .putInt(KEY_VIDEO_SKIP_SECONDS, customization.skipSeconds)
+            .putString(KEY_VIDEO_TIME_DISPLAY, customization.timeDisplay.id)
+            .putBoolean(KEY_VIDEO_SHOW_CAPTIONS, customization.showCaptions)
+            .putBoolean(KEY_VIDEO_SHOW_FULLSCREEN, customization.showFullscreen)
+            .putBoolean(KEY_VIDEO_SHOW_SCREEN_LOCK, customization.showScreenLock)
+            .putBoolean(KEY_VIDEO_SHOW_PIP_BUTTON, customization.showPipButton)
+            .putBoolean(KEY_VIDEO_SHOW_SPEED_SHORTCUT, customization.showSpeedShortcut)
             .apply()
         _videoGestures.value = customization
     }
@@ -1567,6 +1703,8 @@ class ThemePreferences(context: Context) {
         showPosts = prefs.getBoolean(KEY_VIDEO_FEED_POSTS, true),
         showLive = prefs.getBoolean(KEY_VIDEO_FEED_LIVE, true),
         hideWatchedOnHome = prefs.getBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, false),
+        showExplore = prefs.getBoolean(KEY_VIDEO_FEED_EXPLORE, true),
+        hideRestricted = prefs.getBoolean(KEY_VIDEO_FEED_HIDE_RESTRICTED, false),
     )
 
     fun setVideoFeed(customization: VideoFeedCustomization) {
@@ -1574,6 +1712,8 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_VIDEO_FEED_POSTS, customization.showPosts)
             .putBoolean(KEY_VIDEO_FEED_LIVE, customization.showLive)
             .putBoolean(KEY_VIDEO_FEED_HIDE_WATCHED_HOME, customization.hideWatchedOnHome)
+            .putBoolean(KEY_VIDEO_FEED_EXPLORE, customization.showExplore)
+            .putBoolean(KEY_VIDEO_FEED_HIDE_RESTRICTED, customization.hideRestricted)
             .apply()
         _videoFeed.value = customization
     }
@@ -1589,6 +1729,10 @@ class ThemePreferences(context: Context) {
         barHidesOnScroll = prefs.getBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, true),
         showGreeting = prefs.getBoolean(KEY_HOME_GREETING, true),
         alwaysShowDownloads = prefs.getBoolean(KEY_HOME_ALWAYS_DOWNLOADS, false),
+        searchOpensKeyboard = prefs.getBoolean(KEY_SEARCH_OPENS_KEYBOARD, true),
+        hiddenHomeSections = HomeSection.fromIds(prefs.getString(KEY_HOME_HIDDEN_SECTIONS, null)),
+        hiddenLibraryTabs = prefs.getString(KEY_LIBRARY_HIDDEN_TABS, null).orEmpty()
+            .split(',').filterTo(LinkedHashSet()) { it.isNotBlank() },
     )
 
     fun setHomeNavigation(customization: HomeNavigationCustomization) {
@@ -1599,6 +1743,9 @@ class ThemePreferences(context: Context) {
             .putBoolean(KEY_NAV_BAR_HIDES_ON_SCROLL, customization.barHidesOnScroll)
             .putBoolean(KEY_HOME_GREETING, customization.showGreeting)
             .putBoolean(KEY_HOME_ALWAYS_DOWNLOADS, customization.alwaysShowDownloads)
+            .putBoolean(KEY_SEARCH_OPENS_KEYBOARD, customization.searchOpensKeyboard)
+            .putString(KEY_HOME_HIDDEN_SECTIONS, customization.hiddenHomeSections.joinToString(",") { it.id })
+            .putString(KEY_LIBRARY_HIDDEN_TABS, customization.hiddenLibraryTabs.joinToString(","))
             .apply()
         _homeNavigation.value = customization
     }
@@ -2919,6 +3066,48 @@ class ThemePreferences(context: Context) {
     fun setLyricsRomanized(romanized: Boolean) {
         prefs.edit().putBoolean(KEY_LYRICS_ROMANIZED, romanized).apply()
         _lyricsRomanized.value = romanized
+    }
+
+    private fun readLyricsLook(): LyricsCustomization {
+        val defaults = LyricsCustomization.Default
+        return LyricsCustomization(
+            font = LyricsFont.fromId(prefs.getString(KEY_LYRICS_LOOK_FONT, null)),
+            weight = LyricsWeight.fromId(prefs.getString(KEY_LYRICS_LOOK_WEIGHT, null)),
+            size = LyricsTextSize.fromId(prefs.getString(KEY_LYRICS_LOOK_SIZE, null)),
+            spacing = LyricsLineSpacing.fromId(prefs.getString(KEY_LYRICS_LOOK_SPACING, null)),
+            highlight = LyricsHighlight.fromId(prefs.getString(KEY_LYRICS_LOOK_HIGHLIGHT, null)),
+            dim = LyricsDim.fromId(prefs.getString(KEY_LYRICS_LOOK_DIM, null)),
+            blur = prefs.getBoolean(KEY_LYRICS_LOOK_BLUR, defaults.blur),
+            wordMotion = prefs.getBoolean(KEY_LYRICS_LOOK_WORD_MOTION, defaults.wordMotion),
+            glow = prefs.getBoolean(KEY_LYRICS_LOOK_GLOW, defaults.glow),
+            scroll = LyricsScroll.fromId(prefs.getString(KEY_LYRICS_LOOK_SCROLL, null)),
+            rest = LyricsRestPosition.fromId(prefs.getString(KEY_LYRICS_LOOK_REST, null)),
+            interludeDots = prefs.getBoolean(KEY_LYRICS_LOOK_DOTS, defaults.interludeDots),
+            depthScale = prefs.getBoolean(KEY_LYRICS_LOOK_DEPTH, defaults.depthScale),
+            uppercase = prefs.getBoolean(KEY_LYRICS_LOOK_UPPERCASE, defaults.uppercase),
+            duetSides = prefs.getBoolean(KEY_LYRICS_LOOK_DUET, defaults.duetSides),
+        )
+    }
+
+    fun setLyricsLook(look: LyricsCustomization) {
+        prefs.edit()
+            .putString(KEY_LYRICS_LOOK_FONT, look.font.id)
+            .putString(KEY_LYRICS_LOOK_WEIGHT, look.weight.id)
+            .putString(KEY_LYRICS_LOOK_SIZE, look.size.id)
+            .putString(KEY_LYRICS_LOOK_SPACING, look.spacing.id)
+            .putString(KEY_LYRICS_LOOK_HIGHLIGHT, look.highlight.id)
+            .putString(KEY_LYRICS_LOOK_DIM, look.dim.id)
+            .putBoolean(KEY_LYRICS_LOOK_BLUR, look.blur)
+            .putBoolean(KEY_LYRICS_LOOK_WORD_MOTION, look.wordMotion)
+            .putBoolean(KEY_LYRICS_LOOK_GLOW, look.glow)
+            .putString(KEY_LYRICS_LOOK_SCROLL, look.scroll.id)
+            .putString(KEY_LYRICS_LOOK_REST, look.rest.id)
+            .putBoolean(KEY_LYRICS_LOOK_DOTS, look.interludeDots)
+            .putBoolean(KEY_LYRICS_LOOK_DEPTH, look.depthScale)
+            .putBoolean(KEY_LYRICS_LOOK_UPPERCASE, look.uppercase)
+            .putBoolean(KEY_LYRICS_LOOK_DUET, look.duetSides)
+            .apply()
+        _lyricsLook.value = look
     }
 
     private fun getShowRecentSearchesPreference(): Boolean =

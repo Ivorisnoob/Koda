@@ -177,6 +177,8 @@
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-ogg" />
             </intent-filter>
             <intent-filter android:label="@string/app_name">
                 <action android:name="android.intent.action.SEND" />
@@ -184,6 +186,26 @@
                 <category android:name="android.intent.category.DEFAULT" />
 
                 <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-ogg" />
+            </intent-filter>
+
+            <!--
+                Declares Koda a music player to the system, so it is offered
+                where Android lists music apps (the default music app choice,
+                launchers' and assistants' "open my music app"). Both open the
+                app as a plain launch would; neither carries data.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MUSIC_PLAYER" />
+
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
@@ -325,6 +347,22 @@
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>
         </service>
+
+        <!--
+            Declares Koda a media app to the rest of the system. Widget makers
+            such as KWGT, and the platform's own "last media app" routing for a
+            headset play button, find players by this receiver; without it Koda
+            was not listed at all. Media3 hands a play press to MusicService
+            (the only MediaLibraryService, so the video service is never
+            picked), whose onPlaybackResumption rebuilds the last queue.
+        -->
+        <receiver
+            android:name=".service.KodaMediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
 
         <!--
             Puts video playback on the lock screen, in the shade's media area

@@ -104,8 +104,8 @@ private const val SETTLE_HAPTIC_MIN_TRAVEL = 0.05f
  * Put the app into system Picture-in-Picture now.
  *
  * Needed as an explicit call because [PictureInPictureParams.Builder.setAutoEnterEnabled]
- * only exists from API 31, and minSdk here is 30 - without this, PiP was simply
- * unreachable on Android 11. It also backs the player's PiP button, which is
+ * only exists from API 31, and minSdk here is 26 - without this, PiP was simply
+ * unreachable on Android 8-11. It also backs the player's PiP button, which is
  * the only discoverable way in on any version.
  *
  * Returns false when the system refuses (PiP disabled for the app, or the
@@ -169,7 +169,10 @@ fun enterPipMode(
                     activity = activity,
                     packageName = activity.packageName,
                     isPlaying = viewModel.isPlaying.value,
-                    transport = viewModel.currentPipTransport()
+                    transport = viewModel.currentPipTransport(),
+                    skipSeconds = (
+                        com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(activity) / 1000L
+                    ).toInt()
                 )
             )
             .apply { bounds?.let(::setSourceRectHint) }
@@ -473,8 +476,21 @@ fun VideoPlayerOverlay(
         // The collapsed bar's resting rectangle, which the container transform
         // starts from and lands on. Rounded to whole pixels the way the resting
         // bar's own padding and height are, so the hand-off at rest is exact.
-        val barHeightPx = with(density) { MINI_VIDEO_HEIGHT.roundToPx() }.toFloat()
-        val barSideInsetPx = with(density) { MINI_VIDEO_MARGIN.roundToPx() }.toFloat()
+        //
+        // On a wide window it is a card in the bottom corner rather than a bar
+        // (MINI_VIDEO_FLOATING_WIDTH), kept clear of whatever is at that side:
+        // the camera cutout, or a three-button navigation bar.
+        val floatingMini = com.ivor.ivormusic.ui.theme.currentWindowLayout().usesNavigationRail
+        val miniHeight = if (floatingMini) MINI_VIDEO_FLOATING_HEIGHT else MINI_VIDEO_HEIGHT
+        val miniSideInset = if (floatingMini) {
+            MINI_VIDEO_MARGIN + com.ivor.ivormusic.ui.theme.safeHorizontalInsets()
+                .asPaddingValues()
+                .calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr)
+        } else {
+            MINI_VIDEO_MARGIN
+        }
+        val barHeightPx = with(density) { miniHeight.roundToPx() }.toFloat()
+        val barSideInsetPx = with(density) { miniSideInset.roundToPx() }.toFloat()
         val barBottomInsetPx = with(density) {
             (MINI_VIDEO_MARGIN + bottomInset + hostBottomChrome).roundToPx()
         }.toFloat()
@@ -580,8 +596,12 @@ fun VideoPlayerOverlay(
         } else {
             MINI_VIDEO_MARGIN + bottomInset + hostBottomChrome
         }
-        val height = if (showExpandedSurface) fullHeight else MINI_VIDEO_HEIGHT
-        val cornerRadius = if (showExpandedSurface) 0.dp else 28.dp
+        val height = if (showExpandedSurface) fullHeight else miniHeight
+        val cornerRadius = when {
+            showExpandedSurface -> 0.dp
+            floatingMini -> MINI_VIDEO_FLOATING_CORNER
+            else -> 28.dp
+        }
         val miniMotionModifier = if (showExpandedSurface) {
             Modifier
         } else {
@@ -835,10 +855,21 @@ fun VideoPlayerOverlay(
         if (!animatedHost)
         Box(
             modifier = Modifier
-                .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
-                .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
-                .then(miniMotionModifier)
-                .fillMaxWidth()
+                .then(
+                    if (floatingMini && !showExpandedSurface) {
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(bottom = bottomPadding.coerceAtLeast(0.dp), end = miniSideInset)
+                            .then(miniMotionModifier)
+                            .width(MINI_VIDEO_FLOATING_WIDTH)
+                    } else {
+                        Modifier
+                            .padding(bottom = bottomPadding.coerceAtLeast(0.dp))
+                            .padding(horizontal = widthPadding.coerceAtLeast(0.dp))
+                            .then(miniMotionModifier)
+                            .fillMaxWidth()
+                    }
+                )
                 .height(height.coerceAtLeast(0.dp))
         ) {
         Surface(
@@ -863,7 +894,7 @@ fun VideoPlayerOverlay(
                  // Mini Player Content. Tap and both drags are handled by the
                  // Surface above, so the bar itself only draws and offers its
                  // two controls.
-                 MiniVideoPlayerContent(viewModel = viewModel, skipState = miniSkip)
+                 MiniVideoPlayerContent(viewModel = viewModel, skipState = miniSkip, floating = floatingMini)
              }
         }
         if (showExpandedSurface) {
@@ -892,7 +923,14 @@ fun VideoPlayerOverlay(
         }
 
         if (animatedHost) {
-            val barCornerPx = with(density) { MINI_VIDEO_BAR_CORNER.toPx() }
+            val barCornerPx = with(density) {
+                (if (floatingMini) MINI_VIDEO_FLOATING_CORNER else MINI_VIDEO_BAR_CORNER).toPx()
+            }
+            val floatingWidthPx = if (floatingMini) {
+                with(density) { MINI_VIDEO_FLOATING_WIDTH.roundToPx() }.toFloat()
+            } else {
+                Float.NaN
+            }
             val barShadowPx = with(density) { MINI_VIDEO_BAR_SHADOW.toPx() }
             val windowWidthPx = constraints.maxWidth.toFloat()
             // The watch page has no background of its own - it stands on this
@@ -909,6 +947,7 @@ fun VideoPlayerOverlay(
                     collapsedSideInset = barSideInsetPx,
                     collapsedBottomInset = barBottomInsetPx,
                     collapsedCornerRadius = barCornerPx,
+                    collapsedWidth = floatingWidthPx,
                 )
             }
 
@@ -977,7 +1016,9 @@ fun VideoPlayerOverlay(
                     ContainerMiniLayer(
                         viewModel = viewModel,
                         skipState = miniSkip,
-                        width = fullWidth - MINI_VIDEO_MARGIN * 2,
+                        width = if (floatingMini) MINI_VIDEO_FLOATING_WIDTH else fullWidth - MINI_VIDEO_MARGIN * 2,
+                        height = miniHeight,
+                        floating = floatingMini,
                         progress = transformProgress,
                         holdsSurface = barHoldsSurfaceNow,
                     )
@@ -1019,6 +1060,8 @@ private fun BoxScope.ContainerMiniLayer(
     viewModel: VideoPlayerViewModel,
     skipState: com.ivor.ivormusic.ui.components.MiniSkipState,
     width: Dp,
+    height: Dp,
+    floating: Boolean,
     progress: () -> Float,
     holdsSurface: () -> Boolean,
 ) {
@@ -1028,13 +1071,20 @@ private fun BoxScope.ContainerMiniLayer(
     if (!visible) return
     Box(
         modifier = Modifier
-            .align(Alignment.BottomCenter)
+            // The floating card keeps its right edge as the container grows
+            // leftward out of it; the bar grows evenly from the middle.
+            .align(if (floating) Alignment.BottomEnd else Alignment.BottomCenter)
             // Measured once at the bar's width rather than re-laid-out against
             // the container on every frame.
             .requiredWidth(width)
-            .height(MINI_VIDEO_HEIGHT)
+            .height(height)
             .graphicsLayer { alpha = containerMiniAlpha(progress()) }
     ) {
-        MiniVideoPlayerContent(viewModel = viewModel, holdsSurface = holdsSurface, skipState = skipState)
+        MiniVideoPlayerContent(
+            viewModel = viewModel,
+            holdsSurface = holdsSurface,
+            skipState = skipState,
+            floating = floating
+        )
     }
 }
