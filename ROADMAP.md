@@ -298,7 +298,7 @@ One line each; the reasoning is in `docs/`, and the full write-ups are in this f
 - Account-free subscriptions with imports; "Don't recommend" blocklist.
 - Multiple accounts and device-only profiles.
 - Spotlight alternative Home.
-- Searchable settings hub.
+- Searchable settings hub; a picked result scrolls its page to the setting and pulses it (November 2026).
 - Restored root tab per mode; saved tab scroll.
 - Listening stats and music listening history.
 - Editable queues in both modes; video playlists as queues; local video playlists.

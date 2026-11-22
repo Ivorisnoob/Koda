@@ -537,6 +537,8 @@ fun SettingsScreen(
     // remember came back from it on the hub rather than the page that opened it.
     var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(SettingsPage.HUB) }
     var searchQuery by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    // A result picked from the search: its page scrolls to the row and pulses it.
+    val settingsJump = remember { SettingsJumpState() }
 
     // Backup and restore is a page like the others, so on a wide window it
     // opens beside the hub instead of taking the whole screen. Its work runs
@@ -1161,7 +1163,10 @@ fun SettingsScreen(
         )
     }
 
-    CompositionLocalProvider(LocalSettingsInfoSink provides { settingsInfo = it }) {
+    CompositionLocalProvider(
+        LocalSettingsInfoSink provides { settingsInfo = it },
+        LocalSettingsJump provides settingsJump
+    ) {
     if (twoPane) {
         Row(
             modifier = Modifier
@@ -1711,6 +1716,7 @@ private fun SettingsHub(
                     item { SettingsSearchEmptyState(query = searchQuery) }
                 } else {
                     item {
+                        val settingsJump = LocalSettingsJump.current
                         SettingsCard {
                             results.forEachIndexed { index, entry ->
                                 if (index > 0) SettingsDivider()
@@ -1718,6 +1724,7 @@ private fun SettingsHub(
                                     entry = entry,
                                     onClick = {
                                         focusManager.clearFocus()
+                                        settingsJump?.request(entry.title)
                                         entry.action()
                                     }
                                 )
