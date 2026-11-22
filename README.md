@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Android-11%2B-green?style=for-the-badge&logo=android" alt="Android 11 and newer"/>
+  <img src="https://img.shields.io/badge/Android-8.0%2B-green?style=for-the-badge&logo=android" alt="Android 8.0 and newer"/>
   <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-purple?style=for-the-badge&logo=kotlin" alt="Kotlin and Jetpack Compose"/>
   <a href="https://t.me/ivorisnoob_chat"><img src="https://img.shields.io/badge/Telegram-Community-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram community"/></a>
 </p>
@@ -33,7 +33,7 @@ It works without an official YouTube API key, and an account is optional. Search
 
 ## Download
 
-Download the latest APK from **[GitHub Releases](https://github.com/Ivorisnoob/Koda/releases/latest)**. Koda requires Android 11 or newer.
+Download the latest APK from **[GitHub Releases](https://github.com/Ivorisnoob/Koda/releases/latest)**. Koda requires Android 8.0 or newer.
 
 | APK | Use it for |
 |---|---|
@@ -51,23 +51,38 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 
 - Search YouTube Music for songs, albums, artists, and playlists, with paged results and local search history.
 - Search by voice from inside Koda.
-- Choose between the Your Mix and Spotlight home layouts.
+- Choose between the Your Mix and Spotlight home layouts, and turn off the Home sections and Library tabs you do not use.
+- Speed dial puts your most played songs in a grid on Home, one tap to play.
+- Spin, a wheel of songs to flick or spin when you cannot decide what to play.
+- Tell Koda your taste once, with artists, genres and a deck of songs to swipe, and it shapes what it recommends.
 - Get recommendations from local listening activity, with YouTube Music recommendations added when signed in.
 - Start a radio from any song and automatically extend the queue with related music.
 - Browse recently played music, albums, artists, playlists, and liked songs.
-- Create, rename, reorder, edit, and delete device playlists, with generated or custom cover art.
+- Create, rename, reorder, edit, and delete device playlists, with generated or custom cover art or a cover made from the playlist's songs.
+- Select several songs at once to add to a playlist or the queue, or to download together.
+- Sort playlists and the songs inside them, and import or export playlists, including as CSV.
 - Edit playlists you own on YouTube Music and save other people's playlists or albums to your library.
 - Like songs without an account or sync likes to YouTube Music when signed in.
 - Play music stored on the device, with folder exclusions and compatibility scanning.
 - Sort the library by title, artist, date added, or play count.
-- View listening history, charts, streaks, top songs, top artists, and other statistics.
-- Open Ready offline to see fully cached songs that can play without a connection.
+- Open Ready offline to see fully cached songs that can play without a connection, and remove a single song from the cache.
+
+### Recap and statistics
+
+- Recap tells your listening as a story for any week, month, year, or all time: your top song and the day it took the lead, your regulars, when each artist came round, the hours you listen most, and the songs you came back to.
+- Every recap ends with a record drawn from your own plays, one ring for each day, in the colours of your covers.
+- Share your top songs, top artists, or record as a story, post, or square image, with or without the numbers.
+- Statistics and History show every play and how long you actually listened, including plays from headphones and Android Auto with the app closed.
+- Recap and statistics come only from plays on your device; nothing is guessed or sent anywhere.
 
 ### Lyrics
 
 - Synced, word-timed, line-timed, and plain-text lyrics from multiple providers.
 - Local `.lrc` and `.ttml` files, embedded lyrics, and offline lyric playback for device music.
 - Adjustable lyric timing and smooth word-by-word highlighting across every player style.
+- Customize lyric fonts, spacing, colors, and motion, with a playable preview.
+- Duets shown as a conversation, with each singer on their own side, and Romanized lyrics under lines in other scripts.
+- Share your favorite lines as a card in four styles and colors taken from the album cover.
 
 ### Music playback
 
@@ -76,6 +91,10 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 - Shuffle and repeat that survive app restarts.
 - AutoMix transitions, manual crossfade durations, and short overlaps on manual skips.
 - Optional volume normalisation between tracks.
+- Playback speed from 10% to 200%, and an optional pitch control.
+- A visualizer, a waveform seek bar, animated album covers, and double-tap on the cover to seek.
+- Standby turns the phone into a bedside screen with the song, its lyrics, widgets, and a clock.
+- Optional Last.fm scrobbling with your own API key, and Discord status for the song you are listening to.
 - A sleep timer with timed and end-of-track modes.
 - Per-network music quality settings for Wi-Fi and mobile data.
 - Background playback with notification, lock-screen, headset, Bluetooth, and Android Auto controls.
@@ -84,14 +103,22 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 ### Video
 
 - A personalized video home feed, plus local recommendations when signed out.
+- Explore topics on video Home, including Hype, Music, Gaming, News, Sports, and Live.
+- Optional muted previews that play on video cards in the feed.
+- Paid and members-only videos are marked, with a switch to hide them.
 - Search videos, channels, and playlists with date, duration, and sorting filters.
 - Video quality controls with available resolutions up to 2160p60.
 - Smooth motion (experimental, off by default): frame interpolation that plays 24-60 fps video at up to 120 fps, matched to your screen, using a GPU compute engine on phones with OpenGL ES 3.2 graphics.
-- Captions with remembered language and on/off state, plus adjustable size, color, and background.
+- Captions with remembered language and on/off state, adjustable size, color, and background, and subtitle files for videos on your phone.
+- Dubbed and audio-description audio tracks, for playback and downloads.
+- Video shaders that give videos a new look, from Film and Noir to VHS and Comic.
+- Optional SponsorBlock, which skips or marks sponsored segments.
+- Choose which buttons the video player shows, the skip distance, and the picture-in-picture buttons, and lock the screen while you watch.
 - Chapters, storyboard seek previews, playback speed, double-tap seeking, and hold-to-2x.
 - Fullscreen brightness and volume gestures, with an option to remember fullscreen brightness.
 - Picture-in-Picture with playback controls.
-- A mini player that keeps playing while you browse.
+- A mini player that keeps playing while you browse, floating as a card in the corner on wide screens.
+- Landscape and tablet layouts for the watch page, feeds, and channels.
 - Video queues with next, previous, reordering, removal, and playlist continuation.
 - Device-local video playlists, Watch Later, liked videos, and saved YouTube playlists.
 - Timed comments that can appear over the video at the moment they reference.
@@ -121,14 +148,16 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 ### Comments and account actions
 
 - Read, write, reply to, like, and delete comments from the video player.
+- Read community posts from the channels you follow, like them, and vote in polls.
 - Like, dislike, subscribe, and manage account playlists when signed in.
 - Changes to account-owned playlists, likes, subscriptions, comments, and history sync back to YouTube.
 
 ### Downloads and offline playback
 
 - Download songs, videos, albums, and playlists for offline playback.
-- Choose video quality and see an estimated size before downloading.
-- Store portable music and video files under `Downloads/Koda` so other apps can open them.
+- Choose video quality, audio language, or audio only, and see an estimated size before downloading.
+- Downloaded videos keep their chapters and chosen captions for offline viewing.
+- Store portable music and video files under `Downloads/Koda` so other apps can open them (on Android 8 and 9, in Koda's own folder).
 - Keep downloads running in the background with progress notifications.
 - Manage music and video downloads with progress, cancel, delete, and retry controls.
 - Skip files already downloaded when restarting an album or playlist download.
@@ -139,9 +168,11 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 - Material 3 Expressive design with dynamic color, fixed palettes, artwork colors, and AMOLED black.
 - Light, dark, and system themes.
 - A choice between an expressive floating navigation pill and a standard bottom navigation bar.
-- Ambient artwork and chromatic-mist player backgrounds.
+- Ambient artwork and chromatic-mist player backgrounds, and album colors that can tint the whole app.
+- Customization settings for the mini player, Home, the video player, gestures, and more.
+- Alternate app icons.
 - Four haptic levels: Off, Subtle, Balanced, and Rich.
-- Searchable settings grouped into focused pages.
+- Searchable settings grouped into focused pages; a search result takes you straight to the setting.
 - A guided onboarding flow and a built-in update checker.
 - English plus 25 translations, with per-app language selection on supported Android versions.
 
@@ -157,12 +188,13 @@ Official builds are published only on GitHub and in the [Telegram community](htt
 
 ### Accounts, profiles, and backup
 
-- Use Koda without a Google account through a device-local profile.
-- Add several YouTube accounts and switch between them without signing in again.
+- Use Koda without a Google account through a device-local profile, with a name and a picture of its own from the avatar maker or a photo.
+- Add several YouTube accounts, and brand accounts on them, and switch between them without signing in again.
 - Keep subscriptions and hidden recommendations separate per profile while sharing device libraries and downloads.
 - Sign in through an embedded browser or paste session cookies when the browser flow is unavailable.
 - Store account sessions encrypted on the device.
 - Back up and restore playlists, likes, saved items, statistics, history, subscriptions, hidden recommendations, profiles, artwork, and settings.
+- Back up on a schedule as well as by hand.
 - Backups exclude account credentials and downloaded media.
 
 ## Using Koda without an account
@@ -234,7 +266,7 @@ Nine styles to choose from. Pick one in Settings, or long-press the artwork whil
 
 ## Building from source
 
-Use the latest stable Android Studio and a device or emulator running Android 11 or newer.
+Use the latest stable Android Studio and a device or emulator running Android 8.0 or newer.
 
 ```bash
 git clone https://github.com/Ivorisnoob/Koda.git
