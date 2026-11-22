@@ -1453,7 +1453,15 @@ fun MusicApp(
                 }
                 HomeScreen(
                     compactVideoHome = compactVideoHome,
-                    inlinePreviews = inlinePreviews,
+                    // Off while a player covers the feed. The feed under the
+                    // overlay is never paused and its cards still read as on
+                    // screen, so nothing else stops a preview there - and opening
+                    // the player from its mini bar never went through the feed's
+                    // own release. A preview left playing under fullscreen showed
+                    // through on top of the video.
+                    inlinePreviews = inlinePreviews &&
+                        !(overlayVideo != null && isVideoOverlayExpanded) &&
+                        !isShortsOpen,
                     onWatchAsVideo = moveMusicToVideo,
                     onSongClick = { song ->
                         playerViewModel.playSong(song)

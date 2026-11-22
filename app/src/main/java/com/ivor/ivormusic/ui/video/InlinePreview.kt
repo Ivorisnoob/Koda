@@ -593,11 +593,19 @@ fun InlinePreviewSurface(
     val player = controller.exoPlayer ?: return
     androidx.compose.ui.viewinterop.AndroidView(
         factory = { ctx ->
-            androidx.media3.ui.PlayerView(ctx).apply {
-                useController = false
-                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-            }
+            // A TextureView, through the mini player's layout (surface_type has
+            // no setter). [scar] PlayerView's default SurfaceView is composited
+            // behind the window, outside Compose's drawing order, so fullscreen
+            // video - a SurfaceView too - could end up beneath a card's preview
+            // and show it on top of the picture. In-window, the preview is
+            // covered by whatever is drawn over the feed, like any other view.
+            (android.view.LayoutInflater.from(ctx)
+                .inflate(com.ivor.ivormusic.R.layout.mini_video_surface, null) as androidx.media3.ui.PlayerView)
+                .apply {
+                    useController = false
+                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                }
         },
         update = { view -> view.player = player },
         onRelease = { view -> view.player = null },
