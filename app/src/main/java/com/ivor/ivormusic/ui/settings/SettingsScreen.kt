@@ -2940,7 +2940,11 @@ private fun AndroidAutoHelpDialog(
                 }
             },
             text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
                     Text(
                         text = stringResource(R.string.auto_help_intro),
                         color = textColor,
