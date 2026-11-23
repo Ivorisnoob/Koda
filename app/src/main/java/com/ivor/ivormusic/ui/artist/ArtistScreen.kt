@@ -1454,21 +1454,29 @@ private fun PopularSongRow(
             .padding(start = ARTIST_GUTTER, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        SongArtwork(
-            song = song,
-            contentDescription = null,
+        Box(
             modifier = Modifier
                 .size(56.dp)
                 .clip(RoundedCornerShape(14.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-        )
+        ) {
+            SongArtwork(
+                song = song,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+            com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.fillMaxSize())
+        }
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    song.id,
+                    MaterialTheme.colorScheme.onBackground
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -2038,7 +2046,7 @@ private fun ArtistSongCard(
             headlineContent = {
                 Text(
                     text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
-                    color = textColor,
+                    color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(song.id, textColor),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -2084,6 +2092,7 @@ private fun ArtistSongCard(
                             }
                         }
                     }
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.matchParentSize())
                 }
             },
             trailingContent = {

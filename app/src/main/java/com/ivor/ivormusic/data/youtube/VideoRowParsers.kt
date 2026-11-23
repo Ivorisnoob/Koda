@@ -128,13 +128,15 @@ internal fun parseVideoSearchPage(response: String, dropShorts: Boolean = false)
     val renderers = mutableListOf<JSONObject>()
     findObjectsByKey(root, "videoRenderer", renderers)
     findObjectsByKey(root, "lockupViewModel", renderers)
-    val videos = renderers.mapNotNull { renderer ->
+    val movies = mutableListOf<JSONObject>()
+    findObjectsByKey(root, "movieRenderer", movies)
+    val videos = (renderers.mapNotNull { renderer ->
         when {
             !renderer.has("videoId") -> parseLockupViewModel(renderer)
             dropShorts && isShortVideoRenderer(renderer) -> null
             else -> parseVideoSearchRow(renderer)
         }
-    }.distinctBy { it.videoId }
+    } + movies.mapNotNull(::parseMovieRenderer)).distinctBy { it.videoId }
     return VideoFeedPage(videos, videoListContinuationToken(root, search = true))
 }
 
@@ -332,3 +334,63 @@ internal fun parseShortsLockup(lockup: JSONObject): ShortsItem? {
 /** reelWatchEndpoint: videoId, portrait thumbnail and sequence seed. */
 private fun parseReelWatchEndpoint(reel: JSONObject): ShortsItem? =
     parseShortsEndpoint(reel)
+
+/**
+ * Every video on an Explore page ([com.ivor.ivormusic.data.ExploreTopic]), in
+ * the order the page lists them, each once.
+ *
+ * The pages mix four card shapes, so this walks the whole response rather
+ * than a known path. A `videoCardRenderer` (Gaming) names its channel under
+ * `bylineText`, which [parseVideoRenderer] does not read, so it is lent as
+ * `shortBylineText`; a lockup that is not a video (a playlist, a channel)
+ * parses to nothing. Shorts shelves (`reelItemRenderer`) are left out.
+ */
+internal fun parseExploreVideos(root: JSONObject): List<VideoItem> {
+    val videos = LinkedHashMap<String, VideoItem>()
+    fun visit(node: Any?) {
+        when (node) {
+            is JSONObject -> {
+                val iterator = node.keys()
+                while (iterator.hasNext()) {
+                    val key = iterator.next()
+                    val value = node.opt(key)
+                    val parsed = when (key) {
+                        "videoRenderer", "gridVideoRenderer" -> parseVideoRenderer(value as? JSONObject)
+                        "videoCardRenderer" -> (value as? JSONObject)?.let { card ->
+                            if (!card.has("shortBylineText")) {
+                                card.optJSONObject("bylineText")?.let { card.put("shortBylineText", it) }
+                            }
+                            parseVideoRenderer(card)
+                        }
+                        "lockupViewModel" -> parseLockupViewModel(value as? JSONObject)
+                        else -> null
+                    }
+                    if (parsed != null) {
+                        videos.putIfAbsent(parsed.videoId, parsed)
+                    } else if (key != "reelItemRenderer" && key != "shortsLockupViewModel") {
+                        visit(value)
+                    }
+                }
+            }
+            is JSONArray -> for (i in 0 until node.length()) visit(node.opt(i))
+        }
+    }
+    visit(root)
+    return videos.values.toList()
+}
+
+/**
+ * A film in search (`movieRenderer`, verified November 2026: title, length,
+ * "YouTube Movies & TV" byline, and `offerButtons` reading "Buy or rent").
+ * Search used to skip these entirely; they now come through marked paid so
+ * they can be badged or hidden (#379). A film whose offer says it is free
+ * stays unmarked.
+ */
+internal fun parseMovieRenderer(renderer: JSONObject): VideoItem? {
+    val video = parseVideoRenderer(renderer) ?: return null
+    val offers = mutableListOf<JSONObject>()
+    findObjectsByKey(renderer.optJSONArray("offerButtons") ?: return video, "buttonRenderer", offers)
+    val offerText = offers.joinToString(" ") { getRunText(it.optJSONObject("text")).orEmpty() }
+    val free = offerText.contains("free", ignoreCase = true)
+    return if (offers.isEmpty() || free) video else video.copy(access = com.ivor.ivormusic.data.VideoAccess.PAID)
+}

@@ -732,7 +732,10 @@ private fun SpinRow(
                 text = song.title.takeIf { !isUnknownTitle(it) } ?: stringResource(R.string.untitled_song),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    song.id,
+                    MaterialTheme.colorScheme.onBackground,
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -804,6 +807,8 @@ private fun SpinDisc(song: Song, turning: Boolean, coverPx: Int, pill: State<Flo
                 .build()
         }
     }
+    // Scale with the chosen slot, but keep the bars outside the rotation so
+    // the mark stays upright while the record turns.
     Box(
         modifier = Modifier
             .size(SPIN_DISC_SIZE)
@@ -811,35 +816,45 @@ private fun SpinDisc(song: Song, turning: Boolean, coverPx: Int, pill: State<Flo
                 val grow = lerp(0.88f, 1f, pill.value)
                 scaleX = grow
                 scaleY = grow
-                rotationZ = rotation.value
             }
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
     ) {
-        if (request != null) {
-            AsyncImage(
-                model = request,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Icon(
-                Icons.Rounded.MusicNote,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(28.dp)
-            )
-        }
-        // The spindle hole, in the page's own colour.
         Box(
             modifier = Modifier
-                .align(Alignment.Center)
-                .size(SPIN_DISC_SIZE * 0.16f)
+                .fillMaxSize()
+                .graphicsLayer { rotationZ = rotation.value }
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.background)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+        ) {
+            if (request != null) {
+                AsyncImage(
+                    model = request,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(28.dp)
+                )
+            }
+            // The spindle hole, in the page's own colour.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(SPIN_DISC_SIZE * 0.16f)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.background)
+            )
+        }
+        com.ivor.ivormusic.ui.components.NowPlayingMark(
+            song.id,
+            Modifier.fillMaxSize().clip(CircleShape),
+            barSize = 28.dp,
         )
     }
 }

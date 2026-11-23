@@ -1647,6 +1647,7 @@ class DownloadRepository private constructor(private val context: Context) {
                 // that nothing could resume.
                 finishSuccess(request)
                 saveCaptions(request)
+                saveChapters(request)
                 true
             } catch (e: kotlinx.coroutines.CancellationException) {
                 cleanUpCancelled(request, pendingTarget)
@@ -1832,6 +1833,21 @@ class DownloadRepository private constructor(private val context: Context) {
      * Which tracks is the user's choice where the download sheet asked for
      * one, and [DownloadedCaptionStore.preferredTracks] where nothing did.
      */
+    /**
+     * The video's chapters, kept beside its captions so they show when it is
+     * played offline. One `/next`, made only for a finished download.
+     */
+    private suspend fun saveChapters(request: DownloadRequest) {
+        try {
+            val chapters = youtubeRepository.getWatchNextData(request.id).chapters
+            captionStore.saveChapters(request.id, chapters)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.w(TAG, "Chapters not saved for ${request.title}: ${e.message}")
+        }
+    }
+
     private suspend fun saveCaptions(request: DownloadRequest) {
         val chosen = request.captionKeys
         // The user was asked and wanted none.

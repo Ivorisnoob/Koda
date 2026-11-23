@@ -373,18 +373,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         (localItems + savedItems + ytPlaylists).filterNot { it.id in hiddenIds }
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /**
-     * [userPlaylists] less the ones kept to video mode: what music Home and the
-     * Library grid draw. A separate list on purpose, because [userPlaylists] also
-     * answers "is this in my library", feeds import and the add-to-playlist
-     * paths, and a playlist kept to video mode is still the user's own.
-     */
-    val musicModePlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
-        userPlaylists,
-        playlistModeStore.modes
-    ) { playlists, modes ->
-        playlists.filter { modes.showsIn(it.id, com.ivor.ivormusic.data.PlaylistMode.MUSIC) }
-    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+    // musicModePlaylists is declared below isOnline, which it reads: a
+    // property initialiser that touches one declared after it sees null.
 
     // --- Spotlight's YouTube Music tabs (home, explore, charts, new, a mood) ---
 
@@ -752,6 +742,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _recentlyPlayed = MutableStateFlow<List<Song>>(emptyList())
     val recentlyPlayed: StateFlow<List<Song>> = _recentlyPlayed.asStateFlow()
 
+    /** Music Home's speed dial: the most played songs, see [speedDialFrom]. */
+    private val _speedDial = MutableStateFlow<List<Song>>(emptyList())
+    val speedDial: StateFlow<List<Song>> = _speedDial.asStateFlow()
+
     // Plays per song id, for the Library's "Most played" sort. Derived from the
     // same history read as the recents rail rather than a second file load.
     private val _playCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -821,6 +815,32 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         true
     )
 
+    /**
+     * [userPlaylists] less the ones kept to video mode: what music Home and the
+     * Library grid draw. A separate list on purpose, because [userPlaylists] also
+     * answers "is this in my library", feeds import and the add-to-playlist
+     * paths, and a playlist kept to video mode is still the user's own.
+     *
+     * Offline, or in Local Only, downloaded playlists lead it, including ones
+     * the account fetch could not bring back ([playlistsForOffline]). Local
+     * Only is a fresh read each time the list is rebuilt (invariant 7).
+     */
+    val musicModePlaylists: StateFlow<List<com.ivor.ivormusic.data.PlaylistDisplayItem>> = combine(
+        combine(userPlaylists, playlistModeStore.modes, hiddenPlaylistsRepository.hiddenPlaylists, ::Triple),
+        isOnline,
+        downloadRepository.playlistStore.playlists,
+        downloadRepository.downloadedSongs,
+    ) { (playlists, modes, hidden), online, downloaded, downloads ->
+        com.ivor.ivormusic.data.playlistsForOffline(
+            playlists = playlists,
+            online = online && !themePreferences.isLocalOnlyModeEnabled(),
+            downloaded = downloaded,
+            downloads = downloads,
+            hiddenIds = hidden.mapTo(hashSetOf()) { it.playlistId },
+            downloadedLabel = getApplication<Application>().getString(R.string.offline_playlist_owner),
+        ).filter { modes.showsIn(it.id, com.ivor.ivormusic.data.PlaylistMode.MUSIC) }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Classic Home's top artists rail, and the photos found for them so far.
     // Photos arrive separately and late, so the rail draws immediately with a
     // monogram and each face fades in when its lookup lands.
@@ -886,6 +906,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 loadArtistPhotos(artists)
             }
             val localSongs = _songs.value
+            _speedDial.value = speedDialFrom(history, System.currentTimeMillis()).mapNotNull { entry ->
+                if (entry.source == com.ivor.ivormusic.data.SongSource.LOCAL) {
+                    localSongs.find { it.id == entry.songId }
+                } else {
+                    Song.fromYouTube(
+                        videoId = entry.songId,
+                        title = entry.title,
+                        artist = entry.artist,
+                        album = entry.album,
+                        duration = entry.duration,
+                        thumbnailUrl = entry.thumbnailUrl
+                    ).copy(albumId = entry.albumId)
+                }
+            }
             val seen = mutableSetOf<String>()
             val recents = mutableListOf<Song>()
             for (entry in history) {
@@ -3308,8 +3342,91 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadSongs(excludedFolders: Set<String> = emptySet(), manualScan: Boolean = false) {
+        lastDeviceScan = excludedFolders to manualScan
         viewModelScope.launch {
             _songs.value = localRepository.getSongs(excludedFolders, manualScan)
+        }
+    }
+
+    /**
+     * The folders and scan mode of the last device scan, so the Library's
+     * refresh rescans the same way. Null until a scan has run, which is also
+     * what a device library that is switched off looks like: then there is
+     * nothing on the device to rescan.
+     */
+    private var lastDeviceScan: Pair<Set<String>, Boolean>? = null
+
+    private val _isLibraryRefreshing = MutableStateFlow(false)
+
+    /** True only while a pull on the Library is being answered. */
+    val isLibraryRefreshing: StateFlow<Boolean> = _isLibraryRefreshing.asStateFlow()
+    private var libraryRefreshJob: Job? = null
+
+    /**
+     * Pull to refresh on the Library: its own data and nothing else.
+     *
+     * It used to share Home's [refresh], which fetched Home's recommendations
+     * first and walked everything in one chain under one catch, so a failure
+     * anywhere skipped liked songs, playlists and the device scan without a
+     * word. Its spinner followed [isLoading], which Home's own loads also set
+     * and cleared, so it vanished early or never showed; and it rescanned the
+     * device with no excluded folders. Now each part runs side by side and
+     * fails alone, and the spinner is this job's.
+     */
+    fun refreshLibrary() {
+        if (libraryRefreshJob?.isActive == true) return
+        libraryRefreshJob = viewModelScope.launch {
+            _isLibraryRefreshing.value = true
+            val startedAt = System.currentTimeMillis()
+            try {
+                kotlinx.coroutines.coroutineScope {
+                    val loggedIn = sessionManager.isLoggedIn()
+                    _isYouTubeConnected.value = loggedIn
+                    if (loggedIn) {
+                        launch {
+                            libraryPart("liked songs") {
+                                val liked = youtubeRepository.getLikedMusic()
+                                // An empty answer is a failed walk far more
+                                // often than an account with no likes; keep
+                                // what is on screen.
+                                if (liked.isNotEmpty()) _likedSongs.value = liked
+                            }
+                        }
+                        launch {
+                            libraryPart("account playlists") {
+                                val playlists = youtubeRepository.getUserPlaylists()
+                                if (playlists.isNotEmpty()) _youtubePlaylists.value = playlists
+                            }
+                        }
+                    }
+                    launch { libraryPart("device playlists") { playlistRepository.refreshPlaylists() } }
+                    lastDeviceScan?.let { (folders, manual) ->
+                        launch {
+                            libraryPart("device songs") {
+                                _songs.value = localRepository.getSongs(folders, manual)
+                            }
+                        }
+                    }
+                }
+                if (sessionManager.isLoggedIn()) accountLoadedAtMs = System.currentTimeMillis()
+            } finally {
+                // A refresh that answers at once still shows that it ran.
+                val shown = System.currentTimeMillis() - startedAt
+                if (shown < 600L) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    kotlinx.coroutines.delay(600L - shown)
+                }
+                _isLibraryRefreshing.value = false
+            }
+        }
+    }
+
+    private suspend fun libraryPart(name: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            KLog.e("HomeViewModel", "Library refresh: $name failed", e)
         }
     }
     
@@ -3558,17 +3675,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val manuallyLiked = likedSongsRepository.likedSongs.value
             val likedIds = likedSongsRepository.getAllLikedSongIds()
             val likedLocalSongs = _songs.value.filter { it.id in likedIds }
-            val ytLiked = _likedSongs.value.ifEmpty {
-                if (sessionManager.isLoggedIn()) {
-                    try {
-                        youtubeRepository.getLikedMusic()
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                } else emptyList()
-            }
+            // The held list is reused only while it is fresh. It was reused
+            // whenever it was not empty, so a short load (#370) stayed short
+            // until the app was restarted.
+            val cachedLiked = _likedSongs.value
+            val ytLiked = if (sessionManager.isLoggedIn() &&
+                (cachedLiked.isEmpty() || !loadedRecently(accountLoadedAtMs))
+            ) {
+                val fresh = try {
+                    youtubeRepository.getLikedMusic()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                if (fresh.isNotEmpty()) _likedSongs.value = fresh
+                fresh.ifEmpty { cachedLiked }
+            } else cachedLiked
             return (manuallyLiked + ytLiked + likedLocalSongs).distinctBy { it.id }
         }
 
@@ -3859,6 +3982,50 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         loadTrendingVideos()
+    }
+
+    /**
+     * The Explore topic video Home is showing in place of its feed, with its
+     * videos; null for the feed itself (#358). A topic is fetched only when
+     * picked, and kept for [EXPLORE_TTL_MS] so going back and forth between
+     * chips costs nothing.
+     */
+    data class ExploreFeed(
+        val topic: com.ivor.ivormusic.data.ExploreTopic,
+        val videos: List<VideoItem> = emptyList(),
+        val isLoading: Boolean = false,
+        val failed: Boolean = false,
+    )
+
+    private val _explore = MutableStateFlow<ExploreFeed?>(null)
+    val explore: StateFlow<ExploreFeed?> = _explore.asStateFlow()
+    private val exploreCache = HashMap<com.ivor.ivormusic.data.ExploreTopic, Pair<Long, List<VideoItem>>>()
+    private var exploreJob: kotlinx.coroutines.Job? = null
+
+    /** Show [topic], or the feed again for null. [force] skips the cache (a pull to refresh). */
+    fun selectExploreTopic(topic: com.ivor.ivormusic.data.ExploreTopic?, force: Boolean = false) {
+        exploreJob?.cancel()
+        if (topic == null) {
+            _explore.value = null
+            return
+        }
+        val now = android.os.SystemClock.elapsedRealtime()
+        val cached = exploreCache[topic]?.takeIf { !force && now - it.first < EXPLORE_TTL_MS }
+        if (cached != null) {
+            _explore.value = ExploreFeed(topic, cached.second)
+            return
+        }
+        _explore.value = ExploreFeed(
+            topic,
+            videos = _explore.value?.takeIf { it.topic == topic }?.videos.orEmpty(),
+            isLoading = true,
+        )
+        exploreJob = viewModelScope.launch {
+            val videos = youtubeRepository.getExploreVideos(topic)
+            if (_explore.value?.topic != topic) return@launch
+            if (videos.isNotEmpty()) exploreCache[topic] = android.os.SystemClock.elapsedRealtime() to videos
+            _explore.value = ExploreFeed(topic, videos, isLoading = false, failed = videos.isEmpty())
+        }
     }
 
     fun loadTrendingVideos() {
@@ -5005,6 +5172,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
          * request is not cancelled when this expires - it is detached - so a
          * page that arrives late is still there for the next pull.
          */
+        /** How long an Explore topic is shown again without refetching. */
+        private const val EXPLORE_TTL_MS = 10 * 60 * 1000L
         const val VIDEO_FEED_DEADLINE_MS = 8_000L
 
         /**

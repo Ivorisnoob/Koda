@@ -140,7 +140,8 @@ internal fun VideoTitleCard(
                     if (description.isNotEmpty()) {
                         val linked = rememberLinkedText(
                             rich = RichText(description, video.descriptionLinks),
-                            onTimestampClick = onSeekTo
+                            onTimestampClick = onSeekTo,
+                            timestampVideoId = video.videoId
                         )
                         SelectionContainer {
                             Text(

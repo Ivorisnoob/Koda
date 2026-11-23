@@ -44,7 +44,6 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Explore
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
@@ -395,6 +394,7 @@ private fun ClassicNowPlaying(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .coverSeekOnly(LocalCoverSeek.current)
                 .swipeToSkip(swipeToSkip),
             contentAlignment = Alignment.Center
         ) {
@@ -1063,7 +1063,7 @@ private fun ClassicUpNext(
             ) {
                 ClassicSongRow(
                     song = item.song,
-                    highlighted = isCurrent,
+                    currentOccurrence = isCurrent,
                     first = index == 0,
                     last = index == queue.lastIndex,
                     onClick = { viewModel.skipToQueueItem(item.id) },
@@ -1222,7 +1222,6 @@ private fun ClassicRelated(
             itemsIndexed(list, key = { _, item -> "related_${item.id}" }) { index, item ->
                 ClassicSongRow(
                     song = item,
-                    highlighted = false,
                     first = index == 0,
                     last = index == list.lastIndex,
                     onClick = { viewModel.playSongRadio(item) },
@@ -1266,14 +1265,15 @@ private fun ClassicPanelMessage(text: String) {
 @Composable
 private fun ClassicSongRow(
     song: Song,
-    highlighted: Boolean,
     first: Boolean,
     last: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    currentOccurrence: Boolean? = null,
     status: @Composable () -> Unit = {},
     trailing: @Composable () -> Unit
 ) {
+    val highlighted = currentOccurrence == true
     val outer = 20.dp
     val inner = 4.dp
     Surface(
@@ -1301,26 +1301,23 @@ private fun ClassicSongRow(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-                if (highlighted) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.GraphicEq,
-                            contentDescription = stringResource(R.string.cd_playing),
-                            tint = MaterialTheme.colorScheme.inverseOnSurface
-                        )
-                    }
-                }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    song.id,
+                    Modifier.fillMaxSize(),
+                    currentOccurrence = currentOccurrence
+                )
             }
             Column(modifier = Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                val titleResting = LocalContentColor.current
                 Text(
                     song.title,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (highlighted) FontWeight.Bold else FontWeight.SemiBold,
+                    color = if (currentOccurrence != null) {
+                        titleResting
+                    } else {
+                        com.ivor.ivormusic.ui.components.nowPlayingTitleColor(song.id, titleResting)
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

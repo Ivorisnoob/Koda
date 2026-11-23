@@ -424,17 +424,23 @@ fun NowPlayingOptionsSheet(
                 OptionGroup {
                     var needsDivider = false
                     if (goToArtist != null && artist != null) {
-                        OptionRow(
-                            icon = Icons.Rounded.AccountCircle,
-                            title = artist,
-                            subtitle = stringResource(R.string.np_dest_artist),
-                            trailing = OptionRowTrailing.CHEVRON,
-                            onClick = {
-                                onDismiss()
-                                goToArtist(artist)
+                        // One row per artist of a collaboration, each opening
+                        // its own page.
+                        com.ivor.ivormusic.ui.artist.artistMenuNames(artist, song.artistCredits)
+                            .forEach { name ->
+                                if (needsDivider) OptionRowDivider()
+                                OptionRow(
+                                    icon = Icons.Rounded.AccountCircle,
+                                    title = name,
+                                    subtitle = stringResource(R.string.np_dest_artist),
+                                    trailing = OptionRowTrailing.CHEVRON,
+                                    onClick = {
+                                        onDismiss()
+                                        goToArtist(name)
+                                    }
+                                )
+                                needsDivider = true
                             }
-                        )
-                        needsDivider = true
                     }
                     if (goToAlbum != null && album != null) {
                         if (needsDivider) OptionRowDivider()

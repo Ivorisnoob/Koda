@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Back 5 seconds". Same ring as ic_media_replay_10, with a 5 in the hole. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,5V1L7,6l5,5V7c3.31,0 6,2.69 6,6c0,3.31 -2.69,6 -6,6c-3.31,0 -6,-2.69 -6,-6H4c0,4.42 3.58,8 8,8c4.42,0 8,-3.58 8,-8c0,-4.42 -3.58,-8 -8,-8z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.6,10h4.6v1.15h-3.3v1.05h2.9v3.4h-4.2v-1.15h2.95v-1.1h-2.95z" />
+</vector>

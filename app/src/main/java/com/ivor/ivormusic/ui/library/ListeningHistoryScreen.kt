@@ -568,7 +568,8 @@ private fun buildHistoryDays(
                 epochDay = epochDay,
                 runs = runs,
                 plays = entries.size,
-                listenedMs = entries.sumOf { it.duration }
+                // Measured time where it was measured, the song's length before.
+                listenedMs = entries.sumOf { it.heardMs }
             )
         }
 }
@@ -938,6 +939,10 @@ private fun HistoryRunRow(
                 Text(
                     run.entry.title,
                     fontWeight = FontWeight.SemiBold,
+                    color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                        run.entry.songId,
+                        androidx.compose.material3.LocalContentColor.current,
+                    ),
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
@@ -1003,6 +1008,10 @@ private fun HistoryArtwork(run: HistoryRun) {
                 )
             }
         }
+        com.ivor.ivormusic.ui.components.NowPlayingMark(
+            run.entry.songId,
+            Modifier.fillMaxSize(),
+        )
     }
 }
 

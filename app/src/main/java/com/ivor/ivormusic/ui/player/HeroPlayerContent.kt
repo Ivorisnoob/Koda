@@ -216,9 +216,7 @@ fun HeroPlayerSheetContent(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
-                                .pointerInput(Unit) {
-                                    detectTapGestures(onTap = { togglePlay() })
-                                }
+                                .coverTaps(LocalCoverSeek.current) { togglePlay() }
                                 // Off while lyrics are up: that view scrolls and seeks.
                                 .swipeToSkip(swipeToSkip, enabled = !showLyrics)
                                 .styleWheelHold(styleWheel)
@@ -238,7 +236,8 @@ fun HeroPlayerSheetContent(
                                             .padding(top = 60.dp, bottom = 132.dp),
                                         primaryColor = accent,
                                         onSurfaceColor = ink,
-                                        onSurfaceVariantColor = ink.copy(alpha = 0.6f)
+                                        onSurfaceVariantColor = ink.copy(alpha = 0.6f),
+                                        backgroundColor = field
                                     )
                                 } else {
                                     Box(modifier = Modifier.fillMaxSize()) {

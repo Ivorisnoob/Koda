@@ -173,6 +173,8 @@ fun LibraryContent(
     isLocalLibrary: Boolean = true,
     onDownloadsClick: () -> Unit = {},
     initialArtist: String? = null,
+    /** [initialArtist]'s channel id, when the song that named it carried one. */
+    initialArtistId: String? = null,
     onInitialArtistConsumed: () -> Unit = {},
     /**
      * Whether the next hand-off ([initialArtist], [initialPlaylist] or
@@ -253,6 +255,43 @@ fun LibraryContent(
     // the release id, so it never reaches a playlist opened any other way.
     var selectedPlaylistFallback by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
 
+    // The pages under the open one, for a route opened from inside another
+    // (an album or a similar artist from an artist page). Back returns to the
+    // top of it before anything else, so artist -> album -> back lands on the
+    // artist rather than skipping to the root. Search has always worked this
+    // way; the Library did not (#372). Emptied whenever the root is reached or
+    // a page is opened from the root, a list or another tab.
+    val backHistory = remember { mutableStateListOf<LibraryBackEntry>() }
+    // True while a back is restoring a page from [backHistory], so the page
+    // slides in from the side a back comes from.
+    var poppingHistory by remember { mutableStateOf(false) }
+
+    // Save the open page before opening another from inside it.
+    fun pushHistory() {
+        backHistory.add(
+            LibraryBackEntry(
+                route = currentRoute,
+                playlist = selectedPlaylist,
+                artistName = selectedArtistName,
+                artistId = selectedArtistId,
+                albumName = selectedAlbumName,
+                albumSongs = selectedAlbumSongs,
+                playlistFallback = selectedPlaylistFallback
+            )
+        )
+        poppingHistory = false
+    }
+
+    // A page opened from the root, a list or another tab: nothing under it.
+    fun startFresh() {
+        backHistory.clear()
+        poppingHistory = false
+    }
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == LibraryRoute.Main) backHistory.clear()
+    }
+
     /**
      * Open an album from the Library's own songs.
      *
@@ -291,8 +330,9 @@ fun LibraryContent(
     // Handle initial deep link to artist
     LaunchedEffect(initialArtist) {
         if (initialArtist != null) {
+            startFresh()
             selectedArtistName = initialArtist
-            selectedArtistId = null
+            selectedArtistId = initialArtistId
             returnsToCaller = initialReturnToCaller
             currentRoute = LibraryRoute.Artist
             onInitialArtistConsumed()
@@ -302,6 +342,7 @@ fun LibraryContent(
     // Handle initial deep link to a playlist
     LaunchedEffect(initialPlaylist) {
         if (initialPlaylist != null) {
+            startFresh()
             selectedPlaylist = initialPlaylist
             returnsToCaller = initialReturnToCaller
             currentRoute = LibraryRoute.Playlist
@@ -320,6 +361,7 @@ fun LibraryContent(
                 it.album.trim().equals(requested, ignoreCase = true)
             }.sortedInAlbumOrder()
             if (albumSongs.isNotEmpty()) {
+                startFresh()
                 returnsToCaller = initialReturnToCaller
                 openAlbum(initialAlbum, albumSongs)
                 onInitialAlbumConsumed()
@@ -335,6 +377,7 @@ fun LibraryContent(
     LaunchedEffect(pendingSpotifyImport) {
         pendingSpotifyImport?.let { link ->
             spotifyImportLink = link
+            startFresh()
             returnsToCaller = false
             currentRoute = LibraryRoute.SpotifyImport
             viewModel.consumeSpotifyImportRequest()
@@ -351,13 +394,27 @@ fun LibraryContent(
     // two-level routes: they are only ever reached from an open playlist, so
     // back returns there - and deliberately before the excursion check, which
     // must keep waiting for the back that leaves the playlist itself.
+    // A page opened from inside another returns to it first (backHistory).
     fun back() {
         if (currentRoute == LibraryRoute.ImportSongs || currentRoute == LibraryRoute.AddSongs) {
+            poppingHistory = false
             currentRoute = LibraryRoute.Playlist
+        } else if (backHistory.isNotEmpty()) {
+            val entry = backHistory.removeAt(backHistory.lastIndex)
+            selectedPlaylist = entry.playlist
+            selectedArtistName = entry.artistName
+            selectedArtistId = entry.artistId
+            selectedAlbumName = entry.albumName
+            selectedAlbumSongs = entry.albumSongs
+            selectedPlaylistFallback = entry.playlistFallback
+            poppingHistory = true
+            currentRoute = entry.route
         } else if (returnsToCaller) {
+            poppingHistory = false
             returnsToCaller = false
             onReturnToCaller()
         } else {
+            poppingHistory = false
             currentRoute = LibraryRoute.Main
         }
     }
@@ -374,10 +431,12 @@ fun LibraryContent(
                 onShuffleQueue = onShuffleQueue,
                 onDownloadsClick = onDownloadsClick,
                 onNavigateToPlaylist = { playlist ->
+                    startFresh()
                     selectedPlaylist = playlist
                     currentRoute = LibraryRoute.Playlist
                 },
                 onNavigateToArtist = { artist ->
+                    startFresh()
                     selectedArtistName = artist
                     selectedArtistId = null
                     returnsToCaller = false
@@ -387,16 +446,19 @@ fun LibraryContent(
                 // the page opens on that artist rather than on whoever a
                 // search for the name finds first.
                 onNavigateToFollowedArtist = { artist ->
+                    startFresh()
                     selectedArtistName = artist.name
                     selectedArtistId = artist.id.takeIf { it.startsWith("UC") }
                     returnsToCaller = false
                     currentRoute = LibraryRoute.Artist
                 },
-                onNavigateToAlbum = { album, songs -> openAlbum(album, songs) },
+                onNavigateToAlbum = { album, songs -> startFresh(); openAlbum(album, songs) },
                 onNavigateToStats = {
+                    startFresh()
                     currentRoute = LibraryRoute.Stats
                 },
                 onNavigateToHistory = {
+                    startFresh()
                     currentRoute = LibraryRoute.History
                 },
                 readyOfflineCount = readyOffline.songs.size,
@@ -404,9 +466,11 @@ fun LibraryContent(
                 readyOfflineUnnamed = readyOffline.unnamedCount,
                 readyOfflineHistoryDisabled = readyOffline.historyDisabled,
                 onReadyOfflineClick = {
+                    startFresh()
                     currentRoute = LibraryRoute.ReadyOffline
                 },
                 onCreatePlaylist = {
+                    startFresh()
                     currentRoute = LibraryRoute.CreatePlaylist
                 },
                 onSongLongPress = onSongLongPress,
@@ -436,8 +500,14 @@ fun LibraryContent(
                             ?.takeIf { it.first == playlist.id }?.second.orEmpty(),
                         onSongLongPress = onSongLongPress,
                         onEnqueueSong = onEnqueueSong,
-                        onAddSongsRequest = { currentRoute = LibraryRoute.ImportSongs },
-                        onSearchSongsRequest = { currentRoute = LibraryRoute.AddSongs }
+                        onAddSongsRequest = {
+                            poppingHistory = false
+                            currentRoute = LibraryRoute.ImportSongs
+                        },
+                        onSearchSongsRequest = {
+                            poppingHistory = false
+                            currentRoute = LibraryRoute.AddSongs
+                        }
                     )
                 }
             }
@@ -482,8 +552,9 @@ fun LibraryContent(
                         onPlayQueue = onPlayQueue,
                         onShuffleQueue = onShuffleQueue,
                         onSongClick = onSongClick,
-                        onAlbumClick = { album, songs -> openAlbum(album, songs) },
+                        onAlbumClick = { album, songs -> pushHistory(); openAlbum(album, songs) },
                         onOpenAlbum = { albumItem ->
+                            pushHistory()
                             selectedPlaylist = albumItem
                             currentRoute = LibraryRoute.Playlist
                         },
@@ -491,11 +562,13 @@ fun LibraryContent(
                         onSongLongPress = onSongLongPress,
                         onOpenChannel = onOpenChannel,
                         onOpenArtist = { name, id ->
+                            pushHistory()
                             selectedArtistName = name
                             selectedArtistId = id
                             currentRoute = LibraryRoute.Artist
                         },
                         onOpenPlaylist = { playlist ->
+                            pushHistory()
                             selectedPlaylist = playlist
                             currentRoute = LibraryRoute.Playlist
                         }
@@ -551,12 +624,14 @@ fun LibraryContent(
                     viewModel = viewModel,
                     onBack = { back() },
                     onImportFromSpotify = {
+                        startFresh()
                         spotifyImportLink = null
                         currentRoute = LibraryRoute.SpotifyImport
                     },
                     onCreated = { created ->
                         // Straight onto the new playlist; back from there goes
                         // to the root, the same as any playlist opened from it.
+                        startFresh()
                         selectedPlaylist = created
                         returnsToCaller = false
                         currentRoute = LibraryRoute.Playlist
@@ -579,6 +654,7 @@ fun LibraryContent(
                     viewModel = viewModel,
                     onBack = { back() },
                     onCreated = { created ->
+                        startFresh()
                         selectedPlaylist = created
                         returnsToCaller = false
                         currentRoute = LibraryRoute.Playlist
@@ -658,6 +734,7 @@ fun LibraryContent(
         // ImportSongs and AddSongs back onto the playlist, not the root the
         // peel shows, so they are not previewed either.
         previewable = currentRoute != LibraryRoute.Main && !returnsToCaller &&
+            backHistory.isEmpty() &&
             currentRoute != LibraryRoute.ImportSongs && currentRoute != LibraryRoute.AddSongs,
         background = mainScreen
     ) { committedByGesture ->
@@ -670,6 +747,12 @@ fun LibraryContent(
                 committedByGesture -> EnterTransition.None togetherWith ExitTransition.None
                 targetState == LibraryRoute.Main ->
                     fadeIn(animationSpec = effectsSpec) togetherWith
+                        (slideOutHorizontally(animationSpec = spatialSpec) { it } +
+                            fadeOut(animationSpec = effectsSpec))
+                // Back onto a page from the history: the reverse of opening.
+                poppingHistory ->
+                    (slideInHorizontally(animationSpec = spatialSpec) { -it / 3 } +
+                        fadeIn(animationSpec = effectsSpec)) togetherWith
                         (slideOutHorizontally(animationSpec = spatialSpec) { it } +
                             fadeOut(animationSpec = effectsSpec))
                 else ->
@@ -690,6 +773,17 @@ fun LibraryContent(
     }
 }
 
+/** One page under the open one in the Library's back history. */
+private data class LibraryBackEntry(
+    val route: LibraryRoute,
+    val playlist: PlaylistDisplayItem?,
+    val artistName: String?,
+    val artistId: String?,
+    val albumName: String?,
+    val albumSongs: List<Song>,
+    val playlistFallback: Pair<String, List<Song>>?
+)
+
 enum class LibraryRoute {
     Main, Playlist, Album, Artist, Stats, History, ReadyOffline,
     /** The immersive local-playlist creation flow (PlaylistStudioScreen). */
@@ -702,11 +796,11 @@ enum class LibraryRoute {
     SpotifyImport
 }
 
-enum class LibraryTab(val label: String) {
-    All("All"),
-    Playlists("Playlists"),
-    Artists("Artists"),
-    Albums("Albums")
+enum class LibraryTab(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    All("All", com.ivor.ivormusic.R.string.library_tab_all),
+    Playlists("Playlists", com.ivor.ivormusic.R.string.library_tab_playlists),
+    Artists("Artists", com.ivor.ivormusic.R.string.library_tab_artists),
+    Albums("Albums", com.ivor.ivormusic.R.string.library_tab_albums)
 }
 
 /**
@@ -918,6 +1012,14 @@ fun LibraryMainScreen(
     allSongsListState: LazyListState = rememberLazyListState()
 ) {
     val musicModePlaylists by viewModel.musicModePlaylists.collectAsState()
+    // Offline, downloaded playlists join the grid even when they are not in
+    // the library (playlistsForOffline). Those are neither the user's own nor
+    // saved, so the grid must not offer to rename or delete them.
+    val libraryPlaylists by viewModel.userPlaylists.collectAsState()
+    val downloadedOnlyPlaylistIds = remember(musicModePlaylists, libraryPlaylists) {
+        val inLibrary = libraryPlaylists.mapTo(hashSetOf()) { it.id }
+        musicModePlaylists.mapNotNullTo(hashSetOf()) { it.id.takeIf { id -> id !in inLibrary } }
+    }
     val playlistModes by viewModel.playlistModes.collectAsState()
     val localPlaylistIds by viewModel.localPlaylistIds.collectAsState()
     val savedPlaylistIds by viewModel.savedPlaylistIds.collectAsState()
@@ -927,6 +1029,7 @@ fun LibraryMainScreen(
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
     val playCounts by viewModel.playCounts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLibraryRefreshing by viewModel.isLibraryRefreshing.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
 
     // Sort order sticks across launches, so it lives in prefs rather than in
@@ -943,8 +1046,15 @@ fun LibraryMainScreen(
     // playlist and back landed on All again. Someone who lives in Albums had
     // to re-select it all day.
     val storedTabName by themePreferences.libraryTab.collectAsState()
-    val selectedTab = remember(storedTabName) {
-        LibraryTab.entries.firstOrNull { it.name == storedTabName } ?: LibraryTab.All
+    // Tabs switched off under Home and navigation (#373). Never none: a
+    // stored set naming every tab is read as naming none.
+    val libraryNavigation by themePreferences.homeNavigation.collectAsState()
+    val visibleTabs = remember(libraryNavigation.hiddenLibraryTabs) {
+        LibraryTab.entries.filter { it.name !in libraryNavigation.hiddenLibraryTabs }
+            .ifEmpty { LibraryTab.entries }
+    }
+    val selectedTab = remember(storedTabName, visibleTabs) {
+        visibleTabs.firstOrNull { it.name == storedTabName } ?: visibleTabs.first()
     }
     val tabHaptics = com.ivor.ivormusic.util.rememberKodaHaptics()
     val storedSortName by themePreferences.librarySortOption.collectAsState()
@@ -1044,6 +1154,8 @@ fun LibraryMainScreen(
                 }
             }
 
+            // One tab left needs no strip to choose it.
+            if (visibleTabs.size > 1) {
             Spacer(Modifier.height(28.dp))
 
             // M3 Expressive connected button group — replaces the segmented
@@ -1052,7 +1164,7 @@ fun LibraryMainScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
             ) {
-                LibraryTab.entries.forEachIndexed { index, tab ->
+                visibleTabs.forEachIndexed { index, tab ->
                     val selected = selectedTab == tab
                     ToggleButton(
                         checked = selected,
@@ -1067,19 +1179,20 @@ fun LibraryMainScreen(
                             .height(48.dp),
                         shapes = when (index) {
                             0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                            LibraryTab.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                            visibleTabs.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                             else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                         },
                         contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
                         Text(
-                            text = tab.label,
+                            text = stringResource(tab.labelRes),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                             maxLines = 1
                         )
                     }
                 }
+            }
             }
         }
 
@@ -1090,8 +1203,10 @@ fun LibraryMainScreen(
             // other way round: on first load the pull spinner span over a
             // completely blank tab. It now means only "refreshing what is
             // already here", and the empty first load gets skeletons below.
-            isRefreshing = isLoading && librarySongs.isNotEmpty(),
-            onRefresh = { viewModel.refresh() }
+            // Its own flag (not Home's isLoading, which other loads move),
+            // and shown whether or not the Library has anything in it yet.
+            isRefreshing = isLibraryRefreshing,
+            onRefresh = { viewModel.refreshLibrary() }
         ) {
             // No pager here, by decision: the Home shell owns the horizontal
             // flick (switching main tabs), and a pager inside it both ate
@@ -1151,6 +1266,7 @@ fun LibraryMainScreen(
                             playlists = musicModePlaylists,
                             localPlaylistIds = localPlaylistIds,
                             savedPlaylistIds = savedPlaylistIds,
+                            downloadedOnlyIds = downloadedOnlyPlaylistIds,
                             likedSongs = likedSongs,
                             onPlaylistClick = onNavigateToPlaylist,
                             onRemoveSavedPlaylist = { playlist ->
@@ -1675,18 +1791,21 @@ private fun RecentSongCard(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.size(112.dp)
         ) {
-            val art = song.albumArtUri ?: song.highResThumbnailUrl ?: song.thumbnailUrl
-            if (art != null) {
-                AsyncImage(model = art, contentDescription = song.title, contentScale = ContentScale.Crop)
-            } else {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            Box(Modifier.fillMaxSize()) {
+                val art = song.albumArtUri ?: song.highResThumbnailUrl ?: song.thumbnailUrl
+                if (art != null) {
+                    AsyncImage(model = art, contentDescription = song.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
+                com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.fillMaxSize(), barSize = 28.dp)
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -1696,7 +1815,10 @@ private fun RecentSongCard(
         Text(
             song.title,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                song.id,
+                MaterialTheme.colorScheme.onBackground
+            ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 4.dp)
@@ -1716,6 +1838,12 @@ private fun RecentSongCard(
 fun PlaylistsGrid(
     playlists: List<PlaylistDisplayItem>,
     localPlaylistIds: Set<String>,
+    /**
+     * Listed only because they are downloaded and the phone is offline: no
+     * Edit, Delete or Remove, since they are neither owned nor saved. No
+     * default, so a new call site has to answer it.
+     */
+    downloadedOnlyIds: Set<String>,
     likedSongs: List<Song>,
     onPlaylistClick: (PlaylistDisplayItem) -> Unit,
     onEditPlaylist: (playlist: PlaylistDisplayItem, newName: String, newDescription: String?) -> Unit,
@@ -1861,6 +1989,7 @@ fun PlaylistsGrid(
             // YouTube playlists are editable through InnerTube; the synthesized
             // Supermix ("RTM") and Your Likes ("LM") entries are not real playlists
             val isYouTubeEditable = !isLocalPlaylist && !isSavedPlaylist &&
+                playlist.id !in downloadedOnlyIds &&
                 playlist.id != "RTM" && playlist.id != "LM"
             ExpressivePlaylistCard(
                 name = playlist.name ?: stringResource(R.string.untitled_song),
@@ -2817,7 +2946,18 @@ fun SongListItem(
         shadowElevation = shadowElevation
     ) {
         ListItem(
-            headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold) },
+            headlineContent = {
+                Text(
+                    song.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                    color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                        song.id,
+                        androidx.compose.material3.LocalContentColor.current
+                    )
+                )
+            },
             supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingContent = {
                 Surface(
@@ -2830,6 +2970,7 @@ fun SongListItem(
                             AsyncImage(model = song.highResThumbnailUrl ?: song.albumArtUri ?: song.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                         else
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) { Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.matchParentSize())
                         com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize())
                     }
                 }
@@ -3181,9 +3322,6 @@ internal fun TrackSkeletonList(rows: Int = 6) {
 @Composable
 private fun PlaylistTrackRow(
     song: Song,
-    /** The music player is on this song: the row stands out (see below). */
-    isCurrent: Boolean = false,
-    isPlaying: Boolean = false,
     manageEnabled: Boolean,
     reorderEnabled: Boolean,
     isDragging: Boolean,
@@ -3215,7 +3353,9 @@ private fun PlaylistTrackRow(
     // fill vanished into it. `primary` is the cover's colour at the opposite
     // tone - bright on the dark ground, deep on the light one - which is the
     // contrast that survives every cover.
-    val highlighted = isCurrent && !isDragging
+    // Derived per row, so a song change recomposes this row and the one that
+    // was playing, not the track list around them.
+    val highlighted = com.ivor.ivormusic.ui.components.isNowPlayingSong(song.id) && !isDragging
     val containerColor by animateColorAsState(
         targetValue = when {
             isDragging -> MaterialTheme.colorScheme.secondaryContainer
@@ -3306,29 +3446,8 @@ private fun PlaylistTrackRow(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    com.ivor.ivormusic.ui.components.NowPlayingMark(song.id, Modifier.matchParentSize())
                     com.ivor.ivormusic.ui.components.SongSelectedMark(song, Modifier.matchParentSize())
-                    // Playing: the bars over a scrim on the artwork, moving
-                    // while it plays and resting while paused.
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = highlighted,
-                        enter = androidx.compose.animation.fadeIn() +
-                            androidx.compose.animation.scaleIn(initialScale = 0.6f),
-                        exit = androidx.compose.animation.fadeOut() +
-                            androidx.compose.animation.scaleOut(targetScale = 0.6f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            com.ivor.ivormusic.ui.components.PlayingBars(
-                                playing = isPlaying,
-                                color = MaterialTheme.colorScheme.inverseOnSurface,
-                                size = 20.dp
-                            )
-                        }
-                    }
                 }
             }
             Column(
@@ -3677,9 +3796,6 @@ fun PlaylistDetailScreen(
     val canEditSongs = isLocalPlaylist || canEditYouTubeSongs
 
     val trackKeyPrefix = "playlist_${resolvedPlaylist.id}"
-    // Which row is playing. By song id: the page cannot tell which occurrence
-    // the queue is on, so a song listed twice marks both.
-    val nowPlaying = com.ivor.ivormusic.ui.components.LocalNowPlaying.current
     var songRows by remember(resolvedPlaylist.id) {
         val initialSongs = preloadedSongs
             ?.let { if (isAlbum) it.sortedInAlbumOrder() else it }
@@ -5058,8 +5174,6 @@ fun PlaylistDetailScreen(
                     ) {
                         PlaylistTrackRow(
                             song = song,
-                            isCurrent = nowPlaying.songId == song.id,
-                            isPlaying = nowPlaying.isPlaying,
                             manageEnabled = manageEnabled,
                             reorderEnabled = reorderEnabled,
                             isDragging = isDragging,

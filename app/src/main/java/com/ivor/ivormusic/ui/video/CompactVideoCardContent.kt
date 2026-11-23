@@ -38,6 +38,12 @@ internal fun CompactVideoCardContent(
                 .clip(RoundedCornerShape(10.dp))
         ) {
             VideoThumbnail(video = video, modifier = Modifier.fillMaxSize())
+            com.ivor.ivormusic.ui.components.NowPlayingMark(
+                video.videoId,
+                Modifier.fillMaxSize(),
+                barSize = 22.dp,
+                video = true,
+            )
             VideoThumbnailBadge(
                 video = video,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
@@ -48,6 +54,11 @@ internal fun CompactVideoCardContent(
                 text = video.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
+                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                    video.videoId,
+                    androidx.compose.material3.LocalContentColor.current,
+                    video = true,
+                ),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )

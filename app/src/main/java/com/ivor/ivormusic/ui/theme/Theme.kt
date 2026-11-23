@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -113,6 +114,10 @@ internal fun ColorScheme.toAmoled(): ColorScheme = copy(
     surfaceContainerHigh = Color(0xFF181818),
     surfaceContainerHighest = Color(0xFF202020)
 )
+
+/** Light foreground for controls over the scheme's image and video scrim. */
+internal val ColorScheme.onMediaScrim: Color
+    get() = if (onSurface.luminance() >= inverseOnSurface.luminance()) onSurface else inverseOnSurface
 
 // Expressive shapes with more rounded corners
 private val ExpressiveShapes = Shapes(
@@ -210,9 +215,12 @@ fun IvorMusicTheme(
             // it on three-button navigation - a visible band under the
             // floating toolbar and the mini player. Both setters are no-ops
             // from API 35, where the system owns this; they still matter on
-            // 30-34.
-            window.isStatusBarContrastEnforced = false
-            window.isNavigationBarContrastEnforced = false
+            // 29-34. Below 29 they do not exist and there is no scrim to
+            // remove.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+            }
             // Deliberately kept even though enableEdgeToEdge normally handles
             // icon appearance: it decides from the system uiMode, and Koda's
             // theme mode is its own setting, so a user forcing dark inside the

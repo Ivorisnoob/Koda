@@ -483,6 +483,7 @@ private fun MusicTab(
                                         ?: song.thumbnailUrl,
                                     fallbackIcon = Icons.Rounded.MusicNote,
                                     shape = expandedTrackShape(index, available.size),
+                                    mediaId = song.id,
                                     onPlay = { onPlayQueue(available, song) },
                                     onDelete = { onDelete(song.id) },
                                     lossless = losslessDownloads[song.id]
@@ -523,6 +524,7 @@ private fun MusicTab(
                     artworkUrl = song.thumbnailUrl ?: song.albumArtUri?.toString(),
                     fallbackIcon = Icons.Rounded.MusicNote,
                     shape = segmentedShape(index, songs.size),
+                    mediaId = song.id,
                     onPlay = { onPlayQueue(songs, song) },
                     onDelete = { onDelete(song.id) },
                     lossless = losslessDownloads[song.id]
@@ -580,6 +582,8 @@ private fun VideoTab(
                     fallbackIcon = Icons.Rounded.Videocam,
                     shape = segmentedShape(index, videos.size),
                     wideArtwork = true,
+                    mediaId = video.id,
+                    video = true,
                     onPlay = { onPlay(video) },
                     onDelete = { onDelete(video.id) }
                 )
@@ -718,6 +722,8 @@ private fun DownloadedRow(
     wideArtwork: Boolean = false,
     /** Set for a song saved from the lossless server: it wears the pill. */
     lossless: com.ivor.ivormusic.data.lossless.LosslessDownloadInfo? = null,
+    mediaId: String? = null,
+    video: Boolean = false,
 ) {
     Surface(
         modifier = Modifier
@@ -761,6 +767,11 @@ private fun DownloadedRow(
                     tint = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.size(24.dp)
                 )
+                com.ivor.ivormusic.ui.components.NowPlayingMark(
+                    mediaId,
+                    Modifier.matchParentSize(),
+                    video = video,
+                )
             }
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -769,6 +780,11 @@ private fun DownloadedRow(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
+                    color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                        mediaId,
+                        androidx.compose.material3.LocalContentColor.current,
+                        video = video,
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

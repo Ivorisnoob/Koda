@@ -36,6 +36,15 @@ internal object LastFmProtocol {
         subscriber = user.optString("subscriber") == "1"
     )
 
+    /**
+     * The album `track.getInfo` names for a track, or null when it names none.
+     * Shape from Last.fm's API documentation (`track.album.title`); not probed,
+     * because a probe needs a user's API key.
+     */
+    fun albumTitle(root: JSONObject): String? =
+        root.optJSONObject("track")?.optJSONObject("album")?.optString("title")
+            ?.trim()?.takeIf { it.isNotEmpty() }
+
     fun scrobbleCode(root: JSONObject): Int {
         val result = root.getJSONObject("scrobbles")
         val code = objects(result.opt("scrobble")).single().getJSONObject("ignoredMessage").getInt("code")

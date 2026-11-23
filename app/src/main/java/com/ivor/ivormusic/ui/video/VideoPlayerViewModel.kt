@@ -64,6 +64,7 @@ import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.videoPlaybackCacheKey
 import com.ivor.ivormusic.video.core.timedCommentsOf
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -334,6 +335,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     // duplicated the poll or did without.
     private val _positionMs = MutableStateFlow(0L)
     val positionMs: StateFlow<Long> = _positionMs
+
+    /**
+     * True once the playhead is past the previous-button restart window.
+     * Flips only at that boundary, so Picture-in-Picture does not republish
+     * its actions on every progress tick.
+     */
+    private val _previousRestartsVideo = MutableStateFlow(false)
+    val previousRestartsVideo: StateFlow<Boolean> = _previousRestartsVideo
 
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs
@@ -763,6 +772,21 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                 com.ivor.ivormusic.service.VideoPlaybackService.publishQueueCommands()
             }
         }
+        // The skip distance is a setting. The notification's seek buttons use
+        // the player's increment, so a change has to land on the player that
+        // is already built, not only on the next one.
+        viewModelScope.launch {
+            themePreferences.videoGestures
+                .map { it.skipSeconds }
+                .distinctUntilChanged()
+                .collect { seconds ->
+                    val step = seconds
+                        .takeIf { it in com.ivor.ivormusic.data.VideoGestureCustomization.SKIP_SECONDS }
+                        ?.times(1000L)
+                        ?: SEEK_STEP_MS
+                    applySeekIncrement(step)
+                }
+        }
     }
 
     // Video rendering is suspended while the app is not visible - see onEnterBackground()
@@ -948,6 +972,14 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     init {
         observeProfileSwitches()
+        // Live status is declared above this init. Next on the notification
+        // withdraws when a broadcast has nowhere to go, so it has to republish
+        // when the stream turns out to be live.
+        viewModelScope.launch {
+            _isLive.collect {
+                com.ivor.ivormusic.service.VideoPlaybackService.publishQueueCommands()
+            }
+        }
 
         viewModelScope.launch {
             themePreferences.preferHdr.drop(1).distinctUntilChanged().collect { enabled ->
@@ -1035,12 +1067,12 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
-            // 10s each way, matching the player's own double-tap seek. These
-            // are what the media notification's and PiP window's skip buttons
-            // move by, so they must agree with the in-app gesture rather than
-            // with Media3's 5s/15s defaults.
-            .setSeekBackIncrementMs(SEEK_STEP_MS)
-            .setSeekForwardIncrementMs(SEEK_STEP_MS)
+            // The skip setting, matching the on-screen buttons and double-tap.
+            // These are what the media notification's seek buttons move by, so
+            // they must agree with the in-app gesture rather than with
+            // Media3's 5s/15s defaults.
+            .setSeekBackIncrementMs(com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(context))
+            .setSeekForwardIncrementMs(com.ivor.ivormusic.data.ThemePreferences.videoSeekStepMs(context))
             .build().apply {
             playWhenReady = true
             // Repeat is persisted, so a fresh player must adopt the stored
@@ -1468,6 +1500,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         val position = player.currentPosition.coerceAtLeast(0L)
                         _durationMs.value = duration
                         _positionMs.value = position
+                        notePlayhead(position)
                         _progress.value = (position.toFloat() / duration).coerceIn(0f, 1f)
                         _bufferedProgress.value =
                             (player.bufferedPosition.toFloat() / duration).coerceIn(0f, 1f)
@@ -1501,6 +1534,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     /** Zeroes the progress state, so a new video does not inherit the old position. */
     private fun resetProgress() {
         _positionMs.value = 0L
+        notePlayhead(0L)
         _durationMs.value = 0L
         _progress.value = 0f
         _bufferedProgress.value = 0f
@@ -2296,8 +2330,75 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      * default in the container, so subtitles the user just switched off would
      * come straight back.
      */
+    /**
+     * Subtitle files picked for the video playing now, by their address, read
+     * once when picked (#381). Cleared with the video.
+     */
+    private val externalCaptionCues = mutableMapOf<String, List<com.ivor.ivormusic.data.VttCue>>()
+
+    /**
+     * Reads a subtitle file the listener picked (SubRip `.srt` or WebVTT; the
+     * reader takes both) and shows it over the video playing now. It joins the
+     * captions list as one more track, so it can be switched off and back on.
+     * [onResult] hears whether anything readable was in it.
+     */
+    fun loadSubtitleFile(uri: android.net.Uri, onResult: (Boolean) -> Unit = {}) {
+        val videoId = _currentVideo.value?.videoId ?: return
+        viewModelScope.launch {
+            val loaded = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val name = context.contentResolver.query(
+                        uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+                    )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                    // Subtitle files are small; a large one is not a subtitle file.
+                    val text = context.contentResolver.openInputStream(uri)?.use { input ->
+                        val bytes = input.readNBytesCompat(MAX_SUBTITLE_FILE_BYTES + 1)
+                        if (bytes.size > MAX_SUBTITLE_FILE_BYTES) null else bytes.toString(Charsets.UTF_8)
+                    }
+                    val cues = text?.removePrefix("\uFEFF")?.let(com.ivor.ivormusic.data.WebVttParser::parse).orEmpty()
+                    (name ?: uri.lastPathSegment ?: "Subtitles") to cues
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    KLog.w("VideoPlayerVM", "Could not read subtitle file: ${e.message}")
+                    null
+                }
+            }
+            val (name, cues) = loaded ?: (null to emptyList())
+            if (cues.isEmpty() || _currentVideo.value?.videoId != videoId) {
+                onResult(false)
+                return@launch
+            }
+            val track = CaptionTrack(
+                languageCode = EXTERNAL_CAPTION_LANGUAGE,
+                name = name.orEmpty().substringBeforeLast('.').ifBlank { name.orEmpty() },
+                baseUrl = uri.toString(),
+            )
+            externalCaptionCues[track.baseUrl] = cues
+            _captionTracks.value = _captionTracks.value.filterNot { it.baseUrl == track.baseUrl } + track
+            _selectedCaption.value = null
+            setCaptionTrack(track)
+            onResult(true)
+        }
+    }
+
+    private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8 * 1024)
+        while (out.size() < limit) {
+            val read = read(buffer, 0, minOf(buffer.size, limit - out.size()))
+            if (read < 0) break
+            out.write(buffer, 0, read)
+        }
+        return out.toByteArray()
+    }
+
     fun setEmbeddedTextTrack(option: PlayerTrackOption?) {
         val player = _exoPlayer ?: return
+        if (option != null && _selectedCaption.value?.let { it.baseUrl in externalCaptionCues } == true) {
+            _selectedCaption.value = null
+            _captionCues.value = emptyList()
+        }
         themePreferences.setCaptionsEnabled(option != null)
         if (option == null) {
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -2469,16 +2570,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
 
     /**
      * Next for a surface with a single Next button and no room to explain it -
-     * the PiP window: the playlist's next video, or else the related video
-     * autoplay would pick (the filtered list, so nothing marked not interested).
+     * the PiP window and the player's previous/next buttons: the playlist's
+     * next video, or else the related video autoplay would pick (the filtered
+     * list, so nothing marked not interested). A live stream has no up-next.
      * PiP never autoplays into a related video on its own; a tap is a request.
      */
     fun playNextOrRelated(expand: Boolean = true) {
         val active = _queue.value
-        if (active != null) {
-            if (active.hasNext) playQueueIndex(active.index + 1, expand)
+        if (active?.hasNext == true) {
+            playQueueIndex(active.index + 1, expand)
             return
         }
+        if (_isLive.value) return
         relatedVideos.value.firstOrNull()?.let { playVideo(it, expand = expand) }
     }
 
@@ -2486,6 +2589,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun playPreviousInQueue(expand: Boolean = true) {
         val active = _queue.value ?: return
         if (active.hasPrevious) playQueueIndex(active.index - 1, expand)
+    }
+
+    /**
+     * Previous on the player's own buttons. Further than a few seconds into
+     * the video, the press restarts it. A second press, already at the start,
+     * goes to the previous playlist item when there is one.
+     *
+     * Restarts with [seekTo], not [playFromBeginning]: that one also forgets
+     * the resume point, which is the resume notice's action, not this button's.
+     */
+    fun playPreviousOrRestart() {
+        val position = deferredRestorePositionMs ?: _exoPlayer?.currentPosition ?: _positionMs.value
+        if (!_isLive.value &&
+            position > com.ivor.ivormusic.data.VideoGestureCustomization.PREVIOUS_RESTART_WINDOW_MS
+        ) {
+            seekTo(0L)
+            return
+        }
+        playPreviousInQueue(expand = _isExpanded.value)
     }
 
     /**
@@ -2498,7 +2620,8 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
      */
     private val sessionQueueControls = object : com.ivor.ivormusic.service.VideoPlaybackService.QueueControls {
         override val canSkipNext: Boolean
-            get() = _queue.value?.hasNext ?: relatedVideos.value.isNotEmpty()
+            get() = _queue.value?.hasNext == true ||
+                (!_isLive.value && relatedVideos.value.isNotEmpty())
         override val canSkipPrevious: Boolean
             get() = _queue.value?.hasPrevious == true
         override fun skipNext() = playNextOrRelated(expand = _isExpanded.value)
@@ -2626,6 +2749,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         _chapters.value = emptyList() // Clear previous chapters
         _seekPreview.value = null // Never show a frame from the previous video
         _captionTracks.value = emptyList() // Clear previous caption tracks
+        externalCaptionCues.clear()
         // The previous file's audio and subtitle menus address a Tracks
         // snapshot that is about to be replaced; leaving them up would let a
         // tap apply an override against groups that no longer exist.
@@ -2685,6 +2809,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         val duration = (video.duration.coerceAtLeast(0L) * 1_000L)
         deferredRestorePositionMs = position
         _positionMs.value = position
+        notePlayhead(position)
         _durationMs.value = duration
         _progress.value = if (duration > 0L) {
             (position.toFloat() / duration).coerceIn(0f, 1f)
@@ -2739,6 +2864,18 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         } catch (e: Exception) {
             _playbackError.value = e
             _isLoading.value = false
+        }
+        if (isDownloadedVideoId(video.videoId)) {
+            viewModelScope.launch {
+                val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    downloadedCaptions.chapters(video.videoId)
+                }
+                if (saved.isNotEmpty() && _currentVideo.value?.videoId == video.videoId &&
+                    _chapters.value.isEmpty()
+                ) {
+                    _chapters.value = saved
+                }
+            }
         }
         recordLocalWatch(video)
     }
@@ -2801,7 +2938,11 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
         if (watchNext.relatedVideos.isNotEmpty()) {
             _relatedVideos.value = watchNext.relatedVideos
         }
-        _chapters.value = watchNext.chapters
+        // A download played offline may already show its saved chapters; an
+        // answer without any does not take them away.
+        if (watchNext.chapters.isNotEmpty() || !_isLocalPlayback.value) {
+            _chapters.value = watchNext.chapters
+        }
         // Opening the chat panel now costs one poll instead of a second
         // watch-next round trip plus its parse.
         liveSession.setChatContinuation(watchNext.liveChatContinuation)
@@ -3146,12 +3287,25 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
                         downloadedCaptions.tracks(video.videoId)
                     }
                 } else emptyList()
+                // Opening a video with captions on asks for them alongside the
+                // stream, and the stream's own /player response carries the
+                // tracklist. Asked first, the cache was empty and a second
+                // /player went out for the same list (seen in YTRequests,
+                // September 2026). Bounded, because a deferred session never
+                // loads its streams; the request then goes out as before.
+                if (saved.isEmpty() && !_isLocalPlayback.value) {
+                    kotlinx.coroutines.withTimeoutOrNull(CAPTIONS_STREAM_WAIT_MS) {
+                        videoLoader.streamsSettled.first { it == video.videoId }
+                    }
+                }
                 // A download made before captions were kept has none saved;
                 // with a connection the live list still works for it.
                 val tracks = saved.ifEmpty { youtubeRepository.getCaptionTracks(video.videoId) }
                 // Ignore stale results if the user switched videos meanwhile
                 if (_currentVideo.value?.videoId == video.videoId) {
-                    _captionTracks.value = tracks
+                    // A file picked while the list was loading stays on it.
+                    _captionTracks.value = tracks +
+                        _captionTracks.value.filter { it.baseUrl in externalCaptionCues }
                     if (themePreferences.isCaptionsEnabled() && _selectedCaption.value == null) {
                         restoreSavedCaptionTrack(tracks)
                     }
@@ -3206,12 +3360,23 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
     fun setCaptionTrack(track: CaptionTrack?) {
         if (_selectedCaption.value == track) return
         _selectedCaption.value = track
-        themePreferences.setCaptionsEnabled(track != null)
-        themePreferences.setCaptionLanguageCode(track?.languageCode)
+        // A file picked for one video is not a language to look for on the
+        // next, so it leaves the remembered choice as it was.
+        val external = track?.let { externalCaptionCues[it.baseUrl] }
+        if (external == null) {
+            themePreferences.setCaptionsEnabled(track != null)
+            themePreferences.setCaptionLanguageCode(track?.languageCode)
+        }
 
         captionCuesJob?.cancel()
         if (track == null) {
             _captionCues.value = emptyList()
+            return
+        }
+        if (external != null) {
+            // Only one subtitle source draws at a time.
+            if (_embeddedTextTracks.value.any { it.isSelected }) setEmbeddedTextTrack(null)
+            _captionCues.value = external
             return
         }
         captionCuesJob = viewModelScope.launch {
@@ -3382,6 +3547,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             val position = (restoredPosition + deltaMs).coerceIn(0L, duration)
             deferredRestorePositionMs = position
             _positionMs.value = position
+            notePlayhead(position)
             _progress.value = if (duration != Long.MAX_VALUE) {
                 (position.toFloat() / duration).coerceIn(0f, 1f)
             } else {
@@ -3463,6 +3629,7 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             val position = positionMs.coerceIn(0L, duration)
             deferredRestorePositionMs = position
             _positionMs.value = position
+            notePlayhead(position)
             _progress.value = if (duration != Long.MAX_VALUE) {
                 (position.toFloat() / duration).coerceIn(0f, 1f)
             } else {
@@ -3470,7 +3637,24 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
             }
             return
         }
-        _exoPlayer?.let { seekPlayerTo(it, positionMs.coerceAtLeast(0L), precise) }
+        val position = positionMs.coerceAtLeast(0L)
+        notePlayhead(position)
+        _exoPlayer?.let { seekPlayerTo(it, position, precise) }
+    }
+
+    /** Land the player's skip increment, and the notification icons, on [stepMs]. */
+    private fun applySeekIncrement(stepMs: Long) {
+        val player = _exoPlayer ?: return
+        player.setSeekBackIncrementMs(stepMs)
+        player.setSeekForwardIncrementMs(stepMs)
+        com.ivor.ivormusic.service.VideoPlaybackService.refreshSeekButtons()
+    }
+
+    /** Remember whether Previous would restart, and only when that answer changes. */
+    private fun notePlayhead(positionMs: Long) {
+        val restarts = positionMs >
+            com.ivor.ivormusic.data.VideoGestureCustomization.PREVIOUS_RESTART_WINDOW_MS
+        if (_previousRestartsVideo.value != restarts) _previousRestartsVideo.value = restarts
     }
 
     /** The viewer has read the resume notice and wants it gone. */
@@ -3728,6 +3912,17 @@ class VideoPlayerViewModel(application: android.app.Application) : AndroidViewMo
          * disk write nobody asked for.
          */
         private const val SESSION_SAVE_INTERVAL_MS = 15_000L
+
+        /**
+         * How long an automatic caption load waits for the stream phase
+         * before asking for the tracklist itself. Opening a video normally
+         * settles well inside it.
+         */
+        private const val CAPTIONS_STREAM_WAIT_MS = 10_000L
+        /** Larger than any subtitle file; guards against picking a video by mistake. */
+        private const val MAX_SUBTITLE_FILE_BYTES = 4 * 1024 * 1024
+        /** The language of a picked file: not a language at all. */
+        const val EXTERNAL_CAPTION_LANGUAGE = "und"
     }
 
     override fun onCleared() {

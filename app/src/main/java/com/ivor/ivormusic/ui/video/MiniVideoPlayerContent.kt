@@ -84,6 +84,24 @@ internal val MINI_VIDEO_BAR_CORNER = 28.dp
 internal val MINI_VIDEO_BAR_SHADOW = 12.dp
 
 /**
+ * The floating card a wide window collapses to instead of the bar
+ * [judgement November 2026]: a small video in the bottom corner with its
+ * controls under it. A bar across a tablet, or a phone on its side, is a strip
+ * the width of the screen holding a thumbnail and a title, over content that
+ * has little height to spare.
+ */
+internal val MINI_VIDEO_FLOATING_WIDTH = 256.dp
+
+/** The row under the floating card's picture. */
+internal val MINI_VIDEO_FLOATING_CONTROLS = 48.dp
+
+/** The whole floating card: a 16:9 picture and the row under it. */
+internal val MINI_VIDEO_FLOATING_HEIGHT = MINI_VIDEO_FLOATING_WIDTH * 9 / 16 + MINI_VIDEO_FLOATING_CONTROLS
+
+/** Rounding of the floating card. */
+internal val MINI_VIDEO_FLOATING_CORNER = 20.dp
+
+/**
  * The video player's collapsed bar: the video still playing, what it is, and
  * the two controls worth reaching for without opening the player.
  *
@@ -113,6 +131,12 @@ fun MiniVideoPlayerContent(
     holdsSurface: () -> Boolean = { true },
     /** The bar's sideways swipe, owned by the overlay's gesture and bound here. */
     skipState: MiniSkipState,
+    /**
+     * Draw the floating card a wide window uses (the video with a slim row of
+     * controls under it) instead of the bar. The overlay sizes the container
+     * to match; see [MINI_VIDEO_FLOATING_WIDTH].
+     */
+    floating: Boolean = false,
 ) {
     val currentVideo by viewModel.currentVideo.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -150,6 +174,78 @@ fun MiniVideoPlayerContent(
     val liveLabel = stringResource(R.string.badge_live)
     val playLabel = stringResource(R.string.cd_play)
     val pauseLabel = stringResource(R.string.cd_pause)
+
+    if (floating) {
+        // The card: the picture, and one slim row under it. On a wide window
+        // a bar across the bottom spends the full width on a thumbnail and a
+        // title; here the video is the thing, at a size worth watching.
+        Column(modifier = Modifier.fillMaxSize()) {
+            MiniVideoSurface(
+                viewModel = viewModel,
+                isBuffering = isBuffering,
+                isPortrait = isPortrait,
+                isLive = isLive,
+                progress = progress,
+                holdsSurface = holdsSurface,
+                frameModifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(MINI_VIDEO_FLOATING_CONTROLS)
+                    .padding(start = 12.dp, end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MiniSkipCarousel(
+                    state = skipState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    previousLabel = stringResource(R.string.cd_previous),
+                    nextLabel = stringResource(R.string.cd_next),
+                    previous = previousVideo,
+                    next = nextVideo,
+                    neighbour = { neighbour -> MiniFloatingTitle(neighbour.title, neighbour.channelName, false) },
+                ) {
+                    MiniFloatingTitle(
+                        title = video.title,
+                        line = if (isLive) {
+                            listOf(liveLabel, video.channelName).filter { it.isNotBlank() }.joinToString("  •  ")
+                        } else {
+                            video.channelName
+                        },
+                        accent = isLive
+                    )
+                }
+                androidx.compose.material3.IconButton(
+                    onClick = {
+                        haptics.playPause(!isPlaying)
+                        viewModel.togglePlayPause()
+                    },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (isPlaying) pauseLabel else playLabel,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                androidx.compose.material3.IconButton(
+                    onClick = { viewModel.closePlayer() },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.mv_close_player),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+        return
+    }
 
     Row(
         modifier = Modifier
@@ -267,6 +363,33 @@ fun MiniVideoPlayerContent(
 
 }
 
+/** The two lines under the floating card's picture. */
+@Composable
+private fun MiniFloatingTitle(title: String, line: String, accent: Boolean) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (line.isNotBlank()) {
+            Text(
+                text = line,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (accent) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 /**
  * A neighbouring video as it peeks in during a swipe: its thumbnail in the
  * frame the playing video occupies, then its title and channel, laid out
@@ -336,7 +459,9 @@ private fun MiniVideoSurface(
     isPortrait: Boolean,
     isLive: Boolean,
     progress: Float,
-    holdsSurface: () -> Boolean
+    holdsSurface: () -> Boolean,
+    /** Null is the bar's small rounded frame; the floating card passes its own. */
+    frameModifier: Modifier? = null
 ) {
     val resizeMode = remember(isPortrait) {
         if (isPortrait) AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -347,8 +472,7 @@ private fun MiniVideoSurface(
     val videoAspectRatio by viewModel.videoAspectRatio.collectAsState()
 
     Box(
-        modifier = Modifier
-            .width(MINI_VIDEO_THUMB_WIDTH)
+        modifier = (frameModifier ?: Modifier.width(MINI_VIDEO_THUMB_WIDTH))
             .aspectRatio(16f / 9f)
             // PiP entry from the collapsed player must animate from the video
             // thumbnail, never from a stale expanded-player rectangle or the
@@ -364,7 +488,9 @@ private fun MiniVideoSurface(
                     )
                 )
             }
-            .clip(RoundedCornerShape(MINI_VIDEO_THUMB_CORNER))
+            // The floating card's frame is the top of the card, which the card
+            // already rounds.
+            .clip(RoundedCornerShape(if (frameModifier == null) MINI_VIDEO_THUMB_CORNER else 0.dp))
             // Letterbox bars are the absence of picture, not a themed surface,
             // so they stay black in either theme. The documented exception to
             // the palette rule, same as the watch page's own video box.

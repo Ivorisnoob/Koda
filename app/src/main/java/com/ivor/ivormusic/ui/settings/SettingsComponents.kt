@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import com.ivor.ivormusic.R
@@ -239,6 +240,7 @@ internal fun SettingsRow(
             .fillMaxWidth()
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
+            .settingsJumpTarget(title)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -320,6 +322,7 @@ internal fun SettingsToggleRow(
             .fillMaxWidth()
             .scale(scale)
             .clip(RoundedCornerShape(18.dp))
+            .settingsJumpTarget(title)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -352,12 +355,14 @@ internal fun SettingsToggleRow(
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
-                fontSize = 13.sp
-            )
+            if (subtitle.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
+                    fontSize = 13.sp
+                )
+            }
         }
 
         Switch(
@@ -413,7 +418,12 @@ internal fun SettingsChoiceRow(
     tint: Color = MaterialTheme.colorScheme.primary,
 ) {
     val haptics = com.ivor.ivormusic.util.rememberKodaHaptics()
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .settingsJumpTarget(title)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SettingsRowIcon(icon = icon, tint = tint)
             Spacer(modifier = Modifier.width(16.dp))
@@ -694,8 +704,14 @@ internal fun SettingsDetailScaffold(
             }
         }
 
+        // A plain holder, not state: it changes on every layout and nothing
+        // draws from it; only a search jump reads it.
+        val listCoordinates = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+        SettingsJumpEffect(listState = listState, listCoordinates = { listCoordinates[0] })
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .then(Modifier.onGloballyPositioned { listCoordinates[0] = it }),
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,

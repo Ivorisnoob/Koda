@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Sensors
@@ -48,6 +50,20 @@ internal fun VideoFeedSettingsPage(onBack: () -> Unit) {
         onBack = onBack
     ) {
         item {
+            SettingsSection(title = stringResource(R.string.cz_feed_section_explore)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Explore,
+                        title = stringResource(R.string.cz_feed_explore),
+                        subtitle = stringResource(R.string.cz_feed_explore_sub),
+                        enabled = feed.showExplore,
+                        onToggle = { prefs.setVideoFeed(feed.copy(showExplore = it)) }
+                    )
+                }
+            }
+        }
+
+        item {
             SettingsSection(title = stringResource(R.string.cz_feed_section_mixed_in)) {
                 SettingsCard {
                     SettingsToggleRow(
@@ -67,6 +83,13 @@ internal fun VideoFeedSettingsPage(onBack: () -> Unit) {
                         enabled = shortsShelf && !shortsBlocked,
                         onToggle = { prefs.setShortsEnabled(it) },
                         available = !shortsBlocked
+                    )
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Lock,
+                        title = stringResource(R.string.cz_feed_hide_restricted),
+                        subtitle = stringResource(R.string.cz_feed_hide_restricted_sub),
+                        enabled = feed.hideRestricted,
+                        onToggle = { prefs.setVideoFeed(feed.copy(hideRestricted = it)) }
                     )
                     SettingsToggleRow(
                         icon = Icons.Rounded.Sensors,
@@ -124,6 +147,8 @@ internal fun videoFeedSummary(): String {
     val hideWatchedSubs by prefs.hideWatchedInFeed.collectAsState()
     val hidden = listOf(
         !feed.showPosts,
+        !feed.showExplore,
+        feed.hideRestricted,
         !shortsShelf,
         !feed.showLive,
         feed.hideWatchedOnHome,

@@ -408,7 +408,15 @@ class VideoHistoryRepository(context: Context) {
          * section rather than the raw preference copy.
          */
         const val KEY_RESUME_POSITIONS = "resume_positions"
-        private const val MAX_ENTRIES = 100
+        /**
+         * Ten times the 100 it was (November 2026), which kept about a week of
+         * a regular viewer's history. Not unlimited: the list is one
+         * SharedPreferences string, parsed on the main thread when the first
+         * instance is built and rewritten whole on every watch, so its size is
+         * paid at startup and on each video. Past this it belongs in a file
+         * store of its own, as the music history is.
+         */
+        private const val MAX_ENTRIES = 1000
         private const val MAX_RESUME_ENTRIES = 100
 
         /**

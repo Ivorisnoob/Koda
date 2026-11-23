@@ -24,6 +24,9 @@ internal const val EXTRA_MUSIC_IS_UPLOAD = "com.ivor.ivormusic.MUSIC_IS_UPLOAD"
 internal const val EXTRA_SONG_THUMBNAIL_URL = "com.ivor.ivormusic.SONG_THUMBNAIL_URL"
 internal const val EXTRA_SONG_FILE_PATH = "com.ivor.ivormusic.SONG_FILE_PATH"
 internal const val EXTRA_SONG_LYRICS_URI = "com.ivor.ivormusic.SONG_LYRICS_URI"
+/** [Song.artistCredits], as two arrays of the same length. */
+internal const val EXTRA_SONG_ARTIST_NAMES = "com.ivor.ivormusic.SONG_ARTIST_NAMES"
+internal const val EXTRA_SONG_ARTIST_IDS = "com.ivor.ivormusic.SONG_ARTIST_IDS"
 
 /** A plain YouTube upload played as a song; see [com.ivor.ivormusic.data.Song.isUpload]. */
 internal val MediaItem.isUpload: Boolean
@@ -96,6 +99,10 @@ internal fun MusicQueueItem.toPlaybackMediaItem(): MediaItem {
         song.thumbnailUrl?.let { putString(EXTRA_SONG_THUMBNAIL_URL, it) }
         song.filePath?.let { putString(EXTRA_SONG_FILE_PATH, it) }
         song.lyricsUri?.let { putString(EXTRA_SONG_LYRICS_URI, it.toString()) }
+        if (song.artistCredits.isNotEmpty()) {
+            putStringArray(EXTRA_SONG_ARTIST_NAMES, song.artistCredits.map { it.name }.toTypedArray())
+            putStringArray(EXTRA_SONG_ARTIST_IDS, song.artistCredits.map { it.id }.toTypedArray())
+        }
     }
     val metadata = MediaMetadata.Builder()
         .setTitle(song.title)
@@ -166,7 +173,17 @@ internal fun MediaItem.toQueueSong(): Song? {
         releaseType = extras?.getString(EXTRA_MUSIC_RELEASE_TYPE)
             ?.let { name -> MusicReleaseType.entries.firstOrNull { it.name == name } },
         isUpload = extras?.getBoolean(EXTRA_MUSIC_IS_UPLOAD, false) == true,
+        artistCredits = readArtistCredits(
+            extras?.getStringArray(EXTRA_SONG_ARTIST_NAMES),
+            extras?.getStringArray(EXTRA_SONG_ARTIST_IDS),
+        ),
     )
+}
+
+/** Pairs the two extras back up; a mismatched pair is dropped, not guessed at. */
+internal fun readArtistCredits(names: Array<String>?, ids: Array<String>?): List<com.ivor.ivormusic.data.ArtistCredit> {
+    if (names == null || ids == null || names.size != ids.size) return emptyList()
+    return names.zip(ids) { name, id -> com.ivor.ivormusic.data.ArtistCredit(name, id) }
 }
 
 /** This row as a saved queue entry, keeping its occurrence id. */

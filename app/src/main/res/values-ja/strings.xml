@@ -1935,9 +1935,9 @@
     <string name="sp_remember_brightness">フルスクリーンの明るさを記憶</string>
     <string name="sp_pip_buttons">ピクチャーインピクチャーのボタン</string>
     <string name="sp_pip_buttons_videos">次の動画</string>
-    <string name="sp_pip_buttons_seek">10秒スキップ</string>
-    <string name="sp_pip_buttons_videos_sub">プレイリストでは前へ・次へ、それ以外では10秒戻る・次へ</string>
-    <string name="sp_pip_buttons_seek_sub">再生・一時停止ボタンの両側に、10秒戻る・10秒進む</string>
+    <string name="sp_pip_buttons_seek">スキップ</string>
+    <string name="sp_pip_buttons_videos_sub">プレイリストや次の動画があるときは前へ・次へ。それ以外ではこの動画の中でスキップします</string>
+    <string name="sp_pip_buttons_seek_sub">再生・一時停止ボタンの両側で、戻る・進むにスキップ</string>
     <string name="sp_home_classic">クラシック</string>
     <string name="sp_home_spotlight">スポットライト</string>
     <string name="sp_nav_floating">フローティング</string>

@@ -594,9 +594,7 @@ private fun RotaryDial(
                 .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
                 .clip(puckShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onPlayPause() })
-                }
+                .coverTaps(LocalCoverSeek.current) { onPlayPause() }
                 .swipeToSkip(swipeToSkip)
                 .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center

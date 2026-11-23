@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.VerticalAlignBottom
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ThumbDown
@@ -63,12 +64,17 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.WavingHand
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.HdrOn
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
@@ -266,6 +272,76 @@ internal fun HomeNavigationSettingsPage(
                         selectedIndex = modes.indexOf(navigation.startMode),
                         onSelect = { navPrefs.setHomeNavigation(navigation.copy(startMode = modes[it])) }
                     )
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Keyboard,
+                        title = stringResource(R.string.cz_search_keyboard),
+                        subtitle = stringResource(R.string.cz_search_keyboard_sub),
+                        enabled = navigation.searchOpensKeyboard,
+                        onToggle = {
+                            navPrefs.setHomeNavigation(navigation.copy(searchOpensKeyboard = it))
+                        }
+                    )
+                }
+            }
+        }
+
+        // What music Home and the Library show (#373). Your playlists, and
+        // the last Library tab left on, cannot be switched off.
+        item {
+            SettingsSection(title = stringResource(R.string.cz_section_home_sections)) {
+                SettingsCard {
+                    com.ivor.ivormusic.data.HomeSection.entries.forEach { section ->
+                        val (icon, title) = when (section) {
+                            com.ivor.ivormusic.data.HomeSection.SPEED_DIAL ->
+                                Icons.Rounded.Apps to stringResource(R.string.home_section_speed_dial)
+                            com.ivor.ivormusic.data.HomeSection.RECENT_ALBUMS ->
+                                Icons.Rounded.Album to stringResource(R.string.home_section_recent_albums)
+                            com.ivor.ivormusic.data.HomeSection.ARTISTS ->
+                                Icons.Rounded.Person to stringResource(R.string.cz_home_section_artists)
+                            com.ivor.ivormusic.data.HomeSection.MIXES ->
+                                Icons.AutoMirrored.Rounded.QueueMusic to stringResource(R.string.home_section_mixes)
+                            com.ivor.ivormusic.data.HomeSection.JUMP_BACK_IN ->
+                                Icons.Rounded.History to stringResource(R.string.home_section_jump_back_in)
+                        }
+                        SettingsToggleRow(
+                            icon = icon,
+                            title = title,
+                            subtitle = stringResource(R.string.cz_home_section_sub),
+                            enabled = navigation.shows(section),
+                            onToggle = { show ->
+                                val hidden = navigation.hiddenHomeSections.toMutableSet()
+                                if (show) hidden.remove(section) else hidden.add(section)
+                                navPrefs.setHomeNavigation(navigation.copy(hiddenHomeSections = hidden))
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            SettingsSection(title = stringResource(R.string.cz_section_library_tabs)) {
+                SettingsCard {
+                    val tabs = com.ivor.ivormusic.ui.library.LibraryTab.entries
+                    val shown = tabs.count { it.name !in navigation.hiddenLibraryTabs }
+                    tabs.forEach { tab ->
+                        val visible = tab.name !in navigation.hiddenLibraryTabs
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.LibraryMusic,
+                            title = stringResource(tab.labelRes),
+                            subtitle = stringResource(R.string.cz_library_tab_sub),
+                            enabled = visible,
+                            // The last tab showing stays on.
+                            available = !(visible && shown == 1),
+                            onToggle = { show ->
+                                val hidden = navigation.hiddenLibraryTabs.toMutableSet()
+                                if (show) hidden.remove(tab.name) else hidden.add(tab.name)
+                                if (hidden.size < tabs.size) {
+                                    navPrefs.setHomeNavigation(navigation.copy(hiddenLibraryTabs = hidden))
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -383,12 +459,13 @@ internal fun HomeNavigationSettingsPage(
         }
 
         item {
-            // Phones only. A large screen always follows the device
-            // (AppOrientation), so the switch would do nothing there.
             val context = androidx.compose.ui.platform.LocalContext.current
-            if (!com.ivor.ivormusic.ui.theme.AppOrientation.isLargeScreen(context)) {
-                SettingsSection(title = stringResource(R.string.sp_display_section)) {
-                    SettingsCard {
+            val drawBesideCutout = navPrefs.drawBesideCutout.collectAsState().value
+            SettingsSection(title = stringResource(R.string.sp_display_section)) {
+                SettingsCard {
+                    // Phones only. A large screen always follows the device
+                    // (AppOrientation), so the switch would do nothing there.
+                    if (!com.ivor.ivormusic.ui.theme.AppOrientation.isLargeScreen(context)) {
                         SettingsToggleRow(
                             icon = Icons.Rounded.ScreenRotation,
                             title = stringResource(R.string.sp_rotate_with_device),
@@ -401,6 +478,17 @@ internal fun HomeNavigationSettingsPage(
                             explanation = stringResource(R.string.si_rotate_with_device)
                         )
                     }
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.Fullscreen,
+                        title = stringResource(R.string.sp_draw_beside_cutout),
+                        subtitle = stringResource(
+                            if (drawBesideCutout) R.string.sp_draw_beside_cutout_on
+                            else R.string.sp_draw_beside_cutout_off
+                        ),
+                        enabled = drawBesideCutout,
+                        onToggle = navPrefs::setDrawBesideCutout,
+                        explanation = stringResource(R.string.si_draw_beside_cutout)
+                    )
                 }
             }
         }
@@ -432,6 +520,25 @@ internal fun GesturesSettingsPage(
                     HapticsLevelSelector(
                         hapticsLevel = hapticsLevel,
                         onHapticsLevelChange = onHapticsLevelChange
+                    )
+                }
+            }
+        }
+
+        // The music player's cover. Read and written here rather than
+        // threaded through SettingsScreen, like the newer pages.
+        item {
+            val context = LocalContext.current
+            val prefs = remember(context) { ThemePreferences(context) }
+            val coverSeek by prefs.coverDoubleTapSeek.collectAsState()
+            SettingsSection(title = stringResource(R.string.sp_music_player_gestures)) {
+                SettingsCard {
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.SwapHoriz,
+                        title = stringResource(R.string.sp_cover_double_tap_seek),
+                        subtitle = stringResource(R.string.sp_cover_double_tap_seek_sub),
+                        enabled = coverSeek,
+                        onToggle = prefs::setCoverDoubleTapSeek,
                     )
                 }
             }
@@ -1029,6 +1136,28 @@ internal fun PlayerSettingsPage(
                         onToggle = onWaveformSeekBarToggle,
                         explanation = stringResource(R.string.si_waveform)
                     )
+                }
+            }
+        }
+
+        // Editorial only, so it is offered only while Editorial is the style.
+        // Read and written here rather than threaded through SettingsScreen,
+        // like the newer pages.
+        if (playerStyle == PlayerStyle.EDITORIAL) {
+            item {
+                val context = LocalContext.current
+                val prefs = remember(context) { ThemePreferences(context) }
+                val oneRow by prefs.editorialOneRow.collectAsState()
+                SettingsSection(title = stringResource(R.string.sp_style)) {
+                    SettingsCard {
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.SkipNext,
+                            title = stringResource(R.string.sp_editorial_one_row),
+                            subtitle = stringResource(R.string.sp_editorial_one_row_sub),
+                            enabled = oneRow,
+                            onToggle = prefs::setEditorialOneRow,
+                        )
+                    }
                 }
             }
         }
@@ -2215,17 +2344,23 @@ internal fun StorageSettingsPage(
         item {
             SettingsSection(title = stringResource(R.string.sp_downloads)) {
                 SettingsCard {
+                    // Android 8 and 9 cannot publish to Downloads/Koda without a
+                    // storage permission (DownloadStorage), so downloads there
+                    // are always private and the row says so.
+                    val sharedDownloads =
+                        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
                     SettingsToggleRow(
                         icon = Icons.Rounded.Security,
                         title = stringResource(R.string.sp_private_downloads),
-                        subtitle = if (privateDownloadsEnabled) {
-                            stringResource(R.string.sp_private_downloads_on)
-                        } else {
-                            stringResource(R.string.sp_private_downloads_off)
+                        subtitle = when {
+                            !sharedDownloads -> stringResource(R.string.sp_private_downloads_always)
+                            privateDownloadsEnabled -> stringResource(R.string.sp_private_downloads_on)
+                            else -> stringResource(R.string.sp_private_downloads_off)
                         },
-                        enabled = privateDownloadsEnabled,
+                        enabled = privateDownloadsEnabled || !sharedDownloads,
                         onToggle = onPrivateDownloadsEnabledToggle,
-                        explanation = stringResource(R.string.si_private_downloads)
+                        explanation = stringResource(R.string.si_private_downloads),
+                        available = sharedDownloads
                     )
                     // The defaults the music download sheet opens on, and what
                     // a download started without it uses. Read and written
@@ -3045,7 +3180,14 @@ private fun FrameInterpolationRateChoice(
 ) {
     val context = LocalContext.current
     val screenHz = remember(context) {
-        val display = runCatching { context.display }.getOrNull()
+        val display = runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                context.display
+            } else {
+                @Suppress("DEPRECATION")
+                (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
+            }
+        }.getOrNull()
         val mode = display?.mode
         display?.supportedModes
             ?.filter { mode == null || (it.physicalWidth == mode.physicalWidth && it.physicalHeight == mode.physicalHeight) }

@@ -276,7 +276,18 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             } else {
                 youTubeRepository.removeFromYouTubePlaylist(playlistId, song.id, music = true)
             }
-            if (!ok) playlistMembership.forget(playlistId, song.id)
+            if (!ok) {
+                // The tick goes back to what the account says, and the user is
+                // told: before, it simply cleared, and a song that never got
+                // in looked as if it had been added and then lost (#362).
+                playlistMembership.forget(playlistId, song.id)
+                android.widget.Toast.makeText(
+                    context,
+                    if (contains) com.ivor.ivormusic.R.string.playlist_add_failed
+                    else com.ivor.ivormusic.R.string.playlist_remove_failed,
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
@@ -677,14 +688,10 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
                                     lastRecordedSongId = currentSongId
                                     recentSongIds += currentSongId
                                     youTubeRepository.reportPlayback(currentSongId)
-                                    // Fresh pref read: the toggle is flipped
-                                    // from the settings screen and from the
-                                    // history screen's own menu, both holding
-                                    // their own ThemePreferences, so this VM's
-                                    // StateFlow copy is stale at decision time.
-                                    if (themePreferences.isSaveMusicHistoryEnabled()) {
-                                        statsRepository.addPlayEvent(it)
-                                    }
+                                    // The local listening history is written by
+                                    // the service (ListeningRecorder), which
+                                    // also records while this screen is gone and
+                                    // measures how long the song was heard.
                                 }
                             }
                         }
@@ -1426,6 +1433,18 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
         _progress.value = position
     }
 
+    /**
+     * Jumps [deltaMs] from where playback is now, held inside the song: back
+     * stops at its start, forward stops a second short of its end rather than
+     * skipping to the next one.
+     */
+    fun seekBy(deltaMs: Long) {
+        val player = controller ?: return
+        val duration = player.duration.takeIf { it > 0 } ?: _duration.value
+        val upper = if (duration > 0) (duration - 1_000L).coerceAtLeast(0L) else Long.MAX_VALUE
+        seekTo((player.currentPosition + deltaMs).coerceIn(0L, upper))
+    }
+
     // --- Sleep timer ---
     //
     // Owned by MusicService, not by this ViewModel. The timer used to be a
@@ -1716,6 +1735,24 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     
     fun isDownloaded(songId: String): Boolean {
         return downloadRepository.isDownloaded(songId)
+    }
+
+    /** Bytes of [songId] in the music cache; see [CacheManager.cachedSongBytes]. */
+    suspend fun cachedSongBytes(songId: String): Long =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.ivor.ivormusic.data.CacheManager.cachedSongBytes(songId)
+        }
+
+    /** Drop [songId] from the music cache, then [onRemoved] on the main thread. */
+    fun removeFromMusicCache(songId: String, onRemoved: () -> Unit) {
+        // Refused for the song playing: its reader holds the spans this deletes.
+        if (_currentSong.value?.id == songId) return
+        viewModelScope.launch {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.ivor.ivormusic.data.CacheManager.removeSong(songId)
+            }
+            onRemoved()
+        }
     }
     
     fun isDownloading(songId: String): Boolean {

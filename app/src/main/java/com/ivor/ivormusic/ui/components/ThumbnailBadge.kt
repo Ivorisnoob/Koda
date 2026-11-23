@@ -1,5 +1,7 @@
 package com.ivor.ivormusic.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -12,6 +14,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
+import com.ivor.ivormusic.data.VideoAccess
 import com.ivor.ivormusic.data.VideoItem
 
 /**
@@ -65,6 +68,25 @@ fun ThumbnailBadge(
  */
 @Composable
 fun VideoThumbnailBadge(video: VideoItem, modifier: Modifier = Modifier) {
+    // A video not everyone can play says so beside its length (#379), in the
+    // same corner every surface already places this badge.
+    val access = when (video.access) {
+        VideoAccess.MEMBERS_ONLY -> stringResource(R.string.badge_members_only)
+        VideoAccess.PAID -> stringResource(R.string.badge_paid)
+        null -> null
+    }
+    if (access == null) {
+        DurationOrLiveBadge(video, modifier)
+        return
+    }
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        ThumbnailBadge(text = access)
+        DurationOrLiveBadge(video, Modifier)
+    }
+}
+
+@Composable
+private fun DurationOrLiveBadge(video: VideoItem, modifier: Modifier) {
     when {
         video.isLive -> ThumbnailBadge(
             text = stringResource(R.string.badge_live),

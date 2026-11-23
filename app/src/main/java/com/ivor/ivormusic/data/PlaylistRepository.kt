@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -19,14 +21,26 @@ import java.io.File
 import java.util.UUID
 import kotlin.random.Random
 
+/**
+ * Music playlists that live on this device, one JSON file each.
+ *
+ * **The backing state is process-wide** (CLAUDE.md invariant 6). With no DI,
+ * `PlayerViewModel` and `HomeViewModel` each build their own instance: a song
+ * added from the player's Add to playlist sheet went to disk and to the
+ * player's copy only, so the Library's playlist page did not show it, and the
+ * Library's next write to that playlist saved its stale copy over the file and
+ * erased the song (#362). Every instance now reads and writes one flow, and
+ * writes are serialised by [WRITE_LOCK].
+ */
 class PlaylistRepository(private val context: Context) {
 
     private val playlistDir = File(context.filesDir, "playlists")
     private val coversDir = File(context.filesDir, "playlist_covers")
     
-    // Cache of playlists
-    private val _userPlaylists = MutableStateFlow<List<UserPlaylist>>(emptyList())
-    val userPlaylists: StateFlow<List<UserPlaylist>> = _userPlaylists.asStateFlow()
+    // Process-wide, like LocalVideoPlaylistsRepository's: see the class KDoc.
+    private val _userPlaylists: MutableStateFlow<List<UserPlaylist>>
+        get() = shared!!
+    val userPlaylists: StateFlow<List<UserPlaylist>> by lazy { _userPlaylists.asStateFlow() }
 
     private val json = Json { 
         ignoreUnknownKeys = true 
@@ -37,12 +51,18 @@ class PlaylistRepository(private val context: Context) {
     init {
         if (!playlistDir.exists()) playlistDir.mkdirs()
         if (!coversDir.exists()) coversDir.mkdirs()
-        loadPlaylists()
+        // Read once per process. A later instance shares what the first one
+        // read and every write since, rather than re-reading the disk over it.
+        synchronized(LOCK) {
+            if (shared == null) shared = MutableStateFlow(readPlaylists())
+        }
     }
 
     private fun loadPlaylists() {
-        // Load on background thread logic should be called from coroutine, but for init we do minimal
-        // We'll expose suspend functions for ops
+        _userPlaylists.value = readPlaylists()
+    }
+
+    private fun readPlaylists(): List<UserPlaylist> {
         val files = playlistDir.listFiles { _, name -> name.endsWith(".json") }
         val loaded = files?.mapNotNull { file ->
             try {
@@ -54,9 +74,17 @@ class PlaylistRepository(private val context: Context) {
                 null
             }
         }?.sortedByDescending { it.createdAt } ?: emptyList()
-        
-        _userPlaylists.value = loaded
+        return loaded
     }
+
+    /**
+     * Run a read-modify-write on the IO dispatcher under [WRITE_LOCK]. Every
+     * write reads the playlist from [_userPlaylists], changes it and rewrites
+     * the whole file, so two writes overlapping would each save their own
+     * copy and the later one would drop the earlier one's change.
+     */
+    private suspend fun <T> writing(block: suspend () -> T): T =
+        withContext(Dispatchers.IO) { WRITE_LOCK.withLock { block() } }
     
     suspend fun refreshPlaylists() = withContext(Dispatchers.IO) {
         loadPlaylists()
@@ -72,7 +100,7 @@ class PlaylistRepository(private val context: Context) {
         name: String,
         description: String?,
         coverSeeds: Pair<Int, Int>? = null
-    ): String = withContext(Dispatchers.IO) {
+    ): String = writing {
         val id = UUID.randomUUID().toString()
         val coverPath = generateCoverArt(name, id, coverSeeds)
 
@@ -85,15 +113,15 @@ class PlaylistRepository(private val context: Context) {
         )
         
         savePlaylist(newPlaylist)
-        return@withContext id
+        return@writing id
     }
     
-    suspend fun addSongToPlaylist(playlistId: String, song: Song) = withContext(Dispatchers.IO) {
+    suspend fun addSongToPlaylist(playlistId: String, song: Song) = writing {
         val currentList = _userPlaylists.value
-        val playlist = currentList.find { it.id == playlistId } ?: return@withContext
+        val playlist = currentList.find { it.id == playlistId } ?: return@writing
         
         // Check if song already exists
-        if (playlist.songs.any { it.id == song.id }) return@withContext
+        if (playlist.songs.any { it.id == song.id }) return@writing
         
         val updatedPlaylist = playlist.copy(
             songs = playlist.songs + song
@@ -113,18 +141,18 @@ class PlaylistRepository(private val context: Context) {
      *
      * @return how many songs were actually added.
      */
-    suspend fun addSongsToPlaylist(playlistId: String, songs: List<Song>): Int = withContext(Dispatchers.IO) {
-        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext 0
+    suspend fun addSongsToPlaylist(playlistId: String, songs: List<Song>): Int = writing {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@writing 0
         val seen = playlist.songs.mapTo(HashSet()) { it.id }
         val toAdd = songs.filter { seen.add(it.id) }
-        if (toAdd.isEmpty()) return@withContext 0
+        if (toAdd.isEmpty()) return@writing 0
         savePlaylist(playlist.copy(songs = playlist.songs + toAdd))
         toAdd.size
     }
 
-    suspend fun removeSongFromPlaylist(playlistId: String, songId: String) = withContext(Dispatchers.IO) {
+    suspend fun removeSongFromPlaylist(playlistId: String, songId: String) = writing {
         val currentList = _userPlaylists.value
-        val playlist = currentList.find { it.id == playlistId } ?: return@withContext
+        val playlist = currentList.find { it.id == playlistId } ?: return@writing
         
         val updatedPlaylist = playlist.copy(
             songs = playlist.songs.filter { it.id != songId }
@@ -136,10 +164,10 @@ class PlaylistRepository(private val context: Context) {
         playlistId: String,
         fromIndex: Int,
         toIndex: Int
-    ) = withContext(Dispatchers.IO) {
-        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
-        if (fromIndex == toIndex) return@withContext
-        if (fromIndex !in playlist.songs.indices || toIndex !in playlist.songs.indices) return@withContext
+    ) = writing {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@writing
+        if (fromIndex == toIndex) return@writing
+        if (fromIndex !in playlist.songs.indices || toIndex !in playlist.songs.indices) return@writing
 
         val reorderedSongs = playlist.songs.toMutableList().apply {
             val movedSong = removeAt(fromIndex)
@@ -152,21 +180,21 @@ class PlaylistRepository(private val context: Context) {
     suspend fun replacePlaylistSongs(
         playlistId: String,
         songs: List<Song>
-    ) = withContext(Dispatchers.IO) {
-        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+    ) = writing {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@writing
         savePlaylist(playlist.copy(songs = songs))
     }
     
     /** Fills in lengths by song id, re-reading the playlist so a concurrent edit survives. */
-    suspend fun updateSongDurations(playlistId: String, durations: Map<String, Long>) = withContext(Dispatchers.IO) {
-        if (durations.isEmpty()) return@withContext
-        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+    suspend fun updateSongDurations(playlistId: String, durations: Map<String, Long>) = writing {
+        if (durations.isEmpty()) return@writing
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@writing
         savePlaylist(playlist.copy(songs = playlist.songs.map { song ->
             durations[song.id]?.takeIf { song.duration <= 0 }?.let { song.copy(duration = it) } ?: song
         }))
     }
 
-    suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
+    suspend fun deletePlaylist(playlistId: String) = writing {
         val file = File(playlistDir, "$playlistId.json")
         if (file.exists()) file.delete()
         
@@ -184,10 +212,10 @@ class PlaylistRepository(private val context: Context) {
         name: String,
         description: String?,
         coverSeeds: Pair<Int, Int>? = null
-    ) = withContext(Dispatchers.IO) {
-        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+    ) = writing {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@writing
         val trimmedName = name.trim()
-        if (trimmedName.isBlank()) return@withContext
+        if (trimmedName.isBlank()) return@writing
 
         // Only a generated cover follows the name. A cover the user chose is
         // theirs and survives every rename.
@@ -226,8 +254,8 @@ class PlaylistRepository(private val context: Context) {
      * @return true when the cover was replaced.
      */
     suspend fun setCustomCover(playlistId: String, source: android.net.Uri): Boolean =
-        withContext(Dispatchers.IO) {
-            val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext false
+        writing {
+            val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@writing false
             val decoded = try {
                 context.contentResolver.openInputStream(source)?.use { input ->
                     val options = android.graphics.BitmapFactory.Options().apply {
@@ -243,7 +271,7 @@ class PlaylistRepository(private val context: Context) {
             } catch (e: Exception) {
                 KLog.w(TAG, "Could not read the chosen cover", e)
                 null
-            } ?: return@withContext false
+            } ?: return@writing false
 
             val square = cropToSquare(decoded, COVER_SIZE)
             val target = File(coversDir, "custom_${playlistId}_${System.currentTimeMillis()}.jpg")
@@ -256,7 +284,7 @@ class PlaylistRepository(private val context: Context) {
             } catch (e: Exception) {
                 KLog.e(TAG, "Could not write the cover", e)
                 target.delete()
-                return@withContext false
+                return@writing false
             } finally {
                 // Identity check, not equality: cropping an already-square
                 // image hands back the source bitmap itself, and recycling
@@ -281,9 +309,9 @@ class PlaylistRepository(private val context: Context) {
      * @return true when the cover was replaced.
      */
     suspend fun setCoverFromArtwork(playlistId: String, tiles: List<Bitmap>): Boolean =
-        withContext(Dispatchers.IO) {
-            val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext false
-            if (tiles.isEmpty()) return@withContext false
+        writing {
+            val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@writing false
+            if (tiles.isEmpty()) return@writing false
             val size = COVER_SIZE
             val cover = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(cover)
@@ -308,7 +336,7 @@ class PlaylistRepository(private val context: Context) {
             } catch (e: Exception) {
                 KLog.e(TAG, "Could not write the cover", e)
                 target.delete()
-                return@withContext false
+                return@writing false
             } finally {
                 cover.recycle()
             }
@@ -326,8 +354,8 @@ class PlaylistRepository(private val context: Context) {
     suspend fun resetCoverToGenerated(
         playlistId: String,
         coverSeeds: Pair<Int, Int>? = null
-    ) = withContext(Dispatchers.IO) {
-        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@withContext
+    ) = writing {
+        val playlist = _userPlaylists.value.find { it.id == playlistId } ?: return@writing
         val previous = playlist.coverUri
         val regenerated = generateCoverArt(playlist.name, playlist.id, coverSeeds)
         savePlaylist(playlist.copy(coverUri = "file://$regenerated"))
@@ -586,6 +614,14 @@ class PlaylistRepository(private val context: Context) {
 
     companion object {
         private const val TAG = "PlaylistRepository"
+
+        private val LOCK = Any()
+
+        @Volatile
+        private var shared: MutableStateFlow<List<UserPlaylist>>? = null
+
+        /** Serialises every playlist write in the process; see [writing]. */
+        private val WRITE_LOCK = Mutex()
 
         /** Edge of every stored cover, generated or chosen. */
         private const val COVER_SIZE = 1000

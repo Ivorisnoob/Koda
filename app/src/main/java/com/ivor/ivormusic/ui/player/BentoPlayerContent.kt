@@ -284,11 +284,9 @@ fun BentoPlayerSheetContent(
                             .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
                             .clip(RoundedCornerShape(artCorner.dp))
                             .background(tileColor)
-                            .pointerInput(Unit) {
-                                detectTapGestures(onTap = {
-                                    playerHaptics.playPause(!viewModel.isPlaying.value)
-                                    viewModel.togglePlayPause()
-                                })
+                            .coverTaps(LocalCoverSeek.current) {
+                                playerHaptics.playPause(!viewModel.isPlaying.value)
+                                viewModel.togglePlayPause()
                             }
                             // Off while lyrics are up: that view scrolls and seeks.
                             .swipeToSkip(swipeToSkip, enabled = !showLyrics)
@@ -303,7 +301,8 @@ fun BentoPlayerSheetContent(
                                     onSeekTo = { viewModel.seekTo(it) },
                                     primaryColor = MaterialTheme.colorScheme.primary,
                                     onSurfaceColor = onTile,
-                                    onSurfaceVariantColor = onTileVariant
+                                    onSurfaceVariantColor = onTileVariant,
+                                    backgroundColor = tileColor
                                 )
                             } else {
                                 val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }

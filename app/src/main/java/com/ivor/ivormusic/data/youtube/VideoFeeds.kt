@@ -276,6 +276,27 @@ internal class VideoFeeds(
         }
     }
 
+    /**
+     * The videos of one Explore topic, read on demand when its chip is tapped.
+     * Anonymous-safe: every topic is a public page. Empty when the page could
+     * not be read.
+     */
+    suspend fun getExploreVideos(topic: com.ivor.ivormusic.data.ExploreTopic): List<VideoItem> =
+        withContext(Dispatchers.IO) {
+            try {
+                val raw = webApi.postWatchApi(
+                    "browse",
+                    JSONObject().put("context", webApi.webContext()).put("browseId", topic.browseId)
+                ) ?: return@withContext emptyList()
+                parseExploreVideos(JSONObject(raw))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                KLog.e(YOUTUBE_TAG, "getExploreVideos(${topic.name}) failed", e)
+                emptyList()
+            }
+        }
+
     /** One history page; Library must never walk an account's entire history. */
     internal suspend fun getWatchHistoryPage(
         continuation: String? = null,

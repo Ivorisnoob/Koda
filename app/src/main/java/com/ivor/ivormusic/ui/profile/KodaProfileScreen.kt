@@ -290,6 +290,10 @@ fun KodaProfileScreen(
                 }
             }
 
+            item(key = "recap") {
+                com.ivor.ivormusic.ui.recap.RecapEntryCard(Modifier.padding(horizontal = 16.dp))
+            }
+
             val topArtists = listening.stats.topArtists.filterNot { isUnknownArtist(it.name) }.take(8)
             if (topArtists.isNotEmpty()) {
                 item(key = "artists") {
@@ -400,6 +404,10 @@ fun KodaProfileScreen(
                                                     modifier = Modifier.fillMaxSize()
                                                 )
                                             }
+                                            com.ivor.ivormusic.ui.components.NowPlayingMark(
+                                                song.songId,
+                                                Modifier.fillMaxSize(),
+                                            )
                                         }
                                         Spacer(Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
@@ -407,6 +415,10 @@ fun KodaProfileScreen(
                                                 text = song.title,
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 fontWeight = FontWeight.SemiBold,
+                                                color = com.ivor.ivormusic.ui.components.nowPlayingTitleColor(
+                                                    song.songId,
+                                                    androidx.compose.material3.LocalContentColor.current,
+                                                ),
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )

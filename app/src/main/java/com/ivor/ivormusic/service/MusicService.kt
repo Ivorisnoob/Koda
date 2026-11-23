@@ -212,6 +212,12 @@ class MusicService : MediaLibraryService() {
     /** See [RequestedMediaItems]. */
     private val requestedItems by lazy { RequestedMediaItems(serviceScope, browseTree) }
 
+    /** See [ListeningRecorder]. Writes on the IO scope; sampled from the main loop. */
+    private val listeningRecorderLazy = lazy {
+        ListeningRecorder(stats = statsRepository, preferences = themePreferences, scope = resolveScope)
+    }
+    private val listeningRecorder by listeningRecorderLazy
+
     /** See [AutomaticCrossfades]. */
     private val automaticCrossfades by lazy {
         AutomaticCrossfades(
@@ -533,6 +539,7 @@ class MusicService : MediaLibraryService() {
         // Before the scopes go: the writer lives in one of them, and this is
         // the last moment the player can still be read.
         sessionCheckpoints.writeFinal()
+        if (listeningRecorderLazy.isInitialized()) listeningRecorder.flushFinal()
         // Cancel the scopes themselves — they host the preference collectors and
         // any in-flight resolutions, which would otherwise outlive the service.
         serviceScope.cancel()
@@ -927,6 +934,10 @@ class MusicService : MediaLibraryService() {
         serviceScope.launch {
             while (isActive) {
                 if (::engine.isInitialized) {
+                    // The listening history, from the audible player, whatever
+                    // route playback came in by and whether or not the app's
+                    // screen is alive.
+                    listeningRecorder.sample(player)
                     val tracker = lastFmTracker
                     if (tracker != null) {
                         tracker.sample(player)
@@ -1058,7 +1069,12 @@ class MusicService : MediaLibraryService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             super.onMediaItemTransition(mediaItem, reason)
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) lastFmTracker?.reset()
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                lastFmTracker?.reset()
+                // Repeat-one comes back round as the same occurrence; each pass
+                // is a play of its own.
+                listeningRecorder.restart()
+            }
             automaticCrossfades.forgetAttempt()
             refreshMediaButtons()
             // Arriving at a song - an advance, a skip, a seek back to it - gives

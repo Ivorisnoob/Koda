@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.MoneyOff
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.FlashOn
@@ -203,14 +204,20 @@ internal fun buildSettingsSearchIndex(
         listOf("lyrics", "providers", "priority", "order", "karaoke", "synced", "plain text", "offline", "YouLyPlus", "BetterLyrics", "NetEase", "SimpMusic", "LRCLIB", "KuGou", "Unison")
     ) { onOpenPage(SettingsPage.LYRICS) }
     entry(
+        "lyrics_appearance", stringResource(R.string.lyrics_look_title), stringResource(R.string.settings_customization), Icons.Rounded.MusicNote,
+        listOf("lyric font", "weight", "text size", "line spacing", "case", "karaoke", "accent", "dim", "blur", "glow", "cascade", "scroll", "instrumental", "duet")
+    ) { onOpenPage(SettingsPage.LYRICS_APPEARANCE) }
+    entry(
         "lyrics_alignment", stringResource(R.string.lyrics_alignment), stringResource(R.string.lyrics_settings_title), Icons.Rounded.MusicNote,
         listOf("lyrics", "align", "alignment", "left", "centre", "center", "centered", "justify", "layout")
-    ) { onOpenPage(SettingsPage.LYRICS) }
+    ) { onOpenPage(SettingsPage.LYRICS_APPEARANCE) }
     entry(
         "lyrics_romanized", stringResource(R.string.lyrics_romanized), stringResource(R.string.lyrics_settings_title), Icons.Rounded.MusicNote,
         listOf("lyrics", "romanized", "romanised", "romaji", "pinyin", "phonetic", "transliterate", "japanese", "korean", "chinese", "hindi")
-    ) { onOpenPage(SettingsPage.LYRICS) }
+    ) { onOpenPage(SettingsPage.LYRICS_APPEARANCE) }
 
+    entry("lastfm_fill_album", stringResource(R.string.lastfm_fill_album), "Last.fm", Icons.Rounded.History,
+        listOf("album", "missing album", "scrobble album", "fill in", "metadata")) { onOpenPage(SettingsPage.LASTFM) }
     entry("lastfm", stringResource(R.string.lastfm_title), "Last.fm", Icons.Rounded.History,
         listOf("lastfm", "last.fm", "scrobble", "scrobbling", "sync", "api key", "login", "listening history")) {
         onOpenPage(SettingsPage.LASTFM)
@@ -249,6 +256,34 @@ internal fun buildSettingsSearchIndex(
     entry(
         "video_controls_hide", stringResource(R.string.cz_video_controls_hide), stringResource(R.string.cz_video_player), Icons.Rounded.PlayCircle,
         listOf("controls", "auto hide", "hide delay", "timeout", "buttons disappear", "overlay")
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_centre_buttons", stringResource(R.string.cz_video_centre), stringResource(R.string.cz_video_player), Icons.Rounded.SkipNext,
+        listOf(
+            "skip", "previous", "next", "next video", "previous video", "centre", "center",
+            "transport", "10 seconds", "rewind", "forward"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_skip_amount", stringResource(R.string.cz_video_skip_amount), stringResource(R.string.cz_video_player), Icons.Rounded.PlayCircle,
+        listOf("skip", "seek", "double tap", "5 seconds", "10 seconds", "15 seconds", "30 seconds", "rewind", "forward")
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_time_display", stringResource(R.string.cz_video_time_display), stringResource(R.string.cz_video_player), Icons.Rounded.Schedule,
+        listOf("time", "elapsed", "remaining", "duration", "time left", "total", "timestamp")
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_chrome_buttons", stringResource(R.string.cz_video_show_captions), stringResource(R.string.cz_video_player), Icons.Rounded.PlayCircle,
+        listOf(
+            "captions", "subtitles", "cc", "fullscreen", "lock", "screen lock",
+            "picture in picture", "pip", "speed", "playback speed", "hide button"
+        )
+    ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
+    entry(
+        "video_pip_actions", stringResource(R.string.sp_pip_buttons), stringResource(R.string.cz_video_player), Icons.Rounded.PictureInPictureAlt,
+        listOf(
+            "pip", "picture in picture", "floating", "mini window", "next", "previous", "skip", "seek"
+        )
     ) { onOpenPage(SettingsPage.VIDEO_PLAYER) }
     entry(
         "standby", stringResource(R.string.standby_title), stringResource(R.string.settings_customization), Icons.Rounded.Bedtime,
@@ -296,6 +331,14 @@ internal fun buildSettingsSearchIndex(
         listOf("shorts shelf", "shorts row", "hide shorts", "shorts on home")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
     entry(
+        "video_feed_explore", stringResource(R.string.cz_feed_explore), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("explore", "trending", "hype", "topics", "gaming", "news", "sports", "music videos", "categories")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
+        "video_feed_restricted", stringResource(R.string.cz_feed_hide_restricted), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
+        listOf("paid", "members only", "membership", "rent", "buy", "movies", "hide paid", "premium")
+    ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
         "video_feed_live", stringResource(R.string.cz_feed_live), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
         listOf("live", "live streams", "hide live", "streaming now")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
@@ -303,6 +346,18 @@ internal fun buildSettingsSearchIndex(
         "video_feed_watched", stringResource(R.string.cz_feed_hide_watched_home), stringResource(R.string.cz_video_feed), Icons.Rounded.PlayCircle,
         listOf("watched", "hide watched", "already seen", "seen videos", "unwatched only")
     ) { onOpenPage(SettingsPage.VIDEO_FEED) }
+    entry(
+        "search_keyboard", stringResource(R.string.cz_search_keyboard), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("keyboard", "search keyboard", "auto focus", "autofocus", "keyboard pops up", "search opens")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "home_sections", stringResource(R.string.cz_section_home_sections), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("speed dial", "home sections", "hide artists", "hide mixes", "jump back in", "recent albums", "shortcuts", "remove from home")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "library_tabs", stringResource(R.string.cz_section_library_tabs), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
+        listOf("library tabs", "hide artists", "hide albums", "only playlists", "library sections")
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
     entry(
         "top_bar_greeting", stringResource(R.string.cz_top_bar_greeting), stringResource(R.string.sp_home_and_navigation), Icons.Rounded.Dashboard,
         listOf("greeting", "good morning", "hello", "top bar", "header", "home bar")
@@ -401,6 +456,16 @@ internal fun buildSettingsSearchIndex(
         listOf(
             "rotate", "rotation", "landscape", "portrait", "orientation",
             "sideways", "turn", "auto rotate", "lock"
+        )
+    ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
+    entry(
+        "draw_beside_cutout",
+        stringResource(R.string.sp_draw_beside_cutout),
+        stringResource(R.string.settings_appearance),
+        Icons.Rounded.Fullscreen,
+        listOf(
+            "notch", "cutout", "camera", "punch hole", "safe area", "full screen",
+            "fullscreen", "edge", "landscape", "overlap", "island"
         )
     ) { onOpenPage(SettingsPage.HOME_NAVIGATION) }
 
@@ -797,6 +862,14 @@ internal fun buildSettingsSearchIndex(
     entry(
         "playlist_swipe", stringResource(R.string.sp_playlist_swipe), "Local library", Icons.Rounded.SwapHoriz,
         listOf("swipe", "gesture", "dismiss", "remove song", "quick action", "playlist row", "swipe right", "swipe left", "play", "queue", "add to queue", "options")
+    ) { onOpenPage(SettingsPage.GESTURES) }
+    entry(
+        "editorial_one_row", stringResource(R.string.sp_editorial_one_row), "Player", Icons.Rounded.SkipNext,
+        listOf("editorial", "previous", "next", "play", "buttons", "one row", "single line", "controls", "layout")
+    ) { onOpenPage(SettingsPage.PLAYER) }
+    entry(
+        "cover_double_tap_seek", stringResource(R.string.sp_cover_double_tap_seek), "Gestures", Icons.Rounded.SwapHoriz,
+        listOf("seek", "skip ahead", "rewind", "fast forward", "10 seconds", "double tap", "cover", "artwork", "jump")
     ) { onOpenPage(SettingsPage.GESTURES) }
 
     // Advanced

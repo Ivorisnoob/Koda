@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 11 and up: the cutout on every edge. See values/themes.xml for why these sit on Platform.* parents. -->
+    <style name="Platform.Theme.IvorMusic" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- AOSP only ever scrims the navigation bar; the status-bar scrim
+             is OEM-added (HyperOS/MIUI and friends), hence both. -->
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <!-- Draw into the camera cutout from the moment the window exists.
+             MainActivity also sets this at runtime, but some OEM skins only
+             honour what the window was created with, which left landscape
+             boxed in beside the notch. Screens keep their controls clear of
+             it. The splash theme needs it too: the activity window is
+             created under that theme. -->
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+
+    <style name="Platform.App.Starting" parent="Theme.SplashScreen">
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+    </style>
+</resources>
