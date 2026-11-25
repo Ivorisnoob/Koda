@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.DownloadDone
@@ -86,10 +87,13 @@ import com.ivor.ivormusic.data.lossless.LosslessDownloadInfo
 import com.ivor.ivormusic.data.lossless.LosslessOrigin
 import com.ivor.ivormusic.data.lossless.LosslessOrigins
 import com.ivor.ivormusic.data.lossless.LosslessQuality
+import com.ivor.ivormusic.service.FileQualityAnalyzer
 import com.ivor.ivormusic.service.SpectrumProbe
 import com.ivor.ivormusic.service.SpectrumReading
+import com.ivor.ivormusic.service.core.QualityAssessment
 import com.ivor.ivormusic.service.core.QualityVerdict
 import com.ivor.ivormusic.service.core.SpectrumAnalysis
+import com.ivor.ivormusic.service.core.VerdictConfidence
 import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import com.ivor.ivormusic.ui.components.LosslessPill
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +103,16 @@ import java.util.Locale
 
 /** Where the playing song's audio is coming from, as the sheet names it. */
 private enum class AudioOrigin { LOSSLESS_SERVER, LOSSLESS_KEPT, LOSSLESS_DOWNLOAD, DOWNLOAD, DEVICE_FILE, YOUTUBE }
+
+/** Where the whole-file check is for the song in the sheet. */
+private sealed interface FileScan {
+    /** The song has no file on the device to check; playback is listened to instead. */
+    data object None : FileScan
+    data object Running : FileScan
+    data class Done(val reading: SpectrumReading) : FileScan
+    /** The file would not decode; playback is listened to instead. */
+    data object Failed : FileScan
+}
 
 /**
  * Audio quality: what the playing song really is, and the evidence.
@@ -119,29 +133,26 @@ internal fun AudioQualitySheet(viewModel: PlayerViewModel, onDismiss: () -> Unit
     val song by viewModel.currentSong.collectAsState()
     val track by viewModel.audioTrack.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-    val reading by SpectrumProbe.reading.collectAsState()
+    val liveReading by SpectrumProbe.reading.collectAsState()
     val downloads = remember(context) { DownloadRepository.getInstance(context) }
     val downloadedSongs by downloads.downloadedSongs.collectAsState()
     val losslessDownloads by downloads.losslessDownloads.collectAsState()
 
-    DisposableEffect(Unit) {
-        SpectrumProbe.acquire()
-        onDispose { SpectrumProbe.release() }
-    }
-    // A new song is a new measurement.
-    LaunchedEffect(song?.id) { SpectrumProbe.reset() }
-
     val songId = song?.id
-    // Whether the song is whole in the lossless cache yet; it fills as it plays.
-    val keptWhole by produceState(false, songId) {
+    // The cache prefix the song is whole under, if it is yet; it fills as it plays.
+    val keptPrefix by produceState<String?>(null, songId) {
+        value = null
         while (songId != null) {
             value = withContext(Dispatchers.IO) {
-                LosslessQuality.entries.any { q -> LosslessCache.kept(context, LosslessCache.prefix(q, songId)) != null }
+                LosslessQuality.entries
+                    .map { q -> LosslessCache.prefix(q, songId) }
+                    .firstOrNull { LosslessCache.kept(context, it) != null }
             }
-            if (value) break
+            if (value != null) break
             delay(4_000)
         }
     }
+    val keptWhole = keptPrefix != null
 
     val downloadedLossless = songId?.let { losslessDownloads[it] }
     val origin = when {
@@ -154,10 +165,53 @@ internal fun AudioQualitySheet(viewModel: PlayerViewModel, onDismiss: () -> Unit
         else -> AudioOrigin.YOUTUBE
     }
 
-    val current = reading
     val lossless = track?.lossless == true
+    // A lossless song whose file is on the device is checked whole, at its
+    // own depth; one streamed from the server is checked as it plays.
+    val fileInput: FileQualityAnalyzer.Input? = when {
+        !lossless -> null
+        origin == AudioOrigin.LOSSLESS_DOWNLOAD ->
+            downloadedSongs.firstOrNull { it.id == songId }?.uri?.let(FileQualityAnalyzer.Input::Content)
+        origin == AudioOrigin.DEVICE_FILE -> song?.uri?.let(FileQualityAnalyzer.Input::Content)
+        else -> keptPrefix?.let(FileQualityAnalyzer.Input::Kept)
+    }
+    var scanProgress by remember(fileInput) { mutableStateOf(0f) }
+    val scan by produceState<FileScan>(
+        fileInput?.let { input -> FileQualityAnalyzer.rememberedFor(input)?.let(FileScan::Done) } ?: FileScan.None,
+        fileInput,
+    ) {
+        // The state outlives its key, so a new song starts from nothing here.
+        val input = fileInput ?: run { value = FileScan.None; return@produceState }
+        FileQualityAnalyzer.rememberedFor(input)?.let { value = FileScan.Done(it); return@produceState }
+        scanProgress = 0f
+        value = FileScan.Running
+        val result = FileQualityAnalyzer.analyze(context, input) { p ->
+            // Called off the main thread; a snapshot write is safe from there.
+            scanProgress = p
+        }
+        value = result?.let(FileScan::Done) ?: FileScan.Failed
+    }
+    // The live check runs only when the file check cannot.
+    val live = scan == FileScan.None || scan == FileScan.Failed
+    if (live) {
+        DisposableEffect(Unit) {
+            SpectrumProbe.acquire()
+            onDispose { SpectrumProbe.release() }
+        }
+        // A new song is a new measurement.
+        LaunchedEffect(songId) { SpectrumProbe.reset() }
+    }
+
+    val current = (scan as? FileScan.Done)?.reading ?: liveReading.takeIf { live }
     val sampleRate = track?.sampleRate ?: current?.sampleRate ?: 0
-    val verdict = SpectrumAnalysis.verdict(lossless, sampleRate, current?.cutoffHz, current?.seconds ?: 0f)
+    val assessment = SpectrumAnalysis.assess(
+        lossless = lossless,
+        sampleRate = sampleRate,
+        evidence = current?.evidence,
+        seconds = current?.seconds ?: 0f,
+        minSeconds = if (current?.wholeFile == true) 0f else SpectrumAnalysis.SECONDS_FOR_VERDICT,
+    )
+    val claimedBits = track?.bitsPerSample ?: downloadedLossless?.bitsPerSample?.takeIf { it > 0 }
 
     AdaptiveModalSheet(
         onDismissRequest = onDismiss,
@@ -201,11 +255,16 @@ internal fun AudioQualitySheet(viewModel: PlayerViewModel, onDismiss: () -> Unit
                     track?.sampleRate?.let(LosslessDownloadInfo::formatKhz) ?: unknown,
                     Modifier.weight(1f)
                 )
+                val usedBits = current?.usedBits
                 FactTile(
                     stringResource(R.string.aq_bit_depth),
-                    (track?.bitsPerSample ?: downloadedLossless?.bitsPerSample?.takeIf { it > 0 })
-                        ?.let { stringResource(R.string.aq_bits, it) }
-                        ?: if (track?.lossless == false) stringResource(R.string.aq_not_applicable) else unknown,
+                    when {
+                        claimedBits != null && usedBits != null && usedBits < claimedBits ->
+                            stringResource(R.string.aq_bits_used, claimedBits, usedBits)
+                        claimedBits != null -> stringResource(R.string.aq_bits, claimedBits)
+                        track?.lossless == false -> stringResource(R.string.aq_not_applicable)
+                        else -> unknown
+                    },
                     Modifier.weight(1f)
                 )
                 FactTile(
@@ -230,7 +289,10 @@ internal fun AudioQualitySheet(viewModel: PlayerViewModel, onDismiss: () -> Unit
             FrequencyCheckCard(
                 reading = current,
                 sampleRate = sampleRate,
-                verdict = verdict,
+                assessment = assessment,
+                scanning = scan == FileScan.Running,
+                scanProgress = scanProgress,
+                claimedBits = claimedBits,
                 isPlaying = isPlaying,
                 lossless = lossless
             )
@@ -357,10 +419,14 @@ private fun FactTile(label: String, value: String, modifier: Modifier = Modifier
 private fun FrequencyCheckCard(
     reading: SpectrumReading?,
     sampleRate: Int,
-    verdict: QualityVerdict,
+    assessment: QualityAssessment,
+    scanning: Boolean,
+    scanProgress: Float,
+    claimedBits: Int?,
     isPlaying: Boolean,
     lossless: Boolean,
 ) {
+    val verdict = if (scanning) QualityVerdict.LISTENING else assessment.verdict
     val good = verdict == QualityVerdict.GENUINE_HI_RES || verdict == QualityVerdict.LOSSLESS_CD
     val bad = verdict == QualityVerdict.LOSSY_SOURCE || verdict == QualityVerdict.UPSAMPLED_CD
     val tone by animateColorAsState(
@@ -411,7 +477,8 @@ private fun FrequencyCheckCard(
 
             if (verdict == QualityVerdict.LISTENING && lossless) {
                 val progress by animateFloatAsState(
-                    ((reading?.seconds ?: 0f) / SpectrumAnalysis.SECONDS_FOR_VERDICT).coerceIn(0f, 1f),
+                    if (scanning) scanProgress
+                    else ((reading?.seconds ?: 0f) / SpectrumAnalysis.SECONDS_FOR_VERDICT).coerceIn(0f, 1f),
                     label = "aqProgress"
                 )
                 LinearWavyProgressIndicator(
@@ -423,23 +490,119 @@ private fun FrequencyCheckCard(
             }
 
             AnimatedContent(
-                targetState = verdict to (reading == null && !isPlaying),
+                targetState = VerdictShown(
+                    verdict = verdict,
+                    confidence = assessment.confidence.takeIf { !scanning },
+                    waitingForPlay = !scanning && reading == null && !isPlaying,
+                    scanning = scanning,
+                ),
                 transitionSpec = {
                     (fadeIn() + scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy), initialScale = 0.92f))
                         .togetherWith(fadeOut())
                 },
                 label = "aqVerdict"
-            ) { (shown, waitingForPlay) ->
-                VerdictRow(verdict = shown, waitingForPlay = waitingForPlay, tone = tone)
+            ) { shown ->
+                VerdictRow(shown, tone = tone)
+            }
+
+            if (!scanning && lossless && reading != null && verdict != QualityVerdict.LISTENING) {
+                Spacer(Modifier.height(14.dp))
+                EvidenceList(reading = reading, claimedBits = claimedBits)
+            }
+        }
+    }
+}
+
+private data class VerdictShown(
+    val verdict: QualityVerdict,
+    val confidence: VerdictConfidence?,
+    val waitingForPlay: Boolean,
+    val scanning: Boolean,
+)
+
+/**
+ * Each thing the check found, in a line: why the verdict is what it is. A
+ * line is left out when the audio could not answer its question.
+ */
+@Composable
+private fun EvidenceList(reading: SpectrumReading, claimedBits: Int?) {
+    val evidence = reading.evidence
+    val lines = buildList {
+        evidence.cutoffHz?.let { cutoff ->
+            val khz = LosslessDownloadInfo.formatKhz(cutoff)
+            val wall = evidence.wallDb
+            add(
+                when {
+                    wall == null -> stringResource(R.string.aq_e_reaches_top) to true
+                    wall >= SpectrumAnalysis.STEEP_WALL_DB && cutoff < 20_600 ->
+                        stringResource(R.string.aq_e_wall, khz) to false
+                    wall >= SpectrumAnalysis.STEEP_WALL_DB -> stringResource(R.string.aq_e_filter, khz) to true
+                    else -> stringResource(R.string.aq_e_fade, khz) to true
+                }
+            )
+        }
+        evidence.dropoutShare?.let { share ->
+            val percent = (share * 100).toInt()
+            add(
+                if (share >= 0.2f) stringResource(R.string.aq_e_dropouts, percent) to false
+                else stringResource(R.string.aq_e_steady_top) to true
+            )
+        }
+        evidence.ultrasonicFollow?.let { follow ->
+            if ((evidence.cutoffHz ?: 0) > SpectrumAnalysis.HI_RES_EVIDENCE_HZ) {
+                add(
+                    if (follow >= 0.25f) stringResource(R.string.aq_e_ultra_follows) to true
+                    else stringResource(R.string.aq_e_ultra_noise) to false
+                )
+            }
+        }
+        if (reading.wholeFile) {
+            val used = reading.usedBits
+            when {
+                !reading.fullDepth -> add(stringResource(R.string.aq_e_bits_unchecked) to null)
+                used != null && claimedBits != null && used < claimedBits ->
+                    add(stringResource(R.string.aq_e_bits_padded, used, claimedBits) to false)
+                used != null -> add(stringResource(R.string.aq_e_bits_used, used) to true)
+            }
+            add(stringResource(R.string.aq_e_whole_file) to null)
+        } else {
+            add(stringResource(R.string.aq_e_heard, reading.seconds.toInt()) to null)
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        lines.forEach { (text, fine) ->
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(
+                    when (fine) {
+                        true -> Icons.Rounded.CheckCircle
+                        false -> Icons.Rounded.WarningAmber
+                        null -> Icons.Rounded.Info
+                    },
+                    contentDescription = null,
+                    tint = when (fine) {
+                        true -> MaterialTheme.colorScheme.tertiary
+                        false -> MaterialTheme.colorScheme.error
+                        null -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(top = 1.dp).size(16.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
 }
 
 @Composable
-private fun VerdictRow(verdict: QualityVerdict, waitingForPlay: Boolean, tone: Color) {
+private fun VerdictRow(shown: VerdictShown, tone: Color) {
+    val verdict = shown.verdict
     val (icon, title, body) = when {
-        waitingForPlay -> Triple(Icons.Rounded.PlayCircle, R.string.aq_v_play_title, R.string.aq_v_play_body)
+        shown.scanning -> Triple(Icons.Rounded.HourglassTop, R.string.aq_v_scanning_title, R.string.aq_v_scanning_body)
+        shown.waitingForPlay -> Triple(Icons.Rounded.PlayCircle, R.string.aq_v_play_title, R.string.aq_v_play_body)
         else -> when (verdict) {
             QualityVerdict.LISTENING -> Triple(Icons.Rounded.HourglassTop, R.string.aq_v_listening_title, R.string.aq_v_listening_body)
             QualityVerdict.GENUINE_HI_RES -> Triple(Icons.Rounded.Verified, R.string.aq_v_hires_title, R.string.aq_v_hires_body)
@@ -461,7 +624,23 @@ private fun VerdictRow(verdict: QualityVerdict, waitingForPlay: Boolean, tone: C
         }
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(stringResource(title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                // Lossy streams say so plainly; only a judged file gets a confidence.
+                val confidence = shown.confidence.takeIf { verdict != QualityVerdict.LOSSY_STREAM }
+                if (confidence != null && !shown.scanning && !shown.waitingForPlay) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(shape = CircleShape, color = tone.copy(alpha = 0.14f), contentColor = tone) {
+                        Text(
+                            stringResource(
+                                if (confidence == VerdictConfidence.CERTAIN) R.string.aq_conf_certain else R.string.aq_conf_likely
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
             Text(
                 stringResource(body),
                 style = MaterialTheme.typography.bodySmall,
