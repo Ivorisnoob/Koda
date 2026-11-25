@@ -357,6 +357,11 @@ fun MorphPlayerSheetContent(
                                 }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
+                        PlayerAudioQualityBadge(
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(top = 2.dp)
+                        )
                     }
 
                     // ========== SCRUB LINE ==========

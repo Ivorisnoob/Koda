@@ -11,6 +11,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.httpFailureUrl
+import com.ivor.ivormusic.data.lossless.LosslessStreamUri
 import com.ivor.ivormusic.util.KLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +46,8 @@ internal class PlaybackRecovery(
     private val youtube: () -> YouTubeRepository,
     private val forgetWarmed: () -> Unit,
     private val announce: (failed: MediaItem, outcome: String) -> Unit,
+    /** The lossless stream of this song id failed: let YouTube have it for a while. */
+    private val losslessFailed: (videoId: String) -> Unit = {},
 ) {
     // Per-song retries. Reset on successful playback so a song can't
     // permanently exhaust its budget over the lifetime of the service.
@@ -83,6 +86,41 @@ internal class PlaybackRecovery(
         if (uri != null && (uri.scheme == "content" || uri.scheme == "file")) {
             KLog.e(TAG, "Error: Local song $videoId failed. Skipping (not retryable via YouTube).")
             skipAfterFailure(currentItem)
+            return
+        }
+
+        // 0. A stream from the listener's lossless server. Nothing below
+        // applies to it - a 403 there is the server's, not googlevideo's
+        // verdict on our visitorData - so it is handled here: an address that
+        // went stale gets one fresh one, and anything else (a second failure,
+        // or audio this phone cannot decode) hands the song to YouTube.
+        if (LosslessStreamUri.isLossless(uri)) {
+            val key = LOSSLESS_RETRY_PREFIX + videoId
+            val undecodable = error.errorCode in PlaybackException.ERROR_CODE_DECODER_INIT_FAILED..PlaybackException.ERROR_CODE_DECODING_RESOURCES_RECLAIMED ||
+                error.errorCode in PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED..PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ||
+                error.errorCode in PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED..PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
+            if (undecodable || (retryCounts[key] ?: 0) >= 1) {
+                KLog.w(TAG, "Error: lossless stream for $videoId failed; falling back to YouTube")
+                retryCounts.remove(key)
+                losslessFailed(videoId)
+            } else {
+                KLog.w(TAG, "Error: lossless stream for $videoId failed; asking the server again")
+                retryCounts[key] = 1
+            }
+            resolver().forgetUrl(videoId)
+            resolver().forgetInFlight(videoId)
+            scope.launch {
+                delay(RETRY_DELAY_MS)
+                if (player().currentMediaItem?.isSameQueueItemAs(currentItem) != true) return@launch
+                val resolved = reResolve(currentItem)
+                val current = player()
+                if (current.currentMediaItem?.isSameQueueItemAs(currentItem) != true) return@launch
+                if (resolved == null) {
+                    skipAfterFailure(currentItem)
+                    return@launch
+                }
+                current.replaceMusicSource(current.currentMediaItemIndex, resolved)
+            }
             return
         }
 
@@ -363,5 +401,8 @@ internal class PlaybackRecovery(
         const val MAX_RECOVERY_MS = 30_000L
 
         const val RETRY_DELAY_MS = 1000L
+
+        /** Lossless retries share [retryCounts] under their own keys. */
+        const val LOSSLESS_RETRY_PREFIX = "lossless:"
     }
 }

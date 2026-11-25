@@ -43,6 +43,9 @@ import com.ivor.ivormusic.data.DownloadRepository
 import com.ivor.ivormusic.data.MusicDownloadOptions
 import com.ivor.ivormusic.data.Song
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.lossless.LosslessClient
+import com.ivor.ivormusic.data.lossless.LosslessQuality
+import com.ivor.ivormusic.data.lossless.LosslessTrack
 import com.ivor.ivormusic.ui.components.SongArtwork
 import java.util.Locale
 
@@ -79,27 +82,77 @@ fun SongDownloadSheet(
     var formats by remember(song.id) { mutableStateOf<List<DownloadAudioFormat>?>(null) }
     var fallbackBytes by remember(song.id) { mutableStateOf<Map<String, Long?>>(emptyMap()) }
 
+    // The listener's lossless server, when downloads are offered from it, and
+    // whether it has this song. Asked once per sheet so the card can say
+    // "Not on your server" before anyone picks it.
+    val losslessOffer = rememberLosslessDownloadOffer()
+    var losslessLookup by remember(song.id) { mutableStateOf<LosslessLookup>(LosslessLookup.Checking) }
+    var qualityTouched by remember(song.id) { mutableStateOf(false) }
+
+    LaunchedEffect(song.id, losslessOffer) {
+        val config = losslessOffer ?: return@LaunchedEffect
+        if (config.downloadByDefault && !qualityTouched) {
+            quality = ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS
+        }
+        losslessLookup = try {
+            kotlinx.coroutines.withTimeoutOrNull(LOSSLESS_LOOKUP_TIMEOUT_MS) {
+                LosslessClient(context, config).find(song.title, song.artist, song.duration, config.downloadQuality)
+            }.let { track ->
+                when {
+                    track != null -> LosslessLookup.Found(track)
+                    else -> LosslessLookup.Missing
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Unreachable or refused: the download itself will try again and
+            // fall back as the settings say, so the card stays choosable.
+            LosslessLookup.Unknown
+        }
+        if (losslessLookup == LosslessLookup.Missing &&
+            quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS
+        ) {
+            quality = ThemePreferences.DOWNLOAD_MUSIC_QUALITY_HIGH
+        }
+    }
+
     LaunchedEffect(song.id) {
         val resolved = repository.songDownloadFormats(song)
         formats = resolved
         // A song with one stream only: do not leave the missing one selected.
-        if (resolved.isNotEmpty() && resolved.none { it.quality == quality }) {
+        if (quality != ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS &&
+            resolved.isNotEmpty() && resolved.none { it.quality == quality }
+        ) {
             quality = resolved.first().quality
         }
     }
     LaunchedEffect(song.id, formats, quality) {
+        if (quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS) return@LaunchedEffect
         if (formats?.isEmpty() == true && quality !in fallbackBytes) {
             val bytes = repository.estimateSongDownloadBytes(song, quality)
             fallbackBytes = fallbackBytes + (quality to bytes)
         }
     }
 
-    fun bytesFor(option: String): Long? =
-        formats?.firstOrNull { it.quality == option }?.contentLength ?: fallbackBytes[option]
+    // An estimate only: a FLAC's size depends on the music as much as its length.
+    val losslessBytes = losslessOffer?.let { config ->
+        song.duration.takeIf { it > 0L }?.let { ms ->
+            ms / 1000L * nominalLosslessBitrate(config.downloadQuality) / 8L
+        }
+    }
 
+    fun bytesFor(option: String): Long? =
+        if (option == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS) losslessBytes
+        else formats?.firstOrNull { it.quality == option }?.contentLength ?: fallbackBytes[option]
+
+    val losslessSelected = quality == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_LOSSLESS
     val selectedBytes = bytesFor(quality)
-    val sizePending = formats == null ||
-        (formats?.isEmpty() == true && quality !in fallbackBytes)
+    val sizePending = if (losslessSelected) {
+        losslessLookup == LosslessLookup.Checking
+    } else {
+        formats == null || (formats?.isEmpty() == true && quality !in fallbackBytes)
+    }
 
     AdaptiveModalSheet(
         onDismissRequest = onDismiss,
@@ -162,9 +215,39 @@ fun SongDownloadSheet(
             val knownFormats = formats
             val highDetail = qualityDetail(knownFormats, ThemePreferences.DOWNLOAD_MUSIC_QUALITY_HIGH)
             val saverDetail = qualityDetail(knownFormats, ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER)
+            val aboutSize = stringResource(R.string.sd_about_size)
+            val losslessInfo = losslessOffer?.let { config ->
+                val lookup = losslessLookup
+                val hiRes = config.downloadQuality == LosslessQuality.HI_RES &&
+                    (lookup as? LosslessLookup.Found)?.track?.quality?.let(::losslessTierOf) != false
+                MusicQualityCardInfo(
+                    detail = when (lookup) {
+                        LosslessLookup.Checking -> stringResource(R.string.sd_lossless_checking)
+                        is LosslessLookup.Found -> stringResource(
+                            if (hiRes) R.string.sd_lossless_found_hires else R.string.sd_lossless_found_cd
+                        )
+                        else -> stringResource(
+                            if (config.downloadQuality == LosslessQuality.HI_RES) R.string.sd_lossless_detail_hires
+                            else R.string.sd_lossless_detail_cd
+                        )
+                    },
+                    size = losslessBytes?.takeIf { lookup != LosslessLookup.Checking }
+                        ?.let { aboutSize.format(formatDownloadSize(it)) },
+                    sizeLoading = lookup == LosslessLookup.Checking,
+                    available = lookup != LosslessLookup.Missing,
+                    unavailableText = stringResource(R.string.sd_lossless_missing),
+                )
+            }
+            val losslessHiRes = losslessOffer?.downloadQuality == LosslessQuality.HI_RES &&
+                (losslessLookup as? LosslessLookup.Found)?.track?.quality?.let(::losslessTierOf) != false
             MusicQualityPicker(
                 selected = quality,
-                onSelect = { quality = it },
+                onSelect = {
+                    qualityTouched = true
+                    quality = it
+                },
+                lossless = losslessInfo,
+                losslessHiRes = losslessHiRes,
                 info = { option ->
                     MusicQualityCardInfo(
                         detail = if (option == ThemePreferences.DOWNLOAD_MUSIC_QUALITY_SAVER) saverDetail
@@ -210,7 +293,7 @@ fun SongDownloadSheet(
             Button(
                 onClick = {
                     if (rememberChoices) {
-                        ThemePreferences.setDownloadMusicQuality(context, quality)
+                        rememberMusicDownloadQuality(context, quality, offersLossless = losslessOffer != null)
                         ThemePreferences.setSaveLyricsWithDownloads(context, saveLyrics)
                     }
                     onConfirm(MusicDownloadOptions(quality = quality, saveLyrics = saveLyrics))
@@ -233,6 +316,18 @@ fun SongDownloadSheet(
         }
     }
 }
+
+/** Whether the lossless server has the song in a download sheet. */
+internal sealed interface LosslessLookup {
+    data object Checking : LosslessLookup
+    data class Found(val track: LosslessTrack) : LosslessLookup
+    data object Missing : LosslessLookup
+
+    /** The server could not be asked; the download will try it itself. */
+    data object Unknown : LosslessLookup
+}
+
+private const val LOSSLESS_LOOKUP_TIMEOUT_MS = 10_000L
 
 /** The codec line under a quality's name: the real bitrate once known, the nominal one before. */
 @Composable

@@ -520,6 +520,7 @@ private fun GestureNowPlayingView(
                                     .clickable(enabled = artistName != "Unknown Artist") { onArtistClick(artistName) },
                                 textAlign = TextAlign.Center
                             )
+                            PlayerAudioQualityBadge(modifier = Modifier.padding(top = 8.dp))
                         }
                         
                         Spacer(modifier = Modifier.height(30.dp))

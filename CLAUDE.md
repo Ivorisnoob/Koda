@@ -155,6 +155,10 @@ Compile-clean, fail-at-runtime traps. Each is a scar; the doc has the story.
 | A zooming `PlayerView` without `keepKnownAspectRatio` | With Smooth motion's graph the player reports no video size, so zoom-to-fill changes nothing | `playback-video.md` |
 | An effect-graph rule keyed on Smooth motion alone rather than `playerHasEffectGraph()` | A player carrying only the shader stage misses it: paused, it went fullscreen as a small rectangle in one corner | `playback-video.md` |
 | A GLSL name that is a reserved word (`flat`, `packed`) | Compiles as Kotlin; on the phone that one shader fails to build and its frames are copied instead. Run `.probe/scratch/video-shaders/validate.py` | `playback-video.md` |
+| A lossless row (`LosslessStreamUri` fragment) written through the music cache, or a new cache writer that does not skip it | FLAC bytes under the song id are later served as the YouTube stream | `playback-streams.md` |
+| `MediaExtractor` asked for the track of the lossless server's FLAC-in-MP4 | Throws `IllegalArgumentException` from `getTrackFormatNative`; a complete download is retried and leaked. Read it with `Mp4FlacDemuxer` | `playback-streams.md` |
+| jaudiotagger's `Artwork` overloads on a FLAC (`FlacTag.setField(Artwork)`) | `javax.imageio` is missing on Android: the whole tag write fails and the file ships untagged. Use `FlacTag.createArtworkField` | `playback-streams.md` |
+| Removing core library desugaring | Every search throws `NoSuchMethodError` on API 30-32, compiles fine | section 6 below |
 | Removing core library desugaring | Every search throws `NoSuchMethodError` on API 26-32, compiles fine | section 6 below |
 | Reading `play_history*.json` as one JSON array | Since November 2026 it holds one play per line; an array parser reads nothing. Read through `StatsRepository.readHistory`; a backup takes `exportForBackup` | `recap.md` |
 | A play recorded from a screen or ViewModel | Lost whenever the app's screen is gone (swiped away, headset, Auto) and doubled beside the service's; only `ListeningRecorder` writes the history | `recap.md` |

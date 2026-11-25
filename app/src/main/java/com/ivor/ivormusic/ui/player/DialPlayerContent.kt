@@ -315,6 +315,11 @@ fun DialPlayerSheetContent(
                                 }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
+                        // Short form: the dial leaves little height to spare.
+                        PlayerAudioQualityBadge(
+                            showDetail = false,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))

@@ -59,6 +59,8 @@ internal class StreamCacheWarmer(
         if (url.startsWith(MusicStreamResolver.PLACEHOLDER_PREFIX) ||
             url.startsWith(MusicStreamResolver.CACHED_PREFIX)
         ) return
+        // Lossless rows never touch the music cache (see LosslessStreamUri).
+        if (com.ivor.ivormusic.data.lossless.LosslessStreamUri.isLossless(uri)) return
         if (!warmedIds.add(videoId)) return
         if (CacheManager.isFullyCached(videoId)) return
 
