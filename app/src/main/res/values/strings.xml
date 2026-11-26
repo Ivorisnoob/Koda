@@ -1651,6 +1651,7 @@
     <string name="ps_style_morph">Morph</string>
     <string name="ps_style_dial">Dial</string>
     <string name="ps_style_hero">Hero</string>
+    <string name="ps_style_custom">Custom</string>
     <string name="ps_sub_classic">Button controls for playback</string>
     <string name="ps_sub_gesture">Swipe album art to navigate</string>
     <string name="ps_sub_editorial">Two-tone magazine layout</string>
@@ -1660,6 +1661,7 @@
     <string name="ps_sub_morph">Living shape that breathes</string>
     <string name="ps_sub_dial">Rotary ring, spin to scrub</string>
     <string name="ps_sub_hero">Full-bleed art, big play button</string>
+    <string name="ps_sub_custom">A player you lay out yourself</string>
     <string name="hs_classic">Classic</string>
     <string name="hs_classic_desc">One big hero, then rows</string>
     <string name="hs_spotlight_desc">Shortcuts, quick picks, shelves</string>
@@ -2813,4 +2815,45 @@
     <string name="recap_share_saved">Saved</string>
     <string name="recap_share_failed">Couldn\'t make the image. Try again.</string>
     <string name="recap_share_footer">KODA RECAP</string>
+
+    <!-- Custom player layouts -->
+    <string name="cpl_action_none">Nothing</string>
+    <string name="cpl_action_play_pause">Play and pause</string>
+    <string name="cpl_action_previous">Previous</string>
+    <string name="cpl_action_next">Next</string>
+    <string name="cpl_action_seek_back">Back 10 seconds</string>
+    <string name="cpl_action_seek_forward">Forward 10 seconds</string>
+    <string name="cpl_action_like">Like</string>
+    <string name="cpl_action_shuffle">Shuffle</string>
+    <string name="cpl_action_repeat">Repeat</string>
+    <string name="cpl_action_queue">Queue</string>
+    <string name="cpl_action_lyrics">Lyrics</string>
+    <string name="cpl_action_sleep_timer">Sleep timer</string>
+    <string name="cpl_action_radio">Start radio</string>
+    <string name="cpl_action_standby">Standby</string>
+    <string name="cpl_action_options">More options</string>
+    <string name="cpl_action_collapse">Close player</string>
+    <string name="cpl_preset_classic">Classic</string>
+    <string name="cpl_preset_hero">Hero</string>
+    <string name="cpl_preset_canvas">Canvas</string>
+    <string name="cpl_preset_editorial">Editorial</string>
+    <string name="cpl_preset_bento">Bento</string>
+    <string name="cpl_preset_minimal">Minimal</string>
+    <string name="cpl_preset_lyrics">Lyrics</string>
+    <string name="cpl_preset_blank">Blank</string>
+    <string name="cpl_block_cover">Cover</string>
+    <string name="cpl_block_title">Title</string>
+    <string name="cpl_block_scrubber">Seek bar</string>
+    <string name="cpl_block_transport">Controls</string>
+    <string name="cpl_block_button">Button</string>
+    <string name="cpl_block_lyrics">Lyrics</string>
+    <string name="cpl_block_visualizer">Visualizer</string>
+    <string name="cpl_block_up_next">Up next</string>
+    <string name="cpl_block_panel">Panel</string>
+    <string name="cpl_up_next">Up next</string>
+    <string name="cpl_nothing_next">Nothing queued after this</string>
+    <string name="cpl_close_lyrics">Close lyrics</string>
+    <string name="cpl_no_lyrics">Lyrics show here while a song plays</string>
+    <string name="cpl_sample_title">Song title</string>
+    <string name="cpl_sample_artist">Artist</string>
 </resources>

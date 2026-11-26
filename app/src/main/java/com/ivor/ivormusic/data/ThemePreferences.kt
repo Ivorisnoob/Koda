@@ -3299,5 +3299,7 @@ enum class PlayerStyle {
     /** Rotary instrument: a tick-ring dial spun to scrub */
     DIAL,
     /** Full-bleed artwork over a tonal deck with an oversized play disc */
-    HERO
+    HERO,
+    /** A layout the user built themselves (`data/playerlayout/`) */
+    CUSTOM
 }

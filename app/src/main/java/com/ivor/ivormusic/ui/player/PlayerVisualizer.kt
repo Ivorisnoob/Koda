@@ -146,6 +146,27 @@ fun PlayerVisualizerSlot(modifier: Modifier = Modifier) {
 }
 
 /**
+ * The visualizer as a block on a custom player: the user's style, bar count and
+ * sensitivity, drawn at whatever size the block is. Placing the block is the
+ * opt-in, so unlike [PlayerVisualizerSlot] it does not wait on the switch.
+ */
+@Composable
+internal fun PlayerVisualizerBlock(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val prefs = remember(context) { VisualizerPreferences(context) }
+    val style by prefs.style.collectAsState()
+    val barCount by prefs.barCount.collectAsState()
+    val sensitivity by prefs.sensitivity.collectAsState()
+    val description = stringResource(R.string.cd_visualizer)
+    VisualizerCanvas(
+        style = style,
+        barCount = barCount,
+        sensitivity = sensitivity,
+        modifier = modifier.semantics { contentDescription = description }
+    )
+}
+
+/**
  * Whether motion is wanted at all. Animator scale zero is the accessibility
  * setting; Battery Saver is the same answer for a different reason, and both
  * are read once because neither needs to land mid-frame.
