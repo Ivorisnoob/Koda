@@ -202,6 +202,14 @@ private fun PlayerLayoutEditor(
     // A new layout is named after what it started from until someone names it.
     var renamed by remember(request) { mutableStateOf(existing != null) }
     val presetNames = LayoutPreset.entries.associateWith { it.label() }
+    // A player whose pieces can be read off the real thing is captured rather
+    // than built: (the preset, whether it is the editor's starting point and so
+    // replaces the first draft without an undo step).
+    var pendingCapture by remember(request) {
+        mutableStateOf(
+            (request as? LayoutEditorRequest.New)?.preset?.takeIf { it.isCaptured }?.let { it to true }
+        )
+    }
     val coordinates = remember { arrayOfNulls<LayoutCoordinates>(2) } // [0] editor root, [1] canvas
     val dirty = existing == null || draft != initial
 
@@ -210,6 +218,16 @@ private fun PlayerLayoutEditor(
         history.record(draft)
         draft = updated
         historyVersion++
+    }
+
+    /** A new layout takes the name of what it started from until someone names it. */
+    fun nameFor(preset: LayoutPreset): String = if (renamed) {
+        draft.name
+    } else {
+        uniqueLayoutName(
+            presetNames.getValue(preset),
+            store.layouts.value.filter { it.id != draft.id }.map { it.name }
+        )
     }
 
     // The preview is the player as this phone draws it: the window, or the
@@ -301,6 +319,29 @@ private fun PlayerLayoutEditor(
     )
     val selectedBlock = draft.blocks.firstOrNull { it.id == selectedId }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+    // The real player being read for "start from", under the editor's opaque
+    // surface: never seen, never touched.
+    pendingCapture?.let { (preset, isStart) ->
+        StyleCaptureHost(
+            preset = preset,
+            viewModel = viewModel,
+            canvasSize = canvasSize,
+            safeArea = safeArea,
+            playerScheme = playerScheme,
+            ambientBackground = ambientBackground,
+            onCaptured = { blocks ->
+                pendingCapture = null
+                val captured = blocks.ifEmpty { PlayerLayoutPresets.build(preset, "").blocks }
+                val updated = draft.copy(
+                    name = nameFor(preset),
+                    background = PlayerLayoutPresets.backgroundFor(preset),
+                    blocks = captured
+                )
+                if (isStart) draft = updated else commit(updated)
+            }
+        )
+    }
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier
@@ -466,6 +507,8 @@ private fun PlayerLayoutEditor(
         }
     }
 
+    }
+
     configFor?.let { id ->
         draft.blocks.firstOrNull { it.id == id }?.let { block ->
             BlockConfigSheet(
@@ -479,16 +522,12 @@ private fun PlayerLayoutEditor(
         StartFromSheet(
             current = basePreset,
             onPick = { preset ->
-                val built = PlayerLayoutPresets.build(preset, "")
-                val name = if (renamed) {
-                    draft.name
+                if (preset.isCaptured) {
+                    pendingCapture = preset to false
                 } else {
-                    uniqueLayoutName(
-                        presetNames.getValue(preset),
-                        store.layouts.value.filter { it.id != draft.id }.map { it.name }
-                    )
+                    val built = PlayerLayoutPresets.build(preset, "")
+                    commit(draft.copy(name = nameFor(preset), background = built.background, blocks = built.blocks))
                 }
-                commit(draft.copy(name = name, background = built.background, blocks = built.blocks))
                 basePreset = preset
                 selectedId = null
                 showStartFrom = false

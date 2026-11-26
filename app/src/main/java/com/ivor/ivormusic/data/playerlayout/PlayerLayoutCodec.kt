@@ -60,6 +60,7 @@ object PlayerLayoutCodec {
         put("motion", block.motion)
         put("fade", block.fade)
         put("swipe", block.swipeToSkip)
+        put("skin", block.skin.id)
     }
 
     private fun decode(json: JSONObject): PlayerLayout? {
@@ -96,6 +97,7 @@ object PlayerLayoutCodec {
             motion = json.optBoolean("motion", defaults.motion),
             fade = json.optBoolean("fade", defaults.fade),
             swipeToSkip = json.optBoolean("swipe", defaults.swipeToSkip),
+            skin = LayoutSkin.fromId(json.optString("skin")),
         ).clampedToArea()
     }
 

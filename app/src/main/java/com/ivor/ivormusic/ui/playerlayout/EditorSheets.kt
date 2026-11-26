@@ -79,6 +79,7 @@ import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import com.ivor.ivormusic.ui.player.composeShape
 import com.ivor.ivormusic.ui.player.icon
 import com.ivor.ivormusic.ui.player.label
+import com.ivor.ivormusic.ui.player.playerStyleLabel
 import com.ivor.ivormusic.ui.player.playerStyleSubtitle
 
 /* ------------------------------------------------------------------ */
@@ -313,6 +314,22 @@ internal fun BlockConfigSheet(
                 }
                 LayoutBlockKind.LYRICS -> ConfigNote(stringResource(R.string.cpl_cfg_lyrics_note))
                 LayoutBlockKind.VISUALIZER -> ConfigNote(stringResource(R.string.cpl_cfg_visualizer_note))
+            }
+
+            // Whose look it wears: Koda's blocks, or a built-in player's own
+            // pieces. A player's look keeps its own buttons, so a Hero play
+            // disc dropped into any layout is Hero's disc.
+            if (OFFERED_SKINS.size > 1) {
+                ConfigSection(stringResource(R.string.cpl_cfg_skin)) {
+                    ChoiceChips(
+                        options = OFFERED_SKINS,
+                        selected = block.skin,
+                        label = { skin ->
+                            skin.style?.let { playerStyleLabel(it) } ?: stringResource(R.string.cpl_skin_koda)
+                        },
+                        onSelect = { onChange(block.copy(skin = it)) }
+                    )
+                }
             }
         }
     }

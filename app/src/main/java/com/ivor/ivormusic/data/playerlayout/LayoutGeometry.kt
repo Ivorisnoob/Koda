@@ -52,6 +52,24 @@ object LayoutGeometry {
     }
 
     /**
+     * A rectangle measured on a whole screen of [width] x [height] pixels,
+     * written onto [block] as fractions of the safe area. Each edge is taken
+     * on its own and kept inside the area, so a piece that runs under a bar
+     * (a cover drawn up to the top of the screen) is stored touching that edge
+     * and bleeds back out to it when drawn.
+     */
+    fun fromScreenRect(block: LayoutBlock, rect: SnapRect, width: Float, height: Float, insets: AreaInsets): LayoutBlock {
+        val areaWidth = width - insets.left - insets.right
+        val areaHeight = height - insets.top - insets.bottom
+        if (areaWidth <= 0f || areaHeight <= 0f) return block
+        val left = ((rect.left - insets.left) / areaWidth).coerceIn(0f, 1f)
+        val top = ((rect.top - insets.top) / areaHeight).coerceIn(0f, 1f)
+        val right = ((rect.right - insets.left) / areaWidth).coerceIn(0f, 1f)
+        val bottom = ((rect.bottom - insets.top) / areaHeight).coerceIn(0f, 1f)
+        return block.copy(x = left, y = top, width = right - left, height = bottom - top).clampedToArea()
+    }
+
+    /**
      * Where the playback controls begin, as a fraction of the safe area: the
      * top of the highest seek bar, control group or skip/play button in the
      * lower part of the screen. Lyrics opened from a button fill the screen

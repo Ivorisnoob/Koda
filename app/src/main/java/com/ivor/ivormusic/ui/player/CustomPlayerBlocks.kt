@@ -113,6 +113,7 @@ import com.ivor.ivormusic.data.playerlayout.LayoutBlock
 import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
 import com.ivor.ivormusic.data.playerlayout.LayoutColor
 import com.ivor.ivormusic.data.playerlayout.LayoutGeometry
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import com.ivor.ivormusic.data.playerlayout.LayoutTextAlign
 import com.ivor.ivormusic.data.playerlayout.LayoutTextSize
 import com.ivor.ivormusic.data.playerlayout.PlayerLayout
@@ -318,6 +319,23 @@ private fun LayoutBlockContent(
     ink: LayoutInk,
     motionArtwork: Boolean,
 ) {
+    // A block in a player's skin is drawn by that player's own pieces; what a
+    // skin has no piece for falls back to Koda's block in the skin's colours.
+    when (block.skin) {
+        LayoutSkin.HERO -> HeroSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        else -> GenericBlockContent(block, host, ink, motionArtwork)
+    }
+}
+
+@Composable
+private fun GenericBlockContent(
+    block: LayoutBlock,
+    host: LayoutHost,
+    ink: LayoutInk,
+    motionArtwork: Boolean,
+) {
     when (block.kind) {
         LayoutBlockKind.COVER -> CoverBlock(block, host, ink, motionArtwork)
         LayoutBlockKind.TITLE -> TitleBlock(block, host, ink)
@@ -445,6 +463,98 @@ internal fun LayoutAction.icon(): ImageVector = when (this) {
     LayoutAction.COLLAPSE -> Icons.Rounded.KeyboardArrowDown
 }
 
+/** What a button needs to know about the player to draw its action's state. */
+@Immutable
+internal class LayoutActionState(
+    val isPlaying: Boolean,
+    val buffering: Boolean,
+    /** On or off for a toggle; null for an action with no state. */
+    val checked: Boolean?,
+    val repeatOne: Boolean,
+) {
+    fun iconFor(action: LayoutAction): ImageVector = when {
+        action == LayoutAction.PLAY_PAUSE && isPlaying -> Icons.Rounded.Pause
+        action == LayoutAction.REPEAT && repeatOne -> Icons.Rounded.RepeatOne
+        else -> action.icon()
+    }
+}
+
+/** Collects only what [action] shows, so a button recomposes for its own state. */
+@Composable
+internal fun rememberLayoutActionState(action: LayoutAction, host: LayoutHost): LayoutActionState {
+    val viewModel = host.viewModel
+    return when (action) {
+        LayoutAction.PLAY_PAUSE -> {
+            val playing by viewModel.isPlaying.collectAsState()
+            val isBuffering by viewModel.isBuffering.collectAsState()
+            val playWhenReady by viewModel.playWhenReady.collectAsState()
+            LayoutActionState(playing, isBuffering && playWhenReady && !playing, null, false)
+        }
+        LayoutAction.LIKE -> {
+            val liked by viewModel.isCurrentSongLiked.collectAsState()
+            LayoutActionState(false, false, liked, false)
+        }
+        LayoutAction.SHUFFLE -> {
+            val shuffle by viewModel.shuffleModeEnabled.collectAsState()
+            LayoutActionState(false, false, shuffle, false)
+        }
+        LayoutAction.REPEAT -> {
+            val repeat by viewModel.repeatMode.collectAsState()
+            LayoutActionState(false, false, repeat != Player.REPEAT_MODE_OFF, repeat == Player.REPEAT_MODE_ONE)
+        }
+        LayoutAction.LYRICS -> LayoutActionState(false, false, host.lyricsOpen, false)
+        LayoutAction.SLEEP_TIMER -> LayoutActionState(false, false, host.sleepTimerActive, false)
+        else -> LayoutActionState(false, false, null, false)
+    }
+}
+
+/** The icon for [action] in its current state; Like bursts as it does everywhere. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun LayoutActionIcon(
+    action: LayoutAction,
+    state: LayoutActionState,
+    contentDescription: String,
+    modifier: Modifier,
+) {
+    when {
+        state.buffering -> LoadingIndicator(modifier = modifier, color = androidx.compose.material3.LocalContentColor.current)
+        action == LayoutAction.LIKE -> BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+            LikeBurstIcon(isFavorite = state.checked == true, iconSize = min(maxWidth, maxHeight))
+        }
+        else -> Icon(state.iconFor(action), contentDescription = contentDescription, modifier = modifier)
+    }
+}
+
+/**
+ * A cover's gestures in a custom layout: the follow and the swipe to skip,
+ * the double-tap seek with the block's own single-tap action, and the hold
+ * that opens the style wheel. Nothing in the editor.
+ */
+@Composable
+internal fun Modifier.layoutCoverGestures(block: LayoutBlock, host: LayoutHost): Modifier {
+    val swipe = host.swipeToSkip
+    val canSwipe = host.interactive && block.swipeToSkip && swipe != null
+    if (!host.interactive) return this
+    val seek = LocalCoverSeek.current
+    val wheel = LocalPlayerStyleWheelController.current
+    return this
+        .then(if (canSwipe) Modifier.swipeToSkipFollow(swipe!!, SwipeToSkipDefaults.ArtFollow) else Modifier)
+        .coverTaps(seek) { if (block.action != LayoutAction.NONE) host.onAction(block.action) }
+        .then(if (canSwipe) Modifier.swipeToSkip(swipe!!) else Modifier)
+        .styleWheelHold(wheel)
+}
+
+/** A title's swipe to skip in a custom layout, following the finger at text speed. */
+internal fun Modifier.layoutTitleSwipe(block: LayoutBlock, host: LayoutHost): Modifier {
+    val swipe = host.swipeToSkip
+    return if (host.interactive && block.swipeToSkip && swipe != null) {
+        this.swipeToSkipFollow(swipe).swipeToSkip(swipe)
+    } else {
+        this
+    }
+}
+
 /**
  * One button doing [action], in any look, colour and shape.
  *
@@ -465,36 +575,10 @@ internal fun LayoutActionButton(
     ink: LayoutInk,
     modifier: Modifier = Modifier,
 ) {
-    val viewModel = host.viewModel
-    var isPlaying = false
-    var buffering = false
-    var checked: Boolean? = null
-    var repeatOne = false
-    when (action) {
-        LayoutAction.PLAY_PAUSE -> {
-            val playing by viewModel.isPlaying.collectAsState()
-            val isBuffering by viewModel.isBuffering.collectAsState()
-            val playWhenReady by viewModel.playWhenReady.collectAsState()
-            isPlaying = playing
-            buffering = isBuffering && playWhenReady && !playing
-        }
-        LayoutAction.LIKE -> {
-            val liked by viewModel.isCurrentSongLiked.collectAsState()
-            checked = liked
-        }
-        LayoutAction.SHUFFLE -> {
-            val shuffle by viewModel.shuffleModeEnabled.collectAsState()
-            checked = shuffle
-        }
-        LayoutAction.REPEAT -> {
-            val repeat by viewModel.repeatMode.collectAsState()
-            checked = repeat != Player.REPEAT_MODE_OFF
-            repeatOne = repeat == Player.REPEAT_MODE_ONE
-        }
-        LayoutAction.LYRICS -> checked = host.lyricsOpen
-        LayoutAction.SLEEP_TIMER -> checked = host.sleepTimerActive
-        else -> Unit
-    }
+    val state = rememberLayoutActionState(action, host)
+    val isPlaying = state.isPlaying
+    val buffering = state.buffering
+    val checked = state.checked
 
     val roles = roleColors(color, ink)
     val scheme = MaterialTheme.colorScheme
@@ -582,11 +666,7 @@ internal fun LayoutActionButton(
                         tint = content
                     )
                     else -> Icon(
-                        imageVector = when {
-                            action == LayoutAction.PLAY_PAUSE && isPlaying -> Icons.Rounded.Pause
-                            action == LayoutAction.REPEAT && repeatOne -> Icons.Rounded.RepeatOne
-                            else -> action.icon()
-                        },
+                        imageVector = state.iconFor(action),
                         contentDescription = action.label(),
                         modifier = Modifier.size(iconSize)
                     )
@@ -605,8 +685,6 @@ private fun CoverBlock(block: LayoutBlock, host: LayoutHost, ink: LayoutInk, mot
     val song by host.viewModel.currentSong.collectAsState()
     val isPlaying by host.viewModel.isPlaying.collectAsState()
     val shape = block.shape.composeShape()
-    val swipe = host.swipeToSkip
-    val canSwipe = host.interactive && block.swipeToSkip && swipe != null
     val spins = block.motion && (block.shape == BlockShape.ROUND || block.shape.isPolygon)
 
     // Written from a frame clock and read only in the graphics layer, so a
@@ -633,19 +711,7 @@ private fun CoverBlock(block: LayoutBlock, host: LayoutHost, ink: LayoutInk, mot
                         Modifier.fillMaxSize()
                     }
                 )
-                .then(if (canSwipe) Modifier.swipeToSkipFollow(swipe!!, SwipeToSkipDefaults.ArtFollow) else Modifier)
-                .then(
-                    if (host.interactive) {
-                        Modifier
-                            .coverTaps(LocalCoverSeek.current) {
-                                if (block.action != LayoutAction.NONE) host.onAction(block.action)
-                            }
-                            .then(if (canSwipe) Modifier.swipeToSkip(swipe!!) else Modifier)
-                            .styleWheelHold(LocalPlayerStyleWheelController.current)
-                    } else {
-                        Modifier
-                    }
-                )
+                .layoutCoverGestures(block, host)
                 .graphicsLayer { if (spins) rotationZ = angle }
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -718,15 +784,10 @@ private fun TitleBlock(block: LayoutBlock, host: LayoutHost, ink: LayoutInk) {
         LayoutTextAlign.CENTER -> Alignment.CenterHorizontally
         LayoutTextAlign.END -> Alignment.End
     }
-    val swipe = host.swipeToSkip
-    val canSwipe = host.interactive && block.swipeToSkip && swipe != null
-
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .then(
-                if (canSwipe) Modifier.swipeToSkipFollow(swipe!!).swipeToSkip(swipe) else Modifier
-            ),
+            .layoutTitleSwipe(block, host),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = horizontal
     ) {

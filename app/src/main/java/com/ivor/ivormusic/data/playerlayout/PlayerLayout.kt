@@ -1,5 +1,6 @@
 package com.ivor.ivormusic.data.playerlayout
 
+import com.ivor.ivormusic.data.PlayerStyle
 import java.util.UUID
 
 /**
@@ -163,6 +164,28 @@ enum class BlockShape(val id: String) {
     }
 }
 
+/**
+ * Whose look a block wears: Koda's own blocks, or one of the built-in
+ * players' own pieces (Hero's play disc, its skip pills...). A block in a
+ * player's skin is drawn by that player's code, so it cannot drift from it.
+ */
+enum class LayoutSkin(val id: String, val style: PlayerStyle?) {
+    KODA("koda", null),
+    CLASSIC("classic", PlayerStyle.CLASSIC),
+    GESTURE("gesture", PlayerStyle.GESTURE),
+    EDITORIAL("editorial", PlayerStyle.EDITORIAL),
+    CANVAS("canvas", PlayerStyle.POSTER),
+    BENTO("bento", PlayerStyle.BENTO),
+    STICKER("sticker", PlayerStyle.STICKER),
+    MORPH("morph", PlayerStyle.MORPH),
+    DIAL("dial", PlayerStyle.DIAL),
+    HERO("hero", PlayerStyle.HERO);
+
+    companion object {
+        fun fromId(id: String?): LayoutSkin = entries.firstOrNull { it.id == id } ?: KODA
+    }
+}
+
 enum class LayoutTextAlign(val id: String) {
     START("start"),
     CENTER("center"),
@@ -219,6 +242,8 @@ data class LayoutBlock(
     val fade: Boolean = false,
     /** Swiping the cover or the title sideways changes the song. */
     val swipeToSkip: Boolean = true,
+    /** Whose look the block wears. */
+    val skin: LayoutSkin = LayoutSkin.KODA,
 ) {
     val right: Float get() = x + width
     val bottom: Float get() = y + height

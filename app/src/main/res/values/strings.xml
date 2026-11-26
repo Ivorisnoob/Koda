@@ -2929,4 +2929,6 @@
     <string name="cpl_make_own">Make your own player</string>
     <string name="cpl_make_own_sub">Start from this one and move things around</string>
     <string name="cpl_edit_layout">Edit player layout</string>
+    <string name="cpl_cfg_skin">Drawn like</string>
+    <string name="cpl_skin_koda">Koda</string>
 </resources>

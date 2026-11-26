@@ -94,6 +94,32 @@ class PlayerLayoutCodecTest {
     }
 
     @Test
+    fun aBlocksSkinIsKeptAndAnUnknownOneFallsBackToKoda() {
+        val block = LayoutBlock(
+            id = "1", kind = LayoutBlockKind.BUTTON, x = 0.1f, y = 0.1f, width = 0.2f, height = 0.1f,
+            skin = LayoutSkin.HERO
+        )
+        val layout = PlayerLayout(id = "a", name = "Mine", blocks = listOf(block))
+        assertEquals(layout, PlayerLayoutCodec.decodeOne(PlayerLayoutCodec.encodeOne(layout)))
+        val unknown = """{"id":"a","name":"M","blocks":[{"id":"1","kind":"cover","x":0,"y":0,"w":0.5,"h":0.5,"skin":"vaporwave"}]}"""
+        assertEquals(LayoutSkin.KODA, PlayerLayoutCodec.decodeOne(unknown)!!.blocks.single().skin)
+    }
+
+    @Test
+    fun aPieceMeasuredUnderTheStatusBarIsStoredTouchingTheTopEdge() {
+        val insets = AreaInsets(left = 0f, top = 100f, right = 0f, bottom = 50f)
+        val cover = LayoutBlock(id = "c", kind = LayoutBlockKind.COVER, x = 0f, y = 0f, width = 0f, height = 0f)
+        // drawn from the very top of a 1000 x 2150 screen down to 1100
+        val stored = LayoutGeometry.fromScreenRect(cover, SnapRect(0f, 0f, 1000f, 1100f), 1000f, 2150f, insets)
+        assertEquals(0f, stored.y, 0.0001f)
+        assertEquals(1000f / 2000f, stored.bottom, 0.0001f)
+        // and it is drawn back out to the top of the screen
+        val drawn = LayoutGeometry.bounds(stored, 1000f, 2150f, insets)
+        assertEquals(0f, drawn.top, 0.01f)
+        assertEquals(1100f, drawn.bottom, 0.01f)
+    }
+
+    @Test
     fun unreadableTextIsNothingRatherThanACrash() {
         assertTrue(PlayerLayoutCodec.decodeAll("not json").isEmpty())
         assertTrue(PlayerLayoutCodec.decodeAll(null).isEmpty())
