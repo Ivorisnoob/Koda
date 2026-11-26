@@ -534,8 +534,7 @@ fun NowPlayingOptionsSheet(
                                 } else {
                                     com.ivor.ivormusic.ui.playerlayout.LayoutEditorRequest.New(
                                         preset = com.ivor.ivormusic.data.playerlayout.PlayerLayoutPresets
-                                            .forStyle(playerStyle),
-                                        style = playerStyle
+                                            .forStyle(playerStyle)
                                     )
                                 }
                             )

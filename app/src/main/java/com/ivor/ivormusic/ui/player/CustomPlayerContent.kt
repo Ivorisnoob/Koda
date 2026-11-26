@@ -71,7 +71,7 @@ fun CustomPlayerSheetContent(
     val store = remember(context) { PlayerLayoutStore(context) }
     val layouts by store.layouts.collectAsState()
     val activeId by store.activeId.collectAsState()
-    val fallbackName = stringResource(R.string.cpl_preset_classic)
+    val fallbackName = stringResource(R.string.ps_style_classic)
     val fallback = remember(fallbackName) { PlayerLayoutPresets.build(LayoutPreset.CLASSIC, fallbackName) }
     val layout = PlayerLayoutStore.active(layouts, activeId) ?: fallback
 

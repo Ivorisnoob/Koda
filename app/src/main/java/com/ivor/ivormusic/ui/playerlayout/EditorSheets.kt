@@ -72,11 +72,14 @@ import com.ivor.ivormusic.data.playerlayout.LayoutBlock
 import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
 import com.ivor.ivormusic.data.playerlayout.LayoutColor
 import com.ivor.ivormusic.data.playerlayout.LayoutTextAlign
+import com.ivor.ivormusic.data.playerlayout.LayoutPreset
 import com.ivor.ivormusic.data.playerlayout.LayoutTextSize
+import com.ivor.ivormusic.data.playerlayout.PlayerLayoutPresets
 import com.ivor.ivormusic.ui.components.AdaptiveModalSheet
 import com.ivor.ivormusic.ui.player.composeShape
 import com.ivor.ivormusic.ui.player.icon
 import com.ivor.ivormusic.ui.player.label
+import com.ivor.ivormusic.ui.player.playerStyleSubtitle
 
 /* ------------------------------------------------------------------ */
 /* Names and icons                                                     */
@@ -630,6 +633,129 @@ internal fun BackgroundSheet(
         }
     }
 }
+
+/* ------------------------------------------------------------------ */
+/* Start from                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Every built-in player as a layout to start from, then the two that are not
+ * a player. Each tile is drawn from the preset's own blocks, so the picture is
+ * what lands on the screen. Picking one replaces what is on the screen, as one
+ * undo step.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun StartFromSheet(
+    current: LayoutPreset?,
+    onPick: (LayoutPreset) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val previews = remember { LayoutPreset.entries.associateWith { PlayerLayoutPresets.build(it, "") } }
+    AdaptiveModalSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.cpl_start_from_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = stringResource(R.string.cpl_start_from_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            val styled = LayoutPreset.entries.filter { it.style != null }
+            val other = LayoutPreset.entries.filter { it.style == null }
+            Text(
+                text = stringResource(R.string.cpl_start_from_styles),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            PresetGrid(styled, previews, current, onPick)
+            Text(
+                text = stringResource(R.string.cpl_start_from_other),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            PresetGrid(other, previews, current, onPick)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PresetGrid(
+    presets: List<LayoutPreset>,
+    previews: Map<LayoutPreset, com.ivor.ivormusic.data.playerlayout.PlayerLayout>,
+    current: LayoutPreset?,
+    onPick: (LayoutPreset) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    FlowRow(
+        maxItemsInEachRow = 3,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        presets.forEach { preset ->
+            val isCurrent = preset == current
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (isCurrent) scheme.secondaryContainer else scheme.surfaceContainerHigh)
+                    .clickable(role = Role.Button) { onPick(preset) }
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                LayoutWireframe(
+                    layout = previews.getValue(preset),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(0.47f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .then(
+                            if (isCurrent) Modifier.border(2.dp, scheme.primary, RoundedCornerShape(12.dp))
+                            else Modifier
+                        )
+                )
+                Text(
+                    text = preset.label(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isCurrent) scheme.onSecondaryContainer else scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = if (isCurrent) {
+                        stringResource(R.string.cpl_start_from_current)
+                    } else {
+                        preset.subtitle()
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isCurrent) scheme.primary else scheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        repeat((3 - presets.size % 3) % 3) { Spacer(Modifier.weight(1f)) }
+    }
+}
+
+@Composable
+private fun LayoutPreset.subtitle(): String = style?.let { playerStyleSubtitle(it) } ?: stringResource(
+    if (this == LayoutPreset.LYRICS) R.string.cpl_preset_lyrics_sub else R.string.cpl_preset_blank_sub
+)
 
 /* ------------------------------------------------------------------ */
 /* Dialogs                                                             */

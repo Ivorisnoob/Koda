@@ -44,11 +44,11 @@ class PlayerLayoutCodecTest {
     }
 
     @Test
-    fun everyBuiltInStyleHasAPresetToStartFrom() {
-        PlayerStyle.entries.forEach { style ->
-            val layout = PlayerLayoutPresets.build(PlayerLayoutPresets.forStyle(style), "x", style)
-            assertTrue(style.name, layout.blocks.isNotEmpty())
-        }
+    fun everyBuiltInStyleHasAPresetOfItsOwnToStartFrom() {
+        val builtIn = PlayerStyle.entries.filter { it != PlayerStyle.CUSTOM }
+        val presets = builtIn.map { PlayerLayoutPresets.forStyle(it) }
+        assertEquals(builtIn, presets.map { it.style })
+        assertEquals(builtIn.size, presets.distinct().size)
     }
 
     @Test

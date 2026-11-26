@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.AutoAwesomeMosaic
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -105,6 +106,7 @@ import com.ivor.ivormusic.ui.player.PlayerFrameKind
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.areaInsetsPx
 import com.ivor.ivormusic.ui.player.playerFrameFor
+import com.ivor.ivormusic.ui.player.playerStyleLabel
 import com.ivor.ivormusic.ui.player.rememberArtworkColorScheme
 import com.ivor.ivormusic.ui.theme.currentWindowLayout
 import com.ivor.ivormusic.ui.theme.windowDpSize
@@ -138,18 +140,10 @@ fun PlayerLayoutEditorOverlay(viewModel: PlayerViewModel) {
 /** Drag-and-drop from the tray, in the editor's own coordinates. */
 private class TrayDrag(val kind: LayoutBlockKind, val position: Offset)
 
+/** A preset is called by the player it stands for. */
 @Composable
-internal fun LayoutPreset.label(): String = stringResource(
-    when (this) {
-        LayoutPreset.CLASSIC -> R.string.cpl_preset_classic
-        LayoutPreset.HERO -> R.string.cpl_preset_hero
-        LayoutPreset.CANVAS -> R.string.cpl_preset_canvas
-        LayoutPreset.EDITORIAL -> R.string.cpl_preset_editorial
-        LayoutPreset.BENTO -> R.string.cpl_preset_bento
-        LayoutPreset.MINIMAL -> R.string.cpl_preset_minimal
-        LayoutPreset.LYRICS -> R.string.cpl_preset_lyrics
-        LayoutPreset.BLANK -> R.string.cpl_preset_blank
-    }
+internal fun LayoutPreset.label(): String = style?.let { playerStyleLabel(it) } ?: stringResource(
+    if (this == LayoutPreset.LYRICS) R.string.cpl_preset_lyrics else R.string.cpl_preset_blank
 )
 
 /** [base], or "[base] 2", "[base] 3"... whichever is not taken yet. */
@@ -187,7 +181,6 @@ private fun PlayerLayoutEditor(
         existing ?: PlayerLayoutPresets.build(
             preset = newPreset,
             name = uniqueLayoutName(newName, store.layouts.value.map { it.name }),
-            style = (request as? LayoutEditorRequest.New)?.style,
         )
     }
     var draft by remember(request) { mutableStateOf(initial) }
@@ -200,6 +193,15 @@ private fun PlayerLayoutEditor(
     var showRename by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
     var trayDrag by remember { mutableStateOf<TrayDrag?>(null) }
+    // A new layout opens on the "start from" picker, with the player it came
+    // from marked; the preview behind it is already that player.
+    var showStartFrom by remember(request) {
+        mutableStateOf((request as? LayoutEditorRequest.New)?.choose == true)
+    }
+    var basePreset by remember(request) { mutableStateOf((request as? LayoutEditorRequest.New)?.preset) }
+    // A new layout is named after what it started from until someone names it.
+    var renamed by remember(request) { mutableStateOf(existing != null) }
+    val presetNames = LayoutPreset.entries.associateWith { it.label() }
     val coordinates = remember { arrayOfNulls<LayoutCoordinates>(2) } // [0] editor root, [1] canvas
     val dirty = existing == null || draft != initial
 
@@ -407,6 +409,7 @@ private fun PlayerLayoutEditor(
                     } else {
                         BlockTray(
                             background = draft.background,
+                            onStartFrom = { showStartFrom = true },
                             onBackground = { showBackground = true },
                             onAdd = { addBlock(it, null) },
                             onDrag = { kind, tile, local, finished ->
@@ -472,6 +475,28 @@ private fun PlayerLayoutEditor(
             )
         } ?: run { configFor = null }
     }
+    if (showStartFrom) {
+        StartFromSheet(
+            current = basePreset,
+            onPick = { preset ->
+                val built = PlayerLayoutPresets.build(preset, "")
+                val name = if (renamed) {
+                    draft.name
+                } else {
+                    uniqueLayoutName(
+                        presetNames.getValue(preset),
+                        store.layouts.value.filter { it.id != draft.id }.map { it.name }
+                    )
+                }
+                commit(draft.copy(name = name, background = built.background, blocks = built.blocks))
+                basePreset = preset
+                selectedId = null
+                showStartFrom = false
+                haptics.confirm()
+            },
+            onDismiss = { showStartFrom = false }
+        )
+    }
     if (showBackground) {
         BackgroundSheet(
             selected = draft.background,
@@ -484,6 +509,7 @@ private fun PlayerLayoutEditor(
             name = draft.name,
             onRename = { name ->
                 commit(draft.copy(name = name))
+                renamed = true
                 showRename = false
             },
             onDismiss = { showRename = false }
@@ -559,6 +585,7 @@ private fun EditorTopBar(
 @Composable
 private fun BlockTray(
     background: com.ivor.ivormusic.data.playerlayout.LayoutBackground,
+    onStartFrom: () -> Unit,
     onBackground: () -> Unit,
     onAdd: (LayoutBlockKind) -> Unit,
     onDrag: (kind: LayoutBlockKind, tile: LayoutCoordinates, local: Offset, finished: Boolean) -> Unit,
@@ -568,6 +595,15 @@ private fun BlockTray(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
+        item {
+            TrayTile(
+                label = stringResource(R.string.cpl_start_from),
+                icon = Icons.Rounded.AutoAwesomeMosaic,
+                accent = true,
+                contentDescription = stringResource(R.string.cpl_start_from_title),
+                modifier = Modifier.clickable(onClick = onStartFrom)
+            )
+        }
         item {
             TrayTile(
                 label = background.label(),

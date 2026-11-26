@@ -1,6 +1,5 @@
 package com.ivor.ivormusic.ui.playerlayout
 
-import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.playerlayout.LayoutPreset
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,8 +10,11 @@ sealed interface LayoutEditorRequest {
     /** Change a saved layout. */
     data class Edit(val layoutId: String) : LayoutEditorRequest
 
-    /** Start a new layout from [preset]; [style] tunes the presets that stand for several. */
-    data class New(val preset: LayoutPreset, val style: PlayerStyle? = null) : LayoutEditorRequest
+    /**
+     * Start a new layout from [preset]. [choose] opens the "start from" picker
+     * over the editor, with [preset] marked as the one in use.
+     */
+    data class New(val preset: LayoutPreset, val choose: Boolean = true) : LayoutEditorRequest
 }
 
 /**
