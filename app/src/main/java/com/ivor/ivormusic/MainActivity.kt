@@ -1986,6 +1986,9 @@ fun MusicApp(
         // Opened from the player's menu or a lyric line in any player style,
         // and drawn the same whichever one it came from.
         com.ivor.ivormusic.ui.lyricsshare.LyricsShareOverlay(viewModel = playerViewModel)
+        // The custom player layout editor, opened from the player's menu or
+        // Settings; above both players so it can preview the one it edits.
+        com.ivor.ivormusic.ui.playerlayout.PlayerLayoutEditorOverlay(viewModel = playerViewModel)
         // A recap's story owns the window while it is open, as Standby does.
         com.ivor.ivormusic.ui.recap.RecapStoryOverlay(
             viewModel = recapViewModel,

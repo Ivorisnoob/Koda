@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.DashboardCustomize
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
@@ -177,6 +178,9 @@ fun NowPlayingOptionsSheet(
     val lyrics by viewModel.lyricsResult.collectAsState()
     // Off by default; Settings, Playback turns it on.
     val pitchControl by remember(context) { ThemePreferences(context) }.pitchControlEnabled.collectAsState()
+    // Which player this menu belongs to decides how the layout editor opens:
+    // on the layout in use, or on a new one started from this style.
+    val playerStyle by remember(context) { ThemePreferences(context) }.playerStyle.collectAsState()
     val hasShareableLyrics = (lyrics as? com.ivor.ivormusic.data.LyricsResult.Success)
         ?.lines?.any { it.text.isNotBlank() } == true
     val likedIds by viewModel.likedSongIds.collectAsState()
@@ -507,6 +511,34 @@ fun NowPlayingOptionsSheet(
                         onClick = {
                             onDismiss()
                             viewModel.openStandby()
+                        }
+                    )
+                    // The player itself, laid out by hand. From a built-in
+                    // style it starts a new layout from the closest preset.
+                    OptionRowDivider()
+                    val isCustom = playerStyle == com.ivor.ivormusic.data.PlayerStyle.CUSTOM
+                    OptionRow(
+                        icon = Icons.Rounded.DashboardCustomize,
+                        title = stringResource(if (isCustom) R.string.cpl_edit_layout else R.string.cpl_make_own),
+                        subtitle = if (isCustom) null else stringResource(R.string.cpl_make_own_sub),
+                        trailing = OptionRowTrailing.CHEVRON,
+                        onClick = {
+                            onDismiss()
+                            val store = com.ivor.ivormusic.data.playerlayout.PlayerLayoutStore(context)
+                            val active = com.ivor.ivormusic.data.playerlayout.PlayerLayoutStore.active(
+                                store.layouts.value, store.activeId.value
+                            )
+                            com.ivor.ivormusic.ui.playerlayout.PlayerLayoutEditorBus.open(
+                                if (isCustom && active != null) {
+                                    com.ivor.ivormusic.ui.playerlayout.LayoutEditorRequest.Edit(active.id)
+                                } else {
+                                    com.ivor.ivormusic.ui.playerlayout.LayoutEditorRequest.New(
+                                        preset = com.ivor.ivormusic.data.playerlayout.PlayerLayoutPresets
+                                            .forStyle(playerStyle),
+                                        style = playerStyle
+                                    )
+                                }
+                            )
                         }
                     )
                 }
