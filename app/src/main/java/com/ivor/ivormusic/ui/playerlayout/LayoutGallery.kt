@@ -96,6 +96,7 @@ import com.ivor.ivormusic.data.playerlayout.PlayerLayoutStore
 import com.ivor.ivormusic.ui.player.CustomPlayerCanvas
 import com.ivor.ivormusic.ui.player.LayoutHost
 import com.ivor.ivormusic.ui.player.LocalMotionArtwork
+import com.ivor.ivormusic.ui.player.LocalPlayerMiniature
 import com.ivor.ivormusic.ui.player.PlayerFrameKind
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.playerFrameFor
@@ -326,7 +327,10 @@ internal fun LayoutGallery(
                         ) {
                             MaterialTheme(colorScheme = playerScheme) {
                                 // A card never starts a video decoder of its own.
-                                CompositionLocalProvider(LocalMotionArtwork provides null) {
+                                CompositionLocalProvider(
+                                    LocalMotionArtwork provides null,
+                                    LocalPlayerMiniature provides true,
+                                ) {
                                     CustomPlayerCanvas(
                                         layout = layout,
                                         host = host,

@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,6 +65,7 @@ import com.ivor.ivormusic.data.playerlayout.LayoutBlock
 import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
 import com.ivor.ivormusic.ui.player.LayoutBlockPreview
 import com.ivor.ivormusic.ui.player.LayoutHost
+import com.ivor.ivormusic.ui.player.LocalPlayerMiniature
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.label
 import com.ivor.ivormusic.ui.player.rememberLayoutInk
@@ -357,7 +359,9 @@ private fun AddTile(
                             scaleY = fit
                         }
                 ) {
-                    LayoutBlockPreview(block = block, host = host, ink = ink)
+                    CompositionLocalProvider(LocalPlayerMiniature provides true) {
+                        LayoutBlockPreview(block = block, host = host, ink = ink)
+                    }
                 }
             }
         }
@@ -424,7 +428,9 @@ internal fun AddGhost(
                             scaleY = scale
                         }
                 ) {
-                    LayoutBlockPreview(block = block, host = host, ink = ink)
+                    CompositionLocalProvider(LocalPlayerMiniature provides true) {
+                        LayoutBlockPreview(block = block, host = host, ink = ink)
+                    }
                 }
             }
         }

@@ -1501,7 +1501,8 @@ internal fun ClassicCoverArt(
             .then(gestures),
         shape = coverShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shadowElevation = 12.dp
+        // No shadow under the cookie in a shrunk preview: see LocalPlayerMiniature.
+        shadowElevation = if (LocalPlayerMiniature.current) 0.dp else 12.dp
     ) {
         val artSong = song?.takeIf { it.albumArtUri != null || it.thumbnailUrl != null }
         if (artSong != null) {

@@ -45,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +74,7 @@ import com.ivor.ivormusic.data.playerlayout.LayoutTextAlign
 import com.ivor.ivormusic.data.playerlayout.LayoutTextSize
 import com.ivor.ivormusic.ui.player.LayoutBlockPreview
 import com.ivor.ivormusic.ui.player.LayoutHost
+import com.ivor.ivormusic.ui.player.LocalPlayerMiniature
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.icon
 import com.ivor.ivormusic.ui.player.playerStyleLabel
@@ -535,7 +537,9 @@ private fun StyleTile(
                             scaleY = fit
                         }
                 ) {
-                    LayoutBlockPreview(block = block, host = host, ink = ink)
+                    CompositionLocalProvider(LocalPlayerMiniature provides true) {
+                        LayoutBlockPreview(block = block, host = host, ink = ink)
+                    }
                 }
             }
             // Over the preview, so the pieces under it never take the touch.

@@ -45,6 +45,7 @@ import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -90,6 +91,7 @@ import com.ivor.ivormusic.data.playerlayout.SnapRect
 import com.ivor.ivormusic.data.playerlayout.withBlock
 import com.ivor.ivormusic.ui.player.CustomPlayerCanvas
 import com.ivor.ivormusic.ui.player.LayoutHost
+import com.ivor.ivormusic.ui.player.LocalPlayerMiniature
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.areaInsetsPx
 import com.ivor.ivormusic.util.rememberKodaHaptics
@@ -369,13 +371,15 @@ internal fun EditorCanvas(
             // The player's own scheme (the cover's, with album colours on);
             // the editing marks below keep the app's.
             MaterialTheme(colorScheme = playerScheme) {
-                CustomPlayerCanvas(
-                    layout = layout,
-                    host = host,
-                    safeArea = safeArea,
-                    ambientBackground = ambientBackground,
-                    blockModifier = blockModifier,
-                )
+                CompositionLocalProvider(LocalPlayerMiniature provides true) {
+                    CustomPlayerCanvas(
+                        layout = layout,
+                        host = host,
+                        safeArea = safeArea,
+                        ambientBackground = ambientBackground,
+                        blockModifier = blockModifier,
+                    )
+                }
             }
 
             Canvas(

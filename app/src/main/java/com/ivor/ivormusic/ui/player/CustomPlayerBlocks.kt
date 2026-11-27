@@ -74,6 +74,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -138,6 +139,16 @@ import kotlin.math.roundToInt
  * layout editor both draw through [CustomPlayerCanvas], so what the editor
  * shows is the player, not a picture of it.
  */
+
+/**
+ * True where a player is drawn shrunk as a picture of itself: the layout
+ * editor, its style and Add previews, and the gallery's cards. Pieces drop
+ * their elevation shadows there. Skia tessellates a shadow under a concave
+ * outline (Classic's paused cookie) on the render thread, and under a scaled,
+ * moving layer it stuck there past five seconds: the editor froze, twice,
+ * when a Classic cover was tapped [scar November 2026].
+ */
+internal val LocalPlayerMiniature = staticCompositionLocalOf { false }
 
 /** How far the tonal field is taken toward the surface in a dark scheme; Hero's value. */
 private const val TONAL_DARK_FIELD_DEPTH = 0.5f
