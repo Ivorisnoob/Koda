@@ -407,6 +407,15 @@ internal fun LayoutBackgroundLayer(
     }
 }
 
+/**
+ * One block drawn on its own at whatever size it is given, for the editor's
+ * style previews: the same pieces as on the screen, with no motion artwork.
+ */
+@Composable
+internal fun LayoutBlockPreview(block: LayoutBlock, host: LayoutHost, ink: LayoutInk) {
+    LayoutBlockContent(block = block, host = host, ink = ink, motionArtwork = false)
+}
+
 @Composable
 private fun LayoutBlockContent(
     block: LayoutBlock,

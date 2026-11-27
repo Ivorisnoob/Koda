@@ -253,206 +253,8 @@ internal fun AddBlockSheet(
 /* Block settings                                                      */
 /* ------------------------------------------------------------------ */
 
-/**
- * What a block does and how it looks, for the one block tapped. Every choice
- * applies at once, behind the sheet, so the preview answers while it is still
- * open; each is one undo step.
- */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun BlockConfigSheet(
-    block: LayoutBlock,
-    onChange: (LayoutBlock) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AdaptiveModalSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // The sheet scrolls: a plain column clips what is past its
-                // height with nothing logged.
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (block.kind == LayoutBlockKind.BUTTON) block.action.icon() else block.kind.icon(),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                Spacer(Modifier.size(14.dp))
-                Text(
-                    text = block.editorLabel(),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            when (block.kind) {
-                LayoutBlockKind.BUTTON -> {
-                    ConfigSection(stringResource(R.string.cpl_cfg_action)) {
-                        ActionGrid(
-                            actions = LayoutAction.forButtons,
-                            selected = block.action,
-                            onSelect = { onChange(block.copy(action = it)) }
-                        )
-                    }
-                    LookSection(block, onChange)
-                    ColorSection(block, onChange)
-                    ShapeSection(block, onChange, BlockShape.entries)
-                }
-                LayoutBlockKind.TRANSPORT -> {
-                    LookSection(block, onChange)
-                    ColorSection(block, onChange)
-                    ShapeSection(block, onChange, BlockShape.entries)
-                    // Classic's button group carries shuffle and repeat at its ends.
-                    if (block.skin == LayoutSkin.CLASSIC) {
-                        ConfigToggles {
-                            ConfigToggle(
-                                title = stringResource(R.string.cpl_cfg_transport_toggles),
-                                checked = block.showDetail,
-                                onChange = { onChange(block.copy(showDetail = it)) }
-                            )
-                        }
-                    }
-                }
-                LayoutBlockKind.COVER -> {
-                    ConfigSection(stringResource(R.string.cpl_cfg_tap)) {
-                        ActionGrid(
-                            actions = LayoutAction.forCover,
-                            selected = block.action,
-                            onSelect = { onChange(block.copy(action = it)) }
-                        )
-                    }
-                    ShapeSection(block, onChange, BlockShape.entries)
-                    ConfigToggles {
-                        ConfigToggle(
-                            title = stringResource(R.string.cpl_cfg_spin),
-                            subtitle = stringResource(R.string.cpl_cfg_spin_sub),
-                            checked = block.motion,
-                            onChange = { onChange(block.copy(motion = it)) }
-                        )
-                        ConfigToggle(
-                            title = stringResource(R.string.cpl_cfg_fade),
-                            checked = block.fade,
-                            onChange = { onChange(block.copy(fade = it)) }
-                        )
-                        ConfigToggle(
-                            title = stringResource(R.string.cpl_cfg_swipe),
-                            checked = block.swipeToSkip,
-                            onChange = { onChange(block.copy(swipeToSkip = it)) }
-                        )
-                    }
-                }
-                LayoutBlockKind.TITLE -> {
-                    ConfigSection(stringResource(R.string.cpl_cfg_size)) {
-                        ChoiceChips(
-                            options = LayoutTextSize.entries,
-                            selected = block.textSize,
-                            label = {
-                                stringResource(
-                                    when (it) {
-                                        LayoutTextSize.SMALL -> R.string.cpl_size_small
-                                        LayoutTextSize.MEDIUM -> R.string.cpl_size_medium
-                                        LayoutTextSize.LARGE -> R.string.cpl_size_large
-                                        LayoutTextSize.HUGE -> R.string.cpl_size_huge
-                                    }
-                                )
-                            },
-                            onSelect = { onChange(block.copy(textSize = it)) }
-                        )
-                    }
-                    ConfigSection(stringResource(R.string.cpl_cfg_align)) {
-                        ChoiceChips(
-                            options = LayoutTextAlign.entries,
-                            selected = block.align,
-                            label = {
-                                stringResource(
-                                    when (it) {
-                                        LayoutTextAlign.START -> R.string.cpl_align_start
-                                        LayoutTextAlign.CENTER -> R.string.cpl_align_center
-                                        LayoutTextAlign.END -> R.string.cpl_align_end
-                                    }
-                                )
-                            },
-                            onSelect = { onChange(block.copy(align = it)) }
-                        )
-                    }
-                    ConfigToggles {
-                        ConfigToggle(
-                            title = stringResource(R.string.cpl_cfg_show_artist),
-                            checked = block.showDetail,
-                            onChange = { onChange(block.copy(showDetail = it)) }
-                        )
-                        ConfigToggle(
-                            title = stringResource(R.string.cpl_cfg_swipe),
-                            checked = block.swipeToSkip,
-                            onChange = { onChange(block.copy(swipeToSkip = it)) }
-                        )
-                    }
-                }
-                LayoutBlockKind.SCRUBBER -> {
-                    ColorSection(block, onChange)
-                    ConfigToggles {
-                        ConfigToggle(
-                            title = stringResource(R.string.cpl_cfg_show_times),
-                            checked = block.showDetail,
-                            onChange = { onChange(block.copy(showDetail = it)) }
-                        )
-                        ConfigToggle(
-                            title = stringResource(R.string.cpl_cfg_wave),
-                            checked = block.motion,
-                            onChange = { onChange(block.copy(motion = it)) }
-                        )
-                    }
-                }
-                LayoutBlockKind.UP_NEXT -> {
-                    ColorSection(block, onChange)
-                    ShapeSection(
-                        block, onChange,
-                        listOf(BlockShape.SQUARE, BlockShape.ROUNDED, BlockShape.ROUND)
-                    )
-                }
-                LayoutBlockKind.PANEL -> {
-                    ColorSection(block, onChange)
-                    ShapeSection(block, onChange, BlockShape.entries)
-                }
-                LayoutBlockKind.LYRICS -> ConfigNote(stringResource(R.string.cpl_cfg_lyrics_note))
-                LayoutBlockKind.VISUALIZER -> ConfigNote(stringResource(R.string.cpl_cfg_visualizer_note))
-                LayoutBlockKind.HEADER, LayoutBlockKind.TOOLBAR, LayoutBlockKind.TIME -> Unit
-            }
-
-            // Whose look it wears: Koda's blocks, or a built-in player's own
-            // pieces. A player's look keeps its own buttons, so a Hero play
-            // disc dropped into any layout is Hero's disc.
-            if (OFFERED_SKINS.size > 1) {
-                ConfigSection(stringResource(R.string.cpl_cfg_skin)) {
-                    ChoiceChips(
-                        options = OFFERED_SKINS,
-                        selected = block.skin,
-                        label = { skin ->
-                            skin.style?.let { playerStyleLabel(it) } ?: stringResource(R.string.cpl_skin_koda)
-                        },
-                        onSelect = { onChange(block.copy(skin = it)) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConfigSection(title: String, content: @Composable () -> Unit) {
+internal fun ConfigSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = title,
@@ -464,7 +266,7 @@ private fun ConfigSection(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ConfigNote(text: String) {
+internal fun ConfigNote(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
@@ -475,7 +277,7 @@ private fun ConfigNote(text: String) {
 /** Every action as a tile with its icon, three to a row. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActionGrid(
+internal fun ActionGrid(
     actions: List<LayoutAction>,
     selected: LayoutAction,
     onSelect: (LayoutAction) -> Unit,
@@ -529,7 +331,7 @@ private fun ActionGrid(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun <T> ChoiceChips(
+internal fun <T> ChoiceChips(
     options: List<T>,
     selected: T,
     label: @Composable (T) -> String,
@@ -552,7 +354,7 @@ private fun <T> ChoiceChips(
 }
 
 @Composable
-private fun LookSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit) {
+internal fun LookSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit) {
     ConfigSection(stringResource(R.string.cpl_cfg_look)) {
         ChoiceChips(
             options = ButtonLook.entries,
@@ -574,7 +376,7 @@ private fun LookSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit) {
 
 /** Four swatches in the scheme's own colours; neutral is the ink on the ground. */
 @Composable
-private fun ColorSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit) {
+internal fun ColorSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     ConfigSection(stringResource(R.string.cpl_cfg_color)) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -610,7 +412,7 @@ private fun ColorSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ShapeSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit, shapes: List<BlockShape>) {
+internal fun ShapeSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit, shapes: List<BlockShape>) {
     val scheme = MaterialTheme.colorScheme
     ConfigSection(stringResource(R.string.cpl_cfg_shape)) {
         FlowRow(
@@ -637,7 +439,7 @@ private fun ShapeSection(block: LayoutBlock, onChange: (LayoutBlock) -> Unit, sh
 }
 
 @Composable
-private fun ConfigToggles(content: @Composable () -> Unit) {
+internal fun ConfigToggles(content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -648,7 +450,7 @@ private fun ConfigToggles(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ConfigToggle(
+internal fun ConfigToggle(
     title: String,
     checked: Boolean,
     onChange: (Boolean) -> Unit,

@@ -2882,7 +2882,7 @@
     <string name="cpl_discard">Discard</string>
     <string name="cpl_keep_editing">Keep editing</string>
     <string name="cpl_cfg_action">What it does</string>
-    <string name="cpl_cfg_tap">A tap on the cover</string>
+    <string name="cpl_cfg_tap">When tapped</string>
     <string name="cpl_cfg_look">Look</string>
     <string name="cpl_look_filled">Filled</string>
     <string name="cpl_look_tonal">Tonal</string>
@@ -2937,4 +2937,7 @@
     <string name="cpl_menu_change">Change</string>
     <string name="cpl_bring_front">Bring to front</string>
     <string name="cpl_send_back">Send to back</string>
+    <string name="cpl_close_settings">Close settings</string>
+    <string name="cpl_more_options">More options</string>
+    <string name="cpl_fewer_options">Fewer options</string>
 </resources>

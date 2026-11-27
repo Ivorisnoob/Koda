@@ -16,6 +16,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -50,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -338,11 +341,18 @@ private fun PlayerLayoutEditor(
 
     BackHandler {
         when {
+            configFor != null -> configFor = null
             selectedId != null -> selectedId = null
             dirty -> confirmDiscard = true
             else -> onClose()
         }
     }
+
+    val configBlock = configFor?.let { id -> draft.blocks.firstOrNull { it.id == id } }
+    if (configFor != null && configBlock == null) SideEffect { configFor = null }
+    // Held for the panel's exit, when the block is no longer chosen.
+    val lastConfigBlock = remember { arrayOfNulls<LayoutBlock>(1) }
+    if (configBlock != null) lastConfigBlock[0] = configBlock
 
     val playerScheme = rememberArtworkColorScheme(
         enabled = artworkColors,
@@ -410,6 +420,16 @@ private fun PlayerLayoutEditor(
                     onDone = ::save,
                 )
 
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                val toolbarRoom = TOOLBAR_HEIGHT + 20.dp + navBottom
+                val panelHeight = (maxHeight * 0.52f)
+                    .coerceAtMost((maxHeight - 160.dp).coerceAtLeast(240.dp))
+                    .coerceAtLeast(240.dp)
                 EditorCanvas(
                     layout = draft,
                     selectedId = selectedId,
@@ -419,7 +439,15 @@ private fun PlayerLayoutEditor(
                     safeArea = safeArea,
                     ambientBackground = ambientBackground,
                     playerScheme = playerScheme,
-                    onSelect = { selectedId = it },
+                    restBottom = toolbarRoom,
+                    focusId = configFor,
+                    focusBottom = panelHeight,
+                    onSelect = { id ->
+                        selectedId = id
+                        // Another block chosen by a drag, or none: the panel
+                        // shows only the block it was opened on.
+                        if (id == null || (configFor != null && id != configFor)) configFor = null
+                    },
                     onOpenConfig = { configFor = it },
                     onTapBackground = { showBackground = true },
                     onRemove = { id ->
@@ -442,51 +470,40 @@ private fun PlayerLayoutEditor(
                     },
                     onLayoutChange = { draft = it },
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                 )
 
-                EditorToolbar(
+                EditorFoot(
+                    showPanel = configBlock != null,
+                    canPlayPause = draft.canPlayPause,
+                    onFixPlay = ::addPlayButton,
                     onTemplates = { showStartFrom = true },
                     onAdd = { showAdd = true },
                     onBackground = { showBackground = true },
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .navigationBarsPadding()
-                        .padding(top = 8.dp, bottom = 12.dp)
-                )
-            }
-
-            // A screen nothing on which plays or pauses is one tap from fixed.
-            AnimatedVisibility(
-                visible = !draft.canPlayPause,
-                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
-                    scaleIn(MaterialTheme.motionScheme.fastSpatialSpec(), initialScale = 0.9f) +
-                    slideInVertically(MaterialTheme.motionScheme.fastSpatialSpec()) { it / 2 },
-                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
-                    scaleOut(MaterialTheme.motionScheme.fastSpatialSpec(), targetScale = 0.9f),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = TOOLBAR_HEIGHT + 32.dp)
-            ) {
-                MissingPlayPill(onFix = ::addPlayButton)
+                ) {
+                    lastConfigBlock[0]?.let { block ->
+                        BlockSettingsPanel(
+                            block = configBlock ?: block,
+                            background = draft.background,
+                            viewModel = viewModel,
+                            playerScheme = playerScheme,
+                            areaSize = DpSize(areaWidthDp, areaHeightDp),
+                            onChange = { commit(draft.withBlock(it)) },
+                            onClose = { configFor = null },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(panelHeight)
+                        )
+                    }
+                }
+                }
             }
         }
     }
 
     }
 
-    configFor?.let { id ->
-        draft.blocks.firstOrNull { it.id == id }?.let { block ->
-            BlockConfigSheet(
-                block = block,
-                onChange = { commit(draft.withBlock(it)) },
-                onDismiss = { configFor = null }
-            )
-        } ?: run { configFor = null }
-    }
     if (showAdd) {
         AddBlockSheet(
             onAdd = { kind ->
@@ -551,6 +568,62 @@ private fun PlayerLayoutEditor(
             },
             onDismiss = { confirmDiscard = false }
         )
+    }
+}
+
+/**
+ * The foot of the editor: at rest the toolbar, with the fix for a screen
+ * that cannot play or pause just above it; with a block's settings open, the
+ * panel, docked under the block.
+ */
+@Composable
+private fun EditorFoot(
+    showPanel: Boolean,
+    canPlayPause: Boolean,
+    onFixPlay: () -> Unit,
+    onTemplates: () -> Unit,
+    onAdd: () -> Unit,
+    onBackground: () -> Unit,
+    panel: @Composable () -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = !showPanel,
+            enter = fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()) +
+                slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 2 },
+            exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                slideOutVertically(MaterialTheme.motionScheme.fastSpatialSpec()) { it / 2 },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                AnimatedVisibility(
+                    visible = !canPlayPause,
+                    enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                        scaleIn(MaterialTheme.motionScheme.fastSpatialSpec(), initialScale = 0.9f),
+                    exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                        scaleOut(MaterialTheme.motionScheme.fastSpatialSpec(), targetScale = 0.9f),
+                ) {
+                    MissingPlayPill(onFix = onFixPlay)
+                }
+                EditorToolbar(
+                    onTemplates = onTemplates,
+                    onAdd = onAdd,
+                    onBackground = onBackground,
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .padding(top = 8.dp, bottom = 12.dp)
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = showPanel,
+            enter = slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it },
+            exit = slideOutVertically(MaterialTheme.motionScheme.fastSpatialSpec()) { it } +
+                fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            panel()
+        }
     }
 }
 

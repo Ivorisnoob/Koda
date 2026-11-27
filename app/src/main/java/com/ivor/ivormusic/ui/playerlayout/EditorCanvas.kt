@@ -2,6 +2,7 @@ package com.ivor.ivormusic.ui.playerlayout
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -53,10 +54,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -141,6 +145,14 @@ internal fun EditorCanvas(
     /** Every frame of a drag or resize; no undo step per frame. */
     onLayoutChange: (PlayerLayout) -> Unit,
     modifier: Modifier = Modifier,
+    /** Room left under the player at rest, for the toolbar floating there. */
+    restBottom: Dp = 0.dp,
+    /** The block whose settings are open, panned clear of the panel. */
+    focusId: String? = null,
+    /** How much of the bottom the settings panel covers while [focusId] is set. */
+    focusBottom: Dp = 0.dp,
+    /** The editing layer, inside the scaled player, for dropping things onto it. */
+    onCanvasPositioned: (LayoutCoordinates) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
@@ -246,7 +258,8 @@ internal fun EditorCanvas(
     }
 
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
-        val scale = minOf(maxWidth / canvasSize.width, maxHeight / canvasSize.height)
+        val restHeight = (maxHeight - restBottom).coerceAtLeast(1.dp)
+        val scale = minOf(maxWidth / canvasSize.width, restHeight / canvasSize.height)
             .coerceIn(0.05f, 1f)
         // Sizes meant for the screen, in the player's own pixels.
         val perScreenPx = 1f / scale
@@ -261,10 +274,39 @@ internal fun EditorCanvas(
         val canvasHeightPx = with(density) { canvasSize.height.toPx() }
         val areaWidth = (canvasWidthPx - insets.left - insets.right).coerceAtLeast(1f)
         val areaHeight = (canvasHeightPx - insets.top - insets.bottom).coerceAtLeast(1f)
-        // Where the scaled player's top left corner lands in this box: it is
-        // centred, and scaled about its centre.
+        // At rest the player is centred in the room above the toolbar; it is
+        // laid out centred in the whole box and scaled about its centre, then
+        // moved up by half the toolbar's room.
+        val restShift = -with(density) { restBottom.toPx() } / 2f
         val shownLeft = (constraints.maxWidth - canvasWidthPx * scale) / 2f
-        val shownTop = (constraints.maxHeight - canvasHeightPx * scale) / 2f
+        val shownTop = (constraints.maxHeight - canvasHeightPx * scale) / 2f + restShift
+
+        // With a block's settings open the player slides up just far enough
+        // for the block to sit clear of the panel, keeping its top in view.
+        // Worked out once per block, so dragging it does not move the page.
+        val boxHeight = constraints.maxHeight.toFloat()
+        val focusBottomPx = with(density) { focusBottom.toPx() }
+        val focusMargin = with(density) { 16.dp.toPx() }
+        val focusTarget = remember(focusId, scale, boxHeight, focusBottomPx, shownTop) {
+            val block = focusId?.let { id -> layout.blocks.firstOrNull { it.id == id } }
+            if (block == null) {
+                0f
+            } else {
+                val rect = LayoutGeometry.areaRect(block, areaWidth, areaHeight)
+                val top = shownTop + (insets.top + rect.top) * scale
+                val bottom = shownTop + (insets.top + rect.bottom) * scale
+                val visibleBottom = boxHeight - focusBottomPx
+                var dy = 0f
+                if (bottom + focusMargin > visibleBottom) dy = visibleBottom - focusMargin - bottom
+                if (dy < 0f && top + dy < focusMargin) dy = minOf(0f, focusMargin - top)
+                dy
+            }
+        }
+        val focusShift by animateFloatAsState(
+            targetValue = focusTarget,
+            animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+            label = "EditorFocusShift"
+        )
 
         // The gesture below is keyed on the geometry only, so everything it
         // reads that changes between gestures comes through these.
@@ -284,6 +326,7 @@ internal fun EditorCanvas(
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
+                    translationY = restShift + focusShift
                     clip = true
                     shape = RoundedCornerShape(28.dp * perScreenPx)
                 }
@@ -303,6 +346,7 @@ internal fun EditorCanvas(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
+                    .onGloballyPositioned(onCanvasPositioned)
                     .pointerInput(areaWidth, areaHeight, scale) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -379,7 +423,7 @@ internal fun EditorCanvas(
                                         liftUp(heldBlock.id)
                                         menuAt = Offset(
                                             shownLeft + down.position.x * scale,
-                                            shownTop + down.position.y * scale
+                                            shownTop + focusShift + down.position.y * scale
                                         )
                                         menuFor = heldBlock.id
                                         continue
