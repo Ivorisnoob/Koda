@@ -759,9 +759,7 @@ internal fun DialSkinBlock(
                             progress = progress,
                             duration = duration,
                             onSeekTo = { if (host.interactive) viewModel.seekTo(it) },
-                            onPlayPause = {
-                                if (host.interactive && block.action != LayoutAction.NONE) host.onAction(block.action)
-                            },
+                            onPlayPause = rememberBlockAction(block, host),
                             swipeToSkip = swipe,
                             motionEligible = motionArtwork
                         )
@@ -786,7 +784,7 @@ internal fun DialSkinBlock(
 private fun DialSkinButton(block: LayoutBlock, host: LayoutHost) {
     val action = block.action
     val state = rememberLayoutActionState(action, host)
-    val onClick = { host.onAction(action) }
+    val onClick = rememberBlockAction(block, host)
     val label = action.label()
     val scheme = MaterialTheme.colorScheme
     when (block.look) {

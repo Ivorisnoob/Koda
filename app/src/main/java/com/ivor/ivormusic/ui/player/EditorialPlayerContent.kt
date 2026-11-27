@@ -1405,7 +1405,7 @@ internal fun EditorialSkinBlock(
                             EditorialDieCutArt(
                                 currentSong = song,
                                 isPlaying = isPlaying,
-                                onTap = { if (block.action != LayoutAction.NONE) host.onAction(block.action) },
+                                onTap = rememberBlockAction(block, host),
                                 accent = accent,
                                 field = field
                             )
@@ -1440,7 +1440,7 @@ internal fun EditorialSkinBlock(
 private fun EditorialSkinButton(block: LayoutBlock, host: LayoutHost, accent: Color, field: Color) {
     val action = block.action
     val state = rememberLayoutActionState(action, host)
-    val onClick = { host.onAction(action) }
+    val onClick = rememberBlockAction(block, host)
     val label = action.label()
     when {
         block.look == ButtonLook.FILLED && action == LayoutAction.PLAY_PAUSE -> EditorialWordPill(

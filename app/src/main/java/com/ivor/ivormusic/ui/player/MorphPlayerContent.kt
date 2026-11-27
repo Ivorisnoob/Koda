@@ -842,9 +842,7 @@ internal fun MorphSkinBlock(
                             progressFraction = if (duration > 0) {
                                 (progress.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
                             } else 0f,
-                            onPlayPause = {
-                                if (host.interactive && block.action != LayoutAction.NONE) host.onAction(block.action)
-                            },
+                            onPlayPause = rememberBlockAction(block, host),
                             swipeToSkip = swipe,
                             ringColor = scheme.primary,
                             ringTrackColor = scheme.onSurfaceVariant.copy(alpha = 0.2f),
@@ -893,7 +891,7 @@ internal fun MorphSkinBlock(
             val action = block.action
             val state = rememberLayoutActionState(action, host)
             MorphUtilityButton(
-                onClick = { host.onAction(action) },
+                onClick = rememberBlockAction(block, host),
                 active = state.checked == true || block.look == ButtonLook.FILLED,
                 modifier = Modifier.fillMaxSize()
             ) {

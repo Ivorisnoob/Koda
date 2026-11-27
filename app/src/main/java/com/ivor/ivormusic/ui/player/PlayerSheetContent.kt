@@ -1676,7 +1676,7 @@ internal fun ClassicSkinBlock(
 private fun ClassicSkinButton(block: LayoutBlock, host: LayoutHost) {
     val action = block.action
     val state = rememberLayoutActionState(action, host)
-    val onClick = { host.onAction(action) }
+    val onClick = rememberBlockAction(block, host)
     val label = action.label()
     val fill = Modifier.fillMaxSize()
     val iconSize = if (action == LayoutAction.COLLAPSE) 28.dp else 24.dp

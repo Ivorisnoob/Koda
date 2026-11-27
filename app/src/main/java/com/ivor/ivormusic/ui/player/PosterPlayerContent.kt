@@ -901,7 +901,7 @@ private fun CanvasSkinCover(block: LayoutBlock, host: LayoutHost, song: Song?, p
 private fun CanvasSkinButton(block: LayoutBlock, host: LayoutHost) {
     val action = block.action
     val state = rememberLayoutActionState(action, host)
-    val onClick = { host.onAction(action) }
+    val onClick = rememberBlockAction(block, host)
     val label = action.label()
     val fill = Modifier.fillMaxSize()
     when (block.look) {

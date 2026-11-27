@@ -879,12 +879,10 @@ internal fun StickerSkinBlock(
                             currentSong = song,
                             isPlaying = isPlaying,
                             isBuffering = isBuffering && playWhenReady && !isPlaying,
-                            onPlayPause = {
-                                if (block.action != LayoutAction.NONE) host.onAction(block.action)
-                            },
+                            onPlayPause = rememberBlockAction(block, host),
                             onLike = { host.onAction(LayoutAction.LIKE) },
-                            onNext = { if (block.swipeToSkip) host.onAction(LayoutAction.NEXT) },
-                            onPrevious = { if (block.swipeToSkip) host.onAction(LayoutAction.PREVIOUS) },
+                            onNext = rememberLayoutCallback(host, LayoutAction.NEXT, enabled = block.swipeToSkip),
+                            onPrevious = rememberLayoutCallback(host, LayoutAction.PREVIOUS, enabled = block.swipeToSkip),
                             ringColor = chipColor,
                             placeholderColor = chipColor,
                             placeholderIconColor = onChip,
@@ -922,7 +920,7 @@ internal fun StickerSkinBlock(
 private fun StickerSkinButton(block: LayoutBlock, host: LayoutHost, chipColor: Color, onChip: Color) {
     val action = block.action
     val state = rememberLayoutActionState(action, host)
-    val onClick = { host.onAction(action) }
+    val onClick = rememberBlockAction(block, host)
     val label = action.label()
     val ink = MaterialTheme.colorScheme.onSurface
     when (block.look) {

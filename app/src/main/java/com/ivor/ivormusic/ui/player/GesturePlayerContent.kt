@@ -1831,7 +1831,7 @@ private fun GestureSkinCover(block: LayoutBlock, host: LayoutHost, song: Song?, 
         else queue.indexOfFirst { it.id == currentQueueItemId }.coerceIn(0, queue.lastIndex.coerceAtLeast(0))
     }
     val showLyrics = host.lyricsOpen && primary
-    val onTap: () -> Unit = { if (host.interactive && block.action != LayoutAction.NONE) host.onAction(block.action) }
+    val onTap: () -> Unit = rememberBlockAction(block, host)
     val scheme = MaterialTheme.colorScheme
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Crossfade(targetState = showLyrics, label = "GestureSkinArtLyrics") { lyrics ->
@@ -1872,7 +1872,7 @@ private fun GestureSkinCover(block: LayoutBlock, host: LayoutHost, song: Song?, 
 private fun GestureSkinButton(block: LayoutBlock, host: LayoutHost) {
     val action = block.action
     val state = rememberLayoutActionState(action, host)
-    val onClick = { host.onAction(action) }
+    val onClick = rememberBlockAction(block, host)
     val label = action.label()
     val checked = state.checked == true
     when (block.look) {

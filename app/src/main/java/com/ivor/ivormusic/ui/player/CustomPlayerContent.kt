@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,10 +138,14 @@ fun CustomPlayerSheetContent(
             LayoutAction.COLLAPSE -> onCollapse()
         }
     }
+    // Gesture detectors hold on to the callback they started with, so they
+    // get one that never changes and always runs the latest `perform`.
+    val latestPerform by rememberUpdatedState(perform)
+    val onAction: (LayoutAction) -> Unit = remember { { action -> latestPerform(action) } }
     val host = LayoutHost(
         viewModel = viewModel,
         interactive = true,
-        onAction = perform,
+        onAction = onAction,
         onArtistClick = onArtistClick,
         lyricsOpen = if (classicPanel != null) {
             classicPanel.isOpen && classicPanel.tab == ClassicTab.Lyrics

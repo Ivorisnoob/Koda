@@ -72,6 +72,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -667,6 +668,38 @@ internal fun Modifier.layoutIcon(size: Dp): Modifier =
     fillMaxSize(0.62f).sizeIn(maxWidth = size, maxHeight = size).aspectRatio(1f)
 
 /**
+ * [action] through [host] as one lambda that keeps its identity and always
+ * does what the layout says now.
+ *
+ * A gesture detector keeps the lambda it started with until its key changes,
+ * and several of the players' own pieces start one, so a lambda that captured
+ * `block.action` went on doing the old thing after the layout was edited -
+ * until the player was closed and opened again.
+ */
+@Composable
+internal fun rememberLayoutCallback(
+    host: LayoutHost,
+    action: LayoutAction,
+    enabled: Boolean = true,
+): () -> Unit {
+    val currentHost by rememberUpdatedState(host)
+    val currentAction by rememberUpdatedState(action)
+    val currentEnabled by rememberUpdatedState(enabled)
+    return remember {
+        {
+            if (currentHost.interactive && currentEnabled && currentAction != LayoutAction.NONE) {
+                currentHost.onAction(currentAction)
+            }
+        }
+    }
+}
+
+/** What a tap on [block] does, read afresh on every tap. */
+@Composable
+internal fun rememberBlockAction(block: LayoutBlock, host: LayoutHost): () -> Unit =
+    rememberLayoutCallback(host, block.action)
+
+/**
  * A cover's gestures in a custom layout: the follow and the swipe to skip,
  * the double-tap seek with the block's own single-tap action, and the hold
  * that opens the style wheel. Nothing in the editor.
@@ -680,6 +713,7 @@ internal fun Modifier.layoutCoverGestures(
     /** Off while the cover is showing the lyrics, which scroll and seek. */
     enabled: Boolean = true,
 ): Modifier {
+    val tap = rememberBlockAction(block, host)
     val swipe = host.swipeToSkip
     val canSwipe = host.interactive && block.swipeToSkip && swipe != null
     if (!host.interactive || !enabled) return this
@@ -687,7 +721,7 @@ internal fun Modifier.layoutCoverGestures(
     val wheel = LocalPlayerStyleWheelController.current
     return this
         .then(if (canSwipe && follow != null) Modifier.swipeToSkipFollow(swipe!!, follow) else Modifier)
-        .coverTaps(seek) { if (block.action != LayoutAction.NONE) host.onAction(block.action) }
+        .coverTaps(seek, tap)
         .then(if (canSwipe) Modifier.swipeToSkip(swipe!!) else Modifier)
         .styleWheelHold(wheel)
 }

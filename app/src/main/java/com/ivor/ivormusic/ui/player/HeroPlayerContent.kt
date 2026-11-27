@@ -1005,7 +1005,7 @@ internal fun HeroSkinBlock(
 private fun HeroSkinButton(block: LayoutBlock, host: LayoutHost, colors: HeroColors) {
     val action = block.action
     val state = rememberLayoutActionState(action, host)
-    val onClick = { host.onAction(action) }
+    val onClick = rememberBlockAction(block, host)
     val enabled = host.interactive
     val fill = Modifier.fillMaxSize()
     val label = action.label()
