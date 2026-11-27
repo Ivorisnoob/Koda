@@ -1,7 +1,9 @@
 package com.ivor.ivormusic.ui.playerlayout
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -123,20 +125,63 @@ import com.ivor.ivormusic.util.rememberKodaHaptics
 @Composable
 fun PlayerLayoutEditorOverlay(viewModel: PlayerViewModel) {
     val request by PlayerLayoutEditorBus.request.collectAsState()
+    val context = LocalContext.current
+    // The gallery zooms out of the player itself, so it only fades; the
+    // editor rises a little as it comes.
+    val isGallery = request is LayoutEditorRequest.Gallery
     AnimatedVisibility(
         visible = request != null,
-        enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
-            slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 10 },
-        exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
-            slideOutVertically(MaterialTheme.motionScheme.fastSpatialSpec()) { it / 10 },
+        enter = if (isGallery) {
+            fadeIn(MaterialTheme.motionScheme.fastEffectsSpec())
+        } else {
+            fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 10 }
+        },
+        exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
     ) {
         // Held for the exit, when the bus has already let go of it.
-        val opened = remember { PlayerLayoutEditorBus.request.value } ?: return@AnimatedVisibility
-        PlayerLayoutEditor(
-            request = opened,
-            viewModel = viewModel,
-            onClose = { PlayerLayoutEditorBus.close() }
-        )
+        val last = remember { arrayOfNulls<LayoutEditorRequest>(1) }
+        request?.let { last[0] = it }
+        val shown = last[0] ?: return@AnimatedVisibility
+        val fade = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+        AnimatedContent(
+            targetState = shown,
+            transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
+            label = "LayoutEditorPage"
+        ) { opened ->
+            when (opened) {
+                is LayoutEditorRequest.Gallery -> LayoutGallery(
+                    focusId = opened.focusId,
+                    viewModel = viewModel,
+                    onCustomize = { id ->
+                        PlayerLayoutEditorBus.open(LayoutEditorRequest.Edit(id, fromGallery = true))
+                    },
+                    onNew = {
+                        val style = ThemePreferences(context).playerStyle.value
+                        PlayerLayoutEditorBus.open(
+                            LayoutEditorRequest.New(
+                                preset = PlayerLayoutPresets.forStyle(style),
+                                fromGallery = true,
+                            )
+                        )
+                    },
+                    onClose = { PlayerLayoutEditorBus.close() }
+                )
+                else -> PlayerLayoutEditor(
+                    request = opened,
+                    viewModel = viewModel,
+                    onClose = { savedId ->
+                        if (opened.fromGallery) {
+                            PlayerLayoutEditorBus.open(
+                                LayoutEditorRequest.Gallery(savedId ?: (opened as? LayoutEditorRequest.Edit)?.layoutId)
+                            )
+                        } else {
+                            PlayerLayoutEditorBus.close()
+                        }
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -167,7 +212,8 @@ internal fun uniqueLayoutName(base: String, taken: Collection<String>): String {
 private fun PlayerLayoutEditor(
     request: LayoutEditorRequest,
     viewModel: PlayerViewModel,
-    onClose: () -> Unit,
+    /** Leaves the editor, with the layout it saved, or null when nothing was. */
+    onClose: (savedId: String?) -> Unit,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -247,22 +293,10 @@ private fun PlayerLayoutEditor(
         )
     }
 
-    // The preview is the player as this phone draws it: the window, or the
-    // phone-shaped stage on a wide screen. On its side the player uses its
-    // landscape layout instead, so the editor shows the upright one.
-    val window = windowDpSize()
-    val frame = playerFrameFor(currentWindowLayout())
-    val canvasSize = when (frame.kind) {
-        PlayerFrameKind.STAGE -> DpSize(frame.stageWidth, window.height)
-        PlayerFrameKind.LANDSCAPE -> DpSize(min(window.width, window.height), max(window.width, window.height))
-        PlayerFrameKind.FULL -> window
-    }
-    val systemSafeArea = WindowInsets.safeDrawing.asPaddingValues()
-    val safeArea = if (frame.kind == PlayerFrameKind.LANDSCAPE) {
-        PaddingValues(top = 32.dp, bottom = 24.dp)
-    } else {
-        systemSafeArea
-    }
+    // The preview is the player as this phone draws it.
+    val geometry = rememberPlayerCanvasGeometry()
+    val canvasSize = geometry.size
+    val safeArea = geometry.safeArea
     val insets = areaInsetsPx(safeArea, direction, density)
     val areaWidthPx = with(density) { canvasSize.width.toPx() } - insets.left - insets.right
     val areaHeightPx = with(density) { canvasSize.height.toPx() } - insets.top - insets.bottom
@@ -390,7 +424,7 @@ private fun PlayerLayoutEditor(
         store.setActive(draft.id)
         prefs.setPlayerStyle(PlayerStyle.CUSTOM)
         haptics.confirm()
-        onClose()
+        onClose(draft.id)
     }
 
     BackHandler {
@@ -399,7 +433,7 @@ private fun PlayerLayoutEditor(
             configFor != null -> configFor = null
             selectedId != null -> selectedId = null
             dirty -> confirmDiscard = true
-            else -> onClose()
+            else -> onClose(null)
         }
     }
 
@@ -464,7 +498,7 @@ private fun PlayerLayoutEditor(
                     name = draft.name,
                     canUndo = historyVersion >= 0 && history.canUndo,
                     canRedo = historyVersion >= 0 && history.canRedo,
-                    onCancel = { if (dirty) confirmDiscard = true else onClose() },
+                    onCancel = { if (dirty) confirmDiscard = true else onClose(null) },
                     onRename = { showRename = true },
                     onUndo = {
                         history.undo(draft)?.let { draft = it; historyVersion++ }
@@ -670,7 +704,7 @@ private fun PlayerLayoutEditor(
         DiscardLayoutDialog(
             onDiscard = {
                 confirmDiscard = false
-                onClose()
+                onClose(null)
             },
             onDismiss = { confirmDiscard = false }
         )

@@ -35,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -48,6 +50,9 @@ import com.ivor.ivormusic.data.playerlayout.LayoutPreset
 import com.ivor.ivormusic.data.playerlayout.PlayerLayout
 import com.ivor.ivormusic.data.playerlayout.PlayerLayoutPresets
 import com.ivor.ivormusic.data.playerlayout.PlayerLayoutStore
+import com.ivor.ivormusic.ui.playerlayout.LayoutEditorRequest
+import com.ivor.ivormusic.ui.playerlayout.PlayerLayoutEditorBus
+import com.ivor.ivormusic.util.rememberKodaHaptics
 
 /**
  * Custom Player - the layout the listener built, drawn from `PlayerLayoutStore`.
@@ -159,6 +164,16 @@ fun CustomPlayerSheetContent(
     )
     val safeArea = WindowInsets.safeDrawing.asPaddingValues()
     val ink = rememberLayoutInk(layout.background)
+    // A hold on the background, where no block takes the touch, opens the
+    // gallery of layouts the way a lock screen is held to change it.
+    val holdHaptics = rememberKodaHaptics()
+    val savedId = layout.id.takeIf { id -> layouts.any { it.id == id } }
+    val galleryHold = Modifier.pointerInput(savedId) {
+        detectTapGestures(onLongPress = {
+            holdHaptics.longPress()
+            PlayerLayoutEditorBus.open(LayoutEditorRequest.Gallery(savedId))
+        })
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (classicPanel != null) {
@@ -168,6 +183,7 @@ fun CustomPlayerSheetContent(
                     .fillMaxSize()
                     .classicPanelHeight(classicPanel)
             ) {
+                Box(Modifier.fillMaxSize().then(galleryHold))
                 CustomPlayerCanvas(
                     layout = layout,
                     host = host,
@@ -204,6 +220,7 @@ fun CustomPlayerSheetContent(
                 )
             } else {
                 Box(modifier = Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().then(galleryHold))
                     CustomPlayerCanvas(
                         layout = layout,
                         host = host,

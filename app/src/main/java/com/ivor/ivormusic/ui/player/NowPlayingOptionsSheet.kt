@@ -530,7 +530,7 @@ fun NowPlayingOptionsSheet(
                             )
                             com.ivor.ivormusic.ui.playerlayout.PlayerLayoutEditorBus.open(
                                 if (isCustom && active != null) {
-                                    com.ivor.ivormusic.ui.playerlayout.LayoutEditorRequest.Edit(active.id)
+                                    com.ivor.ivormusic.ui.playerlayout.LayoutEditorRequest.Gallery(active.id)
                                 } else {
                                     com.ivor.ivormusic.ui.playerlayout.LayoutEditorRequest.New(
                                         preset = com.ivor.ivormusic.data.playerlayout.PlayerLayoutPresets

@@ -2925,7 +2925,7 @@
     <string name="cpl_cfg_visualizer_note">The visualizer\'s style, bars and sensitivity are set under Player in Settings.</string>
     <string name="cpl_make_own">Make your own player</string>
     <string name="cpl_make_own_sub">Start from this one and move things around</string>
-    <string name="cpl_edit_layout">Edit player layout</string>
+    <string name="cpl_edit_layout">Player layouts</string>
     <string name="cpl_cfg_skin">Style</string>
     <string name="cpl_skin_koda">Koda</string>
     <string name="cpl_cancel">Cancel</string>
@@ -2945,4 +2945,14 @@
     <string name="cpl_add_buttons">Buttons</string>
     <string name="cpl_add_extras">Extras</string>
     <string name="cpl_close_add">Close</string>
+    <string name="cpl_gallery_title">Player layouts</string>
+    <string name="cpl_customize">Customize</string>
+    <string name="cpl_use">Use</string>
+    <string name="cpl_in_use">In use</string>
+    <string name="cpl_new_player">New player</string>
+    <string name="cpl_new_player_sub">Start from any player and make it yours</string>
+    <string name="cpl_more">More</string>
+    <string name="cpl_delete">Delete</string>
+    <string name="cpl_delete_title">Delete \u201c%1$s\u201d?</string>
+    <string name="cpl_delete_body">This layout will be gone for good. If it is in use, the player switches to another.</string>
 </resources>
