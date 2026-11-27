@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -199,7 +197,6 @@ internal fun AddBlockPanel(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AddGroup(
     title: String,
@@ -218,27 +215,32 @@ private fun AddGroup(
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary
         )
-        FlowRow(
-            maxItemsInEachRow = 3,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            entries.forEach { entry ->
-                val block = templateFor(entry)
-                AddTile(
-                    entry = entry,
-                    block = block,
-                    blockSize = sizeOf(block),
-                    background = background,
-                    host = host,
-                    playerScheme = playerScheme,
-                    onAdd = onAdd,
-                    onPick = onPick,
-                    modifier = Modifier.weight(1f)
-                )
+        // Plain rows of three rather than a FlowRow: a FlowRow asks each tile
+        // its intrinsic width first, and the real pieces drawn in a tile are
+        // built on BoxWithConstraints, which cannot answer - it throws.
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            entries.chunked(3).forEach { row ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    row.forEach { entry ->
+                        val block = templateFor(entry)
+                        AddTile(
+                            entry = entry,
+                            block = block,
+                            blockSize = sizeOf(block),
+                            background = background,
+                            host = host,
+                            playerScheme = playerScheme,
+                            onAdd = onAdd,
+                            onPick = onPick,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
-            repeat((3 - entries.size % 3) % 3) { Spacer(Modifier.weight(1f)) }
         }
     }
 }
