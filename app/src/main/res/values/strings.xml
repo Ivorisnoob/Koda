@@ -2940,4 +2940,9 @@
     <string name="cpl_close_settings">Close settings</string>
     <string name="cpl_more_options">More options</string>
     <string name="cpl_fewer_options">Fewer options</string>
+    <string name="cpl_add_hint">Tap to add, or hold and drag it into place</string>
+    <string name="cpl_add_essentials">Essentials</string>
+    <string name="cpl_add_buttons">Buttons</string>
+    <string name="cpl_add_extras">Extras</string>
+    <string name="cpl_close_add">Close</string>
 </resources>

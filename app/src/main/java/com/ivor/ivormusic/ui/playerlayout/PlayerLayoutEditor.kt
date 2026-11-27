@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -63,6 +64,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -76,6 +82,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.min
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.PlayerStyle
@@ -88,6 +95,7 @@ import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
 import com.ivor.ivormusic.data.playerlayout.LayoutColor
 import com.ivor.ivormusic.data.playerlayout.LayoutHistory
 import com.ivor.ivormusic.data.playerlayout.LayoutPreset
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import com.ivor.ivormusic.data.playerlayout.PlayerLayout
 import com.ivor.ivormusic.data.playerlayout.PlayerLayoutPresets
 import com.ivor.ivormusic.data.playerlayout.PlayerLayoutStore
@@ -131,6 +139,9 @@ fun PlayerLayoutEditorOverlay(viewModel: PlayerViewModel) {
         )
     }
 }
+
+/** A piece carried out of the Add gallery: where it is, and the player's scale on screen. */
+private data class AddDrag(val entry: AddEntry, val block: LayoutBlock, val position: Offset, val scale: Float)
 
 /** A preset is called by the player it stands for. */
 @Composable
@@ -190,6 +201,9 @@ private fun PlayerLayoutEditor(
     var arrivingId by remember { mutableStateOf<String?>(null) }
     var configFor by remember { mutableStateOf<String?>(null) }
     var showAdd by remember { mutableStateOf(false) }
+    var addDrag by remember { mutableStateOf<AddDrag?>(null) }
+    // [0] the editor's root, [1] the editing layer inside the scaled player.
+    val coordinates = remember { arrayOfNulls<LayoutCoordinates>(2) }
     var showBackground by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -255,80 +269,120 @@ private fun PlayerLayoutEditor(
     val areaWidthDp = with(density) { areaWidthPx.toDp() }
     val areaHeightDp = with(density) { areaHeightPx.toDp() }
 
-    /**
-     * Puts a new [kind] on the screen, centred on [at] (the middle when null),
-     * and lets it grow into place. A new button is asked what it does.
-     */
-    fun addBlock(
-        kind: LayoutBlockKind,
-        at: Offset? = null,
-        sizeOverride: DpSize? = null,
-        configure: (LayoutBlock) -> LayoutBlock = { it },
-    ) {
-        if (areaWidthPx <= 0f || areaHeightPx <= 0f) return
-        val size = sizeOverride ?: when (kind) {
-            LayoutBlockKind.COVER -> DpSize(areaWidthDp * 0.66f, areaWidthDp * 0.66f)
-            LayoutBlockKind.HEADER -> DpSize(areaWidthDp - 160.dp, 44.dp)
-            LayoutBlockKind.TOOLBAR -> DpSize(areaWidthDp - 40.dp, 72.dp)
-            LayoutBlockKind.TIME -> DpSize(areaWidthDp - 80.dp, 32.dp)
-            LayoutBlockKind.TITLE -> DpSize(areaWidthDp - 48.dp, 72.dp)
-            LayoutBlockKind.SCRUBBER -> DpSize(areaWidthDp - 40.dp, 52.dp)
-            LayoutBlockKind.TRANSPORT -> DpSize(areaWidthDp - 40.dp, 88.dp)
-            LayoutBlockKind.BUTTON -> DpSize(56.dp, 56.dp)
-            LayoutBlockKind.LYRICS -> DpSize(areaWidthDp, areaHeightDp * 0.4f)
-            LayoutBlockKind.VISUALIZER -> DpSize(areaWidthDp - 40.dp, 88.dp)
-            LayoutBlockKind.UP_NEXT -> DpSize(areaWidthDp - 40.dp, 72.dp)
-            LayoutBlockKind.PANEL -> DpSize(areaWidthDp - 32.dp, 160.dp)
-        }
-        val width = with(density) { size.width.toPx() } / areaWidthPx
-        val height = with(density) { size.height.toPx() } / areaHeightPx
-        val center = at ?: Offset(areaWidthPx / 2f, areaHeightPx / 2f)
-        val block = LayoutBlock(
+    // New pieces wear the look most of the layout already wears, so a
+    // seek bar added to a layout started from Hero is Hero's.
+    val dominantSkin = draft.blocks
+        .filter { it.kind != LayoutBlockKind.PANEL }
+        .groupingBy { it.skin }.eachCount()
+        .maxByOrNull { it.value }?.key ?: LayoutSkin.KODA
+
+    /** A new piece's size on the player at its real size. */
+    fun sizeFor(entry: AddEntry): DpSize = when (entry.kind) {
+        LayoutBlockKind.COVER -> DpSize(areaWidthDp * 0.66f, areaWidthDp * 0.66f)
+        LayoutBlockKind.HEADER -> DpSize(areaWidthDp - 160.dp, 44.dp)
+        LayoutBlockKind.TOOLBAR -> DpSize(areaWidthDp - 40.dp, 72.dp)
+        LayoutBlockKind.TIME -> DpSize(areaWidthDp - 80.dp, 32.dp)
+        LayoutBlockKind.TITLE -> DpSize(areaWidthDp - 48.dp, 72.dp)
+        LayoutBlockKind.SCRUBBER -> DpSize(areaWidthDp - 40.dp, 52.dp)
+        LayoutBlockKind.TRANSPORT -> DpSize(areaWidthDp - 40.dp, 88.dp)
+        LayoutBlockKind.BUTTON ->
+            if (entry.action == LayoutAction.PLAY_PAUSE) DpSize(72.dp, 72.dp) else DpSize(56.dp, 56.dp)
+        LayoutBlockKind.LYRICS -> DpSize(areaWidthDp, areaHeightDp * 0.4f)
+        LayoutBlockKind.VISUALIZER -> DpSize(areaWidthDp - 40.dp, 88.dp)
+        LayoutBlockKind.UP_NEXT -> DpSize(areaWidthDp - 40.dp, 72.dp)
+        LayoutBlockKind.PANEL -> DpSize(areaWidthDp - 32.dp, 160.dp)
+    }
+
+    /** The block [entry] adds, centred on [at] in the safe area's pixels (the middle when null). */
+    fun newBlock(entry: AddEntry, at: Offset?): LayoutBlock {
+        val size = sizeFor(entry)
+        val widthPx = areaWidthPx.coerceAtLeast(1f)
+        val heightPx = areaHeightPx.coerceAtLeast(1f)
+        val width = with(density) { size.width.toPx() } / widthPx
+        val height = with(density) { size.height.toPx() } / heightPx
+        val center = at ?: Offset(widthPx / 2f, heightPx / 2f)
+        val base = LayoutBlock(
             id = PlayerLayout.newId(),
-            kind = kind,
-            x = center.x / areaWidthPx - width / 2f,
-            y = center.y / areaHeightPx - height / 2f,
+            kind = entry.kind,
+            x = center.x / widthPx - width / 2f,
+            y = center.y / heightPx - height / 2f,
             width = width,
             height = height,
-        ).let {
-            when (kind) {
-                LayoutBlockKind.BUTTON, LayoutBlockKind.TRANSPORT ->
-                    it.copy(look = ButtonLook.TONAL, color = LayoutColor.PRIMARY)
-                else -> it
-            }
-        }.let(configure).clampedToArea()
-        // A panel is something to put things on, so it goes under them.
+            skin = if (entry.kind == LayoutBlockKind.PANEL) LayoutSkin.KODA else dominantSkin,
+        )
+        return when {
+            entry.kind == LayoutBlockKind.BUTTON && entry.action == LayoutAction.PLAY_PAUSE ->
+                base.copy(
+                    action = LayoutAction.PLAY_PAUSE,
+                    look = ButtonLook.FILLED,
+                    color = LayoutColor.PRIMARY,
+                    shape = BlockShape.ROUND,
+                )
+            entry.kind == LayoutBlockKind.BUTTON ->
+                base.copy(action = entry.action ?: base.action, look = ButtonLook.TONAL, color = LayoutColor.PRIMARY)
+            entry.kind == LayoutBlockKind.TRANSPORT ->
+                base.copy(look = ButtonLook.TONAL, color = LayoutColor.PRIMARY)
+            else -> base
+        }.clampedToArea()
+    }
+
+    /** Puts [entry] on the screen, centred on [at], and lets it grow into place. */
+    fun addEntry(entry: AddEntry, at: Offset? = null) {
+        if (areaWidthPx <= 0f || areaHeightPx <= 0f) return
+        val block = newBlock(entry, at)
+        // A card is something to put things on, so it goes under them.
         commit(
-            if (kind == LayoutBlockKind.PANEL) {
+            if (entry.kind == LayoutBlockKind.PANEL) {
                 draft.copy(blocks = listOf(block) + draft.blocks)
             } else {
                 draft.plusBlock(block)
             }
         )
         haptics.confirm()
+        showAdd = false
         arrivingId = block.id
         selectedId = block.id
-        // A new button is asked what it does straight away; one added for
-        // its job already knows.
-        if (kind == LayoutBlockKind.BUTTON && sizeOverride == null) {
-            configFor = block.id
-        }
     }
 
     /** The fix for a screen that cannot play or pause: a big play button low and central. */
     fun addPlayButton() {
-        addBlock(
-            kind = LayoutBlockKind.BUTTON,
-            at = Offset(areaWidthPx / 2f, areaHeightPx * 0.84f),
-            sizeOverride = DpSize(80.dp, 80.dp),
-            configure = {
-                it.copy(
-                    action = LayoutAction.PLAY_PAUSE,
-                    look = ButtonLook.FILLED,
-                    shape = BlockShape.ROUND,
-                )
-            }
+        addEntry(
+            AddEntry(LayoutBlockKind.BUTTON, LayoutAction.PLAY_PAUSE),
+            at = Offset(areaWidthPx / 2f, areaHeightPx * 0.84f)
         )
+    }
+
+    /** A piece being dragged out of the Add gallery, in the editor's own pixels. */
+    fun pick(entry: AddEntry, phase: PickPhase, tile: LayoutCoordinates, local: Offset) {
+        val root = coordinates[0]
+        val canvas = coordinates[1]
+        if (root == null || !root.isAttached || !tile.isAttached) {
+            addDrag = null
+            return
+        }
+        when (phase) {
+            PickPhase.START -> {
+                haptics.longPress()
+                // The player's scale on screen: its drawn width over its laid-out width.
+                val scale = canvas?.takeIf { it.isAttached }?.let {
+                    it.boundsInRoot().width / it.size.width.coerceAtLeast(1)
+                } ?: 1f
+                val block = newBlock(entry, null)
+                addDrag = AddDrag(entry, block, root.localPositionOf(tile, local), scale)
+            }
+            PickPhase.MOVE -> addDrag = addDrag?.copy(position = root.localPositionOf(tile, local))
+            PickPhase.DROP -> {
+                addDrag = null
+                if (canvas != null && canvas.isAttached) {
+                    val point = canvas.localPositionOf(tile, local)
+                    val inArea = Offset(point.x - insets.left, point.y - insets.top)
+                    if (inArea.x in 0f..areaWidthPx && inArea.y in 0f..areaHeightPx) {
+                        addEntry(entry, inArea)
+                    }
+                }
+            }
+            PickPhase.CANCEL -> addDrag = null
+        }
     }
 
     fun save() {
@@ -341,6 +395,7 @@ private fun PlayerLayoutEditor(
 
     BackHandler {
         when {
+            showAdd -> showAdd = false
             configFor != null -> configFor = null
             selectedId != null -> selectedId = null
             dirty -> confirmDiscard = true
@@ -399,7 +454,9 @@ private fun PlayerLayoutEditor(
     }
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coordinates[0] = it }
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -442,14 +499,19 @@ private fun PlayerLayoutEditor(
                     restBottom = toolbarRoom,
                     focusId = configFor,
                     focusBottom = panelHeight,
+                    onCanvasPositioned = { coordinates[1] = it },
                     onSelect = { id ->
                         selectedId = id
                         // Another block chosen by a drag, or none: the panel
                         // shows only the block it was opened on.
                         if (id == null || (configFor != null && id != configFor)) configFor = null
                     },
-                    onOpenConfig = { configFor = it },
-                    onTapBackground = { showBackground = true },
+                    onOpenConfig = {
+                        showAdd = false
+                        configFor = it
+                    },
+                    // With the gallery open, a tap on the player puts it away.
+                    onTapBackground = { if (showAdd) showAdd = false else showBackground = true },
                     onRemove = { id ->
                         commit(draft.minusBlock(id))
                         if (selectedId == id) selectedId = null
@@ -474,15 +536,44 @@ private fun PlayerLayoutEditor(
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                 )
 
+                // While a piece is carried out of the gallery, the gallery
+                // steps aside so the whole player can be seen.
+                val galleryAway by animateFloatAsState(
+                    targetValue = if (addDrag != null) 1f else 0f,
+                    animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                    label = "GalleryAway"
+                )
                 EditorFoot(
-                    showPanel = configBlock != null,
+                    showPanel = configBlock != null || showAdd,
                     canPlayPause = draft.canPlayPause,
                     onFixPlay = ::addPlayButton,
                     onTemplates = { showStartFrom = true },
-                    onAdd = { showAdd = true },
+                    onAdd = {
+                        configFor = null
+                        selectedId = null
+                        showAdd = true
+                    },
                     onBackground = { showBackground = true },
                 ) {
-                    lastConfigBlock[0]?.let { block ->
+                    if (showAdd) {
+                        AddBlockPanel(
+                            templateFor = { newBlock(it, null) },
+                            sizeOf = { DpSize(areaWidthDp * it.width, areaHeightDp * it.height) },
+                            background = draft.background,
+                            viewModel = viewModel,
+                            playerScheme = playerScheme,
+                            onAdd = { addEntry(it) },
+                            onPick = ::pick,
+                            onClose = { showAdd = false },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(panelHeight)
+                                .graphicsLayer {
+                                    alpha = 1f - galleryAway
+                                    translationY = size.height * 0.35f * galleryAway
+                                }
+                        )
+                    } else lastConfigBlock[0]?.let { block ->
                         BlockSettingsPanel(
                             block = configBlock ?: block,
                             background = draft.background,
@@ -499,20 +590,35 @@ private fun PlayerLayoutEditor(
                 }
                 }
             }
+
+            addDrag?.let { drag ->
+                val size = DpSize(areaWidthDp * drag.block.width, areaHeightDp * drag.block.height)
+                val half = with(density) { Offset((size.width * drag.scale).toPx() / 2f, (size.height * drag.scale).toPx() / 2f) }
+                Box(
+                    modifier = Modifier
+                        .zIndex(2f)
+                        .offset {
+                            IntOffset(
+                                (drag.position.x - half.x).roundToInt(),
+                                (drag.position.y - half.y).roundToInt()
+                            )
+                        }
+                ) {
+                    AddGhost(
+                        block = drag.block,
+                        blockSize = size,
+                        scale = drag.scale,
+                        background = draft.background,
+                        viewModel = viewModel,
+                        playerScheme = playerScheme,
+                    )
+                }
+            }
         }
     }
 
     }
 
-    if (showAdd) {
-        AddBlockSheet(
-            onAdd = { kind ->
-                showAdd = false
-                addBlock(kind)
-            },
-            onDismiss = { showAdd = false }
-        )
-    }
     if (showStartFrom) {
         StartFromSheet(
             current = basePreset,
