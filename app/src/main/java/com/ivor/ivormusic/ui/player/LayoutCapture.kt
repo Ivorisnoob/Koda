@@ -5,6 +5,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import com.ivor.ivormusic.data.playerlayout.AreaInsets
 import com.ivor.ivormusic.data.playerlayout.LayoutBlock
 import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
@@ -67,11 +68,22 @@ internal val LocalLayoutCapture = staticCompositionLocalOf<LayoutCapture?> { nul
  * Tags a piece of a built-in player as a block for "start from". [order] is
  * its place in the stack (lower draws first); [template] is the block it
  * becomes, its position filled in from where the piece landed.
+ *
+ * What is read is the slot the piece was given, not what it reports back:
+ * an icon button drawn 44dp across reports its 48dp touch target, which
+ * spills past its slot, and reading that made every such button 4dp bigger
+ * in the layout than in the player. The pass-through layout below answers
+ * with the size its constraints allowed.
  */
 @Composable
 internal fun Modifier.captureAs(key: String, order: Int, template: () -> LayoutBlock): Modifier {
     val capture = LocalLayoutCapture.current ?: return this
-    return this.onGloballyPositioned { capture.report(key, order, template(), it) }
+    return this
+        .onGloballyPositioned { capture.report(key, order, template(), it) }
+        .layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        }
 }
 
 /** A capture template: a block with no position yet, in [skin]. */

@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
@@ -46,6 +48,9 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
@@ -57,7 +62,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -84,10 +91,12 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -117,6 +126,7 @@ import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import com.ivor.ivormusic.data.playerlayout.LayoutTextAlign
 import com.ivor.ivormusic.data.playerlayout.LayoutTextSize
 import com.ivor.ivormusic.data.playerlayout.PlayerLayout
+import com.ivor.ivormusic.data.playerlayout.SnapRect
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import com.ivor.ivormusic.ui.components.SongArtwork
 import com.ivor.ivormusic.ui.theme.MontserratFamily
@@ -153,6 +163,11 @@ internal fun rememberLayoutInk(background: LayoutBackground): LayoutInk {
         }
         LayoutBackground.AMBIENT -> LayoutInk(scheme.background, scheme.onBackground)
         LayoutBackground.SOLID, LayoutBackground.COVER -> LayoutInk(scheme.surface, scheme.onSurface)
+        LayoutBackground.CONTAINER -> LayoutInk(scheme.primaryContainer, scheme.onPrimaryContainer)
+        LayoutBackground.BOARD, LayoutBackground.SPLIT ->
+            LayoutInk(scheme.surfaceContainerLowest, scheme.onSurface)
+        // Canvas is white type over a dark scrim, whatever the theme.
+        LayoutBackground.CANVAS -> LayoutInk(CanvasScrim, CanvasGlyph)
     }
 }
 
@@ -170,7 +185,34 @@ internal class LayoutHost(
     val lyricsOpen: Boolean,
     val sleepTimerActive: Boolean,
     val swipeToSkip: SwipeToSkipState?,
+    /** Which way the last skip went, for covers that slide the next one in. */
+    val skipDirection: Int = 1,
+    /** Classic's rising panel, when the layout carries Classic's tab bar. */
+    val classicPanel: ClassicPanelState? = null,
 )
+
+/** Where a block sits on the whole screen, for pieces drawn against the screen (Canvas's scrim). */
+@Immutable
+internal class BlockFrame(val rect: SnapRect, val screenWidth: Float, val screenHeight: Float)
+
+internal val LocalBlockFrame = compositionLocalOf<BlockFrame?> { null }
+
+/**
+ * Lays a piece out over the whole screen from inside a block, for a block
+ * whose player draws that piece full screen (Canvas's lyrics). It still draws
+ * where the block sits in the stack, so blocks above it stay above it.
+ */
+internal fun Modifier.screenSized(frame: BlockFrame): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(
+        Constraints.fixed(
+            frame.screenWidth.roundToInt().coerceAtLeast(0),
+            frame.screenHeight.roundToInt().coerceAtLeast(0)
+        )
+    )
+    layout(constraints.maxWidth, constraints.maxHeight) {
+        placeable.place(-frame.rect.left.roundToInt(), -frame.rect.top.roundToInt())
+    }
+}
 
 /** The background, then every block where it was put. */
 @Composable
@@ -180,6 +222,8 @@ internal fun CustomPlayerCanvas(
     safeArea: PaddingValues,
     ambientBackground: Boolean,
     modifier: Modifier = Modifier,
+    /** Applied to the blocks only, over a background that stays put. */
+    blocksModifier: Modifier = Modifier,
 ) {
     val song by host.viewModel.currentSong.collectAsState()
     val ink = rememberLayoutInk(layout.background)
@@ -191,8 +235,10 @@ internal fun CustomPlayerCanvas(
             song = song,
             ambientEnabled = ambientBackground,
             ink = ink,
+            layout = layout,
+            safeArea = safeArea,
         )
-        LayoutBlocks(blocks = layout.blocks, safeArea = safeArea) { block ->
+        LayoutBlocks(blocks = layout.blocks, safeArea = safeArea, modifier = blocksModifier) { block ->
             LayoutBlockContent(
                 block = block,
                 host = host,
@@ -216,15 +262,27 @@ internal fun LayoutBlocks(
     content: @Composable (LayoutBlock) -> Unit,
 ) {
     val direction = LocalLayoutDirection.current
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    val screenWidth = constraints.maxWidth.toFloat()
+    val screenHeight = constraints.maxHeight.toFloat()
+    val frameInsets = areaInsetsPx(safeArea, direction, density)
     Layout(
         content = {
             blocks.forEach { block ->
                 key(block.id) {
-                    Box(modifier = Modifier.layoutId(block.id)) { content(block) }
+                    val frame = BlockFrame(
+                        LayoutGeometry.bounds(block, screenWidth, screenHeight, frameInsets),
+                        screenWidth,
+                        screenHeight
+                    )
+                    Box(modifier = Modifier.layoutId(block.id)) {
+                        CompositionLocalProvider(LocalBlockFrame provides frame) { content(block) }
+                    }
                 }
             }
         },
-        modifier = modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize()
     ) { measurables, constraints ->
         val width = constraints.maxWidth
         val height = constraints.maxHeight
@@ -247,6 +305,7 @@ internal fun LayoutBlocks(
             }
         }
     }
+    }
 }
 
 internal fun areaInsetsPx(safeArea: PaddingValues, direction: LayoutDirection, density: Density) =
@@ -266,9 +325,32 @@ internal fun LayoutBackgroundLayer(
     ambientEnabled: Boolean,
     ink: LayoutInk,
     modifier: Modifier = Modifier,
+    layout: PlayerLayout? = null,
+    safeArea: PaddingValues = PaddingValues(),
 ) {
     val scheme = MaterialTheme.colorScheme
     when (background) {
+        LayoutBackground.CONTAINER -> Box(modifier.fillMaxSize().background(scheme.primaryContainer))
+        LayoutBackground.BOARD -> Box(modifier.fillMaxSize().background(scheme.surfaceContainerLowest))
+        // Sticker's board: two flat tones meeting on a hard edge, no gradient.
+        LayoutBackground.SPLIT -> Column(modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxWidth().weight(0.45f).background(scheme.surfaceContainerLow))
+            Box(Modifier.fillMaxWidth().weight(0.55f).background(scheme.surfaceContainerLowest))
+        }
+        // Canvas's field, joined to the foot of the first cover so the seam
+        // is continuous by construction, under Canvas's scrim.
+        LayoutBackground.CANVAS -> BoxWithConstraints(
+            modifier.fillMaxSize().background(scheme.surfaceContainerLowest)
+        ) {
+            val width = constraints.maxWidth.toFloat()
+            val height = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+            val insets = areaInsetsPx(safeArea, LocalLayoutDirection.current, LocalDensity.current)
+            val joinAt = layout?.blocks?.firstOrNull { it.kind == LayoutBlockKind.COVER }
+                ?.let { LayoutGeometry.bounds(it, width, height, insets).bottom / height }
+                ?: CANVAS_ART_FRACTION
+            CanvasField(song = song, joinAt = joinAt, scrim = CanvasScrim, modifier = Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(canvasScrimBrush()))
+        }
         LayoutBackground.AMBIENT -> Box(modifier.fillMaxSize().background(ink.field)) {
             ChromaticMistBackground(
                 // Not highResThumbnailUrl alone: it is null for every song on
@@ -325,7 +407,31 @@ private fun LayoutBlockContent(
         LayoutSkin.HERO -> HeroSkinBlock(block, host, motionArtwork) { skinInk ->
             GenericBlockContent(block, host, skinInk, motionArtwork)
         }
-        else -> GenericBlockContent(block, host, ink, motionArtwork)
+        LayoutSkin.EDITORIAL -> EditorialSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        LayoutSkin.CANVAS -> CanvasSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        LayoutSkin.CLASSIC -> ClassicSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        LayoutSkin.GESTURE -> GestureSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        LayoutSkin.BENTO -> BentoSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        LayoutSkin.STICKER -> StickerSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        LayoutSkin.MORPH -> MorphSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        LayoutSkin.DIAL -> DialSkinBlock(block, host, motionArtwork) { skinInk ->
+            GenericBlockContent(block, host, skinInk, motionArtwork)
+        }
+        LayoutSkin.KODA -> GenericBlockContent(block, host, ink, motionArtwork)
     }
 }
 
@@ -354,6 +460,9 @@ private fun GenericBlockContent(
         LayoutBlockKind.VISUALIZER -> PlayerVisualizerBlock(Modifier.fillMaxSize())
         LayoutBlockKind.UP_NEXT -> UpNextBlock(block, host, ink)
         LayoutBlockKind.PANEL -> PanelBlock(block)
+        LayoutBlockKind.HEADER -> HeaderBlock(block, host, ink)
+        LayoutBlockKind.TOOLBAR -> ToolbarBlock(host)
+        LayoutBlockKind.TIME -> TimeBlock(host, ink)
     }
 }
 
@@ -440,6 +549,7 @@ internal fun LayoutAction.label(): String = stringResource(
         LayoutAction.STANDBY -> R.string.cpl_action_standby
         LayoutAction.OPTIONS -> R.string.cpl_action_options
         LayoutAction.COLLAPSE -> R.string.cpl_action_collapse
+        LayoutAction.DOWNLOAD -> R.string.cpl_action_download
     }
 )
 
@@ -461,6 +571,7 @@ internal fun LayoutAction.icon(): ImageVector = when (this) {
     LayoutAction.STANDBY -> Icons.Rounded.Nightlight
     LayoutAction.OPTIONS -> Icons.Rounded.MoreVert
     LayoutAction.COLLAPSE -> Icons.Rounded.KeyboardArrowDown
+    LayoutAction.DOWNLOAD -> Icons.Rounded.Download
 }
 
 /** What a button needs to know about the player to draw its action's state. */
@@ -471,10 +582,20 @@ internal class LayoutActionState(
     /** On or off for a toggle; null for an action with no state. */
     val checked: Boolean?,
     val repeatOne: Boolean,
+    /** A download in progress, or a file that is already on the device. */
+    val downloading: Boolean = false,
+    val localFile: Boolean = false,
 ) {
-    fun iconFor(action: LayoutAction): ImageVector = when {
+    fun iconFor(action: LayoutAction, glyphs: ActionGlyphs = ActionGlyphs.ROUNDED): ImageVector {
+        if (glyphs == ActionGlyphs.FILLED) filledGlyph(action, isPlaying, repeatOne)?.let { return it }
+        return roundedIconFor(action)
+    }
+
+    private fun roundedIconFor(action: LayoutAction): ImageVector = when {
         action == LayoutAction.PLAY_PAUSE && isPlaying -> Icons.Rounded.Pause
         action == LayoutAction.REPEAT && repeatOne -> Icons.Rounded.RepeatOne
+        action == LayoutAction.DOWNLOAD && localFile -> Icons.Rounded.Smartphone
+        action == LayoutAction.DOWNLOAD && checked == true -> Icons.Rounded.CheckCircle
         else -> action.icon()
     }
 }
@@ -502,6 +623,16 @@ internal fun rememberLayoutActionState(action: LayoutAction, host: LayoutHost): 
             val repeat by viewModel.repeatMode.collectAsState()
             LayoutActionState(false, false, repeat != Player.REPEAT_MODE_OFF, repeat == Player.REPEAT_MODE_ONE)
         }
+        LayoutAction.DOWNLOAD -> {
+            val song by viewModel.currentSong.collectAsState()
+            val downloadingIds by viewModel.downloadingIds.collectAsState()
+            val downloadedSongs by viewModel.downloadedSongs.collectAsState()
+            val current = song
+            val local = current != null && viewModel.isLocalOriginal(current)
+            val downloading = current != null && current.id in downloadingIds
+            val downloaded = current != null && downloadedSongs.any { it.id == current.id }
+            LayoutActionState(false, false, downloaded || downloading || local, false, downloading, local)
+        }
         LayoutAction.LYRICS -> LayoutActionState(false, false, host.lyricsOpen, false)
         LayoutAction.SLEEP_TIMER -> LayoutActionState(false, false, host.sleepTimerActive, false)
         else -> LayoutActionState(false, false, null, false)
@@ -516,15 +647,24 @@ internal fun LayoutActionIcon(
     state: LayoutActionState,
     contentDescription: String,
     modifier: Modifier,
+    glyphs: ActionGlyphs = ActionGlyphs.ROUNDED,
 ) {
     when {
         state.buffering -> LoadingIndicator(modifier = modifier, color = androidx.compose.material3.LocalContentColor.current)
+        state.downloading -> androidx.compose.material3.CircularWavyProgressIndicator(
+            modifier = modifier,
+            color = androidx.compose.material3.LocalContentColor.current
+        )
         action == LayoutAction.LIKE -> BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
             LikeBurstIcon(isFavorite = state.checked == true, iconSize = min(maxWidth, maxHeight))
         }
-        else -> Icon(state.iconFor(action), contentDescription = contentDescription, modifier = modifier)
+        else -> Icon(state.iconFor(action, glyphs), contentDescription = contentDescription, modifier = modifier)
     }
 }
+
+/** An icon at a player's own size, shrinking with a block made smaller than the player drew it. */
+internal fun Modifier.layoutIcon(size: Dp): Modifier =
+    fillMaxSize(0.62f).sizeIn(maxWidth = size, maxHeight = size).aspectRatio(1f)
 
 /**
  * A cover's gestures in a custom layout: the follow and the swipe to skip,
@@ -532,27 +672,105 @@ internal fun LayoutActionIcon(
  * that opens the style wheel. Nothing in the editor.
  */
 @Composable
-internal fun Modifier.layoutCoverGestures(block: LayoutBlock, host: LayoutHost): Modifier {
+internal fun Modifier.layoutCoverGestures(
+    block: LayoutBlock,
+    host: LayoutHost,
+    /** How far the cover follows the finger; null for a cover that moves itself. */
+    follow: Float? = SwipeToSkipDefaults.ArtFollow,
+    /** Off while the cover is showing the lyrics, which scroll and seek. */
+    enabled: Boolean = true,
+): Modifier {
     val swipe = host.swipeToSkip
     val canSwipe = host.interactive && block.swipeToSkip && swipe != null
-    if (!host.interactive) return this
+    if (!host.interactive || !enabled) return this
     val seek = LocalCoverSeek.current
     val wheel = LocalPlayerStyleWheelController.current
     return this
-        .then(if (canSwipe) Modifier.swipeToSkipFollow(swipe!!, SwipeToSkipDefaults.ArtFollow) else Modifier)
+        .then(if (canSwipe && follow != null) Modifier.swipeToSkipFollow(swipe!!, follow) else Modifier)
         .coverTaps(seek) { if (block.action != LayoutAction.NONE) host.onAction(block.action) }
         .then(if (canSwipe) Modifier.swipeToSkip(swipe!!) else Modifier)
         .styleWheelHold(wheel)
 }
 
 /** A title's swipe to skip in a custom layout, following the finger at text speed. */
-internal fun Modifier.layoutTitleSwipe(block: LayoutBlock, host: LayoutHost): Modifier {
+internal fun Modifier.layoutTitleSwipe(
+    block: LayoutBlock,
+    host: LayoutHost,
+    factor: Float = SwipeToSkipDefaults.TextFollow,
+): Modifier {
     val swipe = host.swipeToSkip
     return if (host.interactive && block.swipeToSkip && swipe != null) {
-        this.swipeToSkipFollow(swipe).swipeToSkip(swipe)
+        this.swipeToSkipFollow(swipe, factor).swipeToSkip(swipe)
     } else {
         this
     }
+}
+
+/**
+ * A player's own title in its block: drawn at its natural height with its foot
+ * on the block's foot, the way every player stacks its title above the
+ * controls. A title that wraps to more lines than it had when the layout was
+ * made grows up past the block's top rather than losing its artist line.
+ */
+@Composable
+internal fun SkinTitleFrame(
+    block: LayoutBlock,
+    host: LayoutHost,
+    factor: Float = SwipeToSkipDefaults.TextFollow,
+    content: @Composable (Modifier) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .layoutTitleSwipe(block, host, factor)
+    ) {
+        content(
+            Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .wrapContentHeight(Alignment.Bottom, unbounded = true)
+        )
+    }
+}
+
+/**
+ * Whether a cover in this skin turns into the lyrics in place, as its player
+ * does. Koda's own blocks open them over the screen instead, and Classic
+ * keeps them in its rising panel.
+ */
+internal val LayoutSkin.lyricsInCover: Boolean
+    get() = this != LayoutSkin.KODA && this != LayoutSkin.CLASSIC
+
+/** Whether [layout]'s first cover shows the lyrics itself when they are opened. */
+internal fun PlayerLayout.lyricsInCover(): Boolean =
+    blocks.firstOrNull { it.kind == LayoutBlockKind.COVER }?.skin?.lyricsInCover == true
+
+/** The lyrics a cover shows in place of its art, in its player's colours. */
+@Composable
+internal fun CoverLyrics(
+    host: LayoutHost,
+    primary: Color,
+    ink: Color,
+    inkVariant: Color,
+    modifier: Modifier = Modifier,
+    background: Color = MaterialTheme.colorScheme.background,
+) {
+    val viewModel = host.viewModel
+    val lyricsResult by viewModel.lyricsResult.collectAsState()
+    val progress by viewModel.progress.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    SyncedLyricsView(
+        lyricsResult = lyricsResult,
+        currentPositionMs = progress,
+        isPlaying = isPlaying,
+        onSeekTo = { viewModel.seekTo(it) },
+        modifier = modifier,
+        primaryColor = primary,
+        onSurfaceColor = ink,
+        onSurfaceVariantColor = inkVariant,
+        interactive = host.interactive,
+        backgroundColor = background
+    )
 }
 
 /**
@@ -842,12 +1060,49 @@ private fun TitleBlock(block: LayoutBlock, host: LayoutHost, ink: LayoutInk) {
 
 @Composable
 private fun ScrubberBlock(block: LayoutBlock, host: LayoutHost, ink: LayoutInk) {
+    val roles = roleColors(block.color, ink)
+    val lineColor = if (block.color == LayoutColor.NEUTRAL) ink.ink else roles.role
+    LayoutScrubber(
+        host = host,
+        color = lineColor,
+        trackColor = lineColor.copy(alpha = 0.22f),
+        timeColor = ink.ink.copy(alpha = 0.75f),
+        wavesOnlyWhilePlaying = block.motion,
+        flat = !block.motion,
+        showTimes = block.showDetail,
+    )
+}
+
+/**
+ * The seek bar every style draws: the smooth wavy scrubber under a clear
+ * Slider that owns the drag, through the scrub return point, with the times
+ * beneath. Each player's skin passes its own measurements, so a seek bar in
+ * Classic's skin is Classic's seven-dot stroke in its own colours.
+ */
+@Composable
+internal fun LayoutScrubber(
+    host: LayoutHost,
+    color: Color,
+    trackColor: Color,
+    timeColor: Color,
+    modifier: Modifier = Modifier.fillMaxSize(),
+    stroke: Dp = 4.dp,
+    trackHeight: Dp = 14.dp,
+    /** The wave settles flat on pause; false waves whenever it is drawn. */
+    wavesOnlyWhilePlaying: Boolean = true,
+    /** No wave at all. */
+    flat: Boolean = false,
+    showTimes: Boolean = true,
+    timeStyle: TextStyle = MaterialTheme.typography.labelMedium,
+    timeWeight: FontWeight? = null,
+    timesPadding: Dp = 0.dp,
+    topPadding: Dp = 0.dp,
+    verticalArrangement: Arrangement.Vertical = Arrangement.Center,
+) {
     val viewModel = host.viewModel
     val progress by viewModel.progress.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-    val roles = roleColors(block.color, ink)
-    val lineColor = if (block.color == LayoutColor.NEUTRAL) ink.ink else roles.role
 
     var scrubPosition by remember { mutableStateOf<Float?>(null) }
     val displayedProgress = scrubPosition?.toLong() ?: progress
@@ -861,24 +1116,27 @@ private fun ScrubberBlock(block: LayoutBlock, host: LayoutHost, ink: LayoutInk) 
         scrubPositionMs = scrubPosition
     )
     val lineStroke = Stroke(
-        width = with(LocalDensity.current) { 4.dp.toPx() },
+        width = with(LocalDensity.current) { stroke.toPx() },
         cap = StrokeCap.Round
     )
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(contentAlignment = Alignment.Center) {
+    Column(modifier = modifier, verticalArrangement = verticalArrangement) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(top = topPadding)) {
             ExpressiveScrubber(
                 progress = { smoothProgress.value },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(scrubberTrackHeight(14.dp)),
-                color = lineColor,
-                trackColor = lineColor.copy(alpha = 0.22f),
+                    .height(scrubberTrackHeight(trackHeight)),
+                color = color,
+                trackColor = trackColor,
                 stroke = lineStroke,
                 trackStroke = lineStroke,
-                amplitude = { if (block.motion && isPlaying) 1f else 0f }
+                amplitude = {
+                    when {
+                        flat -> 0f
+                        wavesOnlyWhilePlaying -> if (isPlaying) 1f else 0f
+                        else -> 1f
+                    }
+                }
             )
             Slider(
                 interactionSource = LocalPlayerScrubInteraction.current,
@@ -909,24 +1167,85 @@ private fun ScrubberBlock(block: LayoutBlock, host: LayoutHost, ink: LayoutInk) 
                 modifier = Modifier.fillMaxWidth()
             )
         }
-        if (block.showDetail) {
+        if (showTimes) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = timesPadding),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = formatEditorialTime(displayedProgress),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = ink.ink.copy(alpha = 0.75f)
+                    style = timeStyle,
+                    fontWeight = timeWeight,
+                    color = timeColor
                 )
                 Text(
                     text = formatEditorialTime(duration),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = ink.ink.copy(alpha = 0.75f)
+                    style = timeStyle,
+                    fontWeight = timeWeight,
+                    color = timeColor
                 )
             }
         }
     }
+}
+
+/** "Now playing" over the album, Classic's header in the layout's ink. */
+@Composable
+private fun HeaderBlock(block: LayoutBlock, host: LayoutHost, ink: LayoutInk) {
+    val song by host.viewModel.currentSong.collectAsState()
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = stringResource(R.string.ps_now_playing).uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.18.em,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1
+        )
+        val album = song?.album?.takeIf { it.isNotBlank() }
+        if (album != null && block.showDetail) {
+            Text(
+                text = album,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = ink.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/** The time as text, "1:23  /  3:45". */
+@Composable
+private fun TimeBlock(host: LayoutHost, ink: LayoutInk) {
+    val progress by host.viewModel.progress.collectAsState()
+    val duration by host.viewModel.duration.collectAsState()
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text = "${formatEditorialTime(progress)}  /  ${formatEditorialTime(duration)}",
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                letterSpacing = 2.sp
+            ),
+            color = ink.ink,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
+    }
+}
+
+/** A floating toolbar of actions with Like as its button: Gesture's, which reads in any layout. */
+@Composable
+private fun ToolbarBlock(host: LayoutHost) {
+    GestureToolbarBlock(host)
 }
 
 /** Previous, play and next; play takes the block's look and the skips a quieter one. */

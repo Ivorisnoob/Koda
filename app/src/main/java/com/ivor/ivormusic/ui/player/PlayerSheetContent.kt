@@ -84,6 +84,8 @@ import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -139,7 +141,14 @@ import com.ivor.ivormusic.ui.components.rememberFocusedQueueListState
 import com.ivor.ivormusic.ui.components.rememberQueueRemoval
 import com.ivor.ivormusic.ui.components.rememberQueueReorderState
 import com.ivor.ivormusic.ui.theme.MontserratFamily
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import com.ivor.ivormusic.data.playerlayout.BlockShape
+import com.ivor.ivormusic.data.playerlayout.ButtonLook
+import com.ivor.ivormusic.data.playerlayout.LayoutAction
+import com.ivor.ivormusic.data.playerlayout.LayoutBlock
+import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import kotlin.math.abs
 
 /**
@@ -169,39 +178,18 @@ fun PlayerSheetContent(
     // Back is handled by ExpandablePlayer: it collapses the player, or closes
     // this style's panel first while the panel is open.
     val currentSong by viewModel.currentSong.collectAsState()
-    var panelOpen by rememberPlayerQueueOpen()
-    var panelTab by rememberSaveable { mutableStateOf(ClassicTab.UpNext) }
+    val panel = rememberClassicPanelState()
     var showOptions by rememberNowPlayingOptionsOpen()
 
     val albumArtUrl = currentSong?.highResThumbnailUrl
         ?: currentSong?.thumbnailUrl
         ?: currentSong?.albumArtUri?.toString()
 
-    // The panel's position, 0 closed to 1 open. One Animatable for the drag,
-    // the fling and the tap, so any of them can be caught mid-flight.
-    val scope = rememberCoroutineScope()
-    val panel = remember { Animatable(if (panelOpen) 1f else 0f) }
-    val panelSpring = spring<Float>(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)
-    LaunchedEffect(panelOpen) { panel.animateTo(if (panelOpen) 1f else 0f, panelSpring) }
-    var heightPx by remember { mutableFloatStateOf(1f) }
-    val dragPanel: (Float) -> Unit = { deltaPx ->
-        scope.launch { panel.snapTo((panel.value - deltaPx / heightPx).coerceIn(0f, 1f)) }
-    }
-    val settlePanel: (Float) -> Unit = { velocity ->
-        val open = if (abs(velocity) > 900f) velocity < 0f else panel.value > 0.5f
-        if (open == panelOpen) scope.launch { panel.animateTo(if (open) 1f else 0f, panelSpring) }
-        else panelOpen = open
-    }
-    val openTab: (ClassicTab) -> Unit = { tab ->
-        panelTab = tab
-        panelOpen = true
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .onSizeChanged { heightPx = it.height.toFloat().coerceAtLeast(1f) }
+            .classicPanelHeight(panel)
     ) {
         ChromaticMistBackground(
             albumArtUrl = albumArtUrl,
@@ -215,37 +203,19 @@ fun PlayerSheetContent(
             onCollapse = onCollapse,
             onShowOptions = { showOptions = true },
             onArtistClick = onArtistClick,
-            onOpenTab = openTab,
-            onDragPanel = dragPanel,
-            onSettlePanel = settlePanel,
-            modifier = Modifier.graphicsLayer {
-                // Recedes a little under the rising panel, so the panel reads
-                // as coming over the player rather than replacing it.
-                val p = panel.value
-                alpha = 1f - p * 0.35f
-                val scale = 1f - p * 0.04f
-                scaleX = scale
-                scaleY = scale
-            }
+            onOpenTab = panel::open,
+            onDragPanel = panel::drag,
+            onSettlePanel = panel::settle,
+            modifier = Modifier.classicRecede(panel)
         )
 
-        val panelVisible by remember { derivedStateOf { panel.value > 0f } }
-        if (panelVisible) {
-            ClassicPanel(
-                viewModel = viewModel,
-                currentSong = currentSong,
-                tab = panelTab,
-                onTabChange = { panelTab = it },
-                onClose = { panelOpen = false },
-                onDragPanel = dragPanel,
-                onSettlePanel = settlePanel,
-                onLoadMore = onLoadMore,
-                onArtistClick = onArtistClick,
-                modifier = Modifier.graphicsLayer {
-                    translationY = (1f - panel.value) * size.height
-                }
-            )
-        }
+        ClassicPanelHost(
+            state = panel,
+            viewModel = viewModel,
+            currentSong = currentSong,
+            onLoadMore = onLoadMore,
+            onArtistClick = onArtistClick
+        )
     }
 
     // The overflow menu, gated on a song so it can never open against nothing.
@@ -265,7 +235,7 @@ fun PlayerSheetContent(
 }
 
 /** The panel's three tabs, in the order YouTube Music has them. Not persisted. */
-private enum class ClassicTab(val label: Int, val icon: ImageVector) {
+internal enum class ClassicTab(val label: Int, val icon: ImageVector) {
     UpNext(R.string.cl_tab_up_next, Icons.AutoMirrored.Rounded.QueueMusic),
     Lyrics(R.string.cl_tab_lyrics, Icons.Rounded.Lyrics),
     Related(R.string.cl_tab_related, Icons.Rounded.Explore)
@@ -328,7 +298,10 @@ private fun ClassicNowPlaying(
                 onClick = onCollapse,
                 shapes = IconButtonDefaults.shapes(),
                 colors = tonal,
-                modifier = Modifier.align(Alignment.CenterStart).size(48.dp)
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(48.dp)
+                    .captureAs("classic.collapse", 22) { classicButton(LayoutAction.COLLAPSE) }
             ) {
                 Icon(
                     Icons.Rounded.KeyboardArrowDown,
@@ -336,33 +309,16 @@ private fun ClassicNowPlaying(
                     modifier = Modifier.size(28.dp)
                 )
             }
-            Column(
+            ClassicHeader(
+                song = currentSong,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .padding(horizontal = 112.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.ps_now_playing).uppercase(),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.18.em,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1
-                )
-                val album = currentSong?.album?.takeIf { it.isNotBlank() }
-                if (album != null) {
-                    Text(
-                        text = album,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
+                    .padding(horizontal = 112.dp)
+                    .fillMaxWidth()
+                    .captureAs("classic.header", 21) {
+                        captureBlock(LayoutBlockKind.HEADER, LayoutSkin.CLASSIC)
+                    }
+            )
             Row(
                 modifier = Modifier.align(Alignment.CenterEnd),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -372,7 +328,9 @@ private fun ClassicNowPlaying(
                 FilledTonalIconToggleButton(
                     checked = sleepTimer.active,
                     onCheckedChange = { sleepTimer.open() },
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier
+                        .size(48.dp)
+                        .captureAs("classic.sleep", 23) { classicButton(LayoutAction.SLEEP_TIMER) }
                 ) {
                     Icon(Icons.Rounded.Bedtime, contentDescription = stringResource(R.string.sleep_timer_title))
                 }
@@ -380,7 +338,9 @@ private fun ClassicNowPlaying(
                     onClick = onShowOptions,
                     shapes = IconButtonDefaults.shapes(),
                     colors = tonal,
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier
+                        .size(48.dp)
+                        .captureAs("classic.options", 24) { classicButton(LayoutAction.OPTIONS) }
                 ) {
                     Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.cd_more_options))
                 }
@@ -400,50 +360,21 @@ private fun ClassicNowPlaying(
         ) {
             if (maxWidth < 64.dp || maxHeight < 64.dp) return@BoxWithConstraints
             val coverSize = minOf(maxWidth - 40.dp, maxHeight - 12.dp)
-            val pausedness by animateFloatAsState(
-                targetValue = if (active) 0f else 1f,
-                animationSpec = spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessLow),
-                label = "classicCoverMorph"
-            )
-            val coverMorph = remember { Morph(MaterialShapes.Square, MaterialShapes.Cookie12Sided) }
-            val coverShape = remember(pausedness) { UnitMorphShape(coverMorph, pausedness.coerceIn(0f, 1f)) }
             val styleWheel = LocalPlayerStyleWheelController.current
-            Surface(
+            ClassicCoverArt(
+                song = currentSong,
+                active = active,
                 modifier = Modifier
                     .size(coverSize)
-                    .graphicsLayer {
-                        val scale = 1f - 0.1f * pausedness
-                        scaleX = scale
-                        scaleY = scale
-                    }
+                    .captureAs("classic.art", 0) {
+                        captureBlock(LayoutBlockKind.COVER, LayoutSkin.CLASSIC) {
+                            copy(action = LayoutAction.NONE, shape = BlockShape.ROUNDED)
+                        }
+                    },
+                gestures = Modifier
                     .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
-                    .styleWheelHold(styleWheel),
-                shape = coverShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shadowElevation = 12.dp
-            ) {
-                val artSong = currentSong?.takeIf { it.albumArtUri != null || it.thumbnailUrl != null }
-                if (artSong != null) {
-                    PlayerArtwork(
-                        song = artSong,
-                        contentDescription = stringResource(R.string.cd_album_art),
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(coverSize * 0.32f),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-            }
+                    .styleWheelHold(styleWheel)
+            )
         }
 
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
@@ -453,39 +384,17 @@ private fun ClassicNowPlaying(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
+                ClassicTitle(
+                    song = currentSong,
+                    onArtistClick = onArtistClick,
                     modifier = Modifier
                         .weight(1f)
+                        .captureAs("classic.title", 10) {
+                            captureBlock(LayoutBlockKind.TITLE, LayoutSkin.CLASSIC)
+                        }
                         .swipeToSkip(swipeToSkip)
                         .swipeToSkipFollow(swipeToSkip)
-                ) {
-                    Text(
-                        text = currentSong?.title?.takeIf { !isUnknownTitle(it) }
-                            ?: stringResource(R.string.untitled_song),
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontFamily = MontserratFamily,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = (-0.02).em
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        // A long title travels rather than being cut.
-                        modifier = Modifier.basicMarquee(initialDelayMillis = 2000)
-                    )
-                    val artist = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
-                    Text(
-                        text = artist ?: stringResource(R.string.unknown_artist),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .padding(top = 2.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = artist != null) { artist?.let(onArtistClick) }
-                    )
-                }
+                )
                 val song = currentSong
                 if (song != null) {
                     val isLocal = viewModel.isLocalOriginal(song)
@@ -495,7 +404,9 @@ private fun ClassicNowPlaying(
                     FilledTonalIconToggleButton(
                         checked = isDownloaded || isDownloading || isLocal,
                         onCheckedChange = { if (!isDownloading && !isLocal) viewModel.toggleDownload(song) },
-                        modifier = Modifier.size(52.dp)
+                        modifier = Modifier
+                            .size(52.dp)
+                            .captureAs("classic.download", 11) { classicButton(LayoutAction.DOWNLOAD) }
                     ) {
                         when {
                             isLocal -> Icon(Icons.Rounded.Smartphone, contentDescription = stringResource(R.string.cd_local_file))
@@ -514,7 +425,9 @@ private fun ClassicNowPlaying(
                     FilledTonalIconToggleButton(
                         checked = isFavorite,
                         onCheckedChange = { viewModel.toggleCurrentSongLike() },
-                        modifier = Modifier.size(52.dp)
+                        modifier = Modifier
+                            .size(52.dp)
+                            .captureAs("classic.like", 12) { classicButton(LayoutAction.LIKE) }
                     ) {
                         LikeBurstIcon(isFavorite = isFavorite, iconSize = 24.dp)
                     }
@@ -522,218 +435,110 @@ private fun ClassicNowPlaying(
             }
 
             // ---- The seek bar. The Slider owns the drag; the scrubber draws.
-            var scrubPosition by remember { mutableStateOf<Float?>(null) }
-            val displayedProgress = scrubPosition?.toLong() ?: progress
-            val scrubReturnPoint = LocalScrubReturnPoint.current
-            val smoothProgress = rememberSmoothProgress(
-                positionMs = progress,
-                durationMs = duration,
-                isPlaying = isPlaying,
-                scrubPositionMs = scrubPosition
-            )
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(top = 14.dp)) {
-                val stroke = Stroke(width = with(LocalDensity.current) { 7.dp.toPx() }, cap = StrokeCap.Round)
-                ExpressiveScrubber(
-                    progress = { smoothProgress.value },
-                    modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
-                    stroke = stroke,
-                    trackStroke = stroke,
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp)
+                    .captureAs("classic.scrubber", 30) {
+                        captureBlock(LayoutBlockKind.SCRUBBER, LayoutSkin.CLASSIC) {
+                            copy(showDetail = true, motion = true)
+                        }
+                    }
+            ) {
+                var scrubPosition by remember { mutableStateOf<Float?>(null) }
+                val displayedProgress = scrubPosition?.toLong() ?: progress
+                val scrubReturnPoint = LocalScrubReturnPoint.current
+                val smoothProgress = rememberSmoothProgress(
+                    positionMs = progress,
+                    durationMs = duration,
+                    isPlaying = isPlaying,
+                    scrubPositionMs = scrubPosition
                 )
-                Slider(
-                    interactionSource = LocalPlayerScrubInteraction.current,
-                    value = scrubPosition ?: progress.toFloat(),
-                    onValueChange = {
-                        scrubPosition = scrubReturnPoint.follow(
-                            value = it,
-                            rangeEnd = duration.toFloat().coerceAtLeast(1f)
-                        ) { smoothProgress.value }
-                    },
-                    onValueChangeFinished = {
-                        val cancelled = scrubReturnPoint.release()
-                        if (!cancelled) scrubPosition?.let { viewModel.seekTo(it.toLong()) }
-                        scrubPosition = null
-                    },
-                    valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.Transparent,
-                        activeTrackColor = Color.Transparent,
-                        inactiveTrackColor = Color.Transparent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    formatDuration(displayedProgress),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    formatDuration(duration),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    val stroke = Stroke(width = with(LocalDensity.current) { 7.dp.toPx() }, cap = StrokeCap.Round)
+                    ExpressiveScrubber(
+                        progress = { smoothProgress.value },
+                        modifier = Modifier.fillMaxWidth().height(scrubberTrackHeight(14.dp)),
+                        stroke = stroke,
+                        trackStroke = stroke,
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    )
+                    Slider(
+                        interactionSource = LocalPlayerScrubInteraction.current,
+                        value = scrubPosition ?: progress.toFloat(),
+                        onValueChange = {
+                            scrubPosition = scrubReturnPoint.follow(
+                                value = it,
+                                rangeEnd = duration.toFloat().coerceAtLeast(1f)
+                            ) { smoothProgress.value }
+                        },
+                        onValueChangeFinished = {
+                            val cancelled = scrubReturnPoint.release()
+                            if (!cancelled) scrubPosition?.let { viewModel.seekTo(it.toLong()) }
+                            scrubPosition = null
+                        },
+                        valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.Transparent,
+                            activeTrackColor = Color.Transparent,
+                            inactiveTrackColor = Color.Transparent
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        formatDuration(displayedProgress),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        formatDuration(duration),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
-            PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+            PlayerVisualizerSlot(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .captureAs("classic.visualizer", 31) {
+                        captureBlock(LayoutBlockKind.VISUALIZER, LayoutSkin.KODA)
+                    }
+            )
 
             // ---- Hero two: the transport, a standard button group. A pressed
             // button widens and its neighbours give way; shuffle and repeat
             // square off when on; play is the one wide filled control, a
             // squircle while playing and a full pill while paused.
-            val shuffleInteraction = remember { MutableInteractionSource() }
-            val prevInteraction = remember { MutableInteractionSource() }
-            val playInteraction = remember { MutableInteractionSource() }
-            val nextInteraction = remember { MutableInteractionSource() }
-            val repeatInteraction = remember { MutableInteractionSource() }
-            val playCorner by animateDpAsState(
-                targetValue = if (active) 28.dp else 48.dp,
-                animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
-                label = "classicPlayCorner"
-            )
-            val playShapes = IconButtonShapes(
-                shape = RoundedCornerShape(playCorner),
-                pressedShape = RoundedCornerShape(16.dp)
-            )
-            val transportTonal = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-            )
-            ButtonGroup(
-                overflowIndicator = {},
+            ClassicTransportGroup(
+                isPlaying = isPlaying,
+                active = active,
+                buffering = isBuffering && playWhenReady && !isPlaying,
+                shuffleOn = shuffleOn,
+                repeatMode = repeatMode,
+                onShuffle = { viewModel.toggleShuffle() },
+                onPrevious = { haptics.skip(); viewModel.skipToPrevious() },
+                onPlayPause = {
+                    haptics.playPause(!viewModel.isPlaying.value)
+                    viewModel.togglePlayPause()
+                },
+                onNext = { haptics.skip(); viewModel.skipToNext() },
+                onRepeat = { viewModel.toggleRepeat() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 10.dp)
-                    .height(96.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                customItem(
-                    buttonGroupContent = {
-                        FilledTonalIconToggleButton(
-                            checked = shuffleOn,
-                            onCheckedChange = { viewModel.toggleShuffle() },
-                            interactionSource = shuffleInteraction,
-                            modifier = Modifier
-                                .weight(0.85f)
-                                .fillMaxHeight()
-                                .animateWidth(shuffleInteraction)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Shuffle,
-                                contentDescription = stringResource(R.string.cd_shuffle),
-                                modifier = Modifier.size(26.dp)
-                            )
+                    .captureAs("classic.transport", 40) {
+                        captureBlock(LayoutBlockKind.TRANSPORT, LayoutSkin.CLASSIC) {
+                            copy(showDetail = true, look = ButtonLook.FILLED)
                         }
-                    },
-                    menuContent = {}
-                )
-                customItem(
-                    buttonGroupContent = {
-                        FilledTonalIconButton(
-                            onClick = { haptics.skip(); viewModel.skipToPrevious() },
-                            shapes = IconButtonDefaults.shapes(),
-                            colors = transportTonal,
-                            interactionSource = prevInteraction,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .animateWidth(prevInteraction)
-                        ) {
-                            Icon(
-                                Icons.Rounded.SkipPrevious,
-                                contentDescription = stringResource(R.string.cd_previous),
-                                modifier = Modifier.size(36.dp)
-                            )
-                        }
-                    },
-                    menuContent = {}
-                )
-                customItem(
-                    buttonGroupContent = {
-                        FilledIconButton(
-                            onClick = {
-                                haptics.playPause(!viewModel.isPlaying.value)
-                                viewModel.togglePlayPause()
-                            },
-                            shapes = playShapes,
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            interactionSource = playInteraction,
-                            modifier = Modifier
-                                .weight(1.9f)
-                                .fillMaxHeight()
-                                .animateWidth(playInteraction)
-                        ) {
-                            if (isBuffering && playWhenReady && !isPlaying) {
-                                LoadingIndicator(
-                                    modifier = Modifier.size(44.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    polygons = listOf(
-                                        MaterialShapes.SoftBurst,
-                                        MaterialShapes.Cookie9Sided,
-                                        MaterialShapes.Pill,
-                                        MaterialShapes.Sunny
-                                    )
-                                )
-                            } else {
-                                Icon(
-                                    if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                    contentDescription = stringResource(if (isPlaying) R.string.cd_pause else R.string.cd_play),
-                                    modifier = Modifier.size(48.dp)
-                                )
-                            }
-                        }
-                    },
-                    menuContent = {}
-                )
-                customItem(
-                    buttonGroupContent = {
-                        FilledTonalIconButton(
-                            onClick = { haptics.skip(); viewModel.skipToNext() },
-                            shapes = IconButtonDefaults.shapes(),
-                            colors = transportTonal,
-                            interactionSource = nextInteraction,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .animateWidth(nextInteraction)
-                        ) {
-                            Icon(
-                                Icons.Rounded.SkipNext,
-                                contentDescription = stringResource(R.string.cd_next),
-                                modifier = Modifier.size(36.dp)
-                            )
-                        }
-                    },
-                    menuContent = {}
-                )
-                customItem(
-                    buttonGroupContent = {
-                        FilledTonalIconToggleButton(
-                            checked = repeatMode != Player.REPEAT_MODE_OFF,
-                            onCheckedChange = { viewModel.toggleRepeat() },
-                            interactionSource = repeatInteraction,
-                            modifier = Modifier
-                                .weight(0.85f)
-                                .fillMaxHeight()
-                                .animateWidth(repeatInteraction)
-                        ) {
-                            Icon(
-                                if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                                contentDescription = stringResource(R.string.cd_repeat),
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    },
-                    menuContent = {}
-                )
-            }
+                    }
+                    .height(96.dp)
+            )
         }
 
         // ---- The way into the panel: a tonal pill of three labelled tabs,
@@ -748,6 +553,9 @@ private fun ClassicNowPlaying(
                     state = rememberDraggableState { onDragPanel(it) },
                     onDragStopped = { velocity -> onSettlePanel(velocity) }
                 )
+                .captureAs("classic.tabs", 50) {
+                    captureBlock(LayoutBlockKind.UP_NEXT, LayoutSkin.CLASSIC)
+                }
         )
     }
 }
@@ -758,7 +566,7 @@ private fun ClassicNowPlaying(
  * beside the icons - an icon alone does not say "Related".
  */
 @Composable
-private fun ClassicPanelEntry(
+internal fun ClassicPanelEntry(
     onSelect: (ClassicTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1350,4 +1158,563 @@ private class UnitMorphShape(private val morph: Morph, private val progress: Flo
 private fun formatDuration(durationMs: Long): String {
     val totalSeconds = durationMs.coerceAtLeast(0L) / 1000
     return String.format(java.util.Locale.ROOT, "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+}
+
+/**
+ * Classic's transport: a standard button group in which a pressed button
+ * widens and its neighbours give way. Shuffle and repeat square off when on;
+ * play is the one wide filled control, a squircle while playing and a full
+ * pill while paused. Shared with blocks in Classic's skin.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun ClassicTransportGroup(
+    isPlaying: Boolean,
+    active: Boolean,
+    buffering: Boolean,
+    shuffleOn: Boolean,
+    repeatMode: Int,
+    onShuffle: () -> Unit,
+    onPrevious: () -> Unit,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onRepeat: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** Shuffle and repeat at the ends, as Classic has them. */
+    withToggles: Boolean = true,
+) {
+    val shuffleInteraction = remember { MutableInteractionSource() }
+    val prevInteraction = remember { MutableInteractionSource() }
+    val playInteraction = remember { MutableInteractionSource() }
+    val nextInteraction = remember { MutableInteractionSource() }
+    val repeatInteraction = remember { MutableInteractionSource() }
+    val playCorner by animateDpAsState(
+        targetValue = if (active) 28.dp else 48.dp,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
+        label = "classicPlayCorner"
+    )
+    val playShapes = IconButtonShapes(
+        shape = RoundedCornerShape(playCorner),
+        pressedShape = RoundedCornerShape(16.dp)
+    )
+    val transportTonal = IconButtonDefaults.filledTonalIconButtonColors(
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+    )
+    ButtonGroup(
+        overflowIndicator = {},
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (withToggles) customItem(
+            buttonGroupContent = {
+                FilledTonalIconToggleButton(
+                    checked = shuffleOn,
+                    onCheckedChange = { onShuffle() },
+                    interactionSource = shuffleInteraction,
+                    modifier = Modifier
+                        .weight(0.85f)
+                        .fillMaxHeight()
+                        .animateWidth(shuffleInteraction)
+                ) {
+                    Icon(
+                        Icons.Rounded.Shuffle,
+                        contentDescription = stringResource(R.string.cd_shuffle),
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            menuContent = {}
+        )
+        customItem(
+            buttonGroupContent = {
+                FilledTonalIconButton(
+                    onClick = onPrevious,
+                    shapes = IconButtonDefaults.shapes(),
+                    colors = transportTonal,
+                    interactionSource = prevInteraction,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .animateWidth(prevInteraction)
+                ) {
+                    Icon(
+                        Icons.Rounded.SkipPrevious,
+                        contentDescription = stringResource(R.string.cd_previous),
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            },
+            menuContent = {}
+        )
+        customItem(
+            buttonGroupContent = {
+                FilledIconButton(
+                    onClick = onPlayPause,
+                    shapes = playShapes,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    interactionSource = playInteraction,
+                    modifier = Modifier
+                        .weight(1.9f)
+                        .fillMaxHeight()
+                        .animateWidth(playInteraction)
+                ) {
+                    if (buffering) {
+                        LoadingIndicator(
+                            modifier = Modifier.size(44.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            polygons = listOf(
+                                MaterialShapes.SoftBurst,
+                                MaterialShapes.Cookie9Sided,
+                                MaterialShapes.Pill,
+                                MaterialShapes.Sunny
+                            )
+                        )
+                    } else {
+                        Icon(
+                            if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(if (isPlaying) R.string.cd_pause else R.string.cd_play),
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                }
+            },
+            menuContent = {}
+        )
+        customItem(
+            buttonGroupContent = {
+                FilledTonalIconButton(
+                    onClick = onNext,
+                    shapes = IconButtonDefaults.shapes(),
+                    colors = transportTonal,
+                    interactionSource = nextInteraction,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .animateWidth(nextInteraction)
+                ) {
+                    Icon(
+                        Icons.Rounded.SkipNext,
+                        contentDescription = stringResource(R.string.cd_next),
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            },
+            menuContent = {}
+        )
+        if (withToggles) customItem(
+            buttonGroupContent = {
+                FilledTonalIconToggleButton(
+                    checked = repeatMode != Player.REPEAT_MODE_OFF,
+                    onCheckedChange = { onRepeat() },
+                    interactionSource = repeatInteraction,
+                    modifier = Modifier
+                        .weight(0.85f)
+                        .fillMaxHeight()
+                        .animateWidth(repeatInteraction)
+                ) {
+                    Icon(
+                        if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                        contentDescription = stringResource(R.string.cd_repeat),
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            menuContent = {}
+        )
+    }
+}
+
+private val CLASSIC_PANEL_SPRING = spring<Float>(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)
+
+/**
+ * Classic's rising panel - Up next, Lyrics and Related over the player - as
+ * state both Classic and a custom layout carrying Classic's tab bar can hold.
+ * The open flag is the player's queue flag ([rememberPlayerQueueOpen]), so
+ * back closes the panel before it collapses the player; the position, 0 closed
+ * to 1 open, is one Animatable for the drag, the fling and the tap, so any of
+ * them can be caught mid-flight.
+ */
+@Stable
+internal class ClassicPanelState(
+    private val openFlag: MutableState<Boolean>,
+    private val tabState: MutableState<ClassicTab>,
+    private val scope: CoroutineScope,
+) {
+    val position = Animatable(if (openFlag.value) 1f else 0f)
+    var heightPx by mutableFloatStateOf(1f)
+
+    val tab: ClassicTab get() = tabState.value
+    val isOpen: Boolean get() = openFlag.value
+
+    fun select(tab: ClassicTab) {
+        tabState.value = tab
+    }
+
+    fun open(tab: ClassicTab) {
+        tabState.value = tab
+        openFlag.value = true
+    }
+
+    fun close() {
+        openFlag.value = false
+    }
+
+    fun drag(deltaPx: Float) {
+        scope.launch { position.snapTo((position.value - deltaPx / heightPx).coerceIn(0f, 1f)) }
+    }
+
+    fun settle(velocity: Float) {
+        val open = if (abs(velocity) > 900f) velocity < 0f else position.value > 0.5f
+        if (open == openFlag.value) {
+            scope.launch { position.animateTo(if (open) 1f else 0f, CLASSIC_PANEL_SPRING) }
+        } else {
+            openFlag.value = open
+        }
+    }
+}
+
+@Composable
+internal fun rememberClassicPanelState(): ClassicPanelState {
+    val openFlag = rememberPlayerQueueOpen()
+    val tabState = rememberSaveable { mutableStateOf(ClassicTab.UpNext) }
+    val scope = rememberCoroutineScope()
+    val state = remember(openFlag, tabState, scope) { ClassicPanelState(openFlag, tabState, scope) }
+    LaunchedEffect(state, openFlag.value) {
+        state.position.animateTo(if (openFlag.value) 1f else 0f, CLASSIC_PANEL_SPRING)
+    }
+    return state
+}
+
+/** Tells the panel how far a full drag is: the height of what it rises over. */
+internal fun Modifier.classicPanelHeight(state: ClassicPanelState): Modifier =
+    onSizeChanged { state.heightPx = it.height.toFloat().coerceAtLeast(1f) }
+
+/**
+ * The player receding a little under the rising panel, so the panel reads as
+ * coming over the player rather than replacing it.
+ */
+internal fun Modifier.classicRecede(state: ClassicPanelState): Modifier = graphicsLayer {
+    val p = state.position.value
+    alpha = 1f - p * 0.35f
+    val scale = 1f - p * 0.04f
+    scaleX = scale
+    scaleY = scale
+}
+
+/** The panel itself, drawn only while it is at least partly up. */
+@Composable
+internal fun ClassicPanelHost(
+    state: ClassicPanelState,
+    viewModel: PlayerViewModel,
+    currentSong: Song?,
+    onLoadMore: () -> Unit,
+    onArtistClick: (String) -> Unit,
+) {
+    val panelVisible by remember(state) { derivedStateOf { state.position.value > 0f } }
+    if (panelVisible) {
+        ClassicPanel(
+            viewModel = viewModel,
+            currentSong = currentSong,
+            tab = state.tab,
+            onTabChange = state::select,
+            onClose = state::close,
+            onDragPanel = state::drag,
+            onSettlePanel = state::settle,
+            onLoadMore = onLoadMore,
+            onArtistClick = onArtistClick,
+            modifier = Modifier.graphicsLayer {
+                translationY = (1f - state.position.value) * size.height
+            }
+        )
+    }
+}
+
+private fun classicButton(action: LayoutAction) =
+    captureBlock(LayoutBlockKind.BUTTON, LayoutSkin.CLASSIC) { copy(action = action, look = ButtonLook.TONAL) }
+
+/* ------------------------------------------------------------------ */
+/* Pieces, shared with blocks in Classic's skin                        */
+/* ------------------------------------------------------------------ */
+
+/** "NOW PLAYING" in the accent over the album, centred. */
+@Composable
+internal fun ClassicHeader(song: Song?, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = stringResource(R.string.ps_now_playing).uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.18.em,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1
+        )
+        val album = song?.album?.takeIf { it.isNotBlank() }
+        if (album != null) {
+            Text(
+                text = album,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/**
+ * Hero one: the cover. Its shape is the play state - a soft square while the
+ * music plays, a twelve-sided cookie that sinks back when it stops - so pause
+ * reads at a glance from across a room. [gestures] go inside the shrink, on
+ * the cover itself.
+ */
+@Composable
+internal fun ClassicCoverArt(
+    song: Song?,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    gestures: Modifier = Modifier,
+    motionEligible: Boolean = true,
+) {
+    val pausedness by animateFloatAsState(
+        targetValue = if (active) 0f else 1f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessLow),
+        label = "classicCoverMorph"
+    )
+    val coverMorph = remember { Morph(MaterialShapes.Square, MaterialShapes.Cookie12Sided) }
+    val coverShape = remember(pausedness) { UnitMorphShape(coverMorph, pausedness.coerceIn(0f, 1f)) }
+    Surface(
+        modifier = modifier
+            .graphicsLayer {
+                val scale = 1f - 0.1f * pausedness
+                scaleX = scale
+                scaleY = scale
+            }
+            .then(gestures),
+        shape = coverShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 12.dp
+    ) {
+        val artSong = song?.takeIf { it.albumArtUri != null || it.thumbnailUrl != null }
+        if (artSong != null) {
+            PlayerArtwork(
+                song = artSong,
+                contentDescription = stringResource(R.string.cd_album_art),
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                motionEligible = motionEligible
+            )
+        } else {
+            BoxWithConstraints(
+                modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(minOf(maxWidth, maxHeight) * 0.32f),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+    }
+}
+
+/** The poster face at size, a long one travelling rather than cut, and the artist in the accent. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun ClassicTitle(
+    song: Song?,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    artistEnabled: Boolean = true,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = song?.title?.takeIf { !isUnknownTitle(it) }
+                ?: stringResource(R.string.untitled_song),
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontFamily = MontserratFamily,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.02).em
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            // A long title travels rather than being cut.
+            modifier = Modifier.basicMarquee(initialDelayMillis = 2000)
+        )
+        val artist = song?.artist?.takeIf { !isUnknownArtist(it) }
+        Text(
+            text = artist ?: stringResource(R.string.unknown_artist),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = artistEnabled && artist != null) { artist?.let(onArtistClick) }
+        )
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Classic's skin for custom layouts                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A block drawn by Classic's own pieces. A button with an on and off state is
+ * Classic's tonal toggle, filled is the primary button, anything else the
+ * tonal button of the top bar. The transport is the whole button group, with
+ * shuffle and repeat at its ends when the block asks for them; Up next is the
+ * tab bar that raises the panel, when the layout carries the panel.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun ClassicSkinBlock(
+    block: LayoutBlock,
+    host: LayoutHost,
+    motionArtwork: Boolean,
+    fallback: @Composable (LayoutInk) -> Unit,
+) {
+    val viewModel = host.viewModel
+    val song by viewModel.currentSong.collectAsState()
+    val scheme = MaterialTheme.colorScheme
+    when (block.kind) {
+        LayoutBlockKind.COVER -> {
+            val isPlaying by viewModel.isPlaying.collectAsState()
+            val isBuffering by viewModel.isBuffering.collectAsState()
+            val playWhenReady by viewModel.playWhenReady.collectAsState()
+            ClassicCoverArt(
+                song = song,
+                active = isPlaying || (isBuffering && playWhenReady),
+                motionEligible = motionArtwork,
+                modifier = Modifier.fillMaxSize(),
+                gestures = Modifier.layoutCoverGestures(block, host)
+            )
+        }
+        LayoutBlockKind.TITLE -> SkinTitleFrame(block, host) { frame ->
+            ClassicTitle(
+                song = song,
+                onArtistClick = host.onArtistClick,
+                artistEnabled = host.interactive,
+                modifier = frame
+            )
+        }
+        LayoutBlockKind.HEADER -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            ClassicHeader(song = song, modifier = Modifier.fillMaxWidth())
+        }
+        LayoutBlockKind.SCRUBBER -> LayoutScrubber(
+            host = host,
+            color = scheme.primary,
+            trackColor = scheme.primary.copy(alpha = 0.18f),
+            timeColor = scheme.onSurfaceVariant,
+            stroke = 7.dp,
+            trackHeight = 14.dp,
+            // Classic's line waves whether or not the music is playing.
+            wavesOnlyWhilePlaying = false,
+            flat = !block.motion,
+            showTimes = block.showDetail,
+            timeStyle = MaterialTheme.typography.labelLarge,
+            timeWeight = FontWeight.SemiBold,
+            verticalArrangement = Arrangement.Top
+        )
+        LayoutBlockKind.TRANSPORT -> {
+            val isPlaying by viewModel.isPlaying.collectAsState()
+            val isBuffering by viewModel.isBuffering.collectAsState()
+            val playWhenReady by viewModel.playWhenReady.collectAsState()
+            val shuffleOn by viewModel.shuffleModeEnabled.collectAsState()
+            val repeatMode by viewModel.repeatMode.collectAsState()
+            ClassicTransportGroup(
+                isPlaying = isPlaying,
+                active = isPlaying || (isBuffering && playWhenReady),
+                buffering = isBuffering && playWhenReady && !isPlaying,
+                shuffleOn = shuffleOn,
+                repeatMode = repeatMode,
+                onShuffle = { host.onAction(LayoutAction.SHUFFLE) },
+                onPrevious = { host.onAction(LayoutAction.PREVIOUS) },
+                onPlayPause = { host.onAction(LayoutAction.PLAY_PAUSE) },
+                onNext = { host.onAction(LayoutAction.NEXT) },
+                onRepeat = { host.onAction(LayoutAction.REPEAT) },
+                withToggles = block.showDetail,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        LayoutBlockKind.BUTTON -> ClassicSkinButton(block, host)
+        LayoutBlockKind.UP_NEXT -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            val panel = host.classicPanel
+            ClassicPanelEntry(
+                onSelect = { tab ->
+                    if (panel != null) panel.open(tab) else host.onAction(LayoutAction.QUEUE)
+                },
+                modifier = if (panel != null && host.interactive) {
+                    Modifier.draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { panel.drag(it) },
+                        onDragStopped = { velocity -> panel.settle(velocity) }
+                    )
+                } else {
+                    Modifier
+                }
+            )
+        }
+        else -> fallback(LayoutInk(scheme.background, scheme.onSurface))
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ClassicSkinButton(block: LayoutBlock, host: LayoutHost) {
+    val action = block.action
+    val state = rememberLayoutActionState(action, host)
+    val onClick = { host.onAction(action) }
+    val label = action.label()
+    val fill = Modifier.fillMaxSize()
+    val iconSize = if (action == LayoutAction.COLLAPSE) 28.dp else 24.dp
+    val checked = state.checked
+    when {
+        block.look == ButtonLook.FILLED -> FilledIconButton(
+            onClick = onClick,
+            shapes = IconButtonDefaults.shapes(),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ),
+            modifier = fill
+        ) {
+            LayoutActionIcon(
+                action, state, label,
+                Modifier.layoutIcon(if (action == LayoutAction.PLAY_PAUSE) 48.dp else iconSize)
+            )
+        }
+        // A toggle, so a running timer or a liked song shows as a filled,
+        // squared button rather than only a tint.
+        checked != null -> FilledTonalIconToggleButton(
+            checked = checked,
+            onCheckedChange = { onClick() },
+            modifier = fill
+        ) {
+            LayoutActionIcon(action, state, label, Modifier.layoutIcon(iconSize))
+        }
+        else -> FilledTonalIconButton(
+            onClick = onClick,
+            shapes = IconButtonDefaults.shapes(),
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ),
+            modifier = fill
+        ) {
+            LayoutActionIcon(action, state, label, Modifier.layoutIcon(iconSize))
+        }
+    }
 }

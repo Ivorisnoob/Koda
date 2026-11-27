@@ -24,6 +24,8 @@ import com.ivor.ivormusic.data.playerlayout.LayoutColor
 import com.ivor.ivormusic.data.playerlayout.LayoutTextAlign
 import com.ivor.ivormusic.data.playerlayout.PlayerLayout
 import com.ivor.ivormusic.ui.player.composeShape
+import com.ivor.ivormusic.ui.player.CanvasGlyph
+import com.ivor.ivormusic.ui.player.canvasScrimBrush
 
 /** The share of the thumbnail given to each system bar, so blocks sit where they will. */
 private const val BAR_FRACTION = 0.04f
@@ -41,10 +43,16 @@ internal fun LayoutWireframe(layout: PlayerLayout, modifier: Modifier = Modifier
     val shapes: Map<BlockShape, Shape> = BlockShape.entries.associateWith { it.composeShape() }
     Canvas(modifier = modifier) {
         val ground = when (layout.background) {
-            LayoutBackground.TONAL -> scheme.primaryContainer
+            LayoutBackground.TONAL, LayoutBackground.CONTAINER -> scheme.primaryContainer
+            LayoutBackground.BOARD, LayoutBackground.SPLIT, LayoutBackground.CANVAS -> scheme.surfaceContainerLowest
             else -> scheme.surface
         }
-        val ink = if (layout.background == LayoutBackground.TONAL) scheme.onPrimaryContainer else scheme.onSurface
+        val ink = when (layout.background) {
+            LayoutBackground.TONAL, LayoutBackground.CONTAINER -> scheme.onPrimaryContainer
+            // Canvas is white over its scrim in every theme.
+            LayoutBackground.CANVAS -> CanvasGlyph
+            else -> scheme.onSurface
+        }
         when (layout.background) {
             LayoutBackground.AMBIENT -> drawRect(
                 Brush.linearGradient(
@@ -56,6 +64,18 @@ internal fun LayoutWireframe(layout: PlayerLayout, modifier: Modifier = Modifier
             LayoutBackground.COVER -> drawRect(
                 Brush.verticalGradient(listOf(scheme.primary, scheme.primary, scheme.surface))
             )
+            LayoutBackground.SPLIT -> {
+                drawRect(scheme.surfaceContainerLow, size = Size(size.width, size.height * 0.45f))
+                drawRect(
+                    ground,
+                    topLeft = Offset(0f, size.height * 0.45f),
+                    size = Size(size.width, size.height * 0.55f)
+                )
+            }
+            LayoutBackground.CANVAS -> {
+                drawRect(ground)
+                drawRect(canvasScrimBrush(endY = size.height))
+            }
             else -> drawRect(ground)
         }
 
@@ -117,6 +137,8 @@ private fun DrawScope.drawBlock(
     }
 
     when (block.kind) {
+        LayoutBlockKind.HEADER, LayoutBlockKind.TIME -> bar(origin.x + size.width * 0.3f, origin.y + size.height * 0.4f, size.width * 0.4f, (size.height * 0.2f).coerceAtLeast(2f), line)
+        LayoutBlockKind.TOOLBAR -> drawRoundRect(container, origin, size, CornerRadius(size.height / 2f))
         LayoutBlockKind.COVER -> shapeIn(
             block.shape, origin, size, scheme.primary,
             square = block.shape == BlockShape.ROUND || block.shape.isPolygon

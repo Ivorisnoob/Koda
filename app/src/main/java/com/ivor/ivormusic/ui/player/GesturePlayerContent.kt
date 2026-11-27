@@ -73,6 +73,11 @@ import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.queuePlaylistDateText
+import com.ivor.ivormusic.data.playerlayout.ButtonLook
+import com.ivor.ivormusic.data.playerlayout.LayoutAction
+import com.ivor.ivormusic.data.playerlayout.LayoutBlock
+import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -291,8 +296,6 @@ private fun GestureNowPlayingView(
         onPrevious = { queue.getOrNull(currentIndex - 1)?.let(onQueueItemChange) }
     )
     
-    // Get album info
-    val albumName = currentSong?.album?.takeIf { !isUnknownAlbum(it) } ?: "Unknown Album"
     val albumArtUrl = currentSong?.highResThumbnailUrl 
         ?: currentSong?.thumbnailUrl 
         ?: currentSong?.albumArtUri?.toString()
@@ -333,55 +336,32 @@ private fun GestureNowPlayingView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Collapse button
-                FilledIconButton(
+                GestureRoundButton(
                     onClick = onCollapse,
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier
+                        .size(48.dp)
+                        .captureAs("gesture.collapse", 20) { gestureButton(LayoutAction.COLLAPSE, ButtonLook.TONAL) }
                 ) {
                     Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(28.dp))
                 }
-                
+
                 // Lyrics Toggle Button (center)
-                Surface(
+                GesturePill(
+                    checked = showLyrics,
                     onClick = onToggleLyrics,
-                    shape = RoundedCornerShape(24.dp),
-                    color = if (showLyrics) MaterialTheme.colorScheme.primary 
-                           else MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Lyrics,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = if (showLyrics) MaterialTheme.colorScheme.onPrimary 
-                                   else MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (showLyrics) "Now Playing" else "Lyrics",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (showLyrics) MaterialTheme.colorScheme.onPrimary 
-                                   else MaterialTheme.colorScheme.onSurface
-                        )
+                    icon = Icons.Rounded.Lyrics,
+                    label = gestureLyricsLabel(showLyrics),
+                    modifier = Modifier.captureAs("gesture.lyrics", 21) {
+                        gestureButton(LayoutAction.LYRICS, ButtonLook.OUTLINED)
                     }
-                }
-                
+                )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledIconButton(
+                    GestureRoundButton(
                         onClick = onShowQueue,
-                        shape = CircleShape,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier
+                            .size(48.dp)
+                            .captureAs("gesture.queue", 22) { gestureButton(LayoutAction.QUEUE, ButtonLook.TONAL) }
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.QueueMusic,
@@ -394,21 +374,13 @@ private fun GestureNowPlayingView(
             
             // ========== 2. "PLAYING FROM" HEADER (right below top bar) ==========
             Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Playing From",
-                style = MaterialTheme.typography.labelMedium,
-                color = onSurfaceVariantColor,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = albumName,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = onSurfaceColor,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 32.dp)
+            GestureHeader(
+                song = currentSong,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .captureAs("gesture.header", 23) {
+                        captureBlock(LayoutBlockKind.HEADER, LayoutSkin.GESTURE)
+                    }
             )
             
             // ========== CENTER CONTENT (vertically centered) ==========
@@ -439,7 +411,13 @@ private fun GestureNowPlayingView(
                     val albumSize = maxWidth.coerceAtLeast(1.dp)
                     
                     Box(
-                        modifier = Modifier.size(albumSize),
+                        modifier = Modifier
+                            .size(albumSize)
+                            .captureAs("gesture.art", 0) {
+                                captureBlock(LayoutBlockKind.COVER, LayoutSkin.GESTURE) {
+                                    copy(action = LayoutAction.PLAY_PAUSE)
+                                }
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Crossfade(targetState = showLyrics, label = "AlbumLyricsCrossfade") { isLyricsVisible ->
@@ -494,33 +472,17 @@ private fun GestureNowPlayingView(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         // ========== 4. SONG INFO ==========
-                        Column(
+                        GestureTitle(
+                            song = currentSong,
+                            onArtistClick = onArtistClick,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .captureAs("gesture.title", 10) {
+                                    captureBlock(LayoutBlockKind.TITLE, LayoutSkin.GESTURE)
+                                }
                                 .swipeToSkip(swipeToSkip)
                                 .swipeToSkipFollow(swipeToSkip)
-                                .padding(horizontal = 24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
-                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = onSurfaceColor,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
-                            Text(
-                                text = artistName,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = onSurfaceVariantColor,
-                                modifier = Modifier
-                                    .clickable(enabled = artistName != "Unknown Artist") { onArtistClick(artistName) },
-                                textAlign = TextAlign.Center
-                            )
-                        }
+                        )
                         
                         Spacer(modifier = Modifier.height(30.dp))
                         // ========== 5. WAVY PROGRESS BAR (Expressive Style) ==========
@@ -528,6 +490,11 @@ private fun GestureNowPlayingView(
                         Column(
                             modifier = Modifier
                                 .width(progressBarWidth)
+                                .captureAs("gesture.scrubber", 30) {
+                                    captureBlock(LayoutBlockKind.SCRUBBER, LayoutSkin.GESTURE) {
+                                        copy(showDetail = true, motion = true)
+                                    }
+                                }
                         ) {
                             // Track the finger locally while scrubbing; seek once on
                             // release instead of on every drag frame (rebuffer storms).
@@ -607,7 +574,13 @@ private fun GestureNowPlayingView(
                 }
             }
             
-            PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+            PlayerVisualizerSlot(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .captureAs("gesture.visualizer", 31) {
+                        captureBlock(LayoutBlockKind.VISUALIZER, LayoutSkin.KODA)
+                    }
+            )
 
             // ========== 6. FLOATING TOOLBAR (Action Buttons) ==========
             Column(
@@ -628,7 +601,10 @@ private fun GestureNowPlayingView(
                     sleepTimerActive = sleepTimerActive,
                     onSleepTimerClick = onSleepTimerClick,
                     primaryColor = primaryColor,
-                    onSurfaceVariantColor = onSurfaceVariantColor
+                    onSurfaceVariantColor = onSurfaceVariantColor,
+                    modifier = Modifier.captureAs("gesture.toolbar", 40) {
+                        captureBlock(LayoutBlockKind.TOOLBAR, LayoutSkin.GESTURE)
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(56.dp))
@@ -643,7 +619,7 @@ private fun GestureNowPlayingView(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun GesturePlayerToolbar(
+internal fun GesturePlayerToolbar(
     shuffleModeEnabled: Boolean,
     repeatMode: Int,
     isFavorite: Boolean,
@@ -658,10 +634,11 @@ private fun GesturePlayerToolbar(
     sleepTimerActive: Boolean,
     onSleepTimerClick: () -> Unit,
     primaryColor: Color,
-    onSurfaceVariantColor: Color
+    onSurfaceVariantColor: Color,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 0.dp),
         contentAlignment = Alignment.Center
@@ -774,7 +751,7 @@ private fun GesturePlayerToolbar(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SwipeableAlbumCarousel(
+internal fun SwipeableAlbumCarousel(
     queue: List<MusicQueueItem>,
     currentIndex: Int,
     isPlaying: Boolean,
@@ -1009,7 +986,7 @@ private fun SwipeableAlbumCarousel(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SingleAlbumArt(
+internal fun SingleAlbumArt(
     song: Song?,
     isPlaying: Boolean,
     isBuffering: Boolean,
@@ -1620,4 +1597,311 @@ private fun formatDuration(durationMs: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return String.format(Locale.US, "%d:%02d", minutes, seconds)
+}
+
+private fun gestureButton(action: LayoutAction, look: ButtonLook) =
+    captureBlock(LayoutBlockKind.BUTTON, LayoutSkin.GESTURE) { copy(action = action, look = look) }
+
+/** The lyrics pill's word: what a tap goes to. */
+internal fun gestureLyricsLabel(showLyrics: Boolean): String = if (showLyrics) "Now Playing" else "Lyrics"
+
+/* ------------------------------------------------------------------ */
+/* Pieces, shared with blocks in Gesture's skin                        */
+/* ------------------------------------------------------------------ */
+
+/** A round top-bar button on the high container, lit in the accent while on. */
+@Composable
+internal fun GestureRoundButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    checked: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    FilledIconButton(
+        onClick = onClick,
+        shape = CircleShape,
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = if (checked) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = if (checked) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurface
+        ),
+        modifier = modifier
+    ) {
+        content()
+    }
+}
+
+/** A labelled pill, filled in the accent while on: the lyrics toggle at the top. */
+@Composable
+internal fun GesturePill(
+    checked: Boolean,
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(24.dp),
+        color = if (checked) MaterialTheme.colorScheme.primary
+               else MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = if (checked) MaterialTheme.colorScheme.onPrimary
+                       else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (checked) MaterialTheme.colorScheme.onPrimary
+                       else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** "Playing From" over the album name, centred under the top bar. */
+@Composable
+internal fun GestureHeader(song: Song?, modifier: Modifier = Modifier) {
+    val albumName = song?.album?.takeIf { !isUnknownAlbum(it) } ?: "Unknown Album"
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Playing From",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = albumName,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        )
+    }
+}
+
+/** The title centred under the carousel, with the artist under it. */
+@Composable
+internal fun GestureTitle(
+    song: Song?,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    artistEnabled: Boolean = true,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = song?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        val artistName = song?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
+        Text(
+            text = artistName,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .clickable(enabled = artistEnabled && artistName != "Unknown Artist") { onArtistClick(artistName) },
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Gesture's skin for custom layouts                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Gesture's floating toolbar as a block: Like as its button, then shuffle,
+ * repeat, download, the sleep timer and the menu. It is also what a toolbar in
+ * Koda's own look draws, since it reads in any layout.
+ */
+@Composable
+internal fun GestureToolbarBlock(host: LayoutHost) {
+    val viewModel = host.viewModel
+    val song by viewModel.currentSong.collectAsState()
+    val shuffle by viewModel.shuffleModeEnabled.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsState()
+    val liked by viewModel.isCurrentSongLiked.collectAsState()
+    val downloadingIds by viewModel.downloadingIds.collectAsState()
+    val downloadedSongs by viewModel.downloadedSongs.collectAsState()
+    val current = song
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        GesturePlayerToolbar(
+            shuffleModeEnabled = shuffle,
+            repeatMode = repeatMode,
+            isFavorite = liked,
+            isDownloaded = current != null && downloadedSongs.any { it.id == current.id },
+            isDownloading = current != null && current.id in downloadingIds,
+            isLocalOriginal = current != null && viewModel.isLocalOriginal(current),
+            onShowOptions = { host.onAction(LayoutAction.OPTIONS) },
+            onToggleShuffle = { host.onAction(LayoutAction.SHUFFLE) },
+            onToggleRepeat = { host.onAction(LayoutAction.REPEAT) },
+            onToggleFavorite = { host.onAction(LayoutAction.LIKE) },
+            onToggleDownload = { host.onAction(LayoutAction.DOWNLOAD) },
+            sleepTimerActive = host.sleepTimerActive,
+            onSleepTimerClick = { host.onAction(LayoutAction.SLEEP_TIMER) },
+            primaryColor = MaterialTheme.colorScheme.primary,
+            onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * A block drawn by Gesture's own pieces. The cover is the carousel of the
+ * queue, swiped through song by song; tonal and filled are the round top-bar
+ * button, outlined the labelled pill, plain a bare icon as on the toolbar.
+ */
+@Composable
+internal fun GestureSkinBlock(
+    block: LayoutBlock,
+    host: LayoutHost,
+    motionArtwork: Boolean,
+    fallback: @Composable (LayoutInk) -> Unit,
+) {
+    val song by host.viewModel.currentSong.collectAsState()
+    val scheme = MaterialTheme.colorScheme
+    when (block.kind) {
+        LayoutBlockKind.COVER -> GestureSkinCover(block, host, song, motionArtwork)
+        LayoutBlockKind.TITLE -> SkinTitleFrame(block, host) { frame ->
+            GestureTitle(
+                song = song,
+                onArtistClick = host.onArtistClick,
+                artistEnabled = host.interactive,
+                modifier = frame
+            )
+        }
+        LayoutBlockKind.HEADER -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            GestureHeader(song = song, modifier = Modifier.fillMaxWidth())
+        }
+        LayoutBlockKind.SCRUBBER -> LayoutScrubber(
+            host = host,
+            color = scheme.primary,
+            trackColor = scheme.onSurfaceVariant.copy(alpha = 0.15f),
+            timeColor = scheme.onSurfaceVariant,
+            stroke = 6.dp,
+            trackHeight = 14.dp,
+            // Gesture's line waves whether or not the music is playing.
+            wavesOnlyWhilePlaying = false,
+            flat = !block.motion,
+            showTimes = block.showDetail,
+            timesPadding = 4.dp,
+            verticalArrangement = Arrangement.Top
+        )
+        LayoutBlockKind.TOOLBAR -> GestureToolbarBlock(host)
+        LayoutBlockKind.BUTTON -> GestureSkinButton(block, host)
+        else -> fallback(LayoutInk(scheme.background, scheme.onSurface))
+    }
+}
+
+/** The carousel, or the one cover when nothing is queued; the lyrics take its square in place. */
+@Composable
+private fun GestureSkinCover(block: LayoutBlock, host: LayoutHost, song: Song?, primary: Boolean) {
+    val viewModel = host.viewModel
+    val queue by viewModel.currentQueue.collectAsState()
+    val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    val isBuffering by viewModel.isBuffering.collectAsState()
+    val playWhenReady by viewModel.playWhenReady.collectAsState()
+    val haptics = rememberPlayerHaptics()
+    val currentIndex = remember(currentQueueItemId, queue) {
+        if (queue.isEmpty()) 0
+        else queue.indexOfFirst { it.id == currentQueueItemId }.coerceIn(0, queue.lastIndex.coerceAtLeast(0))
+    }
+    val showLyrics = host.lyricsOpen && primary
+    val onTap: () -> Unit = { if (host.interactive && block.action != LayoutAction.NONE) host.onAction(block.action) }
+    val scheme = MaterialTheme.colorScheme
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Crossfade(targetState = showLyrics, label = "GestureSkinArtLyrics") { lyrics ->
+            when {
+                lyrics -> key(song?.id) {
+                    CoverLyrics(
+                        host = host,
+                        primary = scheme.primary,
+                        ink = scheme.onSurface,
+                        inkVariant = scheme.onSurfaceVariant
+                    )
+                }
+                queue.isNotEmpty() -> SwipeableAlbumCarousel(
+                    queue = queue,
+                    currentIndex = currentIndex,
+                    isPlaying = isPlaying,
+                    isBuffering = isBuffering && playWhenReady,
+                    onPlayPauseToggle = onTap,
+                    onQueueItemChange = { item ->
+                        if (host.interactive) {
+                            haptics.skip()
+                            viewModel.skipToQueueItem(item.id)
+                        }
+                    }
+                )
+                song != null -> SingleAlbumArt(
+                    song = song,
+                    isPlaying = isPlaying,
+                    isBuffering = isBuffering && playWhenReady,
+                    onPlayPauseToggle = onTap
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GestureSkinButton(block: LayoutBlock, host: LayoutHost) {
+    val action = block.action
+    val state = rememberLayoutActionState(action, host)
+    val onClick = { host.onAction(action) }
+    val label = action.label()
+    val checked = state.checked == true
+    when (block.look) {
+        ButtonLook.OUTLINED -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            GesturePill(
+                checked = checked,
+                onClick = onClick,
+                icon = state.iconFor(action, ActionGlyphs.FILLED),
+                label = if (action == LayoutAction.LYRICS) gestureLyricsLabel(checked) else label,
+            )
+        }
+        ButtonLook.PLAIN -> IconButton(onClick = onClick, modifier = Modifier.fillMaxSize()) {
+            CompositionLocalProvider(
+                LocalContentColor provides if (checked) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
+                LayoutActionIcon(action, state, label, Modifier.layoutIcon(24.dp), ActionGlyphs.FILLED)
+            }
+        }
+        else -> GestureRoundButton(
+            onClick = onClick,
+            checked = checked || block.look == ButtonLook.FILLED,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            LayoutActionIcon(
+                action, state, label,
+                Modifier.layoutIcon(if (action == LayoutAction.COLLAPSE) 28.dp else 24.dp),
+                ActionGlyphs.FILLED
+            )
+        }
+    }
 }

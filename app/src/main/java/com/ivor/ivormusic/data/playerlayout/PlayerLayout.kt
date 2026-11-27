@@ -43,7 +43,15 @@ enum class LayoutBackground(val id: String) {
     /** The cover's own tone, as Hero's deck. */
     TONAL("tonal"),
     /** The cover itself, full screen, fading into the surface at its foot. */
-    COVER("cover");
+    COVER("cover"),
+    /** One flat tone of the cover's colour, as Editorial's page. */
+    CONTAINER("container"),
+    /** The lowest surface tone, as Bento's board and Dial's field. */
+    BOARD("board"),
+    /** Two flat tones meeting on a hard edge, as Sticker's board. */
+    SPLIT("split"),
+    /** Canvas's field: the colour of the cover's own foot, under the art. */
+    CANVAS("canvas");
 
     companion object {
         fun fromId(id: String?): LayoutBackground = entries.firstOrNull { it.id == id } ?: AMBIENT
@@ -66,7 +74,13 @@ enum class LayoutBlockKind(val id: String) {
     /** The song that plays next; a tap opens the queue. */
     UP_NEXT("up_next"),
     /** A plain coloured shape to group other blocks on. */
-    PANEL("panel");
+    PANEL("panel"),
+    /** "Now playing" and where the song is from. */
+    HEADER("header"),
+    /** A floating toolbar of actions with Like as its button. */
+    TOOLBAR("toolbar"),
+    /** The time read out as text. */
+    TIME("time");
 
     /**
      * Whether this kind runs to the screen's edge when it touches the edge of
@@ -97,7 +111,8 @@ enum class LayoutAction(val id: String) {
     RADIO("radio"),
     STANDBY("standby"),
     OPTIONS("options"),
-    COLLAPSE("collapse");
+    COLLAPSE("collapse"),
+    DOWNLOAD("download");
 
     companion object {
         fun fromId(id: String?, fallback: LayoutAction): LayoutAction =
@@ -106,7 +121,7 @@ enum class LayoutAction(val id: String) {
         /** The actions a button can be given, in the order the picker shows them. */
         val forButtons: List<LayoutAction> = listOf(
             PLAY_PAUSE, PREVIOUS, NEXT, SEEK_BACK, SEEK_FORWARD,
-            LIKE, SHUFFLE, REPEAT, QUEUE, LYRICS,
+            LIKE, DOWNLOAD, SHUFFLE, REPEAT, QUEUE, LYRICS,
             SLEEP_TIMER, RADIO, STANDBY, OPTIONS, COLLAPSE
         )
 

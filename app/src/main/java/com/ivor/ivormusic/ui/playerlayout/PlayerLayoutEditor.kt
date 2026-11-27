@@ -61,6 +61,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -210,6 +211,10 @@ private fun PlayerLayoutEditor(
             (request as? LayoutEditorRequest.New)?.preset?.takeIf { it.isCaptured }?.let { it to true }
         )
     }
+    // Every player read off the real thing while the "start from" picker is
+    // open: its previews are drawn from these, and a pick is instant. Read
+    // again for a new song, since a title's length moves the pieces.
+    val captured = remember(song?.id) { mutableStateMapOf<LayoutPreset, List<LayoutBlock>>() }
     val coordinates = remember { arrayOfNulls<LayoutCoordinates>(2) } // [0] editor root, [1] canvas
     val dirty = existing == null || draft != initial
 
@@ -256,6 +261,9 @@ private fun PlayerLayoutEditor(
         if (areaWidthPx <= 0f || areaHeightPx <= 0f) return
         val size = when (kind) {
             LayoutBlockKind.COVER -> DpSize(areaWidthDp * 0.66f, areaWidthDp * 0.66f)
+            LayoutBlockKind.HEADER -> DpSize(areaWidthDp - 160.dp, 44.dp)
+            LayoutBlockKind.TOOLBAR -> DpSize(areaWidthDp - 40.dp, 72.dp)
+            LayoutBlockKind.TIME -> DpSize(areaWidthDp - 80.dp, 32.dp)
             LayoutBlockKind.TITLE -> DpSize(areaWidthDp - 48.dp, 72.dp)
             LayoutBlockKind.SCRUBBER -> DpSize(areaWidthDp - 40.dp, 52.dp)
             LayoutBlockKind.TRANSPORT -> DpSize(areaWidthDp - 40.dp, 88.dp)
@@ -332,14 +340,28 @@ private fun PlayerLayoutEditor(
             ambientBackground = ambientBackground,
             onCaptured = { blocks ->
                 pendingCapture = null
-                val captured = blocks.ifEmpty { PlayerLayoutPresets.build(preset, "").blocks }
+                if (blocks.isNotEmpty()) captured[preset] = blocks
                 val updated = draft.copy(
                     name = nameFor(preset),
                     background = PlayerLayoutPresets.backgroundFor(preset),
-                    blocks = captured
+                    blocks = blocks.ifEmpty { PlayerLayoutPresets.build(preset, "").blocks }
                 )
                 if (isStart) draft = updated else commit(updated)
             }
+        )
+    }
+    if (showStartFrom) {
+        val remaining = remember(song?.id) {
+            LayoutPreset.entries.filter { it.isCaptured && it !in captured }
+        }
+        StyleCaptureQueue(
+            presets = remaining,
+            viewModel = viewModel,
+            canvasSize = canvasSize,
+            safeArea = safeArea,
+            playerScheme = playerScheme,
+            ambientBackground = ambientBackground,
+            onCaptured = { preset, blocks -> if (blocks.isNotEmpty()) captured[preset] = blocks }
         )
     }
     Surface(
@@ -521,12 +543,23 @@ private fun PlayerLayoutEditor(
     if (showStartFrom) {
         StartFromSheet(
             current = basePreset,
+            captured = captured,
             onPick = { preset ->
-                if (preset.isCaptured) {
-                    pendingCapture = preset to false
-                } else {
-                    val built = PlayerLayoutPresets.build(preset, "")
-                    commit(draft.copy(name = nameFor(preset), background = built.background, blocks = built.blocks))
+                val ready = captured[preset]
+                when {
+                    // Fresh ids, so picking the same player twice is two layouts.
+                    ready != null -> commit(
+                        draft.copy(
+                            name = nameFor(preset),
+                            background = PlayerLayoutPresets.backgroundFor(preset),
+                            blocks = ready.map { it.copy(id = PlayerLayout.newId()) }
+                        )
+                    )
+                    preset.isCaptured -> pendingCapture = preset to false
+                    else -> {
+                        val built = PlayerLayoutPresets.build(preset, "")
+                        commit(draft.copy(name = nameFor(preset), background = built.background, blocks = built.blocks))
+                    }
                 }
                 basePreset = preset
                 selectedId = null

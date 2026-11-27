@@ -2833,6 +2833,7 @@
     <string name="cpl_action_standby">Standby</string>
     <string name="cpl_action_options">More options</string>
     <string name="cpl_action_collapse">Close player</string>
+    <string name="cpl_action_download">Download</string>
     <string name="cpl_preset_lyrics">Lyrics</string>
     <string name="cpl_preset_blank">Blank</string>
     <string name="cpl_preset_lyrics_sub">Lyrics up front</string>
@@ -2852,6 +2853,13 @@
     <string name="cpl_block_visualizer">Visualizer</string>
     <string name="cpl_block_up_next">Up next</string>
     <string name="cpl_block_panel">Panel</string>
+    <string name="cpl_block_header">Header</string>
+    <string name="cpl_block_toolbar">Toolbar</string>
+    <string name="cpl_block_time">Time</string>
+    <string name="cpl_bg_container">Tone</string>
+    <string name="cpl_bg_board">Board</string>
+    <string name="cpl_bg_split">Split</string>
+    <string name="cpl_bg_canvas">Canvas</string>
     <string name="cpl_up_next">Up next</string>
     <string name="cpl_nothing_next">Nothing queued after this</string>
     <string name="cpl_close_lyrics">Close lyrics</string>
@@ -2919,6 +2927,7 @@
     <string name="cpl_size_huge">Huge</string>
     <string name="cpl_cfg_show_artist">Show the artist</string>
     <string name="cpl_cfg_show_times">Show the times</string>
+    <string name="cpl_cfg_transport_toggles">Shuffle and repeat at the ends</string>
     <string name="cpl_cfg_wave">Wave while playing</string>
     <string name="cpl_cfg_spin">Turn while playing</string>
     <string name="cpl_cfg_spin_sub">Round and shaped covers</string>

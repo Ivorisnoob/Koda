@@ -63,11 +63,13 @@ object PlayerLayoutPresets {
         )
     }
 
+    /** Each player's own ground; the ones that are not a player use the ambient field. */
     fun backgroundFor(preset: LayoutPreset): LayoutBackground = when (preset) {
         LayoutPreset.HERO -> LayoutBackground.TONAL
-        LayoutPreset.CANVAS -> LayoutBackground.COVER
-        LayoutPreset.EDITORIAL, LayoutPreset.BENTO, LayoutPreset.STICKER, LayoutPreset.DIAL ->
-            LayoutBackground.SOLID
+        LayoutPreset.CANVAS -> LayoutBackground.CANVAS
+        LayoutPreset.EDITORIAL -> LayoutBackground.CONTAINER
+        LayoutPreset.BENTO, LayoutPreset.DIAL -> LayoutBackground.BOARD
+        LayoutPreset.STICKER -> LayoutBackground.SPLIT
         else -> LayoutBackground.AMBIENT
     }
 

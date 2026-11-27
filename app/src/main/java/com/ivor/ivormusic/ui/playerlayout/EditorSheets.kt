@@ -71,6 +71,7 @@ import com.ivor.ivormusic.data.playerlayout.LayoutBackground
 import com.ivor.ivormusic.data.playerlayout.LayoutBlock
 import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
 import com.ivor.ivormusic.data.playerlayout.LayoutColor
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import com.ivor.ivormusic.data.playerlayout.LayoutTextAlign
 import com.ivor.ivormusic.data.playerlayout.LayoutPreset
 import com.ivor.ivormusic.data.playerlayout.LayoutTextSize
@@ -90,6 +91,9 @@ import com.ivor.ivormusic.ui.player.playerStyleSubtitle
 internal fun LayoutBlockKind.label(): String = stringResource(
     when (this) {
         LayoutBlockKind.COVER -> R.string.cpl_block_cover
+        LayoutBlockKind.HEADER -> R.string.cpl_block_header
+        LayoutBlockKind.TOOLBAR -> R.string.cpl_block_toolbar
+        LayoutBlockKind.TIME -> R.string.cpl_block_time
         LayoutBlockKind.TITLE -> R.string.cpl_block_title
         LayoutBlockKind.SCRUBBER -> R.string.cpl_block_scrubber
         LayoutBlockKind.TRANSPORT -> R.string.cpl_block_transport
@@ -103,6 +107,9 @@ internal fun LayoutBlockKind.label(): String = stringResource(
 
 internal fun LayoutBlockKind.icon(): ImageVector = when (this) {
     LayoutBlockKind.COVER -> Icons.Rounded.Album
+    LayoutBlockKind.HEADER -> Icons.Rounded.Title
+    LayoutBlockKind.TOOLBAR -> Icons.Rounded.SmartButton
+    LayoutBlockKind.TIME -> Icons.Rounded.LinearScale
     LayoutBlockKind.TITLE -> Icons.Rounded.Title
     LayoutBlockKind.SCRUBBER -> Icons.Rounded.LinearScale
     LayoutBlockKind.TRANSPORT -> Icons.Rounded.PlayCircle
@@ -138,6 +145,10 @@ private fun BlockShape.label(): String = stringResource(
 internal fun LayoutBackground.label(): String = stringResource(
     when (this) {
         LayoutBackground.AMBIENT -> R.string.cpl_bg_ambient
+        LayoutBackground.CONTAINER -> R.string.cpl_bg_container
+        LayoutBackground.BOARD -> R.string.cpl_bg_board
+        LayoutBackground.SPLIT -> R.string.cpl_bg_split
+        LayoutBackground.CANVAS -> R.string.cpl_bg_canvas
         LayoutBackground.SOLID -> R.string.cpl_bg_solid
         LayoutBackground.TONAL -> R.string.cpl_bg_tonal
         LayoutBackground.COVER -> R.string.cpl_bg_cover
@@ -210,6 +221,16 @@ internal fun BlockConfigSheet(
                     LookSection(block, onChange)
                     ColorSection(block, onChange)
                     ShapeSection(block, onChange, BlockShape.entries)
+                    // Classic's button group carries shuffle and repeat at its ends.
+                    if (block.skin == LayoutSkin.CLASSIC) {
+                        ConfigToggles {
+                            ConfigToggle(
+                                title = stringResource(R.string.cpl_cfg_transport_toggles),
+                                checked = block.showDetail,
+                                onChange = { onChange(block.copy(showDetail = it)) }
+                            )
+                        }
+                    }
                 }
                 LayoutBlockKind.COVER -> {
                     ConfigSection(stringResource(R.string.cpl_cfg_tap)) {
@@ -314,6 +335,7 @@ internal fun BlockConfigSheet(
                 }
                 LayoutBlockKind.LYRICS -> ConfigNote(stringResource(R.string.cpl_cfg_lyrics_note))
                 LayoutBlockKind.VISUALIZER -> ConfigNote(stringResource(R.string.cpl_cfg_visualizer_note))
+                LayoutBlockKind.HEADER, LayoutBlockKind.TOOLBAR, LayoutBlockKind.TIME -> Unit
             }
 
             // Whose look it wears: Koda's blocks, or a built-in player's own
@@ -621,6 +643,14 @@ internal fun BackgroundSheet(
                                             .background(scheme.surface)
                                             .border(1.dp, scheme.outlineVariant, RoundedCornerShape(12.dp))
                                         LayoutBackground.TONAL -> Modifier.background(scheme.primaryContainer)
+                                        LayoutBackground.CONTAINER -> Modifier.background(scheme.primaryContainer)
+                                        LayoutBackground.BOARD, LayoutBackground.CANVAS -> Modifier.background(scheme.surfaceContainerLowest)
+                                        LayoutBackground.SPLIT -> Modifier.background(
+                                            Brush.verticalGradient(
+                                                0f to scheme.surfaceContainerLow, 0.45f to scheme.surfaceContainerLow,
+                                                0.45f to scheme.surfaceContainerLowest, 1f to scheme.surfaceContainerLowest
+                                            )
+                                        )
                                         LayoutBackground.COVER -> Modifier.background(
                                             Brush.verticalGradient(
                                                 listOf(scheme.primary, scheme.surface)
@@ -665,10 +695,22 @@ internal fun BackgroundSheet(
 @Composable
 internal fun StartFromSheet(
     current: LayoutPreset?,
+    /** Each player as read off the real thing, as it arrives; the rest draw their hand-built layout. */
+    captured: Map<LayoutPreset, List<LayoutBlock>>,
     onPick: (LayoutPreset) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val previews = remember { LayoutPreset.entries.associateWith { PlayerLayoutPresets.build(it, "") } }
+    val built = remember { LayoutPreset.entries.associateWith { PlayerLayoutPresets.build(it, "") } }
+    val previews = LayoutPreset.entries.associateWith { preset ->
+        captured[preset]?.let { blocks ->
+            com.ivor.ivormusic.data.playerlayout.PlayerLayout(
+                id = "",
+                name = "",
+                background = PlayerLayoutPresets.backgroundFor(preset),
+                blocks = blocks
+            )
+        } ?: built.getValue(preset)
+    }
     AdaptiveModalSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier

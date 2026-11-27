@@ -26,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.playerlayout.LayoutAction
+import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import com.ivor.ivormusic.data.playerlayout.LayoutGeometry
 import com.ivor.ivormusic.data.playerlayout.LayoutPreset
 import com.ivor.ivormusic.data.playerlayout.PlayerLayout
@@ -85,10 +88,21 @@ fun CustomPlayerSheetContent(
     var showLyrics by remember { mutableStateOf(false) }
     val playerHaptics = rememberPlayerHaptics()
     val sleepTimer = rememberSleepTimerControl(viewModel = viewModel)
+    // Which way the last skip went, for covers that slide the next one in.
+    var skipDirection by remember { mutableIntStateOf(1) }
     val swipeToSkip = rememberSwipeToSkip(
-        onNext = { playerHaptics.skip(); viewModel.skipToNext() },
-        onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() }
+        onNext = { skipDirection = 1; playerHaptics.skip(); viewModel.skipToNext() },
+        onPrevious = { skipDirection = -1; playerHaptics.skip(); viewModel.skipToPrevious() }
     )
+    // Classic's rising panel, when the layout carries Classic's tab bar: it
+    // holds the queue and the lyrics there, as it does in Classic.
+    val usesClassicPanel = layout.blocks.any {
+        it.kind == LayoutBlockKind.UP_NEXT && it.skin == LayoutSkin.CLASSIC
+    }
+    val classicPanel = if (usesClassicPanel) rememberClassicPanelState() else null
+    // A cover in a player's skin shows the lyrics in place of its art, as its
+    // player does, rather than opening them over the screen.
+    val lyricsInCover = layout.lyricsInCover()
     // Declared after ExpandablePlayer's handlers, so it answers first while
     // the lyrics are open; the queue's own handler wins over both.
     BackHandler(enabled = showLyrics && !showQueue) { showLyrics = false }
@@ -96,19 +110,26 @@ fun CustomPlayerSheetContent(
     val perform: (LayoutAction) -> Unit = { action ->
         when (action) {
             LayoutAction.NONE -> Unit
+            LayoutAction.DOWNLOAD -> viewModel.currentSong.value?.let {
+                if (!viewModel.isLocalOriginal(it) && !viewModel.isDownloading(it.id)) viewModel.toggleDownload(it)
+            }
             LayoutAction.PLAY_PAUSE -> {
                 playerHaptics.playPause(!viewModel.isPlaying.value)
                 viewModel.togglePlayPause()
             }
-            LayoutAction.PREVIOUS -> { playerHaptics.skip(); viewModel.skipToPrevious() }
-            LayoutAction.NEXT -> { playerHaptics.skip(); viewModel.skipToNext() }
+            LayoutAction.PREVIOUS -> { skipDirection = -1; playerHaptics.skip(); viewModel.skipToPrevious() }
+            LayoutAction.NEXT -> { skipDirection = 1; playerHaptics.skip(); viewModel.skipToNext() }
             LayoutAction.SEEK_BACK -> viewModel.seekBy(-10_000L)
             LayoutAction.SEEK_FORWARD -> viewModel.seekBy(10_000L)
             LayoutAction.LIKE -> viewModel.toggleCurrentSongLike()
             LayoutAction.SHUFFLE -> viewModel.toggleShuffle()
             LayoutAction.REPEAT -> viewModel.toggleRepeat()
-            LayoutAction.QUEUE -> showQueue = true
-            LayoutAction.LYRICS -> showLyrics = !showLyrics
+            LayoutAction.QUEUE -> if (classicPanel != null) classicPanel.open(ClassicTab.UpNext) else showQueue = true
+            LayoutAction.LYRICS -> if (classicPanel != null) {
+                classicPanel.open(ClassicTab.Lyrics)
+            } else {
+                showLyrics = !showLyrics
+            }
             LayoutAction.SLEEP_TIMER -> sleepTimer.open()
             LayoutAction.RADIO -> viewModel.currentSong.value?.let { viewModel.playSongRadio(it) }
             LayoutAction.STANDBY -> viewModel.openStandby()
@@ -121,15 +142,43 @@ fun CustomPlayerSheetContent(
         interactive = true,
         onAction = perform,
         onArtistClick = onArtistClick,
-        lyricsOpen = showLyrics,
+        lyricsOpen = if (classicPanel != null) {
+            classicPanel.isOpen && classicPanel.tab == ClassicTab.Lyrics
+        } else {
+            showLyrics
+        },
         sleepTimerActive = sleepTimer.active,
         swipeToSkip = swipeToSkip,
+        skipDirection = skipDirection,
+        classicPanel = classicPanel,
     )
     val safeArea = WindowInsets.safeDrawing.asPaddingValues()
     val ink = rememberLayoutInk(layout.background)
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Crossfade(targetState = showQueue, label = "CustomQueueTransition") { queueVisible ->
+        if (classicPanel != null) {
+            // The panel rises over the layout, which recedes a little under it.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .classicPanelHeight(classicPanel)
+            ) {
+                CustomPlayerCanvas(
+                    layout = layout,
+                    host = host,
+                    safeArea = safeArea,
+                    ambientBackground = ambientBackground,
+                    blocksModifier = Modifier.classicRecede(classicPanel),
+                )
+                ClassicPanelHost(
+                    state = classicPanel,
+                    viewModel = viewModel,
+                    currentSong = currentSong,
+                    onLoadMore = onLoadMore,
+                    onArtistClick = onArtistClick
+                )
+            }
+        } else Crossfade(targetState = showQueue, label = "CustomQueueTransition") { queueVisible ->
             if (queueVisible) {
                 EditorialQueueView(
                     queue = currentQueue,
@@ -157,7 +206,7 @@ fun CustomPlayerSheetContent(
                         ambientBackground = ambientBackground,
                     )
                     AnimatedVisibility(
-                        visible = showLyrics,
+                        visible = showLyrics && !lyricsInCover,
                         enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()),
                         exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec())
                     ) {

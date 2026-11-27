@@ -933,8 +933,7 @@ internal fun HeroChromeButton(
 /* ------------------------------------------------------------------ */
 
 /** An icon at Hero's size, shrinking with a block made smaller than Hero drew it. */
-private fun Modifier.heroIcon(size: Dp): Modifier =
-    fillMaxSize(0.62f).sizeIn(maxWidth = size, maxHeight = size).aspectRatio(1f)
+private fun Modifier.heroIcon(size: Dp): Modifier = layoutIcon(size)
 
 /**
  * A block drawn by Hero's own pieces. The four button looks are Hero's four
@@ -953,25 +952,50 @@ internal fun HeroSkinBlock(
     val colors = rememberHeroColors()
     val song by host.viewModel.currentSong.collectAsState()
     when (block.kind) {
-        LayoutBlockKind.COVER -> HeroArtwork(
-            song = song,
-            colors = colors,
-            motionEligible = motionArtwork,
-            modifier = Modifier
-                .fillMaxSize()
-                .layoutCoverGestures(block, host)
-                .clip(block.shape.composeShape())
-        )
-        LayoutBlockKind.TITLE -> HeroTitle(
-            song = song,
-            colors = colors,
-            onArtistClick = host.onArtistClick,
-            artistEnabled = host.interactive,
-            verticalArrangement = Arrangement.Bottom,
-            modifier = Modifier
-                .fillMaxSize()
-                .layoutTitleSwipe(block, host)
-        )
+        LayoutBlockKind.COVER -> {
+            // Hero swaps the art for the lyrics in place, clear of the top bar
+            // above and the title on the art's foot.
+            val showLyrics = host.lyricsOpen && motionArtwork
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layoutCoverGestures(block, host, enabled = !showLyrics)
+                    .clip(block.shape.composeShape())
+            ) {
+                Crossfade(targetState = showLyrics, label = "HeroSkinArtLyrics") { lyrics ->
+                    if (lyrics) {
+                        CoverLyrics(
+                            host = host,
+                            primary = colors.accent,
+                            ink = colors.ink,
+                            inkVariant = colors.ink.copy(alpha = 0.6f),
+                            background = colors.field,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
+                                .padding(top = 60.dp, bottom = 132.dp)
+                        )
+                    } else {
+                        HeroArtwork(
+                            song = song,
+                            colors = colors,
+                            motionEligible = motionArtwork,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+        }
+        // On the art in Hero, so it moves with the art when the cover is swiped.
+        LayoutBlockKind.TITLE -> SkinTitleFrame(block, host, SwipeToSkipDefaults.ArtFollow) { frame ->
+            HeroTitle(
+                song = song,
+                colors = colors,
+                onArtistClick = host.onArtistClick,
+                artistEnabled = host.interactive,
+                modifier = frame
+            )
+        }
         LayoutBlockKind.BUTTON -> HeroSkinButton(block, host, colors)
         else -> fallback(LayoutInk(colors.field, colors.ink))
     }
@@ -1009,7 +1033,7 @@ private fun HeroSkinButton(block: LayoutBlock, host: LayoutHost, colors: HeroCol
             enabled = enabled,
             modifier = fill
         ) {
-            LayoutActionIcon(action, state, label, Modifier.heroIcon(30.dp))
+            LayoutActionIcon(action, state, label, Modifier.heroIcon(30.dp), ActionGlyphs.FILLED)
         }
         block.look == ButtonLook.PLAIN -> HeroChromeButton(
             onClick = onClick,
@@ -1023,7 +1047,8 @@ private fun HeroSkinButton(block: LayoutBlock, host: LayoutHost, colors: HeroCol
         ) {
             LayoutActionIcon(
                 action, state, label,
-                Modifier.heroIcon(if (action == LayoutAction.COLLAPSE) 26.dp else 22.dp)
+                Modifier.heroIcon(if (action == LayoutAction.COLLAPSE) 26.dp else 22.dp),
+                ActionGlyphs.FILLED
             )
         }
         else -> HeroToggle(
@@ -1034,7 +1059,7 @@ private fun HeroSkinButton(block: LayoutBlock, host: LayoutHost, colors: HeroCol
             enabled = enabled,
             modifier = fill
         ) {
-            LayoutActionIcon(action, state, label, Modifier.heroIcon(22.dp))
+            LayoutActionIcon(action, state, label, Modifier.heroIcon(22.dp), ActionGlyphs.FILLED)
         }
     }
 }

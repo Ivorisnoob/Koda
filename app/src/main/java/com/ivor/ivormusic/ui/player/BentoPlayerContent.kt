@@ -75,6 +75,14 @@ import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import androidx.compose.foundation.layout.RowScope
+import com.ivor.ivormusic.data.MusicQueueItem
+import com.ivor.ivormusic.data.Song
+import com.ivor.ivormusic.data.playerlayout.ButtonLook
+import com.ivor.ivormusic.data.playerlayout.LayoutAction
+import com.ivor.ivormusic.data.playerlayout.LayoutBlock
+import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 
 /**
  * Bento Player - the squish grid style.
@@ -198,29 +206,21 @@ fun BentoPlayerSheetContent(
                             modifier = Modifier
                                 .width(56.dp)
                                 .fillMaxHeight()
+                                .captureAs("bento.collapse", 20) { bentoButton(LayoutAction.COLLAPSE, ButtonLook.TONAL) }
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowDown, "Collapse",
                                 modifier = Modifier.size(26.dp)
                             )
                         }
-                        Surface(
+                        BentoHeaderTile(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxHeight(),
-                            shape = RoundedCornerShape(18.dp),
-                            color = tileColor,
-                            contentColor = onTileVariant
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "NOW PLAYING",
-                                    style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 3.sp),
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                                .fillMaxHeight()
+                                .captureAs("bento.header", 21) {
+                                    captureBlock(LayoutBlockKind.HEADER, LayoutSkin.BENTO)
+                                }
+                        )
                         BentoTile(
                             onClick = sleepTimer.open,
                             color = if (sleepTimer.active) {
@@ -232,6 +232,7 @@ fun BentoPlayerSheetContent(
                             modifier = Modifier
                                 .width(56.dp)
                                 .fillMaxHeight()
+                                .captureAs("bento.sleep", 22) { bentoButton(LayoutAction.SLEEP_TIMER, ButtonLook.TONAL) }
                         ) {
                             Icon(
                                 Icons.Rounded.Bedtime, "Sleep timer",
@@ -245,6 +246,7 @@ fun BentoPlayerSheetContent(
                             modifier = Modifier
                                 .width(56.dp)
                                 .fillMaxHeight()
+                                .captureAs("bento.options", 23) { bentoButton(LayoutAction.OPTIONS, ButtonLook.TONAL) }
                         ) {
                             Icon(
                                 Icons.Rounded.MoreVert, "More options",
@@ -254,31 +256,17 @@ fun BentoPlayerSheetContent(
                     }
 
                     // ========== ART TILE (corner-breathing) ==========
-                    val infinite = rememberInfiniteTransition(label = "BentoBreath")
-                    val breathing by infinite.animateFloat(
-                        initialValue = 28f,
-                        targetValue = 52f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(durationMillis = 2600, easing = FastOutSlowInEasing),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "BentoBreathValue"
-                    )
-                    // Spring chases a moving target while playing and a
-                    // fixed one while paused, so pause settles smoothly.
-                    val artCorner by animateFloatAsState(
-                        targetValue = if (isPlaying) breathing else 36f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "BentoArtCorner"
-                    )
+                    val artCorner = rememberBentoArtCorner(isPlaying)
 
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
+                            .captureAs("bento.art", 0) {
+                                captureBlock(LayoutBlockKind.COVER, LayoutSkin.BENTO) {
+                                    copy(action = LayoutAction.PLAY_PAUSE)
+                                }
+                            }
                             // Outside the clip, so the whole tile slides with
                             // the finger instead of the art sliding inside it.
                             .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
@@ -305,65 +293,23 @@ fun BentoPlayerSheetContent(
                                     backgroundColor = tileColor
                                 )
                             } else {
-                                val artSong = currentSong?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
-                                if (artSong != null) {
-                                    PlayerArtwork(
-                                        song = artSong,
-                                        contentDescription = "Album Art",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.MusicNote,
-                                            contentDescription = null,
-                                            tint = onTileVariant.copy(alpha = 0.4f),
-                                            modifier = Modifier.size(96.dp)
-                                        )
-                                    }
-                                }
+                                BentoArt(song = currentSong)
                             }
                         }
                     }
 
                     // ========== TITLE TILE ==========
-                    Surface(
+                    BentoTitleTile(
+                        song = currentSong,
+                        onArtistClick = onArtistClick,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .captureAs("bento.title", 10) {
+                                captureBlock(LayoutBlockKind.TITLE, LayoutSkin.BENTO)
+                            }
                             .swipeToSkipFollow(swipeToSkip)
-                            .swipeToSkip(swipeToSkip),
-                        shape = RoundedCornerShape(20.dp),
-                        color = tileColor
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
-                            Text(
-                                text = currentSong?.title?.takeIf { !isUnknownTitle(it) }
-                                    ?: "Untitled",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = onTile,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
-                                ?: "Unknown Artist"
-                            Text(
-                                text = artistName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = onTileVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable(enabled = artistName != "Unknown Artist") {
-                                        onArtistClick(artistName)
-                                    }
-                            )
-                        }
-                    }
+                            .swipeToSkip(swipeToSkip)
+                    )
 
                     // ========== PROGRESS TILE (hard two-tone fill) ==========
                     BentoProgressTile(
@@ -374,69 +320,44 @@ fun BentoPlayerSheetContent(
                         trackColor = tileColor,
                         fillColor = MaterialTheme.colorScheme.primaryContainer,
                         onTile = onTile,
-                        onTileVariant = onTileVariant
-                    )
-
-                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
-
-                    // ========== TRANSPORT ROW (squish physics) ==========
-                    Row(
+                        onTileVariant = onTileVariant,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(84.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        BentoSquishTile(
-                            baseWeight = 1f,
-                            onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ) {
-                            Icon(
-                                Icons.Default.SkipPrevious, "Previous",
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                        BentoSquishTile(
-                            baseWeight = 1.6f,
-                            onClick = {
-                                playerHaptics.playPause(!viewModel.isPlaying.value)
-                                viewModel.togglePlayPause()
-                            },
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ) {
-                            if (isBuffering && playWhenReady && !isPlaying) {
-                                LoadingIndicator(
-                                    modifier = Modifier.size(36.dp),
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    polygons = listOf(
-                                        MaterialShapes.SoftBurst,
-                                        MaterialShapes.Cookie9Sided,
-                                        MaterialShapes.Pill,
-                                        MaterialShapes.Sunny
-                                    )
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isPlaying) "Pause" else "Play",
-                                    modifier = Modifier.size(40.dp)
-                                )
+                            .captureAs("bento.scrubber", 30) {
+                                captureBlock(LayoutBlockKind.SCRUBBER, LayoutSkin.BENTO) {
+                                    copy(showDetail = true)
+                                }
                             }
-                        }
-                        BentoSquishTile(
-                            baseWeight = 1f,
-                            onClick = { playerHaptics.skip(); viewModel.skipToNext() },
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ) {
-                            Icon(
-                                Icons.Default.SkipNext, "Next",
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                    }
+                            .height(64.dp)
+                    )
+
+                    PlayerVisualizerSlot(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .captureAs("bento.visualizer", 31) {
+                                captureBlock(LayoutBlockKind.VISUALIZER, LayoutSkin.KODA)
+                            }
+                    )
+
+                    // ========== TRANSPORT ROW (squish physics) ==========
+                    BentoTransportRow(
+                        isPlaying = isPlaying,
+                        buffering = isBuffering && playWhenReady && !isPlaying,
+                        onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() },
+                        onPlayPause = {
+                            playerHaptics.playPause(!viewModel.isPlaying.value)
+                            viewModel.togglePlayPause()
+                        },
+                        onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .captureAs("bento.transport", 40) {
+                                captureBlock(LayoutBlockKind.TRANSPORT, LayoutSkin.BENTO) {
+                                    copy(look = ButtonLook.FILLED)
+                                }
+                            }
+                            .height(84.dp)
+                    )
 
                     // ========== STATUS ROW ==========
                     Row(
@@ -449,7 +370,8 @@ fun BentoPlayerSheetContent(
                             checked = isFavorite,
                             onClick = { viewModel.toggleCurrentSongLike() },
                             uncheckedColor = tileColor,
-                            uncheckedContent = onTileVariant
+                            uncheckedContent = onTileVariant,
+                            capture = Modifier.captureAs("bento.like", 50) { bentoButton(LayoutAction.LIKE, ButtonLook.OUTLINED) }
                         ) {
                             LikeBurstIcon(isFavorite = isFavorite, iconSize = 22.dp)
                         }
@@ -457,7 +379,8 @@ fun BentoPlayerSheetContent(
                             checked = shuffleModeEnabled,
                             onClick = { viewModel.toggleShuffle() },
                             uncheckedColor = tileColor,
-                            uncheckedContent = onTileVariant
+                            uncheckedContent = onTileVariant,
+                            capture = Modifier.captureAs("bento.shuffle", 51) { bentoButton(LayoutAction.SHUFFLE, ButtonLook.OUTLINED) }
                         ) {
                             Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(22.dp))
                         }
@@ -465,7 +388,8 @@ fun BentoPlayerSheetContent(
                             checked = repeatMode != Player.REPEAT_MODE_OFF,
                             onClick = { viewModel.toggleRepeat() },
                             uncheckedColor = tileColor,
-                            uncheckedContent = onTileVariant
+                            uncheckedContent = onTileVariant,
+                            capture = Modifier.captureAs("bento.repeat", 52) { bentoButton(LayoutAction.REPEAT, ButtonLook.OUTLINED) }
                         ) {
                             Icon(
                                 if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
@@ -478,49 +402,23 @@ fun BentoPlayerSheetContent(
                             checked = showLyrics,
                             onClick = { showLyrics = !showLyrics },
                             uncheckedColor = tileColor,
-                            uncheckedContent = onTileVariant
+                            uncheckedContent = onTileVariant,
+                            capture = Modifier.captureAs("bento.lyrics", 53) { bentoButton(LayoutAction.LYRICS, ButtonLook.OUTLINED) }
                         ) {
                             Icon(Icons.Rounded.Lyrics, "Lyrics", modifier = Modifier.size(22.dp))
                         }
                         // Up-next peek tile: expands into the queue.
-                        Surface(
+                        BentoUpNextTile(
+                            queue = currentQueue,
+                            currentQueueItemId = currentQueueItemId,
                             onClick = { showQueue = true },
                             modifier = Modifier
                                 .weight(2f)
-                                .fillMaxHeight(),
-                            shape = RoundedCornerShape(18.dp),
-                            color = tileColor,
-                            contentColor = onTileVariant
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = "Queue",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                // index + 1 is the real next song now that this
-                                // list is the play order rather than the order
-                                // the queue was built in. The -1 guard matters
-                                // for the same reason: unfound would have read
-                                // getOrNull(0) and named the first song in the
-                                // queue as the one coming up.
-                                val nextTitle = remember(currentQueue, currentQueueItemId) {
-                                    val index = currentQueue.indexOfFirst { it.id == currentQueueItemId }
-                                    if (index < 0) "End of queue"
-                                    else currentQueue.getOrNull(index + 1)?.song?.title ?: "End of queue"
+                                .fillMaxHeight()
+                                .captureAs("bento.upnext", 54) {
+                                    captureBlock(LayoutBlockKind.UP_NEXT, LayoutSkin.BENTO)
                                 }
-                                Text(
-                                    text = nextTitle,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        )
                     }
 
                     Spacer(modifier = Modifier.navigationBarsPadding())
@@ -549,7 +447,7 @@ fun BentoPlayerSheetContent(
 
 /** Plain flat tile with a click action. */
 @Composable
-private fun BentoTile(
+internal fun BentoTile(
     onClick: () -> Unit,
     color: Color,
     contentColor: Color,
@@ -572,7 +470,7 @@ private fun BentoTile(
  * neighbors physically compress, springing back on release.
  */
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.BentoSquishTile(
+private fun RowScope.BentoSquishTile(
     baseWeight: Float,
     onClick: () -> Unit,
     color: Color,
@@ -608,11 +506,35 @@ private fun androidx.compose.foundation.layout.RowScope.BentoSquishTile(
  * rounder - tonal color and corner radius carry the state, never elevation.
  */
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.BentoToggleTile(
+private fun RowScope.BentoToggleTile(
     checked: Boolean,
     onClick: () -> Unit,
     uncheckedColor: Color,
     uncheckedContent: Color,
+    capture: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    BentoToggleSurface(
+        checked = checked,
+        onClick = onClick,
+        uncheckedColor = uncheckedColor,
+        uncheckedContent = uncheckedContent,
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .then(capture),
+        content = content
+    )
+}
+
+/** [BentoToggleTile] at any size, for blocks in Bento's skin. */
+@Composable
+internal fun BentoToggleSurface(
+    checked: Boolean,
+    onClick: () -> Unit,
+    uncheckedColor: Color,
+    uncheckedContent: Color,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     val corner by animateDpAsState(
@@ -625,9 +547,7 @@ private fun androidx.compose.foundation.layout.RowScope.BentoToggleTile(
     )
     Surface(
         onClick = onClick,
-        modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight(),
+        modifier = modifier,
         shape = RoundedCornerShape(corner),
         color = if (checked) MaterialTheme.colorScheme.tertiaryContainer else uncheckedColor,
         contentColor = if (checked) MaterialTheme.colorScheme.onTertiaryContainer else uncheckedContent
@@ -641,7 +561,7 @@ private fun androidx.compose.foundation.layout.RowScope.BentoToggleTile(
  * the playhead. An invisible slider on top scrubs; one seek on release.
  */
 @Composable
-private fun BentoProgressTile(
+internal fun BentoProgressTile(
     progress: Long,
     duration: Long,
     isPlaying: Boolean,
@@ -649,7 +569,9 @@ private fun BentoProgressTile(
     trackColor: Color,
     fillColor: Color,
     onTile: Color,
-    onTileVariant: Color
+    onTileVariant: Color,
+    modifier: Modifier = Modifier.fillMaxWidth().height(64.dp),
+    showTimes: Boolean = true
 ) {
     var scrubPosition by remember { mutableStateOf<Float?>(null) }
     val displayedProgress = scrubPosition?.toLong() ?: progress
@@ -665,9 +587,7 @@ private fun BentoProgressTile(
     val fillFraction = smoothProgress.value
 
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp)
+        modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .background(trackColor)
     ) {
@@ -679,7 +599,7 @@ private fun BentoProgressTile(
                     .background(fillColor)
             )
         }
-        Row(
+        if (showTimes) Row(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
@@ -712,5 +632,394 @@ private fun BentoProgressTile(
             ),
             modifier = Modifier.fillMaxSize()
         )
+    }
+}
+
+private fun bentoButton(action: LayoutAction, look: ButtonLook) =
+    captureBlock(LayoutBlockKind.BUTTON, LayoutSkin.BENTO) { copy(action = action, look = look) }
+
+/* ------------------------------------------------------------------ */
+/* Pieces, shared with blocks in Bento's skin                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The art tile's corner, which slowly breathes while music plays and settles
+ * when it stops: the grid itself is the play state.
+ */
+@Composable
+internal fun rememberBentoArtCorner(isPlaying: Boolean): Float {
+    val infinite = rememberInfiniteTransition(label = "BentoBreath")
+    val breathing by infinite.animateFloat(
+        initialValue = 28f,
+        targetValue = 52f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "BentoBreathValue"
+    )
+    // Spring chases a moving target while playing and a fixed one while
+    // paused, so pause settles smoothly.
+    val artCorner by animateFloatAsState(
+        targetValue = if (isPlaying) breathing else 36f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "BentoArtCorner"
+    )
+    return artCorner
+}
+
+/** The cover filling its tile, or a quiet note where there is none. */
+@Composable
+internal fun BentoArt(song: Song?, motionEligible: Boolean = true) {
+    val artSong = song?.takeIf { it.thumbnailUrl != null || it.albumArtUri != null }
+    if (artSong != null) {
+        PlayerArtwork(
+            song = artSong,
+            contentDescription = "Album Art",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            motionEligible = motionEligible
+        )
+    } else {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(96.dp)
+            )
+        }
+    }
+}
+
+/** "NOW PLAYING" in spaced capitals on a flat tile. */
+@Composable
+internal fun BentoHeaderTile(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = "NOW PLAYING",
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 3.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/** The title and artist on their own flat tile. */
+@Composable
+internal fun BentoTitleTile(
+    song: Song?,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    artistEnabled: Boolean = true,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
+            Text(
+                text = song?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            val artistName = song?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
+            Text(
+                text = artistName,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(enabled = artistEnabled && artistName != "Unknown Artist") {
+                        onArtistClick(artistName)
+                    }
+            )
+        }
+    }
+}
+
+/**
+ * Previous, play and next as tiles with press mass: the pressed tile expands
+ * while its neighbours compress, springing back on release.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun BentoTransportRow(
+    isPlaying: Boolean,
+    buffering: Boolean,
+    onPrevious: () -> Unit,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        BentoSquishTile(
+            baseWeight = 1f,
+            onClick = onPrevious,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ) {
+            Icon(
+                Icons.Default.SkipPrevious, "Previous",
+                modifier = Modifier.size(32.dp)
+            )
+        }
+        BentoSquishTile(
+            baseWeight = 1.6f,
+            onClick = onPlayPause,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            if (buffering) {
+                LoadingIndicator(
+                    modifier = Modifier.size(36.dp),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    polygons = listOf(
+                        MaterialShapes.SoftBurst,
+                        MaterialShapes.Cookie9Sided,
+                        MaterialShapes.Pill,
+                        MaterialShapes.Sunny
+                    )
+                )
+            } else {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+        }
+        BentoSquishTile(
+            baseWeight = 1f,
+            onClick = onNext,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ) {
+            Icon(
+                Icons.Default.SkipNext, "Next",
+                modifier = Modifier.size(32.dp)
+            )
+        }
+    }
+}
+
+/** The up-next peek: the next song's title on a tile that opens the queue. */
+@Composable
+internal fun BentoUpNextTile(
+    queue: List<MusicQueueItem>,
+    currentQueueItemId: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = "Queue",
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            // index + 1 is the real next song now that this list is the play
+            // order rather than the order the queue was built in. The -1 guard
+            // matters for the same reason: unfound would have read getOrNull(0)
+            // and named the first song in the queue as the one coming up.
+            val nextTitle = remember(queue, currentQueueItemId) {
+                val index = queue.indexOfFirst { it.id == currentQueueItemId }
+                if (index < 0) "End of queue"
+                else queue.getOrNull(index + 1)?.song?.title ?: "End of queue"
+            }
+            Text(
+                text = nextTitle,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Bento's skin for custom layouts                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A block drawn by Bento's own tiles. Tonal is the flat tile of the top row
+ * (lit in the tertiary tone while on), outlined and plain the toggle tile that
+ * rounds and lights when on, filled the primary tile; the transport is the
+ * squishing row, Up next the peek tile.
+ */
+@Composable
+internal fun BentoSkinBlock(
+    block: LayoutBlock,
+    host: LayoutHost,
+    motionArtwork: Boolean,
+    fallback: @Composable (LayoutInk) -> Unit,
+) {
+    val viewModel = host.viewModel
+    val song by viewModel.currentSong.collectAsState()
+    val scheme = MaterialTheme.colorScheme
+    val tileColor = scheme.surfaceContainerHigh
+    when (block.kind) {
+        LayoutBlockKind.COVER -> {
+            val isPlaying by viewModel.isPlaying.collectAsState()
+            val artCorner = rememberBentoArtCorner(isPlaying)
+            val showLyrics = host.lyricsOpen && motionArtwork
+            val swipe = host.swipeToSkip
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Outside the clip, so the whole tile slides with the
+                    // finger instead of the art sliding inside it.
+                    .then(
+                        if (swipe != null && host.interactive && block.swipeToSkip) {
+                            Modifier.swipeToSkipFollow(swipe, SwipeToSkipDefaults.ArtFollow)
+                        } else Modifier
+                    )
+                    .clip(RoundedCornerShape(artCorner.dp))
+                    .background(tileColor)
+                    .layoutCoverGestures(block, host, follow = null, enabled = !showLyrics)
+            ) {
+                Crossfade(targetState = showLyrics, label = "BentoSkinArtLyrics") { lyrics ->
+                    if (lyrics) {
+                        CoverLyrics(
+                            host = host,
+                            primary = scheme.primary,
+                            ink = scheme.onSurface,
+                            inkVariant = scheme.onSurfaceVariant,
+                            background = tileColor
+                        )
+                    } else {
+                        BentoArt(song = song, motionEligible = motionArtwork)
+                    }
+                }
+            }
+        }
+        LayoutBlockKind.TITLE -> SkinTitleFrame(block, host) { frame ->
+            BentoTitleTile(
+                song = song,
+                onArtistClick = host.onArtistClick,
+                artistEnabled = host.interactive,
+                modifier = frame
+            )
+        }
+        LayoutBlockKind.HEADER -> BentoHeaderTile(Modifier.fillMaxSize())
+        LayoutBlockKind.SCRUBBER -> {
+            val progress by viewModel.progress.collectAsState()
+            val duration by viewModel.duration.collectAsState()
+            val isPlaying by viewModel.isPlaying.collectAsState()
+            BentoProgressTile(
+                progress = progress,
+                duration = duration,
+                isPlaying = isPlaying,
+                onSeekTo = { if (host.interactive) viewModel.seekTo(it) },
+                trackColor = tileColor,
+                fillColor = scheme.primaryContainer,
+                onTile = scheme.onSurface,
+                onTileVariant = scheme.onSurfaceVariant,
+                showTimes = block.showDetail,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        LayoutBlockKind.TRANSPORT -> {
+            val isPlaying by viewModel.isPlaying.collectAsState()
+            val isBuffering by viewModel.isBuffering.collectAsState()
+            val playWhenReady by viewModel.playWhenReady.collectAsState()
+            BentoTransportRow(
+                isPlaying = isPlaying,
+                buffering = isBuffering && playWhenReady && !isPlaying,
+                onPrevious = { host.onAction(LayoutAction.PREVIOUS) },
+                onPlayPause = { host.onAction(LayoutAction.PLAY_PAUSE) },
+                onNext = { host.onAction(LayoutAction.NEXT) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        LayoutBlockKind.BUTTON -> BentoSkinButton(block, host)
+        LayoutBlockKind.UP_NEXT -> {
+            val queue by viewModel.currentQueue.collectAsState()
+            val currentQueueItemId by viewModel.currentQueueItemId.collectAsState()
+            BentoUpNextTile(
+                queue = queue,
+                currentQueueItemId = currentQueueItemId,
+                onClick = { host.onAction(LayoutAction.QUEUE) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        else -> fallback(LayoutInk(scheme.surfaceContainerLowest, scheme.onSurface))
+    }
+}
+
+@Composable
+private fun BentoSkinButton(block: LayoutBlock, host: LayoutHost) {
+    val action = block.action
+    val state = rememberLayoutActionState(action, host)
+    val onClick = { host.onAction(action) }
+    val label = action.label()
+    val scheme = MaterialTheme.colorScheme
+    val fill = Modifier.fillMaxSize()
+    val checked = state.checked == true
+    when (block.look) {
+        ButtonLook.OUTLINED, ButtonLook.PLAIN -> BentoToggleSurface(
+            checked = checked,
+            onClick = onClick,
+            uncheckedColor = scheme.surfaceContainerHigh,
+            uncheckedContent = scheme.onSurfaceVariant,
+            modifier = fill
+        ) {
+            LayoutActionIcon(action, state, label, Modifier.layoutIcon(22.dp), ActionGlyphs.FILLED)
+        }
+        ButtonLook.FILLED -> BentoTile(
+            onClick = onClick,
+            color = scheme.primaryContainer,
+            contentColor = scheme.onPrimaryContainer,
+            modifier = fill
+        ) {
+            LayoutActionIcon(
+                action, state, label,
+                Modifier.layoutIcon(if (action == LayoutAction.PLAY_PAUSE) 40.dp else 26.dp),
+                ActionGlyphs.FILLED
+            )
+        }
+        ButtonLook.TONAL -> BentoTile(
+            onClick = onClick,
+            color = if (checked) scheme.tertiaryContainer else scheme.surfaceContainerHigh,
+            contentColor = if (checked) scheme.onTertiaryContainer else scheme.onSurface,
+            modifier = fill
+        ) {
+            LayoutActionIcon(
+                action, state, label,
+                Modifier.layoutIcon(if (action == LayoutAction.COLLAPSE) 26.dp else 24.dp),
+                ActionGlyphs.FILLED
+            )
+        }
     }
 }

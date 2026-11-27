@@ -110,6 +110,12 @@ import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.data.queuePlaylistDateText
+import com.ivor.ivormusic.data.playerlayout.BlockShape
+import com.ivor.ivormusic.data.playerlayout.ButtonLook
+import com.ivor.ivormusic.data.playerlayout.LayoutAction
+import com.ivor.ivormusic.data.playerlayout.LayoutBlock
+import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
 import com.ivor.ivormusic.ui.components.QueueDragHandle
 import com.ivor.ivormusic.ui.components.QueueRowContainer
@@ -318,7 +324,8 @@ private fun EditorialNowPlayingView(
                 onClick = onCollapse,
                 accent = accent,
                 field = field,
-                size = 44.dp
+                size = 44.dp,
+                modifier = Modifier.captureAs("editorial.collapse", 20) { editorialButton(LayoutAction.COLLAPSE, ButtonLook.FILLED) }
             ) {
                 Icon(Icons.Default.KeyboardArrowDown, "Collapse", modifier = Modifier.size(26.dp))
             }
@@ -329,7 +336,8 @@ private fun EditorialNowPlayingView(
                     onClick = onShowSleepTimer,
                     accent = if (sleepTimerActive) accent else field,
                     field = if (sleepTimerActive) field else accent,
-                    size = 44.dp
+                    size = 44.dp,
+                    modifier = Modifier.captureAs("editorial.sleep", 21) { editorialButton(LayoutAction.SLEEP_TIMER, ButtonLook.TONAL) }
                 ) {
                     Icon(Icons.Rounded.Bedtime, "Sleep timer", modifier = Modifier.size(22.dp))
                 }
@@ -337,7 +345,8 @@ private fun EditorialNowPlayingView(
                     onClick = onShowQueue,
                     accent = accent,
                     field = field,
-                    size = 44.dp
+                    size = 44.dp,
+                    modifier = Modifier.captureAs("editorial.queue", 22) { editorialButton(LayoutAction.QUEUE, ButtonLook.FILLED) }
                 ) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", modifier = Modifier.size(22.dp))
                 }
@@ -345,7 +354,8 @@ private fun EditorialNowPlayingView(
                     onClick = onShowOptions,
                     accent = accent,
                     field = field,
-                    size = 44.dp
+                    size = 44.dp,
+                    modifier = Modifier.captureAs("editorial.options", 23) { editorialButton(LayoutAction.OPTIONS, ButtonLook.FILLED) }
                 ) {
                     Icon(Icons.Rounded.MoreVert, "More options", modifier = Modifier.size(22.dp))
                 }
@@ -362,6 +372,11 @@ private fun EditorialNowPlayingView(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .captureAs("editorial.art", 0) {
+                    captureBlock(LayoutBlockKind.COVER, LayoutSkin.EDITORIAL) {
+                        copy(action = LayoutAction.PLAY_PAUSE, shape = BlockShape.SQUARE)
+                    }
+                }
                 .swipeToSkip(swipeToSkip, enabled = !showLyrics),
             contentAlignment = Alignment.Center
         ) {
@@ -399,47 +414,18 @@ private fun EditorialNowPlayingView(
         // ========== HEADLINE ==========
         // Wrapped so the song information is one swipe target the full width
         // of the player, not two text-shaped ones.
-        val title = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled"
-        val headlineBase = when {
-            title.length <= 12 -> MaterialTheme.typography.displayLarge
-            title.length <= 24 -> MaterialTheme.typography.displayMedium
-            else -> MaterialTheme.typography.displaySmall
-        }
-        Column(
+        EditorialHeadline(
+            song = currentSong,
+            accent = accent,
+            onArtistClick = onArtistClick,
             modifier = Modifier
                 .fillMaxWidth()
+                .captureAs("editorial.title", 10) {
+                    captureBlock(LayoutBlockKind.TITLE, LayoutSkin.EDITORIAL)
+                }
                 .swipeToSkip(swipeToSkip)
                 .swipeToSkipFollow(swipeToSkip)
-        ) {
-            Text(
-                text = title,
-                style = headlineBase.copy(
-                    fontFamily = FontFamily.Serif,
-                    fontStyle = FontStyle.Italic,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = accent,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-            )
-
-            val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
-            Text(
-                text = artistName.uppercase(),
-                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
-                color = accent.copy(alpha = 0.8f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(enabled = artistName != "Unknown Artist") { onArtistClick(artistName) }
-                    .padding(horizontal = 4.dp, vertical = 4.dp)
-            )
-        }
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -466,7 +452,10 @@ private fun EditorialNowPlayingView(
                     onClick = onPrevious,
                     accent = accent,
                     field = field,
-                    size = 80.dp
+                    size = 80.dp,
+                    modifier = Modifier.captureAs("editorial.previous", 42) {
+                        editorialButton(LayoutAction.PREVIOUS, ButtonLook.FILLED)
+                    }
                 ) {
                     Icon(
                         Icons.Default.SkipPrevious,
@@ -486,63 +475,27 @@ private fun EditorialNowPlayingView(
                 ) {
                     if (oneRow) previousButton()
                     // The word IS the icon.
-                    Surface(
+                    EditorialWordPill(
+                        isPlaying = isPlaying,
+                        buffering = isBuffering && playWhenReady && !isPlaying,
                         onClick = onPlayPause,
+                        accent = accent,
+                        field = field,
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxHeight(),
-                        shape = RoundedCornerShape(50),
-                        color = accent,
-                        contentColor = field
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            if (isBuffering && playWhenReady && !isPlaying) {
-                                LoadingIndicator(
-                                    modifier = Modifier.size(36.dp),
-                                    color = field,
-                                    polygons = listOf(
-                                        MaterialShapes.SoftBurst,
-                                        MaterialShapes.Cookie9Sided,
-                                        MaterialShapes.Pill,
-                                        MaterialShapes.Sunny
-                                    )
-                                )
-                            } else {
-                                AnimatedContent(
-                                    targetState = isPlaying,
-                                    label = "EditorialPlayWord"
-                                ) { playing ->
-                                    // The pill can be narrow on a small screen, a
-                                    // large display size, in the one-row layout or
-                                    // with a long translation, so the word shrinks
-                                    // to fit rather than wrapping.
-                                    val wordStyle = MaterialTheme.typography.headlineSmall.copy(
-                                        fontWeight = FontWeight.Medium,
-                                        letterSpacing = 3.sp
-                                    )
-                                    Text(
-                                        text = stringResource(
-                                            if (playing) R.string.cd_pause else R.string.cd_play
-                                        ).uppercase(),
-                                        style = wordStyle,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        autoSize = TextAutoSize.StepBased(
-                                            minFontSize = 12.sp,
-                                            maxFontSize = wordStyle.fontSize,
-                                            stepSize = 1.sp
-                                        ),
-                                        modifier = Modifier.padding(horizontal = 12.dp)
-                                    )
-                                }
+                            .fillMaxHeight()
+                            .captureAs("editorial.play", 40) {
+                                editorialButton(LayoutAction.PLAY_PAUSE, ButtonLook.FILLED)
                             }
-                        }
-                    }
+                    )
                     EditorialCircleButton(
                         onClick = onNext,
                         accent = accent,
                         field = field,
-                        size = 80.dp
+                        size = 80.dp,
+                        modifier = Modifier.captureAs("editorial.next", 41) {
+                            editorialButton(LayoutAction.NEXT, ButtonLook.FILLED)
+                        }
                     ) {
                         Icon(
                             Icons.Default.SkipNext,
@@ -562,7 +515,15 @@ private fun EditorialNowPlayingView(
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     if (!oneRow) previousButton()
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .captureAs("editorial.scrubber", 30) {
+                                captureBlock(LayoutBlockKind.SCRUBBER, LayoutSkin.EDITORIAL) {
+                                    copy(motion = true, showDetail = true)
+                                }
+                            }
+                    ) {
                         // Scrub locally, seek once on release (streamed tracks
                         // rebuffer if seeked per drag frame).
                         var scrubPosition by remember { mutableStateOf<Float?>(null) }
@@ -640,7 +601,13 @@ private fun EditorialNowPlayingView(
                     }
                 }
 
-                PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+                PlayerVisualizerSlot(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .captureAs("editorial.visualizer", 31) {
+                            captureBlock(LayoutBlockKind.VISUALIZER, LayoutSkin.KODA)
+                        }
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -655,7 +622,10 @@ private fun EditorialNowPlayingView(
                         checked = isFavorite,
                         onClick = { onFavoriteToggle(!isFavorite) },
                         accent = accent,
-                        field = field
+                        field = field,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .captureAs("editorial.like", 50) { editorialButton(LayoutAction.LIKE, ButtonLook.OUTLINED) }
                     ) {
                         LikeBurstIcon(isFavorite = isFavorite, iconSize = 20.dp)
                     }
@@ -663,7 +633,10 @@ private fun EditorialNowPlayingView(
                         checked = isDownloaded || isDownloading,
                         onClick = { if (!isDownloading && !isLocalOriginal) onDownloadToggle() },
                         accent = accent,
-                        field = field
+                        field = field,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .captureAs("editorial.download", 51) { editorialButton(LayoutAction.DOWNLOAD, ButtonLook.OUTLINED) }
                     ) {
                         when {
                             isLocalOriginal -> Icon(
@@ -685,7 +658,10 @@ private fun EditorialNowPlayingView(
                         checked = shuffleModeEnabled,
                         onClick = onToggleShuffle,
                         accent = accent,
-                        field = field
+                        field = field,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .captureAs("editorial.shuffle", 52) { editorialButton(LayoutAction.SHUFFLE, ButtonLook.OUTLINED) }
                     ) {
                         Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(20.dp))
                     }
@@ -693,7 +669,10 @@ private fun EditorialNowPlayingView(
                         checked = repeatMode != Player.REPEAT_MODE_OFF,
                         onClick = onToggleRepeat,
                         accent = accent,
-                        field = field
+                        field = field,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .captureAs("editorial.repeat", 53) { editorialButton(LayoutAction.REPEAT, ButtonLook.OUTLINED) }
                     ) {
                         Icon(
                             if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
@@ -706,7 +685,10 @@ private fun EditorialNowPlayingView(
                         checked = showLyrics,
                         onClick = onToggleLyrics,
                         accent = accent,
-                        field = field
+                        field = field,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .captureAs("editorial.lyrics", 54) { editorialButton(LayoutAction.LYRICS, ButtonLook.OUTLINED) }
                     ) {
                         Icon(Icons.Rounded.Lyrics, "Lyrics", modifier = Modifier.size(20.dp))
                     }
@@ -736,7 +718,7 @@ private val EDITORIAL_ONE_ROW_MIN_WIDTH = 400.dp
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun EditorialDieCutArt(
+internal fun EditorialDieCutArt(
     currentSong: Song?,
     isPlaying: Boolean,
     onTap: () -> Unit,
@@ -835,8 +817,9 @@ internal fun EditorialCircleButton(
     onClick: () -> Unit,
     accent: Color,
     field: Color,
-    size: androidx.compose.ui.unit.Dp,
+    size: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     FilledIconButton(
@@ -845,9 +828,13 @@ internal fun EditorialCircleButton(
         shape = CircleShape,
         colors = IconButtonDefaults.filledIconButtonColors(
             containerColor = accent,
-            contentColor = field
+            contentColor = field,
+            // A disabled button in the layout editor is a picture of the real
+            // one, so it keeps its colours.
+            disabledContainerColor = accent,
+            disabledContentColor = field
         ),
-        modifier = Modifier.size(size)
+        modifier = modifier.then(if (size != androidx.compose.ui.unit.Dp.Unspecified) Modifier.size(size) else Modifier)
     ) {
         content()
     }
@@ -863,14 +850,17 @@ internal fun EditorialChip(
     onClick: () -> Unit,
     accent: Color,
     field: Color,
+    modifier: Modifier = Modifier.size(48.dp),
+    enabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         shape = CircleShape,
         color = if (checked) accent else Color.Transparent,
         contentColor = if (checked) field else accent,
-        modifier = Modifier.size(48.dp)
+        modifier = modifier
     ) {
         Box(contentAlignment = Alignment.Center) {
             content()
@@ -1240,4 +1230,263 @@ internal fun formatEditorialTime(durationMs: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return String.format("%d:%02d", minutes, seconds)
+}
+
+
+private fun editorialButton(action: LayoutAction, look: ButtonLook) =
+    captureBlock(LayoutBlockKind.BUTTON, LayoutSkin.EDITORIAL) { copy(action = action, look = look) }
+
+/** The display serif italic headline, re-typeset per track, over the artist in spaced capitals. */
+@Composable
+internal fun EditorialHeadline(
+    song: Song?,
+    accent: Color,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    artistEnabled: Boolean = true,
+    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
+) {
+    // Wrapped so the song information is one swipe target the full width
+    // of the player, not two text-shaped ones.
+    val title = song?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled"
+    val headlineBase = when {
+        title.length <= 12 -> MaterialTheme.typography.displayLarge
+        title.length <= 24 -> MaterialTheme.typography.displayMedium
+        else -> MaterialTheme.typography.displaySmall
+    }
+    Column(modifier = modifier, verticalArrangement = verticalArrangement) {
+        Text(
+            text = title,
+            style = headlineBase.copy(
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
+                fontWeight = FontWeight.Bold
+            ),
+            color = accent,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        )
+
+        val artistName = song?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
+        Text(
+            text = artistName.uppercase(),
+            style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
+            color = accent.copy(alpha = 0.8f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = artistEnabled && artistName != "Unknown Artist") { onArtistClick(artistName) }
+                .padding(horizontal = 4.dp, vertical = 4.dp)
+        )
+    }
+}
+
+/** PLAY / PAUSE as a word in a pill: the label is the icon. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun EditorialWordPill(
+    isPlaying: Boolean,
+    buffering: Boolean,
+    onClick: () -> Unit,
+    accent: Color,
+    field: Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = accent,
+        contentColor = field
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (buffering) {
+                LoadingIndicator(
+                    modifier = Modifier.size(36.dp),
+                    color = field,
+                    polygons = listOf(
+                        MaterialShapes.SoftBurst,
+                        MaterialShapes.Cookie9Sided,
+                        MaterialShapes.Pill,
+                        MaterialShapes.Sunny
+                    )
+                )
+            } else {
+                AnimatedContent(
+                    targetState = isPlaying,
+                    label = "EditorialPlayWord"
+                ) { playing ->
+                    // The pill can be narrow on a small screen, a large display
+                    // size, in the one-row layout or with a long translation, so
+                    // the word shrinks to fit rather than wrapping.
+                    val wordStyle = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 3.sp
+                    )
+                    Text(
+                        text = stringResource(
+                            if (playing) R.string.cd_pause else R.string.cd_play
+                        ).uppercase(),
+                        style = wordStyle,
+                        maxLines = 1,
+                        softWrap = false,
+                        autoSize = TextAutoSize.StepBased(
+                            minFontSize = 12.sp,
+                            maxFontSize = wordStyle.fontSize,
+                            stepSize = 1.sp
+                        ),
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Editorial's skin for custom layouts                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A block drawn by Editorial's own pieces, in its two tones. Filled is the
+ * accent circle (the word pill for play), tonal the circle that inverts while
+ * on (the sleep timer), outlined and plain the bare chip that fills when on.
+ */
+@Composable
+internal fun EditorialSkinBlock(
+    block: LayoutBlock,
+    host: LayoutHost,
+    motionArtwork: Boolean,
+    fallback: @Composable (LayoutInk) -> Unit,
+) {
+    val field = MaterialTheme.colorScheme.primaryContainer
+    val accent = MaterialTheme.colorScheme.onPrimaryContainer
+    val song by host.viewModel.currentSong.collectAsState()
+    when (block.kind) {
+        LayoutBlockKind.COVER -> {
+            val isPlaying by host.viewModel.isPlaying.collectAsState()
+            val swipe = host.swipeToSkip
+            // Editorial shows the lyrics where the die-cut was.
+            val showLyrics = host.lyricsOpen && motionArtwork
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (host.interactive && block.swipeToSkip && swipe != null && !showLyrics) {
+                            Modifier.swipeToSkip(swipe)
+                        } else Modifier
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Crossfade(targetState = showLyrics, label = "EditorialSkinArtLyrics") { lyrics ->
+                    if (lyrics) {
+                        CoverLyrics(
+                            host = host,
+                            primary = accent,
+                            ink = accent,
+                            inkVariant = accent.copy(alpha = 0.6f),
+                            background = field
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.graphicsLayer {
+                                val dx = swipe?.offset ?: 0f
+                                translationX = dx * SwipeToSkipDefaults.ArtFollow
+                                rotationZ = dx / 80f
+                            }
+                        ) {
+                            EditorialDieCutArt(
+                                currentSong = song,
+                                isPlaying = isPlaying,
+                                onTap = { if (block.action != LayoutAction.NONE) host.onAction(block.action) },
+                                accent = accent,
+                                field = field
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        LayoutBlockKind.TITLE -> SkinTitleFrame(block, host) { frame ->
+            EditorialHeadline(
+                song = song,
+                accent = accent,
+                onArtistClick = host.onArtistClick,
+                artistEnabled = host.interactive,
+                modifier = frame
+            )
+        }
+        LayoutBlockKind.SCRUBBER -> LayoutScrubber(
+            host = host,
+            color = accent,
+            trackColor = accent.copy(alpha = 0.35f),
+            timeColor = accent.copy(alpha = 0.8f),
+            showTimes = block.showDetail,
+            flat = !block.motion,
+        )
+        LayoutBlockKind.BUTTON -> EditorialSkinButton(block, host, accent, field)
+        else -> fallback(LayoutInk(field, accent))
+    }
+}
+
+@Composable
+private fun EditorialSkinButton(block: LayoutBlock, host: LayoutHost, accent: Color, field: Color) {
+    val action = block.action
+    val state = rememberLayoutActionState(action, host)
+    val onClick = { host.onAction(action) }
+    val label = action.label()
+    when {
+        block.look == ButtonLook.FILLED && action == LayoutAction.PLAY_PAUSE -> EditorialWordPill(
+            isPlaying = state.isPlaying,
+            buffering = state.buffering,
+            onClick = onClick,
+            accent = accent,
+            field = field,
+            enabled = host.interactive,
+            modifier = Modifier.fillMaxSize()
+        )
+        block.look == ButtonLook.FILLED || block.look == ButtonLook.TONAL -> {
+            // Tonal inverts while on, as the sleep timer does.
+            val lit = block.look == ButtonLook.FILLED || state.checked == true
+            EditorialCircleButton(
+                onClick = onClick,
+                accent = if (lit) accent else field,
+                field = if (lit) field else accent,
+                enabled = host.interactive,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                BoxWithConstraints(contentAlignment = Alignment.Center) {
+                    val big = minOf(maxWidth, maxHeight) >= 64.dp
+                    LayoutActionIcon(
+                        action, state, label,
+                        Modifier.layoutIcon(
+                            when {
+                                big -> 34.dp
+                                action == LayoutAction.COLLAPSE -> 26.dp
+                                else -> 22.dp
+                            }
+                        ),
+                        ActionGlyphs.FILLED
+                    )
+                }
+            }
+        }
+        else -> EditorialChip(
+            checked = state.checked == true,
+            onClick = onClick,
+            accent = accent,
+            field = field,
+            enabled = host.interactive,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            LayoutActionIcon(action, state, label, Modifier.layoutIcon(20.dp), ActionGlyphs.FILLED)
+        }
+    }
 }

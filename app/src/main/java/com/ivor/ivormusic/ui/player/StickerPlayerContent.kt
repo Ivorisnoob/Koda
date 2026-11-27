@@ -84,6 +84,11 @@ import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import com.ivor.ivormusic.data.playerlayout.ButtonLook
+import com.ivor.ivormusic.data.playerlayout.LayoutAction
+import com.ivor.ivormusic.data.playerlayout.LayoutBlock
+import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
@@ -222,7 +227,10 @@ fun StickerPlayerSheetContent(
                             onClick = onCollapse,
                             accent = chipColor,
                             field = onChip,
-                            size = 44.dp
+                            size = 44.dp,
+                            modifier = Modifier.captureAs("sticker.collapse", 20) {
+                                stickerButton(LayoutAction.COLLAPSE, ButtonLook.TONAL)
+                            }
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowDown, "Collapse",
@@ -234,7 +242,10 @@ fun StickerPlayerSheetContent(
                                 onClick = sleepTimer.open,
                                 accent = if (sleepTimer.active) ink else chipColor,
                                 field = if (sleepTimer.active) chipColor else onChip,
-                                size = 44.dp
+                                size = 44.dp,
+                                modifier = Modifier.captureAs("sticker.sleep", 21) {
+                                    stickerButton(LayoutAction.SLEEP_TIMER, ButtonLook.TONAL)
+                                }
                             ) {
                                 Icon(
                                     Icons.Rounded.Bedtime, "Sleep timer",
@@ -245,7 +256,10 @@ fun StickerPlayerSheetContent(
                                 onClick = { showQueue = true },
                                 accent = chipColor,
                                 field = onChip,
-                                size = 44.dp
+                                size = 44.dp,
+                                modifier = Modifier.captureAs("sticker.queue", 22) {
+                                    stickerButton(LayoutAction.QUEUE, ButtonLook.TONAL)
+                                }
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.QueueMusic, "Queue",
@@ -256,7 +270,10 @@ fun StickerPlayerSheetContent(
                                 onClick = { showOptions = true },
                                 accent = chipColor,
                                 field = onChip,
-                                size = 44.dp
+                                size = 44.dp,
+                                modifier = Modifier.captureAs("sticker.options", 23) {
+                                    stickerButton(LayoutAction.OPTIONS, ButtonLook.TONAL)
+                                }
                             ) {
                                 Icon(
                                     Icons.Rounded.MoreVert, "More options",
@@ -271,6 +288,11 @@ fun StickerPlayerSheetContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
+                            .captureAs("sticker.art", 0) {
+                                captureBlock(LayoutBlockKind.COVER, LayoutSkin.STICKER) {
+                                    copy(action = LayoutAction.PLAY_PAUSE)
+                                }
+                            }
                     ) {
                         Crossfade(targetState = showLyrics, label = "StickerLyrics") { lyricsVisible ->
                             if (lyricsVisible) {
@@ -306,46 +328,30 @@ fun StickerPlayerSheetContent(
                     // ========== TITLE / ARTIST ==========
                     // Wrapped so the song information is one swipe target the
                     // full width of the player, not two text-shaped ones.
-                    Column(
+                    StickerTitle(
+                        song = currentSong,
+                        onArtistClick = onArtistClick,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .captureAs("sticker.title", 10) {
+                                captureBlock(LayoutBlockKind.TITLE, LayoutSkin.STICKER)
+                            }
                             .swipeToSkip(swipeToSkip)
                             .swipeToSkipFollow(swipeToSkip)
-                    ) {
-                        Text(
-                            text = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
-                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Black),
-                            color = ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
-                        )
-                        val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
-                            ?: "Unknown Artist"
-                        Text(
-                            text = artistName.uppercase(),
-                            style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
-                            color = inkVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(enabled = artistName != "Unknown Artist") {
-                                    onArtistClick(artistName)
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // ========== PROGRESS ==========
-                    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .captureAs("sticker.scrubber", 30) {
+                                captureBlock(LayoutBlockKind.SCRUBBER, LayoutSkin.STICKER) {
+                                    copy(showDetail = true, motion = true)
+                                }
+                            }
+                    ) {
                         var scrubPosition by remember { mutableStateOf<Float?>(null) }
                         val displayedProgress = scrubPosition?.toLong() ?: progress
                         val scrubReturnPoint = LocalScrubReturnPoint.current
@@ -417,7 +423,13 @@ fun StickerPlayerSheetContent(
                         }
                     }
 
-                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+                    PlayerVisualizerSlot(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .captureAs("sticker.visualizer", 31) {
+                                captureBlock(LayoutBlockKind.VISUALIZER, LayoutSkin.KODA)
+                            }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -433,7 +445,10 @@ fun StickerPlayerSheetContent(
                             onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
                             accent = chipColor,
                             field = onChip,
-                            size = 56.dp
+                            size = 56.dp,
+                            modifier = Modifier.captureAs("sticker.previous", 40) {
+                                stickerButton(LayoutAction.PREVIOUS, ButtonLook.FILLED)
+                            }
                         ) {
                             Icon(
                                 Icons.Default.SkipPrevious, "Previous",
@@ -444,7 +459,10 @@ fun StickerPlayerSheetContent(
                             onClick = { playerHaptics.skip(); viewModel.skipToNext() },
                             accent = chipColor,
                             field = onChip,
-                            size = 56.dp
+                            size = 56.dp,
+                            modifier = Modifier.captureAs("sticker.next", 41) {
+                                stickerButton(LayoutAction.NEXT, ButtonLook.FILLED)
+                            }
                         ) {
                             Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(28.dp))
                         }
@@ -452,7 +470,12 @@ fun StickerPlayerSheetContent(
                             checked = isFavorite,
                             onClick = { viewModel.toggleCurrentSongLike() },
                             accent = chipColor,
-                            field = onChip
+                            field = onChip,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .captureAs("sticker.like", 42) {
+                                    stickerButton(LayoutAction.LIKE, ButtonLook.OUTLINED)
+                                }
                         ) {
                             LikeBurstIcon(isFavorite = isFavorite, iconSize = 20.dp)
                         }
@@ -460,7 +483,12 @@ fun StickerPlayerSheetContent(
                             checked = shuffleModeEnabled,
                             onClick = { viewModel.toggleShuffle() },
                             accent = chipColor,
-                            field = onChip
+                            field = onChip,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .captureAs("sticker.shuffle", 43) {
+                                    stickerButton(LayoutAction.SHUFFLE, ButtonLook.OUTLINED)
+                                }
                         ) {
                             Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(20.dp))
                         }
@@ -468,7 +496,12 @@ fun StickerPlayerSheetContent(
                             checked = repeatMode != Player.REPEAT_MODE_OFF,
                             onClick = { viewModel.toggleRepeat() },
                             accent = chipColor,
-                            field = onChip
+                            field = onChip,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .captureAs("sticker.repeat", 44) {
+                                    stickerButton(LayoutAction.REPEAT, ButtonLook.OUTLINED)
+                                }
                         ) {
                             Icon(
                                 if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
@@ -481,7 +514,12 @@ fun StickerPlayerSheetContent(
                             checked = showLyrics,
                             onClick = { showLyrics = !showLyrics },
                             accent = chipColor,
-                            field = onChip
+                            field = onChip,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .captureAs("sticker.lyrics", 45) {
+                                    stickerButton(LayoutAction.LYRICS, ButtonLook.OUTLINED)
+                                }
                         ) {
                             Icon(Icons.Rounded.Lyrics, "Lyrics", modifier = Modifier.size(20.dp))
                         }
@@ -522,7 +560,7 @@ fun StickerPlayerSheetContent(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun DraggableSticker(
+internal fun DraggableSticker(
     currentSong: Song?,
     isPlaying: Boolean,
     isBuffering: Boolean,
@@ -532,7 +570,8 @@ private fun DraggableSticker(
     onPrevious: () -> Unit,
     ringColor: Color,
     placeholderColor: Color,
-    placeholderIconColor: Color
+    placeholderIconColor: Color,
+    motionEligible: Boolean = true
 ) {
     val dieCuts = remember {
         listOf(
@@ -725,7 +764,8 @@ private fun DraggableSticker(
                     song = artSong,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    motionEligible = motionEligible
                 )
             } else {
                 Icon(
@@ -747,6 +787,178 @@ private fun DraggableSticker(
                     )
                 )
             }
+        }
+    }
+}
+
+private fun stickerButton(action: LayoutAction, look: ButtonLook) =
+    captureBlock(LayoutBlockKind.BUTTON, LayoutSkin.STICKER) { copy(action = action, look = look) }
+
+/* ------------------------------------------------------------------ */
+/* Pieces, shared with blocks in Sticker's skin                        */
+/* ------------------------------------------------------------------ */
+
+/** The title set heavy and centred, over the artist in spaced capitals. */
+@Composable
+internal fun StickerTitle(
+    song: Song?,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    artistEnabled: Boolean = true,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = song?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
+            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Black),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        )
+        val artistName = song?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
+        Text(
+            text = artistName.uppercase(),
+            style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = artistEnabled && artistName != "Unknown Artist") {
+                    onArtistClick(artistName)
+                }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Sticker's skin for custom layouts                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A block drawn by Sticker's own pieces. The cover is the grabbable sticker
+ * (tap to play, double tap to like, peel it off to skip); filled and tonal are
+ * the round chip-coloured buttons (inverted while on), outlined and plain the
+ * bare chip that fills when on.
+ */
+@Composable
+internal fun StickerSkinBlock(
+    block: LayoutBlock,
+    host: LayoutHost,
+    motionArtwork: Boolean,
+    fallback: @Composable (LayoutInk) -> Unit,
+) {
+    val viewModel = host.viewModel
+    val song by viewModel.currentSong.collectAsState()
+    val scheme = MaterialTheme.colorScheme
+    val chipColor = scheme.secondaryContainer
+    val onChip = scheme.onSecondaryContainer
+    when (block.kind) {
+        LayoutBlockKind.COVER -> {
+            val isPlaying by viewModel.isPlaying.collectAsState()
+            val isBuffering by viewModel.isBuffering.collectAsState()
+            val playWhenReady by viewModel.playWhenReady.collectAsState()
+            val showLyrics = host.lyricsOpen && motionArtwork
+            Box(Modifier.fillMaxSize()) {
+                Crossfade(targetState = showLyrics, label = "StickerSkinArtLyrics") { lyrics ->
+                    if (lyrics) {
+                        CoverLyrics(
+                            host = host,
+                            primary = scheme.primary,
+                            ink = scheme.onSurface,
+                            inkVariant = scheme.onSurfaceVariant
+                        )
+                    } else {
+                        DraggableSticker(
+                            currentSong = song,
+                            isPlaying = isPlaying,
+                            isBuffering = isBuffering && playWhenReady && !isPlaying,
+                            onPlayPause = {
+                                if (block.action != LayoutAction.NONE) host.onAction(block.action)
+                            },
+                            onLike = { host.onAction(LayoutAction.LIKE) },
+                            onNext = { if (block.swipeToSkip) host.onAction(LayoutAction.NEXT) },
+                            onPrevious = { if (block.swipeToSkip) host.onAction(LayoutAction.PREVIOUS) },
+                            ringColor = chipColor,
+                            placeholderColor = chipColor,
+                            placeholderIconColor = onChip,
+                            motionEligible = motionArtwork
+                        )
+                    }
+                }
+            }
+        }
+        LayoutBlockKind.TITLE -> SkinTitleFrame(block, host) { frame ->
+            StickerTitle(
+                song = song,
+                onArtistClick = host.onArtistClick,
+                artistEnabled = host.interactive,
+                modifier = frame
+            )
+        }
+        LayoutBlockKind.SCRUBBER -> LayoutScrubber(
+            host = host,
+            color = scheme.primary,
+            trackColor = scheme.onSurfaceVariant.copy(alpha = 0.25f),
+            timeColor = scheme.onSurfaceVariant,
+            stroke = 4.dp,
+            trackHeight = 14.dp,
+            flat = !block.motion,
+            showTimes = block.showDetail,
+            verticalArrangement = Arrangement.Top
+        )
+        LayoutBlockKind.BUTTON -> StickerSkinButton(block, host, chipColor, onChip)
+        else -> fallback(LayoutInk(scheme.surfaceContainerLowest, scheme.onSurface))
+    }
+}
+
+@Composable
+private fun StickerSkinButton(block: LayoutBlock, host: LayoutHost, chipColor: Color, onChip: Color) {
+    val action = block.action
+    val state = rememberLayoutActionState(action, host)
+    val onClick = { host.onAction(action) }
+    val label = action.label()
+    val ink = MaterialTheme.colorScheme.onSurface
+    when (block.look) {
+        ButtonLook.FILLED, ButtonLook.TONAL -> {
+            // Inverted while on, as the sleep timer is.
+            val lit = state.checked == true
+            EditorialCircleButton(
+                onClick = onClick,
+                accent = if (lit) ink else chipColor,
+                field = if (lit) chipColor else onChip,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                BoxWithConstraints(contentAlignment = Alignment.Center) {
+                    val big = minOf(maxWidth, maxHeight) >= 52.dp
+                    LayoutActionIcon(
+                        action, state, label,
+                        Modifier.layoutIcon(
+                            when {
+                                big -> 28.dp
+                                action == LayoutAction.COLLAPSE -> 26.dp
+                                else -> 22.dp
+                            }
+                        ),
+                        ActionGlyphs.FILLED
+                    )
+                }
+            }
+        }
+        else -> EditorialChip(
+            checked = state.checked == true,
+            onClick = onClick,
+            accent = chipColor,
+            field = onChip,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            LayoutActionIcon(action, state, label, Modifier.layoutIcon(20.dp), ActionGlyphs.FILLED)
         }
     }
 }
