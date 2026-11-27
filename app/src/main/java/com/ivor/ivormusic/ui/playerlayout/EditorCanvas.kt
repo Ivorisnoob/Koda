@@ -1,22 +1,32 @@
 package com.ivor.ivormusic.ui.playerlayout
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -24,6 +34,7 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FlipToBack
 import androidx.compose.material.icons.rounded.FlipToFront
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -31,10 +42,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,6 +55,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -66,6 +80,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.playerlayout.AreaInsets
+import com.ivor.ivormusic.data.playerlayout.LayoutBackground
 import com.ivor.ivormusic.data.playerlayout.LayoutBlock
 import com.ivor.ivormusic.data.playerlayout.LayoutGeometry
 import com.ivor.ivormusic.data.playerlayout.LayoutSnapping
@@ -153,6 +168,8 @@ internal fun EditorCanvas(
     focusBottom: Dp = 0.dp,
     /** The editing layer, inside the scaled player, for dropping things onto it. */
     onCanvasPositioned: (LayoutCoordinates) -> Unit = {},
+    /** A swipe across empty space chose the next or previous background. */
+    onSwipeBackground: (LayoutBackground) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
@@ -228,6 +245,23 @@ internal fun EditorCanvas(
             removingId = null
         }
     }
+
+    // A swipe across empty space pages through backgrounds: the player
+    // follows the finger a little and the background's name shows.
+    val swipe = remember { Animatable(0f) }
+    var swipeName by remember { mutableStateOf<LayoutBackground?>(null) }
+    var swipeNameShown by remember { mutableStateOf(false) }
+    var swipeEnded by remember { mutableIntStateOf(0) }
+    LaunchedEffect(swipeEnded) {
+        if (swipeEnded > 0) {
+            delay(1100)
+            swipeNameShown = false
+        }
+    }
+    val swipeBackground by rememberUpdatedState(onSwipeBackground)
+
+    // Snap guides fade in and out rather than blink.
+    val guideAlpha = remember { Animatable(0f) }
 
     // The block whose menu is open, and where the finger was, on screen.
     var menuFor by remember { mutableStateOf<String?>(null) }
@@ -327,6 +361,7 @@ internal fun EditorCanvas(
                     scaleX = scale
                     scaleY = scale
                     translationY = restShift + focusShift
+                    translationX = swipe.value
                     clip = true
                     shape = RoundedCornerShape(28.dp * perScreenPx)
                 }
@@ -400,6 +435,10 @@ internal fun EditorCanvas(
                             var dragging = false
                             var held = false
                             var snapped = false
+                            var paging = false
+                            var pageTo: LayoutBackground? = null
+                            val pagePx = with(density) { 72.dp.toPx() } * perScreenPx
+                            val followMax = with(density) { 40.dp.toPx() }
 
                             try {
                                 while (true) {
@@ -431,7 +470,9 @@ internal fun EditorCanvas(
                                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                     lastUptime = change.uptimeMillis
                                     if (!change.pressed) {
-                                        if (!dragging && !held) {
+                                        if (paging) {
+                                            pageTo?.let { swipeBackground(it) }
+                                        } else if (!dragging && !held) {
                                             when {
                                                 target != null -> {
                                                     haptics.subtle()
@@ -445,6 +486,27 @@ internal fun EditorCanvas(
                                         break
                                     }
                                     total += change.positionChange()
+                                    if (target == null && !paging && abs(total.x) > slop && abs(total.x) > abs(total.y)) {
+                                        paging = true
+                                        swipeName = start.background
+                                        swipeNameShown = true
+                                    }
+                                    if (paging) {
+                                        change.consume()
+                                        val follow = (total.x * scale * 0.35f).coerceIn(-followMax, followMax)
+                                        scope.launch { swipe.snapTo(follow) }
+                                        val next = if (abs(total.x) > pagePx) {
+                                            start.background.step(if (total.x < 0f) 1 else -1)
+                                        } else {
+                                            null
+                                        }
+                                        if (next != pageTo) {
+                                            pageTo = next
+                                            swipeName = next ?: start.background
+                                            haptics.tick()
+                                        }
+                                        continue
+                                    }
                                     if (!dragging && target != null && hypot(total.x, total.y) > slop) {
                                         dragging = true
                                         // A drag out of a hold carries the block, as on a home screen.
@@ -470,10 +532,24 @@ internal fun EditorCanvas(
                                             )
                                         }
                                         val nowSnapped = result.guidesX.isNotEmpty() || result.guidesY.isNotEmpty()
-                                        if (nowSnapped && !snapped) haptics.tick()
+                                        if (nowSnapped) {
+                                            guidesX = result.guidesX
+                                            guidesY = result.guidesY
+                                        }
+                                        if (nowSnapped && !snapped) {
+                                            haptics.tick()
+                                            scope.launch { guideAlpha.animateTo(1f, tween(90)) }
+                                            // A carried block gives a small pulse as it catches the line.
+                                            if (handle == null) {
+                                                scope.launch {
+                                                    lift.animateTo(LIFT_SCALE + 0.025f, spring(Spring.DampingRatioNoBouncy, Spring.StiffnessHigh))
+                                                    lift.animateTo(LIFT_SCALE, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium))
+                                                }
+                                            }
+                                        } else if (!nowSnapped && snapped) {
+                                            scope.launch { guideAlpha.animateTo(0f, tween(160)) }
+                                        }
                                         snapped = nowSnapped
-                                        guidesX = result.guidesX
-                                        guidesY = result.guidesY
                                         layoutChange(
                                             start.withBlock(
                                                 LayoutGeometry.withAreaRect(target, result.rect, areaWidth, areaHeight)
@@ -482,8 +558,13 @@ internal fun EditorCanvas(
                                     }
                                 }
                             } finally {
-                                guidesX = emptyList()
-                                guidesY = emptyList()
+                                scope.launch { guideAlpha.animateTo(0f, tween(180)) }
+                                if (paging) {
+                                    swipeEnded++
+                                    scope.launch {
+                                        swipe.animateTo(0f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow))
+                                    }
+                                }
                                 // A block held for its menu stays up until the menu goes.
                                 if (liftedId != null && menuFor == null) setDown()
                             }
@@ -502,6 +583,7 @@ internal fun EditorCanvas(
                     selection = selection.value,
                     guidesX = guidesX,
                     guidesY = guidesY,
+                    guideAlpha = guideAlpha.value,
                     barTint = chrome.scrim.copy(alpha = 0.22f),
                     outline = chrome.outline,
                     accent = chrome.primary,
@@ -512,6 +594,19 @@ internal fun EditorCanvas(
                     badgeRing = chrome.surface,
                 )
             }
+        }
+
+        // The background's name while a swipe pages through them.
+        AnimatedVisibility(
+            visible = swipeNameShown,
+            enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                scaleIn(MaterialTheme.motionScheme.fastSpatialSpec(), initialScale = 0.9f),
+            exit = fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset { IntOffset(0, (shownTop + focusShift + 20.dp.toPx()).roundToInt()) }
+        ) {
+            BackgroundNamePill(swipeName ?: layout.background)
         }
 
         // The hold menu, in the app's own colours, at the finger.
@@ -676,6 +771,7 @@ private fun DrawScope.drawEditorChrome(
     selection: Float,
     guidesX: List<Float>,
     guidesY: List<Float>,
+    guideAlpha: Float,
     barTint: Color,
     outline: Color,
     accent: Color,
@@ -709,11 +805,14 @@ private fun DrawScope.drawEditorChrome(
             style = Stroke(width = 1f * px, pathEffect = dashes)
         )
     }
-    guidesX.forEach { x ->
-        drawLine(guide, Offset(insets.left + x, 0f), Offset(insets.left + x, size.height), strokeWidth = 1.5f * px)
-    }
-    guidesY.forEach { y ->
-        drawLine(guide, Offset(0f, insets.top + y), Offset(size.width, insets.top + y), strokeWidth = 1.5f * px)
+    val guideTint = guide.copy(alpha = guide.alpha * guideAlpha.coerceIn(0f, 1f))
+    if (guideAlpha > 0f) {
+        guidesX.forEach { x ->
+            drawLine(guideTint, Offset(insets.left + x, 0f), Offset(insets.left + x, size.height), strokeWidth = 1.5f * px)
+        }
+        guidesY.forEach { y ->
+            drawLine(guideTint, Offset(0f, insets.top + y), Offset(size.width, insets.top + y), strokeWidth = 1.5f * px)
+        }
     }
 
     val selected = layout.blocks.firstOrNull { it.id == selectedId }?.takeIf { it.id !in hiddenIds }
@@ -754,5 +853,45 @@ private fun DrawScope.drawEditorChrome(
             strokeWidth = 2f * px,
             cap = StrokeCap.Round
         )
+    }
+}
+
+/** The background after this one, or before it, round the list. */
+private fun LayoutBackground.step(by: Int): LayoutBackground {
+    val all = LayoutBackground.entries
+    return all[(ordinal + by).mod(all.size)]
+}
+
+/** A background's name, and where it sits among them. */
+@Composable
+private fun BackgroundNamePill(background: LayoutBackground) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        shape = CircleShape,
+        color = scheme.inverseSurface,
+        contentColor = scheme.inverseOnSurface,
+        shadowElevation = 4.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, end = 16.dp, top = 9.dp, bottom = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.Wallpaper, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(background.label(), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.width(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                LayoutBackground.entries.forEach { each ->
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                scheme.inverseOnSurface.copy(alpha = if (each == background) 1f else 0.35f)
+                            )
+                    )
+                }
+            }
+        }
     }
 }

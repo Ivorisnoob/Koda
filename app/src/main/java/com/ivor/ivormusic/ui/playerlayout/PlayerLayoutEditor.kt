@@ -534,6 +534,7 @@ private fun PlayerLayoutEditor(
                     focusId = configFor,
                     focusBottom = panelHeight,
                     onCanvasPositioned = { coordinates[1] = it },
+                    onSwipeBackground = { commit(draft.copy(background = it)) },
                     onSelect = { id ->
                         selectedId = id
                         // Another block chosen by a drag, or none: the panel
