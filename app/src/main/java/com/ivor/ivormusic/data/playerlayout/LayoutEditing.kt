@@ -44,6 +44,18 @@ fun PlayerLayout.restacked(id: String, up: Boolean): PlayerLayout {
     return copy(blocks = updated)
 }
 
+/** Moves a block to the top of the stack, over everything else. */
+fun PlayerLayout.toFront(id: String): PlayerLayout {
+    val moving = blocks.firstOrNull { it.id == id } ?: return this
+    return copy(blocks = blocks.filterNot { it.id == id } + moving)
+}
+
+/** Moves a block to the bottom of the stack, under everything else. */
+fun PlayerLayout.toBack(id: String): PlayerLayout {
+    val moving = blocks.firstOrNull { it.id == id } ?: return this
+    return copy(blocks = listOf(moving) + blocks.filterNot { it.id == id })
+}
+
 /**
  * Undo and redo for the editor: whole layouts, which are small and immutable,
  * so a step is one reference rather than a description of a change. One entry

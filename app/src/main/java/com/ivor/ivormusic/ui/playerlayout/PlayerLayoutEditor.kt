@@ -1,20 +1,19 @@
 package com.ivor.ivormusic.ui.playerlayout
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,70 +24,62 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesomeMosaic
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.FlipToBack
-import androidx.compose.material.icons.rounded.FlipToFront
-import androidx.compose.material.icons.rounded.Done
-import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Wallpaper
-import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.min
-import androidx.compose.ui.zIndex
 import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.data.ThemePreferences
+import com.ivor.ivormusic.data.playerlayout.BlockShape
 import com.ivor.ivormusic.data.playerlayout.ButtonLook
+import com.ivor.ivormusic.data.playerlayout.LayoutAction
 import com.ivor.ivormusic.data.playerlayout.LayoutBlock
 import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
 import com.ivor.ivormusic.data.playerlayout.LayoutColor
@@ -101,7 +92,8 @@ import com.ivor.ivormusic.data.playerlayout.clampedToArea
 import com.ivor.ivormusic.data.playerlayout.duplicating
 import com.ivor.ivormusic.data.playerlayout.minusBlock
 import com.ivor.ivormusic.data.playerlayout.plusBlock
-import com.ivor.ivormusic.data.playerlayout.restacked
+import com.ivor.ivormusic.data.playerlayout.toBack
+import com.ivor.ivormusic.data.playerlayout.toFront
 import com.ivor.ivormusic.data.playerlayout.withBlock
 import com.ivor.ivormusic.ui.player.PlayerFrameKind
 import com.ivor.ivormusic.ui.player.PlayerViewModel
@@ -112,7 +104,6 @@ import com.ivor.ivormusic.ui.player.rememberArtworkColorScheme
 import com.ivor.ivormusic.ui.theme.currentWindowLayout
 import com.ivor.ivormusic.ui.theme.windowDpSize
 import com.ivor.ivormusic.util.rememberKodaHaptics
-import kotlin.math.roundToInt
 
 /**
  * The custom player layout editor, hosted once in `MainActivity` above both
@@ -138,9 +129,6 @@ fun PlayerLayoutEditorOverlay(viewModel: PlayerViewModel) {
     }
 }
 
-/** Drag-and-drop from the tray, in the editor's own coordinates. */
-private class TrayDrag(val kind: LayoutBlockKind, val position: Offset)
-
 /** A preset is called by the player it stands for. */
 @Composable
 internal fun LayoutPreset.label(): String = style?.let { playerStyleLabel(it) } ?: stringResource(
@@ -155,6 +143,12 @@ internal fun uniqueLayoutName(base: String, taken: Collection<String>): String {
     return "$base $n"
 }
 
+/**
+ * The editor is the player itself in edit mode, the way a home screen is
+ * edited: every block carries a badge that removes it, a tap on one opens its
+ * settings, a hold offers its menu, and a drag moves it. The only chrome is
+ * Cancel and Done above, and Templates, Add and Background below.
+ */
 @Composable
 private fun PlayerLayoutEditor(
     request: LayoutEditorRequest,
@@ -189,11 +183,13 @@ private fun PlayerLayoutEditor(
     // Bumped on every step so undo and redo re-read whether they can go.
     var historyVersion by remember { mutableIntStateOf(0) }
     var selectedId by remember { mutableStateOf<String?>(null) }
+    // The block just added or copied, which grows into place.
+    var arrivingId by remember { mutableStateOf<String?>(null) }
     var configFor by remember { mutableStateOf<String?>(null) }
+    var showAdd by remember { mutableStateOf(false) }
     var showBackground by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
-    var trayDrag by remember { mutableStateOf<TrayDrag?>(null) }
     // A new layout opens on the "start from" picker, with the player it came
     // from marked; the preview behind it is already that player.
     var showStartFrom by remember(request) {
@@ -215,7 +211,6 @@ private fun PlayerLayoutEditor(
     // open: its previews are drawn from these, and a pick is instant. Read
     // again for a new song, since a title's length moves the pieces.
     val captured = remember(song?.id) { mutableStateMapOf<LayoutPreset, List<LayoutBlock>>() }
-    val coordinates = remember { arrayOfNulls<LayoutCoordinates>(2) } // [0] editor root, [1] canvas
     val dirty = existing == null || draft != initial
 
     fun commit(updated: PlayerLayout) {
@@ -257,9 +252,18 @@ private fun PlayerLayoutEditor(
     val areaWidthDp = with(density) { areaWidthPx.toDp() }
     val areaHeightDp = with(density) { areaHeightPx.toDp() }
 
-    fun addBlock(kind: LayoutBlockKind, at: Offset?) {
+    /**
+     * Puts a new [kind] on the screen, centred on [at] (the middle when null),
+     * and lets it grow into place. A new button is asked what it does.
+     */
+    fun addBlock(
+        kind: LayoutBlockKind,
+        at: Offset? = null,
+        sizeOverride: DpSize? = null,
+        configure: (LayoutBlock) -> LayoutBlock = { it },
+    ) {
         if (areaWidthPx <= 0f || areaHeightPx <= 0f) return
-        val size = when (kind) {
+        val size = sizeOverride ?: when (kind) {
             LayoutBlockKind.COVER -> DpSize(areaWidthDp * 0.66f, areaWidthDp * 0.66f)
             LayoutBlockKind.HEADER -> DpSize(areaWidthDp - 160.dp, 44.dp)
             LayoutBlockKind.TOOLBAR -> DpSize(areaWidthDp - 40.dp, 72.dp)
@@ -289,7 +293,7 @@ private fun PlayerLayoutEditor(
                     it.copy(look = ButtonLook.TONAL, color = LayoutColor.PRIMARY)
                 else -> it
             }
-        }.clampedToArea()
+        }.let(configure).clampedToArea()
         // A panel is something to put things on, so it goes under them.
         commit(
             if (kind == LayoutBlockKind.PANEL) {
@@ -299,9 +303,29 @@ private fun PlayerLayoutEditor(
             }
         )
         haptics.confirm()
+        arrivingId = block.id
         selectedId = block.id
-        // A new button is asked what it does straight away.
-        if (kind == LayoutBlockKind.BUTTON) configFor = block.id
+        // A new button is asked what it does straight away; one added for
+        // its job already knows.
+        if (kind == LayoutBlockKind.BUTTON && sizeOverride == null) {
+            configFor = block.id
+        }
+    }
+
+    /** The fix for a screen that cannot play or pause: a big play button low and central. */
+    fun addPlayButton() {
+        addBlock(
+            kind = LayoutBlockKind.BUTTON,
+            at = Offset(areaWidthPx / 2f, areaHeightPx * 0.84f),
+            sizeOverride = DpSize(80.dp, 80.dp),
+            configure = {
+                it.copy(
+                    action = LayoutAction.PLAY_PAUSE,
+                    look = ButtonLook.FILLED,
+                    shape = BlockShape.ROUND,
+                )
+            }
+        )
     }
 
     fun save() {
@@ -325,7 +349,6 @@ private fun PlayerLayoutEditor(
         albumArtUri = song?.albumArtUri?.toString() ?: song?.thumbnailUrl,
         base = MaterialTheme.colorScheme
     )
-    val selectedBlock = draft.blocks.firstOrNull { it.id == selectedId }
 
     Box(modifier = Modifier.fillMaxSize()) {
     // The real player being read for "start from", under the editor's opaque
@@ -366,9 +389,7 @@ private fun PlayerLayoutEditor(
     }
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { coordinates[0] = it }
+        modifier = Modifier.fillMaxSize()
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -376,7 +397,7 @@ private fun PlayerLayoutEditor(
                     name = draft.name,
                     canUndo = historyVersion >= 0 && history.canUndo,
                     canRedo = historyVersion >= 0 && history.canRedo,
-                    onClose = { if (dirty) confirmDiscard = true else onClose() },
+                    onCancel = { if (dirty) confirmDiscard = true else onClose() },
                     onRename = { showRename = true },
                     onUndo = {
                         history.undo(draft)?.let { draft = it; historyVersion++ }
@@ -386,145 +407,71 @@ private fun PlayerLayoutEditor(
                         history.redo(draft)?.let { draft = it; historyVersion++ }
                         if (draft.blocks.none { it.id == selectedId }) selectedId = null
                     },
-                    onSave = ::save,
+                    onDone = ::save,
                 )
 
                 EditorCanvas(
                     layout = draft,
                     selectedId = selectedId,
+                    arrivingId = arrivingId,
                     viewModel = viewModel,
                     canvasSize = canvasSize,
                     safeArea = safeArea,
                     ambientBackground = ambientBackground,
                     playerScheme = playerScheme,
-                    onSelect = { id ->
-                        if (id != null && id != selectedId) haptics.subtle()
-                        selectedId = id
-                    },
+                    onSelect = { selectedId = it },
                     onOpenConfig = { configFor = it },
+                    onTapBackground = { showBackground = true },
+                    onRemove = { id ->
+                        commit(draft.minusBlock(id))
+                        if (selectedId == id) selectedId = null
+                    },
+                    onDuplicate = { id ->
+                        draft.duplicating(id)?.let { (updated, copyId) ->
+                            commit(updated)
+                            haptics.confirm()
+                            arrivingId = copyId
+                            selectedId = copyId
+                        }
+                    },
+                    onFront = { id -> commit(draft.toFront(id)) },
+                    onBack = { id -> commit(draft.toBack(id)) },
                     onGestureStart = { before ->
                         history.record(before)
                         historyVersion++
                     },
                     onLayoutChange = { draft = it },
-                    onCanvasPositioned = { coordinates[1] = it },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
                 )
 
-                Text(
-                    text = if (!draft.canPlayPause) {
-                        stringResource(R.string.cpl_no_play_warning)
-                    } else if (selectedBlock == null) {
-                        stringResource(R.string.cpl_tray_hint)
-                    } else {
-                        stringResource(R.string.cpl_editor_hint)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (!draft.canPlayPause) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    textAlign = TextAlign.Center,
+                EditorToolbar(
+                    onTemplates = { showStartFrom = true },
+                    onAdd = { showAdd = true },
+                    onBackground = { showBackground = true },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 4.dp)
-                )
-
-                val barEffects = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-                val barSpatial = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
-                AnimatedContent(
-                    targetState = selectedBlock != null,
-                    transitionSpec = {
-                        (fadeIn(barEffects) + scaleIn(barSpatial, initialScale = 0.94f))
-                            .togetherWith(fadeOut(barEffects))
-                    },
-                    label = "EditorBottomBar",
-                    modifier = Modifier
-                        .fillMaxWidth()
+                        .align(Alignment.CenterHorizontally)
                         .navigationBarsPadding()
-                        .padding(bottom = 12.dp)
-                ) { hasSelection ->
-                    val block = draft.blocks.firstOrNull { it.id == selectedId }
-                    if (hasSelection && block != null) {
-                        SelectionBar(
-                            block = block,
-                            isTop = draft.blocks.lastOrNull()?.id == block.id,
-                            isBottom = draft.blocks.firstOrNull()?.id == block.id,
-                            onEdit = { configFor = block.id },
-                            onDuplicate = {
-                                draft.duplicating(block.id)?.let { (updated, id) ->
-                                    commit(updated)
-                                    selectedId = id
-                                }
-                            },
-                            onForward = { commit(draft.restacked(block.id, up = true)) },
-                            onBackward = { commit(draft.restacked(block.id, up = false)) },
-                            onRemove = {
-                                commit(draft.minusBlock(block.id))
-                                selectedId = null
-                            },
-                            onDone = { selectedId = null }
-                        )
-                    } else {
-                        BlockTray(
-                            background = draft.background,
-                            onStartFrom = { showStartFrom = true },
-                            onBackground = { showBackground = true },
-                            onAdd = { addBlock(it, null) },
-                            onDrag = { kind, tile, local, finished ->
-                                val root = coordinates[0]
-                                if (root == null || !root.isAttached || !tile.isAttached) {
-                                    trayDrag = null
-                                    return@BlockTray
-                                }
-                                if (!finished) {
-                                    trayDrag = TrayDrag(kind, root.localPositionOf(tile, local))
-                                } else {
-                                    trayDrag = null
-                                    val canvas = coordinates[1]
-                                    if (canvas != null && canvas.isAttached) {
-                                        val point = canvas.localPositionOf(tile, local)
-                                        val inArea = Offset(point.x - insets.left, point.y - insets.top)
-                                        if (inArea.x in 0f..areaWidthPx && inArea.y in 0f..areaHeightPx) {
-                                            addBlock(kind, inArea)
-                                        }
-                                    }
-                                }
-                            }
-                        )
-                    }
-                }
+                        .padding(top = 8.dp, bottom = 12.dp)
+                )
             }
 
-            // The block being dragged out of the tray, under the finger.
-            trayDrag?.let { drag ->
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shadowElevation = 6.dp,
-                    modifier = Modifier
-                        .zIndex(2f)
-                        .offset {
-                            IntOffset(
-                                (drag.position.x - 40.dp.toPx()).roundToInt(),
-                                (drag.position.y - 60.dp.toPx()).roundToInt()
-                            )
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(drag.kind.icon(), contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(drag.kind.label(), style = MaterialTheme.typography.labelLarge)
-                    }
-                }
+            // A screen nothing on which plays or pauses is one tap from fixed.
+            AnimatedVisibility(
+                visible = !draft.canPlayPause,
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    scaleIn(MaterialTheme.motionScheme.fastSpatialSpec(), initialScale = 0.9f) +
+                    slideInVertically(MaterialTheme.motionScheme.fastSpatialSpec()) { it / 2 },
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    scaleOut(MaterialTheme.motionScheme.fastSpatialSpec(), targetScale = 0.9f),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = TOOLBAR_HEIGHT + 32.dp)
+            ) {
+                MissingPlayPill(onFix = ::addPlayButton)
             }
         }
     }
@@ -539,6 +486,15 @@ private fun PlayerLayoutEditor(
                 onDismiss = { configFor = null }
             )
         } ?: run { configFor = null }
+    }
+    if (showAdd) {
+        AddBlockSheet(
+            onAdd = { kind ->
+                showAdd = false
+                addBlock(kind)
+            },
+            onDismiss = { showAdd = false }
+        )
     }
     if (showStartFrom) {
         StartFromSheet(
@@ -598,45 +554,54 @@ private fun PlayerLayoutEditor(
     }
 }
 
+/** Cancel on one side, Done on the other, the layout's name between. */
 @Composable
 private fun EditorTopBar(
     name: String,
     canUndo: Boolean,
     canRedo: Boolean,
-    onClose: () -> Unit,
+    onCancel: () -> Unit,
     onRename: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
-    onSave: () -> Unit,
+    onDone: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onClose) {
-            Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.cpl_close_editor))
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onRename)
-                .padding(horizontal = 4.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = stringResource(R.string.cpl_editor_tap_rename),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        TextButton(onClick = onCancel) { Text(stringResource(R.string.cpl_cancel)) }
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            Surface(
+                onClick = onRename,
+                shape = CircleShape,
+                color = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = stringResource(R.string.cpl_rename),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         }
         IconButton(onClick = onUndo, enabled = canUndo) {
             Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = stringResource(R.string.cpl_undo))
@@ -645,117 +610,107 @@ private fun EditorTopBar(
             Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = stringResource(R.string.cpl_redo))
         }
         Spacer(Modifier.width(4.dp))
-        Button(onClick = onSave) { Text(stringResource(R.string.cpl_save)) }
+        Button(onClick = onDone) { Text(stringResource(R.string.cpl_done)) }
     }
 }
+
+private val TOOLBAR_HEIGHT = 80.dp
 
 /**
- * Every kind of block, to tap onto the middle of the screen or drag up to
- * where it should go. The background sits first, because it is the one
- * choice that is not a block.
+ * The three things that are not on the screen: a whole player to start from,
+ * something new to put on it, and what is behind it. Each says what it is.
  */
 @Composable
-private fun BlockTray(
-    background: com.ivor.ivormusic.data.playerlayout.LayoutBackground,
-    onStartFrom: () -> Unit,
+private fun EditorToolbar(
+    onTemplates: () -> Unit,
+    onAdd: () -> Unit,
     onBackground: () -> Unit,
-    onAdd: (LayoutBlockKind) -> Unit,
-    onDrag: (kind: LayoutBlockKind, tile: LayoutCoordinates, local: Offset, finished: Boolean) -> Unit,
-) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        item {
-            TrayTile(
-                label = stringResource(R.string.cpl_start_from),
-                icon = Icons.Rounded.AutoAwesomeMosaic,
-                accent = true,
-                contentDescription = stringResource(R.string.cpl_start_from_title),
-                modifier = Modifier.clickable(onClick = onStartFrom)
-            )
-        }
-        item {
-            TrayTile(
-                label = background.label(),
-                icon = Icons.Rounded.Wallpaper,
-                accent = true,
-                contentDescription = stringResource(R.string.cpl_background),
-                modifier = Modifier.clickable(onClick = onBackground)
-            )
-        }
-        items(LayoutBlockKind.entries) { kind ->
-            val description = stringResource(R.string.cpl_add_block, kind.label())
-            var tile by remember { mutableStateOf<LayoutCoordinates?>(null) }
-            TrayTile(
-                label = kind.label(),
-                icon = kind.icon(),
-                accent = false,
-                contentDescription = description,
-                modifier = Modifier
-                    .onGloballyPositioned { tile = it }
-                    .pointerInput(kind) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            // Only a pull upward leaves the tray; sideways is
-                            // the tray's own scroll.
-                            val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
-                                if (over < 0f) change.consume()
-                            } ?: return@awaitEachGesture
-                            val coords = tile ?: return@awaitEachGesture
-                            var last = start.position
-                            onDrag(kind, coords, last, false)
-                            drag(start.id) { change ->
-                                last = change.position
-                                change.consume()
-                                onDrag(kind, coords, last, false)
-                            }
-                            onDrag(kind, coords, last, true)
-                        }
-                    }
-                    .clickable { onAdd(kind) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun TrayTile(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    accent: Boolean,
-    contentDescription: String,
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = if (accent) {
-            MaterialTheme.colorScheme.tertiaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHighest
-        },
-        contentColor = if (accent) {
-            MaterialTheme.colorScheme.onTertiaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurface
-        },
-        modifier = Modifier
-            .size(width = 84.dp, height = 80.dp)
-            .then(modifier)
+        shape = RoundedCornerShape(32.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shadowElevation = 2.dp,
+        modifier = modifier
+            .padding(horizontal = 20.dp)
+            .widthIn(max = 440.dp)
+            .fillMaxWidth()
+            .height(TOOLBAR_HEIGHT)
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ToolbarTile(
+                icon = Icons.Rounded.AutoAwesomeMosaic,
+                label = stringResource(R.string.cpl_templates),
+                prominent = false,
+                onClick = onTemplates,
+                modifier = Modifier.weight(1f)
+            )
+            ToolbarTile(
+                icon = Icons.Rounded.Add,
+                label = stringResource(R.string.cpl_add),
+                prominent = true,
+                onClick = onAdd,
+                modifier = Modifier.weight(1f)
+            )
+            ToolbarTile(
+                icon = Icons.Rounded.Wallpaper,
+                label = stringResource(R.string.cpl_background),
+                prominent = false,
+                onClick = onBackground,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+/** A labelled toolbar button that squishes and squares its corners under the thumb. */
+@Composable
+private fun ToolbarTile(
+    icon: ImageVector,
+    label: String,
+    prominent: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val squish by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
+        label = "ToolbarTileSquish"
+    )
+    val corner: Dp by animateDpAsState(
+        targetValue = if (pressed) 14.dp else 24.dp,
+        animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
+        label = "ToolbarTileCorner"
+    )
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        interactionSource = interaction,
+        shape = RoundedCornerShape(corner),
+        color = if (prominent) scheme.primary else Color.Transparent,
+        contentColor = if (prominent) scheme.onPrimary else scheme.onSurface,
+        modifier = modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                scaleX = squish
+                scaleY = squish
+            }
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(6.dp)
-                .semantics(mergeDescendants = true) { this.contentDescription = contentDescription }
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+            modifier = Modifier.padding(horizontal = 4.dp)
         ) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (prominent) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -763,75 +718,46 @@ private fun TrayTile(
     }
 }
 
-/** The picked block: change it, copy it, restack it, remove it. */
+/** Says what is wrong and fixes it in one tap. */
 @Composable
-private fun SelectionBar(
-    block: LayoutBlock,
-    isTop: Boolean,
-    isBottom: Boolean,
-    onEdit: () -> Unit,
-    onDuplicate: () -> Unit,
-    onForward: () -> Unit,
-    onBackward: () -> Unit,
-    onRemove: () -> Unit,
-    onDone: () -> Unit,
-) {
+private fun MissingPlayPill(onFix: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+        shape = CircleShape,
+        color = scheme.errorContainer,
+        contentColor = scheme.onErrorContainer,
+        shadowElevation = 3.dp,
+        modifier = Modifier.padding(horizontal = 24.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = block.kind.icon(),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 6.dp).size(20.dp)
-                )
-                Text(
-                    text = block.editorLabel(),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 10.dp)
-                )
-                IconButton(onClick = onDone) {
-                    Icon(Icons.Rounded.Done, contentDescription = stringResource(R.string.cpl_deselect))
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Row(
+            modifier = Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.cpl_no_play_short),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 2,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            Spacer(Modifier.width(10.dp))
+            Surface(
+                onClick = onFix,
+                shape = CircleShape,
+                color = scheme.error,
+                contentColor = scheme.onError,
             ) {
-                FilledTonalIconButton(
-                    onClick = onEdit,
-                    modifier = Modifier.size(width = 64.dp, height = 48.dp)
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Rounded.Tune, contentDescription = stringResource(R.string.cpl_edit_block))
-                }
-                IconButton(onClick = onDuplicate) {
-                    Icon(Icons.Rounded.ContentCopy, contentDescription = stringResource(R.string.cpl_duplicate))
-                }
-                IconButton(onClick = onForward, enabled = !isTop) {
-                    Icon(Icons.Rounded.FlipToFront, contentDescription = stringResource(R.string.cpl_bring_forward))
-                }
-                IconButton(onClick = onBackward, enabled = !isBottom) {
-                    Icon(Icons.Rounded.FlipToBack, contentDescription = stringResource(R.string.cpl_send_backward))
-                }
-                IconButton(
-                    onClick = onRemove,
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = stringResource(R.string.cpl_add_play),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
                     )
-                ) {
-                    Icon(Icons.Rounded.DeleteOutline, contentDescription = stringResource(R.string.cpl_remove))
                 }
             }
         }

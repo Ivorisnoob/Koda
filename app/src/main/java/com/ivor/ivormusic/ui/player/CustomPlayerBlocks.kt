@@ -225,6 +225,12 @@ internal fun CustomPlayerCanvas(
     modifier: Modifier = Modifier,
     /** Applied to the blocks only, over a background that stays put. */
     blocksModifier: Modifier = Modifier,
+    /**
+     * Applied to each block's own slot: the editor lifts a block while it is
+     * carried and fades one out as it is removed. Read state in a deferred
+     * lambda (`graphicsLayer { }`), so a moving value never recomposes.
+     */
+    blockModifier: (LayoutBlock) -> Modifier = { Modifier },
 ) {
     val song by host.viewModel.currentSong.collectAsState()
     val ink = rememberLayoutInk(layout.background)
@@ -239,7 +245,12 @@ internal fun CustomPlayerCanvas(
             layout = layout,
             safeArea = safeArea,
         )
-        LayoutBlocks(blocks = layout.blocks, safeArea = safeArea, modifier = blocksModifier) { block ->
+        LayoutBlocks(
+            blocks = layout.blocks,
+            safeArea = safeArea,
+            modifier = blocksModifier,
+            blockModifier = blockModifier,
+        ) { block ->
             LayoutBlockContent(
                 block = block,
                 host = host,
@@ -260,6 +271,7 @@ internal fun LayoutBlocks(
     blocks: List<LayoutBlock>,
     safeArea: PaddingValues,
     modifier: Modifier = Modifier,
+    blockModifier: (LayoutBlock) -> Modifier = { Modifier },
     content: @Composable (LayoutBlock) -> Unit,
 ) {
     val direction = LocalLayoutDirection.current
@@ -277,7 +289,7 @@ internal fun LayoutBlocks(
                         screenWidth,
                         screenHeight
                     )
-                    Box(modifier = Modifier.layoutId(block.id)) {
+                    Box(modifier = Modifier.layoutId(block.id).then(blockModifier(block))) {
                         CompositionLocalProvider(LocalBlockFrame provides frame) { content(block) }
                     }
                 }

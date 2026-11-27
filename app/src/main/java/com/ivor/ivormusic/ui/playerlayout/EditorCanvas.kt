@@ -1,5 +1,10 @@
 package com.ivor.ivormusic.ui.playerlayout
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -7,14 +12,31 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.FlipToBack
+import androidx.compose.material.icons.rounded.FlipToFront
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -22,19 +44,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.ivor.ivormusic.R
 import com.ivor.ivormusic.data.playerlayout.AreaInsets
 import com.ivor.ivormusic.data.playerlayout.LayoutBlock
 import com.ivor.ivormusic.data.playerlayout.LayoutGeometry
@@ -48,8 +74,11 @@ import com.ivor.ivormusic.ui.player.LayoutHost
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 import com.ivor.ivormusic.ui.player.areaInsetsPx
 import com.ivor.ivormusic.util.rememberKodaHaptics
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 /** Pull distance for snapping, on screen. */
 private val SNAP_DISTANCE = 8.dp
@@ -65,21 +94,36 @@ private val HANDLE_REACH = 22.dp
 
 private val HANDLE_RADIUS = 7.dp
 
+/** The remove badge on every block's top corner, on screen. */
+private val BADGE_RADIUS = 11.dp
+
+/** How far from a badge's centre a touch still takes it, on screen. */
+private val BADGE_REACH = 18.dp
+
+/** How much a block grows when it is picked up. */
+private const val LIFT_SCALE = 1.04f
+
 /**
- * The player at its real size, scaled down to fit, with the editing layer over
- * it.
+ * The player at its real size, scaled down to fit, in edit mode.
  *
  * The preview is the real renderer laid out at the size of the player on this
  * phone and only scaled in its graphics layer, so text sizes, insets and the
  * fractions blocks are stored as are exactly what the player will use. The
  * editing layer lives inside the same scaled layer, so touches arrive in the
  * player's own pixels; anything meant to be a fixed size on screen (handles,
- * the snap distance, touch slop) is divided by the scale.
+ * badges, the snap distance, touch slop) is divided by the scale.
+ *
+ * Each gesture means one thing: a tap on a block opens its settings, a drag
+ * moves it, a hold lifts it and offers its menu (and a drag from there carries
+ * it), the badge on its corner removes it, and the dots on the chosen block
+ * resize it. A tap on the empty background asks for a new background.
  */
 @Composable
 internal fun EditorCanvas(
     layout: PlayerLayout,
     selectedId: String?,
+    /** The block just added or copied, which grows into place. */
+    arrivingId: String?,
     viewModel: PlayerViewModel,
     canvasSize: DpSize,
     safeArea: PaddingValues,
@@ -87,17 +131,22 @@ internal fun EditorCanvas(
     playerScheme: ColorScheme,
     onSelect: (String?) -> Unit,
     onOpenConfig: (String) -> Unit,
+    onTapBackground: () -> Unit,
+    onRemove: (String) -> Unit,
+    onDuplicate: (String) -> Unit,
+    onFront: (String) -> Unit,
+    onBack: (String) -> Unit,
     /** A drag or resize began from [before]; record it for undo. */
     onGestureStart: (before: PlayerLayout) -> Unit,
     /** Every frame of a drag or resize; no undo step per frame. */
     onLayoutChange: (PlayerLayout) -> Unit,
-    onCanvasPositioned: (LayoutCoordinates) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
     val chrome = MaterialTheme.colorScheme
     val haptics = rememberKodaHaptics()
+    val scope = rememberCoroutineScope()
     val host = remember(viewModel) {
         LayoutHost(
             viewModel = viewModel,
@@ -110,6 +159,92 @@ internal fun EditorCanvas(
         )
     }
 
+    // The badges and outlines pop in once the editor has arrived.
+    val marks = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        delay(140)
+        marks.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow))
+    }
+
+    // A block being carried (dragged, or held for its menu) is lifted and
+    // loses its marks, which would no longer line up with it.
+    var liftedId by remember { mutableStateOf<String?>(null) }
+    val lift = remember { Animatable(1f) }
+    fun liftUp(id: String) {
+        liftedId = id
+        scope.launch { lift.animateTo(LIFT_SCALE, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)) }
+    }
+    fun setDown() {
+        scope.launch {
+            lift.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium))
+            // Not reached when another lift took over the animation.
+            liftedId = null
+        }
+    }
+
+    // The chosen block's outline and dots grow in, each time it is chosen
+    // and each time it is set down.
+    val selection = remember { Animatable(1f) }
+    LaunchedEffect(selectedId, liftedId) {
+        if (selectedId != null && liftedId == null) {
+            selection.snapTo(0f)
+            selection.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium))
+        }
+    }
+
+    // A new block grows into place.
+    val arrival = remember { Animatable(1f) }
+    LaunchedEffect(arrivingId) {
+        if (arrivingId != null) {
+            arrival.snapTo(0f)
+            arrival.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow))
+        }
+    }
+
+    // A removed block shrinks and fades before it leaves the layout.
+    var removingId by remember { mutableStateOf<String?>(null) }
+    val removal = remember { Animatable(0f) }
+    val remove by rememberUpdatedState(onRemove)
+    fun removeBlock(id: String) {
+        if (removingId != null) return
+        removingId = id
+        haptics.subtle()
+        scope.launch {
+            removal.snapTo(0f)
+            removal.animateTo(1f, tween(durationMillis = 170, easing = FastOutLinearInEasing))
+            remove(id)
+            removingId = null
+        }
+    }
+
+    // The block whose menu is open, and where the finger was, on screen.
+    var menuFor by remember { mutableStateOf<String?>(null) }
+    var menuAt by remember { mutableStateOf(Offset.Zero) }
+
+    val currentArriving by rememberUpdatedState(arrivingId)
+    val blockModifier: (LayoutBlock) -> Modifier = remember {
+        { block ->
+            Modifier.graphicsLayer {
+                var scale = 1f
+                var alpha = 1f
+                if (block.id == liftedId) scale *= lift.value
+                if (block.id == currentArriving) {
+                    val p = arrival.value
+                    scale *= 0.82f + 0.18f * p
+                    alpha *= p.coerceIn(0f, 1f)
+                }
+                if (block.id == removingId) {
+                    val p = removal.value
+                    scale *= 1f - 0.22f * p
+                    alpha *= 1f - p
+                }
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+            }
+        }
+    }
+
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
         val scale = minOf(maxWidth / canvasSize.width, maxHeight / canvasSize.height)
             .coerceIn(0.05f, 1f)
@@ -119,11 +254,17 @@ internal fun EditorCanvas(
         val minBlockPx = with(density) { MIN_BLOCK.toPx() }
         val minTouchPx = with(density) { MIN_TOUCH.toPx() } * perScreenPx
         val reachPx = with(density) { HANDLE_REACH.toPx() } * perScreenPx
+        val badgePx = with(density) { BADGE_RADIUS.toPx() } * perScreenPx
+        val badgeReachPx = with(density) { BADGE_REACH.toPx() } * perScreenPx
         val insets = areaInsetsPx(safeArea, direction, density)
         val canvasWidthPx = with(density) { canvasSize.width.toPx() }
         val canvasHeightPx = with(density) { canvasSize.height.toPx() }
         val areaWidth = (canvasWidthPx - insets.left - insets.right).coerceAtLeast(1f)
         val areaHeight = (canvasHeightPx - insets.top - insets.bottom).coerceAtLeast(1f)
+        // Where the scaled player's top left corner lands in this box: it is
+        // centred, and scaled about its centre.
+        val shownLeft = (constraints.maxWidth - canvasWidthPx * scale) / 2f
+        val shownTop = (constraints.maxHeight - canvasHeightPx * scale) / 2f
 
         // The gesture below is keyed on the geometry only, so everything it
         // reads that changes between gestures comes through these.
@@ -131,6 +272,7 @@ internal fun EditorCanvas(
         val currentSelected by rememberUpdatedState(selectedId)
         val select by rememberUpdatedState(onSelect)
         val openConfig by rememberUpdatedState(onOpenConfig)
+        val tapBackground by rememberUpdatedState(onTapBackground)
         val gestureStart by rememberUpdatedState(onGestureStart)
         val layoutChange by rememberUpdatedState(onLayoutChange)
         var guidesX by remember { mutableStateOf(emptyList<Float>()) }
@@ -143,7 +285,7 @@ internal fun EditorCanvas(
                     scaleX = scale
                     scaleY = scale
                     clip = true
-                    shape = RoundedCornerShape(24.dp * perScreenPx)
+                    shape = RoundedCornerShape(28.dp * perScreenPx)
                 }
         ) {
             // The player's own scheme (the cover's, with album colours on);
@@ -154,19 +296,45 @@ internal fun EditorCanvas(
                     host = host,
                     safeArea = safeArea,
                     ambientBackground = ambientBackground,
+                    blockModifier = blockModifier,
                 )
             }
 
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .onGloballyPositioned(onCanvasPositioned)
                     .pointerInput(areaWidth, areaHeight, scale) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val start = currentLayout
+                            val slop = viewConfiguration.touchSlop * perScreenPx
+                            val live = start.blocks.filter { it.id != removingId }
+
+                            // The remove badges sit over everything, top of the stack first.
+                            val badged = live.lastOrNull { block ->
+                                val center = badgeCenter(
+                                    LayoutGeometry.areaRect(block, areaWidth, areaHeight),
+                                    insets, canvasWidthPx, canvasHeightPx, badgePx
+                                )
+                                hypot(down.position.x - center.x, down.position.y - center.y) <= badgeReachPx
+                            }
+                            if (badged != null) {
+                                down.consume()
+                                var moved = Offset.Zero
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Main)
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                                    if (!change.pressed) {
+                                        if (hypot(moved.x, moved.y) <= slop) removeBlock(badged.id)
+                                        return@awaitEachGesture
+                                    }
+                                    moved += change.positionChange()
+                                    change.consume()
+                                }
+                            }
+
                             val point = Offset(down.position.x - insets.left, down.position.y - insets.top)
-                            val selected = start.blocks.firstOrNull { it.id == currentSelected }
+                            val selected = live.firstOrNull { it.id == currentSelected }
                             val handle = selected?.let {
                                 handleAt(LayoutGeometry.areaRect(it, areaWidth, areaHeight), point, reachPx)
                             }
@@ -174,7 +342,7 @@ internal fun EditorCanvas(
                                 handle != null -> selected
                                 selected != null && LayoutGeometry.areaRect(selected, areaWidth, areaHeight)
                                     .grown(minTouchPx).contains(point) -> selected
-                                else -> start.blocks.lastOrNull {
+                                else -> live.lastOrNull {
                                     LayoutGeometry.areaRect(it, areaWidth, areaHeight).grown(minTouchPx).contains(point)
                                 }
                             }
@@ -182,67 +350,112 @@ internal fun EditorCanvas(
                             val others = start.blocks
                                 .filter { it.id != target?.id }
                                 .map { LayoutGeometry.areaRect(it, areaWidth, areaHeight) }
-                            val slop = viewConfiguration.touchSlop * perScreenPx
+                            val holdMillis = viewConfiguration.longPressTimeoutMillis
+                            var lastUptime = down.uptimeMillis
                             var total = Offset.Zero
                             var dragging = false
+                            var held = false
                             var snapped = false
 
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Main)
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                if (!change.pressed) {
-                                    if (!dragging) {
-                                        when {
-                                            target == null -> select(null)
-                                            target.id == currentSelected && handle == null -> openConfig(target.id)
-                                            else -> select(target.id)
+                            try {
+                                while (true) {
+                                    // Until it moves or lets go, a finger on a block is
+                                    // waiting to become a hold.
+                                    val waiting = target != null && handle == null && !dragging && !held
+                                    val event = if (waiting) {
+                                        val left = holdMillis - (lastUptime - down.uptimeMillis)
+                                        if (left <= 0L) null else withTimeoutOrNull(left) {
+                                            awaitPointerEvent(PointerEventPass.Main)
+                                        }
+                                    } else {
+                                        awaitPointerEvent(PointerEventPass.Main)
+                                    }
+                                    if (event == null) {
+                                        // Held still: lift it and offer its menu, under the finger.
+                                        held = true
+                                        val heldBlock = target!!
+                                        haptics.longPress()
+                                        if (heldBlock.id != currentSelected) select(heldBlock.id)
+                                        liftUp(heldBlock.id)
+                                        menuAt = Offset(
+                                            shownLeft + down.position.x * scale,
+                                            shownTop + down.position.y * scale
+                                        )
+                                        menuFor = heldBlock.id
+                                        continue
+                                    }
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    lastUptime = change.uptimeMillis
+                                    if (!change.pressed) {
+                                        if (!dragging && !held) {
+                                            when {
+                                                target != null -> {
+                                                    haptics.subtle()
+                                                    select(target.id)
+                                                    openConfig(target.id)
+                                                }
+                                                currentSelected != null -> select(null)
+                                                else -> tapBackground()
+                                            }
+                                        }
+                                        break
+                                    }
+                                    total += change.positionChange()
+                                    if (!dragging && target != null && hypot(total.x, total.y) > slop) {
+                                        dragging = true
+                                        // A drag out of a hold carries the block, as on a home screen.
+                                        if (held) menuFor = null
+                                        gestureStart(start)
+                                        if (target.id != currentSelected) select(target.id)
+                                        if (handle == null && !held) {
+                                            haptics.subtle()
+                                            liftUp(target.id)
                                         }
                                     }
-                                    break
-                                }
-                                total += change.positionChange()
-                                if (!dragging && target != null && hypot(total.x, total.y) > slop) {
-                                    dragging = true
-                                    gestureStart(start)
-                                    if (target.id != currentSelected) select(target.id)
-                                }
-                                if (dragging && target != null && startRect != null) {
-                                    change.consume()
-                                    val result = if (handle == null) {
-                                        LayoutSnapping.move(
-                                            startRect.offset(total.x, total.y),
-                                            others, areaWidth, areaHeight, snapPx
-                                        )
-                                    } else {
-                                        LayoutSnapping.resize(
-                                            startRect.movedEdges(handle, total),
-                                            handle, others, areaWidth, areaHeight, snapPx, minBlockPx
+                                    if (dragging && target != null && startRect != null) {
+                                        change.consume()
+                                        val result = if (handle == null) {
+                                            LayoutSnapping.move(
+                                                startRect.offset(total.x, total.y),
+                                                others, areaWidth, areaHeight, snapPx
+                                            )
+                                        } else {
+                                            LayoutSnapping.resize(
+                                                startRect.movedEdges(handle, total),
+                                                handle, others, areaWidth, areaHeight, snapPx, minBlockPx
+                                            )
+                                        }
+                                        val nowSnapped = result.guidesX.isNotEmpty() || result.guidesY.isNotEmpty()
+                                        if (nowSnapped && !snapped) haptics.tick()
+                                        snapped = nowSnapped
+                                        guidesX = result.guidesX
+                                        guidesY = result.guidesY
+                                        layoutChange(
+                                            start.withBlock(
+                                                LayoutGeometry.withAreaRect(target, result.rect, areaWidth, areaHeight)
+                                            )
                                         )
                                     }
-                                    val nowSnapped = result.guidesX.isNotEmpty() || result.guidesY.isNotEmpty()
-                                    if (nowSnapped && !snapped) haptics.tick()
-                                    snapped = nowSnapped
-                                    guidesX = result.guidesX
-                                    guidesY = result.guidesY
-                                    layoutChange(
-                                        start.withBlock(
-                                            LayoutGeometry.withAreaRect(target, result.rect, areaWidth, areaHeight)
-                                        )
-                                    )
                                 }
+                            } finally {
+                                guidesX = emptyList()
+                                guidesY = emptyList()
+                                // A block held for its menu stays up until the menu goes.
+                                if (liftedId != null && menuFor == null) setDown()
                             }
-                            guidesX = emptyList()
-                            guidesY = emptyList()
                         }
                     }
             ) {
                 drawEditorChrome(
                     layout = layout,
                     selectedId = selectedId,
+                    hiddenIds = setOfNotNull(liftedId, removingId),
                     insets = insets,
                     areaWidth = areaWidth,
                     areaHeight = areaHeight,
                     perScreenPx = perScreenPx,
+                    marks = marks.value,
+                    selection = selection.value,
                     guidesX = guidesX,
                     guidesY = guidesY,
                     barTint = chrome.scrim.copy(alpha = 0.22f),
@@ -250,7 +463,91 @@ internal fun EditorCanvas(
                     accent = chrome.primary,
                     onAccent = chrome.onPrimary,
                     guide = chrome.tertiary,
+                    badgeFill = chrome.inverseSurface,
+                    badgeGlyph = chrome.inverseOnSurface,
+                    badgeRing = chrome.surface,
                 )
+            }
+        }
+
+        // The hold menu, in the app's own colours, at the finger.
+        val menuBlock = menuFor?.let { id -> layout.blocks.firstOrNull { it.id == id } }
+        if (menuBlock != null) {
+            val isTop = layout.blocks.lastOrNull()?.id == menuBlock.id
+            val isBottom = layout.blocks.firstOrNull()?.id == menuBlock.id
+            fun closeMenu() {
+                menuFor = null
+                setDown()
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset { IntOffset(menuAt.x.roundToInt(), menuAt.y.roundToInt()) }
+                    .size(1.dp)
+            ) {
+                DropdownMenu(
+                    expanded = true,
+                    onDismissRequest = ::closeMenu,
+                    offset = DpOffset(0.dp, 4.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    Text(
+                        text = menuBlock.editorLabel(),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.cpl_menu_change)) },
+                        leadingIcon = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                        onClick = {
+                            closeMenu()
+                            openConfig(menuBlock.id)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.cpl_duplicate)) },
+                        leadingIcon = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) },
+                        onClick = {
+                            closeMenu()
+                            onDuplicate(menuBlock.id)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.cpl_bring_front)) },
+                        leadingIcon = { Icon(Icons.Rounded.FlipToFront, contentDescription = null) },
+                        enabled = !isTop,
+                        onClick = {
+                            closeMenu()
+                            onFront(menuBlock.id)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.cpl_send_back)) },
+                        leadingIcon = { Icon(Icons.Rounded.FlipToBack, contentDescription = null) },
+                        enabled = !isBottom,
+                        onClick = {
+                            closeMenu()
+                            onBack(menuBlock.id)
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.cpl_remove)) },
+                        leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null) },
+                        colors = MenuDefaults.itemColors(
+                            textColor = MaterialTheme.colorScheme.error,
+                            leadingIconColor = MaterialTheme.colorScheme.error,
+                        ),
+                        onClick = {
+                            menuFor = null
+                            liftedId = null
+                            scope.launch { lift.snapTo(1f) }
+                            removeBlock(menuBlock.id)
+                        }
+                    )
+                }
             }
         }
     }
@@ -272,10 +569,30 @@ private fun SnapRect.movedEdges(edges: SnapEdges, delta: Offset) = SnapRect(
     bottom = if (edges.bottom) bottom + delta.y else bottom,
 )
 
-/** The handles of a selected block: four corners, and the middle of each side long enough to hold one. */
+/**
+ * Where a block's remove badge sits, in the canvas's pixels: on its top left
+ * corner, held inside the canvas so a block against an edge keeps a whole one.
+ */
+private fun badgeCenter(
+    rect: SnapRect,
+    insets: AreaInsets,
+    canvasWidth: Float,
+    canvasHeight: Float,
+    radius: Float,
+): Offset {
+    val margin = radius * 1.2f
+    return Offset(
+        (insets.left + rect.left).coerceIn(margin, (canvasWidth - margin).coerceAtLeast(margin)),
+        (insets.top + rect.top).coerceIn(margin, (canvasHeight - margin).coerceAtLeast(margin)),
+    )
+}
+
+/**
+ * The handles of the chosen block: three corners (the fourth carries the
+ * remove badge), and the middle of each side long enough to hold one.
+ */
 private fun handlesOf(rect: SnapRect, reach: Float): List<Pair<Offset, SnapEdges>> {
     val corners = listOf(
-        Offset(rect.left, rect.top) to SnapEdges(left = true, top = true),
         Offset(rect.right, rect.top) to SnapEdges(right = true, top = true),
         Offset(rect.left, rect.bottom) to SnapEdges(left = true, bottom = true),
         Offset(rect.right, rect.bottom) to SnapEdges(right = true, bottom = true),
@@ -303,17 +620,26 @@ private fun handleAt(rect: SnapRect, point: Offset, reach: Float): SnapEdges? =
 private fun DrawScope.drawEditorChrome(
     layout: PlayerLayout,
     selectedId: String?,
+    /** Blocks drawn without marks: lifted, or on their way out. */
+    hiddenIds: Set<String>,
     insets: AreaInsets,
     areaWidth: Float,
     areaHeight: Float,
     perScreenPx: Float,
+    /** 0 to 1 as the marks pop in when the editor opens. */
+    marks: Float,
+    /** 0 to 1 as the chosen block's outline and dots grow in. */
+    selection: Float,
     guidesX: List<Float>,
     guidesY: List<Float>,
-    barTint: androidx.compose.ui.graphics.Color,
-    outline: androidx.compose.ui.graphics.Color,
-    accent: androidx.compose.ui.graphics.Color,
-    onAccent: androidx.compose.ui.graphics.Color,
-    guide: androidx.compose.ui.graphics.Color,
+    barTint: Color,
+    outline: Color,
+    accent: Color,
+    onAccent: Color,
+    guide: Color,
+    badgeFill: Color,
+    badgeGlyph: Color,
+    badgeRing: Color,
 ) {
     val px = 1.dp.toPx() * perScreenPx
     // The status and navigation bars: blocks there sit under the system's own.
@@ -325,13 +651,14 @@ private fun DrawScope.drawEditorChrome(
             size = Size(size.width, insets.bottom)
         )
     }
+    val shown = marks.coerceIn(0f, 1f)
     val dashes = PathEffect.dashPathEffect(floatArrayOf(5f * px, 4f * px))
-    val corner = CornerRadius(6f * px)
+    val corner = CornerRadius(10f * px)
     layout.blocks.forEach { block ->
-        if (block.id == selectedId) return@forEach
+        if (block.id == selectedId || block.id in hiddenIds) return@forEach
         val rect = LayoutGeometry.areaRect(block, areaWidth, areaHeight)
         drawRoundRect(
-            color = outline.copy(alpha = 0.55f),
+            color = outline.copy(alpha = 0.5f * shown),
             topLeft = Offset(insets.left + rect.left, insets.top + rect.top),
             size = Size(rect.width, rect.height),
             cornerRadius = corner,
@@ -344,20 +671,44 @@ private fun DrawScope.drawEditorChrome(
     guidesY.forEach { y ->
         drawLine(guide, Offset(0f, insets.top + y), Offset(size.width, insets.top + y), strokeWidth = 1.5f * px)
     }
-    val selected = layout.blocks.firstOrNull { it.id == selectedId } ?: return
-    val rect = LayoutGeometry.areaRect(selected, areaWidth, areaHeight)
-    val origin = Offset(insets.left + rect.left, insets.top + rect.top)
-    drawRoundRect(
-        color = accent,
-        topLeft = origin,
-        size = Size(rect.width, rect.height),
-        cornerRadius = corner,
-        style = Stroke(width = 2f * px)
-    )
-    val radius = HANDLE_RADIUS.toPx() * perScreenPx
-    handlesOf(rect, HANDLE_REACH.toPx() * perScreenPx).forEach { (center, _) ->
-        val at = Offset(insets.left + center.x, insets.top + center.y)
-        drawCircle(onAccent, radius = radius + 2f * px, center = at)
-        drawCircle(accent, radius = radius, center = at)
+
+    val selected = layout.blocks.firstOrNull { it.id == selectedId }?.takeIf { it.id !in hiddenIds }
+    if (selected != null) {
+        val grow = selection.coerceAtLeast(0f)
+        val rect = LayoutGeometry.areaRect(selected, areaWidth, areaHeight)
+        drawRoundRect(
+            color = accent.copy(alpha = grow.coerceAtMost(1f)),
+            topLeft = Offset(insets.left + rect.left, insets.top + rect.top),
+            size = Size(rect.width, rect.height),
+            cornerRadius = corner,
+            style = Stroke(width = 2f * px)
+        )
+        val radius = HANDLE_RADIUS.toPx() * perScreenPx * grow
+        handlesOf(rect, HANDLE_REACH.toPx() * perScreenPx).forEach { (center, _) ->
+            val at = Offset(insets.left + center.x, insets.top + center.y)
+            drawCircle(onAccent, radius = radius + 2f * px, center = at)
+            drawCircle(accent, radius = radius, center = at)
+        }
+    }
+
+    // Remove badges last, in stack order, so the top block's is on top.
+    val badge = BADGE_RADIUS.toPx() * perScreenPx * marks.coerceAtLeast(0f)
+    if (badge <= 0f) return
+    layout.blocks.forEach { block ->
+        if (block.id in hiddenIds) return@forEach
+        val center = badgeCenter(
+            LayoutGeometry.areaRect(block, areaWidth, areaHeight),
+            insets, size.width, size.height, BADGE_RADIUS.toPx() * perScreenPx
+        )
+        drawCircle(badgeRing, radius = badge + 1.5f * px, center = center)
+        drawCircle(badgeFill, radius = badge, center = center)
+        val arm = badge * 0.46f
+        drawLine(
+            color = badgeGlyph,
+            start = Offset(center.x - arm, center.y),
+            end = Offset(center.x + arm, center.y),
+            strokeWidth = 2f * px,
+            cap = StrokeCap.Round
+        )
     }
 }

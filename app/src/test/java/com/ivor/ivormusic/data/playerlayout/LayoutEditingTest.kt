@@ -26,6 +26,13 @@ class LayoutEditingTest {
     }
 
     @Test
+    fun frontAndBackGoAllTheWay() {
+        assertEquals(listOf("b", "c", "a"), layout.toFront("a").blocks.map { it.id })
+        assertEquals(listOf("c", "a", "b"), layout.toBack("c").blocks.map { it.id })
+        assertSame(layout, layout.toFront("zzz"))
+    }
+
+    @Test
     fun duplicatingAMissingBlockIsNothing() {
         assertNull(layout.duplicating("zzz"))
     }

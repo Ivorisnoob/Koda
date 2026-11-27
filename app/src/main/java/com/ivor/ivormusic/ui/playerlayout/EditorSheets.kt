@@ -31,9 +31,12 @@ import androidx.compose.material.icons.rounded.CropSquare
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LinearScale
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.SmartButton
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
@@ -108,9 +111,9 @@ internal fun LayoutBlockKind.label(): String = stringResource(
 internal fun LayoutBlockKind.icon(): ImageVector = when (this) {
     LayoutBlockKind.COVER -> Icons.Rounded.Album
     LayoutBlockKind.HEADER -> Icons.Rounded.Title
-    LayoutBlockKind.TOOLBAR -> Icons.Rounded.SmartButton
-    LayoutBlockKind.TIME -> Icons.Rounded.LinearScale
-    LayoutBlockKind.TITLE -> Icons.Rounded.Title
+    LayoutBlockKind.TOOLBAR -> Icons.Rounded.MoreHoriz
+    LayoutBlockKind.TIME -> Icons.Rounded.Schedule
+    LayoutBlockKind.TITLE -> Icons.Rounded.TextFields
     LayoutBlockKind.SCRUBBER -> Icons.Rounded.LinearScale
     LayoutBlockKind.TRANSPORT -> Icons.Rounded.PlayCircle
     LayoutBlockKind.BUTTON -> Icons.Rounded.SmartButton
@@ -154,6 +157,97 @@ internal fun LayoutBackground.label(): String = stringResource(
         LayoutBackground.COVER -> R.string.cpl_bg_cover
     }
 )
+
+/* ------------------------------------------------------------------ */
+/* Adding                                                              */
+/* ------------------------------------------------------------------ */
+
+/** What can be added, most wanted first. */
+private val ADD_ORDER = listOf(
+    LayoutBlockKind.COVER,
+    LayoutBlockKind.TITLE,
+    LayoutBlockKind.SCRUBBER,
+    LayoutBlockKind.TRANSPORT,
+    LayoutBlockKind.BUTTON,
+    LayoutBlockKind.LYRICS,
+    LayoutBlockKind.UP_NEXT,
+    LayoutBlockKind.HEADER,
+    LayoutBlockKind.TOOLBAR,
+    LayoutBlockKind.TIME,
+    LayoutBlockKind.VISUALIZER,
+    LayoutBlockKind.PANEL,
+)
+
+/** Everything that can go on the screen; a tap puts it in the middle. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun AddBlockSheet(
+    onAdd: (LayoutBlockKind) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AdaptiveModalSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.cpl_add_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            FlowRow(
+                maxItemsInEachRow = 3,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ADD_ORDER.forEach { kind ->
+                    Surface(
+                        onClick = { onAdd(kind) },
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 104.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = kind.icon(),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Text(
+                                text = kind.label(),
+                                style = MaterialTheme.typography.labelLarge,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+                repeat((3 - ADD_ORDER.size % 3) % 3) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
 
 /* ------------------------------------------------------------------ */
 /* Block settings                                                      */
