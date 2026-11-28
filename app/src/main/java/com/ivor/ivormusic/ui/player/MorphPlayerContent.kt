@@ -96,6 +96,11 @@ import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import com.ivor.ivormusic.data.playerlayout.ButtonLook
+import com.ivor.ivormusic.data.playerlayout.LayoutAction
+import com.ivor.ivormusic.data.playerlayout.LayoutBlock
+import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -247,7 +252,10 @@ fun MorphPlayerSheetContent(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        MorphUtilityButton(onClick = onCollapse) {
+                        MorphUtilityButton(
+                            onClick = onCollapse,
+                            modifier = Modifier.size(44.dp).captureAs("morph.collapse", 20) { morphButton(LayoutAction.COLLAPSE) }
+                        ) {
                             Icon(
                                 Icons.Default.KeyboardArrowDown, "Collapse",
                                 modifier = Modifier.size(26.dp)
@@ -256,26 +264,36 @@ fun MorphPlayerSheetContent(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             MorphUtilityButton(
                                 onClick = sleepTimer.open,
-                                active = sleepTimer.active
+                                active = sleepTimer.active,
+                                modifier = Modifier.size(44.dp).captureAs("morph.sleep", 21) { morphButton(LayoutAction.SLEEP_TIMER) }
                             ) {
                                 Icon(
                                     Icons.Rounded.Bedtime, "Sleep timer",
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
-                            MorphUtilityButton(onClick = { showLyrics = !showLyrics }) {
+                            MorphUtilityButton(
+                                onClick = { showLyrics = !showLyrics },
+                                modifier = Modifier.size(44.dp).captureAs("morph.lyrics", 22) { morphButton(LayoutAction.LYRICS) }
+                            ) {
                                 Icon(
                                     Icons.Rounded.Lyrics, "Lyrics",
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
-                            MorphUtilityButton(onClick = { showQueue = true }) {
+                            MorphUtilityButton(
+                                onClick = { showQueue = true },
+                                modifier = Modifier.size(44.dp).captureAs("morph.queue", 23) { morphButton(LayoutAction.QUEUE) }
+                            ) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.QueueMusic, "Queue",
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
-                            MorphUtilityButton(onClick = { showOptions = true }) {
+                            MorphUtilityButton(
+                                onClick = { showOptions = true },
+                                modifier = Modifier.size(44.dp).captureAs("morph.options", 24) { morphButton(LayoutAction.OPTIONS) }
+                            ) {
                                 Icon(
                                     Icons.Rounded.MoreVert, "More options",
                                     modifier = Modifier.size(22.dp)
@@ -289,6 +307,11 @@ fun MorphPlayerSheetContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
+                            .captureAs("morph.art", 0) {
+                                captureBlock(LayoutBlockKind.COVER, LayoutSkin.MORPH) {
+                                    copy(action = LayoutAction.PLAY_PAUSE)
+                                }
+                            }
                     ) {
                         Crossfade(targetState = showLyrics, label = "MorphLyrics") { lyricsVisible ->
                             if (lyricsVisible) {
@@ -324,43 +347,28 @@ fun MorphPlayerSheetContent(
                     // ========== TITLE / ARTIST ==========
                     // Wrapped so the song information is one swipe target the
                     // full width of the player, not two text-shaped ones.
-                    Column(
+                    MorphTitle(
+                        song = currentSong,
+                        onArtistClick = onArtistClick,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .captureAs("morph.title", 10) {
+                                captureBlock(LayoutBlockKind.TITLE, LayoutSkin.MORPH)
+                            }
                             .swipeToSkip(swipeToSkip)
                             .swipeToSkipFollow(swipeToSkip)
-                    ) {
-                        Text(
-                            text = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
-                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-                            color = onSurfaceColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
-                        )
-                        val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
-                            ?: "Unknown Artist"
-                        Text(
-                            text = artistName,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = primaryColor.copy(alpha = 0.9f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(enabled = artistName != "Unknown Artist") {
-                                    onArtistClick(artistName)
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
+                    )
 
                     // ========== SCRUB LINE ==========
-                    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .captureAs("morph.scrubber", 30) {
+                                captureBlock(LayoutBlockKind.SCRUBBER, LayoutSkin.MORPH) {
+                                    copy(showDetail = true, motion = true)
+                                }
+                            }
+                    ) {
                         var scrubPosition by remember { mutableStateOf<Float?>(null) }
                         val displayedProgress = scrubPosition?.toLong() ?: progress
                         val scrubReturnPoint = LocalScrubReturnPoint.current
@@ -432,7 +440,13 @@ fun MorphPlayerSheetContent(
                         }
                     }
 
-                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+                    PlayerVisualizerSlot(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .captureAs("morph.visualizer", 31) {
+                                captureBlock(LayoutBlockKind.VISUALIZER, LayoutSkin.KODA)
+                            }
+                    )
 
                     // ========== SUMMONED FLOATING TOOLBAR ==========
                     AnimatedVisibility(
@@ -440,52 +454,22 @@ fun MorphPlayerSheetContent(
                         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                     ) {
-                        Box(
+                        MorphToolbar(
+                            isFavorite = isFavorite,
+                            shuffleModeEnabled = shuffleModeEnabled,
+                            repeatMode = repeatMode,
+                            onLike = { viewModel.toggleCurrentSongLike() },
+                            onShuffle = { viewModel.toggleShuffle() },
+                            onPrevious = { playerHaptics.skip(); viewModel.skipToPrevious() },
+                            onNext = { playerHaptics.skip(); viewModel.skipToNext() },
+                            onRepeat = { viewModel.toggleRepeat() },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            HorizontalFloatingToolbar(
-                                expanded = true,
-                                colors = FloatingToolbarDefaults.standardFloatingToolbarColors(),
-                                floatingActionButton = {
-                                    FloatingToolbarDefaults.StandardFloatingActionButton(
-                                        onClick = { viewModel.toggleCurrentSongLike() }
-                                    ) {
-                                        LikeBurstIcon(isFavorite = isFavorite)
-                                    }
-                                },
-                                content = {
-                                    IconToggleButton(
-                                        checked = shuffleModeEnabled,
-                                        onCheckedChange = { viewModel.toggleShuffle() }
-                                    ) {
-                                        Icon(Icons.Default.Shuffle, "Shuffle")
-                                    }
-                                    androidx.compose.material3.IconButton(
-                                        onClick = { playerHaptics.skip(); viewModel.skipToPrevious() }
-                                    ) {
-                                        Icon(Icons.Default.SkipPrevious, "Previous")
-                                    }
-                                    androidx.compose.material3.IconButton(
-                                        onClick = { playerHaptics.skip(); viewModel.skipToNext() }
-                                    ) {
-                                        Icon(Icons.Default.SkipNext, "Next")
-                                    }
-                                    IconToggleButton(
-                                        checked = repeatMode != Player.REPEAT_MODE_OFF,
-                                        onCheckedChange = { viewModel.toggleRepeat() }
-                                    ) {
-                                        Icon(
-                                            if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
-                                            else Icons.Default.Repeat,
-                                            "Repeat"
-                                        )
-                                    }
+                                .padding(vertical = 10.dp)
+                                .captureAs("morph.toolbar", 40) {
+                                    captureBlock(LayoutBlockKind.TOOLBAR, LayoutSkin.MORPH)
                                 }
-                            )
-                        }
+                        )
                     }
 
                     Spacer(
@@ -517,9 +501,10 @@ fun MorphPlayerSheetContent(
 }
 
 @Composable
-private fun MorphUtilityButton(
+internal fun MorphUtilityButton(
     onClick: () -> Unit,
     active: Boolean = false,
+    modifier: Modifier = Modifier.size(44.dp),
     content: @Composable () -> Unit
 ) {
     FilledIconButton(
@@ -533,7 +518,7 @@ private fun MorphUtilityButton(
                 MaterialTheme.colorScheme.onPrimary
             } else MaterialTheme.colorScheme.onSurface
         ),
-        modifier = Modifier.size(44.dp)
+        modifier = modifier
     ) {
         content()
     }
@@ -550,15 +535,17 @@ private fun MorphUtilityButton(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun MorphHero(
+internal fun MorphHero(
     currentSong: Song?,
     isPlaying: Boolean,
     isBuffering: Boolean,
     progressFraction: Float,
     onPlayPause: () -> Unit,
-    swipeToSkip: SwipeToSkipState,
+    /** Null where the hero takes no swipe: the layout editor, or a layout that turned it off. */
+    swipeToSkip: SwipeToSkipState?,
     ringColor: Color,
-    ringTrackColor: Color
+    ringTrackColor: Color,
+    motionEligible: Boolean = true
 ) {
     val cycleShapes = remember {
         listOf(
@@ -663,7 +650,7 @@ private fun MorphHero(
             modifier = Modifier
                 .size(heroSize)
                 .graphicsLayer {
-                    val dx = swipeToSkip.offset
+                    val dx = swipeToSkip?.offset ?: 0f
                     translationX = dx * SwipeToSkipDefaults.ArtFollow
                     rotationZ = tilt + dx / 60f
                     scaleX = breath * (1f + (abs(dx) / 2500f).coerceAtMost(0.08f))
@@ -672,7 +659,7 @@ private fun MorphHero(
                 .clip(heroShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .coverTaps(LocalCoverSeek.current) { currentOnPlayPause() }
-                .swipeToSkip(swipeToSkip)
+                .then(if (swipeToSkip != null) Modifier.swipeToSkip(swipeToSkip) else Modifier)
                 // Last in the chain: consumes the post-long-press hold
                 // stream before the tap and skip-drag detectors see it.
                 .styleWheelHold(styleWheel),
@@ -684,7 +671,8 @@ private fun MorphHero(
                     song = artSong,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    motionEligible = motionEligible
                 )
             } else {
                 Icon(
@@ -707,5 +695,213 @@ private fun MorphHero(
                 )
             }
         }
+    }
+}
+
+private fun morphButton(action: LayoutAction) =
+    captureBlock(LayoutBlockKind.BUTTON, LayoutSkin.MORPH) { copy(action = action, look = ButtonLook.TONAL) }
+
+/* ------------------------------------------------------------------ */
+/* Pieces, shared with blocks in Morph's skin                          */
+/* ------------------------------------------------------------------ */
+
+/** The title centred under the living shape, the artist in the accent. */
+@Composable
+internal fun MorphTitle(
+    song: Song?,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    artistEnabled: Boolean = true,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = song?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
+            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        )
+        val artistName = song?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
+        Text(
+            text = artistName,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = artistEnabled && artistName != "Unknown Artist") {
+                    onArtistClick(artistName)
+                }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+/** The floating toolbar Morph summons: Like as its button, then shuffle, the skips and repeat. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@Composable
+internal fun MorphToolbar(
+    isFavorite: Boolean,
+    shuffleModeEnabled: Boolean,
+    repeatMode: Int,
+    onLike: () -> Unit,
+    onShuffle: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onRepeat: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        HorizontalFloatingToolbar(
+            expanded = true,
+            colors = FloatingToolbarDefaults.standardFloatingToolbarColors(),
+            floatingActionButton = {
+                FloatingToolbarDefaults.StandardFloatingActionButton(onClick = onLike) {
+                    LikeBurstIcon(isFavorite = isFavorite)
+                }
+            },
+            content = {
+                IconToggleButton(
+                    checked = shuffleModeEnabled,
+                    onCheckedChange = { onShuffle() }
+                ) {
+                    Icon(Icons.Default.Shuffle, "Shuffle")
+                }
+                androidx.compose.material3.IconButton(onClick = onPrevious) {
+                    Icon(Icons.Default.SkipPrevious, "Previous")
+                }
+                androidx.compose.material3.IconButton(onClick = onNext) {
+                    Icon(Icons.Default.SkipNext, "Next")
+                }
+                IconToggleButton(
+                    checked = repeatMode != Player.REPEAT_MODE_OFF,
+                    onCheckedChange = { onRepeat() }
+                ) {
+                    Icon(
+                        if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
+                        else Icons.Default.Repeat,
+                        "Repeat"
+                    )
+                }
+            }
+        )
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Morph's skin for custom layouts                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A block drawn by Morph's own pieces. The cover is the living shape inside
+ * its wavy progress ring; every button is the round utility button, lit while
+ * on; the toolbar is the one Morph summons, here always in view.
+ */
+@Composable
+internal fun MorphSkinBlock(
+    block: LayoutBlock,
+    host: LayoutHost,
+    motionArtwork: Boolean,
+    fallback: @Composable (LayoutInk) -> Unit,
+) {
+    val viewModel = host.viewModel
+    val song by viewModel.currentSong.collectAsState()
+    val scheme = MaterialTheme.colorScheme
+    when (block.kind) {
+        LayoutBlockKind.COVER -> {
+            val isPlaying by viewModel.isPlaying.collectAsState()
+            val isBuffering by viewModel.isBuffering.collectAsState()
+            val playWhenReady by viewModel.playWhenReady.collectAsState()
+            val progress by viewModel.progress.collectAsState()
+            val duration by viewModel.duration.collectAsState()
+            val showLyrics = host.lyricsOpen && motionArtwork
+            val swipe = host.swipeToSkip?.takeIf { host.interactive && block.swipeToSkip }
+            Box(Modifier.fillMaxSize()) {
+                Crossfade(targetState = showLyrics, label = "MorphSkinArtLyrics") { lyrics ->
+                    if (lyrics) {
+                        CoverLyrics(
+                            host = host,
+                            primary = scheme.primary,
+                            ink = scheme.onSurface,
+                            inkVariant = scheme.onSurfaceVariant
+                        )
+                    } else {
+                        MorphHero(
+                            currentSong = song,
+                            isPlaying = isPlaying,
+                            isBuffering = isBuffering && playWhenReady && !isPlaying,
+                            progressFraction = if (duration > 0) {
+                                (progress.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                            } else 0f,
+                            onPlayPause = rememberBlockAction(block, host),
+                            swipeToSkip = swipe,
+                            ringColor = scheme.primary,
+                            ringTrackColor = scheme.onSurfaceVariant.copy(alpha = 0.2f),
+                            motionEligible = motionArtwork
+                        )
+                    }
+                }
+            }
+        }
+        LayoutBlockKind.TITLE -> SkinTitleFrame(block, host) { frame ->
+            MorphTitle(
+                song = song,
+                onArtistClick = host.onArtistClick,
+                artistEnabled = host.interactive,
+                modifier = frame
+            )
+        }
+        LayoutBlockKind.SCRUBBER -> LayoutScrubber(
+            host = host,
+            color = scheme.primary,
+            trackColor = scheme.onSurfaceVariant.copy(alpha = 0.15f),
+            timeColor = scheme.onSurfaceVariant,
+            stroke = 3.dp,
+            trackHeight = 12.dp,
+            flat = !block.motion,
+            showTimes = block.showDetail,
+            verticalArrangement = Arrangement.Top
+        )
+        LayoutBlockKind.TOOLBAR -> {
+            val liked by viewModel.isCurrentSongLiked.collectAsState()
+            val shuffle by viewModel.shuffleModeEnabled.collectAsState()
+            val repeatMode by viewModel.repeatMode.collectAsState()
+            MorphToolbar(
+                isFavorite = liked,
+                shuffleModeEnabled = shuffle,
+                repeatMode = repeatMode,
+                onLike = { host.onAction(LayoutAction.LIKE) },
+                onShuffle = { host.onAction(LayoutAction.SHUFFLE) },
+                onPrevious = { host.onAction(LayoutAction.PREVIOUS) },
+                onNext = { host.onAction(LayoutAction.NEXT) },
+                onRepeat = { host.onAction(LayoutAction.REPEAT) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        LayoutBlockKind.BUTTON -> {
+            val action = block.action
+            val state = rememberLayoutActionState(action, host)
+            MorphUtilityButton(
+                onClick = rememberBlockAction(block, host),
+                active = state.checked == true || block.look == ButtonLook.FILLED,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                LayoutActionIcon(
+                    action, state, action.label(),
+                    Modifier.layoutIcon(if (action == LayoutAction.COLLAPSE) 26.dp else 22.dp),
+                    ActionGlyphs.FILLED
+                )
+            }
+        }
+        else -> fallback(LayoutInk(scheme.background, scheme.onSurface))
     }
 }

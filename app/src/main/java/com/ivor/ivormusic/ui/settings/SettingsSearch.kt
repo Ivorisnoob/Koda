@@ -66,6 +66,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.NotInterested
+import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Wifi
@@ -863,6 +864,10 @@ internal fun buildSettingsSearchIndex(
         "playlist_swipe", stringResource(R.string.sp_playlist_swipe), "Local library", Icons.Rounded.SwapHoriz,
         listOf("swipe", "gesture", "dismiss", "remove song", "quick action", "playlist row", "swipe right", "swipe left", "play", "queue", "add to queue", "options")
     ) { onOpenPage(SettingsPage.GESTURES) }
+    entry(
+        "layout_editor_move_blocks", stringResource(R.string.sp_layout_move_blocks), "Player", Icons.Rounded.OpenWith,
+        listOf("custom", "layout", "editor", "move", "drag", "resize", "blocks", "lock", "arrange")
+    ) { onOpenPage(SettingsPage.PLAYER) }
     entry(
         "editorial_one_row", stringResource(R.string.sp_editorial_one_row), "Player", Icons.Rounded.SkipNext,
         listOf("editorial", "previous", "next", "play", "buttons", "one row", "single line", "controls", "layout")

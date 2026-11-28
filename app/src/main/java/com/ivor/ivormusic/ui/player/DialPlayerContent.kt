@@ -71,6 +71,11 @@ import com.ivor.ivormusic.data.isUnknownArtist
 import com.ivor.ivormusic.data.isUnknownTitle
 import com.ivor.ivormusic.data.PlaylistDisplayItem
 import com.ivor.ivormusic.ui.components.LikeBurstIcon
+import com.ivor.ivormusic.data.playerlayout.ButtonLook
+import com.ivor.ivormusic.data.playerlayout.LayoutAction
+import com.ivor.ivormusic.data.playerlayout.LayoutBlock
+import com.ivor.ivormusic.data.playerlayout.LayoutBlockKind
+import com.ivor.ivormusic.data.playerlayout.LayoutSkin
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -184,7 +189,10 @@ fun DialPlayerSheetContent(
                             onClick = onCollapse,
                             accent = chipColor,
                             field = ink,
-                            size = 44.dp
+                            size = 44.dp,
+                            modifier = Modifier.captureAs("dial.collapse", 20) {
+                                dialButton(LayoutAction.COLLAPSE, ButtonLook.TONAL)
+                            }
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowDown, "Collapse",
@@ -196,7 +204,10 @@ fun DialPlayerSheetContent(
                                 onClick = sleepTimer.open,
                                 accent = if (sleepTimer.active) accent else chipColor,
                                 field = if (sleepTimer.active) MaterialTheme.colorScheme.onPrimary else ink,
-                                size = 44.dp
+                                size = 44.dp,
+                                modifier = Modifier.captureAs("dial.sleep", 21) {
+                                    dialButton(LayoutAction.SLEEP_TIMER, ButtonLook.TONAL)
+                                }
                             ) {
                                 Icon(
                                     Icons.Rounded.Bedtime, "Sleep timer",
@@ -207,7 +218,10 @@ fun DialPlayerSheetContent(
                                 onClick = { showQueue = true },
                                 accent = chipColor,
                                 field = ink,
-                                size = 44.dp
+                                size = 44.dp,
+                                modifier = Modifier.captureAs("dial.queue", 22) {
+                                    dialButton(LayoutAction.QUEUE, ButtonLook.TONAL)
+                                }
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.QueueMusic, "Queue",
@@ -218,7 +232,10 @@ fun DialPlayerSheetContent(
                                 onClick = { showOptions = true },
                                 accent = chipColor,
                                 field = ink,
-                                size = 44.dp
+                                size = 44.dp,
+                                modifier = Modifier.captureAs("dial.options", 23) {
+                                    dialButton(LayoutAction.OPTIONS, ButtonLook.TONAL)
+                                }
                             ) {
                                 Icon(
                                     Icons.Rounded.MoreVert, "More options",
@@ -233,6 +250,11 @@ fun DialPlayerSheetContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
+                            .captureAs("dial.art", 0) {
+                                captureBlock(LayoutBlockKind.COVER, LayoutSkin.DIAL) {
+                                    copy(action = LayoutAction.PLAY_PAUSE)
+                                }
+                            }
                     ) {
                         Crossfade(targetState = showLyrics, label = "DialLyrics") { lyricsVisible ->
                             if (lyricsVisible) {
@@ -272,50 +294,37 @@ fun DialPlayerSheetContent(
                         ),
                         color = ink,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .captureAs("dial.time", 30) {
+                                captureBlock(LayoutBlockKind.TIME, LayoutSkin.DIAL)
+                            }
                     )
 
-                    PlayerVisualizerSlot(modifier = Modifier.fillMaxWidth())
+                    PlayerVisualizerSlot(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .captureAs("dial.visualizer", 31) {
+                                captureBlock(LayoutBlockKind.VISUALIZER, LayoutSkin.KODA)
+                            }
+                    )
 
                     Spacer(modifier = Modifier.height(6.dp))
 
                     // ========== TITLE / ARTIST ==========
                     // Wrapped so the song information is one swipe target the
                     // full width of the player, not two text-shaped ones.
-                    Column(
+                    DialTitle(
+                        song = currentSong,
+                        onArtistClick = onArtistClick,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .captureAs("dial.title", 10) {
+                                captureBlock(LayoutBlockKind.TITLE, LayoutSkin.DIAL)
+                            }
                             .swipeToSkip(swipeToSkip)
                             .swipeToSkipFollow(swipeToSkip)
-                    ) {
-                        Text(
-                            text = currentSong?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
-                        )
-                        val artistName = currentSong?.artist?.takeIf { !isUnknownArtist(it) }
-                            ?: "Unknown Artist"
-                        Text(
-                            text = artistName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = inkVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(enabled = artistName != "Unknown Artist") {
-                                    onArtistClick(artistName)
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -331,7 +340,10 @@ fun DialPlayerSheetContent(
                             onClick = { playerHaptics.skip(); viewModel.skipToPrevious() },
                             accent = chipColor,
                             field = ink,
-                            size = 56.dp
+                            size = 56.dp,
+                            modifier = Modifier.captureAs("dial.previous", 40) {
+                                dialButton(LayoutAction.PREVIOUS, ButtonLook.FILLED)
+                            }
                         ) {
                             Icon(
                                 Icons.Default.SkipPrevious, "Previous",
@@ -342,7 +354,12 @@ fun DialPlayerSheetContent(
                             checked = isFavorite,
                             onClick = { viewModel.toggleCurrentSongLike() },
                             accent = accent,
-                            field = MaterialTheme.colorScheme.onPrimary
+                            field = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .captureAs("dial.like", 41) {
+                                    dialButton(LayoutAction.LIKE, ButtonLook.OUTLINED)
+                                }
                         ) {
                             LikeBurstIcon(isFavorite = isFavorite, iconSize = 20.dp)
                         }
@@ -350,7 +367,12 @@ fun DialPlayerSheetContent(
                             checked = shuffleModeEnabled,
                             onClick = { viewModel.toggleShuffle() },
                             accent = accent,
-                            field = MaterialTheme.colorScheme.onPrimary
+                            field = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .captureAs("dial.shuffle", 42) {
+                                    dialButton(LayoutAction.SHUFFLE, ButtonLook.OUTLINED)
+                                }
                         ) {
                             Icon(Icons.Default.Shuffle, "Shuffle", modifier = Modifier.size(20.dp))
                         }
@@ -358,7 +380,12 @@ fun DialPlayerSheetContent(
                             checked = repeatMode != Player.REPEAT_MODE_OFF,
                             onClick = { viewModel.toggleRepeat() },
                             accent = accent,
-                            field = MaterialTheme.colorScheme.onPrimary
+                            field = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .captureAs("dial.repeat", 43) {
+                                    dialButton(LayoutAction.REPEAT, ButtonLook.OUTLINED)
+                                }
                         ) {
                             Icon(
                                 if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
@@ -371,7 +398,12 @@ fun DialPlayerSheetContent(
                             checked = showLyrics,
                             onClick = { showLyrics = !showLyrics },
                             accent = accent,
-                            field = MaterialTheme.colorScheme.onPrimary
+                            field = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .captureAs("dial.lyrics", 44) {
+                                    dialButton(LayoutAction.LYRICS, ButtonLook.OUTLINED)
+                                }
                         ) {
                             Icon(Icons.Rounded.Lyrics, "Lyrics", modifier = Modifier.size(20.dp))
                         }
@@ -379,7 +411,10 @@ fun DialPlayerSheetContent(
                             onClick = { playerHaptics.skip(); viewModel.skipToNext() },
                             accent = chipColor,
                             field = ink,
-                            size = 56.dp
+                            size = 56.dp,
+                            modifier = Modifier.captureAs("dial.next", 45) {
+                                dialButton(LayoutAction.NEXT, ButtonLook.FILLED)
+                            }
                         ) {
                             Icon(Icons.Default.SkipNext, "Next", modifier = Modifier.size(28.dp))
                         }
@@ -422,7 +457,7 @@ fun DialPlayerSheetContent(
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun RotaryDial(
+internal fun RotaryDial(
     currentSong: Song?,
     isPlaying: Boolean,
     isBuffering: Boolean,
@@ -430,7 +465,9 @@ private fun RotaryDial(
     duration: Long,
     onSeekTo: (Long) -> Unit,
     onPlayPause: () -> Unit,
-    swipeToSkip: SwipeToSkipState
+    /** Null where the puck takes no swipe: the layout editor, or a layout that turned it off. */
+    swipeToSkip: SwipeToSkipState?,
+    motionEligible: Boolean = true
 ) {
     val styleWheel = LocalPlayerStyleWheelController.current
     val tickColor = MaterialTheme.colorScheme.primary
@@ -586,11 +623,15 @@ private fun RotaryDial(
         Box(
             modifier = Modifier
                 .size(puckSize)
-                .swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
+                .then(
+                    if (swipeToSkip != null) {
+                        Modifier.swipeToSkipFollow(swipeToSkip, SwipeToSkipDefaults.ArtFollow)
+                    } else Modifier
+                )
                 .clip(puckShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .coverTaps(LocalCoverSeek.current) { onPlayPause() }
-                .swipeToSkip(swipeToSkip)
+                .then(if (swipeToSkip != null) Modifier.swipeToSkip(swipeToSkip) else Modifier)
                 .styleWheelHold(styleWheel),
             contentAlignment = Alignment.Center
         ) {
@@ -600,7 +641,8 @@ private fun RotaryDial(
                     song = artSong,
                     contentDescription = "Album Art",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    motionEligible = motionEligible
                 )
             } else {
                 Icon(
@@ -622,6 +664,162 @@ private fun RotaryDial(
                     )
                 )
             }
+        }
+    }
+}
+
+private fun dialButton(action: LayoutAction, look: ButtonLook) =
+    captureBlock(LayoutBlockKind.BUTTON, LayoutSkin.DIAL) { copy(action = action, look = look) }
+
+/* ------------------------------------------------------------------ */
+/* Pieces, shared with blocks in Dial's skin                           */
+/* ------------------------------------------------------------------ */
+
+/** The title and artist, small and centred under the readout. */
+@Composable
+internal fun DialTitle(
+    song: Song?,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    artistEnabled: Boolean = true,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = song?.title?.takeIf { !isUnknownTitle(it) } ?: "Untitled",
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        )
+        val artistName = song?.artist?.takeIf { !isUnknownArtist(it) } ?: "Unknown Artist"
+        Text(
+            text = artistName,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = artistEnabled && artistName != "Unknown Artist") {
+                    onArtistClick(artistName)
+                }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Dial's skin for custom layouts                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A block drawn by Dial's own pieces. The cover is the whole instrument: the
+ * tick ring that scrubs as it turns and the die-cut puck at its centre. Filled
+ * and tonal are the round buttons (lit in the accent while on), outlined and
+ * plain the chip; the time is the monospaced readout.
+ */
+@Composable
+internal fun DialSkinBlock(
+    block: LayoutBlock,
+    host: LayoutHost,
+    motionArtwork: Boolean,
+    fallback: @Composable (LayoutInk) -> Unit,
+) {
+    val viewModel = host.viewModel
+    val song by viewModel.currentSong.collectAsState()
+    val scheme = MaterialTheme.colorScheme
+    when (block.kind) {
+        LayoutBlockKind.COVER -> {
+            val isPlaying by viewModel.isPlaying.collectAsState()
+            val isBuffering by viewModel.isBuffering.collectAsState()
+            val playWhenReady by viewModel.playWhenReady.collectAsState()
+            val progress by viewModel.progress.collectAsState()
+            val duration by viewModel.duration.collectAsState()
+            val showLyrics = host.lyricsOpen && motionArtwork
+            val swipe = host.swipeToSkip?.takeIf { host.interactive && block.swipeToSkip }
+            Box(Modifier.fillMaxSize()) {
+                Crossfade(targetState = showLyrics, label = "DialSkinArtLyrics") { lyrics ->
+                    if (lyrics) {
+                        CoverLyrics(
+                            host = host,
+                            primary = scheme.primary,
+                            ink = scheme.onSurface,
+                            inkVariant = scheme.onSurfaceVariant
+                        )
+                    } else {
+                        RotaryDial(
+                            currentSong = song,
+                            isPlaying = isPlaying,
+                            isBuffering = isBuffering && playWhenReady && !isPlaying,
+                            progress = progress,
+                            duration = duration,
+                            onSeekTo = { if (host.interactive) viewModel.seekTo(it) },
+                            onPlayPause = rememberBlockAction(block, host),
+                            swipeToSkip = swipe,
+                            motionEligible = motionArtwork
+                        )
+                    }
+                }
+            }
+        }
+        LayoutBlockKind.TITLE -> SkinTitleFrame(block, host) { frame ->
+            DialTitle(
+                song = song,
+                onArtistClick = host.onArtistClick,
+                artistEnabled = host.interactive,
+                modifier = frame
+            )
+        }
+        LayoutBlockKind.BUTTON -> DialSkinButton(block, host)
+        else -> fallback(LayoutInk(scheme.surfaceContainerLowest, scheme.onSurface))
+    }
+}
+
+@Composable
+private fun DialSkinButton(block: LayoutBlock, host: LayoutHost) {
+    val action = block.action
+    val state = rememberLayoutActionState(action, host)
+    val onClick = rememberBlockAction(block, host)
+    val label = action.label()
+    val scheme = MaterialTheme.colorScheme
+    when (block.look) {
+        ButtonLook.FILLED, ButtonLook.TONAL -> {
+            val lit = state.checked == true
+            EditorialCircleButton(
+                onClick = onClick,
+                accent = if (lit) scheme.primary else scheme.surfaceContainerHigh,
+                field = if (lit) scheme.onPrimary else scheme.onSurface,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                BoxWithConstraints(contentAlignment = Alignment.Center) {
+                    val big = minOf(maxWidth, maxHeight) >= 52.dp
+                    LayoutActionIcon(
+                        action, state, label,
+                        Modifier.layoutIcon(
+                            when {
+                                big -> 28.dp
+                                action == LayoutAction.COLLAPSE -> 26.dp
+                                else -> 22.dp
+                            }
+                        ),
+                        ActionGlyphs.FILLED
+                    )
+                }
+            }
+        }
+        else -> EditorialChip(
+            checked = state.checked == true,
+            onClick = onClick,
+            accent = scheme.primary,
+            field = scheme.onPrimary,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            LayoutActionIcon(action, state, label, Modifier.layoutIcon(20.dp), ActionGlyphs.FILLED)
         }
     }
 }

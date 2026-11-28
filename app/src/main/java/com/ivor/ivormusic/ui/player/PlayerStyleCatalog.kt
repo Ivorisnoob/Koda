@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.DashboardCustomize
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Interests
 import androidx.compose.material.icons.rounded.Landscape
@@ -117,6 +118,10 @@ internal val playerStyleCatalog: List<PlayerStyleInfo> = listOf(
     PlayerStyleInfo(
         PlayerStyle.HERO, "Hero", "Full-bleed art, big play button",
         Icons.Rounded.Landscape, MaterialShapes.Arch
+    ),
+    PlayerStyleInfo(
+        PlayerStyle.CUSTOM, "Custom", "A player you lay out yourself",
+        Icons.Rounded.DashboardCustomize, MaterialShapes.Puffy
     )
 )
 
@@ -550,6 +555,52 @@ private fun PlayerStylePreview(style: PlayerStyle, modifier: Modifier = Modifier
                     }
                 }
             }
+
+            // Pieces placed off the usual grid, one of them lifted as if
+            // being dragged into place.
+            PlayerStyle.CUSTOM -> Box(modifier = Modifier.fillMaxSize()) {
+                PreviewPolygon(
+                    polygon = MaterialShapes.Puffy,
+                    color = art,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .fillMaxHeight(0.62f)
+                        .aspectRatio(1f)
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .fillMaxWidth(0.34f)
+                        .fillMaxHeight(0.28f)
+                        .rotate(8f)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(soft)
+                        .border(1.5.dp, art, RoundedCornerShape(5.dp))
+                )
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    PreviewLine(color = line, widthFraction = 0.55f)
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(art)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .width(22.dp)
+                                .height(10.dp)
+                                .clip(RoundedCornerShape(percent = 50))
+                                .background(soft)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -591,6 +642,7 @@ internal fun playerStyleLabel(style: PlayerStyle): String = when (style) {
     PlayerStyle.MORPH -> stringResource(R.string.ps_style_morph)
     PlayerStyle.DIAL -> stringResource(R.string.ps_style_dial)
     PlayerStyle.HERO -> stringResource(R.string.ps_style_hero)
+    PlayerStyle.CUSTOM -> stringResource(R.string.ps_style_custom)
 }
 
 @Composable
@@ -604,4 +656,5 @@ internal fun playerStyleSubtitle(style: PlayerStyle): String = when (style) {
     PlayerStyle.MORPH -> stringResource(R.string.ps_sub_morph)
     PlayerStyle.DIAL -> stringResource(R.string.ps_sub_dial)
     PlayerStyle.HERO -> stringResource(R.string.ps_sub_hero)
+    PlayerStyle.CUSTOM -> stringResource(R.string.ps_sub_custom)
 }

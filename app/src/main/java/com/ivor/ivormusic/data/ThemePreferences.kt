@@ -149,6 +149,16 @@ class ThemePreferences(context: Context) {
         prefs.edit().putBoolean(KEY_EDITORIAL_ONE_ROW, enabled).apply()
         _editorialOneRow.value = enabled
     }
+
+    // Off by default: the custom layout editor keeps blocks where they are,
+    // so a stray drag while tapping a block does not shift it.
+    private val _layoutEditorMoveBlocks = MutableStateFlow(prefs.getBoolean(KEY_LAYOUT_EDITOR_MOVE_BLOCKS, false))
+    val layoutEditorMoveBlocks: StateFlow<Boolean> = _layoutEditorMoveBlocks.asStateFlow()
+
+    fun setLayoutEditorMoveBlocks(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LAYOUT_EDITOR_MOVE_BLOCKS, enabled).apply()
+        _layoutEditorMoveBlocks.value = enabled
+    }
     
     private val _videoMode = MutableStateFlow(getVideoModePreference())
     val videoMode: StateFlow<Boolean> = _videoMode.asStateFlow()
@@ -492,6 +502,8 @@ class ThemePreferences(context: Context) {
                 _coverDoubleTapSeek.value = prefs.getBoolean(KEY_COVER_DOUBLE_TAP_SEEK, true)
             KEY_EDITORIAL_ONE_ROW ->
                 _editorialOneRow.value = prefs.getBoolean(KEY_EDITORIAL_ONE_ROW, false)
+            KEY_LAYOUT_EDITOR_MOVE_BLOCKS ->
+                _layoutEditorMoveBlocks.value = prefs.getBoolean(KEY_LAYOUT_EDITOR_MOVE_BLOCKS, false)
             KEY_MINI_PLAYER_BUTTONS, KEY_MINI_PLAYER_COVER_TAP, KEY_MINI_PLAYER_COVER_MOTION,
             KEY_MINI_PLAYER_SWIPE_SKIP, KEY_MINI_PLAYER_SWIPE_DISMISS, KEY_MINI_PLAYER_SHRINK,
             KEY_MINI_PLAYER_COLOR, KEY_MINI_PLAYER_SECOND_LINE, KEY_MINI_PLAYER_LONG_PRESS ->
@@ -707,6 +719,7 @@ class ThemePreferences(context: Context) {
         private const val KEY_LIBRARY_HIDDEN_TABS = "library_hidden_tabs"
         private const val KEY_COVER_DOUBLE_TAP_SEEK = "cover_double_tap_seek"
         private const val KEY_EDITORIAL_ONE_ROW = "editorial_one_row"
+        private const val KEY_LAYOUT_EDITOR_MOVE_BLOCKS = "layout_editor_move_blocks"
 
         /**
          * How long the video controls stay up, as a fresh read: the player
@@ -3299,5 +3312,7 @@ enum class PlayerStyle {
     /** Rotary instrument: a tick-ring dial spun to scrub */
     DIAL,
     /** Full-bleed artwork over a tonal deck with an oversized play disc */
-    HERO
+    HERO,
+    /** A layout the user built themselves (`data/playerlayout/`) */
+    CUSTOM
 }

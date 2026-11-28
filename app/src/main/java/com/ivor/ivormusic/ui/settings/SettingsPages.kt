@@ -81,6 +81,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.NotInterested
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Save
@@ -1054,6 +1055,17 @@ internal fun PlayerSettingsPage(
                             onStyleSelected = onPlayerStyleChange
                         )
                     }
+                    // Read and written here, like Editorial's row below.
+                    val context = LocalContext.current
+                    val prefs = remember(context) { ThemePreferences(context) }
+                    val moveBlocks by prefs.layoutEditorMoveBlocks.collectAsState()
+                    SettingsToggleRow(
+                        icon = Icons.Rounded.OpenWith,
+                        title = stringResource(R.string.sp_layout_move_blocks),
+                        subtitle = stringResource(R.string.sp_layout_move_blocks_sub),
+                        enabled = moveBlocks,
+                        onToggle = prefs::setLayoutEditorMoveBlocks,
+                    )
                 }
             }
         }

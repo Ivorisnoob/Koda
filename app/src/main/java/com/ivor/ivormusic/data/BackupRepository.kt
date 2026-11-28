@@ -98,7 +98,8 @@ class BackupRepository(context: Context) {
             "hidden_playlists",         // playlists the user told Koda not to show
             "playlist_modes",           // playlists kept to music or video mode
             "ivor_track_loudness",      // measured per-track gain
-            "koda_icon_styles"          // icon looks the user mixed themselves
+            "koda_icon_styles",         // icon looks the user mixed themselves
+            "koda_player_layouts"       // custom player layouts (PlayerLayoutStore)
         )
 
         /**

@@ -926,6 +926,20 @@ fun ExpandablePlayer(
                                     onOpenAlbum = onOpenAlbum
                                 )
                             }
+                            PlayerStyle.CUSTOM -> {
+                                CustomPlayerSheetContent(
+                                    viewModel = viewModel,
+                                    ambientBackground = ambientBackground,
+                                    onCollapse = { onExpandChange(false) },
+                                    onLoadMore = {
+                                        viewModel.loadMoreRecommendations()
+                                    },
+                                    onArtistClick = onArtistClick,
+                                    onWatchAsVideo = onWatchAsVideo,
+                                    onAlbumClick = onAlbumClick,
+                                    onOpenAlbum = onOpenAlbum
+                                )
+                            }
                         }
                         }
                         }
