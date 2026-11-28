@@ -5,7 +5,8 @@
 <h1 align="center">Koda</h1>
 
 <p align="center">
-  <b>A music and video player for Android, powered by YouTube Music.</b>
+  <b>A music and video player powered by YouTube Music.</b><br/>
+  On Android, with native apps for <a href="https://github.com/Ivorisnoob/iKoda">iPhone and Mac</a> and <a href="https://github.com/Ivorisnoob/koda-windows">Windows</a>.
 </p>
 
 <p align="center">
@@ -16,7 +17,9 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Android-8.0%2B-green?style=for-the-badge&logo=android" alt="Android 8.0 and newer"/>
-  <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-purple?style=for-the-badge&logo=kotlin" alt="Kotlin and Jetpack Compose"/>
+  <a href="https://github.com/Ivorisnoob/iKoda"><img src="https://img.shields.io/badge/iOS-26%2B-black?style=for-the-badge&logo=apple" alt="Koda for iPhone, iOS 26 and newer"/></a>
+  <a href="https://github.com/Ivorisnoob/iKoda"><img src="https://img.shields.io/badge/macOS-26%2B-black?style=for-the-badge&logo=apple" alt="Koda for Mac, macOS 26 and newer"/></a>
+  <a href="https://github.com/Ivorisnoob/koda-windows"><img src="https://img.shields.io/badge/Windows-11-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Koda for Windows, Windows 11"/></a>
   <a href="https://t.me/ivorisnoob_chat"><img src="https://img.shields.io/badge/Telegram-Community-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram community"/></a>
 </p>
 
@@ -44,6 +47,18 @@ Download the latest APK from **[GitHub Releases](https://github.com/Ivorisnoob/K
 Android will ask for permission to install an app from outside the Play Store. After installation, Koda's updater can check GitHub Releases and select the correct APK automatically.
 
 Official builds are published only on GitHub and in the [Telegram community](https://t.me/ivorisnoob_chat). See [SECURITY.md](SECURITY.md) before installing a build from anywhere else.
+
+## Koda on other devices
+
+Koda is a family of apps, one for each platform, each written natively in that platform's own design language rather than ported from this one. They share the same idea - YouTube Music and YouTube with no ads and no account required - and the iPhone, Mac and Windows apps can import a backup from Koda for Android, so your library comes with you.
+
+| Platform | App | Built with | Download |
+|---|---|---|---|
+| Android 8.0+ | Koda (this repository) | Kotlin, Jetpack Compose, Material 3 Expressive | [Releases](https://github.com/Ivorisnoob/Koda/releases/latest) |
+| iPhone (iOS 26+) and Mac (macOS 26+) | [Koda for iPhone and Mac](https://github.com/Ivorisnoob/iKoda) | Swift, SwiftUI, Liquid Glass | [`Koda.ipa` and `Koda.dmg`](https://github.com/Ivorisnoob/iKoda/releases/latest), or the AltStore and SideStore source |
+| Windows 11 | [Koda for Windows](https://github.com/Ivorisnoob/koda-windows) | C#, .NET, WinUI 3, Fluent | [Installer or portable zip](https://github.com/Ivorisnoob/koda-windows/releases/latest) |
+
+The iPhone, Mac and Windows apps are newer and do not have every feature listed below yet; each repository lists what it has. Every Koda shares the [Telegram community](https://t.me/ivorisnoob_chat), and bugs go to that app's own issue tracker.
 
 ## Features
 

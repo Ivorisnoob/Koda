@@ -82,6 +82,8 @@ Changelog:
 
 **Koda** (package `com.ivor.ivormusic`, GitHub `ivorisnoob/Koda`): Android music and video player over YouTube Music. Kotlin + Compose + Material 3 Expressive. No official API keys - NewPipe Extractor plus direct InnerTube calls.
 
+**Koda is a family; this repository is the Android one and the reference.** The siblings are separate repositories with their own `CLAUDE.md`: **Koda for iPhone and Mac** (`Ivorisnoob/iKoda`, SwiftUI, iOS/macOS 26+, locally `E:\Ivors\Developement\open-source\Koda-iOS`) and **Koda for Windows** (`Ivorisnoob/koda-windows`, WinUI 3 on .NET, locally `F:\koda-windows`). They are native rewrites, not ports: nothing here is shared code, so a change here never needs a matching edit there, but they import Android's backup file, so **the backup format is a cross-platform contract** - read `docs/identity.md` before changing a store's name or shape. A Linux app exists but is not announced yet; leave it out of public docs until the owner says so. The README's "Koda on other devices" table is where the family is listed.
+
 MVVM with StateFlow and **no DI framework**: ViewModels build repositories directly, so several `YouTubeRepository` instances coexist and cross-instance freshness is a real concern. Repositories persist through SharedPreferences.
 
 | Question | Code | Doc |
